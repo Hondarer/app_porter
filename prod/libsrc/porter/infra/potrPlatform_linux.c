@@ -20,13 +20,13 @@
 
     #include "potrPlatform.h"
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_sendto(PotrSocket sock, const uint8_t *buf, size_t len, int flags, const struct sockaddr *dest, int dest_len)
 {
     return (int)sendto(sock, buf, len, flags, dest, (socklen_t)dest_len);
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_recvfrom(PotrSocket sock, uint8_t *buf, size_t len, int flags, struct sockaddr *src, int *src_len)
 {
     socklen_t sl = (socklen_t)*src_len;
@@ -35,7 +35,7 @@ int potr_recvfrom(PotrSocket sock, uint8_t *buf, size_t len, int flags, struct s
     return n;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_poll_writable(PotrSocket fd, int timeout_ms)
 {
     struct pollfd pfd;
@@ -51,7 +51,7 @@ int potr_poll_writable(PotrSocket fd, int timeout_ms)
     return -1;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_poll_readable(PotrSocket fd, int timeout_ms)
 {
     struct pollfd pfd;
@@ -67,7 +67,7 @@ int potr_poll_readable(PotrSocket fd, int timeout_ms)
     return -1;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len)
 {
     size_t sent = 0;
@@ -81,7 +81,7 @@ int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len)
     return 0;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
 {
     size_t received = 0;
@@ -97,14 +97,14 @@ int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
     return 1;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_socket_lib_init(void)
 {
     return 0;
 }
 void potr_socket_lib_cleanup(void) {}
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_set_nonblocking(PotrSocket fd)
 {
     int flags = fcntl(fd, F_GETFL, 0);
@@ -113,7 +113,7 @@ int potr_set_nonblocking(PotrSocket fd)
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0 ? -1 : 0;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_set_blocking(PotrSocket fd)
 {
     int flags = fcntl(fd, F_GETFL, 0);

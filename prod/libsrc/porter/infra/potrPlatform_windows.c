@@ -19,19 +19,19 @@
 
     #include "potrPlatform.h"
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_sendto(PotrSocket sock, const uint8_t *buf, size_t len, int flags, const struct sockaddr *dest, int dest_len)
 {
     return sendto(sock, (const char *)buf, (int)len, flags, dest, dest_len);
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_recvfrom(PotrSocket sock, uint8_t *buf, size_t len, int flags, struct sockaddr *src, int *src_len)
 {
     return recvfrom(sock, (char *)buf, (int)len, flags, src, src_len);
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_poll_writable(PotrSocket fd, int timeout_ms)
 {
     WSAPOLLFD pfd;
@@ -47,7 +47,7 @@ int potr_poll_writable(PotrSocket fd, int timeout_ms)
     return -1;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_poll_readable(PotrSocket fd, int timeout_ms)
 {
     WSAPOLLFD pfd;
@@ -63,7 +63,7 @@ int potr_poll_readable(PotrSocket fd, int timeout_ms)
     return -1;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len)
 {
     size_t sent = 0;
@@ -77,7 +77,7 @@ int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len)
     return 0;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
 {
     size_t received = 0;
@@ -93,27 +93,27 @@ int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
     return 1;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_socket_lib_init(void)
 {
     WSADATA wsa;
     return WSAStartup(MAKEWORD(2, 2), &wsa) == 0 ? 0 : -1;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 void potr_socket_lib_cleanup(void)
 {
     WSACleanup();
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_set_nonblocking(PotrSocket fd)
 {
     u_long mode = 1;
     return ioctlsocket(fd, FIONBIO, &mode) == 0 ? 0 : -1;
 }
 
-/* doxygen コメントはヘッダに記載 */
+/* doxygen コメントは、ヘッダに記載 */
 int potr_set_blocking(PotrSocket fd)
 {
     u_long mode = 0;
