@@ -433,7 +433,7 @@ static void sender_connect_loop(struct PotrContext_ *ctx, int path_idx)
                  ctx->service.service_id, path_idx);
 
         ctx->tcp_conn_fd[path_idx]           = sock;
-        ctx->tcp_last_ping_recv_ms[path_idx] = clock_get_monotonic_ms();
+        ctx->tcp_last_ping_recv_ms[path_idx] = com_util_get_monotonic_ms();
 
         /* tcp_active_paths カウンタをインクリメント (tcp_state_mutex 保護) */
         COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
@@ -665,7 +665,7 @@ static void receiver_accept_loop(struct PotrContext_ *ctx, int path_idx)
             /* TCP_SESSION_SAME の場合は reset 不要 (セッション継続) */
 
             ctx->tcp_conn_fd[path_idx]           = conn;
-            ctx->tcp_last_ping_recv_ms[path_idx] = clock_get_monotonic_ms();
+            ctx->tcp_last_ping_recv_ms[path_idx] = com_util_get_monotonic_ms();
             ctx->tcp_first_pkt_len[path_idx]         = pkt_len; /* 先読みバッファ有効化 */
 
             COM_UTIL_MUTEX_UNLOCK(&ctx->session_establish_mutex);

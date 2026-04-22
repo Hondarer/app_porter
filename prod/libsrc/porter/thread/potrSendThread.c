@@ -246,7 +246,7 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
 
         if (sent_any && should_track_valid_data_send_time(ctx))
         {
-            ctx->last_valid_data_send_ms = clock_get_monotonic_ms();
+            ctx->last_valid_data_send_ms = com_util_get_monotonic_ms();
             potr_health_thread_wake(ctx);
         }
     }
@@ -454,12 +454,12 @@ COM_UTIL_THREAD_FUNC(send_thread_func)
                 if (pack_wait_ms > 0)
                 {
                     /* パッキング待ちあり: タイムアウトまで追加エントリを待ち合わせる */
-                    uint64_t      deadline = clock_get_monotonic_ms() + pack_wait_ms;
+                    uint64_t      deadline = com_util_get_monotonic_ms() + pack_wait_ms;
                     PotrPayloadElem next;
 
                     for (;;)
                     {
-                        uint64_t now = clock_get_monotonic_ms();
+                        uint64_t now = com_util_get_monotonic_ms();
                         uint32_t remaining;
                         size_t   elem_size;
 

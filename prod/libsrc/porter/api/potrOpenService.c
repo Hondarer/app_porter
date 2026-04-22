@@ -65,9 +65,9 @@ static PotrSocket open_socket_unicast(struct in_addr bind_addr, uint16_t port)
 /* セッション識別子と開始時刻を生成してコンテキストに格納する。 */
 static void generate_session(struct PotrContext_ *ctx)
 {
-    srand((unsigned int)clock_get_monotonic_ms());
+    srand((unsigned int)com_util_get_monotonic_ms());
     ctx->session_id = (uint32_t)rand();
-    clock_get_realtime(&ctx->session_tv_sec, &ctx->session_tv_nsec);
+    com_util_get_realtime(&ctx->session_tv_sec, &ctx->session_tv_nsec);
 
     ctx->last_ping_send_ms       = 0U;
     ctx->last_valid_data_send_ms = 0U;

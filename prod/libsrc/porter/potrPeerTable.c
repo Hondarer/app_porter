@@ -34,9 +34,9 @@
 /* ピアのセッション識別子・開始時刻を生成して peer に格納する */
 static void peer_generate_session(PotrPeerContext *peer)
 {
-    srand((unsigned int)clock_get_monotonic_ms());
+    srand((unsigned int)com_util_get_monotonic_ms());
     peer->session_id = (uint32_t)rand();
-    clock_get_realtime(&peer->session_tv_sec, &peer->session_tv_nsec);
+    com_util_get_realtime(&peer->session_tv_sec, &peer->session_tv_nsec);
 }
 
 /* 使用中でない peer_id を単調増加カウンタから生成する (peers_mutex 取得済みの文脈で呼ぶ) */

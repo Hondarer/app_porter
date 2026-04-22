@@ -640,7 +640,7 @@ static int n1_update_path_health(PotrPeerContext *peer, int path_idx)
     int64_t s;
     int32_t ns;
 
-    clock_get_monotonic(&s, &ns);
+    com_util_get_monotonic(&s, &ns);
     peer->last_recv_tv_sec               = s;
     peer->last_recv_tv_nsec              = ns;
     peer->path_last_recv_sec[path_idx]   = s;
@@ -656,7 +656,7 @@ static void n1_check_health_timeout(struct PotrContext_ *ctx)
     int32_t now_nsec;
     int i;
 
-    clock_get_monotonic(&now_sec, &now_nsec);
+    com_util_get_monotonic(&now_sec, &now_nsec);
     int k;
     int should_wake_health = 0;
 
@@ -1121,8 +1121,8 @@ static void update_path_recv(struct PotrContext_      *ctx,
    片方向 type 1-6 では PING / 有効 DATA、双方向 type 7 では PING 受信時のみ呼ぶこと。 */
 static int update_path_health(struct PotrContext_ *ctx, int path_idx)
 {
-    clock_get_monotonic(&ctx->last_recv_tv_sec, &ctx->last_recv_tv_nsec);
-    clock_get_monotonic(&ctx->path_last_recv_sec[path_idx],
+    com_util_get_monotonic(&ctx->last_recv_tv_sec, &ctx->last_recv_tv_nsec);
+    com_util_get_monotonic(&ctx->path_last_recv_sec[path_idx],
                   &ctx->path_last_recv_nsec[path_idx]);
     return set_path_ping_state(&ctx->path_ping_state[path_idx],
                                POTR_PING_STATE_NORMAL);
@@ -1139,7 +1139,7 @@ static void check_health_timeout(struct PotrContext_ *ctx)
 
     if (ctx->health_timeout_ms == 0) return;
 
-    clock_get_monotonic(&now_sec, &now_nsec);
+    com_util_get_monotonic(&now_sec, &now_nsec);
 
     /* パスごとのタイムアウト: peer_port をクリア */
     for (i = 0; i < ctx->n_path; i++)
@@ -1237,7 +1237,7 @@ static int reorder_gap_ready(struct PotrContext_ *ctx, uint32_t nack_num)
     if (!ctx->reorder_pending || ctx->reorder_nack_num != nack_num)
     {
         uint32_t effective_ms;
-        clock_get_monotonic(&now_sec, &now_nsec);
+        com_util_get_monotonic(&now_sec, &now_nsec);
 
         /* マルチキャスト/ブロードキャスト通常モードでは NACK 送出タイミングを分散させる。
            複数受信者が同一欠番を同時に NACK すると送信者側で輻輳が発生するため、
@@ -1264,7 +1264,7 @@ static int reorder_gap_ready(struct PotrContext_ *ctx, uint32_t nack_num)
     }
 
     /* 同一欠番: タイムアウト確認 */
-    clock_get_monotonic(&now_sec, &now_nsec);
+    com_util_get_monotonic(&now_sec, &now_nsec);
     if (now_sec > ctx->reorder_deadline_sec
         || (now_sec == ctx->reorder_deadline_sec
             && now_nsec >= ctx->reorder_deadline_nsec))
@@ -2205,7 +2205,7 @@ COM_UTIL_THREAD_FUNC(recv_thread_func)
 
                     /* 同一 ack_num の NACK が POTR_NACK_DEDUP_MS 以内に届いた場合は破棄 */
                     {
-                        uint64_t now_ms    = clock_get_monotonic_ms();
+                        uint64_t now_ms    = com_util_get_monotonic_ms();
                         int      dedup_idx;
                         int      is_dup    = 0;
 
@@ -2590,7 +2590,7 @@ COM_UTIL_THREAD_FUNC(tcp_recv_thread_func)
             {
                 /* ポーリングタイムアウト: PING 受信時刻を確認する */
                 uint64_t last    = ctx->tcp_last_ping_recv_ms[path_idx];
-                uint64_t elapsed = clock_get_monotonic_ms() - last;
+                uint64_t elapsed = com_util_get_monotonic_ms() - last;
                 if (last > 0 && elapsed > (uint64_t)ctx->health_timeout_ms)
                 {
                     int ping_state_changed;
@@ -2730,7 +2730,7 @@ COM_UTIL_THREAD_FUNC(tcp_recv_thread_func)
                      "tcp_recv[service_id=%" PRId64 " path=%d]: PING seq=%u",
                      ctx->service.service_id, path_idx, (unsigned)pkt.seq_num);
             COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
-            ctx->tcp_last_ping_recv_ms[path_idx] = clock_get_monotonic_ms();
+            ctx->tcp_last_ping_recv_ms[path_idx] = com_util_get_monotonic_ms();
             ping_state_changed = set_path_ping_state(&ctx->path_ping_state[path_idx],
                                                      POTR_PING_STATE_NORMAL);
             if (pkt.payload_len >= POTR_MAX_PATH && pkt.payload != NULL)
