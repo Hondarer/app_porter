@@ -12,7 +12,7 @@
  */
 
 #include <com_util/base/platform.h>
-#include <com_util/fs/file_io.h>
+#include <com_util/crt/stdio.h>
 #include <ctype.h>
 #include <inttypes.h>
 #include <stdio.h>

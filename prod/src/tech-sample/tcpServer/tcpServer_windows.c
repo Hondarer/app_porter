@@ -29,7 +29,7 @@
 #if defined(PLATFORM_WINDOWS)
 
 #include "tcpServer.h"   /* WIN32_LEAN_AND_MEAN / windows.h / winsock2.h / ws2tcpip.h を内包 */
-#include <com_util/fs/path_max.h>
+#include <com_util/crt/path.h>
 
 #include <stdio.h>
 #include <stdlib.h>

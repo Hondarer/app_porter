@@ -6,8 +6,10 @@
 #include <testfw.h>
 
 #include <config.h>
+#include <mock_com_util.h>
 #include <porter_type.h>
 
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -22,6 +24,20 @@ using namespace testing;
 
 namespace
 {
+FILE *delegate_fopen(const char *path, const char *modes, int *errno_out)
+{
+    FILE *fp;
+
+    errno = 0;
+    fp    = fopen(path, modes);
+    if (fp == nullptr && errno_out != nullptr)
+    {
+        *errno_out = errno;
+    }
+
+    return fp;
+}
+
 class TempConfigFile
 {
   public:
@@ -87,8 +103,12 @@ class TempConfigFile
 
 TEST(configLoadGlobalTest, loadsProtocolSpecificHealthDefaults)
 {
+    NiceMock<Mock_com_util> mock_com_util;
     TempConfigFile file;
     PotrGlobalConfig global = {};
+
+    ON_CALL(mock_com_util, com_util_fopen(_, _, _))
+        .WillByDefault(Invoke(delegate_fopen));
 
     ASSERT_NE('\0', file.path()[0]);
     ASSERT_TRUE(file.writeAll("[global]\n"

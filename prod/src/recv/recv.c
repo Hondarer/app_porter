@@ -41,8 +41,8 @@
  */
 
 #include <com_util/base/platform.h>
-#include <com_util/fs/file_io.h>
-#include <com_util/fs/path_max.h>
+#include <com_util/crt/path.h>
+#include <com_util/crt/stdio.h>
 #include <inttypes.h>
 #include <signal.h>
 #include <stdio.h>
