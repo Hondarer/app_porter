@@ -457,7 +457,6 @@ int main(int argc, char *argv[])
     int is_bidir;
     PotrRecvCallback callback;
 
-    /* コンソール UTF-8 ヘルパーを初期化する */
     console_init();
 
     /* オプション解析 */

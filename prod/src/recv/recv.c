@@ -667,7 +667,6 @@ int main(int argc, char *argv[])
     BidirThread bidir_thread = 0;
     int bidir_started = 0;
 
-    /* コンソール UTF-8 ヘルパーを初期化する */
     console_init();
 
     /* オプション解析 */
