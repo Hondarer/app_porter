@@ -3,7 +3,12 @@
 # 本ファイルの編集は禁止する。makepart.mk を作成して拡張・カスタマイズすること。
 
 # ワークスペースのディレクトリ
-find-up =     $(if $(wildcard $(1)/$(2)),$(1),        $(if $(filter $(1),$(patsubst %/,%,$(dir $(1)))),,            $(call find-up,$(patsubst %/,%,$(dir $(1))),$(2))        )    )
+find-up = \
+    $(if $(wildcard $(1)/$(2)),$(1),\
+        $(if $(filter $(1),$(patsubst %/,%,$(dir $(1)))),,\
+            $(call find-up,$(patsubst %/,%,$(dir $(1))),$(2))\
+        )\
+    )
 
 # 再帰 make 間でワークスペースルートは不変のため、内部キャッシュ変数で継承する
 ifeq ($(origin MAKEFW_WORKSPACE_DIR), undefined)

@@ -1,6 +1,6 @@
-# makefile サブディレクトリ走査テンプレート
-# prod/test 配下の中間階層 makefile で使用する標準テンプレート
-# 本ファイルの編集は禁止する。makelocal.mk を作成して拡張・カスタマイズすること。
+# makefile テンプレート
+# すべての最終階層 makefile で使用する標準テンプレート
+# 本ファイルの編集は禁止する。makepart.mk を作成して拡張・カスタマイズすること。
 
 # ワークスペースのディレクトリ
 find-up = \
@@ -18,8 +18,10 @@ export MAKEFW_WORKSPACE_DIR
 
 WORKSPACE_DIR := $(MAKEFW_WORKSPACE_DIR)
 
-# 準備処理 (走査テンプレートより前に include)
+# 準備処理 (ビルドテンプレートより前に include)
 include $(WORKSPACE_DIR)/framework/makefw/makefiles/prepare.mk
 
-# サブディレクトリ走査テンプレートを include
-include $(WORKSPACE_DIR)/framework/makefw/makefiles/makesubdir.mk
+##### makepart.mk の内容は、このタイミングで処理される #####
+
+# ビルドテンプレートを include
+include $(WORKSPACE_DIR)/framework/makefw/makefiles/makemain.mk
