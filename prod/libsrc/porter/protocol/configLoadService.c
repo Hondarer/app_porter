@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           configLoadService.c
- *  @brief          [service.<id>] セクション読み込みの実装。
+ *  @brief          service.<id> セクション読み込みの実装。
  *  @author         Tetsuo Honda
  *  @date           2026/04/26
  *  @version        1.0.0

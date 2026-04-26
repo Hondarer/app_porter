@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           configLoadGlobal.c
- *  @brief          [global] セクション読み込みの実装。
+ *  @brief          global セクション読み込みの実装。
  *  @author         Tetsuo Honda
  *  @date           2026/04/26
  *  @version        1.0.0
