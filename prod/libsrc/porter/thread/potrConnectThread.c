@@ -25,7 +25,7 @@
 #if defined(PLATFORM_LINUX)
     #include <arpa/inet.h>
     #include <errno.h>
-#endif /* PLATFORM_ */
+#endif /* PLATFORM_LINUX */
 
 #include <porter_const.h>
 

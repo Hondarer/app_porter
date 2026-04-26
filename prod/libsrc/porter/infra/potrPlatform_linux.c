@@ -124,4 +124,4 @@ int potr_set_blocking(PotrSocket fd)
 
 #elif defined(PLATFORM_WINDOWS) && defined(COMPILER_MSVC)
     #pragma warning(disable : 4206)
-#endif /* PLATFORM_ */
+#endif

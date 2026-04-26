@@ -18,7 +18,7 @@
 
 #if defined(PLATFORM_LINUX)
     #include <arpa/inet.h>
-#endif /* PLATFORM_ */
+#endif /* PLATFORM_LINUX */
 
 #include <porter_const.h>
 #include <porter.h>

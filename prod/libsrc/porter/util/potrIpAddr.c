@@ -17,7 +17,7 @@
 
 #if defined(PLATFORM_LINUX)
     #include <netdb.h>
-#endif /* PLATFORM_ */
+#endif /* PLATFORM_LINUX */
 
 #include <porter_const.h>
 
