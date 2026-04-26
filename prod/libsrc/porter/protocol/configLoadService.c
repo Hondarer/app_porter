@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           configLoadService.c
- *  @brief          service.<id> セクション読み込みの実装。
+ *  @brief          service.id セクション読み込みの実装。
  *  @author         Tetsuo Honda
  *  @date           2026/04/26
  *  @version        1.0.0
@@ -261,8 +261,8 @@ static void apply_service_kv(const char *key, const char *val,
  *  @return         成功時は POTR_SUCCESS、サービスが見つからない場合は POTR_ERROR を返します。
  *
  *  @details
- *  [service.<id>] 形式のセクション名から <id> 部分を取得し、service_id と照合します。
- *  サービスの識別子はセクション名の <id> であり、ポート番号とは無関係です。
+ *  [service.id] 形式のセクション名から id 部分を取得し、service_id と照合します。
+ *  サービスの識別子はセクション名の id であり、ポート番号とは無関係です。
  *******************************************************************************
  */
 int config_load_service(const char *config_path, int64_t service_id,

@@ -39,13 +39,13 @@ static void config_set_global_defaults(PotrGlobalConfig *global)
 
 /**
  *******************************************************************************
- *  @brief          設定ファイルから [global] セクションを読み込みます。
+ *  @brief          設定ファイルから global セクションを読み込みます。
  *  @param[in]      config_path 設定ファイルのパス。
  *  @param[out]     global      読み込み結果を格納する構造体へのポインタ。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
  *
  *  @details
- *  [global] セクションが存在しない場合はデフォルト値を設定します。
+ *  global セクションが存在しない場合はデフォルト値を設定します。
  *******************************************************************************
  */
 int config_load_global(const char *config_path, PotrGlobalConfig *global)
