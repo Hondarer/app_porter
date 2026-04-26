@@ -104,67 +104,6 @@ static int is_text_data(const void *data, size_t len)
     return 1;
 }
 
-/**
- *******************************************************************************
- *  @brief          バイナリデータを一時ファイルに保存する。
- *  @param[in]      data        保存するデータ。
- *  @param[in]      len         データのバイト数。
- *  @param[out]     path_out    保存先パスの格納先バッファ。
- *  @param[in]      path_size   path_out バッファのサイズ (バイト)。
- *  @return         成功時は 0、失敗時は -1 を返します。
- *******************************************************************************
- */
-static int save_to_temp_file(const void *data, size_t len, char *path_out, size_t path_size)
-{
-#if defined(PLATFORM_LINUX)
-    int fd;
-    ssize_t written;
-
-    snprintf(path_out, path_size, "/tmp/porter_recv_XXXXXX");
-    fd = mkstemp(path_out);
-    if (fd == -1)
-    {
-        return -1;
-    }
-    written = write(fd, data, len);
-    close(fd);
-    if (written < 0 || (size_t)written != len)
-    {
-        return -1;
-    }
-    return 0;
-#elif defined(PLATFORM_WINDOWS)
-    char tmp_dir[PLATFORM_PATH_MAX];
-    FILE *fp = NULL;
-    size_t written;
-
-    if (path_out == NULL || path_size < PLATFORM_PATH_MAX)
-    {
-        return -1;
-    }
-    if (GetTempPathA(sizeof(tmp_dir), tmp_dir) == 0)
-    {
-        return -1;
-    }
-    if (GetTempFileNameA(tmp_dir, "ptr", 0, path_out) == 0)
-    {
-        return -1;
-    }
-    fp = com_util_fopen(path_out, "wb", NULL);
-    if (fp == NULL)
-    {
-        return -1;
-    }
-    written = com_util_fwrite(data, 1, len, fp);
-    com_util_fclose(fp);
-    if (written != len)
-    {
-        return -1;
-    }
-    return 0;
-#endif /* PLATFORM_ */
-}
-
 #if defined(PLATFORM_LINUX)
 /**
  *******************************************************************************
@@ -278,14 +217,21 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
         }
         else
         {
-            char tmp_path[4096];
-            if (save_to_temp_file(data, len, tmp_path, sizeof(tmp_path)) == 0)
+            char  tmp_path[PLATFORM_PATH_MAX];
+            FILE *fp = com_util_fopen_temp("ptr", tmp_path, sizeof(tmp_path), NULL);
+
+            if (fp != NULL && com_util_fwrite(data, 1, len, fp) == len)
             {
+                com_util_fclose(fp);
                 printf("\n[サービス %" PRId64 "] 受信 (%zu バイト): バイナリデータを保存しました: %s\n", service_id,
                        len, tmp_path);
             }
             else
             {
+                if (fp != NULL)
+                {
+                    com_util_fclose(fp);
+                }
                 fprintf(stderr, "\n[サービス %" PRId64 "] 受信 (%zu バイト): バイナリデータの保存に失敗しました。\n",
                         service_id, len);
             }
