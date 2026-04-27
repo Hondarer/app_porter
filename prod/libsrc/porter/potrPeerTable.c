@@ -168,7 +168,7 @@ int peer_table_init(struct PotrContext_ *ctx)
                                            sizeof(PotrPeerContext));
     if (ctx->peers == NULL)
     {
-        POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                  "peer_table_init: service_id=%" PRId64 " calloc failed (max_peers=%d)",
                  ctx->service.service_id, ctx->max_peers);
         return POTR_ERROR;
@@ -183,7 +183,7 @@ int peer_table_init(struct PotrContext_ *ctx)
     ctx->n_peers      = 0;
     ctx->next_peer_id = 1U;
 
-    POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
              "peer_table_init: service_id=%" PRId64 " max_peers=%d",
              ctx->service.service_id, ctx->max_peers);
 
@@ -200,7 +200,7 @@ void peer_table_destroy(struct PotrContext_ *ctx)
         return;
     }
 
-    POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
              "peer_table_destroy: service_id=%" PRId64 " n_peers=%d",
              ctx->service.service_id, ctx->n_peers);
 
@@ -282,7 +282,7 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
     {
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &sender_addr->sin_addr, ip_str, sizeof(ip_str));
-        POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                  "peer_create: service_id=%" PRId64 " max_peers=%d reached, "
                  "rejecting new connection from %s:%u",
                  ctx->service.service_id, ctx->max_peers,
@@ -303,7 +303,7 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
     if (peer == NULL)
     {
         /* n_peers < max_peers のはずなのにスロットが見つからない (内部整合性エラー) */
-        POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                  "peer_create: service_id=%" PRId64 " no free slot (internal error)",
                  ctx->service.service_id);
         return NULL;
@@ -324,7 +324,7 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
                     ctx->global.window_size, ctx->global.max_payload) != POTR_SUCCESS)
     {
         peer->active = 0;
-        POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                  "peer_create: service_id=%" PRId64 " send_window init failed",
                  ctx->service.service_id);
         return NULL;
@@ -335,7 +335,7 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
     {
         window_destroy(&peer->send_window);
         peer->active = 0;
-        POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                  "peer_create: service_id=%" PRId64 " recv_window init failed",
                  ctx->service.service_id);
         return NULL;
@@ -351,7 +351,7 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
         window_destroy(&peer->send_window);
         COM_UTIL_MUTEX_DESTROY(&peer->send_window_mutex);
         peer->active = 0;
-        POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                  "peer_create: service_id=%" PRId64 " frag_buf alloc failed",
                  ctx->service.service_id);
         return NULL;
@@ -366,7 +366,7 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
 
     ctx->n_peers++;
 
-    POTR_LOG(COM_UTIL_LOG_LEVEL_INFO,
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
              "peer_create: service_id=%" PRId64 " peer_id=%u created (n_peers=%d)",
              ctx->service.service_id, (unsigned)peer->peer_id, ctx->n_peers);
 
@@ -381,7 +381,7 @@ void peer_path_clear(struct PotrContext_ *ctx, PotrPeerContext *peer, int path_i
         return; /* すでに未使用スロット */
     }
 
-    POTR_LOG(COM_UTIL_LOG_LEVEL_WARNING,
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
              "peer_path_clear: service_id=%" PRId64 " peer=%u path %d cleared",
              ctx->service.service_id, (unsigned)peer->peer_id, path_idx);
 
@@ -399,7 +399,7 @@ void peer_free(struct PotrContext_ *ctx, PotrPeerContext *peer)
         return;
     }
 
-    POTR_LOG(COM_UTIL_LOG_LEVEL_INFO,
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
              "peer_free: service_id=%" PRId64 " peer_id=%u freed",
              ctx->service.service_id, (unsigned)peer->peer_id);
 

@@ -141,7 +141,7 @@ int config_load_global(const char *config_path, PotrGlobalConfig *global)
         }
     }
 
-    POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
              "config loaded: window_size=%u max_payload=%u "
              "max_message_size=%u send_queue_depth=%u "
              "udp_health=%u/%u tcp_health=%u/%u tcp_close_timeout_ms=%u reorder_timeout_ms=%u",

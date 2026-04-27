@@ -291,11 +291,11 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
 
     if (ctx == NULL)
     {
-        POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR, "potrCloseService: handle is NULL");
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potrCloseService: handle is NULL");
         return POTR_ERROR;
     }
 
-    POTR_LOG(COM_UTIL_LOG_LEVEL_INFO, "potrCloseService: service_id=%" PRId64 " closing", ctx->service.service_id);
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potrCloseService: service_id=%" PRId64 " closing", ctx->service.service_id);
     ctx->close_requested = 1;
 
     /* TCP: 接続管理スレッドを停止する (send/recv/health スレッドは connect スレッド内で停止) */
@@ -307,7 +307,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
 
             stop_tcp_health_threads(ctx);
 
-            POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
                      "potrCloseService: service_id=%" PRId64 " flushing send queue and sending TCP FIN",
                      ctx->service.service_id);
             potr_send_queue_wait_drained(&ctx->send_queue);
@@ -318,7 +318,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
                 begin_tcp_close_wait(ctx, fin_target_seq);
                 if (send_tcp_fin(ctx, fin_target_seq) != POTR_SUCCESS)
                 {
-                    POTR_LOG(COM_UTIL_LOG_LEVEL_WARNING,
+                    POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
                              "potrCloseService: service_id=%" PRId64 " TCP FIN send failed",
                              ctx->service.service_id);
                     reset_tcp_close_wait(ctx);
@@ -326,7 +326,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
                 }
                 else if (wait_for_tcp_close_ack(ctx, ctx->global.tcp_close_timeout_ms) != POTR_SUCCESS)
                 {
-                    POTR_LOG(COM_UTIL_LOG_LEVEL_WARNING,
+                    POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
                              "potrCloseService: service_id=%" PRId64 " TCP FIN_ACK wait timed out (%ums)",
                              ctx->service.service_id,
                              (unsigned)ctx->global.tcp_close_timeout_ms);
@@ -334,14 +334,14 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
                 }
                 else
                 {
-                    POTR_LOG(COM_UTIL_LOG_LEVEL_INFO,
+                    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
                              "potrCloseService: service_id=%" PRId64 " TCP FIN_ACK received",
                              ctx->service.service_id);
                 }
             }
             else if (ctx->send_has_data)
             {
-                POTR_LOG(COM_UTIL_LOG_LEVEL_WARNING,
+                POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
                          "potrCloseService: service_id=%" PRId64 " TCP close without active path",
                          ctx->service.service_id);
                 ret = POTR_ERROR;
@@ -352,7 +352,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
             }
         }
 
-        POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE, "potrCloseService: service_id=%" PRId64 " stopping connect thread (TCP)",
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potrCloseService: service_id=%" PRId64 " stopping connect thread (TCP)",
                  ctx->service.service_id);
         potr_connect_thread_stop(ctx);
 
@@ -389,7 +389,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
 
     potr_socket_lib_cleanup();
 
-        POTR_LOG(COM_UTIL_LOG_LEVEL_INFO, "potrCloseService: service closed (TCP)");
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potrCloseService: service closed (TCP)");
         potr_callback_mutex_destroy(ctx);
         free(ctx);
         return ret;
@@ -398,7 +398,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
     /* 非 TCP: ヘルスチェックスレッドを停止 (送信者のみ) */
     if (ctx->health_running[0])
     {
-        POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE, "potrCloseService: service_id=%" PRId64 " stopping health thread",
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potrCloseService: service_id=%" PRId64 " stopping health thread",
                  ctx->service.service_id);
         potr_health_thread_stop(ctx);
     }
@@ -409,7 +409,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
     /* 送信スレッドを停止してキューを破棄 (送信者のみ) */
     if (ctx->send_thread_running)
     {
-        POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE, "potrCloseService: service_id=%" PRId64 " flushing send queue and sending FIN",
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potrCloseService: service_id=%" PRId64 " flushing send queue and sending FIN",
                  ctx->service.service_id);
         potr_send_queue_wait_drained(&ctx->send_queue);
         if (ctx->is_multi_peer)
@@ -426,7 +426,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
          * send_thread_stop() が send_window_mutex を破棄する前に停止する必要がある。 */
         if (ctx->running[0])
         {
-            POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE, "potrCloseService: service_id=%" PRId64 " stopping recv thread",
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potrCloseService: service_id=%" PRId64 " stopping recv thread",
                      ctx->service.service_id);
             comm_recv_thread_stop(ctx);
         }
@@ -437,7 +437,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
     /* 送信スレッド未起動の受信専用サービスではここで受信スレッドを停止する */
     if (ctx->running[0])
     {
-        POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE, "potrCloseService: service_id=%" PRId64 " stopping recv thread",
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potrCloseService: service_id=%" PRId64 " stopping recv thread",
                  ctx->service.service_id);
         comm_recv_thread_stop(ctx);
     }
@@ -487,7 +487,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
     free(ctx->crypto_buf);
     free(ctx->recv_buf);
     free(ctx->send_wire_buf);
-    POTR_LOG(COM_UTIL_LOG_LEVEL_INFO, "potrCloseService: service closed");
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potrCloseService: service closed");
 
     potr_callback_mutex_destroy(ctx);
     free(ctx);

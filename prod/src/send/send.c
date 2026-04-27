@@ -243,22 +243,22 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
 
 /**
  *******************************************************************************
- *  @brief          ログレベル文字列を com_util_log_level_t に変換する。
+ *  @brief          ログレベル文字列を com_util_trace_level_t に変換する。
  *  @param[in]      str     レベル文字列 (VERBOSE/INFO/WARNING/ERROR/CRITICAL)。
  *  @param[out]     out     変換結果の格納先。
  *  @return         変換に成功した場合は 1、未知の文字列の場合は 0 を返します。
  *******************************************************************************
  */
-static int parse_log_level(const char *str, com_util_log_level_t *out)
+static int parse_trace_level(const char *str, com_util_trace_level_t *out)
 {
     static const struct
     {
         const char *name;
-        com_util_log_level_t level;
+        com_util_trace_level_t level;
         uint32_t _pad;
     } tbl[] = {
-        {"VERBOSE", COM_UTIL_LOG_LEVEL_VERBOSE, 0U}, {"INFO", COM_UTIL_LOG_LEVEL_INFO, 0U},         {"WARNING", COM_UTIL_LOG_LEVEL_WARNING, 0U},
-        {"ERROR", COM_UTIL_LOG_LEVEL_ERROR, 0U},     {"CRITICAL", COM_UTIL_LOG_LEVEL_CRITICAL, 0U},
+        {"VERBOSE", COM_UTIL_TRACE_LEVEL_VERBOSE, 0U}, {"INFO", COM_UTIL_TRACE_LEVEL_INFO, 0U},         {"WARNING", COM_UTIL_TRACE_LEVEL_WARNING, 0U},
+        {"ERROR", COM_UTIL_TRACE_LEVEL_ERROR, 0U},     {"CRITICAL", COM_UTIL_TRACE_LEVEL_CRITICAL, 0U},
     };
     char upper[16];
     size_t i;
@@ -397,8 +397,8 @@ int main(int argc, char *argv[])
     int compress;
     int ret = EXIT_SUCCESS;
     int i;
-    com_util_log_level_t log_level = COM_UTIL_LOG_LEVEL_NONE;
-    int log_level_set = 0;
+    com_util_trace_level_t trace_level = COM_UTIL_TRACE_LEVEL_NONE;
+    int trace_level_set = 0;
     PotrType svc_type;
     int is_bidir;
     PotrRecvCallback callback;
@@ -417,7 +417,7 @@ int main(int argc, char *argv[])
                 return EXIT_FAILURE;
             }
             i++;
-            if (!parse_log_level(argv[i], &log_level))
+            if (!parse_trace_level(argv[i], &trace_level))
             {
                 fprintf(stderr,
                         "エラー: 不明なログレベル \"%s\"。"
@@ -425,7 +425,7 @@ int main(int argc, char *argv[])
                         argv[i]);
                 return EXIT_FAILURE;
             }
-            log_level_set = 1;
+            trace_level_set = 1;
         }
         else
         {
@@ -447,11 +447,11 @@ int main(int argc, char *argv[])
     service_id = (int64_t)strtoll(argv[i + 1], NULL, 10);
 
     /* ロガー設定 (stderr 出力) */
-    if (log_level_set)
+    if (trace_level_set)
     {
-        com_util_logger_t *logger = potrGetLogger();
-        com_util_logger_set_stderr_level(logger, log_level);
-        com_util_logger_start(logger);
+        com_util_tracer_t *tracer = potrGetTracer();
+        com_util_tracer_set_stderr_level(tracer, trace_level);
+        com_util_tracer_start(tracer);
     }
 
 #if defined(PLATFORM_LINUX)
