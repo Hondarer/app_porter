@@ -85,20 +85,20 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
     if (ctx == NULL || data == NULL || len == 0
         || len > (size_t)ctx->global.max_message_size)
     {
-        POTR_LOG(TRACE_LEVEL_ERROR,
+        POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
                  "potrSend: invalid argument (handle=%p data=%p len=%zu max=%u)",
                  (const void *)handle, data, len,
                  (ctx != NULL) ? (unsigned)ctx->global.max_message_size : 0U);
         return POTR_ERROR;
     }
 
-    POTR_LOG(TRACE_LEVEL_VERBOSE,
+    POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
              "potrSend: service_id=%" PRId64 " peer_id=%u len=%zu flags=0x%x",
              ctx->service.service_id, (unsigned)peer_id, len, (unsigned)flags);
 
     if (ctx->close_requested)
     {
-        POTR_LOG(TRACE_LEVEL_VERBOSE,
+        POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                  "potrSend: service_id=%" PRId64 " rejected because close is in progress",
                  ctx->service.service_id);
         return POTR_ERROR;
@@ -109,7 +109,7 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
     if (potr_is_tcp_type(ctx->service.type)
         && (ctx->tcp_active_paths == 0 || !ctx->health_alive))
     {
-        POTR_LOG(TRACE_LEVEL_VERBOSE,
+        POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                  "potrSend: service_id=%" PRId64 " TCP not connected"
                  " (active_paths=%d health_alive=%d)",
                  ctx->service.service_id,
@@ -120,7 +120,7 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
     /* UDP 1:1 双方向: PING 交換による接続確立前は POTR_ERROR_DISCONNECTED を返す */
     if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR && !ctx->health_alive)
     {
-        POTR_LOG(TRACE_LEVEL_VERBOSE,
+        POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                  "potrSend: service_id=%" PRId64 " UDP bidir not connected",
                  ctx->service.service_id);
         return POTR_ERROR_DISCONNECTED;
@@ -140,7 +140,7 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
         if (com_util_compress(ctx->compress_buf, &cmp_len,
                           (const uint8_t *)data, len) != 0)
         {
-            POTR_LOG(TRACE_LEVEL_ERROR,
+            POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
                      "potrSend: service_id=%" PRId64 " compression failed (len=%zu)",
                      ctx->service.service_id, len);
             return POTR_ERROR;
@@ -148,7 +148,7 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
 
         if (cmp_len < len)
         {
-            POTR_LOG(TRACE_LEVEL_VERBOSE,
+            POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                      "potrSend: service_id=%" PRId64 " compress %zu -> %zu bytes",
                      ctx->service.service_id, len, cmp_len);
             ptr        = ctx->compress_buf;
@@ -157,7 +157,7 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
         }
         else
         {
-            POTR_LOG(TRACE_LEVEL_VERBOSE,
+            POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                      "potrSend: service_id=%" PRId64 " compression skipped"
                      " (compressed %zu >= original %zu bytes), sending uncompressed",
                      ctx->service.service_id, cmp_len, len);
@@ -170,7 +170,7 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
     {
         if (peer_id == POTR_PEER_NA)
         {
-            POTR_LOG(TRACE_LEVEL_ERROR,
+            POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
                      "potrSend: service_id=%" PRId64 " N:1 mode requires valid peer_id (got POTR_PEER_NA)",
                      ctx->service.service_id);
             return POTR_ERROR;
@@ -188,7 +188,7 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
             ids = (PotrPeerId *)malloc((size_t)ctx->max_peers * sizeof(PotrPeerId));
             if (ids == NULL)
             {
-                POTR_LOG(TRACE_LEVEL_ERROR,
+                POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
                          "potrSend: service_id=%" PRId64 " PEER_ALL malloc failed",
                          ctx->service.service_id);
                 return POTR_ERROR;
@@ -207,7 +207,7 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
             if (n_ids == 0)
             {
                 free(ids);
-                POTR_LOG(TRACE_LEVEL_VERBOSE,
+                POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                          "potrSend: service_id=%" PRId64 " PEER_ALL not connected",
                          ctx->service.service_id);
                 return POTR_ERROR_DISCONNECTED;
@@ -233,7 +233,7 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
                 if (peer == NULL)
                 {
                     COM_UTIL_MUTEX_UNLOCK(&ctx->peers_mutex);
-                    POTR_LOG(TRACE_LEVEL_ERROR,
+                    POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
                              "potrSend: service_id=%" PRId64 " peer_id=%u not found",
                              ctx->service.service_id, (unsigned)peer_id);
                     return POTR_ERROR;
@@ -244,7 +244,7 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
 
             if (!peer_alive)
             {
-                POTR_LOG(TRACE_LEVEL_VERBOSE,
+                POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                          "potrSend: service_id=%" PRId64 " peer_id=%u N:1 not connected",
                          ctx->service.service_id, (unsigned)peer_id);
                 return POTR_ERROR_DISCONNECTED;

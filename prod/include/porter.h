@@ -19,7 +19,7 @@
 
 #include <porter_type.h>
 #include <com_util/base/platform.h>
-#include <com_util/trace/trace.h>
+#include <com_util/trace/logger.h>
 
 #ifdef DOXYGEN
 
@@ -400,19 +400,19 @@ extern "C"
     /**
      *******************************************************************************
      *  @brief          porter 内部ロガーハンドルを返します。
-     *  @return         trace_logger_t ハンドル。
+     *  @return         com_util_logger_t ハンドル。
      *
      *  @details
-     *  porter ライブラリが内部で使用する trace_logger_t ハンドルを返します。\n
+     *  porter ライブラリが内部で使用する com_util_logger_t ハンドルを返します。\n
      *  本関数は potrOpenService() の前に呼び出すことができます。\n
-     *  取得したハンドルに対して trace_logger_set_stderr_level() と
-     *  trace_logger_start() を呼び出すことで、stderr へのログ出力を有効化できます。
+     *  取得したハンドルに対して com_util_logger_set_stderr_level() と
+     *  com_util_logger_start() を呼び出すことで、stderr へのログ出力を有効化できます。
      *
      *  @par            stderr 出力を有効にする例
      *  @code{.c}
-        trace_logger_t *logger = potrGetLogger();
-        trace_logger_set_stderr_level(logger, TRACE_LEVEL_INFO);
-        trace_logger_start(logger);
+        com_util_logger_t *logger = potrGetLogger();
+        com_util_logger_set_stderr_level(logger, COM_UTIL_LOG_LEVEL_INFO);
+        com_util_logger_start(logger);
      *  @endcode
      *
      *  @par            ログフォーマット (stderr)
@@ -425,7 +425,7 @@ extern "C"
      *  本関数はスレッドセーフです。
      *******************************************************************************
      */
-    POTR_EXPORT trace_logger_t * POTR_API potrGetLogger(void);
+    POTR_EXPORT com_util_logger_t * POTR_API potrGetLogger(void);
 
     /**
      *******************************************************************************

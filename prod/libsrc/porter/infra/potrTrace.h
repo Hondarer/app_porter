@@ -13,9 +13,9 @@
  *
  *  使用方法:
  *  @code{.c}
-    POTR_LOG(TRACE_LEVEL_INFO,  "service_id=%" PRId64 " opened", service_id);
-    POTR_LOG(TRACE_LEVEL_ERROR, "socket bind failed: port=%u", port);
-    POTR_LOG(TRACE_LEVEL_VERBOSE, "PING sent: seq=%u", seq);
+    POTR_LOG(COM_UTIL_LOG_LEVEL_INFO,  "service_id=%" PRId64 " opened", service_id);
+    POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR, "socket bind failed: port=%u", port);
+    POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE, "PING sent: seq=%u", seq);
  *  @endcode
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
@@ -26,7 +26,7 @@
 #ifndef POTR_TRACE_H
 #define POTR_TRACE_H
 
-#include <com_util/trace/trace.h>
+#include <com_util/trace/logger.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -36,32 +36,32 @@ extern "C"
 /**
  *******************************************************************************
  *  @brief          グローバルロガーハンドルを返します (初回呼び出し時に lazy create)。
- *  @return         trace_logger_t ハンドル。NULL を返すことはありません。
+ *  @return         com_util_logger_t ハンドル。NULL を返すことはありません。
  *
  *  @details
  *  本関数を直接呼び出さず、POTR_LOG マクロを使用してください。
  *******************************************************************************
  */
-trace_logger_t *potr_trace_get(void);
+com_util_logger_t *potr_trace_get(void);
 
 /**
  *  @def            POTR_LOG(level, ...)
  *  @brief          porter 内部ログ出力マクロ。
  *
  *  @details
- *  __FILE__ と __LINE__ を自動付加して trace_logger_writef() を呼び出します。\n
+ *  __FILE__ と __LINE__ を自動付加して com_util_logger_writef() を呼び出します。\n
  *  ロガーが未 start の場合は無視されます。\n
- *  level には trace_level_t の値を指定してください。
+ *  level には com_util_log_level_t の値を指定してください。
  *
  *  @par            例
  *  @code{.c}
-    POTR_LOG(TRACE_LEVEL_INFO,    "potrOpenService: service_id=%" PRId64 "", service_id);
-    POTR_LOG(TRACE_LEVEL_WARNING, "NACK received: seq=%u", seq);
-    POTR_LOG(TRACE_LEVEL_ERROR,   "socket() failed");
+    POTR_LOG(COM_UTIL_LOG_LEVEL_INFO,    "potrOpenService: service_id=%" PRId64 "", service_id);
+    POTR_LOG(COM_UTIL_LOG_LEVEL_WARNING, "NACK received: seq=%u", seq);
+    POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,   "socket() failed");
  *  @endcode
  */
 #define POTR_LOG(level, ...) \
-    TRACE_LOGGER_WRITEF(potr_trace_get(), (level), __VA_ARGS__)
+    COM_UTIL_LOGGER_WRITEF(potr_trace_get(), (level), __VA_ARGS__)
 
 #ifdef __cplusplus
 }

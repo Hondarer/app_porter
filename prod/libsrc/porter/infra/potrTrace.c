@@ -7,10 +7,10 @@
  *  @version        1.0.0
  *
  *  @details
- *  porter ライブラリ全体で共有する trace_logger_t ハンドルを管理します。\n
+ *  porter ライブラリ全体で共有する com_util_logger_t ハンドルを管理します。\n
  *  ロガーは初回アクセス時に lazy create され、プロセス終了時に
  *  trace_registry_dispose_all_on_unload() によって自動的に解放されます。\n
- *  出力開始 (trace_logger_start) はライブラリ利用者が potrGetLogger() 経由で
+ *  出力開始 (com_util_logger_start) はライブラリ利用者が potrGetLogger() 経由で
  *  stderr レベルを設定した後に行います。
  *
  *  @par            スレッド セーフティ
@@ -23,7 +23,7 @@
  *******************************************************************************
  */
 
-#include <com_util/trace/trace.h>
+#include <com_util/trace/logger.h>
 
 #include <porter.h>
 
@@ -32,20 +32,20 @@
 /* ── グローバルロガー状態 ──────────────────────────────────────────────── */
 
 /** トレースプロバイダハンドル。potr_trace_get() で一度だけ初期化する。 */
-static trace_logger_t *s_trace = NULL;
+static com_util_logger_t *s_trace = NULL;
 
 /* ── 内部 API ─────────────────────────────────────────────────────────── */
 
 /* doxygen コメントは potrTrace.h に記載 */
-trace_logger_t *potr_trace_get(void)
+com_util_logger_t *potr_trace_get(void)
 {
     if (s_trace == NULL)
     {
-        s_trace = trace_logger_create();
+        s_trace = com_util_logger_create();
         if (s_trace != NULL)
         {
-            trace_logger_set_name(s_trace, "porter", 0);
-            /* OS レベルは TRACE_LEVEL_INFO (デフォルト値)、stderr は TRACE_LEVEL_NONE (デフォルト値)。
+            com_util_logger_set_name(s_trace, "porter", 0);
+            /* OS レベルは COM_UTIL_LOG_LEVEL_INFO (デフォルト値)、stderr は COM_UTIL_LOG_LEVEL_NONE (デフォルト値)。
              * start は potrGetLogger() 経由で利用者が明示的に呼ぶ。 */
         }
     }
@@ -55,7 +55,7 @@ trace_logger_t *potr_trace_get(void)
 /* ── 公開 API ─────────────────────────────────────────────────────────── */
 
 /* doxygen コメントは porter.h に記載 */
-POTR_EXPORT trace_logger_t * POTR_API potrGetLogger(void)
+POTR_EXPORT com_util_logger_t * POTR_API potrGetLogger(void)
 {
     return potr_trace_get();
 }

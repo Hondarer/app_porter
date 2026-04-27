@@ -117,7 +117,7 @@ static int wait_oneway_udp_ping_due(struct PotrContext_ *ctx,
             && last_data >= last_ping
             && last_data != *last_logged_data_ms)
         {
-            POTR_LOG(TRACE_LEVEL_VERBOSE,
+            POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                      "health[service_id=%" PRId64 "]: suppress PING due to recent DATA"
                      " (remaining=%" PRIu64 "ms)",
                      ctx->service.service_id,
@@ -340,7 +340,7 @@ COM_UTIL_THREAD_FUNC(health_thread_func)
                     }
                 }
 
-                POTR_LOG(TRACE_LEVEL_VERBOSE,
+                POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                          "health[service_id=%" PRId64 "]: PING peer=%u seq=%u",
                          ctx->service.service_id,
                          (unsigned)ctx->peers[i].peer_id, (unsigned)seq);
@@ -378,7 +378,7 @@ COM_UTIL_THREAD_FUNC(health_thread_func)
 
             if (build_result != POTR_SUCCESS) { continue; }
 
-            POTR_LOG(TRACE_LEVEL_VERBOSE,
+            POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                      "health[service_id=%" PRId64 "]: PING seq=%u",
                      ctx->service.service_id, (unsigned)seq);
 
@@ -457,7 +457,7 @@ COM_UTIL_THREAD_FUNC(tcp_health_thread_func)
     struct PotrContext_ *ctx      = harg->ctx;
     int                  path_idx = harg->path_idx;
 
-    POTR_LOG(TRACE_LEVEL_VERBOSE,
+    POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
              "tcp_health[service_id=%" PRId64 " path=%d]: starting",
              ctx->service.service_id, path_idx);
 
@@ -470,7 +470,7 @@ COM_UTIL_THREAD_FUNC(tcp_health_thread_func)
         (void)tcp_send_ping_packet(ctx, path_idx);
     }
 
-    POTR_LOG(TRACE_LEVEL_VERBOSE,
+    POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
              "tcp_health[service_id=%" PRId64 " path=%d]: exited",
              ctx->service.service_id, path_idx);
 
@@ -498,13 +498,13 @@ int potr_health_thread_start(struct PotrContext_ *ctx)
 
     if (ctx->health_interval_ms == 0)
     {
-        POTR_LOG(TRACE_LEVEL_VERBOSE,
+        POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                  "health_thread[service_id=%" PRId64 "]: disabled (health_interval_ms=0)",
                  ctx->service.service_id);
         return POTR_SUCCESS;
     }
 
-    POTR_LOG(TRACE_LEVEL_VERBOSE,
+    POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
              "health_thread[service_id=%" PRId64 "]: starting (interval=%ums)",
              ctx->service.service_id,
              (unsigned)ctx->health_interval_ms);
@@ -517,7 +517,7 @@ int potr_health_thread_start(struct PotrContext_ *ctx)
     if (com_util_thread_create(&ctx->health_thread[0], health_thread_func, ctx) != 0)
     {
         ctx->health_running[0] = 0;
-        POTR_LOG(TRACE_LEVEL_ERROR,
+        POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
                  "health_thread[service_id=%" PRId64 "]: thread create failed",
                  ctx->service.service_id);
         return POTR_ERROR;
@@ -574,7 +574,7 @@ int potr_tcp_health_thread_start(struct PotrContext_ *ctx, int path_idx)
 
     if (ctx->health_interval_ms == 0)
     {
-        POTR_LOG(TRACE_LEVEL_VERBOSE,
+        POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
                  "tcp_health_thread[service_id=%" PRId64 " path=%d]: disabled",
                  ctx->service.service_id, path_idx);
         return POTR_SUCCESS;
@@ -590,7 +590,7 @@ int potr_tcp_health_thread_start(struct PotrContext_ *ctx, int path_idx)
                            &s_health_args[path_idx]) != 0)
     {
         ctx->health_running[path_idx] = 0;
-        POTR_LOG(TRACE_LEVEL_ERROR,
+        POTR_LOG(COM_UTIL_LOG_LEVEL_ERROR,
                  "tcp_health_thread[service_id=%" PRId64 " path=%d]: thread create failed",
                  ctx->service.service_id, path_idx);
         return POTR_ERROR;

@@ -245,22 +245,22 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
 
 /**
  *******************************************************************************
- *  @brief          ログレベル文字列を trace_level_t に変換する。
+ *  @brief          ログレベル文字列を com_util_log_level_t に変換する。
  *  @param[in]      str     レベル文字列 (VERBOSE/INFO/WARNING/ERROR/CRITICAL)。
  *  @param[out]     out     変換結果の格納先。
  *  @return         変換に成功した場合は 1、未知の文字列の場合は 0 を返します。
  *******************************************************************************
  */
-static int parse_log_level(const char *str, trace_level_t *out)
+static int parse_log_level(const char *str, com_util_log_level_t *out)
 {
     static const struct
     {
         const char *name;
-        trace_level_t level;
+        com_util_log_level_t level;
         uint32_t _pad;
     } tbl[] = {
-        {"VERBOSE", TRACE_LEVEL_VERBOSE, 0U}, {"INFO", TRACE_LEVEL_INFO, 0U},         {"WARNING", TRACE_LEVEL_WARNING, 0U},
-        {"ERROR", TRACE_LEVEL_ERROR, 0U},     {"CRITICAL", TRACE_LEVEL_CRITICAL, 0U},
+        {"VERBOSE", COM_UTIL_LOG_LEVEL_VERBOSE, 0U}, {"INFO", COM_UTIL_LOG_LEVEL_INFO, 0U},         {"WARNING", COM_UTIL_LOG_LEVEL_WARNING, 0U},
+        {"ERROR", COM_UTIL_LOG_LEVEL_ERROR, 0U},     {"CRITICAL", COM_UTIL_LOG_LEVEL_CRITICAL, 0U},
     };
     char upper[16];
     size_t i;
@@ -605,7 +605,7 @@ int main(int argc, char *argv[])
     int64_t service_id;
     PotrHandle handle;
     int i;
-    trace_level_t log_level = TRACE_LEVEL_NONE;
+    com_util_log_level_t log_level = COM_UTIL_LOG_LEVEL_NONE;
     int log_level_set = 0;
     PotrType svc_type;
     int is_bidir;
@@ -613,7 +613,7 @@ int main(int argc, char *argv[])
     BidirThread bidir_thread = 0;
     int bidir_started = 0;
 
-    console_init();
+    com_util_console_init();
 
     /* オプション解析 */
     for (i = 1; i < argc; i++)
@@ -659,9 +659,9 @@ int main(int argc, char *argv[])
     /* ロガー設定 (stderr 出力) */
     if (log_level_set)
     {
-        trace_logger_t *logger = potrGetLogger();
-        trace_logger_set_stderr_level(logger, log_level);
-        trace_logger_start(logger);
+        com_util_logger_t *logger = potrGetLogger();
+        com_util_logger_set_stderr_level(logger, log_level);
+        com_util_logger_start(logger);
     }
 
 #if defined(PLATFORM_LINUX)

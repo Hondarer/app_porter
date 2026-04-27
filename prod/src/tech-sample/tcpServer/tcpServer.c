@@ -99,7 +99,7 @@ static void parse_args(int argc, char *argv[],
  *******************************************************************************
  */
 int main(int argc, char *argv[]) {
-    console_init();
+    com_util_console_init();
     platform_init(handle_client_session);
 
     if (dispatch_internal_args(argc, argv)) {

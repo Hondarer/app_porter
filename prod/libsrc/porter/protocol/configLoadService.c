@@ -218,7 +218,7 @@ static void apply_service_kv(const char *key, const char *val,
                 current->encrypt_key[i] = (uint8_t)byte_val;
             }
             current->encrypt_enabled = 1;
-            POTR_LOG(TRACE_LEVEL_INFO,
+            POTR_LOG(COM_UTIL_LOG_LEVEL_INFO,
                      "config: encrypt_key loaded as hex key (service_id=%" PRId64 ")",
                      current->service_id);
         }
@@ -228,7 +228,7 @@ static void apply_service_kv(const char *key, const char *val,
                                            (const uint8_t *)val, hex_len) == 0)
             {
                 current->encrypt_enabled = 1;
-                POTR_LOG(TRACE_LEVEL_INFO,
+                POTR_LOG(COM_UTIL_LOG_LEVEL_INFO,
                          "config: encrypt_key treated as passphrase (SHA-256, service_id=%" PRId64 ")",
                          current->service_id);
             }
@@ -236,7 +236,7 @@ static void apply_service_kv(const char *key, const char *val,
             {
                 memset(current->encrypt_key, 0, sizeof(current->encrypt_key));
                 current->encrypt_enabled = 0;
-                POTR_LOG(TRACE_LEVEL_WARNING,
+                POTR_LOG(COM_UTIL_LOG_LEVEL_WARNING,
                          "config: encrypt_key passphrase hashing failed (service_id=%" PRId64 ")",
                          current->service_id);
             }
@@ -245,7 +245,7 @@ static void apply_service_kv(const char *key, const char *val,
         {
             memset(current->encrypt_key, 0, sizeof(current->encrypt_key));
             current->encrypt_enabled = 0;
-            POTR_LOG(TRACE_LEVEL_WARNING,
+            POTR_LOG(COM_UTIL_LOG_LEVEL_WARNING,
                      "config: encrypt_key is empty, ignored (service_id=%" PRId64 ")",
                      current->service_id);
         }
@@ -346,7 +346,7 @@ int config_load_service(const char *config_path, int64_t service_id,
         return POTR_ERROR;
     }
 
-    POTR_LOG(TRACE_LEVEL_VERBOSE,
+    POTR_LOG(COM_UTIL_LOG_LEVEL_VERBOSE,
              "service loaded: service_id=%" PRId64 " type=%d "
              "src_addr1=%s dst_addr1=%s dst_port=%u src_port=%u",
              def->service_id, (int)def->type,
