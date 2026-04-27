@@ -131,7 +131,7 @@ public:
     {
         if (tmp_path_.empty()) {
 #if defined(PLATFORM_LINUX)
-            char tmpl[] = "/tmp/porter_test_XXXXXX.conf";
+            char tmpl[] = "/tmp" PLATFORM_PATH_SEP "porter_test_XXXXXX.conf";
             int fd = mkstemps(tmpl, 5); /* ".conf" = 5 文字 */
             if (fd == -1) { return ""; }
             close(fd);
