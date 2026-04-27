@@ -220,7 +220,7 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
         else
         {
             char  tmp_path[PLATFORM_PATH_MAX];
-            FILE *fp = com_util_fopen_temp("ptr", tmp_path, sizeof(tmp_path), NULL);
+            FILE *fp = com_util_fopen_temp("ptr", "wb", tmp_path, sizeof(tmp_path), NULL);
 
             if (fp != NULL && com_util_fwrite(data, 1, len, fp) == len)
             {
