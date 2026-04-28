@@ -1,14 +1,14 @@
 /**
  *******************************************************************************
  *  @file           potrTrace.c
- *  @brief          porter グローバルロガー管理。
+ *  @brief          porter グローバルトレーサー管理。
  *  @author         Tetsuo Honda
  *  @date           2026/04/19
  *  @version        1.0.0
  *
  *  @details
  *  porter ライブラリ全体で共有する com_util_tracer_t ハンドルを管理します。\n
- *  ロガーは初回アクセス時に lazy create され、プロセス終了時に
+ *  トレーサーは初回アクセス時に lazy create され、プロセス終了時に
  *  trace_registry_dispose_all_on_unload() によって自動的に解放されます。\n
  *  出力開始 (com_util_tracer_start) はライブラリ利用者が potrGetTracer() 経由で
  *  stderr レベルを設定した後に行います。
@@ -29,7 +29,7 @@
 
 #include "potrTrace.h"
 
-/* ── グローバルロガー状態 ──────────────────────────────────────────────── */
+/* ── グローバルトレーサー状態 ──────────────────────────────────────────────── */
 
 /** トレースプロバイダハンドル。potr_trace_get() で一度だけ初期化する。 */
 static com_util_tracer_t *s_trace = NULL;

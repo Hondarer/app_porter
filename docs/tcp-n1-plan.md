@@ -429,7 +429,7 @@ static void *tcp_peer_health_thread_func(void *arg)
         /* タイムアウト確認 */
         uint64_t now = health_get_ms();
         if (now - peer->tcp_last_ping_recv_ms[path_idx] > health_timeout_ms) {
-            POTR_LOG(INFO, "peer[%u] path[%d]: PING timeout, closing connection",
+            POTR_TRACE(INFO, "peer[%u] path[%d]: PING timeout, closing connection",
                      peer->peer_id, path_idx);
             /* ソケットクローズで recv スレッドを切断検知させる */
             POTR_SOCKET_CLOSE(peer->tcp_conn_fd[path_idx]);
@@ -474,7 +474,7 @@ static void receiver_accept_n1_loop(struct PotrContext_ *ctx, int path_idx)
         /* 接続元フィルタ (既存 receiver_accept_loop と同一ロジック) */
         if (tcp_n1_is_src_filtered(ctx, path_idx, &peer_addr))
         {
-            POTR_LOG(POTR_TRACE_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: "
+            POTR_TRACE(POTR_TRACE_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: "
                      "rejected (src filter) from %s:%u",
                      ctx->service.service_id, path_idx,
                      peer_addr_str, (unsigned)ntohs(peer_addr.sin_port));
@@ -482,7 +482,7 @@ static void receiver_accept_n1_loop(struct PotrContext_ *ctx, int path_idx)
             continue;
         }
 
-        POTR_LOG(POTR_TRACE_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: "
+        POTR_TRACE(POTR_TRACE_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: "
                  "TCP N:1 accepted from %s:%u",
                  ctx->service.service_id, path_idx,
                  peer_addr_str, (unsigned)ntohs(peer_addr.sin_port));
@@ -494,7 +494,7 @@ static void receiver_accept_n1_loop(struct PotrContext_ *ctx, int path_idx)
 
         if (peer == NULL)
         {
-            POTR_LOG(POTR_TRACE_WARNING, "connect_thread[service_id=%" PRId64 " path=%d]: "
+            POTR_TRACE(POTR_TRACE_WARNING, "connect_thread[service_id=%" PRId64 " path=%d]: "
                      "max_peers reached, rejected from %s:%u",
                      ctx->service.service_id, path_idx,
                      peer_addr_str, (unsigned)ntohs(peer_addr.sin_port));
@@ -502,14 +502,14 @@ static void receiver_accept_n1_loop(struct PotrContext_ *ctx, int path_idx)
             continue;
         }
 
-        POTR_LOG(POTR_TRACE_VERBOSE, "connect_thread[service_id=%" PRId64 " path=%d]: "
+        POTR_TRACE(POTR_TRACE_VERBOSE, "connect_thread[service_id=%" PRId64 " path=%d]: "
                  "peer[%u] created",
                  ctx->service.service_id, path_idx, peer->peer_id);
 
         /* per-peer スレッド起動 (join しない → 即座に次の accept へ) */
         if (tcp_peer_recv_thread_start(ctx, peer, path_idx) != POTR_SUCCESS)
         {
-            POTR_LOG(POTR_TRACE_ERROR, "connect_thread: tcp_peer_recv_thread_start failed");
+            POTR_TRACE(POTR_TRACE_ERROR, "connect_thread: tcp_peer_recv_thread_start failed");
             POTR_MUTEX_LOCK(&ctx->peers_mutex);
             peer_free_tcp(ctx, peer);
             POTR_MUTEX_UNLOCK(&ctx->peers_mutex);
@@ -521,7 +521,7 @@ static void receiver_accept_n1_loop(struct PotrContext_ *ctx, int path_idx)
         {
             if (tcp_peer_health_thread_start(ctx, peer, path_idx) != POTR_SUCCESS)
             {
-                POTR_LOG(POTR_TRACE_ERROR,
+                POTR_TRACE(POTR_TRACE_ERROR,
                          "connect_thread: tcp_peer_health_thread_start failed");
                 /* recv スレッドはソケットクローズで自然終了する */
                 POTR_SOCKET_CLOSE(conn);
@@ -584,7 +584,7 @@ static void flush_packed_peer(struct PotrContext_ *ctx,
                                  &peer->tcp_send_mutex[k],
                                  wire_buf, wire_len) != POTR_SUCCESS)
                 {
-                    POTR_LOG(POTR_TRACE_WARNING,
+                    POTR_TRACE(POTR_TRACE_WARNING,
                              "send_thread: peer[%u] path[%d]: tcp_send_all failed",
                              peer->peer_id, k);
                 }
@@ -594,7 +594,7 @@ static void flush_packed_peer(struct PotrContext_ *ctx,
                 /* バッファ満杯: ログ抑制付きで警告 */
                 if (peer->tcp_buf_full_suppress_cnt[k]++ == 0)
                 {
-                    POTR_LOG(POTR_TRACE_WARNING,
+                    POTR_TRACE(POTR_TRACE_WARNING,
                              "send_thread: peer[%u] path[%d]: send buffer full, "
                              "dropping packet", peer->peer_id, k);
                 }

@@ -35,7 +35,7 @@ extern "C"
 
 /**
  *******************************************************************************
- *  @brief          グローバルロガーハンドルを返します (初回呼び出し時に lazy create)。
+ *  @brief          グローバルトレーサーハンドルを返します (初回呼び出し時に lazy create)。
  *  @return         com_util_tracer_t ハンドル。NULL を返すことはありません。
  *
  *  @details
@@ -50,7 +50,7 @@ com_util_tracer_t *potr_trace_get(void);
  *
  *  @details
  *  __FILE__ と __LINE__ を自動付加して com_util_tracer_writef() を呼び出します。\n
- *  ロガーが未 start の場合は無視されます。\n
+ *  トレーサーが未 start の場合は無視されます。\n
  *  level には com_util_trace_level_t の値を指定してください。
  *
  *  @par            例

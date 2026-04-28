@@ -656,7 +656,7 @@ int main(int argc, char *argv[])
     config_path = argv[i];
     service_id = (int64_t)strtoll(argv[i + 1], NULL, 10);
 
-    /* ロガー設定 (stderr 出力) */
+    /* トレーサー設定 (stderr 出力) */
     if (trace_level_set)
     {
         com_util_tracer_t *tracer = potrGetTracer();
