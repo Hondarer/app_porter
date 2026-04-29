@@ -108,7 +108,7 @@ int window_init(PotrWindow *win, uint32_t initial_seq,
  *  @param[in,out]  win  解放するウィンドウ構造体へのポインタ。
  *******************************************************************************
  */
-void window_destroy(PotrWindow *win)
+void window_dispose(PotrWindow *win)
 {
     if (win == NULL)
     {

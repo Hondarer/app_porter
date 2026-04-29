@@ -214,9 +214,9 @@ static void cleanup_sockets(struct PotrContext_ *ctx)
    memset(ctx, 0, ...) 後であれば、未初期化ポインタ (NULL) に対しても安全に呼び出せる。 */
 static void ctx_cleanup(struct PotrContext_ *ctx)
 {
-    potr_callback_mutex_destroy(ctx);
-    window_destroy(&ctx->send_window);
-    window_destroy(&ctx->recv_window);
+    potr_callback_mutex_dispose(ctx);
+    window_dispose(&ctx->send_window);
+    window_dispose(&ctx->recv_window);
     free(ctx->frag_buf);
     free(ctx->compress_buf);
     free(ctx->crypto_buf);
@@ -224,7 +224,7 @@ static void ctx_cleanup(struct PotrContext_ *ctx)
     free(ctx->send_wire_buf);
     if (ctx->is_multi_peer && ctx->peers != NULL)
     {
-        peer_table_destroy(ctx);
+        peer_table_dispose(ctx);
     }
     /* TCP listen ソケットをクローズ (path ごと) */
     {
@@ -1112,7 +1112,7 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
             COM_UTIL_MUTEX_INIT(&ctx->recv_window_mutex);
         }
 
-        /* SENDER または TCP_BIDIR: 送信キューを初期化 (connect スレッドが reconnect 時に destroy+init する) */
+        /* SENDER または TCP_BIDIR: 送信キューを初期化 (connect スレッドが reconnect 時に dispose+init する) */
         if (role == POTR_ROLE_SENDER
             || ctx->service.type == POTR_TYPE_TCP_BIDIR)
         {
@@ -1140,7 +1140,7 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
             if (role == POTR_ROLE_SENDER
                 || ctx->service.type == POTR_TYPE_TCP_BIDIR)
             {
-                potr_send_queue_destroy(&ctx->send_queue);
+                potr_send_queue_dispose(&ctx->send_queue);
             }
             {
                 int i;
@@ -1188,7 +1188,7 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
 
             if (potr_send_thread_start(ctx) != POTR_SUCCESS)
             {
-                potr_send_queue_destroy(&ctx->send_queue);
+                potr_send_queue_dispose(&ctx->send_queue);
                 ctx_cleanup(ctx);
                 return POTR_ERROR;
             }
@@ -1198,7 +1198,7 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
             if (potr_health_thread_start(ctx) != POTR_SUCCESS)
             {
                 potr_send_thread_stop(ctx);
-                potr_send_queue_destroy(&ctx->send_queue);
+                potr_send_queue_dispose(&ctx->send_queue);
                 ctx_cleanup(ctx);
                 return POTR_ERROR;
             }
@@ -1207,7 +1207,7 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
             {
                 potr_health_thread_stop(ctx);
                 potr_send_thread_stop(ctx);
-                potr_send_queue_destroy(&ctx->send_queue);
+                potr_send_queue_dispose(&ctx->send_queue);
                 ctx_cleanup(ctx);
                 return POTR_ERROR;
             }

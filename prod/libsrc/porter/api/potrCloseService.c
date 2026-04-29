@@ -359,7 +359,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
         /* 送信キューを破棄 (SENDER / TCP_BIDIR のみ) */
         if (ctx->role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
         {
-            potr_send_queue_destroy(&ctx->send_queue);
+            potr_send_queue_dispose(&ctx->send_queue);
         }
 
         /* TCP mutex / condvar を解放 */
@@ -379,8 +379,8 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
         }
 
         /* 送受信ウィンドウと動的バッファを解放 */
-        window_destroy(&ctx->send_window);
-        window_destroy(&ctx->recv_window);
+        window_dispose(&ctx->send_window);
+        window_dispose(&ctx->recv_window);
         free(ctx->frag_buf);
         free(ctx->compress_buf);
         free(ctx->crypto_buf);
@@ -390,7 +390,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
     potr_socket_lib_cleanup();
 
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potrCloseService: service closed (TCP)");
-        potr_callback_mutex_destroy(ctx);
+        potr_callback_mutex_dispose(ctx);
         free(ctx);
         return ret;
     }
@@ -415,7 +415,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
         if (ctx->is_multi_peer)
         {
             /* N:1: 全アクティブピアへ FIN を送信してピアテーブルを破棄 */
-            peer_table_destroy(ctx);
+            peer_table_dispose(ctx);
         }
         else
         {
@@ -431,7 +431,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
             comm_recv_thread_stop(ctx);
         }
         potr_send_thread_stop(ctx);
-        potr_send_queue_destroy(&ctx->send_queue);
+        potr_send_queue_dispose(&ctx->send_queue);
     }
 
     /* 送信スレッド未起動の受信専用サービスではここで受信スレッドを停止する */
@@ -473,14 +473,14 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
     if (!ctx->is_multi_peer)
     {
         /* 1:1 モード: コンテキストレベルのウィンドウを解放する */
-        window_destroy(&ctx->send_window);
-        window_destroy(&ctx->recv_window);
+        window_dispose(&ctx->send_window);
+        window_dispose(&ctx->recv_window);
     }
     else if (ctx->peers != NULL)
     {
         /* N:1 モード: 送信スレッド未起動の場合もピアテーブルを解放する
-           (すでに peer_table_destroy 済みの場合は ctx->peers が NULL になっている) */
-        peer_table_destroy(ctx);
+           (すでに peer_table_dispose 済みの場合は ctx->peers が NULL になっている) */
+        peer_table_dispose(ctx);
     }
     free(ctx->frag_buf);
     free(ctx->compress_buf);
@@ -489,7 +489,7 @@ POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
     free(ctx->send_wire_buf);
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potrCloseService: service closed");
 
-    potr_callback_mutex_destroy(ctx);
+    potr_callback_mutex_dispose(ctx);
     free(ctx);
     return POTR_SUCCESS;
 }

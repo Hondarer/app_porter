@@ -35,7 +35,7 @@ typedef struct
 } PotrPreparedPathEvents;
 
 extern void potr_callback_mutex_init(struct PotrContext_ *ctx);
-extern void potr_callback_mutex_destroy(struct PotrContext_ *ctx);
+extern void potr_callback_mutex_dispose(struct PotrContext_ *ctx);
 extern void potr_callback_emit(struct PotrContext_ *ctx, PotrPeerId peer_id,
                                PotrEvent event, const void *data, size_t len);
 extern void potr_callback_emit_locked(struct PotrContext_ *ctx, PotrPeerId peer_id,

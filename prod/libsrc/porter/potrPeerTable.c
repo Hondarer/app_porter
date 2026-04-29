@@ -191,7 +191,7 @@ int peer_table_init(struct PotrContext_ *ctx)
 }
 
 /* doxygen コメントは、ヘッダに記載 */
-void peer_table_destroy(struct PotrContext_ *ctx)
+void peer_table_dispose(struct PotrContext_ *ctx)
 {
     int i;
 
@@ -201,7 +201,7 @@ void peer_table_destroy(struct PotrContext_ *ctx)
     }
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-             "peer_table_destroy: service_id=%" PRId64 " n_peers=%d",
+             "peer_table_dispose: service_id=%" PRId64 " n_peers=%d",
              ctx->service.service_id, ctx->n_peers);
 
     for (i = 0; i < ctx->max_peers; i++)
@@ -215,8 +215,8 @@ void peer_table_destroy(struct PotrContext_ *ctx)
         peer_send_fin(ctx, &ctx->peers[i]);
 
         /* リソース解放 */
-        window_destroy(&ctx->peers[i].send_window);
-        window_destroy(&ctx->peers[i].recv_window);
+        window_dispose(&ctx->peers[i].send_window);
+        window_dispose(&ctx->peers[i].recv_window);
         COM_UTIL_MUTEX_DESTROY(&ctx->peers[i].send_window_mutex);
         free(ctx->peers[i].frag_buf);
         ctx->peers[i].frag_buf = NULL;
@@ -333,7 +333,7 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
     if (window_init(&peer->recv_window, 0,
                     ctx->global.window_size, ctx->global.max_payload) != POTR_SUCCESS)
     {
-        window_destroy(&peer->send_window);
+        window_dispose(&peer->send_window);
         peer->active = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                  "peer_create: service_id=%" PRId64 " recv_window init failed",
@@ -347,8 +347,8 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
     peer->frag_buf = (uint8_t *)malloc(ctx->global.max_message_size);
     if (peer->frag_buf == NULL)
     {
-        window_destroy(&peer->recv_window);
-        window_destroy(&peer->send_window);
+        window_dispose(&peer->recv_window);
+        window_dispose(&peer->send_window);
         COM_UTIL_MUTEX_DESTROY(&peer->send_window_mutex);
         peer->active = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
@@ -403,8 +403,8 @@ void peer_free(struct PotrContext_ *ctx, PotrPeerContext *peer)
              "peer_free: service_id=%" PRId64 " peer_id=%u freed",
              ctx->service.service_id, (unsigned)peer->peer_id);
 
-    window_destroy(&peer->send_window);
-    window_destroy(&peer->recv_window);
+    window_dispose(&peer->send_window);
+    window_dispose(&peer->recv_window);
     COM_UTIL_MUTEX_DESTROY(&peer->send_window_mutex);
 
     free(peer->frag_buf);

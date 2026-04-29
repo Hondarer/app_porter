@@ -24,7 +24,7 @@
  *
  *  @details
  *  パケットバッファ・有効フラグ・ペイロードプールは動的確保する。\n
- *  window_init() で確保し、window_destroy() で解放すること。
+ *  window_init() で確保し、window_dispose() で解放すること。
  */
 typedef struct
 {
@@ -45,7 +45,7 @@ extern "C"
 
     extern int  window_init(PotrWindow *win, uint32_t initial_seq,
                             uint16_t window_size, uint16_t max_payload);
-    extern void window_destroy(PotrWindow *win);
+    extern void window_dispose(PotrWindow *win);
     extern int  window_send_push(PotrWindow *win, const PotrPacket *packet);
     extern int  window_send_full(const PotrWindow *win);
     extern int  window_send_get(const PotrWindow *win, uint32_t seq_num,

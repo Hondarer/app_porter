@@ -57,7 +57,7 @@ int potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload)
 }
 
 /* doxygen コメントは、ヘッダに記載 */
-void potr_send_queue_destroy(PotrSendQueue *q)
+void potr_send_queue_dispose(PotrSendQueue *q)
 {
     COM_UTIL_COND_DESTROY(&q->drained);
     COM_UTIL_COND_DESTROY(&q->not_full);

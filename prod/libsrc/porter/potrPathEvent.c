@@ -42,7 +42,7 @@ void potr_callback_mutex_init(struct PotrContext_ *ctx)
     COM_UTIL_MUTEX_INIT(&ctx->callback_mutex);
 }
 
-void potr_callback_mutex_destroy(struct PotrContext_ *ctx)
+void potr_callback_mutex_dispose(struct PotrContext_ *ctx)
 {
     COM_UTIL_MUTEX_DESTROY(&ctx->callback_mutex);
 }

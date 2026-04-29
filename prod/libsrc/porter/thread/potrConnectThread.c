@@ -211,7 +211,7 @@ static void reset_send_queue(struct PotrContext_ *ctx)
 {
     size_t   depth       = ctx->send_queue.depth;
     uint16_t max_payload = (uint16_t)ctx->global.max_payload;
-    potr_send_queue_destroy(&ctx->send_queue);
+    potr_send_queue_dispose(&ctx->send_queue);
     (void)potr_send_queue_init(&ctx->send_queue, depth, max_payload);
 }
 

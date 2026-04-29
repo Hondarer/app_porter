@@ -704,13 +704,13 @@ case POTR_TYPE_TCP_BIDIR_N1:
         POTR_MUTEX_UNLOCK(&ctx->peers_mutex);
 
         /* 3. 全ピアのスレッドを JOIN してからテーブルを解放 */
-        peer_table_destroy_tcp(ctx);  /* 全ピアの recv/health スレッド JOIN + peer_free_tcp */
+        peer_table_dispose_tcp(ctx);  /* 全ピアの recv/health スレッド JOIN + peer_free_tcp */
 
         /* 4. TCP_BIDIR_N1: 送信スレッドと送信キューを解放 */
         if (ctx->service.type == POTR_TYPE_TCP_BIDIR_N1) {
             potr_send_queue_shutdown(&ctx->send_queue);
             potr_send_thread_stop(ctx);
-            potr_send_queue_destroy(&ctx->send_queue);
+            potr_send_queue_dispose(&ctx->send_queue);
         }
 
         /* 5. ctx レベルの mutex/condvar 解放 */
@@ -816,7 +816,7 @@ health スレッド:
 potrCloseService():
   1. connect_thread_running = 0 (新規 accept を止める)
   2. LOCK(peers_mutex) → tcp_peer_running = 0 + conn_fd クローズ → UNLOCK
-  3. peer_table_destroy_tcp() → 全スレッドを JOIN
+  3. peer_table_dispose_tcp() → 全スレッドを JOIN
 ```
 
 ### 6.3 ctx->tcp_active_paths カウンタの扱い

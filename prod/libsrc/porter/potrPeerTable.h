@@ -61,7 +61,7 @@ extern "C"
      *
      *  @param[in,out]  ctx         セッションコンテキスト。
      */
-    extern void peer_table_destroy(struct PotrContext_ *ctx);
+    extern void peer_table_dispose(struct PotrContext_ *ctx);
 
     /**
      *  @brief  session_triplet でピアを検索する。

@@ -81,7 +81,7 @@ extern "C"
 #endif /* __cplusplus */
 
     extern int  potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload);
-    extern void potr_send_queue_destroy(PotrSendQueue *q);
+    extern void potr_send_queue_dispose(PotrSendQueue *q);
     extern int  potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id,
                                      uint16_t flags,
                                      const void *payload, uint16_t payload_len);      /* 満杯時は即時 POTR_ERROR */
