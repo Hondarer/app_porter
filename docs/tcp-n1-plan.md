@@ -786,9 +786,9 @@ if (potr_is_tcp_n1_type(ctx->service.type))
 | `tcp_last_ping_req_recv_ms[4]` | 32 B |
 | `tcp_recv_thread[4]` (pthread_t) | 32 B |
 | `tcp_health_thread[4]` | 32 B |
-| `tcp_send_mutex[4]` (pthread_mutex_t) | 160 B |
+| `tcp_send_mutex[4]` (com_util_mutex_t) | 160 B |
 | `tcp_health_mutex[4]` | 160 B |
-| `tcp_health_wakeup[4]` (pthread_cond_t) | 192 B |
+| `tcp_health_wakeup[4]` (com_util_condvar_t) | 192 B |
 | `tcp_recv_window_mutex` | 40 B |
 | その他整数フィールド | 〜32 B |
 | **合計** | **約 730〜760 B 増加** |

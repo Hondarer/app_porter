@@ -60,12 +60,12 @@ static void signal_health_thread(struct PotrContext_ *ctx, int path_idx)
         return;
     }
 
-    COM_UTIL_MUTEX_LOCK(&ctx->health_mutex[path_idx]);
+    com_util_mutex_lock(&ctx->health_mutex[path_idx]);
     if (ctx->health_running[path_idx])
     {
-        COM_UTIL_COND_SIGNAL(&ctx->health_wakeup[path_idx]);
+        com_util_condvar_signal(&ctx->health_wakeup[path_idx]);
     }
-    COM_UTIL_MUTEX_UNLOCK(&ctx->health_mutex[path_idx]);
+    com_util_mutex_unlock(&ctx->health_mutex[path_idx]);
 }
 
 /* health_interval_ms ミリ秒、または停止シグナルが来るまでスリープする (path_idx 版) */
@@ -78,13 +78,13 @@ static void health_sleep(struct PotrContext_ *ctx, int path_idx, uint32_t interv
         return;
     }
 
-    COM_UTIL_MUTEX_LOCK(&ctx->health_mutex[path_idx]);
+    com_util_mutex_lock(&ctx->health_mutex[path_idx]);
     if (ctx->health_running[path_idx])
     {
         com_util_condvar_timedwait(&ctx->health_wakeup[path_idx],
                                &ctx->health_mutex[path_idx], interval_ms);
     }
-    COM_UTIL_MUTEX_UNLOCK(&ctx->health_mutex[path_idx]);
+    com_util_mutex_unlock(&ctx->health_mutex[path_idx]);
 }
 
 static int wait_oneway_udp_ping_due(struct PotrContext_ *ctx,
@@ -153,7 +153,7 @@ static int tcp_send_ping_packet(struct PotrContext_ *ctx, int path_idx)
 
     potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
 
-    COM_UTIL_MUTEX_LOCK(&ctx->send_window_mutex);
+    com_util_mutex_lock(&ctx->send_window_mutex);
     shdr.service_id      = ctx->service.service_id;
     shdr.session_id      = ctx->session_id;
     shdr.session_tv_sec  = ctx->session_tv_sec;
@@ -161,7 +161,7 @@ static int tcp_send_ping_packet(struct PotrContext_ *ctx, int path_idx)
     seq                  = ctx->send_window.next_seq;
     build_result = packet_build_ping(&ping_pkt, &shdr, seq,
                                      health_states, (uint16_t)POTR_MAX_PATH);
-    COM_UTIL_MUTEX_UNLOCK(&ctx->send_window_mutex);
+    com_util_mutex_unlock(&ctx->send_window_mutex);
 
     if (build_result != POTR_SUCCESS)
     {
@@ -194,13 +194,13 @@ static int tcp_send_ping_packet(struct PotrContext_ *ctx, int path_idx)
         }
         wire_len = PACKET_HEADER_SIZE + enc_out;
 
-        COM_UTIL_MUTEX_LOCK(&ctx->tcp_send_mutex[path_idx]);
+        com_util_mutex_lock(&ctx->tcp_send_mutex[path_idx]);
         if (ctx->tcp_conn_fd[path_idx] != POTR_INVALID_SOCKET)
         {
             send_ok = (potr_tcp_send(ctx->tcp_conn_fd[path_idx],
                                      wire_buf, wire_len) == 0);
         }
-        COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_send_mutex[path_idx]);
+        com_util_mutex_unlock(&ctx->tcp_send_mutex[path_idx]);
     }
     else
     {
@@ -209,13 +209,13 @@ static int tcp_send_ping_packet(struct PotrContext_ *ctx, int path_idx)
         memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
         wire_len = PACKET_HEADER_SIZE + POTR_MAX_PATH;
 
-        COM_UTIL_MUTEX_LOCK(&ctx->tcp_send_mutex[path_idx]);
+        com_util_mutex_lock(&ctx->tcp_send_mutex[path_idx]);
         if (ctx->tcp_conn_fd[path_idx] != POTR_INVALID_SOCKET)
         {
             send_ok = (potr_tcp_send(ctx->tcp_conn_fd[path_idx],
                                      wire_buf, wire_len) == 0);
         }
-        COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_send_mutex[path_idx]);
+        com_util_mutex_unlock(&ctx->tcp_send_mutex[path_idx]);
     }
 
     return send_ok ? POTR_SUCCESS : POTR_ERROR;
@@ -224,7 +224,7 @@ static int tcp_send_ping_packet(struct PotrContext_ *ctx, int path_idx)
 /* ====================================================================
  * 非 TCP (UDP/マルチキャスト) 用ヘルスチェックスレッド本体
  * ==================================================================== */
-COM_UTIL_THREAD_FUNC(health_thread_func)
+static void health_thread_func(void *arg)
 {
     struct PotrContext_ *ctx = (struct PotrContext_ *)arg;
     PotrPacketSessionHdr shdr;
@@ -263,7 +263,7 @@ COM_UTIL_THREAD_FUNC(health_thread_func)
             /* N:1 モード: アクティブ全ピアへ PING を送信する */
             int i;
 
-            COM_UTIL_MUTEX_LOCK(&ctx->peers_mutex);
+            com_util_mutex_lock(&ctx->peers_mutex);
 
             for (i = 0; i < ctx->max_peers && ctx->health_running[0]; i++)
             {
@@ -281,14 +281,14 @@ COM_UTIL_THREAD_FUNC(health_thread_func)
                 peer_shdr.session_tv_sec  = ctx->peers[i].session_tv_sec;
                 peer_shdr.session_tv_nsec = ctx->peers[i].session_tv_nsec;
 
-                COM_UTIL_MUTEX_LOCK(&ctx->peers[i].send_window_mutex);
+                com_util_mutex_lock(&ctx->peers[i].send_window_mutex);
                 seq = ctx->peers[i].send_window.next_seq;
                 /* N:1 (UNICAST_BIDIR_N1) は双方向 PING。ピアごとの自端パス受信状態をペイロードに設定する。 */
                 potr_copy_path_ping_state(health_states, ctx->peers[i].path_ping_state,
                                           POTR_MAX_PATH);
                 packet_build_ping(&ping_pkt, &peer_shdr, seq, health_states,
                                   (uint16_t)POTR_MAX_PATH);
-                COM_UTIL_MUTEX_UNLOCK(&ctx->peers[i].send_window_mutex);
+                com_util_mutex_unlock(&ctx->peers[i].send_window_mutex);
 
                 if (ctx->service.encrypt_enabled)
                 {
@@ -346,7 +346,7 @@ COM_UTIL_THREAD_FUNC(health_thread_func)
                          (unsigned)ctx->peers[i].peer_id, (unsigned)seq);
             }
 
-            COM_UTIL_MUTEX_UNLOCK(&ctx->peers_mutex);
+            com_util_mutex_unlock(&ctx->peers_mutex);
         }
         else
         {
@@ -370,11 +370,11 @@ COM_UTIL_THREAD_FUNC(health_thread_func)
                 memset(health_states, POTR_PING_STATE_UNDEFINED, POTR_MAX_PATH);
             }
 
-            COM_UTIL_MUTEX_LOCK(&ctx->send_window_mutex);
+            com_util_mutex_lock(&ctx->send_window_mutex);
             seq          = ctx->send_window.next_seq;
             build_result = packet_build_ping(&ping_pkt, &shdr, seq,
                                              health_states, (uint16_t)POTR_MAX_PATH);
-            COM_UTIL_MUTEX_UNLOCK(&ctx->send_window_mutex);
+            com_util_mutex_unlock(&ctx->send_window_mutex);
 
             if (build_result != POTR_SUCCESS) { continue; }
 
@@ -445,13 +445,13 @@ COM_UTIL_THREAD_FUNC(health_thread_func)
         }
     }
 
-    COM_UTIL_THREAD_RETURN;
+    return;
 }
 
 /* ====================================================================
  * TCP 用ヘルスチェックスレッド本体 (path ごと)
  * ==================================================================== */
-COM_UTIL_THREAD_FUNC(tcp_health_thread_func)
+static void tcp_health_thread_func(void *arg)
 {
     HealthArg           *harg     = (HealthArg *)arg;
     struct PotrContext_ *ctx      = harg->ctx;
@@ -474,7 +474,7 @@ COM_UTIL_THREAD_FUNC(tcp_health_thread_func)
              "tcp_health[service_id=%" PRId64 " path=%d]: exited",
              ctx->service.service_id, path_idx);
 
-    COM_UTIL_THREAD_RETURN;
+    return;
 }
 
 int potr_tcp_send_ping_now(struct PotrContext_ *ctx, int path_idx)
@@ -509,8 +509,8 @@ int potr_health_thread_start(struct PotrContext_ *ctx)
              ctx->service.service_id,
              (unsigned)ctx->health_interval_ms);
 
-    COM_UTIL_MUTEX_INIT(&ctx->health_mutex[0]);
-    COM_UTIL_COND_INIT(&ctx->health_wakeup[0]);
+    com_util_mutex_init(&ctx->health_mutex[0]);
+    com_util_condvar_init(&ctx->health_wakeup[0]);
 
     ctx->health_running[0] = 1;
 
@@ -540,14 +540,14 @@ int potr_health_thread_stop(struct PotrContext_ *ctx)
 
     ctx->health_running[0] = 0;
 
-    COM_UTIL_MUTEX_LOCK(&ctx->health_mutex[0]);
-    COM_UTIL_COND_SIGNAL(&ctx->health_wakeup[0]);
-    COM_UTIL_MUTEX_UNLOCK(&ctx->health_mutex[0]);
+    com_util_mutex_lock(&ctx->health_mutex[0]);
+    com_util_condvar_signal(&ctx->health_wakeup[0]);
+    com_util_mutex_unlock(&ctx->health_mutex[0]);
 
     com_util_thread_join(&ctx->health_thread[0]);
 
-    COM_UTIL_COND_DESTROY(&ctx->health_wakeup[0]);
-    COM_UTIL_MUTEX_DESTROY(&ctx->health_mutex[0]);
+    com_util_condvar_destroy(&ctx->health_wakeup[0]);
+    com_util_mutex_destroy(&ctx->health_mutex[0]);
 
     return POTR_SUCCESS;
 }
@@ -614,9 +614,9 @@ int potr_tcp_health_thread_stop(struct PotrContext_ *ctx, int path_idx)
 
     ctx->health_running[path_idx] = 0;
 
-    COM_UTIL_MUTEX_LOCK(&ctx->health_mutex[path_idx]);
-    COM_UTIL_COND_SIGNAL(&ctx->health_wakeup[path_idx]);
-    COM_UTIL_MUTEX_UNLOCK(&ctx->health_mutex[path_idx]);
+    com_util_mutex_lock(&ctx->health_mutex[path_idx]);
+    com_util_condvar_signal(&ctx->health_wakeup[path_idx]);
+    com_util_mutex_unlock(&ctx->health_mutex[path_idx]);
 
     com_util_thread_join(&ctx->health_thread[path_idx]);
 

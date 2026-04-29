@@ -6,4 +6,4 @@ TEST_SRCS := \
 INCDIR += $(MYAPP_DIR)/prod/libsrc/porter
 
 # ライブラリの指定
-LIBS += mock_libc
+LIBS += mock_com_util com_util mock_libc

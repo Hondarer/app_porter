@@ -50,14 +50,14 @@ POTR_EXPORT int POTR_API potrDisconnectPeer(PotrHandle handle, PotrPeerId peer_i
         return POTR_ERROR;
     }
 
-    COM_UTIL_MUTEX_LOCK(&ctx->peers_mutex);
+    com_util_mutex_lock(&ctx->peers_mutex);
 
     {
         PotrPeerContext *peer = peer_find_by_id(ctx, peer_id);
 
         if (peer == NULL)
         {
-            COM_UTIL_MUTEX_UNLOCK(&ctx->peers_mutex);
+            com_util_mutex_unlock(&ctx->peers_mutex);
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                      "potrDisconnectPeer: service_id=%" PRId64 " peer_id=%u not found",
                      ctx->service.service_id, (unsigned)peer_id);
@@ -77,16 +77,16 @@ POTR_EXPORT int POTR_API potrDisconnectPeer(PotrHandle handle, PotrPeerId peer_i
             PotrPreparedPathEvents prepared;
 
             potr_zero_path_states(next_states);
-            COM_UTIL_MUTEX_LOCK(&ctx->callback_mutex);
+            com_util_mutex_lock(&ctx->callback_mutex);
             potr_sync_peer_path_state_locked(peer, next_states, &prepared);
             potr_emit_peer_path_events_locked(ctx, peer, &prepared);
-            COM_UTIL_MUTEX_UNLOCK(&ctx->callback_mutex);
+            com_util_mutex_unlock(&ctx->callback_mutex);
         }
 
         /* ピアリソースを解放 */
         peer_free(ctx, peer);
     }
 
-    COM_UTIL_MUTEX_UNLOCK(&ctx->peers_mutex);
+    com_util_mutex_unlock(&ctx->peers_mutex);
     return POTR_SUCCESS;
 }

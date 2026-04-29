@@ -43,6 +43,7 @@
 #include <com_util/base/platform.h>
 #include <com_util/crt/path.h>
 #include <com_util/crt/stdio.h>
+#include <com_util/sync/sync.h>
 #include <inttypes.h>
 #include <signal.h>
 #include <stdio.h>
@@ -50,10 +51,7 @@
 #include <string.h>
 
 #if defined(PLATFORM_LINUX)
-    #include <pthread.h>
     #include <unistd.h>
-#elif defined(PLATFORM_WINDOWS)
-    #include <process.h>
 #endif /* PLATFORM_ */
 
 #include <com_util/console/console.h>
@@ -391,29 +389,15 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
     return 0;
 }
 
-#if defined(PLATFORM_LINUX)
-typedef pthread_t BidirThread;
+typedef com_util_thread_t BidirThread;
 
 /**
  *******************************************************************************
- *  @brief          bidir 送信スレッド関数 (Linux)。
+ *  @brief          bidir 送信スレッド関数。
  *  @param[in]      arg BidirSendCtx へのポインタ。
- *  @return         NULL
  *******************************************************************************
  */
-static void *bidir_send_thread_func(void *arg)
-#elif defined(PLATFORM_WINDOWS)
-typedef HANDLE BidirThread;
-
-/**
- *******************************************************************************
- *  @brief          bidir 送信スレッド関数 (Windows)。
- *  @param[in]      arg BidirSendCtx へのポインタ。
- *  @return         0
- *******************************************************************************
- */
-static unsigned __stdcall bidir_send_thread_func(void *arg)
-#endif /* PLATFORM_ */
+static void bidir_send_thread_func(void *arg)
 {
     BidirSendCtx *ctx = (BidirSendCtx *)arg;
     char msg_buf[POTR_MAX_MESSAGE_SIZE + 2U];
@@ -543,12 +527,7 @@ static unsigned __stdcall bidir_send_thread_func(void *arg)
     }
 
     *ctx->running = 0; /* 送信終了時に受信ループも停止させる */
-
-#if defined(PLATFORM_LINUX)
-    return NULL;
-#elif defined(PLATFORM_WINDOWS)
-    return 0U;
-#endif /* PLATFORM_ */
+    return;
 }
 
 /**
@@ -561,17 +540,7 @@ static unsigned __stdcall bidir_send_thread_func(void *arg)
  */
 static int start_bidir_send_thread(BidirThread *thread, BidirSendCtx *ctx)
 {
-#if defined(PLATFORM_LINUX)
-    return pthread_create(thread, NULL, bidir_send_thread_func, ctx) == 0;
-#elif defined(PLATFORM_WINDOWS)
-    uintptr_t h = _beginthreadex(NULL, 0U, bidir_send_thread_func, ctx, 0U, NULL);
-    if (h == 0U)
-    {
-        return 0;
-    }
-    *thread = (HANDLE)h;
-    return 1;
-#endif /* PLATFORM_ */
+    return com_util_thread_create(thread, bidir_send_thread_func, ctx) == 0;
 }
 
 /**
@@ -580,15 +549,12 @@ static int start_bidir_send_thread(BidirThread *thread, BidirSendCtx *ctx)
  *  @param[in]      thread  スレッドハンドル。
  *******************************************************************************
  */
-static void join_bidir_send_thread(BidirThread thread)
+static void join_bidir_send_thread(BidirThread *thread)
 {
-#if defined(PLATFORM_LINUX)
-    pthread_cancel(thread); /* fgets でブロック中のスレッドを中断する */
-    pthread_join(thread, NULL);
-#elif defined(PLATFORM_WINDOWS)
-    WaitForSingleObject(thread, INFINITE);
-    CloseHandle(thread);
-#endif /* PLATFORM_ */
+    if (com_util_thread_join_timed(thread, 500) != 0)
+    {
+        com_util_thread_detach(thread);
+    }
 }
 
 /**
@@ -717,7 +683,7 @@ int main(int argc, char *argv[])
 
     if (bidir_started)
     {
-        join_bidir_send_thread(bidir_thread);
+        join_bidir_send_thread(&bidir_thread);
     }
 
     potrCloseService(handle);

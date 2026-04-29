@@ -57,13 +57,8 @@ protected:
     void SetUp() override
     {
         memset(&ctx, 0, sizeof(ctx));
-#if defined(PLATFORM_LINUX)
-        pthread_mutex_init(&ctx.peers_mutex, nullptr);
-        pthread_mutex_init(&ctx.callback_mutex, nullptr);
-#elif defined(PLATFORM_WINDOWS)
-        InitializeCriticalSection(&ctx.peers_mutex);
-        InitializeCriticalSection(&ctx.callback_mutex);
-#endif /* PLATFORM_ */
+com_util_mutex_init(&ctx.peers_mutex);
+        com_util_mutex_init(&ctx.callback_mutex);
         ctx.service.service_id = 42;
 
         memset(&peer_ctx, 0, sizeof(peer_ctx));
@@ -77,13 +72,8 @@ protected:
 
     void TearDown() override
     {
-#if defined(PLATFORM_LINUX)
-        pthread_mutex_destroy(&ctx.peers_mutex);
-        pthread_mutex_destroy(&ctx.callback_mutex);
-#elif defined(PLATFORM_WINDOWS)
-        DeleteCriticalSection(&ctx.peers_mutex);
-        DeleteCriticalSection(&ctx.callback_mutex);
-#endif /* PLATFORM_ */
+com_util_mutex_destroy(&ctx.peers_mutex);
+        com_util_mutex_destroy(&ctx.callback_mutex);
     }
 
     struct PotrContext_ ctx;

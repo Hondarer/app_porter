@@ -1099,17 +1099,17 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
            health_mutex[] / health_wakeup[] を初期化 */
         {
             int i;
-            COM_UTIL_MUTEX_INIT(&ctx->tcp_state_mutex);
-            COM_UTIL_COND_INIT(&ctx->tcp_state_cv);
-            COM_UTIL_MUTEX_INIT(&ctx->tcp_close_mutex);
-            COM_UTIL_COND_INIT(&ctx->tcp_close_cv);
+            com_util_mutex_init(&ctx->tcp_state_mutex);
+            com_util_condvar_init(&ctx->tcp_state_cv);
+            com_util_mutex_init(&ctx->tcp_close_mutex);
+            com_util_condvar_init(&ctx->tcp_close_cv);
             for (i = 0; i < (int)POTR_MAX_PATH; i++)
             {
-                COM_UTIL_MUTEX_INIT(&ctx->tcp_send_mutex[i]);
-                COM_UTIL_MUTEX_INIT(&ctx->health_mutex[i]);
-                COM_UTIL_COND_INIT(&ctx->health_wakeup[i]);
+                com_util_mutex_init(&ctx->tcp_send_mutex[i]);
+                com_util_mutex_init(&ctx->health_mutex[i]);
+                com_util_condvar_init(&ctx->health_wakeup[i]);
             }
-            COM_UTIL_MUTEX_INIT(&ctx->recv_window_mutex);
+            com_util_mutex_init(&ctx->recv_window_mutex);
         }
 
         /* SENDER または TCP_BIDIR: 送信キューを初期化 (connect スレッドが reconnect 時に dispose+init する) */
@@ -1122,13 +1122,13 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
             {
                 {
                     int i;
-                    COM_UTIL_MUTEX_DESTROY(&ctx->tcp_state_mutex);
-                    COM_UTIL_COND_DESTROY(&ctx->tcp_state_cv);
-                    COM_UTIL_MUTEX_DESTROY(&ctx->tcp_close_mutex);
-                    COM_UTIL_COND_DESTROY(&ctx->tcp_close_cv);
+                    com_util_mutex_destroy(&ctx->tcp_state_mutex);
+                    com_util_condvar_destroy(&ctx->tcp_state_cv);
+                    com_util_mutex_destroy(&ctx->tcp_close_mutex);
+                    com_util_condvar_destroy(&ctx->tcp_close_cv);
                     for (i = 0; i < (int)POTR_MAX_PATH; i++)
-                        COM_UTIL_MUTEX_DESTROY(&ctx->tcp_send_mutex[i]);
-                    COM_UTIL_MUTEX_DESTROY(&ctx->recv_window_mutex);
+                        com_util_mutex_destroy(&ctx->tcp_send_mutex[i]);
+                    com_util_mutex_destroy(&ctx->recv_window_mutex);
                 }
                 ctx_cleanup(ctx);
                 return POTR_ERROR;
@@ -1144,13 +1144,13 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
             }
             {
                 int i;
-                COM_UTIL_MUTEX_DESTROY(&ctx->tcp_state_mutex);
-                COM_UTIL_COND_DESTROY(&ctx->tcp_state_cv);
-                COM_UTIL_MUTEX_DESTROY(&ctx->tcp_close_mutex);
-                COM_UTIL_COND_DESTROY(&ctx->tcp_close_cv);
+                com_util_mutex_destroy(&ctx->tcp_state_mutex);
+                com_util_condvar_destroy(&ctx->tcp_state_cv);
+                com_util_mutex_destroy(&ctx->tcp_close_mutex);
+                com_util_condvar_destroy(&ctx->tcp_close_cv);
                 for (i = 0; i < (int)POTR_MAX_PATH; i++)
-                    COM_UTIL_MUTEX_DESTROY(&ctx->tcp_send_mutex[i]);
-                COM_UTIL_MUTEX_DESTROY(&ctx->recv_window_mutex);
+                    com_util_mutex_destroy(&ctx->tcp_send_mutex[i]);
+                com_util_mutex_destroy(&ctx->recv_window_mutex);
             }
             ctx_cleanup(ctx);
             return POTR_ERROR;

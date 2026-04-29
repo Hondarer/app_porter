@@ -37,22 +37,13 @@ class potrSendTest : public Test
         ctx.peers                   = peers;
 
         ASSERT_EQ(POTR_SUCCESS, potr_send_queue_init(&ctx.send_queue, 8, 1400));
-
-#if defined(PLATFORM_LINUX)
-        pthread_mutex_init(&ctx.peers_mutex, NULL);
-#elif defined(PLATFORM_WINDOWS)
-        InitializeCriticalSection(&ctx.peers_mutex);
-#endif /* PLATFORM_ */
+        com_util_mutex_init(&ctx.peers_mutex);
     }
 
     void TearDown() override
     {
-#if defined(PLATFORM_LINUX)
-        pthread_mutex_destroy(&ctx.peers_mutex);
-#elif defined(PLATFORM_WINDOWS)
-        DeleteCriticalSection(&ctx.peers_mutex);
-#endif /* PLATFORM_ */
-        potr_send_queue_destroy(&ctx.send_queue);
+        com_util_mutex_destroy(&ctx.peers_mutex);
+        potr_send_queue_dispose(&ctx.send_queue);
     }
 
     PotrPayloadElem popQueuedElem()

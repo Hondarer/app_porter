@@ -30,11 +30,11 @@
 
 #include "tcpServer.h"   /* WIN32_LEAN_AND_MEAN / windows.h / winsock2.h / ws2tcpip.h を内包 */
 #include <com_util/crt/path.h>
+#include <com_util/sync/sync.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <process.h>     /* _beginthreadex */
 
 /** 名前付きパイプ名フォーマット。 */
 #define TCPSERVER_PIPE_NAME_FMT "\\\\.\\pipe\\tcpserver_worker_%d"
@@ -263,7 +263,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker) {
  *  イベントをシグナル状態にします。
  *******************************************************************************
  */
-static unsigned __stdcall worker_monitor_thread(void *arg) {
+static void worker_monitor_thread(void *arg) {
     WorkerMonitorArg *ctx              = (WorkerMonitorArg *)arg;
     int               id              = ctx->id;
     WorkerInfo       *workers         = ctx->workers;
@@ -283,7 +283,7 @@ static unsigned __stdcall worker_monitor_thread(void *arg) {
             break;
         }
     }
-    return 0;
+    return;
 }
 
 /**
@@ -379,11 +379,18 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n,
         ConnectNamedPipe(workers[i].pipe, NULL);
 
         /* 監視スレッド起動 */
+        com_util_thread_t monitor_thread;
+
         args[i].id               = i;
         args[i].workers          = workers;
         args[i].events           = events;
         args[i].conns_per_worker = conns_per_worker;
-        _beginthreadex(NULL, 0, worker_monitor_thread, (void *)&args[i], 0, NULL);
+        if (com_util_thread_create(&monitor_thread, worker_monitor_thread, (void *)&args[i]) != 0) {
+            fprintf(stderr, "監視スレッド起動失敗: %d\n", i);
+            free(args);
+            exit(1);
+        }
+        com_util_thread_detach(&monitor_thread);
 
         printf("[親プロセス] ワーカー %d (PID %lu) 起動完了\n", i, pi.dwProcessId);
     }

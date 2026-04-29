@@ -90,14 +90,14 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
     shdr.session_tv_nsec = ctx->session_tv_nsec;
 
     /* send_window へのアクセスを排他制御する (送信スレッド・ヘルスチェックスレッド・受信スレッドが競合) */
-    COM_UTIL_MUTEX_LOCK(&ctx->send_window_mutex);
+    com_util_mutex_lock(&ctx->send_window_mutex);
 
     seq = ctx->send_window.next_seq;
 
     if (packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len)
         != POTR_SUCCESS)
     {
-        COM_UTIL_MUTEX_UNLOCK(&ctx->send_window_mutex);
+        com_util_mutex_unlock(&ctx->send_window_mutex);
         return;
     }
 
@@ -132,7 +132,7 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
                          nonce,
                          (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != 0)
         {
-            COM_UTIL_MUTEX_UNLOCK(&ctx->send_window_mutex);
+            com_util_mutex_unlock(&ctx->send_window_mutex);
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                      "sender[service_id=%" PRId64 "]: encrypt failed seq=%u",
                      ctx->service.service_id, (unsigned)seq);
@@ -144,7 +144,7 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
             /* TCP: ウィンドウ登録不要。next_seq をインクリメントして mutex を解放 */
             ctx->send_window.next_seq++;
             ctx->send_has_data = 1;
-            COM_UTIL_MUTEX_UNLOCK(&ctx->send_window_mutex);
+            com_util_mutex_unlock(&ctx->send_window_mutex);
         }
         else
         {
@@ -152,7 +152,7 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
             outer_pkt.payload = ctx->crypto_buf;
             window_send_push(&ctx->send_window, &outer_pkt);
             ctx->send_has_data = 1;
-            COM_UTIL_MUTEX_UNLOCK(&ctx->send_window_mutex);
+            com_util_mutex_unlock(&ctx->send_window_mutex);
         }
 
         /* wire 組立: NBO ヘッダー + 暗号文 + タグ */
@@ -171,13 +171,13 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
             /* TCP: ウィンドウ登録不要。next_seq をインクリメントして mutex を解放 */
             ctx->send_window.next_seq++;
             ctx->send_has_data = 1;
-            COM_UTIL_MUTEX_UNLOCK(&ctx->send_window_mutex);
+            com_util_mutex_unlock(&ctx->send_window_mutex);
         }
         else
         {
             window_send_push(&ctx->send_window, &outer_pkt);
             ctx->send_has_data = 1;
-            COM_UTIL_MUTEX_UNLOCK(&ctx->send_window_mutex);
+            com_util_mutex_unlock(&ctx->send_window_mutex);
         }
 
         /* NBO ヘッダー (32B) を send_wire_buf 先頭に書き込む (ペイロードはすでに直後に配置済み) */
@@ -210,9 +210,9 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
                     {
                         ctx->buf_full_suppress_cnt[i] = 0;
                     }
-                    COM_UTIL_MUTEX_LOCK(&ctx->tcp_send_mutex[i]);
+                    com_util_mutex_lock(&ctx->tcp_send_mutex[i]);
                     potr_tcp_send(ctx->tcp_conn_fd[i], ctx->send_wire_buf, wire_len);
-                    COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_send_mutex[i]);
+                    com_util_mutex_unlock(&ctx->tcp_send_mutex[i]);
                 }
                 else
                 {
@@ -268,14 +268,14 @@ static void flush_packed_peer(struct PotrContext_ *ctx, PotrPeerContext *peer,
     shdr.session_tv_sec  = peer->session_tv_sec;
     shdr.session_tv_nsec = peer->session_tv_nsec;
 
-    COM_UTIL_MUTEX_LOCK(&peer->send_window_mutex);
+    com_util_mutex_lock(&peer->send_window_mutex);
 
     seq = peer->send_window.next_seq;
 
     if (packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len)
         != POTR_SUCCESS)
     {
-        COM_UTIL_MUTEX_UNLOCK(&peer->send_window_mutex);
+        com_util_mutex_unlock(&peer->send_window_mutex);
         return;
     }
 
@@ -300,7 +300,7 @@ static void flush_packed_peer(struct PotrContext_ *ctx, PotrPeerContext *peer,
                          nonce,
                          (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != 0)
         {
-            COM_UTIL_MUTEX_UNLOCK(&peer->send_window_mutex);
+            com_util_mutex_unlock(&peer->send_window_mutex);
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                      "sender[service_id=%" PRId64 "]: peer=%u encrypt failed seq=%u",
                      ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq);
@@ -311,7 +311,7 @@ static void flush_packed_peer(struct PotrContext_ *ctx, PotrPeerContext *peer,
         window_send_push(&peer->send_window, &outer_pkt);
         peer->send_has_data = 1;
 
-        COM_UTIL_MUTEX_UNLOCK(&peer->send_window_mutex);
+        com_util_mutex_unlock(&peer->send_window_mutex);
 
         memcpy(ctx->send_wire_buf, &outer_pkt, PACKET_HEADER_SIZE);
         memcpy(ctx->send_wire_buf + PACKET_HEADER_SIZE, ctx->crypto_buf, enc_len);
@@ -327,7 +327,7 @@ static void flush_packed_peer(struct PotrContext_ *ctx, PotrPeerContext *peer,
         window_send_push(&peer->send_window, &outer_pkt);
         peer->send_has_data = 1;
 
-        COM_UTIL_MUTEX_UNLOCK(&peer->send_window_mutex);
+        com_util_mutex_unlock(&peer->send_window_mutex);
 
         memcpy(ctx->send_wire_buf, &outer_pkt, PACKET_HEADER_SIZE);
         wire_len = PACKET_HEADER_SIZE + packed_len;
@@ -361,9 +361,9 @@ static void send_packed_peer_mode(struct PotrContext_ *ctx, PotrPayloadElem *fir
     int              n_dequeued    = 1;
 
     /* ピアを検索 (peers_mutex は lookup だけ保護、送信中は解放する) */
-    COM_UTIL_MUTEX_LOCK(&ctx->peers_mutex);
+    com_util_mutex_lock(&ctx->peers_mutex);
     peer = peer_find_by_id(ctx, target_peer_id);
-    COM_UTIL_MUTEX_UNLOCK(&ctx->peers_mutex);
+    com_util_mutex_unlock(&ctx->peers_mutex);
 
     if (peer == NULL)
     {
@@ -416,7 +416,7 @@ static void send_packed_peer_mode(struct PotrContext_ *ctx, PotrPayloadElem *fir
 }
 
 /* 送信スレッド本体 */
-COM_UTIL_THREAD_FUNC(send_thread_func)
+static void send_thread_func(void *arg)
 {
     struct PotrContext_ *ctx = (struct PotrContext_ *)arg;
     PotrPayloadElem        first;
@@ -549,7 +549,7 @@ COM_UTIL_THREAD_FUNC(send_thread_func)
         }
     }
 
-    COM_UTIL_THREAD_RETURN;
+    return;
 }
 
 /* doxygen コメントは、ヘッダに記載 */
@@ -557,11 +557,11 @@ int potr_send_thread_start(struct PotrContext_ *ctx)
 {
     ctx->send_thread_running = 1;
 
-    COM_UTIL_MUTEX_INIT(&ctx->send_window_mutex);
+    com_util_mutex_init(&ctx->send_window_mutex);
     if (com_util_thread_create(&ctx->send_thread, send_thread_func, ctx) != 0)
     {
         ctx->send_thread_running = 0;
-        COM_UTIL_MUTEX_DESTROY(&ctx->send_window_mutex);
+        com_util_mutex_destroy(&ctx->send_window_mutex);
         return POTR_ERROR;
     }
 
@@ -575,5 +575,5 @@ void potr_send_thread_stop(struct PotrContext_ *ctx)
     potr_send_queue_shutdown(&ctx->send_queue);
 
     com_util_thread_join(&ctx->send_thread);
-    COM_UTIL_MUTEX_DESTROY(&ctx->send_window_mutex);
+    com_util_mutex_destroy(&ctx->send_window_mutex);
 }

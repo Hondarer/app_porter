@@ -59,10 +59,10 @@ static void sync_tcp_service_path_state_locked(struct PotrContext_ *ctx)
     PotrPreparedPathEvents prepared;
 
     potr_copy_tcp_path_states(ctx, next_states);
-    COM_UTIL_MUTEX_LOCK(&ctx->callback_mutex);
+    com_util_mutex_lock(&ctx->callback_mutex);
     potr_sync_service_path_state_locked(ctx, next_states, &prepared);
     potr_emit_service_path_events_locked(ctx, &prepared);
-    COM_UTIL_MUTEX_UNLOCK(&ctx->callback_mutex);
+    com_util_mutex_unlock(&ctx->callback_mutex);
 }
 
 static void set_tcp_path_ping_state(struct PotrContext_ *ctx,
@@ -92,12 +92,12 @@ static void close_tcp_conn(struct PotrContext_ *ctx, int path_idx)
 /* 再接続待機: reconnect_interval_ms 経過または停止シグナルまでスリープする */
 static void reconnect_wait(struct PotrContext_ *ctx, int path_idx, uint32_t wait_ms)
 {
-    COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
+    com_util_mutex_lock(&ctx->tcp_state_mutex);
     if (ctx->connect_thread_running[path_idx])
     {
         com_util_condvar_timedwait(&ctx->tcp_state_cv, &ctx->tcp_state_mutex, wait_ms);
     }
-    COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_state_mutex);
+    com_util_mutex_unlock(&ctx->tcp_state_mutex);
 }
 
 /* ================================================================
@@ -436,9 +436,9 @@ static void sender_connect_loop(struct PotrContext_ *ctx, int path_idx)
         ctx->tcp_last_ping_recv_ms[path_idx] = com_util_get_monotonic_ms();
 
         /* tcp_active_paths カウンタをインクリメント (tcp_state_mutex 保護) */
-        COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_lock(&ctx->tcp_state_mutex);
         active_count = ++ctx->tcp_active_paths;
-        COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_unlock(&ctx->tcp_state_mutex);
         (void)active_count; /* CONNECTED イベントは recv スレッドが最初のパケット受信時に発火 */
 
         reset_connection_state(ctx);
@@ -452,9 +452,9 @@ static void sender_connect_loop(struct PotrContext_ *ctx, int path_idx)
         if (start_connected_threads(ctx, path_idx) != POTR_SUCCESS)
         {
             /* スレッド起動失敗: カウンタを戻す */
-            COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
+            com_util_mutex_lock(&ctx->tcp_state_mutex);
             active_count = --ctx->tcp_active_paths;
-            COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_state_mutex);
+            com_util_mutex_unlock(&ctx->tcp_state_mutex);
             if (active_count == 0)
             {
                 reset_all_paths_disconnected(ctx);
@@ -477,15 +477,15 @@ static void sender_connect_loop(struct PotrContext_ *ctx, int path_idx)
 
         stop_connected_threads(ctx, path_idx);
 
-        COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_lock(&ctx->tcp_state_mutex);
         set_tcp_path_ping_state(ctx, path_idx, POTR_PING_STATE_UNDEFINED);
         sync_tcp_service_path_state_locked(ctx);
-        COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_unlock(&ctx->tcp_state_mutex);
 
         /* tcp_active_paths カウンタをデクリメント (tcp_state_mutex 保護) */
-        COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_lock(&ctx->tcp_state_mutex);
         active_count = --ctx->tcp_active_paths;
-        COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_unlock(&ctx->tcp_state_mutex);
 
         if (active_count == 0)
         {
@@ -629,14 +629,14 @@ static void receiver_accept_loop(struct PotrContext_ *ctx, int path_idx)
             }
 
             /* session_establish_mutex 下でセッション判定と状態更新を行う */
-            COM_UTIL_MUTEX_LOCK(&ctx->session_establish_mutex);
+            com_util_mutex_lock(&ctx->session_establish_mutex);
 
             session_result = tcp_session_compare(ctx, &pkt);
 
             if (session_result == TCP_SESSION_OLD)
             {
                 /* 旧セッション: 拒否 */
-                COM_UTIL_MUTEX_UNLOCK(&ctx->session_establish_mutex);
+                com_util_mutex_unlock(&ctx->session_establish_mutex);
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
                          "connect_thread[service_id=%" PRId64 " path=%d]: "
                          "old session rejected (known_id=%u pkt_id=%u)",
@@ -668,14 +668,14 @@ static void receiver_accept_loop(struct PotrContext_ *ctx, int path_idx)
             ctx->tcp_last_ping_recv_ms[path_idx] = com_util_get_monotonic_ms();
             ctx->tcp_first_pkt_len[path_idx]         = pkt_len; /* 先読みバッファ有効化 */
 
-            COM_UTIL_MUTEX_UNLOCK(&ctx->session_establish_mutex);
+            com_util_mutex_unlock(&ctx->session_establish_mutex);
         }
         /* ── セッション判定ここまで ── */
 
         /* tcp_active_paths カウンタをインクリメント (tcp_state_mutex 保護) */
-        COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_lock(&ctx->tcp_state_mutex);
         active_count = ++ctx->tcp_active_paths;
-        COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_unlock(&ctx->tcp_state_mutex);
         (void)active_count; /* CONNECTED イベントは recv スレッドが最初のパケット受信時に発火 */
 
         /* TCP_BIDIR 新セッション再接続時 (path[0] のみ): shutdown 済みのキューをリセット */
@@ -686,9 +686,9 @@ static void receiver_accept_loop(struct PotrContext_ *ctx, int path_idx)
 
         if (start_connected_threads(ctx, path_idx) != POTR_SUCCESS)
         {
-            COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
+            com_util_mutex_lock(&ctx->tcp_state_mutex);
             active_count = --ctx->tcp_active_paths;
-            COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_state_mutex);
+            com_util_mutex_unlock(&ctx->tcp_state_mutex);
             if (active_count == 0)
             {
                 reset_all_paths_disconnected(ctx);
@@ -708,18 +708,18 @@ static void receiver_accept_loop(struct PotrContext_ *ctx, int path_idx)
 
         stop_connected_threads(ctx, path_idx);
 
-        COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_lock(&ctx->tcp_state_mutex);
         set_tcp_path_ping_state(ctx, path_idx, POTR_PING_STATE_UNDEFINED);
         sync_tcp_service_path_state_locked(ctx);
-        COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_unlock(&ctx->tcp_state_mutex);
 
         /* 先読みバッファをクリア (recv スレッドが未処理のまま終了した場合の安全策) */
         ctx->tcp_first_pkt_len[path_idx] = 0;
 
         /* tcp_active_paths カウンタをデクリメント (tcp_state_mutex 保護) */
-        COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_lock(&ctx->tcp_state_mutex);
         active_count = --ctx->tcp_active_paths;
-        COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_state_mutex);
+        com_util_mutex_unlock(&ctx->tcp_state_mutex);
 
         if (active_count == 0)
         {
@@ -732,7 +732,7 @@ static void receiver_accept_loop(struct PotrContext_ *ctx, int path_idx)
 }
 
 /* 接続管理スレッド本体 (ConnectArg* を受け取り、path ごとに動作) */
-COM_UTIL_THREAD_FUNC(connect_thread_func)
+static void connect_thread_func(void *arg)
 {
     ConnectArg          *carg     = (ConnectArg *)arg;
     struct PotrContext_ *ctx      = carg->ctx;
@@ -759,7 +759,7 @@ COM_UTIL_THREAD_FUNC(connect_thread_func)
              "connect_thread[service_id=%" PRId64 " path=%d]: exited",
              ctx->service.service_id, path_idx);
 
-    COM_UTIL_THREAD_RETURN;
+    return;
 }
 
 /**
@@ -791,7 +791,7 @@ int potr_connect_thread_start(struct PotrContext_ *ctx)
     /* RECEIVER: session_establish_mutex と先読みバッファを初期化する */
     if (ctx->role == POTR_ROLE_RECEIVER)
     {
-        COM_UTIL_MUTEX_INIT(&ctx->session_establish_mutex);
+        com_util_mutex_init(&ctx->session_establish_mutex);
 
         for (i = 0; i < ctx->n_path; i++)
         {
@@ -811,7 +811,7 @@ int potr_connect_thread_start(struct PotrContext_ *ctx)
                     free(ctx->tcp_first_pkt_buf[j]);
                     ctx->tcp_first_pkt_buf[j] = NULL;
                 }
-                COM_UTIL_MUTEX_DESTROY(&ctx->session_establish_mutex);
+                com_util_mutex_destroy(&ctx->session_establish_mutex);
                 return POTR_ERROR;
             }
         }
@@ -872,9 +872,9 @@ void potr_connect_thread_stop(struct PotrContext_ *ctx)
     }
 
     /* 2. reconnect_wait 中の全スレッドを起床させる */
-    COM_UTIL_MUTEX_LOCK(&ctx->tcp_state_mutex);
-    COM_UTIL_COND_BROADCAST(&ctx->tcp_state_cv);
-    COM_UTIL_MUTEX_UNLOCK(&ctx->tcp_state_mutex);
+    com_util_mutex_lock(&ctx->tcp_state_mutex);
+    com_util_condvar_broadcast(&ctx->tcp_state_cv);
+    com_util_mutex_unlock(&ctx->tcp_state_mutex);
 
     /* 3. RECEIVER: 全 path の listen ソケットをクローズして accept をアンブロック */
     if (ctx->role == POTR_ROLE_RECEIVER)
@@ -918,7 +918,7 @@ void potr_connect_thread_stop(struct PotrContext_ *ctx)
                 ctx->tcp_first_pkt_buf[i] = NULL;
             }
         }
-        COM_UTIL_MUTEX_DESTROY(&ctx->session_establish_mutex);
+        com_util_mutex_destroy(&ctx->session_establish_mutex);
     }
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
