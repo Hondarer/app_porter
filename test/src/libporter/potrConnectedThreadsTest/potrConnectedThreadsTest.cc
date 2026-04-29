@@ -8,6 +8,7 @@
 #include <porter_const.h>
 #include <potrContext.h>
 #include <potrConnectedThreads.h>
+#include <potrHealthThread.h>
 
 #include <string.h>
 
@@ -56,7 +57,7 @@ static int fake_recv_start(struct PotrContext_ *ctx, int path_idx)
     return g_calls.recv_start_result;
 }
 
-extern "C" int potr_tcp_send_ping_now(struct PotrContext_ *ctx, int path_idx)
+int potr_tcp_send_ping_now(struct PotrContext_ *ctx, int path_idx)
 {
     (void)ctx;
     g_calls.tcp_send_ping_calls++;

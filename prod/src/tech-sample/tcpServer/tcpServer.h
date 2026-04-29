@@ -105,6 +105,12 @@ typedef void (*ClientSessionFn)(ClientFd fd);
  *  platform_init() で設定します。
  *******************************************************************************
  */
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif /* __cplusplus */
+
 extern ClientSessionFn g_session_fn;
 
 /* ============================================================
@@ -173,5 +179,9 @@ void run_fork_server(int port);
  *******************************************************************************
  */
 void run_prefork_server(int port, int num_workers, int conns_per_worker);
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif /* TCPSERVER_H */
