@@ -7,6 +7,7 @@ TEST_SRCS := \
 
 # TEST_SRCS の相対インクルード解決
 INCDIR += \
+	$(MYAPP_DIR)/prod/libsrc/porter \
 	$(MYAPP_DIR)/prod/libsrc/porter/api \
 	$(MYAPP_DIR)/prod/libsrc/porter/infra
 
