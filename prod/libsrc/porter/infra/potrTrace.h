@@ -49,7 +49,7 @@ com_util_tracer_t *potr_trace_get(void);
  *  @brief          porter 内部ログ出力マクロ。
  *
  *  @details
- *  __FILE__ と __LINE__ を自動付加して com_util_tracer_writef() を呼び出します。\n
+ *  __FILE__ と __LINE__ を自動付加する com_util_tracer_writef() マクロを呼び出します。\n
  *  トレーサーが未 start の場合は無視されます。\n
  *  level には com_util_trace_level_t の値を指定してください。
  *
@@ -61,7 +61,7 @@ com_util_tracer_t *potr_trace_get(void);
  *  @endcode
  */
 #define POTR_TRACE(level, ...) \
-    COM_UTIL_TRACER_WRITEF(potr_trace_get(), (level), __VA_ARGS__)
+    com_util_tracer_writef(potr_trace_get(), (level), NULL, __VA_ARGS__)
 
 #ifdef __cplusplus
 }
