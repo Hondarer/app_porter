@@ -36,7 +36,7 @@ doxy :
 			rm -f "$(DOXY_WARN_FILE)"; \
 			$(MAKE) -C $(DOXYFW_DIR) CATEGORY=$(APP_NAME); \
 			MAKE_EXIT=$$?; \
-			if [ -s "$(DOXY_WARN_FILE)" ]; then \
+			if [ -z "$(SUPPRESS_DOXY_WARN_PRINT)" ] && [ -s "$(DOXY_WARN_FILE)" ]; then \
 				printf '\n'; \
 				bash "$(TESTFW_BANNER)" WARNING "\e[33m"; \
 				printf '\n'; \
