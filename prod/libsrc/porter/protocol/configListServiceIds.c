@@ -16,8 +16,8 @@
 
 #include <porter_const.h>
 
-#include "config.h"
-#include "configParseCommon.h"
+#include <porter/protocol/config.h>
+#include <porter/protocol/configParseCommon.h>
 
 /**
  *******************************************************************************

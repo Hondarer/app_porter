@@ -23,12 +23,12 @@
 #include <porter_const.h>
 #include <porter.h>
 
-#include "potrContext.h"
-#include "potrPeerTable.h"
-#include "protocol/packet.h"
-#include "protocol/window.h"
-#include "infra/potrTrace.h"
-#include "infra/potrPlatform.h"
+#include <porter/potrContext.h>
+#include <porter/potrPeerTable.h>
+#include <porter/protocol/packet.h>
+#include <porter/protocol/window.h>
+#include <porter/infra/potrTrace.h>
+#include <porter/infra/potrPlatform.h>
 #include <com_util/crypto/crypto.h>
 
 /* ピアのセッション識別子・開始時刻を生成して peer に格納する */

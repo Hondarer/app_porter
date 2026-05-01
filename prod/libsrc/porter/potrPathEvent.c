@@ -15,8 +15,8 @@
 
 #include <porter_const.h>
 
-#include "potrPathEvent.h"
-#include "infra/potrPlatform.h"
+#include <porter/potrPathEvent.h>
+#include <porter/infra/potrPlatform.h>
 
 static int path_state_is_normal(uint8_t state)
 {

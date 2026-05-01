@@ -19,9 +19,9 @@
 
 #include <porter_const.h>
 
-#include "../infra/potrTrace.h"
-#include "potrHealthThread.h"
-#include "potrConnectedThreads.h"
+#include <porter/infra/potrTrace.h>
+#include <porter/thread/potrHealthThread.h>
+#include <porter/thread/potrConnectedThreads.h>
 
 int potr_start_connected_threads(struct PotrContext_           *ctx,
                                  int                            path_idx,

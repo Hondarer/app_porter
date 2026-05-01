@@ -1,7 +1,7 @@
 #ifndef PORTER_PROTOCOL_CONFIG_PARSE_KV_COMMON_H
 #define PORTER_PROTOCOL_CONFIG_PARSE_KV_COMMON_H
 
-#include "configParseCommon.h"
+#include <porter/protocol/configParseCommon.h>
 
 /* "key = value" 行を解析して key_out, val_out に格納する。成功時は 1 を返す。 */
 static int config_parse_kv(const char *line, char *key_out, size_t key_size,

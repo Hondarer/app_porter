@@ -23,8 +23,8 @@
 
 #include <porter_const.h>
 
-#include "seqnum.h"
-#include "window.h"
+#include <porter/protocol/seqnum.h>
+#include <porter/protocol/window.h>
 
 /**
  *******************************************************************************

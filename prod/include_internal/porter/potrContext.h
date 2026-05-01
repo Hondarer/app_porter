@@ -23,11 +23,11 @@
 #include <com_util/base/platform.h>
 #include <porter_type.h>
 
-#include "protocol/window.h"
+#include <porter/protocol/window.h>
 #include <com_util/compress/compress.h>
 #include <com_util/crypto/crypto.h>
-#include "infra/potrSendQueue.h"
-#include "infra/potrPlatform.h"
+#include <porter/infra/potrSendQueue.h>
+#include <porter/infra/potrPlatform.h>
 
 /** TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) か判定する。 */
 static inline int potr_is_tcp_type(PotrType t)

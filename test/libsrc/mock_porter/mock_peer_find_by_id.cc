@@ -5,8 +5,8 @@
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
 #include <mock_potrPeerTable.h>
-#include <potrContext.h>
-#include <potrPeerTable.h>
+#include <porter/potrContext.h>
+#include <porter/potrPeerTable.h>
 
 WEAK_ATR PotrPeerContext *peer_find_by_id(struct PotrContext_ *ctx, PotrPeerId peer_id)
 {

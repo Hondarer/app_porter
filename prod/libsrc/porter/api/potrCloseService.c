@@ -20,18 +20,18 @@
 #include <porter_const.h>
 
 #include <com_util/crypto/crypto.h>
-#include "../infra/potrTrace.h"
-#include "../infra/potrSendQueue.h"
-#include "../potrContext.h"
-#include "../potrPathEvent.h"
-#include "../potrPeerTable.h"
-#include "../protocol/packet.h"
-#include "../protocol/window.h"
-#include "../thread/potrConnectThread.h"
-#include "../thread/potrHealthThread.h"
-#include "../thread/potrRecvThread.h"
-#include "../thread/potrSendThread.h"
-#include "../util/potrIpAddr.h"
+#include <porter/infra/potrTrace.h>
+#include <porter/infra/potrSendQueue.h>
+#include <porter/potrContext.h>
+#include <porter/potrPathEvent.h>
+#include <porter/potrPeerTable.h>
+#include <porter/protocol/packet.h>
+#include <porter/protocol/window.h>
+#include <porter/thread/potrConnectThread.h>
+#include <porter/thread/potrHealthThread.h>
+#include <porter/thread/potrRecvThread.h>
+#include <porter/thread/potrSendThread.h>
+#include <porter/util/potrIpAddr.h>
 
 /* FIN パケットを全パスへ送信する */
 static void send_fin(struct PotrContext_ *ctx)

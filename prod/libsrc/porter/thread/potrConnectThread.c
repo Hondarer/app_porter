@@ -29,18 +29,18 @@
 
 #include <porter_const.h>
 
-#include "../potrContext.h"
-#include "../potrPathEvent.h"
-#include "../protocol/packet.h"
-#include "../infra/potrSendQueue.h"
-#include "../protocol/window.h"
-#include "../infra/potrTrace.h"
-#include "../infra/potrPlatform.h"
-#include "potrConnectThread.h"
-#include "potrConnectedThreads.h"
-#include "potrRecvThread.h"
-#include "potrSendThread.h"
-#include "potrHealthThread.h"
+#include <porter/potrContext.h>
+#include <porter/potrPathEvent.h>
+#include <porter/protocol/packet.h>
+#include <porter/infra/potrSendQueue.h>
+#include <porter/protocol/window.h>
+#include <porter/infra/potrTrace.h>
+#include <porter/infra/potrPlatform.h>
+#include <porter/thread/potrConnectThread.h>
+#include <porter/thread/potrConnectedThreads.h>
+#include <porter/thread/potrRecvThread.h>
+#include <porter/thread/potrSendThread.h>
+#include <porter/thread/potrHealthThread.h>
 
 /* connect/accept スレッドに渡す引数 */
 typedef struct

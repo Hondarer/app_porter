@@ -17,10 +17,10 @@
 #include <porter_const.h>
 #include <porter_type.h>
 
-#include "../infra/potrTrace.h"
-#include "config.h"
-#include "configParseCommon.h"
-#include "configParseKvCommon.h"
+#include <porter/infra/potrTrace.h>
+#include <porter/protocol/config.h>
+#include <porter/protocol/configParseCommon.h>
+#include <porter/protocol/configParseKvCommon.h>
 
 /* global 既定値を構造体へ設定する。 */
 static void config_set_global_defaults(PotrGlobalConfig *global)

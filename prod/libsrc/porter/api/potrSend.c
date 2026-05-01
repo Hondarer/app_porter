@@ -18,11 +18,11 @@
 #include <porter_const.h>
 #include <porter.h>
 
-#include "../potrContext.h"
-#include "../potrPeerTable.h"
-#include "../infra/potrSendQueue.h"
+#include <porter/potrContext.h>
+#include <porter/potrPeerTable.h>
+#include <porter/infra/potrSendQueue.h>
 #include <com_util/compress/compress.h>
-#include "../infra/potrTrace.h"
+#include <porter/infra/potrTrace.h>
 
 
 /* N:1 モードで 1 ピアへ send を行う内部実装 (peers_mutex 取得不要・呼び出し元で検索済み) */

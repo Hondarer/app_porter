@@ -21,7 +21,7 @@
 
 #include <porter_type.h>
 
-#include "potrContext.h"
+#include <porter/potrContext.h>
 
 #ifdef __cplusplus
 extern "C"

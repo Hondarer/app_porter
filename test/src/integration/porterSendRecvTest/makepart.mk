@@ -3,4 +3,4 @@
 TEST_SRCS := $(MYAPP_DIR)/../com_util/prod/libsrc/com_util/crt/stdio.c
 LIBS      := mock_libc
 INCDIR    += $(MYAPP_DIR)/test/include
-INCDIR    += $(MYAPP_DIR)/../com_util/prod/libsrc/com_util/crt
+INCDIR    += $(MYAPP_DIR)/../com_util/prod/include_internal

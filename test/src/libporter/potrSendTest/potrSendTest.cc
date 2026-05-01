@@ -9,8 +9,8 @@
 
 #include <porter_const.h>
 #include <porter.h>
-#include <potrContext.h>
-#include <potrSendQueue.h>
+#include <porter/potrContext.h>
+#include <porter/infra/potrSendQueue.h>
 
 #if defined(PLATFORM_LINUX)
     #include <pthread.h>

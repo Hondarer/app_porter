@@ -23,18 +23,18 @@
 
 #include <porter_const.h>
 
-#include "../protocol/packet.h"
-#include "../protocol/seqnum.h"
-#include "../protocol/window.h"
-#include "../potrContext.h"
-#include "../potrPathEvent.h"
-#include "../potrPeerTable.h"
-#include "potrHealthThread.h"
-#include "potrRecvThread.h"
+#include <porter/protocol/packet.h>
+#include <porter/protocol/seqnum.h>
+#include <porter/protocol/window.h>
+#include <porter/potrContext.h>
+#include <porter/potrPathEvent.h>
+#include <porter/potrPeerTable.h>
+#include <porter/thread/potrHealthThread.h>
+#include <porter/thread/potrRecvThread.h>
 #include <com_util/compress/compress.h>
 #include <com_util/crypto/crypto.h>
-#include "../infra/potrTrace.h"
-#include "../infra/potrPlatform.h"
+#include <porter/infra/potrTrace.h>
+#include <porter/infra/potrPlatform.h>
 
 /* 前方宣言: 後で定義される関数 */
 static void recv_deliver(struct PotrContext_ *ctx, const uint8_t *payload,

@@ -24,7 +24,7 @@
 #include <porter_const.h>
 #include <porter_type.h>
 
-#include "packet.h"
+#include <porter/protocol/packet.h>
 
 /* packet.h で公開した PACKET_HEADER_SIZE をそのまま使用する */
 

@@ -20,10 +20,10 @@
 #include <porter_type.h>
 
 #include <com_util/crypto/crypto.h>
-#include "../infra/potrTrace.h"
-#include "config.h"
-#include "configParseCommon.h"
-#include "configParseKvCommon.h"
+#include <porter/infra/potrTrace.h>
+#include <porter/protocol/config.h>
+#include <porter/protocol/configParseCommon.h>
+#include <porter/protocol/configParseKvCommon.h>
 
 /* src を dst に切り詰めコピーする。 */
 static void copy_cstr_trunc(char *dst, size_t dst_size, const char *src)

@@ -39,15 +39,15 @@
 
 #include <porter_const.h>
 
-#include "../potrContext.h"
-#include "../potrPeerTable.h"
-#include "../infra/potrSendQueue.h"
-#include "../infra/potrPlatform.h"
-#include "potrSendThread.h"
-#include "potrHealthThread.h"
-#include "../protocol/packet.h"
-#include "../protocol/window.h"
-#include "../infra/potrTrace.h"
+#include <porter/potrContext.h>
+#include <porter/potrPeerTable.h>
+#include <porter/infra/potrSendQueue.h>
+#include <porter/infra/potrPlatform.h>
+#include <porter/thread/potrSendThread.h>
+#include <porter/thread/potrHealthThread.h>
+#include <porter/protocol/packet.h>
+#include <porter/protocol/window.h>
+#include <porter/infra/potrTrace.h>
 #include <com_util/crypto/crypto.h>
 
 static int should_track_valid_data_send_time(const struct PotrContext_ *ctx)

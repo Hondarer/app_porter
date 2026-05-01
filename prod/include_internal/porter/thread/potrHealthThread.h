@@ -17,7 +17,7 @@
 #ifndef POTR_HEALTH_THREAD_H
 #define POTR_HEALTH_THREAD_H
 
-#include "../potrContext.h"
+#include <porter/potrContext.h>
 
 #ifdef __cplusplus
 extern "C"

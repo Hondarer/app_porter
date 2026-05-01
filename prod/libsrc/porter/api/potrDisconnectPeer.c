@@ -16,10 +16,10 @@
 #include <porter_const.h>
 #include <porter.h>
 
-#include "../potrContext.h"
-#include "../potrPathEvent.h"
-#include "../potrPeerTable.h"
-#include "../infra/potrTrace.h"
+#include <porter/potrContext.h>
+#include <porter/potrPathEvent.h>
+#include <porter/potrPeerTable.h>
+#include <porter/infra/potrTrace.h>
 
 
 /* doxygen コメントは、ヘッダに記載 */

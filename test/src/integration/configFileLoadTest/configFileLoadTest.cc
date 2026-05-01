@@ -5,7 +5,7 @@
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
 
-#include <config.h>
+#include <porter/protocol/config.h>
 #include <porter_const.h>
 #include <porter_test_helper.h>
 

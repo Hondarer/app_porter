@@ -9,7 +9,7 @@
 
 #include <porter_const.h>
 #include <porter.h>
-#include <potrContext.h>
+#include <porter/potrContext.h>
 
 #if defined(PLATFORM_LINUX)
     #include <pthread.h>

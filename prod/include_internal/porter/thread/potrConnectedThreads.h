@@ -18,7 +18,7 @@
 #ifndef POTR_CONNECTED_THREADS_H
 #define POTR_CONNECTED_THREADS_H
 
-#include "../potrContext.h"
+#include <porter/potrContext.h>
 
 #ifdef __cplusplus
 extern "C"

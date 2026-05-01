@@ -17,8 +17,8 @@
 
 #include <porter_const.h>
 
-#include "potrSendQueue.h"
-#include "potrPlatform.h"
+#include <porter/infra/potrSendQueue.h>
+#include <porter/infra/potrPlatform.h>
 
 /* doxygen コメントは、ヘッダに記載 */
 int potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload)

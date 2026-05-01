@@ -6,8 +6,8 @@
 #include <testfw.h>
 
 #include <porter_const.h>
-#include <potrContext.h>
-#include <potrPathEvent.h>
+#include <porter/potrContext.h>
+#include <porter/potrPathEvent.h>
 
 #include <string.h>
 

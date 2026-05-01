@@ -14,7 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "seqnum.h"
+#include <porter/protocol/seqnum.h>
 
 /**
  *******************************************************************************

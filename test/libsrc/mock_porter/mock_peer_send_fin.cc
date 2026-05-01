@@ -5,8 +5,8 @@
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
 #include <mock_potrPeerTable.h>
-#include <potrContext.h>
-#include <potrPeerTable.h>
+#include <porter/potrContext.h>
+#include <porter/potrPeerTable.h>
 
 WEAK_ATR void peer_send_fin(struct PotrContext_ *ctx, PotrPeerContext *peer)
 {

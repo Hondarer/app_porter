@@ -1,3 +1,1 @@
-# mock 内で参照する内部インクルード解決
-INCDIR += \
-	$(MYAPP_DIR)/prod/libsrc/porter
+# (include_internal はトップ makepart.mk で追加済みのため追加設定不要)

@@ -28,7 +28,7 @@
 #include <porter_const.h>
 #include <porter_type.h>
 
-#include "potrPlatform.h"
+#include <porter/infra/potrPlatform.h>
 
 /**
  *  @brief  送信キューの 1 エントリ。ペイロードエレメント 1 個分のデータを保持する。

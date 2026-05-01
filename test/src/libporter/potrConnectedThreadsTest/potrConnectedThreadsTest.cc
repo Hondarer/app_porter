@@ -6,9 +6,9 @@
 #include <testfw.h>
 
 #include <porter_const.h>
-#include <potrContext.h>
-#include <potrConnectedThreads.h>
-#include <potrHealthThread.h>
+#include <porter/potrContext.h>
+#include <porter/thread/potrConnectedThreads.h>
+#include <porter/thread/potrHealthThread.h>
 
 #include <string.h>
 

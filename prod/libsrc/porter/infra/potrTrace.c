@@ -27,7 +27,7 @@
 
 #include <porter.h>
 
-#include "potrTrace.h"
+#include <porter/infra/potrTrace.h>
 
 /* ── グローバルトレーサー状態 ──────────────────────────────────────────────── */
 

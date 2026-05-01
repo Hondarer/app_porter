@@ -21,7 +21,7 @@
 
 #include <porter_const.h>
 
-#include "potrIpAddr.h"
+#include <porter/util/potrIpAddr.h>
 
 /* IPv4 文字列をネットワークバイトオーダーへ変換する。 */
 int parse_ipv4_addr(const char *ip_str, struct in_addr *out_addr)

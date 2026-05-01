@@ -6,7 +6,7 @@
 #include <testfw.h>
 #include <com_util/trace/tracer.h>
 #include <porter.h>
-#include "potrTrace.h"
+#include <porter/infra/potrTrace.h>
 
 WEAK_ATR com_util_tracer_t *potr_trace_get(void)
 {

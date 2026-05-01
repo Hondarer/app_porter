@@ -19,18 +19,18 @@
 #include <porter_const.h>
 #include <porter.h>
 
-#include "../protocol/packet.h"
-#include "../protocol/window.h"
-#include "../potrContext.h"
-#include "../potrPathEvent.h"
-#include "../potrPeerTable.h"
-#include "../thread/potrRecvThread.h"
-#include "../thread/potrHealthThread.h"
-#include "../thread/potrConnectThread.h"
-#include "../infra/potrSendQueue.h"
-#include "../thread/potrSendThread.h"
-#include "../util/potrIpAddr.h"
-#include "../infra/potrTrace.h"
+#include <porter/protocol/packet.h>
+#include <porter/protocol/window.h>
+#include <porter/potrContext.h>
+#include <porter/potrPathEvent.h>
+#include <porter/potrPeerTable.h>
+#include <porter/thread/potrRecvThread.h>
+#include <porter/thread/potrHealthThread.h>
+#include <porter/thread/potrConnectThread.h>
+#include <porter/infra/potrSendQueue.h>
+#include <porter/thread/potrSendThread.h>
+#include <porter/util/potrIpAddr.h>
+#include <porter/infra/potrTrace.h>
 
 /* ソケットを作成して bind する。成功時は PotrSocket を返す。失敗時は POTR_INVALID_SOCKET。
    bind_addr: bind する IPv4 アドレス。port: bind するポート番号 (0 = OS 自動選定)。 */

@@ -14,7 +14,7 @@
 #include <porter_const.h>
 #include <porter.h>
 
-#include "../protocol/config.h"
+#include <porter/protocol/config.h>
 
 /* doxygen コメントは、ヘッダに記載 */
 POTR_EXPORT int POTR_API potrGetServiceType(const char *config_path,

@@ -23,13 +23,13 @@
 #include <porter_const.h>
 #include <porter.h>
 
-#include "../protocol/packet.h"
-#include "../protocol/window.h"
-#include "../potrContext.h"
-#include "../potrPeerTable.h"
-#include "potrHealthThread.h"
-#include "../infra/potrTrace.h"
-#include "../infra/potrPlatform.h"
+#include <porter/protocol/packet.h>
+#include <porter/protocol/window.h>
+#include <porter/potrContext.h>
+#include <porter/potrPeerTable.h>
+#include <porter/thread/potrHealthThread.h>
+#include <porter/infra/potrTrace.h>
+#include <porter/infra/potrPlatform.h>
 #include <com_util/crypto/crypto.h>
 
 /* TCP health スレッドに渡す引数 (path ごと) */

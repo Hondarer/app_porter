@@ -18,7 +18,7 @@
     #include <errno.h>
     #include <fcntl.h>
 
-    #include "potrPlatform.h"
+    #include <porter/infra/potrPlatform.h>
 
 /* doxygen コメントは、ヘッダに記載 */
 int potr_sendto(PotrSocket sock, const uint8_t *buf, size_t len, int flags, const struct sockaddr *dest, int dest_len)
