@@ -1,4 +1,4 @@
-# インクルードパス
+# インクルードの検索パス
 INCDIR += \
 	$(MYAPP_DIR)/../com_util/test/include \
 	$(MYAPP_DIR)/test/include \
