@@ -45,7 +45,6 @@ extern "C"
 com_util_tracer_t *potr_trace_get(void);
 
 /**
- *  @def            POTR_TRACE(level, ...)
  *  @brief          porter 内部ログ出力マクロ。
  *
  *  @details

@@ -24,7 +24,6 @@
 #ifdef DOXYGEN
 
     /**
-     *  @def            POTR_EXPORT
      *  @brief          DLL エクスポート/インポート制御マクロ。
      *  @details        ビルド条件に応じて以下の値を取ります。
      *
@@ -39,7 +38,6 @@
     #define POTR_EXPORT
 
     /**
-     *  @def            POTR_API
      *  @brief          呼び出し規約マクロ。
      *  @details        Windows 環境では `__stdcall` 呼び出し規約を指定します。\n
      *                  Linux (非 Windows) 環境では空に展開されます。\n
