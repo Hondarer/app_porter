@@ -243,6 +243,41 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
 
 /**
  *******************************************************************************
+ *  @brief          トレースフックコールバック。指定レベル以上のメッセージを stderr へ出力する。
+ *  @param[in]      prev      チェーン継続用の前エントリ。
+ *  @param[in]      handle    trace を行った tracer ハンドル。
+ *  @param[in]      level     trace レベル。
+ *  @param[in]      timestamp 解決済みタイムスタンプ。
+ *  @param[in]      message   解決済みメッセージ文字列。
+ *  @param[in]      context   閾値レベル (com_util_trace_level_t *) を指すポインタ。
+ *******************************************************************************
+ */
+static void trace_console_hook(
+    com_util_tracer_hook_entry_t        *prev,
+    com_util_tracer_t                   *handle,
+    com_util_trace_level_t               level,
+    const com_util_realtime_timestamp_t *timestamp,
+    const char                          *message,
+    void                                *context)
+{
+    static const char lc_table[] = {'C', 'E', 'W', 'I', 'V', 'D'};
+    com_util_trace_level_t threshold = *(const com_util_trace_level_t *)context;
+    char ts[COM_UTIL_CLOCK_ISO8601_LOCAL_MSEC_LEN + 1];
+    char lc;
+
+    if (threshold != COM_UTIL_TRACE_LEVEL_NONE && (int)level <= (int)threshold)
+    {
+        lc = ((int)level >= 0 && (int)level < (int)COM_UTIL_TRACE_LEVEL_NONE)
+                 ? lc_table[(int)level] : 'D';
+        com_util_format_realtime_iso8601_local(ts, sizeof(ts),
+                                               timestamp->tv_sec, timestamp->tv_nsec);
+        fprintf(stderr, "%s %c %s\n", ts, lc, message);
+    }
+    com_util_tracer_call_next_hook(prev, handle, level, timestamp, message);
+}
+
+/**
+ *******************************************************************************
  *  @brief          ログレベル文字列を com_util_trace_level_t に変換する。
  *  @param[in]      str     レベル文字列 (VERBOSE/INFO/WARNING/ERROR/CRITICAL)。
  *  @param[out]     out     変換結果の格納先。
@@ -622,11 +657,11 @@ int main(int argc, char *argv[])
     config_path = argv[i];
     service_id = (int64_t)strtoll(argv[i + 1], NULL, 10);
 
-    /* トレーサー設定 (stderr 出力) */
+    /* トレーサー設定 (フック経由コンソール出力) */
     if (trace_level_set)
     {
         com_util_tracer_t *tracer = potrGetTracer();
-        com_util_tracer_set_stderr_level(tracer, trace_level);
+        com_util_tracer_set_hook(tracer, trace_console_hook, &trace_level);
         com_util_tracer_start(tracer);
     }
 
