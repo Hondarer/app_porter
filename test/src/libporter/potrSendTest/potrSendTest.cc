@@ -5,7 +5,7 @@
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
 #include <mock_com_util.h>
-#include <mock_potrPeerTable.h>
+#include <mock_porter.h>
 
 #include <porter_const.h>
 #include <porter.h>
@@ -61,7 +61,7 @@ class potrSendTest : public Test
 TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
 {
     NiceMock<Mock_com_util>       mock_log;
-    NiceMock<Mock_potrPeerTable> mock_peer_table;
+    NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "tcp-before-connected";
 
     ctx.service.type     = POTR_TYPE_TCP_BIDIR;
@@ -76,7 +76,7 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
 TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
 {
     NiceMock<Mock_com_util>       mock_log;
-    NiceMock<Mock_potrPeerTable> mock_peer_table;
+    NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "n1-broadcast";
 
     ctx.service.type   = POTR_TYPE_UNICAST_BIDIR_N1;
@@ -93,7 +93,7 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
 TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
 {
     NiceMock<Mock_com_util>       mock_log;
-    NiceMock<Mock_potrPeerTable> mock_peer_table;
+    NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "n1-connected-peer";
 
     ctx.service.type   = POTR_TYPE_UNICAST_BIDIR_N1;
@@ -120,7 +120,7 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
 TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
 {
     NiceMock<Mock_com_util>       mock_log;
-    NiceMock<Mock_potrPeerTable> mock_peer_table;
+    NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "one-way-still-sendable";
 
     ctx.service.type = POTR_TYPE_UNICAST;

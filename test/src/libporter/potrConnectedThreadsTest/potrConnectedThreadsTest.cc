@@ -9,10 +9,29 @@
 #include <porter/potrContext.h>
 #include <porter/thread/potrConnectedThreads.h>
 #include <porter/thread/potrHealthThread.h>
+#include <com_util/trace/tracer.h>
 
 #include <string.h>
 
 using namespace testing;
+
+/* Stubs for tracer functions - tests don't need actual tracing */
+extern "C" {
+    com_util_tracer_t *potr_trace_get(void)
+    {
+        return NULL;
+    }
+
+    int com_util_tracer_writef(com_util_tracer_t *handle, com_util_trace_level_t level,
+                                const com_util_realtime_timestamp_t *timestamp, const char *format, ...)
+    {
+        (void)handle;
+        (void)level;
+        (void)timestamp;
+        (void)format;
+        return 0;
+    }
+}
 
 struct ConnectedThreadsCallState
 {

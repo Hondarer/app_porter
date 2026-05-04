@@ -4,15 +4,15 @@
     #define _HAS_STD_BYTE 0
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
-#include <mock_potrPeerTable.h>
+#include <mock_porter.h>
 #include <porter/potrContext.h>
 #include <porter/potrPeerTable.h>
 
 MOCK_WEAK_IMPL(void, peer_free, struct PotrContext_ *ctx, PotrPeerContext *peer)
 {
-    if (_mock_potrPeerTable != nullptr)
+    if (_mock_porter != nullptr)
     {
-        _mock_potrPeerTable->peer_free(ctx, peer);
+        _mock_porter->peer_free(ctx, peer);
     }
 
     if (getTraceLevel() > TRACE_NONE)

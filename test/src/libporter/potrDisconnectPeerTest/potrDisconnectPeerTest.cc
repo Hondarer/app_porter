@@ -5,7 +5,7 @@
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
 #include <mock_com_util.h>
-#include <mock_potrPeerTable.h>
+#include <mock_porter.h>
 
 #include <porter_const.h>
 #include <porter.h>
@@ -87,7 +87,7 @@ TEST_F(potrDisconnectPeerTest, handle_null)
 {
     // Arrange
     NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_potrPeerTable>  mock_peer_table;
+    NiceMock<Mock_porter>  mock_peer_table;
 
     // Pre-Assert
     EXPECT_CALL(mock_log, _com_util_tracer_writef(_, COM_UTIL_TRACE_LEVEL_ERROR, nullptr,
@@ -107,7 +107,7 @@ TEST_F(potrDisconnectPeerTest, peer_id_na)
 {
     // Arrange
     NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_potrPeerTable>  mock_peer_table;
+    NiceMock<Mock_porter>  mock_peer_table;
 
     // Pre-Assert
     EXPECT_CALL(mock_log, _com_util_tracer_writef(_, COM_UTIL_TRACE_LEVEL_ERROR, nullptr,
@@ -127,7 +127,7 @@ TEST_F(potrDisconnectPeerTest, peer_id_all)
 {
     // Arrange
     NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_potrPeerTable>  mock_peer_table;
+    NiceMock<Mock_porter>  mock_peer_table;
 
     // Pre-Assert
     EXPECT_CALL(mock_log, _com_util_tracer_writef(_, COM_UTIL_TRACE_LEVEL_ERROR, nullptr,
@@ -147,7 +147,7 @@ TEST_F(potrDisconnectPeerTest, not_multi_peer)
 {
     // Arrange
     NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_potrPeerTable>  mock_peer_table;
+    NiceMock<Mock_porter>  mock_peer_table;
     ctx.is_multi_peer = 0; // [状態] - N:1 モードでない (is_multi_peer=0) に設定する。
 
     // Pre-Assert
@@ -168,7 +168,7 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
 {
     // Arrange
     NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_potrPeerTable>  mock_peer_table;
+    NiceMock<Mock_porter>  mock_peer_table;
     ctx.is_multi_peer = 1; // [状態] - N:1 モードに設定する。
 
     EXPECT_CALL(mock_peer_table, peer_find_by_id(&ctx, (PotrPeerId)99))
@@ -193,7 +193,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
 {
     // Arrange
     NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_potrPeerTable>  mock_peer_table;
+    NiceMock<Mock_porter>  mock_peer_table;
     ctx.is_multi_peer         = 1;               // [状態] - N:1 モードに設定する。
     ctx.callback              = mock_callback;   // [状態] - 受信コールバックを設定する。
     peer_ctx.health_alive     = 1;               // [状態] - ピアを疎通済み状態 (health_alive=1) に設定する。
@@ -248,7 +248,7 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
 {
     // Arrange
     NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_potrPeerTable>  mock_peer_table;
+    NiceMock<Mock_porter>  mock_peer_table;
     ctx.is_multi_peer   = 1;               // [状態] - N:1 モードに設定する。
     ctx.callback        = mock_callback;   // [状態] - 受信コールバックを設定する。
     peer_ctx.health_alive = 0;             // [状態] - ピアを切断済み状態 (health_alive=0) に設定する。
