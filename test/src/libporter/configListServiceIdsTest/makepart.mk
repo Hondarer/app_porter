@@ -5,4 +5,4 @@ TEST_SRCS := \
 INCDIR += $(MYAPP_DIR)/test/include
 
 # ライブラリの指定
-LIBS += mock_porter mock_com_util com_util mock_libc
+LIBS += mock_porter mock_com_util mock_libc
