@@ -6,6 +6,12 @@
 #include <testfw.h>
 #include <mock_potrPeerTable.h>
 
+#if defined(COMPILER_MSVC)
+#pragma comment(linker, "/INCLUDE:_mock_impl_peer_find_by_id")
+#pragma comment(linker, "/INCLUDE:_mock_impl_peer_free")
+#pragma comment(linker, "/INCLUDE:_mock_impl_peer_send_fin")
+#endif /* COMPILER_MSVC */
+
 Mock_potrPeerTable *_mock_potrPeerTable = nullptr;
 
 Mock_potrPeerTable::Mock_potrPeerTable()

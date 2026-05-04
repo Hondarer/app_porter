@@ -13,7 +13,7 @@ WEAK_ATR com_util_tracer_t *potr_trace_get(void)
     return nullptr;
 }
 
-WEAK_ATR com_util_tracer_t * POTR_API potrGetTracer(void)
+WEAK_ATR com_util_tracer_t *potrGetTracer(void)
 {
     return nullptr;
 }

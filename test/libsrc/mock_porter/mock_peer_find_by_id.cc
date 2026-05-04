@@ -8,7 +8,7 @@
 #include <porter/potrContext.h>
 #include <porter/potrPeerTable.h>
 
-WEAK_ATR PotrPeerContext *peer_find_by_id(struct PotrContext_ *ctx, PotrPeerId peer_id)
+MOCK_WEAK_IMPL(PotrPeerContext *, peer_find_by_id, struct PotrContext_ *ctx, PotrPeerId peer_id)
 {
     PotrPeerContext *rtc = nullptr;
 
