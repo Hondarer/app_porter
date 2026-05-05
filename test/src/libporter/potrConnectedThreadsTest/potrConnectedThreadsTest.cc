@@ -4,34 +4,17 @@
     #define _HAS_STD_BYTE 0
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
+#include <mock_com_util.h>
+#include <mock_porter.h>
 
 #include <porter_const.h>
 #include <porter/potrContext.h>
 #include <porter/thread/potrConnectedThreads.h>
 #include <porter/thread/potrHealthThread.h>
-#include <com_util/trace/tracer.h>
 
 #include <string.h>
 
 using namespace testing;
-
-/* Stubs for tracer functions - tests don't need actual tracing */
-extern "C" {
-    com_util_tracer_t *potr_trace_get(void)
-    {
-        return NULL;
-    }
-
-    int com_util_tracer_writef(com_util_tracer_t *handle, com_util_trace_level_t level,
-                                const com_util_realtime_timestamp_t *timestamp, const char *format, ...)
-    {
-        (void)handle;
-        (void)level;
-        (void)timestamp;
-        (void)format;
-        return 0;
-    }
-}
 
 struct ConnectedThreadsCallState
 {
@@ -118,8 +101,13 @@ static void fake_set_path_ping_state(struct PotrContext_ *ctx,
 class potrConnectedThreadsTest : public Test
 {
   protected:
+    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_porter>   mock_porter;
+
     void SetUp() override
     {
+        ON_CALL(mock_com_util, _com_util_tracer_writef(_, _, _, _)).WillByDefault(Return(0));
+
         memset(&ctx, 0, sizeof(ctx));
         memset(&g_calls, 0, sizeof(g_calls));
 
