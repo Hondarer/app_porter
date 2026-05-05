@@ -6,14 +6,6 @@
 #include <testfw.h>
 #include <mock_porter.h>
 
-#if defined(COMPILER_MSVC)
-#pragma comment(linker, "/INCLUDE:_mock_impl_peer_find_by_id")
-#pragma comment(linker, "/INCLUDE:_mock_impl_peer_send_fin")
-#pragma comment(linker, "/INCLUDE:_mock_impl_peer_free")
-#pragma comment(linker, "/INCLUDE:_mock_impl_potr_trace_get")
-#pragma comment(linker, "/INCLUDE:_mock_impl_potrGetTracer")
-#endif /* COMPILER_MSVC */
-
 Mock_porter *_mock_porter = nullptr;
 
 Mock_porter::Mock_porter()

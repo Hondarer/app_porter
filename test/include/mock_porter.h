@@ -1,17 +1,22 @@
 #ifndef MOCK_PORTER_H
 #define MOCK_PORTER_H
 
+#include <com_util/base/platform.h>
 #include <testfw.h>
 #include <porter_type.h>
 #include <com_util/trace/tracer.h>
 
+#if defined(COMPILER_MSVC)
+#pragma comment(linker, "/INCLUDE:_mock_impl_peer_find_by_id")
+#pragma comment(linker, "/INCLUDE:_mock_impl_peer_send_fin")
+#pragma comment(linker, "/INCLUDE:_mock_impl_peer_free")
+#pragma comment(linker, "/INCLUDE:_mock_impl_potr_trace_get")
+#pragma comment(linker, "/INCLUDE:_mock_impl_potrGetTracer")
+#endif /* COMPILER_MSVC */
+
 /* 完全型不要のため前方宣言 */
 struct PotrContext_;
 typedef struct PotrPeerContext_ PotrPeerContext;
-
-// delegate_real_* 関数の前方宣言
-extern com_util_tracer_t *delegate_real_potr_trace_get(void);
-extern com_util_tracer_t *delegate_real_potrGetTracer(void);
 
 class Mock_porter
 {
