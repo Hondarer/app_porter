@@ -5,6 +5,7 @@
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
 
+#include <mock_porter.h>
 #include <porter/protocol/config.h>
 #include <config_test_helper.h>
 #include <mock_com_util.h>

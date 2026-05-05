@@ -4,8 +4,8 @@
     #define _HAS_STD_BYTE 0
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
-#include <mock_porter.h>
 
+#include <mock_porter.h>
 #include <porter/protocol/config.h>
 #include <porter_const.h>
 #include <porter_test_helper.h>
