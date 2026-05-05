@@ -4,6 +4,7 @@
 #include <com_util/base/platform.h>
 #include <testfw.h>
 #include <porter_type.h>
+#include <porter/potrContext.h>
 #include <com_util/trace/tracer.h>
 
 #if defined(COMPILER_MSVC)
@@ -13,10 +14,6 @@
 #pragma comment(linker, "/INCLUDE:_mock_impl_potr_trace_get")
 #pragma comment(linker, "/INCLUDE:_mock_impl_potrGetTracer")
 #endif /* COMPILER_MSVC */
-
-/* 完全型不要のため前方宣言 */
-struct PotrContext_;
-typedef struct PotrPeerContext_ PotrPeerContext;
 
 class Mock_porter
 {
