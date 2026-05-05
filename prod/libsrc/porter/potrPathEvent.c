@@ -15,6 +15,7 @@
 
 #include <porter_const.h>
 
+#include <com_util/sync/sync.h>
 #include <porter/potrPathEvent.h>
 #include <porter/infra/potrPlatform.h>
 
