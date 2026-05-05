@@ -5,6 +5,7 @@
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
 #include <mock_porter.h>
+#include <porter.h>
 
 MOCK_WEAK_IMPL(com_util_tracer_t *, potrGetTracer, void)
 {
