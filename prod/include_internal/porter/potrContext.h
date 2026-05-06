@@ -250,7 +250,7 @@ struct PotrContext_
     int              frag_compressed;   /**< フラグメント受信中の圧縮フラグ (非 0: 圧縮あり)。 */
     uint32_t         _pad_frag;         /**< パディング (frag_buf を 8 バイト境界に揃える)。 */
     uint8_t         *frag_buf;          /**< フラグメント結合バッファ (動的確保。max_message_size バイト)。 */
-    uint8_t         *compress_buf;      /**< 圧縮・解凍用一時バッファ (動的確保)。 */
+    uint8_t         *compress_buf;      /**< 圧縮・展開用一時バッファ (動的確保)。 */
     size_t           compress_buf_size; /**< compress_buf のサイズ (バイト)。 */
     uint8_t         *crypto_buf;        /**< 暗号化・復号用一時バッファ (動的確保)。 */
     size_t           crypto_buf_size;   /**< crypto_buf のサイズ (バイト)。 */

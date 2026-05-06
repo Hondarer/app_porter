@@ -362,7 +362,7 @@ static int n1_reorder_gap_ready(PotrPeerContext *peer, uint32_t nack_num)
     return 1;
 }
 
-/* N:1: データを解凍してコールバックに渡す */
+/* N:1: データを展開してコールバックに渡す */
 static void n1_recv_deliver(struct PotrContext_ *ctx, PotrPeerContext *peer,
                              const uint8_t *payload, size_t payload_len,
                              int compressed)
@@ -1478,7 +1478,7 @@ static void send_reject(struct PotrContext_ *ctx, uint32_t seq_num)
     }
 }
 
-/* 受信データを解凍してコールバックに渡す */
+/* 受信データを展開してコールバックに渡す */
 static void recv_deliver(struct PotrContext_ *ctx,
                          const uint8_t      *payload,
                          size_t              payload_len,
@@ -1513,7 +1513,7 @@ static void recv_deliver(struct PotrContext_ *ctx,
     }
 }
 
-/* ペイロードエレメント 1 件のフラグメント結合・解凍・コールバック処理。
+/* ペイロードエレメント 1 件のフラグメント結合・展開・コールバック処理。
    window_recv_pop で取り出した外側パケットを packet_unpack_next で展開した
    各ペイロードエレメントに対して呼び出す。 */
 static void deliver_payload_elem(struct PotrContext_ *ctx, const PotrPacket *elem)

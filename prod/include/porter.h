@@ -293,7 +293,7 @@ extern "C"
      *
      *  compress に `POTR_SEND_COMPRESS` を指定した場合、内部で圧縮処理を行ってから送信します。\n
      *  圧縮後のサイズが元のサイズ以上になった場合は、自動的に非圧縮で送信します。\n
-     *  受信側の PotrRecvCallback には、解凍済みの元メッセージが渡されます。\n
+     *  受信側の PotrRecvCallback には、展開済みの元メッセージが渡されます。\n
      *  送受信ともにフラグメント化と組み合わせて使用できます。
      *
      *  @par            ノンブロッキング送信 (flags に POTR_SEND_BLOCKING を指定しない場合)
