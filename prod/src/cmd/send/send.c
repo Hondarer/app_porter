@@ -43,6 +43,7 @@
 #include <com_util/base/platform.h>
 #include <com_util/crt/path.h>
 #include <com_util/crt/stdio.h>
+#include <com_util/runtime/shutdown.h>
 #include <inttypes.h>
 #include <signal.h>
 #include <stdio.h>
@@ -59,8 +60,10 @@
 /** 入力バッファサイズ。POTR_MAX_MESSAGE_SIZE + 改行 + NUL。 */
 #define INPUT_BUF_SIZE (POTR_MAX_MESSAGE_SIZE + 2U)
 
-/** 送信ループ継続フラグ。シグナルハンドラーで 0 に設定される。 */
+/** 送信ループ継続フラグ。終了要求 callback で 0 に設定される。 */
 static volatile int g_running = 1;
+/** 終了要求の受信有無。main 側の表示制御に使う。 */
+static volatile sig_atomic_t g_shutdown_requested = 0;
 
 /**
  *******************************************************************************
@@ -104,55 +107,24 @@ static int is_text_data(const void *data, size_t len)
     return 1;
 }
 
-#if defined(PLATFORM_LINUX)
 /**
  *******************************************************************************
- *  @brief          Linux SIGINT シグナルハンドラー。
- *  @param[in]      sig シグナル番号。
+ *  @brief          終了要求 callback。
+ *  @param[in]      event   終了イベント。
+ *  @param[in]      context 未使用。
  *******************************************************************************
  */
-static void sig_handler(int sig)
+static void send_shutdown_request_callback(const com_util_shutdown_event_t *event, void *context)
 {
-    (void)sig;
+    (void)event;
+    (void)context;
+    g_shutdown_requested = 1;
     g_running = 0;
-    printf("\n終了中...\n");
-    fflush(stdout);
-    close(STDIN_FILENO); /* fgets のブロックを解除する */
-}
-#elif defined(PLATFORM_WINDOWS)
-/**
- *******************************************************************************
- *  @brief          Windows コンソール制御イベントハンドラー。
- *  @param[in]      type    コンソール制御イベント種別。\n
- *                          (CTRL_C_EVENT / CTRL_BREAK_EVENT /
- *                           CTRL_CLOSE_EVENT / CTRL_SHUTDOWN_EVENT など)
- *  @return         イベントを処理した場合は TRUE を返します。
- *                  TRUE を返すことで既定の強制終了処理を抑止します。
- *
- *  @details
- *  GenerateConsoleCtrlEvent() や Ctrl+C / Ctrl+Break により送信される
- *  コンソール制御イベントを受信します。\n
- *  本ハンドラーでは送信ループ終了フラグをクリアし、
- *  メインスレッドに正常終了を要求します。
- *******************************************************************************
- */
-static BOOL WINAPI console_ctrl_handler(DWORD type)
-{
-    switch (type)
-    {
-    case CTRL_C_EVENT:
-    case CTRL_BREAK_EVENT:
-    case CTRL_CLOSE_EVENT:
-    case CTRL_SHUTDOWN_EVENT:
-        g_running = 0;
-        printf("\n終了中...\n");
-        fflush(stdout);
-        return TRUE;
-    }
 
-    return FALSE;
-}
+#if defined(PLATFORM_LINUX)
+    close(STDIN_FILENO); /* fgets のブロックを解除する */
 #endif /* PLATFORM_ */
+}
 
 /**
  *******************************************************************************
@@ -480,6 +452,8 @@ int main(int argc, char *argv[])
 
     config_path = argv[i];
     service_id = (int64_t)strtoll(argv[i + 1], NULL, 10);
+    g_running = 1;
+    g_shutdown_requested = 0;
 
     /* トレーサー設定 (フック経由コンソール出力) */
     if (trace_level_set)
@@ -489,11 +463,11 @@ int main(int argc, char *argv[])
         com_util_tracer_start(tracer);
     }
 
-#if defined(PLATFORM_LINUX)
-    signal(SIGINT, sig_handler);
-#elif defined(PLATFORM_WINDOWS)
-    SetConsoleCtrlHandler(console_ctrl_handler, TRUE);
-#endif /* PLATFORM_ */
+    if (com_util_shutdown_request_register(send_shutdown_request_callback, NULL) != 0)
+    {
+        fprintf(stderr, "エラー: 終了要求 callback の登録に失敗しました。\n");
+        return EXIT_FAILURE;
+    }
 
     printf("サービス %" PRId64 " を開いています... (設定: %s)\n", service_id, config_path);
     fflush(stdout);
@@ -656,6 +630,12 @@ int main(int argc, char *argv[])
         {
             break;
         }
+    }
+
+    if (g_shutdown_requested)
+    {
+        printf("\n終了中...\n");
+        fflush(stdout);
     }
 
     potrCloseService(handle);
