@@ -125,6 +125,7 @@ static vector<uint8_t> make_plain_data_packet(int64_t service_id,
     write_u32_be(packet, 28, 0U);
     write_u16_be(packet, 32, POTR_FLAG_DATA);
     write_u16_be(packet, 34, (uint16_t)packed_len);
+    write_u32_be(packet, 36, POTR_PROTOCOL_VERSION);
     write_u16_be(packet, kPacketHeaderSize, 0U);
     write_u32_be(packet, kPacketHeaderSize + 2U, (uint32_t)payload.size());
     memcpy(packet.data() + kPacketHeaderSize + POTR_PAYLOAD_ELEM_HDR_SIZE,
@@ -149,6 +150,7 @@ static vector<uint8_t> make_plain_ping_packet(int64_t service_id,
     write_u32_be(packet, 28, 0U);
     write_u16_be(packet, 32, POTR_FLAG_PING);
     write_u16_be(packet, 34, POTR_MAX_PATH);
+    write_u32_be(packet, 36, POTR_PROTOCOL_VERSION);
     return packet;
 }
 
@@ -175,6 +177,7 @@ static vector<uint8_t> make_plain_fin_packet(int64_t service_id,
     write_u32_be(packet, 28, ack_num);
     write_u16_be(packet, 32, flags);
     write_u16_be(packet, 34, 0U);
+    write_u32_be(packet, 36, POTR_PROTOCOL_VERSION);
     return packet;
 }
 
@@ -194,6 +197,7 @@ static vector<uint8_t> make_invalid_encrypted_ping_packet(int64_t service_id,
     write_u32_be(packet, 28, 0U);
     write_u16_be(packet, 32, (uint16_t)(POTR_FLAG_PING | POTR_FLAG_ENCRYPTED));
     write_u16_be(packet, 34, POTR_CRYPTO_TAG_SIZE);
+    write_u32_be(packet, 36, POTR_PROTOCOL_VERSION);
     return packet;
 }
 

@@ -45,10 +45,11 @@ static uint64_t ntoh64(uint64_t v)
 /* セッションヘッダーフィールドをパケットに NBO で書き込む */
 static void fill_session_hdr(PotrPacket *packet, const PotrPacketSessionHdr *shdr)
 {
-    packet->service_id      = (int64_t)hton64((uint64_t)shdr->service_id);
-    packet->session_tv_sec  = (int64_t)hton64((uint64_t)shdr->session_tv_sec);
-    packet->session_id      = htonl(shdr->session_id);
-    packet->session_tv_nsec = htonl((uint32_t)shdr->session_tv_nsec);
+    packet->service_id       = (int64_t)hton64((uint64_t)shdr->service_id);
+    packet->session_tv_sec   = (int64_t)hton64((uint64_t)shdr->session_tv_sec);
+    packet->session_id       = htonl(shdr->session_id);
+    packet->session_tv_nsec  = htonl((uint32_t)shdr->session_tv_nsec);
+    packet->protocol_version = htonl(POTR_PROTOCOL_VERSION);
 }
 
 /**
@@ -316,6 +317,7 @@ int packet_unpack_next(const PotrPacket *container, size_t *offset,
     elem_out->session_id      = container->session_id;
     elem_out->session_tv_sec  = container->session_tv_sec;
     elem_out->session_tv_nsec = container->session_tv_nsec;
+    elem_out->protocol_version = container->protocol_version;
     elem_out->ack_num         = 0;
     elem_out->flags           = ntohs(flags_nbo);
     elem_out->payload_len     = (uint16_t)payload_len;
@@ -359,8 +361,10 @@ int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
     memcpy(&tmp32, b + 28, 4); packet->ack_num         = ntohl(tmp32);
     memcpy(&tmp16, b + 32, 2); packet->flags           = ntohs(tmp16);
     memcpy(&tmp16, b + 34, 2); packet->payload_len     = ntohs(tmp16);
+    memcpy(&tmp32, b + 36, 4); packet->protocol_version = ntohl(tmp32);
 
-    if (packet->payload_len > POTR_MAX_PAYLOAD
+    if (packet->protocol_version != POTR_PROTOCOL_VERSION
+        || packet->payload_len > POTR_MAX_PAYLOAD
         || (size_t)packet->payload_len + PACKET_HEADER_SIZE > buf_len)
     {
         return POTR_ERROR;

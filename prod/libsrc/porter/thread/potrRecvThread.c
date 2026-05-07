@@ -2254,7 +2254,7 @@ static void recv_thread_func(void *arg)
 
                         if (get_result == POTR_SUCCESS)
                         {
-                            /* [NBO ヘッダー 36B][ペイロード] を recv_buf に組み立てる */
+                            /* [NBO ヘッダー][ペイロード] を recv_buf に組み立てる */
                             wire_len = packet_wire_size(&resend_pkt);
                             memcpy(ctx->recv_buf, &resend_pkt, PACKET_HEADER_SIZE);
                             memcpy(ctx->recv_buf + PACKET_HEADER_SIZE,

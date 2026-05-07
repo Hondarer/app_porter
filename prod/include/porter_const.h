@@ -75,6 +75,12 @@
     0x0002U /**< ペイロードが圧縮されていることを示すペイロードエレメントフラグ。圧縮はメッセージ単位で行い、全フラグメントのペイロードエレメントに設定する。先頭 4 バイトが元サイズ (NBO)、続くデータが raw DEFLATE。 */
 /** @} */
 
+/** @defgroup POTR_PROTOCOL プロトコル定数
+ *  @{
+ */
+#define POTR_PROTOCOL_VERSION 1U /**< 現行の porter ワイヤープロトコルバージョン。 */
+/** @} */
+
 /** @defgroup POTR_DEFAULT デフォルト値
  *  @{
  */

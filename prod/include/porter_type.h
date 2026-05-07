@@ -200,31 +200,31 @@ typedef struct
  *
  *  ワイヤーフォーマット (バイトオフセット):
  *  @code
-     0: service_id      (int64_t,  8 bytes)
-     8: session_tv_sec  (int64_t,  8 bytes)
-    16: session_id      (uint32_t, 4 bytes)
-    20: session_tv_nsec (int32_t,  4 bytes)
-    24: seq_num         (uint32_t, 4 bytes)
-    28: ack_num         (uint32_t, 4 bytes)
-    32: flags           (uint16_t, 2 bytes)
-    34: payload_len     (uint16_t, 2 bytes)
-    36: _reserved       (uint32_t, 4 bytes, padding)
-    40: payload         (pointer)
+     0: service_id       (int64_t,  8 bytes)
+     8: session_tv_sec   (int64_t,  8 bytes)
+    16: session_id       (uint32_t, 4 bytes)
+    20: session_tv_nsec  (int32_t,  4 bytes)
+    24: seq_num          (uint32_t, 4 bytes)
+    28: ack_num          (uint32_t, 4 bytes)
+    32: flags            (uint16_t, 2 bytes)
+    34: payload_len      (uint16_t, 2 bytes)
+    36: protocol_version (uint32_t, 4 bytes)
+    40: payload          (pointer)
  *  @endcode
  *******************************************************************************
  */
 typedef struct
 {
-    int64_t  service_id;      /**< サービス識別子 (NBO)。受信時に照合する。 */
-    int64_t  session_tv_sec;  /**< セッション開始時刻 秒部 (NBO)。struct timespec の tv_sec 相当。 */
-    uint32_t session_id;      /**< セッション識別子 (NBO)。potrOpenService 時に決定する乱数。 */
-    int32_t  session_tv_nsec; /**< セッション開始時刻 ナノ秒部 (NBO)。struct timespec の tv_nsec 相当。 */
-    uint32_t seq_num;         /**< 通番。送信側が付与する連番 (NBO)。 */
-    uint32_t ack_num;         /**< 再送要求番号 / 再送不能通番 (NBO)。NACK では要求通番、REJECT では再送不能通番を格納する。 */
-    uint16_t flags;           /**< パケット種別フラグ (POTR_FLAG_*) (NBO)。 */
-    uint16_t payload_len;     /**< ペイロード長 (バイト) (NBO)。 */
-    uint32_t _reserved;       /**< パディング (payload ポインタを 8 バイト境界に揃える)。 */
-    const uint8_t *payload;   /**< ペイロードデータへのポインタ (読み取り専用)。ウィンドウプールまたは受信バッファ内を指す。 */
+    int64_t  service_id;       /**< サービス識別子 (NBO)。受信時に照合する。 */
+    int64_t  session_tv_sec;   /**< セッション開始時刻 秒部 (NBO)。struct timespec の tv_sec 相当。 */
+    uint32_t session_id;       /**< セッション識別子 (NBO)。potrOpenService 時に決定する乱数。 */
+    int32_t  session_tv_nsec;  /**< セッション開始時刻 ナノ秒部 (NBO)。struct timespec の tv_nsec 相当。 */
+    uint32_t seq_num;          /**< 通番。送信側が付与する連番 (NBO)。 */
+    uint32_t ack_num;          /**< 再送要求番号 / 再送不能通番 (NBO)。NACK では要求通番、REJECT では再送不能通番を格納する。 */
+    uint16_t flags;            /**< パケット種別フラグ (POTR_FLAG_*) (NBO)。 */
+    uint16_t payload_len;      /**< ペイロード長 (バイト) (NBO)。 */
+    uint32_t protocol_version; /**< プロトコルバージョン (NBO)。POTR_PROTOCOL_VERSION と照合する。 */
+    const uint8_t *payload;    /**< ペイロードデータへのポインタ (読み取り専用)。ウィンドウプールまたは受信バッファ内を指す。 */
 } PotrPacket;
 
 /**
