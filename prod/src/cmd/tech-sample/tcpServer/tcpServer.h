@@ -44,7 +44,6 @@
 #elif defined(PLATFORM_WINDOWS)
 
     #include <com_util/base/windows_sdk.h>
-    #pragma comment(lib, "ws2_32.lib")
 
     /** クライアントソケットの型。Linux では int、Windows では SOCKET。 */
     typedef SOCKET  ClientFd;

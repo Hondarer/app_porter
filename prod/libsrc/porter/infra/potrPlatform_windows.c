@@ -15,8 +15,6 @@
 
 #if defined(PLATFORM_WINDOWS)
 
-    #pragma comment(lib, "ws2_32.lib")
-
     #include <porter/infra/potrPlatform.h>
 
 /* doxygen コメントは、ヘッダに記載 */

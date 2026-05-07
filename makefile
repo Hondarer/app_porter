@@ -9,8 +9,10 @@ SUBDIRS = \
 APP_NAME = $(notdir $(CURDIR))
 DOXYFW_DIR = ../../framework/doxyfw
 TESTFW_BANNER = ../../framework/testfw/bin/banner.sh
+APPDEPS_RESOLVER = ../../framework/makefw/bin/resolve_app_deps.sh
 DOXY_WARN_FILE = $(CURDIR)/doxy.warn
 BUILD_LOG = $(CURDIR)/make_build.log
+TEST_LOG = $(CURDIR)/make_test.log
 DOXY_LOG  = $(CURDIR)/make_doxy.log
 SUBDIR_TARGETS = $(addprefix __subdir__,$(SUBDIRS))
 
@@ -18,34 +20,59 @@ SUBDIR_TARGETS = $(addprefix __subdir__,$(SUBDIRS))
 
 .PHONY: default
 default:
-	@git_hash=$$(git -C "$(CURDIR)" rev-parse HEAD 2>/dev/null); \
-	git_dirty=$$(git -C "$(CURDIR)" status --porcelain --untracked-files=no 2>/dev/null); \
-	if [ -n "$$git_hash" ] && [ -z "$$git_dirty" ] && \
-	   [ -f "$(BUILD_LOG)" ] && [ "$$(cat '$(BUILD_LOG)')" = "$$git_hash" ]; then \
-		echo "INFO: Skipping build (already built at $$git_hash)"; \
+	@sig_file=$$(mktemp); \
+	if ! bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" > "$$sig_file"; then \
+		rm -f "$$sig_file"; \
+		exit 1; \
+	fi; \
+	current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); \
+	if [ "$$current_clean" = "1" ] && [ -f "$(BUILD_LOG)" ] && cmp -s "$$sig_file" "$(BUILD_LOG)"; then \
+		echo "INFO: Skipping build (dependencies are unchanged and clean)"; \
+		rm -f "$$sig_file"; \
 	else \
 		rm -f "$(BUILD_LOG)"; \
+		make_exit=0; \
 		for dir in $(SUBDIRS); do \
 			if [ -f $$dir/makefile ]; then \
 				echo $(MAKE) -C $$dir; \
-				$(MAKE) -C $$dir || exit 1; \
+				$(MAKE) -C $$dir || { make_exit=$$?; break; }; \
 			fi; \
 		done; \
-		if [ -n "$$git_hash" ] && [ -z "$$git_dirty" ]; then \
-			echo "$$git_hash" > "$(BUILD_LOG)"; \
+		if [ $$make_exit -eq 0 ] && [ "$$current_clean" = "1" ]; then \
+			cp "$$sig_file" "$(BUILD_LOG)"; \
 		fi; \
+		rm -f "$$sig_file"; \
+		if [ $$make_exit -ne 0 ]; then exit $$make_exit; fi; \
 	fi
 
 .PHONY: clean
 clean : SUBDIR_GOAL = clean
 clean : $(SUBDIR_TARGETS)
-	@rm -f "$(DOXY_WARN_FILE)" "$(BUILD_LOG)" "$(DOXY_LOG)"
+	@rm -f "$(DOXY_WARN_FILE)" "$(BUILD_LOG)" "$(TEST_LOG)" "$(DOXY_LOG)"
 
 .PHONY: test
 test :
 	@if [ -f test/makefile ]; then \
+		sig_file=$$(mktemp); \
+		if ! bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" > "$$sig_file"; then \
+			rm -f "$$sig_file"; \
+			exit 1; \
+		fi; \
+		current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); \
+		if [ "$$current_clean" = "1" ] && [ -f "$(TEST_LOG)" ] && cmp -s "$$sig_file" "$(TEST_LOG)"; then \
+			echo "INFO: Skipping test (dependencies are unchanged and clean)"; \
+			rm -f "$$sig_file"; \
+			exit 0; \
+		fi; \
+		rm -f "$(TEST_LOG)"; \
 		echo $(MAKE) -C test test; \
-		$(MAKE) -C test test || exit 1; \
+		$(MAKE) -C test test; \
+		make_exit=$$?; \
+		if [ $$make_exit -eq 0 ] && [ "$$current_clean" = "1" ]; then \
+			cp "$$sig_file" "$(TEST_LOG)"; \
+		fi; \
+		rm -f "$$sig_file"; \
+		if [ $$make_exit -ne 0 ]; then exit $$make_exit; fi; \
 	else \
 		:; # echo "Skipping directory 'test' (no makefile)"; \
 	fi

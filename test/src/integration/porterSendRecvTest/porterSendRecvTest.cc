@@ -15,7 +15,6 @@
     #include <unistd.h>
 #elif defined(PLATFORM_WINDOWS)
     #include <com_util/base/windows_sdk.h>
-    #pragma comment(lib, "ws2_32.lib")
 #endif /* PLATFORM_ */
 
 /**
