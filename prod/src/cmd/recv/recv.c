@@ -43,6 +43,7 @@
 #include <com_util/base/platform.h>
 #include <com_util/crt/path.h>
 #include <com_util/crt/stdio.h>
+#include <com_util/prompt/prompt.h>
 #include <com_util/runtime/shutdown.h>
 #include <com_util/sync/sync.h>
 #include <inttypes.h>
@@ -290,25 +291,125 @@ static int parse_trace_level(const char *str, com_util_trace_level_t *out)
 typedef struct
 {
     PotrHandle handle;
+    int64_t service_id;
     volatile int *running;
 } BidirSendCtx;
 
 /**
  *******************************************************************************
- *  @brief          標準入力から1行読み込み、末尾の改行を取り除く。
- *  @param[out]     buf     読み込み先バッファ。
- *  @param[in]      size    バッファサイズ (バイト)。
- *  @return         入力があれば 1、EOF またはエラーなら 0 を返します。
+ *  @brief          文字列先頭の空白を読み飛ばす。
+ *  @param[in]      p 文字列。
+ *  @return         空白以外の先頭位置を返します。
  *******************************************************************************
  */
-static int read_line(char *buf, size_t size)
+static char *skip_spaces(char *p)
 {
-    if (fgets(buf, (int)size, stdin) == NULL)
+    while (p != NULL && (*p == ' ' || *p == '\t'))
     {
-        return 0;
+        p++;
     }
-    buf[strcspn(buf, "\n")] = '\0';
-    return 1;
+    return p;
+}
+
+/**
+ *******************************************************************************
+ *  @brief          文字列末尾の空白を削除する。
+ *  @param[in,out]  s 文字列。
+ *******************************************************************************
+ */
+static void trim_right(char *s)
+{
+    size_t len;
+
+    if (s == NULL)
+    {
+        return;
+    }
+
+    len = strlen(s);
+    while (len > 0U && (s[len - 1U] == ' ' || s[len - 1U] == '\t'))
+    {
+        len--;
+    }
+    s[len] = '\0';
+}
+
+/**
+ *******************************************************************************
+ *  @brief          次の空白区切りトークンを取得する。
+ *  @param[in,out]  cursor 解析位置。
+ *  @return         トークン先頭。トークンがない場合は NULL。
+ *******************************************************************************
+ */
+static char *next_token(char **cursor)
+{
+    char *p;
+    char *start;
+
+    if (cursor == NULL || *cursor == NULL)
+    {
+        return NULL;
+    }
+
+    p = skip_spaces(*cursor);
+    if (*p == '\0')
+    {
+        *cursor = p;
+        return NULL;
+    }
+
+    start = p;
+    while (*p != '\0' && *p != ' ' && *p != '\t')
+    {
+        p++;
+    }
+    if (*p != '\0')
+    {
+        *p = '\0';
+        p++;
+    }
+    *cursor = p;
+    return start;
+}
+
+/**
+ *******************************************************************************
+ *  @brief          前後が同じ引用符なら引用符を外す。
+ *  @param[in,out]  value 文字列。
+ *  @return         引用符を外した文字列。
+ *******************************************************************************
+ */
+static char *strip_matching_quotes(char *value)
+{
+    size_t len;
+
+    value = skip_spaces(value);
+    trim_right(value);
+
+    len = strlen(value);
+    if (len >= 2U
+        && ((value[0] == '"' && value[len - 1U] == '"')
+            || (value[0] == '\'' && value[len - 1U] == '\'')))
+    {
+        value[len - 1U] = '\0';
+        value++;
+    }
+    return value;
+}
+
+/**
+ *******************************************************************************
+ *  @brief          対話コマンドのヘルプを表示する。
+ *******************************************************************************
+ */
+static void print_interactive_help(void)
+{
+    printf("コマンド:\n");
+    printf("  send [-c|--compress] <message>  テキストを送信します。\n");
+    printf("  file [-c|--compress] <path>     ファイルを送信します。\n");
+    printf("  help                            このヘルプを表示します。\n");
+    printf("  exit, quit                      送信を終了します。\n");
+    fflush(stdout);
 }
 
 /**
@@ -390,6 +491,129 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
     return 0;
 }
 
+/**
+ *******************************************************************************
+ *  @brief          対話コマンド 1 行を処理する。
+ *  @param[in]      handle サービスハンドル。
+ *  @param[in,out]  line   入力行。解析中に一部を書き換えます。
+ *  @return         1: 継続、0: 終了。
+ *******************************************************************************
+ */
+static int process_interactive_command(PotrHandle handle, char *line)
+{
+    char *cursor;
+    char *command;
+    char *payload;
+    unsigned char *file_data = NULL;
+    size_t file_len = 0;
+    const void *send_data;
+    size_t send_len;
+    int compress = 0;
+    int is_file;
+    const char *compress_label;
+
+    cursor = line;
+    command = next_token(&cursor);
+    if (command == NULL)
+    {
+        return 1;
+    }
+
+    if (strcmp(command, "help") == 0)
+    {
+        print_interactive_help();
+        return 1;
+    }
+    if (strcmp(command, "exit") == 0 || strcmp(command, "quit") == 0)
+    {
+        return 0;
+    }
+
+    if (strcmp(command, "send") != 0 && strcmp(command, "file") != 0)
+    {
+        fprintf(stderr, "エラー: 不明なコマンドです: %s\n", command);
+        fprintf(stderr, "help でコマンド一覧を表示します。\n");
+        return 1;
+    }
+
+    is_file = (strcmp(command, "file") == 0);
+    payload = skip_spaces(cursor);
+    if (strncmp(payload, "-c", 2) == 0
+        && (payload[2] == '\0' || payload[2] == ' ' || payload[2] == '\t'))
+    {
+        compress = 1;
+        payload = skip_spaces(payload + 2);
+    }
+    else if (strncmp(payload, "--compress", 10) == 0
+             && (payload[10] == '\0' || payload[10] == ' ' || payload[10] == '\t'))
+    {
+        compress = 1;
+        payload = skip_spaces(payload + 10);
+    }
+
+    if (is_file)
+    {
+        payload = strip_matching_quotes(payload);
+    }
+    else
+    {
+        trim_right(payload);
+    }
+
+    if (payload[0] == '\0')
+    {
+        fprintf(stderr, "エラー: %s の引数を指定してください。\n", command);
+        return 1;
+    }
+
+    if (is_file)
+    {
+        if (read_file_data(payload, &file_data, &file_len) != 0)
+        {
+            return 1;
+        }
+        send_data = file_data;
+        send_len = file_len;
+    }
+    else
+    {
+        send_data = payload;
+        send_len = strlen(payload);
+    }
+
+    compress_label = compress ? " [圧縮あり]" : "";
+    if (is_file)
+    {
+        printf("ファイル送信中: \"%s\" (%zu バイト)%s\n", payload, send_len, compress_label);
+    }
+    else
+    {
+        printf("送信中: \"%s\" (%zu バイト)%s\n", payload, send_len, compress_label);
+    }
+    fflush(stdout);
+
+    if (potrSend(handle, POTR_PEER_NA, send_data, send_len,
+                 (compress ? POTR_SEND_COMPRESS : 0) | POTR_SEND_BLOCKING) != POTR_SUCCESS)
+    {
+        fprintf(stderr, "エラー: 送信に失敗しました。\n");
+        free(file_data);
+        return 0;
+    }
+
+    if (is_file)
+    {
+        printf("ファイル送信完了: \"%s\" (%zu バイト)\n", payload, send_len);
+    }
+    else
+    {
+        printf("送信完了。\n");
+    }
+    fflush(stdout);
+
+    free(file_data);
+    return 1;
+}
+
 typedef com_util_thread_t BidirThread;
 
 /**
@@ -401,132 +625,31 @@ typedef com_util_thread_t BidirThread;
 static void bidir_send_thread_func(void *arg)
 {
     BidirSendCtx *ctx = (BidirSendCtx *)arg;
-    char msg_buf[POTR_MAX_MESSAGE_SIZE + 2U];
-    char ans_buf[8];
-    size_t msg_len;
-    int compress;
-    const char *compress_label;
+    char line[POTR_MAX_MESSAGE_SIZE + 2U];
+    com_util_prompt_t *prompt;
+
+    prompt = com_util_prompt_create(0);
+    if (prompt == NULL)
+    {
+        fprintf(stderr, "エラー: プロンプトの初期化に失敗しました。\n");
+        *ctx->running = 0;
+        return;
+    }
 
     while (*ctx->running)
     {
-        unsigned char *file_data = NULL;
-        size_t file_len = 0;
-        const void *send_data;
-        size_t send_len;
-        int is_file = 0;
-
-        printf("\n送信方法を選択してください [T: テキスト / f: ファイル]> ");
-        fflush(stdout);
-
-        if (!read_line(ans_buf, sizeof(ans_buf)))
+        if (com_util_prompt_readline_fmt(prompt, line, sizeof(line),
+                                         "porter-recv[%" PRId64 "]> ", ctx->service_id) == 0)
         {
             break;
         }
-
-        if (ans_buf[0] == 'f' || ans_buf[0] == 'F')
-        {
-            /* ファイル送信モード */
-            is_file = 1;
-
-            printf("ファイルパス> ");
-            fflush(stdout);
-
-            if (!read_line(msg_buf, sizeof(msg_buf)))
-            {
-                break;
-            }
-
-            if (strlen(msg_buf) == 0U)
-            {
-                break;
-            }
-
-            if (read_file_data(msg_buf, &file_data, &file_len) != 0)
-            {
-                goto bidir_ask_continue;
-            }
-
-            send_data = file_data;
-            send_len = file_len;
-        }
-        else
-        {
-            /* テキスト送信モード */
-            printf("メッセージ> ");
-            fflush(stdout);
-
-            if (!read_line(msg_buf, sizeof(msg_buf)))
-            {
-                break; /* EOF またはシグナル割り込み */
-            }
-
-            msg_len = strlen(msg_buf);
-            if (msg_len == 0U)
-            {
-                break; /* 空行で送信終了 */
-            }
-
-            send_data = msg_buf;
-            send_len = msg_len;
-        }
-
-        printf("圧縮送信しますか？ [y/N]> ");
-        fflush(stdout);
-
-        compress = 0;
-        if (read_line(ans_buf, sizeof(ans_buf)))
-        {
-            if (ans_buf[0] == 'y' || ans_buf[0] == 'Y')
-            {
-                compress = 1;
-            }
-        }
-
-        compress_label = compress ? " [圧縮あり]" : "";
-
-        if (is_file)
-        {
-            printf("ファイル送信中: \"%s\" (%zu バイト)%s\n", msg_buf, send_len, compress_label);
-        }
-        else
-        {
-            printf("送信中: \"%s\" (%zu バイト)%s\n", msg_buf, send_len, compress_label);
-        }
-
-        if (potrSend(ctx->handle, POTR_PEER_NA, send_data, send_len,
-                     (compress ? POTR_SEND_COMPRESS : 0) | POTR_SEND_BLOCKING) != POTR_SUCCESS)
-        {
-            fprintf(stderr, "エラー: 送信に失敗しました。\n");
-            free(file_data);
-            break;
-        }
-
-        if (is_file)
-        {
-            printf("ファイル送信完了: \"%s\" (%zu バイト)\n", msg_buf, send_len);
-        }
-        else
-        {
-            printf("送信完了。");
-        }
-
-        free(file_data);
-
-    bidir_ask_continue:
-        printf(" 続けて送信しますか？ [Y/n]> ");
-        fflush(stdout);
-
-        if (!read_line(ans_buf, sizeof(ans_buf)))
-        {
-            break;
-        }
-
-        if (ans_buf[0] == 'n' || ans_buf[0] == 'N')
+        if (!process_interactive_command(ctx->handle, line))
         {
             break;
         }
     }
 
+    com_util_prompt_dispose(prompt);
     *ctx->running = 0; /* 送信終了時に受信ループも停止させる */
     return;
 }
@@ -658,9 +781,10 @@ int main(int argc, char *argv[])
     if (is_bidir)
     {
         printf("双方向モード (unicast_bidir)。\n");
-        printf("メッセージを入力して送信できます (空行または Ctrl+D で送信終了)。\n");
+        printf("help でコマンド一覧を表示します。exit で送信を終了します。\n");
         fflush(stdout);
         bidir_ctx.handle = handle;
+        bidir_ctx.service_id = service_id;
         bidir_ctx.running = &g_running;
         if (start_bidir_send_thread(&bidir_thread, &bidir_ctx))
         {

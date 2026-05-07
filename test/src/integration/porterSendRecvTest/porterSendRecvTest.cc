@@ -356,34 +356,18 @@ TEST_F(porterSendRecvTest, send_single_message)
     // SENDER を起動して最初のプロンプトを待つ
     send_h_ = startProcessAsync(send_path, {config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);                                             // [確認] - SENDER が起動すること。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "送信方法を選択してください", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-    // [確認] - SENDER が "送信方法を選択してください" を出力すること。
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
 
     // Act
-    // テキスト送信を選択する
-    ASSERT_TRUE(writeLineStdin(send_h_, "T")); // [手順] - SENDER に "T" (テキスト) を入力する。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "メッセージ>", 3000)); // [手順] - SENDER が "メッセージ>" を出力するまで待機する。
-    // [確認] - SENDER が "メッセージ>" を出力すること。
-
-    // 対話入力を順次送り込む
-    ASSERT_TRUE(writeLineStdin(send_h_, "Hello Porter")); // [手順] - SENDER に "Hello Porter" を入力する。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか",
-                                  3000)); // [手順] - SENDER が "圧縮送信しますか" を出力するまで待機する。
-    // [確認] - SENDER が "圧縮送信しますか" を出力すること。
-
-    ASSERT_TRUE(writeLineStdin(send_h_, "N")); // [手順] - SENDER に "N" を入力する。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか",
-                                  3000)); // [手順] - SENDER が "続けて送信しますか" を出力するまで待機する。
-    // [確認] - SENDER が "続けて送信しますか" を出力すること。
+    ASSERT_TRUE(writeLineStdin(send_h_, "send Hello Porter"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "Hello Porter", 3000)); // [手順] - RECIEVER が "Hello Porter" を出力するまで待機する。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "受信 (12 バイト)", 3000)); // [手順] - RECIEVER が受信バイト数を出力するまで待機する。
 
-    writeLineStdin(send_h_, "N"); // [手順] - SENDER に "N" を入力する。
+    writeLineStdin(send_h_, "exit");
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
@@ -428,29 +412,12 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
     // [確認] - 以下を 3 回繰り返す。
     for (size_t i = 0; i < messages.size(); i++)
     {
-        ASSERT_NO_THROW(
-            waitForOutput(send_h_, "送信方法を選択してください", 3000)); // [手順]   - SENDER が送信方法選択プロンプトを出力するまで待機する。
-        // [確認]   - SENDER が "送信方法を選択してください" を出力すること。
-
-        ASSERT_TRUE(writeLineStdin(send_h_, "T")); // [手順]   - SENDER に "T" (テキスト) を入力する。
-        ASSERT_NO_THROW(
-            waitForOutput(send_h_, "メッセージ>", 3000)); // [手順]   - SENDER が "メッセージ>" を出力するまで待機する。
-        // [確認]   - SENDER が "メッセージ>" を出力すること。
-
-        ASSERT_TRUE(writeLineStdin(send_h_, messages[i])); // [手順]   - SENDER に送信メッセージ "msg{1~3}" を入力する。
-        ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか",
-                                      3000)); // [手順]   - SENDER が "圧縮送信しますか" を出力するまで待機する。
-        // [確認]   - SENDER が "圧縮送信しますか" を出力すること。
-
-        ASSERT_TRUE(writeLineStdin(send_h_, "N")); // [手順]   - SENDER に "N" を入力する。
-        ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか",
-                                      3000)); // [手順]   - SENDER が "続けて送信しますか" を出力するまで待機する。
-        // [確認]   - SENDER が "続けて送信しますか" を出力すること。
-
-        bool last = (i == messages.size() - 1);
-        ASSERT_TRUE(writeLineStdin(
-            send_h_, last ? "N" : "Y")); // [手順]   - SENDER に次の送信可否を入力する (1~2 は Y, 3 は N)。
+        ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+        ASSERT_TRUE(writeLineStdin(send_h_, string("send ") + messages[i]));
     }
+
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
@@ -539,7 +506,7 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
 
     send_h_ = startProcessAsync(send_path, {config_path, "13"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
 
     sleep_ms(250);
     EXPECT_EQ(string::npos, getStdout(recv_h_).find("接続確立"));
@@ -610,17 +577,13 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
 
     send_h_ = startProcessAsync(send_path, {config_path, "53"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "T"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "メッセージ>", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, payload));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, string("send ") + payload));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
 
     /* sender 側は追加送信せず即 close する。 */
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
     ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000));
@@ -731,18 +694,14 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
     send_h_ = startProcessAsync(send_path, {client_config_path, "54"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
     ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "T"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "メッセージ>", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, payload));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, string("send ") + payload));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知", 3000));
@@ -820,25 +779,15 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
 
     send_h_ = startProcessAsync(send_path, {"-l", "VERBOSE", config_path, "14"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "T"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "メッセージ>", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "ping-delay-1"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send ping-delay-1"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "ping-delay-1", 3000));
 
     sleep_ms(250);
-    ASSERT_TRUE(writeLineStdin(send_h_, "Y"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "T"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "メッセージ>", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "ping-delay-2"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send ping-delay-2"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "ping-delay-2", 3000));
 
     sleep_ms(250);
@@ -852,7 +801,7 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
     EXPECT_NE(string::npos,
               getStderr(send_h_).find("health[service_id=14]: PING seq="));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
     interruptProcess(recv_h_);
@@ -889,30 +838,15 @@ TEST_F(porterSendRecvTest, bidir_echo)
         waitForOutput(send_h_, "双方向モード", 5000)); // [手順] - SENDER が "双方向モード" を出力するまで待機する。
     // [確認] - SENDER が "双方向モード" を出力すること。
     ASSERT_NO_THROW(
-        waitForOutput(send_h_, "送信方法を選択してください", 3000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-    // [確認] - SENDER が "送信方法を選択してください" を出力すること。
+        waitForOutput(send_h_, "porter-send[", 3000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+    // [確認] - SENDER が "porter-send[" を出力すること。
     /* TCP は接続確立の完了後に最初の PING 周期へ入るため、UDP より少し余裕を持たせる。 */
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800));
 
     // Act
-    // テキスト送信を選択する
-    ASSERT_TRUE(writeLineStdin(send_h_, "T")); // [手順] - SENDER に "T" (テキスト) を入力する。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "メッセージ>", 3000)); // [手順] - SENDER が "メッセージ>" を出力するまで待機する。
-    // [確認] - SENDER が "メッセージ>" を出力すること。
-
-    // SENDER からメッセージを送り、RECIEVER が受信することを確認する
-    ASSERT_TRUE(writeLineStdin(send_h_, "bidir-test")); // [手順] - SENDER に "bidir-test" を入力する。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか",
-                                  3000)); // [手順] - SENDER が "圧縮送信しますか" を出力するまで待機する。
-    // [確認] - SENDER が "圧縮送信しますか" を出力すること。
-
-    ASSERT_TRUE(writeLineStdin(send_h_, "N")); // [手順] - SENDER に "N" を入力する。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか",
-                                  3000)); // [手順] - SENDER が "続けて送信しますか" を出力するまで待機する。
-    // [確認] - SENDER が "続けて送信しますか" を出力すること。
-
-    ASSERT_TRUE(writeLineStdin(send_h_, "N")); // [手順] - SENDER に "N" を入力する。
+    ASSERT_TRUE(writeLineStdin(send_h_, "send bidir-test"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
@@ -945,15 +879,11 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
 
     send_h_ = startProcessAsync(send_path, {config_path, "30"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "T"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "メッセージ>", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "encrypted-ok"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send encrypted-ok"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
@@ -1001,20 +931,16 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
     send_h_ = startProcessAsync(send_path, {client_config_path, "50"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
     ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
 
     /* 状態変化時の割り込み PING により、双方向 CONNECTED が 2 周期未満で成立することを確認する。 */
     /* TCP は接続確立の完了後に最初の PING 周期へ入るため、UDP より少し余裕を持たせる。 */
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "T"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "メッセージ>", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "n1-secure-ok"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send n1-secure-ok"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
@@ -1055,17 +981,13 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
     send_h_ = startProcessAsync(send_path, {client_config_path, "52"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
     ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 5000));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 5000));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "T"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "メッセージ>", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "n1-after-ping-ok"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send n1-after-ping-ok"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
@@ -1100,18 +1022,14 @@ TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
     send_h_ = startProcessAsync(send_path, {client_config_path, "51"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
     ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
 
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "T"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "メッセージ>", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "n1-connected-ok"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send n1-connected-ok"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
@@ -1139,18 +1057,14 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
 
     send_h_ = startProcessAsync(send_path, {"-l", "VERBOSE", config_path, "60"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
 
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "T"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "メッセージ>", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "tcp-encrypted-ok"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send tcp-encrypted-ok"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
@@ -1180,17 +1094,13 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
 
     send_h_ = startProcessAsync(send_path, {"-l", "VERBOSE", config_path, "61"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "T"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "メッセージ>", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "tcp-before-connected"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send tcp-before-connected"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
@@ -1218,19 +1128,15 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
 
     send_h_ = startProcessAsync(send_path, {"-l", "VERBOSE", config_path, "62"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "送信方法を選択してください", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000));
 
     sleep_ms(1200);
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "T"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "メッセージ>", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "tcp-timeout-ignored"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "N"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send tcp-timeout-ignored"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
@@ -1269,33 +1175,21 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
     send_h_ = startProcessAsync(send_path, {config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);                                             // [確認] - SENDER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(send_h_, "送信方法を選択してください", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-    // [確認] - SENDER が "送信方法を選択してください" を出力すること。
+        waitForOutput(send_h_, "porter-send[", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+    // [確認] - SENDER が "porter-send[" を出力すること。
 
     // Act
-    // ファイル送信を選択する
-    ASSERT_TRUE(writeLineStdin(send_h_, "f")); // [手順] - SENDER に "f" (ファイル) を入力する。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "ファイルパス>", 3000)); // [手順] - SENDER が "ファイルパス>" を出力するまで待機する。
-    // [確認] - SENDER が "ファイルパス>" を出力すること。
-
-    ASSERT_TRUE(writeLineStdin(send_h_, bin_path)); // [手順] - SENDER にバイナリファイルのパスを入力する。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか",
-                                  3000)); // [手順] - SENDER が "圧縮送信しますか" を出力するまで待機する。
-    // [確認] - SENDER が "圧縮送信しますか" を出力すること。
-
-    ASSERT_TRUE(writeLineStdin(send_h_, "N")); // [手順] - SENDER に "N" を入力する。
+    ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + bin_path));
     ASSERT_NO_THROW(waitForOutput(send_h_, "ファイル送信完了",
                                   3000)); // [手順] - SENDER が "ファイル送信完了" を出力するまで待機する。
     // [確認] - SENDER が "ファイル送信完了" を出力すること。
 
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか",
-                                  3000)); // [手順] - SENDER が "続けて送信しますか" を出力するまで待機する。
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "バイナリデータを保存しました", 3000)); // [手順] - RECIEVER が保存メッセージを出力するまで待機する。
 
-    writeLineStdin(send_h_, "N"); // [手順] - SENDER に "N" を入力する。
+    writeLineStdin(send_h_, "exit");
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
@@ -1332,28 +1226,17 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
     send_h_ = startProcessAsync(send_path, {config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);                                             // [確認] - SENDER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(send_h_, "送信方法を選択してください", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-    // [確認] - SENDER が "送信方法を選択してください" を出力すること。
+        waitForOutput(send_h_, "porter-send[", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+    // [確認] - SENDER が "porter-send[" を出力すること。
 
     // Act
-    // テキスト送信を選択する
-    ASSERT_TRUE(writeLineStdin(send_h_, "T")); // [手順] - SENDER に "T" (テキスト) を入力する。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "メッセージ>", 3000)); // [手順] - SENDER が "メッセージ>" を出力するまで待機する。
-    // [確認] - SENDER が "メッセージ>" を出力すること。
-
-    ASSERT_TRUE(writeLineStdin(send_h_, "Hello Text")); // [手順] - SENDER に "Hello Text" を入力する。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "圧縮送信しますか",
-                                  3000)); // [手順] - SENDER が "圧縮送信しますか" を出力するまで待機する。
-
-    ASSERT_TRUE(writeLineStdin(send_h_, "N")); // [手順] - SENDER に "N" を入力する。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか",
-                                  3000)); // [手順] - SENDER が "続けて送信しますか" を出力するまで待機する。
+    ASSERT_TRUE(writeLineStdin(send_h_, "send Hello Text"));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "Hello Text", 3000)); // [手順] - RECIEVER が "Hello Text" を出力するまで待機する。
 
-    writeLineStdin(send_h_, "N"); // [手順] - SENDER に "N" を入力する。
+    writeLineStdin(send_h_, "exit");
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
@@ -1388,22 +1271,14 @@ TEST_F(porterSendRecvTest, send_file_too_large_fails)
     send_h_ = startProcessAsync(send_path, {config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);                                             // [確認] - SENDER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(send_h_, "送信方法を選択してください", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+        waitForOutput(send_h_, "porter-send[", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
 
     // Act
-    // ファイル送信を選択し、サイズ超過ファイルのパスを入力する
-    ASSERT_TRUE(writeLineStdin(send_h_, "f")); // [手順] - SENDER に "f" (ファイル) を入力する。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "ファイルパス>", 3000)); // [手順] - SENDER が "ファイルパス>" を出力するまで待機する。
-
-    ASSERT_TRUE(writeLineStdin(send_h_, large_path)); // [手順] - SENDER にサイズ超過ファイルのパスを入力する。
-
-    // エラーメッセージ出力後に「続けて送信しますか」プロンプトが表示されるはず
-    ASSERT_NO_THROW(waitForOutput(send_h_, "続けて送信しますか",
-                                  3000)); // [手順] - SENDER が "続けて送信しますか" を出力するまで待機する。
+    ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + large_path));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
     // [確認] - SENDER がエラー後も対話を継続していること。
 
-    writeLineStdin(send_h_, "N"); // [手順] - SENDER に "N" を入力する。
+    writeLineStdin(send_h_, "exit");
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
