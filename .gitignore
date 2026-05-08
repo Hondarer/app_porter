@@ -39,6 +39,7 @@ coverage.xml
 
 ## ビルド/Doxy スキップ用ログ
 make_build.log
+make_test.log
 make_doxy.log
 
 ## 中間ファイル (Doxygen)
