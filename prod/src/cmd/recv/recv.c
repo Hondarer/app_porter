@@ -614,7 +614,7 @@ static int process_interactive_command(PotrHandle handle, char *line)
     return 1;
 }
 
-typedef com_util_thread_t BidirThread;
+typedef com_util_thread_t * BidirThread;
 
 /**
  *******************************************************************************
@@ -675,9 +675,9 @@ static int start_bidir_send_thread(BidirThread *thread, BidirSendCtx *ctx)
  */
 static void join_bidir_send_thread(BidirThread *thread)
 {
-    if (com_util_thread_join_timed(thread, 500) != 0)
+    if (com_util_thread_join(*thread, 500) != 0)
     {
-        com_util_thread_detach(thread);
+        com_util_thread_detach(*thread);
     }
 }
 

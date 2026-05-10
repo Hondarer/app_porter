@@ -379,7 +379,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n,
         ConnectNamedPipe(workers[i].pipe, NULL);
 
         /* 監視スレッド起動 */
-        com_util_thread_t monitor_thread;
+        com_util_thread_t * monitor_thread;
 
         args[i].id               = i;
         args[i].workers          = workers;
@@ -390,7 +390,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n,
             free(args);
             exit(1);
         }
-        com_util_thread_detach(&monitor_thread);
+        com_util_thread_detach(monitor_thread);
 
         printf("[親プロセス] ワーカー %d (PID %lu) 起動完了\n", i, pi.dwProcessId);
     }

@@ -141,7 +141,7 @@ typedef struct PotrPeerContext_
 
     /* 送受信ウィンドウ (ピアごと独立) */
     PotrWindow send_window;        /**< 送信ウィンドウ (NACK 再送用)。 */
-    com_util_mutex_t  send_window_mutex;  /**< send_window 保護 (送信・受信・ヘルスチェックスレッド競合)。 */
+    com_util_local_lock_t *  send_window_mutex;  /**< send_window 保護 (送信・受信・ヘルスチェックスレッド競合)。 */
     PotrWindow recv_window;        /**< 受信ウィンドウ (順序整列)。 */
     int        send_has_data;      /**< 現セッションで DATA を 1 件以上送信済みか (1: 送信済み, 0: 未送信)。 */
     uint32_t   _pad_send_has_data; /**< パディング。 */
@@ -191,16 +191,16 @@ typedef struct PotrPeerContext_
 struct PotrContext_
 {
     PotrRecvCallback callback;                         /**< 受信コールバック。 */
-    com_util_mutex_t        callback_mutex;                   /**< コールバック直列化用ミューテックス。 */
-    com_util_thread_t       recv_thread[POTR_MAX_PATH];       /**< 受信スレッドハンドル (path ごと)。 */
-    com_util_thread_t       health_thread[POTR_MAX_PATH];     /**< ヘルスチェックスレッドハンドル (path ごと、TCP: 全ロール)。 */
-    com_util_mutex_t        health_mutex[POTR_MAX_PATH];      /**< ヘルスチェックスレッド停止用ミューテックス (path ごと)。 */
-    com_util_condvar_t      health_wakeup[POTR_MAX_PATH];     /**< ヘルスチェックスレッドを即時起床させる条件変数 (path ごと)。 */
+    com_util_local_lock_t *        callback_mutex;                   /**< コールバック直列化用ミューテックス。 */
+    com_util_thread_t *       recv_thread[POTR_MAX_PATH];       /**< 受信スレッドハンドル (path ごと)。 */
+    com_util_thread_t *       health_thread[POTR_MAX_PATH];     /**< ヘルスチェックスレッドハンドル (path ごと、TCP: 全ロール)。 */
+    com_util_local_lock_t *        health_mutex[POTR_MAX_PATH];      /**< ヘルスチェックスレッド停止用ミューテックス (path ごと)。 */
+    com_util_condvar_t *      health_wakeup[POTR_MAX_PATH];     /**< ヘルスチェックスレッドを即時起床させる条件変数 (path ごと)。 */
     PotrServiceDef   service;      /**< サービス定義。 */
     PotrGlobalConfig global;       /**< プロトコル別のグローバル既定値。 */
     uint32_t         health_interval_ms; /**< 通信種別とサービス上書きを解決した実効 PING 送信間隔。 */
     PotrWindow       send_window;       /**< 送信バッファ (過去 N パケット保持。NACK 再送・REJECT 判定に使用)。 */
-    com_util_mutex_t        send_window_mutex; /**< send_window 保護用ミューテックス (送信スレッド・ヘルスチェックスレッド・受信スレッドが競合するため)。 */
+    com_util_local_lock_t *        send_window_mutex; /**< send_window 保護用ミューテックス (送信スレッド・ヘルスチェックスレッド・受信スレッドが競合するため)。 */
     PotrWindow       recv_window;       /**< 受信ウィンドウ (順序整列・欠番検出)。 */
     uint32_t         health_timeout_ms;  /**< 通信種別とサービス上書きを解決した実効受信タイムアウト。 */
 
@@ -258,7 +258,7 @@ struct PotrContext_
     uint8_t         *send_wire_buf;     /**< 送信 wire 組立バッファ (動的確保。PACKET_HEADER_SIZE + max_payload バイト)。送信スレッドのみ使用。 */
 
     /* 非同期送信 (POTR_ROLE_SENDER のみ使用) */
-    com_util_thread_t        send_thread;          /**< 送信スレッドハンドル。 */
+    com_util_thread_t *        send_thread;          /**< 送信スレッドハンドル。 */
     volatile int      send_thread_running;  /**< 送信スレッド実行フラグ (1: 実行中, 0: 停止)。 */
     uint32_t          _pad_send_thread;     /**< パディング (nack_dedup_buf を 8 バイト境界に揃える)。 */
 
@@ -293,7 +293,7 @@ struct PotrContext_
     PotrPeerContext *peers;            /**< ピアテーブル (動的確保。max_peers エントリ)。 */
     int              max_peers;      /**< ピアテーブルサイズ (service.max_peers から取得)。 */
     int              n_peers;        /**< 現在の接続ピア数。 */
-    com_util_mutex_t        peers_mutex;    /**< ピアテーブル保護用ミューテックス。 */
+    com_util_local_lock_t *        peers_mutex;    /**< ピアテーブル保護用ミューテックス。 */
     uint32_t         next_peer_id;   /**< 次に発行するピア ID (単調増加、初期値 1)。 */
 
     /* --- TCP 接続管理 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR のみ有効) --- */
@@ -301,20 +301,20 @@ struct PotrContext_
     PotrSocket         tcp_conn_fd[POTR_MAX_PATH];     /**< アクティブ TCP 接続 fd (path ごと)。 */
     volatile int       tcp_active_paths;               /**< アクティブ TCP path 数 (0 = 全切断)。 */
     uint32_t           _pad_tcp_connected[2];          /**< パディング (tcp_send_mutex を 8 バイト境界に揃える。8 バイト確保)。 */
-    com_util_mutex_t          tcp_send_mutex[POTR_MAX_PATH];  /**< TCP send() 排他制御 (path ごと)。送信スレッド・ヘルスチェックスレッド・recv スレッド競合防止。 */
+    com_util_local_lock_t *          tcp_send_mutex[POTR_MAX_PATH];  /**< TCP send() 排他制御 (path ごと)。送信スレッド・ヘルスチェックスレッド・recv スレッド競合防止。 */
 
     /* recv_window 保護 (TCP v2: 複数 recv スレッドが同一 recv_window にアクセスするため) */
-    com_util_mutex_t          recv_window_mutex;              /**< recv_window 保護用ミューテックス。 */
+    com_util_local_lock_t *          recv_window_mutex;              /**< recv_window 保護用ミューテックス。 */
 
     /* connect/accept スレッド */
-    com_util_thread_t         connect_thread[POTR_MAX_PATH];         /**< SENDER: connect スレッド。RECEIVER: accept スレッド。path ごと。 */
+    com_util_thread_t *         connect_thread[POTR_MAX_PATH];         /**< SENDER: connect スレッド。RECEIVER: accept スレッド。path ごと。 */
     volatile int       connect_thread_running[POTR_MAX_PATH]; /**< connect スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。 */
 
     /* 切断通知 (recv/health スレッド → connect スレッドへの通知) */
-    com_util_mutex_t          tcp_state_mutex;            /**< tcp_state_cv 保護用ミューテックス。tcp_active_paths のカウンタ更新も保護。 */
-    com_util_condvar_t        tcp_state_cv;               /**< 切断通知・reconnect sleep の中断用条件変数。 */
-    com_util_mutex_t          tcp_close_mutex;            /**< tcp_close_cv 保護用ミューテックス。 */
-    com_util_condvar_t        tcp_close_cv;               /**< FIN_ACK 待機解除用条件変数。 */
+    com_util_local_lock_t *          tcp_state_mutex;            /**< tcp_state_cv 保護用ミューテックス。tcp_active_paths のカウンタ更新も保護。 */
+    com_util_condvar_t *        tcp_state_cv;               /**< 切断通知・reconnect sleep の中断用条件変数。 */
+    com_util_local_lock_t *          tcp_close_mutex;            /**< tcp_close_cv 保護用ミューテックス。 */
+    com_util_condvar_t *        tcp_close_cv;               /**< FIN_ACK 待機解除用条件変数。 */
 
     /* PING 受信追跡 (TCP recv スレッドが参照・更新。両端 PING 受信タイムアウト監視に使用) */
     volatile uint64_t  tcp_last_ping_recv_ms[POTR_MAX_PATH]; /**< TCP PING 最終受信時刻 (ms, CLOCK_MONOTONIC 基準)。path ごと。接続確立時に現在時刻で初期化。受信タイムアウト判定に使用。 */
@@ -325,7 +325,7 @@ struct PotrContext_
     /* TCP セッション確立排他制御 (RECEIVER TCP のみ使用)。
      * 複数 path の accept スレッドが並行して session_id 判定を行う際の競合を防ぐ。
      * potr_connect_thread_start で初期化、potr_connect_thread_stop で破棄する。 */
-    com_util_mutex_t          session_establish_mutex;
+    com_util_local_lock_t *          session_establish_mutex;
 
     /* TCP 先読みバッファ (path ごと)。
      * accept スレッドが session 判定のために読み取った最初の 1 パケット分のバイト列を

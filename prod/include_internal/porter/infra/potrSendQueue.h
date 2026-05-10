@@ -69,10 +69,10 @@ typedef struct
     size_t           tail;         /**< 書き込み位置 (potrSend 呼び出し元が使用)。 */
     size_t           count;        /**< キュー内エントリ数。 */
     size_t           inflight;     /**< sendto 実行中エントリ数。 */
-    com_util_mutex_t        mutex;        /**< 排他制御。 */
-    com_util_condvar_t      not_empty;    /**< count > 0 になったことを通知する条件変数。 */
-    com_util_condvar_t      not_full;     /**< count + inflight < depth になったことを通知する条件変数。 */
-    com_util_condvar_t      drained;      /**< count == 0 && inflight == 0 を通知する条件変数。 */
+    com_util_local_lock_t *        mutex;        /**< 排他制御。 */
+    com_util_condvar_t *      not_empty;    /**< count > 0 になったことを通知する条件変数。 */
+    com_util_condvar_t *      not_full;     /**< count + inflight < depth になったことを通知する条件変数。 */
+    com_util_condvar_t *      drained;      /**< count == 0 && inflight == 0 を通知する条件変数。 */
 } PotrSendQueue;
 
 #ifdef __cplusplus

@@ -40,12 +40,12 @@ static int any_path_alive(const int *states)
 
 void potr_callback_mutex_init(struct PotrContext_ *ctx)
 {
-    com_util_mutex_init(&ctx->callback_mutex);
+    com_util_local_lock_create(&ctx->callback_mutex);
 }
 
 void potr_callback_mutex_dispose(struct PotrContext_ *ctx)
 {
-    com_util_mutex_destroy(&ctx->callback_mutex);
+    com_util_local_lock_destroy(ctx->callback_mutex);
 }
 
 void potr_callback_emit_locked(struct PotrContext_ *ctx, PotrPeerId peer_id,
@@ -65,9 +65,9 @@ void potr_callback_emit(struct PotrContext_ *ctx, PotrPeerId peer_id,
         return;
     }
 
-    com_util_mutex_lock(&ctx->callback_mutex);
+    com_util_local_lock_lock(ctx->callback_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     potr_callback_emit_locked(ctx, peer_id, event, data, len);
-    com_util_mutex_unlock(&ctx->callback_mutex);
+    com_util_local_lock_unlock(ctx->callback_mutex);
 }
 
 void potr_zero_path_states(int *states)
