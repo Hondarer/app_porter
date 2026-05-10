@@ -7,7 +7,8 @@ SUBDIRS = \
 	test
 
 APP_NAME = $(notdir $(CURDIR))
-DOXYFW_DIR = ../../framework/doxyfw
+MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+WORKSPACE_DIR ?= $(abspath $(MAKEFILE_DIR)/../..)
 TESTFW_BANNER = ../../framework/testfw/bin/banner.sh
 APPDEPS_RESOLVER = ../../framework/makefw/bin/resolve_app_deps.sh
 DOXY_WARN_FILE = $(CURDIR)/doxy.warn
@@ -15,6 +16,9 @@ BUILD_LOG = $(CURDIR)/make_build.log
 TEST_LOG = $(CURDIR)/make_test.log
 DOXY_LOG  = $(CURDIR)/make_doxy.log
 SUBDIR_TARGETS = $(addprefix __subdir__,$(SUBDIRS))
+
+export WORKSPACE_DIR
+export DOXYFW_HOME
 
 .DEFAULT_GOAL := default
 
@@ -80,7 +84,11 @@ test :
 .PHONY: doxy
 doxy :
 	@if [ -f Doxyfile.part ]; then \
-		if [ -d $(DOXYFW_DIR) ] && [ -f $(DOXYFW_DIR)/makefile ]; then \
+		if [ -z "$(DOXYFW_HOME)" ]; then \
+			echo "ERROR: DOXYFW_HOME is not defined."; \
+			exit 1; \
+		fi; \
+		if [ -d "$(DOXYFW_HOME)" ] && [ -f "$(DOXYFW_HOME)/makefile" ]; then \
 			git_hash=$$(git -C "$(CURDIR)" rev-parse HEAD 2>/dev/null); \
 			git_dirty=$$(git -C "$(CURDIR)" status --porcelain --untracked-files=no 2>/dev/null); \
 			if [ -n "$$git_hash" ] && [ -z "$$git_dirty" ] && \
@@ -88,9 +96,9 @@ doxy :
 				echo "INFO: Skipping doxy (already generated at $$git_hash)"; \
 			else \
 				rm -f "$(DOXY_LOG)"; \
-				echo $(MAKE) -C $(DOXYFW_DIR) CATEGORY=$(APP_NAME); \
+				echo $(MAKE) -C "$(DOXYFW_HOME)" CATEGORY=$(APP_NAME); \
 				rm -f "$(DOXY_WARN_FILE)"; \
-				$(MAKE) -C $(DOXYFW_DIR) CATEGORY=$(APP_NAME); \
+				$(MAKE) -C "$(DOXYFW_HOME)" CATEGORY=$(APP_NAME); \
 				MAKE_EXIT=$$?; \
 				if [ -z "$(SUPPRESS_DOXY_WARN_PRINT)" ] && [ -s "$(DOXY_WARN_FILE)" ]; then \
 					printf '\n'; \
@@ -108,7 +116,7 @@ doxy :
 				if [ $$MAKE_EXIT -ne 0 ]; then exit $$MAKE_EXIT; fi; \
 			fi; \
 		else \
-			:; # echo "INFO: $(DOXYFW_DIR) directory not found, skipping."; \
+			:; # echo "INFO: $(DOXYFW_HOME) directory not found, skipping."; \
 		fi; \
 	else \
 		:; # echo "INFO: Doxygen is not configured for $(APP_NAME), skipping."; \
