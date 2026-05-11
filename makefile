@@ -9,7 +9,8 @@ SUBDIRS = \
 APP_NAME = $(notdir $(CURDIR))
 MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 WORKSPACE_DIR ?= $(abspath $(MAKEFILE_DIR)/../..)
-TESTFW_BANNER = ../../framework/testfw/bin/banner.sh
+TESTFW_HOME   ?= $(WORKSPACE_DIR)/framework/testfw
+TESTFW_BANNER = $(TESTFW_HOME)/bin/banner.sh
 APPDEPS_RESOLVER = ../../framework/makefw/bin/resolve_app_deps.sh
 DOXY_WARN_FILE = $(CURDIR)/doxy.warn
 BUILD_LOG = $(CURDIR)/make_build.log
@@ -19,6 +20,7 @@ SUBDIR_TARGETS = $(addprefix __subdir__,$(SUBDIRS))
 
 export WORKSPACE_DIR
 export DOXYFW_HOME
+export TESTFW_HOME
 
 .DEFAULT_GOAL := default
 
