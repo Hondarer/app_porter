@@ -21,7 +21,12 @@
 
 static int path_state_is_normal(uint8_t state)
 {
-    return state == POTR_PING_STATE_NORMAL ? 1 : 0;
+    if (state == POTR_PING_STATE_NORMAL)
+    {
+        return 1;
+    }
+
+    return 0;
 }
 
 static int any_path_alive(const int *states)
@@ -130,7 +135,14 @@ void potr_sync_service_path_state_locked(struct PotrContext_   *ctx,
     memset(prepared, 0, sizeof(*prepared));
     memcpy(prepared->final_states, next_states, sizeof(prepared->final_states));
 
-    old_alive = ctx->health_alive ? 1 : 0;
+    if (ctx->health_alive)
+    {
+        old_alive = 1;
+    }
+    else
+    {
+        old_alive = 0;
+    }
     new_alive = any_path_alive(next_states);
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
@@ -141,8 +153,14 @@ void potr_sync_service_path_state_locked(struct PotrContext_   *ctx,
         }
 
         prepared->changed_paths[prepared->changed_count] = k;
-        prepared->changed_events[prepared->changed_count] =
-            next_states[k] ? POTR_EVENT_PATH_CONNECTED : POTR_EVENT_PATH_DISCONNECTED;
+        if (next_states[k] != 0)
+        {
+            prepared->changed_events[prepared->changed_count] = POTR_EVENT_PATH_CONNECTED;
+        }
+        else
+        {
+            prepared->changed_events[prepared->changed_count] = POTR_EVENT_PATH_DISCONNECTED;
+        }
         prepared->changed_count++;
     }
 
@@ -151,8 +169,14 @@ void potr_sync_service_path_state_locked(struct PotrContext_   *ctx,
 
     if (old_alive != new_alive)
     {
-        prepared->session_event = new_alive ? POTR_EVENT_CONNECTED
-                                            : POTR_EVENT_DISCONNECTED;
+        if (new_alive != 0)
+        {
+            prepared->session_event = POTR_EVENT_CONNECTED;
+        }
+        else
+        {
+            prepared->session_event = POTR_EVENT_DISCONNECTED;
+        }
     }
 }
 
@@ -167,7 +191,14 @@ void potr_sync_peer_path_state_locked(PotrPeerContext         *peer,
     memset(prepared, 0, sizeof(*prepared));
     memcpy(prepared->final_states, next_states, sizeof(prepared->final_states));
 
-    old_alive = peer->health_alive ? 1 : 0;
+    if (peer->health_alive)
+    {
+        old_alive = 1;
+    }
+    else
+    {
+        old_alive = 0;
+    }
     new_alive = any_path_alive(next_states);
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
@@ -178,8 +209,14 @@ void potr_sync_peer_path_state_locked(PotrPeerContext         *peer,
         }
 
         prepared->changed_paths[prepared->changed_count] = k;
-        prepared->changed_events[prepared->changed_count] =
-            next_states[k] ? POTR_EVENT_PATH_CONNECTED : POTR_EVENT_PATH_DISCONNECTED;
+        if (next_states[k] != 0)
+        {
+            prepared->changed_events[prepared->changed_count] = POTR_EVENT_PATH_CONNECTED;
+        }
+        else
+        {
+            prepared->changed_events[prepared->changed_count] = POTR_EVENT_PATH_DISCONNECTED;
+        }
         prepared->changed_count++;
     }
 
@@ -188,8 +225,14 @@ void potr_sync_peer_path_state_locked(PotrPeerContext         *peer,
 
     if (old_alive != new_alive)
     {
-        prepared->session_event = new_alive ? POTR_EVENT_CONNECTED
-                                            : POTR_EVENT_DISCONNECTED;
+        if (new_alive != 0)
+        {
+            prepared->session_event = POTR_EVENT_CONNECTED;
+        }
+        else
+        {
+            prepared->session_event = POTR_EVENT_DISCONNECTED;
+        }
     }
 }
 

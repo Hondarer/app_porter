@@ -153,18 +153,48 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
 
     case POTR_EVENT_PATH_CONNECTED:
     case POTR_EVENT_PATH_DISCONNECTED:
+    {
+        const char *event_str;
+        int path_state0;
+        int path_state1;
+        int path_state2;
+        int path_state3;
+
         path_states = (const int *)data;
         path_idx    = (int)len;
+        if (event == POTR_EVENT_PATH_CONNECTED)
+        {
+            event_str = "CONNECTED";
+        }
+        else
+        {
+            event_str = "DISCONNECTED";
+        }
+        if (path_states != NULL)
+        {
+            path_state0 = path_states[0];
+            path_state1 = path_states[1];
+            path_state2 = path_states[2];
+            path_state3 = path_states[3];
+        }
+        else
+        {
+            path_state0 = 0;
+            path_state1 = 0;
+            path_state2 = 0;
+            path_state3 = 0;
+        }
         printf("[サービス %" PRId64 "] path[%d] %s states={%d,%d,%d,%d}\n",
                service_id,
                path_idx,
-               (event == POTR_EVENT_PATH_CONNECTED) ? "CONNECTED" : "DISCONNECTED",
-               path_states != NULL ? path_states[0] : 0,
-               path_states != NULL ? path_states[1] : 0,
-               path_states != NULL ? path_states[2] : 0,
-               path_states != NULL ? path_states[3] : 0);
+               event_str,
+               path_state0,
+               path_state1,
+               path_state2,
+               path_state3);
         fflush(stdout);
         break;
+    }
 
     case POTR_EVENT_DATA:
     default:
@@ -268,7 +298,14 @@ static int parse_trace_level(const char *str, com_util_trace_level_t *out)
 
     for (j = 0; j < sizeof(upper) - 1U && str[j] != '\0'; j++)
     {
-        upper[j] = (str[j] >= 'a' && str[j] <= 'z') ? (char)(str[j] - ('a' - 'A')) : str[j];
+        if (str[j] >= 'a' && str[j] <= 'z')
+        {
+            upper[j] = (char)(str[j] - ('a' - 'A'));
+        }
+        else
+        {
+            upper[j] = str[j];
+        }
     }
     upper[j] = '\0';
 
@@ -581,7 +618,14 @@ static int process_interactive_command(PotrHandle handle, char *line)
         send_len = strlen(payload);
     }
 
-    compress_label = compress ? " [圧縮あり]" : "";
+    if (compress)
+    {
+        compress_label = " [圧縮あり]";
+    }
+    else
+    {
+        compress_label = "";
+    }
     if (is_file)
     {
         printf("ファイル送信中: \"%s\" (%zu バイト)%s\n", payload, send_len, compress_label);
@@ -592,12 +636,25 @@ static int process_interactive_command(PotrHandle handle, char *line)
     }
     fflush(stdout);
 
-    if (potrSend(handle, POTR_PEER_NA, send_data, send_len,
-                 (compress ? POTR_SEND_COMPRESS : 0) | POTR_SEND_BLOCKING) != POTR_SUCCESS)
+    if (compress)
     {
-        fprintf(stderr, "エラー: 送信に失敗しました。\n");
-        free(file_data);
-        return 0;
+        if (potrSend(handle, POTR_PEER_NA, send_data, send_len,
+                     POTR_SEND_COMPRESS | POTR_SEND_BLOCKING) != POTR_SUCCESS)
+        {
+            fprintf(stderr, "エラー: 送信に失敗しました。\n");
+            free(file_data);
+            return 0;
+        }
+    }
+    else
+    {
+        if (potrSend(handle, POTR_PEER_NA, send_data, send_len,
+                     POTR_SEND_BLOCKING) != POTR_SUCCESS)
+        {
+            fprintf(stderr, "エラー: 送信に失敗しました。\n");
+            free(file_data);
+            return 0;
+        }
     }
 
     if (is_file)

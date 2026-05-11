@@ -178,7 +178,12 @@ static int send_tcp_control_packet(struct PotrContext_ *ctx, PotrPacket *pkt,
         }
     }
 
-    return sent_any ? POTR_SUCCESS : POTR_ERROR;
+    if (sent_any)
+    {
+        return POTR_SUCCESS;
+    }
+
+    return POTR_ERROR;
 }
 
 static void notify_tcp_close_ack_received(struct PotrContext_ *ctx, uint32_t fin_target_seq)
@@ -404,7 +409,14 @@ static void n1_deliver_payload_elem(struct PotrContext_ *ctx, PotrPeerContext *p
         {
             if (peer->frag_buf_len == 0)
             {
-                peer->frag_compressed = (elem->flags & POTR_FLAG_COMPRESSED) ? 1 : 0;
+                if ((elem->flags & POTR_FLAG_COMPRESSED) != 0)
+                {
+                    peer->frag_compressed = 1;
+                }
+                else
+                {
+                    peer->frag_compressed = 0;
+                }
             }
             memcpy(peer->frag_buf + peer->frag_buf_len,
                    elem->payload, elem->payload_len);
@@ -437,8 +449,18 @@ static void n1_deliver_payload_elem(struct PotrContext_ *ctx, PotrPeerContext *p
     {
         if (ctx->callback != NULL)
         {
+            int elem_compressed;
+
+            if ((elem->flags & POTR_FLAG_COMPRESSED) != 0)
+            {
+                elem_compressed = 1;
+            }
+            else
+            {
+                elem_compressed = 0;
+            }
             n1_recv_deliver(ctx, peer, elem->payload, (size_t)elem->payload_len,
-                            (elem->flags & POTR_FLAG_COMPRESSED) ? 1 : 0);
+                            elem_compressed);
         }
     }
 }
@@ -599,7 +621,12 @@ static int n1_check_and_update_session(struct PotrContext_ *ctx,
     }
     else
     {
-        return (pkt->session_id == peer->peer_session_id) ? 1 : 0;
+        if (pkt->session_id == peer->peer_session_id)
+        {
+            return 1;
+        }
+
+        return 0;
     }
 
     peer->peer_session_id      = pkt->session_id;
@@ -834,8 +861,14 @@ static int recv_authenticate_packet(struct PotrContext_ *ctx,
         uint16_t flags_nbo = htons((uint16_t)pkt->flags);
         uint32_t val_nbo;
 
-        val = (pkt->flags & (POTR_FLAG_NACK | POTR_FLAG_REJECT | POTR_FLAG_FIN_ACK))
-              ? pkt->ack_num : pkt->seq_num;
+        if ((pkt->flags & (POTR_FLAG_NACK | POTR_FLAG_REJECT | POTR_FLAG_FIN_ACK)) != 0)
+        {
+            val = pkt->ack_num;
+        }
+        else
+        {
+            val = pkt->seq_num;
+        }
         val_nbo = htonl(val);
 
         memcpy(nonce,      &sid_nbo,   4);
@@ -886,7 +919,13 @@ static int check_src_addr(const struct PotrContext_ *ctx,
     if (ctx->is_multi_peer)
     {
         if (ctx->service.src_port != 0)
-            return (ntohs(sender->sin_port) == ctx->service.src_port) ? 1 : 0;
+        {
+            if (ntohs(sender->sin_port) == ctx->service.src_port)
+            {
+                return 1;
+            }
+            return 0;
+        }
         return 1;
     }
 
@@ -2144,10 +2183,19 @@ static void recv_thread_func(void *arg)
 
                 n1_update_path_recv(peer, &sender_addr, i);
 
+                const char *pkt_kind_str;
+                if ((pkt.flags & POTR_FLAG_PING) != 0)
+                {
+                    pkt_kind_str = "PING";
+                }
+                else
+                {
+                    pkt_kind_str = "DATA";
+                }
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
                          "recv[service_id=%" PRId64 "]: peer=%u %s seq=%u",
                          ctx->service.service_id, (unsigned)peer->peer_id,
-                         (pkt.flags & POTR_FLAG_PING) ? "PING" : "DATA",
+                         pkt_kind_str,
                          (unsigned)pkt.seq_num);
 
                 if (pkt.flags & POTR_FLAG_PING)
@@ -2538,16 +2586,38 @@ static void tcp_recv_thread_func(void *arg)
      * 定周期 PING を送る構成でのみ有効とする。 */
     int      use_recv_timeout = (ctx->health_interval_ms > 0 && ctx->health_timeout_ms > 0);
     /* ポーリング間隔: 1 秒単位でチェックし、health_timeout_ms を超えないようにする。 */
-    uint32_t poll_ms = use_recv_timeout
-                       ? (ctx->health_timeout_ms < 1000U
-                          ? ctx->health_timeout_ms
-                          : 1000U)
-                       : 0U;
+    uint32_t poll_ms;
+    const char *recv_timeout_label;
+
+    if (use_recv_timeout)
+    {
+        if (ctx->health_timeout_ms < 1000U)
+        {
+            poll_ms = ctx->health_timeout_ms;
+        }
+        else
+        {
+            poll_ms = 1000U;
+        }
+    }
+    else
+    {
+        poll_ms = 0U;
+    }
+
+    if (use_recv_timeout)
+    {
+        recv_timeout_label = "enabled";
+    }
+    else
+    {
+        recv_timeout_label = "disabled";
+    }
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
              "tcp_recv[service_id=%" PRId64 " path=%d]: starting (recv_timeout=%s)",
              ctx->service.service_id, path_idx,
-             use_recv_timeout ? "enabled" : "disabled");
+             recv_timeout_label);
 
     while (ctx->running[path_idx])
     {

@@ -110,7 +110,12 @@ int potr_set_nonblocking(PotrSocket fd)
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0)
         return -1;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0 ? -1 : 0;
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
+    {
+        return -1;
+    }
+
+    return 0;
 }
 
 /* doxygen コメントは、ヘッダに記載 */
@@ -119,7 +124,12 @@ int potr_set_blocking(PotrSocket fd)
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0)
         return -1;
-    return fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0 ? -1 : 0;
+    if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0)
+    {
+        return -1;
+    }
+
+    return 0;
 }
 
 #elif defined(PLATFORM_WINDOWS) && defined(COMPILER_MSVC)

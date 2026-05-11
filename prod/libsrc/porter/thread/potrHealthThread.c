@@ -47,7 +47,12 @@ static uint64_t get_last_health_signal_send_ms(const struct PotrContext_ *ctx)
     uint64_t last_ping = ctx->last_ping_send_ms;
     uint64_t last_data = ctx->last_valid_data_send_ms;
 
-    return (last_ping > last_data) ? last_ping : last_data;
+    if (last_ping > last_data)
+    {
+        return last_ping;
+    }
+
+    return last_data;
 }
 
 static void signal_health_thread(struct PotrContext_ *ctx, int path_idx)
@@ -217,7 +222,12 @@ static int tcp_send_ping_packet(struct PotrContext_ *ctx, int path_idx)
         com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
     }
 
-    return send_ok ? POTR_SUCCESS : POTR_ERROR;
+    if (send_ok)
+    {
+        return POTR_SUCCESS;
+    }
+
+    return POTR_ERROR;
 }
 
 /* ====================================================================

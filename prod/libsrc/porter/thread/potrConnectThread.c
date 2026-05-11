@@ -737,12 +737,32 @@ static void connect_thread_func(void *arg)
     ConnectArg          *carg     = (ConnectArg *)arg;
     struct PotrContext_ *ctx      = carg->ctx;
     int                  path_idx = carg->path_idx;
+    const char          *role_str;
+    const char          *type_str;
+
+    if (ctx->role == POTR_ROLE_SENDER)
+    {
+        role_str = "SENDER";
+    }
+    else
+    {
+        role_str = "RECEIVER";
+    }
+
+    if (ctx->service.type == POTR_TYPE_TCP_BIDIR)
+    {
+        type_str = "TCP_BIDIR";
+    }
+    else
+    {
+        type_str = "TCP";
+    }
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
              "connect_thread[service_id=%" PRId64 " path=%d]: started (role=%s type=%s)",
              ctx->service.service_id, path_idx,
-             (ctx->role == POTR_ROLE_SENDER) ? "SENDER" : "RECEIVER",
-             (ctx->service.type == POTR_TYPE_TCP_BIDIR) ? "TCP_BIDIR" : "TCP");
+             role_str,
+             type_str);
 
     if (ctx->role == POTR_ROLE_SENDER)
     {

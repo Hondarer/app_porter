@@ -85,7 +85,14 @@ int config_load_global(const char *config_path, PotrGlobalConfig *global)
 
         if (config_parse_section_name(trimmed, section, sizeof(section)))
         {
-            in_global = (strcmp(section, "global") == 0) ? 1 : 0;
+            if (strcmp(section, "global") == 0)
+            {
+                in_global = 1;
+            }
+            else
+            {
+                in_global = 0;
+            }
             continue;
         }
 

@@ -95,7 +95,12 @@ int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
 int potr_socket_lib_init(void)
 {
     WSADATA wsa;
-    return WSAStartup(MAKEWORD(2, 2), &wsa) == 0 ? 0 : -1;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) == 0)
+    {
+        return 0;
+    }
+
+    return -1;
 }
 
 /* doxygen コメントは、ヘッダに記載 */
@@ -108,14 +113,24 @@ void potr_socket_lib_cleanup(void)
 int potr_set_nonblocking(PotrSocket fd)
 {
     u_long mode = 1;
-    return ioctlsocket(fd, FIONBIO, &mode) == 0 ? 0 : -1;
+    if (ioctlsocket(fd, FIONBIO, &mode) == 0)
+    {
+        return 0;
+    }
+
+    return -1;
 }
 
 /* doxygen コメントは、ヘッダに記載 */
 int potr_set_blocking(PotrSocket fd)
 {
     u_long mode = 0;
-    return ioctlsocket(fd, FIONBIO, &mode) == 0 ? 0 : -1;
+    if (ioctlsocket(fd, FIONBIO, &mode) == 0)
+    {
+        return 0;
+    }
+
+    return -1;
 }
 
 #endif /* PLATFORM_WINDOWS */

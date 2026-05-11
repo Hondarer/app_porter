@@ -159,18 +159,65 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
 
     case POTR_EVENT_PATH_CONNECTED:
     case POTR_EVENT_PATH_DISCONNECTED:
+    {
+        const char *path_event_str;
+        int path_state0;
+        int path_state1;
+        int path_state2;
+        int path_state3;
         path_states = (const int *)data;
         path_idx    = (int)len;
+        if (event == POTR_EVENT_PATH_CONNECTED)
+        {
+            path_event_str = "CONNECTED";
+        }
+        else
+        {
+            path_event_str = "DISCONNECTED";
+        }
+        if (path_states != NULL)
+        {
+            path_state0 = path_states[0];
+        }
+        else
+        {
+            path_state0 = 0;
+        }
+        if (path_states != NULL)
+        {
+            path_state1 = path_states[1];
+        }
+        else
+        {
+            path_state1 = 0;
+        }
+        if (path_states != NULL)
+        {
+            path_state2 = path_states[2];
+        }
+        else
+        {
+            path_state2 = 0;
+        }
+        if (path_states != NULL)
+        {
+            path_state3 = path_states[3];
+        }
+        else
+        {
+            path_state3 = 0;
+        }
         printf("\n[サービス %" PRId64 "] path[%d] %s states={%d,%d,%d,%d}\n",
                service_id,
                path_idx,
-               (event == POTR_EVENT_PATH_CONNECTED) ? "CONNECTED" : "DISCONNECTED",
-               path_states != NULL ? path_states[0] : 0,
-               path_states != NULL ? path_states[1] : 0,
-               path_states != NULL ? path_states[2] : 0,
-               path_states != NULL ? path_states[3] : 0);
+               path_event_str,
+               path_state0,
+               path_state1,
+               path_state2,
+               path_state3);
         fflush(stdout);
         break;
+    }
 
     case POTR_EVENT_DATA:
     default:
@@ -240,8 +287,14 @@ static void trace_console_hook(
 
     if (threshold != COM_UTIL_TRACE_LEVEL_NONE && (int)level <= (int)threshold)
     {
-        lc = ((int)level >= 0 && (int)level < (int)COM_UTIL_TRACE_LEVEL_NONE)
-                 ? lc_table[(int)level] : 'D';
+        if ((int)level >= 0 && (int)level < (int)COM_UTIL_TRACE_LEVEL_NONE)
+        {
+            lc = lc_table[(int)level];
+        }
+        else
+        {
+            lc = 'D';
+        }
         com_util_format_realtime_iso8601_local(ts, sizeof(ts),
                                                timestamp->tv_sec, timestamp->tv_nsec);
         fprintf(stderr, "%s %c %s\n", ts, lc, message);
@@ -274,7 +327,14 @@ static int parse_trace_level(const char *str, com_util_trace_level_t *out)
 
     for (j = 0; j < sizeof(upper) - 1U && str[j] != '\0'; j++)
     {
-        upper[j] = (str[j] >= 'a' && str[j] <= 'z') ? (char)(str[j] - ('a' - 'A')) : str[j];
+        if (str[j] >= 'a' && str[j] <= 'z')
+        {
+            upper[j] = (char)(str[j] - ('a' - 'A'));
+        }
+        else
+        {
+            upper[j] = str[j];
+        }
     }
     upper[j] = '\0';
 
@@ -428,6 +488,7 @@ static int process_interactive_command(PotrHandle handle, char *line)
     int compress = 0;
     int is_file;
     const char *compress_label;
+    unsigned int send_flags;
     int send_rtc;
 
     cursor = line;
@@ -499,7 +560,14 @@ static int process_interactive_command(PotrHandle handle, char *line)
         send_len = strlen(payload);
     }
 
-    compress_label = compress ? " [圧縮あり]" : "";
+    if (compress)
+    {
+        compress_label = " [圧縮あり]";
+    }
+    else
+    {
+        compress_label = "";
+    }
     if (is_file)
     {
         printf("ファイル送信中: \"%s\" (%zu バイト)%s\n", payload, send_len, compress_label);
@@ -510,8 +578,16 @@ static int process_interactive_command(PotrHandle handle, char *line)
     }
     fflush(stdout);
 
+    if (compress)
+    {
+        send_flags = POTR_SEND_COMPRESS;
+    }
+    else
+    {
+        send_flags = 0;
+    }
     send_rtc = potrSend(handle, POTR_PEER_NA, send_data, send_len,
-                        (compress ? POTR_SEND_COMPRESS : 0) | POTR_SEND_BLOCKING);
+                        send_flags | POTR_SEND_BLOCKING);
     if (send_rtc != POTR_SUCCESS)
     {
         if (send_rtc == POTR_ERROR_DISCONNECTED)
@@ -713,7 +789,14 @@ int main(int argc, char *argv[])
     }
 
     /* 双方向サービスの場合は接続状態と受信データ表示のためコールバックを設定する */
-    callback = is_bidir ? on_recv : NULL;
+    if (is_bidir)
+    {
+        callback = on_recv;
+    }
+    else
+    {
+        callback = NULL;
+    }
 
     if (potrOpenServiceFromConfig(config_path, service_id, POTR_ROLE_SENDER, callback, &handle) != POTR_SUCCESS)
     {

@@ -32,6 +32,7 @@ static int send_to_peer(struct PotrContext_ *ctx, PotrPeerId peer_id,
 {
     size_t   remaining  = len;
     size_t   max_payload;
+    size_t   chunk;
 
     max_payload = ctx->global.max_payload - POTR_PAYLOAD_ELEM_HDR_SIZE;
     if (ctx->service.encrypt_enabled)
@@ -46,7 +47,14 @@ static int send_to_peer(struct PotrContext_ *ctx, PotrPeerId peer_id,
 
     while (remaining > 0)
     {
-        size_t   chunk     = (remaining > max_payload) ? max_payload : remaining;
+        if (remaining > max_payload)
+        {
+            chunk = max_payload;
+        }
+        else
+        {
+            chunk = remaining;
+        }
         int      more_frag = (remaining > chunk);
         uint16_t elem_flags = base_flags;
 
@@ -81,14 +89,23 @@ POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
     struct PotrContext_ *ctx       = (struct PotrContext_ *)handle;
     const uint8_t       *ptr      = (const uint8_t *)data;
     uint16_t             base_flags = 0;
+    unsigned             max_message_size;
 
     if (ctx == NULL || data == NULL || len == 0
         || len > (size_t)ctx->global.max_message_size)
     {
+        if (ctx != NULL)
+        {
+            max_message_size = (unsigned)ctx->global.max_message_size;
+        }
+        else
+        {
+            max_message_size = 0U;
+        }
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "potrSend: invalid argument (handle=%p data=%p len=%zu max=%u)",
-                 (const void *)handle, data, len,
-                 (ctx != NULL) ? (unsigned)ctx->global.max_message_size : 0U);
+                  "potrSend: invalid argument (handle=%p data=%p len=%zu max=%u)",
+                  (const void *)handle, data, len,
+                  max_message_size);
         return POTR_ERROR;
     }
 

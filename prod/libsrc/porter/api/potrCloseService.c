@@ -135,7 +135,12 @@ static int tcp_send_all_locked(PotrSocket fd, com_util_local_lock_t *mtx,
     result = potr_tcp_send(fd, buf, len);
     com_util_local_lock_unlock(mtx);
 
-    return (result == 0) ? POTR_SUCCESS : POTR_ERROR;
+    if (result == 0)
+    {
+        return POTR_SUCCESS;
+    }
+
+    return POTR_ERROR;
 }
 
 static int send_tcp_control_packet(struct PotrContext_ *ctx, PotrPacket *pkt, uint32_t nonce_val)
@@ -194,7 +199,12 @@ static int send_tcp_control_packet(struct PotrContext_ *ctx, PotrPacket *pkt, ui
         }
     }
 
-    return sent_any ? POTR_SUCCESS : POTR_ERROR;
+    if (sent_any)
+    {
+        return POTR_SUCCESS;
+    }
+
+    return POTR_ERROR;
 }
 
 static int send_tcp_fin(struct PotrContext_ *ctx, uint32_t fin_target_seq)

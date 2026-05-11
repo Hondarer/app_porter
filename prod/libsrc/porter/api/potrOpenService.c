@@ -867,25 +867,36 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
                 int i;
                 for (i = 0; i < (int)POTR_MAX_PATH; i++)
                 {
+                    const char *dst_addr_label;
+
                     if (ctx->service.dst_addr[i][0] == '\0') break;
+
+                    if (ctx->service.dst_addr[i][0] != '\0')
+                    {
+                        dst_addr_label = ctx->service.dst_addr[i];
+                    }
+                    else
+                    {
+                        dst_addr_label = "*";
+                    }
 
                     if (open_socket_tcp_receiver(ctx, i) != POTR_SUCCESS)
                     {
                         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                                  "potrOpenService: service_id=%" PRId64 " TCP listen failed"
                                  " (path=%d dst_addr=%s dst_port=%u)",
-                                 ctx->service.service_id, i,
-                                 ctx->service.dst_addr[i][0] ? ctx->service.dst_addr[i] : "*",
-                                 (unsigned)ctx->service.dst_port);
+                                  ctx->service.service_id, i,
+                                  dst_addr_label,
+                                  (unsigned)ctx->service.dst_port);
                         ctx_cleanup(ctx);
                         return POTR_ERROR;
                     }
                     POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
                              "potrOpenService: service_id=%" PRId64 " TCP path[%d] listening"
-                             " on %s:%u",
-                             ctx->service.service_id, i,
-                             ctx->service.dst_addr[i][0] ? ctx->service.dst_addr[i] : "*",
-                             (unsigned)ctx->service.dst_port);
+                              " on %s:%u",
+                              ctx->service.service_id, i,
+                              dst_addr_label,
+                              (unsigned)ctx->service.dst_port);
                     ctx->n_path = i + 1;
                 }
                 if (ctx->n_path == 0)
@@ -1194,7 +1205,11 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
             }
 
             ctx->health_send_immediate[0] =
-                potr_type_uses_immediate_health_ping(ctx->service.type) ? 1 : 0;
+                0;
+            if (potr_type_uses_immediate_health_ping(ctx->service.type))
+            {
+                ctx->health_send_immediate[0] = 1;
+            }
             if (potr_health_thread_start(ctx) != POTR_SUCCESS)
             {
                 potr_send_thread_stop(ctx);
@@ -1224,10 +1239,21 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
     {
         role_str = "RECEIVER";
     }
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
-             "potrOpenService: service_id=%" PRId64 " role=%s encrypt=%s opened successfully",
-             ctx->service.service_id,
-             role_str,
-             ctx->service.encrypt_enabled ? "ON" : "OFF");
+    if (ctx->service.encrypt_enabled)
+    {
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+                 "potrOpenService: service_id=%" PRId64 " role=%s encrypt=%s opened successfully",
+                 ctx->service.service_id,
+                 role_str,
+                 "ON");
+    }
+    else
+    {
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+                 "potrOpenService: service_id=%" PRId64 " role=%s encrypt=%s opened successfully",
+                 ctx->service.service_id,
+                 role_str,
+                 "OFF");
+    }
     return POTR_SUCCESS;
 }

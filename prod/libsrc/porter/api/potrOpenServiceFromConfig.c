@@ -27,11 +27,21 @@ POTR_EXPORT int POTR_API potrOpenServiceFromConfig(const char       *config_path
 {
     PotrGlobalConfig global;
     PotrServiceDef   service;
+    const char      *config_label;
+
+    if (config_path != NULL)
+    {
+        config_label = config_path;
+    }
+    else
+    {
+        config_label = "(null)";
+    }
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-             "potrOpenServiceFromConfig: service_id=%" PRId64 " config=%s",
-             service_id,
-             config_path != NULL ? config_path : "(null)");
+              "potrOpenServiceFromConfig: service_id=%" PRId64 " config=%s",
+              service_id,
+              config_label);
 
     if (config_path == NULL || handle == NULL)
     {

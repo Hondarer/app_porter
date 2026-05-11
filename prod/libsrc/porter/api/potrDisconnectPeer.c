@@ -26,6 +26,7 @@
 POTR_EXPORT int POTR_API potrDisconnectPeer(PotrHandle handle, PotrPeerId peer_id)
 {
     struct PotrContext_ *ctx = (struct PotrContext_ *)handle;
+    int64_t service_id;
 
     if (ctx == NULL)
     {
@@ -33,12 +34,21 @@ POTR_EXPORT int POTR_API potrDisconnectPeer(PotrHandle handle, PotrPeerId peer_i
         return POTR_ERROR;
     }
 
+    if (ctx != NULL)
+    {
+        service_id = ctx->service.service_id;
+    }
+    else
+    {
+        service_id = 0;
+    }
+
     if (peer_id == POTR_PEER_NA || peer_id == POTR_PEER_ALL)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                  "potrDisconnectPeer: service_id=%" PRId64 " invalid peer_id=%u"
                  " (POTR_PEER_NA or POTR_PEER_ALL not allowed)",
-                 ctx != NULL ? ctx->service.service_id : 0, (unsigned)peer_id);
+                 service_id, (unsigned)peer_id);
         return POTR_ERROR;
     }
 
