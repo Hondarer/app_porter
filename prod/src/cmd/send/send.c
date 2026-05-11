@@ -43,7 +43,7 @@
 #include <com_util/base/platform.h>
 #include <com_util/crt/path.h>
 #include <com_util/crt/stdio.h>
-#include <com_util/prompt/prompt.h>
+#include <com_util/prompt/pinned_prompt.h>
 #include <com_util/runtime/shutdown.h>
 #include <inttypes.h>
 #include <signal.h>
@@ -65,6 +65,8 @@
 static volatile int g_running = 1;
 /** 終了要求の受信有無。main 側の表示制御に使う。 */
 static volatile sig_atomic_t g_shutdown_requested = 0;
+/** pinned prompt ハンドル。on_recv や trace hook から参照する。 */
+static com_util_pinned_prompt_t *g_screen = NULL;
 
 /**
  *******************************************************************************
@@ -148,13 +150,13 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
     switch (event)
     {
     case POTR_EVENT_CONNECTED:
-        printf("\n[サービス %" PRId64 "] 接続確立\n", service_id);
-        fflush(stdout);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                      "\n[サービス %" PRId64 "] 接続確立\n", service_id);
         break;
 
     case POTR_EVENT_DISCONNECTED:
-        printf("\n[サービス %" PRId64 "] 切断検知\n", service_id);
-        fflush(stdout);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                      "\n[サービス %" PRId64 "] 切断検知\n", service_id);
         break;
 
     case POTR_EVENT_PATH_CONNECTED:
@@ -207,15 +209,15 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
         {
             path_state3 = 0;
         }
-        printf("\n[サービス %" PRId64 "] path[%d] %s states={%d,%d,%d,%d}\n",
-               service_id,
-               path_idx,
-               path_event_str,
-               path_state0,
-               path_state1,
-               path_state2,
-               path_state3);
-        fflush(stdout);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                      "\n[サービス %" PRId64 "] path[%d] %s states={%d,%d,%d,%d}\n",
+                                      service_id,
+                                      path_idx,
+                                      path_event_str,
+                                      path_state0,
+                                      path_state1,
+                                      path_state2,
+                                      path_state3);
         break;
     }
 
@@ -233,7 +235,8 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
             }
             memcpy(buf, data, copy_len);
             buf[copy_len] = '\0';
-            printf("\n[サービス %" PRId64 "] 受信 (%zu バイト): %s\n", service_id, len, buf);
+            com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                          "\n[サービス %" PRId64 "] 受信 (%zu バイト): %s\n", service_id, len, buf);
         }
         else
         {
@@ -243,8 +246,9 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
             if (fp != NULL && com_util_fwrite(data, 1, len, fp) == len)
             {
                 com_util_fclose(fp);
-                printf("\n[サービス %" PRId64 "] 受信 (%zu バイト): バイナリデータを保存しました: %s\n", service_id,
-                       len, tmp_path);
+                com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                              "\n[サービス %" PRId64 "] 受信 (%zu バイト): バイナリデータを保存しました: %s\n",
+                                              service_id, len, tmp_path);
             }
             else
             {
@@ -252,11 +256,11 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
                 {
                     com_util_fclose(fp);
                 }
-                fprintf(stderr, "\n[サービス %" PRId64 "] 受信 (%zu バイト): バイナリデータの保存に失敗しました。\n",
-                        service_id, len);
+                com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                              "\n[サービス %" PRId64 "] 受信 (%zu バイト): バイナリデータの保存に失敗しました。\n",
+                                              service_id, len);
             }
         }
-        fflush(stdout);
         break;
     }
 }
@@ -297,7 +301,8 @@ static void trace_console_hook(
         }
         com_util_format_realtime_iso8601_local(ts, sizeof(ts),
                                                timestamp->tv_sec, timestamp->tv_nsec);
-        fprintf(stderr, "%s %c %s\n", ts, lc, message);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "%s %c %s\n", ts, lc, message);
     }
     com_util_tracer_call_next_hook(prev, handle, level, timestamp, message);
 }
@@ -458,12 +463,15 @@ static char *strip_matching_quotes(char *value)
  */
 static void print_interactive_help(void)
 {
-    printf("コマンド:\n");
-    printf("  send [-c|--compress] <message>  テキストを送信します。\n");
-    printf("  file [-c|--compress] <path>     ファイルを送信します。\n");
-    printf("  help                            このヘルプを表示します。\n");
-    printf("  exit, quit                      終了します。\n");
-    fflush(stdout);
+    com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT, "コマンド:\n");
+    com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                  "  send [-c|--compress] <message>  テキストを送信します。\n");
+    com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                  "  file [-c|--compress] <path>     ファイルを送信します。\n");
+    com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                  "  help                            このヘルプを表示します。\n");
+    com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                  "  exit, quit                      終了します。\n");
 }
 
 static int read_file_data(const char *path, unsigned char **out_data, size_t *out_len);
@@ -510,8 +518,10 @@ static int process_interactive_command(PotrHandle handle, char *line)
 
     if (strcmp(command, "send") != 0 && strcmp(command, "file") != 0)
     {
-        fprintf(stderr, "エラー: 不明なコマンドです: %s\n", command);
-        fprintf(stderr, "help でコマンド一覧を表示します。\n");
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "エラー: 不明なコマンドです: %s\n", command);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "help でコマンド一覧を表示します。\n");
         return 1;
     }
 
@@ -541,7 +551,8 @@ static int process_interactive_command(PotrHandle handle, char *line)
 
     if (payload[0] == '\0')
     {
-        fprintf(stderr, "エラー: %s の引数を指定してください。\n", command);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "エラー: %s の引数を指定してください。\n", command);
         return 1;
     }
 
@@ -570,13 +581,14 @@ static int process_interactive_command(PotrHandle handle, char *line)
     }
     if (is_file)
     {
-        printf("ファイル送信中: \"%s\" (%zu バイト)%s\n", payload, send_len, compress_label);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                      "ファイル送信中: \"%s\" (%zu バイト)%s\n", payload, send_len, compress_label);
     }
     else
     {
-        printf("送信中: \"%s\" (%zu バイト)%s\n", payload, send_len, compress_label);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                      "送信中: \"%s\" (%zu バイト)%s\n", payload, send_len, compress_label);
     }
-    fflush(stdout);
 
     if (compress)
     {
@@ -592,11 +604,13 @@ static int process_interactive_command(PotrHandle handle, char *line)
     {
         if (send_rtc == POTR_ERROR_DISCONNECTED)
         {
-            fprintf(stderr, "エラー: 未接続のため送信できません。\n");
+            com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                          "エラー: 未接続のため送信できません。\n");
         }
         else
         {
-            fprintf(stderr, "エラー: 送信に失敗しました。\n");
+            com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                          "エラー: 送信に失敗しました。\n");
         }
         free(file_data);
         return -1;
@@ -604,13 +618,13 @@ static int process_interactive_command(PotrHandle handle, char *line)
 
     if (is_file)
     {
-        printf("ファイル送信完了: \"%s\" (%zu バイト)\n", payload, send_len);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                      "ファイル送信完了: \"%s\" (%zu バイト)\n", payload, send_len);
     }
     else
     {
-        printf("送信完了。\n");
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT, "送信完了。\n");
     }
-    fflush(stdout);
 
     free(file_data);
     return 1;
@@ -637,13 +651,15 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
 
     if (fp == NULL)
     {
-        fprintf(stderr, "エラー: ファイル \"%s\" を開けませんでした。\n", path);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "エラー: ファイル \"%s\" を開けませんでした。\n", path);
         return -1;
     }
 
     if (com_util_fseek(fp, 0, SEEK_END) != 0)
     {
-        fprintf(stderr, "エラー: ファイルの読み込みに失敗しました。\n");
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "エラー: ファイルの読み込みに失敗しました。\n");
         com_util_fclose(fp);
         return -1;
     }
@@ -651,22 +667,25 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
     file_size = com_util_ftell(fp);
     if (file_size < 0)
     {
-        fprintf(stderr, "エラー: ファイルの読み込みに失敗しました。\n");
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "エラー: ファイルの読み込みに失敗しました。\n");
         com_util_fclose(fp);
         return -1;
     }
 
     if (file_size == 0)
     {
-        fprintf(stderr, "エラー: ファイルが空です。\n");
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "エラー: ファイルが空です。\n");
         com_util_fclose(fp);
         return -1;
     }
 
     if ((uint64_t)file_size > POTR_MAX_MESSAGE_SIZE)
     {
-        fprintf(stderr, "エラー: ファイルサイズ (%" PRId64 " バイト) が最大送信サイズ (%u バイト) を超えています。\n",
-                file_size, (unsigned)POTR_MAX_MESSAGE_SIZE);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "エラー: ファイルサイズ (%" PRId64 " バイト) が最大送信サイズ (%u バイト) を超えています。\n",
+                                      file_size, (unsigned)POTR_MAX_MESSAGE_SIZE);
         com_util_fclose(fp);
         return -1;
     }
@@ -674,7 +693,8 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
     buf = (unsigned char *)malloc((size_t)file_size);
     if (buf == NULL)
     {
-        fprintf(stderr, "エラー: メモリ確保に失敗しました。\n");
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "エラー: メモリ確保に失敗しました。\n");
         com_util_fclose(fp);
         return -1;
     }
@@ -685,7 +705,8 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
 
     if (read_count != (size_t)file_size)
     {
-        fprintf(stderr, "エラー: ファイルの読み込みに失敗しました。\n");
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "エラー: ファイルの読み込みに失敗しました。\n");
         free(buf);
         return -1;
     }
@@ -716,7 +737,6 @@ int main(int argc, char *argv[])
     PotrType svc_type;
     int is_bidir;
     PotrRecvCallback callback;
-    com_util_prompt_t *prompt;
 
     com_util_console_init();
 
@@ -763,6 +783,13 @@ int main(int argc, char *argv[])
     g_running = 1;
     g_shutdown_requested = 0;
 
+    g_screen = com_util_pinned_prompt_create(NULL);
+    if (g_screen == NULL)
+    {
+        fprintf(stderr, "エラー: プロンプトの初期化に失敗しました。\n");
+        return EXIT_FAILURE;
+    }
+
     /* トレーサー設定 (フック経由コンソール出力) */
     if (trace_level_set)
     {
@@ -773,12 +800,14 @@ int main(int argc, char *argv[])
 
     if (com_util_shutdown_request_register(send_shutdown_request_callback, NULL) != 0)
     {
-        fprintf(stderr, "エラー: 終了要求 callback の登録に失敗しました。\n");
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "エラー: 終了要求 callback の登録に失敗しました。\n");
+        com_util_pinned_prompt_dispose(g_screen);
         return EXIT_FAILURE;
     }
 
-    printf("サービス %" PRId64 " を開いています... (設定: %s)\n", service_id, config_path);
-    fflush(stdout);
+    com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                  "サービス %" PRId64 " を開いています... (設定: %s)\n", service_id, config_path);
 
     /* サービス種別を取得して双方向サービスかどうか判定する */
     is_bidir = 0;
@@ -800,35 +829,32 @@ int main(int argc, char *argv[])
 
     if (potrOpenServiceFromConfig(config_path, service_id, POTR_ROLE_SENDER, callback, &handle) != POTR_SUCCESS)
     {
-        fprintf(stderr, "エラー: サービス %" PRId64 " を開けませんでした。\n", service_id);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
+                                      "エラー: サービス %" PRId64 " を開けませんでした。\n", service_id);
+        com_util_pinned_prompt_dispose(g_screen);
         return EXIT_FAILURE;
     }
 
     if (is_bidir)
     {
-        printf("双方向モード。相手からの受信メッセージと接続状態も表示します。\n");
-        fflush(stdout);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                      "双方向モード。相手からの受信メッセージと接続状態も表示します。\n");
     }
-    printf("送信準備完了。Ctrl+C または Ctrl+D で終了します。\n");
-    printf("help でコマンド一覧を表示します。\n");
-    fflush(stdout);
-
-    prompt = com_util_prompt_create(0);
-    if (prompt == NULL)
-    {
-        fprintf(stderr, "エラー: プロンプトの初期化に失敗しました。\n");
-        potrCloseService(handle);
-        return EXIT_FAILURE;
-    }
+    com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                  "送信準備完了。Ctrl+C または Ctrl+D で終了します。\n");
+    com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                  "help でコマンド一覧を表示します。\n");
 
     while (g_running)
     {
         int command_result;
-        if (com_util_prompt_readline_fmt(prompt, line, sizeof(line),
-                                         "porter-send[%" PRId64 "]> ", service_id) == 0)
+        if (com_util_pinned_prompt_readline_fmt(g_screen, line, sizeof(line),
+                                                "porter-send[%" PRId64 "]> ", service_id) == 0)
         {
             break;
         }
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
+                                      "porter-send[%" PRId64 "]> %s\n", service_id, line);
 
         command_result = process_interactive_command(handle, line);
         if (command_result == 0)
@@ -842,16 +868,13 @@ int main(int argc, char *argv[])
         }
     }
 
-    com_util_prompt_dispose(prompt);
-
     if (g_shutdown_requested)
     {
-        printf("\n終了中...\n");
-        fflush(stdout);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT, "\n終了中...\n");
     }
 
     potrCloseService(handle);
-    printf("終了しました。\n");
-    fflush(stdout);
+    com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT, "終了しました。\n");
+    com_util_pinned_prompt_dispose(g_screen);
     return ret;
 }
