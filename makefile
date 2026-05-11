@@ -27,9 +27,17 @@ export TESTFW_HOME
 .PHONY: default
 default:
 	@sig_file=$$(mktemp); \
-	if ! bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" > "$$sig_file"; then \
+	if ! MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" > "$$sig_file"; then \
 		rm -f "$$sig_file"; \
 		exit 1; \
+	fi; \
+	if [ -f "$(BUILD_LOG)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
+		prev_crt=$$(sed -n 's/^MSVC_CRT=//p' "$(BUILD_LOG)"); \
+		if [ -n "$$prev_crt" ] && [ "$$prev_crt" != "$(MSVC_CRT_SUBDIR)" ]; then \
+			rm -f "$$sig_file"; \
+			echo "ERROR: MSVC runtime mismatch detected. Run 'make clean' first, then rebuild.  Previous build: $$prev_crt  Current request: $(MSVC_CRT_SUBDIR)" >&2; \
+			exit 1; \
+		fi; \
 	fi; \
 	current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); \
 	if [ "$$current_clean" = "1" ] && [ -f "$(BUILD_LOG)" ] && cmp -s "$$sig_file" "$(BUILD_LOG)"; then \
@@ -60,9 +68,17 @@ clean : $(SUBDIR_TARGETS)
 test :
 	@if [ -f test/makefile ]; then \
 		sig_file=$$(mktemp); \
-		if ! bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" > "$$sig_file"; then \
+		if ! MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" > "$$sig_file"; then \
 			rm -f "$$sig_file"; \
 			exit 1; \
+		fi; \
+		if [ -f "$(TEST_LOG)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
+			prev_crt=$$(sed -n 's/^MSVC_CRT=//p' "$(TEST_LOG)"); \
+			if [ -n "$$prev_crt" ] && [ "$$prev_crt" != "$(MSVC_CRT_SUBDIR)" ]; then \
+				rm -f "$$sig_file"; \
+				echo "ERROR: MSVC runtime mismatch detected. Run 'make clean' first, then rebuild.  Previous build: $$prev_crt  Current request: $(MSVC_CRT_SUBDIR)" >&2; \
+				exit 1; \
+			fi; \
 		fi; \
 		current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); \
 		if [ "$$current_clean" = "1" ] && [ -f "$(TEST_LOG)" ] && cmp -s "$$sig_file" "$(TEST_LOG)"; then \
