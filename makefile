@@ -18,6 +18,28 @@ TEST_LOG = $(CURDIR)/make_test.log
 DOXY_LOG  = $(CURDIR)/make_doxy.log
 SUBDIR_TARGETS = $(addprefix __subdir__,$(SUBDIRS))
 
+# Windows の場合、MSVC_CRT_SUBDIR が未設定なら計算する
+# Calculate MSVC_CRT_SUBDIR if not set (for standalone builds)
+ifeq ($(OS),Windows_NT)
+    MSVC_CRT ?= shared
+    CONFIG ?= RelWithDebInfo
+    ifeq ($(MSVC_CRT_SUBDIR),)
+        ifeq ($(CONFIG),Debug)
+            ifeq ($(MSVC_CRT),shared)
+                MSVC_CRT_SUBDIR := mdd
+            else
+                MSVC_CRT_SUBDIR := mtd
+            endif
+        else
+            ifeq ($(MSVC_CRT),shared)
+                MSVC_CRT_SUBDIR := md
+            else
+                MSVC_CRT_SUBDIR := mt
+            endif
+        endif
+    endif
+endif
+
 export WORKSPACE_DIR
 export DOXYFW_HOME
 export TESTFW_HOME
