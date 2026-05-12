@@ -135,7 +135,7 @@ doxy :
 		fi; \
 		if [ -d "$(DOXYFW_HOME)" ] && [ -f "$(DOXYFW_HOME)/makefile" ]; then \
 			git_hash=$$(git -C "$(CURDIR)" rev-parse HEAD 2>/dev/null); \
-			git_dirty=$$(git -C "$(CURDIR)" status --porcelain --untracked-files=no 2>/dev/null); \
+			git_dirty=$$(git -C "$(CURDIR)" status --porcelain 2>/dev/null); \
 			if [ -n "$$git_hash" ] && [ -z "$$git_dirty" ] && \
 			   [ -f "$(DOXY_LOG)" ] && [ "$$(cat '$(DOXY_LOG)')" = "$$git_hash" ]; then \
 				echo "INFO: Skipping doxy (already generated at $$git_hash)"; \
