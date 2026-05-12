@@ -1,0 +1,19 @@
+# Repository-wide line ending policy
+* text=auto eol=lf
+
+# Windows executable scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files
+# Keep draw.io exported SVG out of text normalization/diff conversion
+*.drawio.svg binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.7z binary
+*.gz binary
