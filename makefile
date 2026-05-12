@@ -9,9 +9,13 @@ SUBDIRS = \
 APP_NAME = $(notdir $(CURDIR))
 MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 WORKSPACE_DIR ?= $(abspath $(MAKEFILE_DIR)/../..)
+MAKEFW_HOME := $(strip $(MAKEFW_HOME))
+ifeq ($(MAKEFW_HOME),)
+    $(error MAKEFW_HOME is required. Export MAKEFW_HOME before running make)
+endif
 TESTFW_HOME   ?= $(WORKSPACE_DIR)/framework/testfw
 TESTFW_BANNER = $(TESTFW_HOME)/bin/banner.sh
-APPDEPS_RESOLVER = ../../framework/makefw/bin/resolve_app_deps.sh
+APPDEPS_RESOLVER = $(MAKEFW_HOME)/bin/resolve_app_deps.sh
 DOXY_WARN_FILE = $(CURDIR)/doxy.warn
 BUILD_LOG = $(CURDIR)/make_build.log
 TEST_LOG = $(CURDIR)/make_test.log
@@ -41,6 +45,7 @@ ifeq ($(OS),Windows_NT)
 endif
 
 export WORKSPACE_DIR
+export MAKEFW_HOME
 export DOXYFW_HOME
 export TESTFW_HOME
 
