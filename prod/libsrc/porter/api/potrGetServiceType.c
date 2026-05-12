@@ -16,7 +16,7 @@
 
 #include <porter/protocol/config.h>
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 POTR_EXPORT int POTR_API potrGetServiceType(const char *config_path,
                                             int64_t     service_id,
                                             PotrType   *type)

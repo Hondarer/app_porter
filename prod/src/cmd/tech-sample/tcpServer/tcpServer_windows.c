@@ -402,7 +402,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n,
  *  プラットフォームフック
  * ============================================================ */
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void platform_init(ClientSessionFn session_fn) {
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
@@ -412,12 +412,12 @@ void platform_init(ClientSessionFn session_fn) {
     g_session_fn = session_fn;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void platform_cleanup(void) {
     WSACleanup();
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 int dispatch_internal_args(int argc, char *argv[]) {
     for (int i = 1; i < argc - 1; i++) {
         if (strcmp(argv[i], "--child") == 0) {
@@ -444,7 +444,7 @@ int dispatch_internal_args(int argc, char *argv[]) {
  *  サーバー実装
  * ============================================================ */
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void run_fork_server(int port) {
     SOCKET listen_socket = create_listen_socket(port);
     char   exepath[PLATFORM_PATH_MAX];
@@ -480,7 +480,7 @@ void run_fork_server(int port) {
     }
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void run_prefork_server(int port, int num_workers, int conns_per_worker) {
     WorkerInfo *workers = (WorkerInfo *)malloc((size_t)num_workers * sizeof(WorkerInfo));
     HANDLE     *events  = (HANDLE *)malloc((size_t)num_workers * sizeof(HANDLE));

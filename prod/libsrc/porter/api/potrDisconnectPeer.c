@@ -22,7 +22,7 @@
 #include <porter/infra/potrTrace.h>
 
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 POTR_EXPORT int POTR_API potrDisconnectPeer(PotrHandle handle, PotrPeerId peer_id)
 {
     struct PotrContext_ *ctx = (struct PotrContext_ *)handle;

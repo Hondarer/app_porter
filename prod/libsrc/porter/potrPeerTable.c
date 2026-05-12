@@ -77,7 +77,7 @@ static PotrPeerId allocate_peer_id(struct PotrContext_ *ctx)
     return candidate;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void peer_send_fin(struct PotrContext_ *ctx, PotrPeerContext *peer)
 {
     PotrPacket           fin_pkt;
@@ -159,7 +159,7 @@ void peer_send_fin(struct PotrContext_ *ctx, PotrPeerContext *peer)
     }
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 int peer_table_init(struct PotrContext_ *ctx)
 {
     int i;
@@ -190,7 +190,7 @@ int peer_table_init(struct PotrContext_ *ctx)
     return POTR_SUCCESS;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void peer_table_dispose(struct PotrContext_ *ctx)
 {
     int i;
@@ -230,7 +230,7 @@ void peer_table_dispose(struct PotrContext_ *ctx)
     ctx->n_peers = 0;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 PotrPeerContext *peer_find_by_session(struct PotrContext_ *ctx,
                                       uint32_t session_id,
                                       int64_t  session_tv_sec,
@@ -254,7 +254,7 @@ PotrPeerContext *peer_find_by_session(struct PotrContext_ *ctx,
     return NULL;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 PotrPeerContext *peer_find_by_id(struct PotrContext_ *ctx, PotrPeerId peer_id)
 {
     int i;
@@ -269,7 +269,7 @@ PotrPeerContext *peer_find_by_id(struct PotrContext_ *ctx, PotrPeerId peer_id)
     return NULL;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 PotrPeerContext *peer_create(struct PotrContext_       *ctx,
                               const struct sockaddr_in *sender_addr,
                               int                       path_idx)
@@ -373,7 +373,7 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
     return peer;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void peer_path_clear(struct PotrContext_ *ctx, PotrPeerContext *peer, int path_idx)
 {
     if (peer->dest_addr[path_idx].sin_family == 0)
@@ -391,7 +391,7 @@ void peer_path_clear(struct PotrContext_ *ctx, PotrPeerContext *peer, int path_i
     peer->n_paths--;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void peer_free(struct PotrContext_ *ctx, PotrPeerContext *peer)
 {
     if (peer == NULL || !peer->active)

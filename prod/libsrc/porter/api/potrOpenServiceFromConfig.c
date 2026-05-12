@@ -18,7 +18,7 @@
 #include <porter/protocol/config.h>
 #include <porter/infra/potrTrace.h>
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 POTR_EXPORT int POTR_API potrOpenServiceFromConfig(const char       *config_path,
                                                int64_t           service_id,
                                                PotrRole          role,

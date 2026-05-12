@@ -20,7 +20,7 @@
 #include <porter/infra/potrSendQueue.h>
 #include <porter/infra/potrPlatform.h>
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 int potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload)
 {
     size_t i;
@@ -56,7 +56,7 @@ int potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload)
     return POTR_SUCCESS;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void potr_send_queue_dispose(PotrSendQueue *q)
 {
     com_util_condvar_destroy(q->drained);
@@ -69,7 +69,7 @@ void potr_send_queue_dispose(PotrSendQueue *q)
     q->payload_pool = NULL;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 int potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id,
                          uint16_t flags,
                          const void *payload, uint16_t payload_len)
@@ -95,7 +95,7 @@ int potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id,
     return POTR_SUCCESS;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 int potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id,
                               uint16_t flags,
                               const void *payload, uint16_t payload_len,
@@ -128,7 +128,7 @@ int potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id,
     return POTR_SUCCESS;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 int potr_send_queue_pop(PotrSendQueue *q, PotrPayloadElem *out, volatile int *running)
 {
     com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
@@ -154,7 +154,7 @@ int potr_send_queue_pop(PotrSendQueue *q, PotrPayloadElem *out, volatile int *ru
     return POTR_SUCCESS;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 int potr_send_queue_peek(PotrSendQueue *q, PotrPayloadElem *out)
 {
     com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
@@ -171,7 +171,7 @@ int potr_send_queue_peek(PotrSendQueue *q, PotrPayloadElem *out)
     return POTR_SUCCESS;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 int potr_send_queue_peek_timed(PotrSendQueue *q, PotrPayloadElem *out,
                                uint32_t timeout_ms)
 {
@@ -194,7 +194,7 @@ int potr_send_queue_peek_timed(PotrSendQueue *q, PotrPayloadElem *out,
     return POTR_SUCCESS;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 int potr_send_queue_try_pop(PotrSendQueue *q, PotrPayloadElem *out)
 {
     com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
@@ -214,7 +214,7 @@ int potr_send_queue_try_pop(PotrSendQueue *q, PotrPayloadElem *out)
     return POTR_SUCCESS;
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void potr_send_queue_complete(PotrSendQueue *q)
 {
     com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
@@ -236,7 +236,7 @@ void potr_send_queue_complete(PotrSendQueue *q)
     com_util_local_lock_unlock(q->mutex);
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void potr_send_queue_wait_drained(PotrSendQueue *q)
 {
     com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
@@ -249,7 +249,7 @@ void potr_send_queue_wait_drained(PotrSendQueue *q)
     com_util_local_lock_unlock(q->mutex);
 }
 
-/* doxygen コメントは、ヘッダに記載 */
+/* doxygen コメントは、ヘッダーに記載 */
 void potr_send_queue_shutdown(PotrSendQueue *q)
 {
     com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
