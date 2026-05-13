@@ -16,11 +16,17 @@ endif
 TESTFW_HOME   ?= $(WORKSPACE_DIR)/framework/testfw
 TESTFW_BANNER = $(TESTFW_HOME)/bin/banner.sh
 APPDEPS_RESOLVER = $(MAKEFW_HOME)/bin/resolve_app_deps.sh
+COVERITY_MAKE_WRAPPER = $(MAKEFW_HOME)/bin/cov-build-app.sh
+COVERITY_CONFIG = $(CURDIR)/coverity.mk
 DOXY_WARN_FILE = $(CURDIR)/doxy.warn
 BUILD_LOG = $(CURDIR)/make_build.log
 TEST_LOG = $(CURDIR)/make_test.log
 DOXY_LOG  = $(CURDIR)/make_doxy.log
 SUBDIR_TARGETS = $(addprefix __subdir__,$(SUBDIRS))
+
+ifneq ($(wildcard $(COVERITY_CONFIG)),)
+include $(COVERITY_CONFIG)
+endif
 
 # Windows の場合、MSVC_CRT_SUBDIR が未設定なら計算する
 # Calculate MSVC_CRT_SUBDIR if not set (for standalone builds)
@@ -51,6 +57,25 @@ export TESTFW_HOME
 
 .DEFAULT_GOAL := default
 
+.PHONY: __ensure-coverity
+__ensure-coverity:
+	@if [ -z "$(COVERITY_HOME)" ]; then \
+		echo "ERROR: COVERITY_HOME is required for with-cov." >&2; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(COVERITY_CONFIG)" ]; then \
+		echo "ERROR: coverity.mk is required for $(CURDIR)/with-cov." >&2; \
+		exit 1; \
+	fi
+	@if [ "$(COVERITY_TOOLCHAIN)" != "c_cpp" ] && [ "$(COVERITY_TOOLCHAIN)" != "dotnet" ]; then \
+		echo "ERROR: COVERITY_TOOLCHAIN must be 'c_cpp' or 'dotnet' in $(COVERITY_CONFIG)." >&2; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(COVERITY_MAKE_WRAPPER)" ]; then \
+		echo "ERROR: Coverity wrapper script was not found: $(COVERITY_MAKE_WRAPPER)" >&2; \
+		exit 1; \
+	fi
+
 .PHONY: default
 default:
 	@sig_file=$$(mktemp); \
@@ -77,6 +102,46 @@ default:
 			if [ -f $$dir/makefile ]; then \
 				echo $(MAKE) -C $$dir; \
 				$(MAKE) -C $$dir || { make_exit=$$?; break; }; \
+			fi; \
+		done; \
+		if [ $$make_exit -eq 0 ] && [ "$$current_clean" = "1" ]; then \
+			cp "$$sig_file" "$(BUILD_LOG)"; \
+		fi; \
+		rm -f "$$sig_file"; \
+		if [ $$make_exit -ne 0 ]; then exit $$make_exit; fi; \
+	fi
+
+.PHONY: with-cov
+with-cov: __ensure-coverity
+	@sig_file=$$(mktemp); \
+	if ! MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" > "$$sig_file"; then \
+		rm -f "$$sig_file"; \
+		exit 1; \
+	fi; \
+	if [ -f "$(BUILD_LOG)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
+		prev_crt=$$(sed -n 's/^MSVC_CRT=//p' "$(BUILD_LOG)"); \
+		if [ -n "$$prev_crt" ] && [ "$$prev_crt" != "$(MSVC_CRT_SUBDIR)" ]; then \
+			rm -f "$$sig_file"; \
+			echo "ERROR: MSVC runtime mismatch detected. Run 'make clean' first, then rebuild.  Previous build: $$prev_crt  Current request: $(MSVC_CRT_SUBDIR)" >&2; \
+			exit 1; \
+		fi; \
+	fi; \
+	current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); \
+	if [ "$$current_clean" = "1" ] && [ -f "$(BUILD_LOG)" ] && cmp -s "$$sig_file" "$(BUILD_LOG)"; then \
+		echo "INFO: Skipping build (dependencies are unchanged and clean)"; \
+		rm -f "$$sig_file"; \
+	else \
+		rm -f "$(BUILD_LOG)"; \
+		make_exit=0; \
+		for dir in $(SUBDIRS); do \
+			if [ -f $$dir/makefile ]; then \
+				if [ "$$dir" = "prod" ]; then \
+					echo "$(COVERITY_MAKE_WRAPPER)" "$(COVERITY_TOOLCHAIN)" $(MAKE) -C $$dir; \
+					"$(COVERITY_MAKE_WRAPPER)" "$(COVERITY_TOOLCHAIN)" $(MAKE) -C $$dir || { make_exit=$$?; break; }; \
+				else \
+					echo $(MAKE) -C $$dir; \
+					$(MAKE) -C $$dir || { make_exit=$$?; break; }; \
+				fi; \
 			fi; \
 		done; \
 		if [ $$make_exit -eq 0 ] && [ "$$current_clean" = "1" ]; then \
