@@ -52,6 +52,9 @@ idir
 ## Python cache
 __pycache__/
 
+## doxybook2 によって生成される Markdown
+/docs/doxybook2/
+
 ## 成果物
 lib
 bin

@@ -193,7 +193,7 @@ test :
 
 .PHONY: doxy
 doxy :
-	@if [ -f Doxyfile.part ]; then \
+	@if [ -f prod/Doxyfile.part ]; then \
 		if [ -z "$(DOXYFW_HOME)" ]; then \
 			echo "ERROR: DOXYFW_HOME is not defined."; \
 			exit 1; \
