@@ -268,8 +268,14 @@ static void trace_console_hook(
 
     if (threshold != COM_UTIL_TRACE_LEVEL_NONE && (int)level <= (int)threshold)
     {
-        lc = ((int)level >= 0 && (int)level < (int)COM_UTIL_TRACE_LEVEL_NONE)
-                 ? lc_table[(int)level] : 'D';
+        if ((int)level >= 0 && (int)level < (int)COM_UTIL_TRACE_LEVEL_NONE)
+        {
+            lc = lc_table[(int)level];
+        }
+        else
+        {
+            lc = 'D';
+        }
         com_util_format_realtime_iso8601_local(ts, sizeof(ts),
                                                timestamp->tv_sec, timestamp->tv_nsec);
         com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,

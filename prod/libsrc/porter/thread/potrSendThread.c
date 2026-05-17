@@ -382,14 +382,23 @@ static void send_packed_peer_mode(struct PotrContext_ *ctx, PotrPayloadElem *fir
         while (potr_send_queue_peek(&ctx->send_queue, &next) == POTR_SUCCESS)
         {
             size_t elem_size;
+            size_t crypto_tag_overhead;
 
             if (next.peer_id != target_peer_id) break;
             if (next.flags & POTR_FLAG_MORE_FRAG) break;
 
             elem_size = POTR_PAYLOAD_ELEM_HDR_SIZE + (size_t)next.payload_len;
-            if (packed_len + elem_size > (size_t)ctx->global.max_payload
-                                         - (ctx->service.encrypt_enabled
-                                            ? POTR_CRYPTO_TAG_SIZE : 0U))
+
+            if (ctx->service.encrypt_enabled)
+            {
+                crypto_tag_overhead = POTR_CRYPTO_TAG_SIZE;
+            }
+            else
+            {
+                crypto_tag_overhead = 0U;
+            }
+
+            if (packed_len + elem_size > (size_t)ctx->global.max_payload - crypto_tag_overhead)
             {
                 break;
             }
@@ -462,6 +471,7 @@ static void send_thread_func(void *arg)
                         uint64_t now = com_util_get_monotonic_ms();
                         uint32_t remaining;
                         size_t   elem_size;
+                        size_t crypto_tag_overhead;
 
                         if (now >= deadline)
                         {
@@ -483,9 +493,16 @@ static void send_thread_func(void *arg)
 
                         elem_size = POTR_PAYLOAD_ELEM_HDR_SIZE + (size_t)next.payload_len;
 
-                        if (packed_len + elem_size > (size_t)ctx->global.max_payload
-                                                     - (ctx->service.encrypt_enabled
-                                                        ? POTR_CRYPTO_TAG_SIZE : 0U))
+                        if (ctx->service.encrypt_enabled)
+                        {
+                            crypto_tag_overhead = POTR_CRYPTO_TAG_SIZE;
+                        }
+                        else
+                        {
+                            crypto_tag_overhead = 0U;
+                        }
+
+                        if (packed_len + elem_size > (size_t)ctx->global.max_payload - crypto_tag_overhead)
                         {
                             break; /* 容量満杯: 即時送信してタイマーリセット */
                         }
@@ -508,6 +525,7 @@ static void send_thread_func(void *arg)
                     while (potr_send_queue_peek(&ctx->send_queue, &next) == POTR_SUCCESS)
                     {
                         size_t elem_size;
+                        size_t crypto_tag_overhead;
 
                         if (next.flags & POTR_FLAG_MORE_FRAG)
                         {
@@ -516,9 +534,16 @@ static void send_thread_func(void *arg)
 
                         elem_size = POTR_PAYLOAD_ELEM_HDR_SIZE + (size_t)next.payload_len;
 
-                        if (packed_len + elem_size > (size_t)ctx->global.max_payload
-                                                     - (ctx->service.encrypt_enabled
-                                                        ? POTR_CRYPTO_TAG_SIZE : 0U))
+                        if (ctx->service.encrypt_enabled)
+                        {
+                            crypto_tag_overhead = POTR_CRYPTO_TAG_SIZE;
+                        }
+                        else
+                        {
+                            crypto_tag_overhead = 0U;
+                        }
+
+                        if (packed_len + elem_size > (size_t)ctx->global.max_payload - crypto_tag_overhead)
                         {
                             break;
                         }
