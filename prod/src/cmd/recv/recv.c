@@ -52,10 +52,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(PLATFORM_LINUX)
-    #include <unistd.h>
-#endif /* PLATFORM_ */
-
 #include <com_util/console/console.h>
 #include <porter.h>
 
@@ -890,11 +886,7 @@ int main(int argc, char *argv[])
 
     while (g_running)
     {
-#if defined(PLATFORM_LINUX)
-        usleep(100000);
-#elif defined(PLATFORM_WINDOWS)
-        Sleep(100);
-#endif /* PLATFORM_ */
+        com_util_sleep_ms(100U);
     }
 
     if (bidir_started)

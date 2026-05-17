@@ -211,7 +211,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker) {
 
             if (active_count == 0) {
                 /* アクティブな接続がない場合は少し待ってパイプを再チェック */
-                Sleep(10);
+                com_util_sleep_ms(10U);
                 continue;
             }
 
