@@ -254,7 +254,7 @@ static PotrSocket tcp_connect_with_timeout(struct PotrContext_ *ctx, int path_id
 {
     PotrSocket         sock;
     struct sockaddr_in addr;
-    int                timeout_ms = (int)ctx->service.connect_timeout_ms;
+    uint32_t           timeout_ms = ctx->service.connect_timeout_ms;
     int                reuse = 1;
 
     sock = socket(AF_INET, SOCK_STREAM, 0);
