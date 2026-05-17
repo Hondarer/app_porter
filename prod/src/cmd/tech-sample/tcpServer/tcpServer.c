@@ -98,6 +98,14 @@ static void parse_args(int argc, char *argv[],
  *  4. 指定されたモードでサーバーを起動します。
  *******************************************************************************
  */
+/* C4702: Windows 版 run_fork_server / run_prefork_server は while(1) 不脱出ループのため
+ * LTCG が関数を noreturn と推論し、後続の platform_cleanup() / return 0 を到達不能と判定する。
+ * Linux 版は SIGINT/SIGTERM で正常脱出して以下に到達するため、コード自体は仕様上必要。
+ * プラットフォーム差異による副次警告のため main 関数全体に push/pop で局所抑制をかける。 */
+#if defined(COMPILER_MSVC)
+#pragma warning(push)
+#pragma warning(disable: 4702)
+#endif
 int main(int argc, char *argv[]) {
     com_util_console_init();
     platform_init(handle_client_session);
@@ -123,3 +131,6 @@ int main(int argc, char *argv[]) {
     platform_cleanup();
     return 0;
 }
+#if defined(COMPILER_MSVC)
+#pragma warning(pop)
+#endif
