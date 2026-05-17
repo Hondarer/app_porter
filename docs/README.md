@@ -101,7 +101,8 @@ send -l TRACE ../sample-config/porter-services.conf 1001
 
 ## Doxygen (API 仕様書、モジュール仕様書)
 
-- [doxygen](../../../pages/doxygen/porter/index.html)
+<!-- docsfw の仕上がりパスに対する相対リンク。この Markdown からの相対パスではないことに注意 -->
+- [doxygen](../../../doxygen/porter/index.html)
 
 ## 単一ファイル版 Doxygen (API 仕様書、モジュール仕様書)
 

@@ -626,12 +626,18 @@ case POTR_TYPE_TCP_BIDIR_N1:
         /* 1. listen ソケット作成 (既存 TCP RECEIVER と同一処理を流用) */
         for (i = 0; i < ctx->n_path; i++) {
             ctx->tcp_listen_sock[i] = open_socket_tcp_receiver(ctx, i);
-            if (ctx->tcp_listen_sock[i] == POTR_INVALID_SOCKET) goto error;
+            if (ctx->tcp_listen_sock[i] == POTR_INVALID_SOCKET) {
+                ctx_cleanup(ctx);
+                return POTR_ERROR;
+            }
         }
 
         /* 2. ピアテーブル初期化 */
         ctx->is_multi_peer = 1;
-        if (peer_table_init(ctx) != POTR_SUCCESS) goto error;
+        if (peer_table_init(ctx) != POTR_SUCCESS) {
+            ctx_cleanup(ctx);
+            return POTR_ERROR;
+        }
 
         /* 3. TCP mutex/condvar 初期化 (ctx レベル: peers_mutex は peer_table_init で初期化済み) */
         /* tcp_state_mutex, tcp_state_cv は 1:1 TCP と共通のため初期化しておく */
@@ -643,23 +649,40 @@ case POTR_TYPE_TCP_BIDIR_N1:
         if (is_bidir_n1) {
             if (potr_send_queue_init(&ctx->send_queue,
                                      POTR_SEND_QUEUE_DEPTH,
-                                     (uint16_t)ctx->global.max_payload) != POTR_SUCCESS)
-                goto error;
-            if (potr_send_thread_start(ctx) != POTR_SUCCESS) goto error;
+                                     (uint16_t)ctx->global.max_payload) != POTR_SUCCESS) {
+                ctx_cleanup(ctx);
+                return POTR_ERROR;
+            }
+            if (potr_send_thread_start(ctx) != POTR_SUCCESS) {
+                ctx_cleanup(ctx);
+                return POTR_ERROR;
+            }
         }
 
         /* 5. accept スレッド起動 → receiver_accept_n1_loop が呼ばれる */
-        if (potr_connect_thread_start(ctx) != POTR_SUCCESS) goto error;
+        if (potr_connect_thread_start(ctx) != POTR_SUCCESS) {
+            ctx_cleanup(ctx);
+            return POTR_ERROR;
+        }
     }
     else /* POTR_ROLE_SENDER */
     {
         /* SENDER 側: 既存 TCP/TCP_BIDIR SENDER と同一 */
         /* (宛先アドレス解決 + connect スレッド起動) */
         for (i = 0; i < ctx->n_path; i++) {
-            if (resolve_dst_addr(ctx, i) != POTR_SUCCESS) goto error;
+            if (resolve_dst_addr(ctx, i) != POTR_SUCCESS) {
+                ctx_cleanup(ctx);
+                return POTR_ERROR;
+            }
         }
-        if (init_send_resources(ctx) != POTR_SUCCESS) goto error;
-        if (potr_connect_thread_start(ctx) != POTR_SUCCESS) goto error;
+        if (init_send_resources(ctx) != POTR_SUCCESS) {
+            ctx_cleanup(ctx);
+            return POTR_ERROR;
+        }
+        if (potr_connect_thread_start(ctx) != POTR_SUCCESS) {
+            ctx_cleanup(ctx);
+            return POTR_ERROR;
+        }
     }
     break;
 }
