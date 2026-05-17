@@ -886,7 +886,7 @@ int main(int argc, char *argv[])
 
     while (g_running)
     {
-        com_util_sleep_ms(100U);
+        com_util_sleep_ms(100);
     }
 
     if (bidir_started)

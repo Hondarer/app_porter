@@ -90,7 +90,7 @@ static void close_tcp_conn(struct PotrContext_ *ctx, int path_idx)
 }
 
 /* 再接続待機: reconnect_interval_ms 経過または停止シグナルまでスリープする */
-static void reconnect_wait(struct PotrContext_ *ctx, int path_idx, uint32_t wait_ms)
+static void reconnect_wait(struct PotrContext_ *ctx, int path_idx, int wait_ms)
 {
     com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     if (ctx->connect_thread_running[path_idx])
@@ -109,7 +109,7 @@ static void reconnect_wait(struct PotrContext_ *ctx, int path_idx, uint32_t wait
  * buf は PACKET_HEADER_SIZE + max_payload バイト以上確保されていること。
  * 戻り値: 1 = 成功 (*out_len にバイト数を格納)、0 = タイムアウト、-1 = EOF/エラー/不正。 */
 static int tcp_read_first_packet(PotrSocket fd, uint8_t *buf, size_t max_buf,
-                                  size_t *out_len, uint32_t timeout_ms)
+                                  size_t *out_len, int timeout_ms)
 {
     int      ready;
     uint16_t wire_payload_len;
@@ -254,7 +254,7 @@ static PotrSocket tcp_connect_with_timeout(struct PotrContext_ *ctx, int path_id
 {
     PotrSocket         sock;
     struct sockaddr_in addr;
-    uint32_t           timeout_ms = ctx->service.connect_timeout_ms;
+    int                timeout_ms = (int)ctx->service.connect_timeout_ms;
     int                reuse = 1;
 
     sock = socket(AF_INET, SOCK_STREAM, 0);

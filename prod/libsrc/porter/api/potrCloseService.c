@@ -248,11 +248,11 @@ static void begin_tcp_close_wait(struct PotrContext_ *ctx, uint32_t fin_target_s
     com_util_local_lock_unlock(ctx->tcp_close_mutex);
 }
 
-static int wait_for_tcp_close_ack(struct PotrContext_ *ctx, uint32_t timeout_ms)
+static int wait_for_tcp_close_ack(struct PotrContext_ *ctx, int timeout_ms)
 {
     int result = POTR_SUCCESS;
 
-    if (timeout_ms == 0U)
+    if (timeout_ms == 0)
     {
         reset_tcp_close_wait(ctx);
         return POTR_SUCCESS;

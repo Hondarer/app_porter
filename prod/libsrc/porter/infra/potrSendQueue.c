@@ -173,7 +173,7 @@ int potr_send_queue_peek(PotrSendQueue *q, PotrPayloadElem *out)
 
 /* doxygen コメントは、ヘッダーに記載 */
 int potr_send_queue_peek_timed(PotrSendQueue *q, PotrPayloadElem *out,
-                               uint32_t timeout_ms)
+                               int timeout_ms)
 {
     com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
 

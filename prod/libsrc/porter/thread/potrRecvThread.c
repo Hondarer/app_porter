@@ -2550,9 +2550,9 @@ static void recv_thread_func(void *arg)
 
 /* TCP ソケットが読み取り可能になるまで最大 wait_ms ミリ秒待機する。
  * 戻り値: 1 = データあり、0 = タイムアウト、-1 = エラー。 */
-static int tcp_wait_readable(PotrSocket fd, uint32_t wait_ms)
+static int tcp_wait_readable(PotrSocket fd, int wait_ms)
 {
-    return potr_poll_readable(fd, (int)wait_ms);
+    return potr_poll_readable(fd, wait_ms);
 }
 
 /* TCP ソケットから正確に n バイト読み取る。
