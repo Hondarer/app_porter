@@ -6,8 +6,6 @@
 *.cmd text eol=crlf
 
 # Binary files
-# Keep draw.io exported SVG out of text normalization/diff conversion
-*.drawio.svg binary
 *.png binary
 *.jpg binary
 *.jpeg binary
