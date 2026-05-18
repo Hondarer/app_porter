@@ -1,17 +1,48 @@
 # Repository-wide line ending policy
+# .editorconfig の `end_of_line = lf`、.clang-format の `UseCRLF: false` と整合させる。
 * text=auto eol=lf
 
 # Windows executable scripts
+# .editorconfig の `[*.{bat,cmd}] end_of_line = crlf` と整合させる。
 *.bat text eol=crlf
 *.cmd text eol=crlf
 
-# Binary files
+# Image files
 *.png binary
 *.jpg binary
 *.jpeg binary
 *.gif binary
+*.bmp binary
+*.tif binary
+*.tiff binary
+*.webp binary
 *.ico binary
+*.icns binary
+
+# Font files
+*.eot binary
+*.otf binary
+*.ttf binary
+*.ttc binary
+*.woff binary
+*.woff2 binary
+
+# Office documents
+*.doc binary
+*.docx binary
+*.xls binary
+*.xlsx binary
+*.ppt binary
+*.pptx binary
+*.vsd binary
+*.vsdx binary
 *.pdf binary
+
+# Compressed archives
 *.zip binary
 *.7z binary
 *.gz binary
+*.tar binary
+*.bz2 binary
+*.xz binary
+*.rar binary
