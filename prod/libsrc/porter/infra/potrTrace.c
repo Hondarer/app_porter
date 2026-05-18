@@ -13,7 +13,7 @@
  *  出力開始 (com_util_tracer_start) はライブラリ利用者が potrGetTracer() 経由で
  *  stderr レベルを設定した後に行います。
  *
- *  @par            スレッド セーフティ
+ *  @par            スレッド セーフ
  *  トレース書き込みは trace-com_util が内部で排他制御を行います。\n
  *  potr_trace_get() の lazy create はプロセス起動直後の単一スレッド期間に
  *  完了することを前提とします。
