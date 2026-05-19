@@ -253,7 +253,6 @@ static void apply_service_kv(const char *key, const char *val,
 }
 
 /**
- *******************************************************************************
  *  @brief          設定ファイルから指定サービスの定義を読み込みます。
  *  @param[in]      config_path 設定ファイルのパス。
  *  @param[in]      service_id  読み込むサービスの ID。
@@ -263,7 +262,6 @@ static void apply_service_kv(const char *key, const char *val,
  *  @details
  *  [service.id] 形式のセクション名から id 部分を取得し、service_id と照合します。
  *  サービスの識別子はセクション名の id であり、ポート番号とは無関係です。
- *******************************************************************************
  */
 int config_load_service(const char *config_path, int64_t service_id,
                         PotrServiceDef *def)

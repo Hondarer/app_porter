@@ -53,13 +53,11 @@ static void fill_session_hdr(PotrPacket *packet, const PotrPacketSessionHdr *shd
 }
 
 /**
- *******************************************************************************
  *  @brief          NACK パケットを構築します。
  *  @param[out]     packet      構築結果を格納するパケット構造体へのポインタ。
  *  @param[in]      shdr        セッション識別ヘッダーへのポインタ。
  *  @param[in]      nack_num    再送要求する通番。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- *******************************************************************************
  */
 int packet_build_nack(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
                       uint32_t nack_num)
@@ -81,7 +79,6 @@ int packet_build_nack(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
 }
 
 /**
- *******************************************************************************
  *  @brief          PING パケットを構築します。
  *  @param[out]     packet             構築結果を格納するパケット構造体へのポインタ。
  *  @param[in]      shdr               セッション識別ヘッダーへのポインタ。
@@ -98,7 +95,6 @@ int packet_build_nack(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
  *  ack_num は常に 0。受信者は seq_num を上限として欠番を一括 NACK します。\n
  *  ペイロードには POTR_MAX_PATH バイトのパス受信状態 (POTR_PING_STATE_*) を格納します。\n
  *  暗号化時はヘルススレッドが wire_buf にコピー後に com_util_encrypt を適用します。
- *******************************************************************************
  */
 int packet_build_ping(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
                       uint32_t seq_num,
@@ -130,7 +126,6 @@ int packet_build_ping(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
 }
 
 /**
- *******************************************************************************
  *  @brief          再送不能通知 (REJECT) パケットを構築します。
  *  @param[out]     packet      構築結果を格納するパケット構造体へのポインタ。
  *  @param[in]      shdr        セッション識別ヘッダーへのポインタ。
@@ -141,7 +136,6 @@ int packet_build_ping(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
  *  受信者から NACK を受け取ったが、送信ウィンドウに該当パケットが存在しない場合に
  *  送信者が返すパケットです。受信者はこのパケットを受け取ると即時 DISCONNECTED を
  *  発火し、欠落通番をスキップして後続パケットの配信を継続します。
- *******************************************************************************
  */
 int packet_build_reject(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
                         uint32_t seq_num)
@@ -163,7 +157,6 @@ int packet_build_reject(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
 }
 
 /**
- *******************************************************************************
  *  @brief          正常終了通知 (FIN) パケットを構築します。
  *  @param[out]     packet      構築結果を格納するパケット構造体へのポインタ。
  *  @param[in]      shdr        セッション識別ヘッダーへのポインタ。
@@ -174,7 +167,6 @@ int packet_build_reject(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
  *  `POTR_FLAG_FIN_TARGET_VALID` と `ack_num` の設定は呼び出し側が行います。\n
  *  受信者は target 付き FIN の場合のみ `ack_num` を参照して
  *  受信ウィンドウ追い付き後まで DISCONNECTED を遅延できます。
- *******************************************************************************
  */
 int packet_build_fin(PotrPacket *packet, const PotrPacketSessionHdr *shdr)
 {
@@ -195,13 +187,11 @@ int packet_build_fin(PotrPacket *packet, const PotrPacketSessionHdr *shdr)
 }
 
 /**
- *******************************************************************************
  *  @brief          FIN 完了応答 (FIN_ACK) パケットを構築します。
  *  @param[out]     packet          構築結果を格納するパケット構造体へのポインタ。
  *  @param[in]      shdr            セッション識別ヘッダーへのポインタ。
  *  @param[in]      fin_target_seq  完了した FIN target 通番。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- *******************************************************************************
  */
 int packet_build_fin_ack(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
                          uint32_t fin_target_seq)
@@ -223,7 +213,6 @@ int packet_build_fin_ack(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
 }
 
 /**
- *******************************************************************************
  *  @brief          データパケット (パックコンテナ) を構築します。
  *  @param[out]     out             構築結果を格納するパケット構造体へのポインタ。
  *  @param[in]      shdr            セッション識別ヘッダーへのポインタ。
@@ -239,7 +228,6 @@ int packet_build_fin_ack(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
  *  通番は外側パケットの seq_num フィールドで管理します。\n
  *  ペイロードエレメントの形式は flags(2) + payload_len(4) + payload(N) です。\n
  *  受信者は POTR_FLAG_DATA を検出後 packet_unpack_next() でペイロードエレメントを展開します。
- *******************************************************************************
  */
 int packet_build_packed(PotrPacket *out, const PotrPacketSessionHdr *shdr,
                         uint32_t seq_num,
@@ -264,7 +252,6 @@ int packet_build_packed(PotrPacket *out, const PotrPacketSessionHdr *shdr,
 }
 
 /**
- *******************************************************************************
  *  @brief          データパケットから次のペイロードエレメントを取り出します。
  *  @param[in]      container  packet_parse() 済みのデータパケット (POTR_FLAG_DATA)。
  *  @param[in,out]  offset     コンテナ payload 内の読み取り位置。呼び出し毎に更新。
@@ -277,7 +264,6 @@ int packet_build_packed(PotrPacket *out, const PotrPacketSessionHdr *shdr,
  *  通番は外側パケットで管理するためペイロードエレメントには含まれません。\n
  *  container->payload_len はホストバイトオーダー (packet_parse() 変換済み) で参照します。\n
  *  elem_out の session 情報は container から引き継ぎます。
- *******************************************************************************
  */
 int packet_unpack_next(const PotrPacket *container, size_t *offset,
                        PotrPacket *elem_out)
@@ -330,7 +316,6 @@ int packet_unpack_next(const PotrPacket *container, size_t *offset,
 }
 
 /**
- *******************************************************************************
  *  @brief          受信バイト列をパケット構造体に解析します。
  *  @param[out]     packet      解析結果を格納するパケット構造体へのポインタ。
  *  @param[in]      buf         受信バイト列へのポインタ。
@@ -339,7 +324,6 @@ int packet_unpack_next(const PotrPacket *container, size_t *offset,
  *
  *  @details
  *  各フィールドをホストバイトオーダーに変換して構造体に格納します。
- *******************************************************************************
  */
 int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
 {
@@ -378,7 +362,6 @@ int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
 }
 
 /**
- *******************************************************************************
  *  @brief          パケットのヘッダー + ペイロードの合計バイト数を返します。
  *  @param[in]      packet  対象のパケット構造体へのポインタ。
  *                          packet_build_*() で構築した NBO パケットを渡すこと。
@@ -389,7 +372,6 @@ int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
  *  @details
  *  UDP 送信時に sendto() へ渡すバイト数を求めるために使用します。\n
  *  内部で ntohs(packet->payload_len) を呼ぶため、引数は必ず NBO 状態で渡してください。
- *******************************************************************************
  */
 size_t packet_wire_size(const PotrPacket *packet)
 {

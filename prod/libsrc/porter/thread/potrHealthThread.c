@@ -492,14 +492,12 @@ int potr_tcp_send_ping_now(struct PotrContext_ *ctx, int path_idx)
 }
 
 /**
- *******************************************************************************
  *  @brief          非 TCP ヘルスチェックスレッドを起動します。
  *  @param[in,out]  ctx  セッションコンテキストへのポインタ。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
  *
  *  @details
  *  ctx->health_interval_ms が 0 の場合は起動しません (POTR_SUCCESS を返します)。
- *******************************************************************************
  */
 int potr_health_thread_start(struct PotrContext_ *ctx)
 {
@@ -536,11 +534,9 @@ int potr_health_thread_start(struct PotrContext_ *ctx)
 }
 
 /**
- *******************************************************************************
  *  @brief          非 TCP ヘルスチェックスレッドを停止します。
  *  @param[in,out]  ctx  セッションコンテキストへのポインタ。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- *******************************************************************************
  */
 int potr_health_thread_stop(struct PotrContext_ *ctx)
 {
@@ -567,7 +563,6 @@ void potr_health_thread_wake(struct PotrContext_ *ctx)
 }
 
 /**
- *******************************************************************************
  *  @brief          TCP ヘルスチェックスレッドを path ごとに起動します。
  *  @param[in,out]  ctx       セッションコンテキストへのポインタ。
  *  @param[in]      path_idx  パスインデックス (0 ～ n_path-1)。
@@ -575,7 +570,6 @@ void potr_health_thread_wake(struct PotrContext_ *ctx)
  *
  *  @details
  *  ctx->health_interval_ms が 0 の場合は起動しません (POTR_SUCCESS を返します)。
- *******************************************************************************
  */
 int potr_tcp_health_thread_start(struct PotrContext_ *ctx, int path_idx)
 {
@@ -609,12 +603,10 @@ int potr_tcp_health_thread_start(struct PotrContext_ *ctx, int path_idx)
 }
 
 /**
- *******************************************************************************
  *  @brief          TCP ヘルスチェックスレッドを停止します。
  *  @param[in,out]  ctx       セッションコンテキストへのポインタ。
  *  @param[in]      path_idx  パスインデックス (0 ～ n_path-1)。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- *******************************************************************************
  */
 int potr_tcp_health_thread_stop(struct PotrContext_ *ctx, int path_idx)
 {

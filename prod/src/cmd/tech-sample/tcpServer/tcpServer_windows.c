@@ -44,9 +44,7 @@
  * ============================================================ */
 
 /**
- *******************************************************************************
  *  @brief          ワーカープロセスの情報を管理する構造体。
- *******************************************************************************
  */
 typedef struct {
     HANDLE pipe;       /**< ワーカーとの通信用パイプ。 */
@@ -55,9 +53,7 @@ typedef struct {
 } WorkerInfo;
 
 /**
- *******************************************************************************
  *  @brief          ワーカー監視スレッドへ渡すコンテキスト。
- *******************************************************************************
  */
 typedef struct {
     int          id;              /**< ワーカー ID。 */
@@ -71,13 +67,11 @@ typedef struct {
  * ============================================================ */
 
 /**
- *******************************************************************************
  *  @brief          listen ソケットを作成してバインドし、待ち受けを開始します。
  *  @param[in]      port 待ち受けポート番号。
  *  @return         listen ソケット。
  *
  *  @attention      失敗した場合は exit() で終了します。
- *******************************************************************************
  */
 static SOCKET create_listen_socket(int port) {
     struct addrinfo hints = {0}, *result;
@@ -119,12 +113,10 @@ static SOCKET create_listen_socket(int port) {
 }
 
 /**
- *******************************************************************************
  *  @brief          fork モードの子プロセスとして起動された場合のクライアント処理。
  *  @param[in]      client_socket `--child` 引数で受け取ったクライアントソケット。
  *
  *  g_session_fn() で通信メインループを実行し、platform_cleanup() 後に ExitProcess() で終了します。
- *******************************************************************************
  */
 __declspec(noreturn) static void run_as_fork_child(SOCKET client_socket) {
     g_session_fn(client_socket);
@@ -133,7 +125,6 @@ __declspec(noreturn) static void run_as_fork_child(SOCKET client_socket) {
 }
 
 /**
- *******************************************************************************
  *  @brief          prefork モードのワーカープロセスとして起動された場合の処理。
  *  @param[in]      pipe_name        `--worker` 引数で受け取ったパイプ名。
  *  @param[in]      conns_per_worker 同時接続数。1 の場合は逐次処理、2 以上は多重処理。
@@ -145,7 +136,6 @@ __declspec(noreturn) static void run_as_fork_child(SOCKET client_socket) {
  *    PeekNamedPipe() でパイプを非ブロッキングチェックしながら、select() で
  *    アクティブな複数ソケットを監視するイベントループ。接続が閉じるたびに親へ
  *    完了通知 (done=1) を 1 バイト送信します。
- *******************************************************************************
  */
 static void worker_loop(const char *pipe_name, int conns_per_worker) {
     DWORD bytes_read, bytes_written;
@@ -254,14 +244,12 @@ static void worker_loop(const char *pipe_name, int conns_per_worker) {
 }
 
 /**
- *******************************************************************************
  *  @brief          ワーカーの完了を監視するスレッド。
  *  @param[in]      arg WorkerMonitorArg へのポインタ。
  *  @return         スレッド終了時は 0 を返します。
  *
  *  ワーカーからの完了通知を受け取ると、ワーカーの状態を「空き」に更新し
  *  イベントをシグナル状態にします。
- *******************************************************************************
  */
 static void worker_monitor_thread(void *arg) {
     WorkerMonitorArg *ctx              = (WorkerMonitorArg *)arg;
@@ -287,7 +275,6 @@ static void worker_monitor_thread(void *arg) {
 }
 
 /**
- *******************************************************************************
  *  @brief          接続を受け付けられるワーカーのインデックスを返します。
  *  @param[in]      workers          ワーカー情報配列。
  *  @param[in]      events           ワーカーイベント配列。
@@ -297,7 +284,6 @@ static void worker_monitor_thread(void *arg) {
  *
  *  conn_count < conns_per_worker のワーカーを探します。
  *  全ワーカーが満杯の場合は WaitForMultipleObjects でいずれかに空きが生じるまで待機します。
- *******************************************************************************
  */
 static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n,
                                  int conns_per_worker) {
@@ -312,7 +298,6 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n,
 }
 
 /**
- *******************************************************************************
  *  @brief          n 個のワーカープロセスを起動します。
  *  @param[in]      workers ワーカー情報配列。
  *  @param[in]      events  ワーカーイベント配列。
@@ -322,7 +307,6 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n,
  *  自分自身を `--worker <pipe_name>` 引数付きで再起動します。
  *
  *  @attention      パイプ作成またはプロセス起動に失敗した場合は exit() で終了します。
- *******************************************************************************
  */
 static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n,
                                   int conns_per_worker) {

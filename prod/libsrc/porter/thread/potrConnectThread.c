@@ -783,7 +783,6 @@ static void connect_thread_func(void *arg)
 }
 
 /**
- *******************************************************************************
  *  @brief          TCP 接続管理スレッドを起動します (path 数分)。
  *  @param[in,out]  ctx  セッションコンテキストへのポインタ。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
@@ -793,7 +792,6 @@ static void connect_thread_func(void *arg)
  *  - SENDER: dst_addr_resolved[i] および dst_port が設定済みであること (n_path 分)。
  *  - RECEIVER: tcp_listen_sock[i] が listen 状態であること (n_path 分)。
  *  - tcp_state_mutex / tcp_state_cv / tcp_send_mutex[] が初期化済みであること。
- *******************************************************************************
  */
 int potr_connect_thread_start(struct PotrContext_ *ctx)
 {
@@ -858,7 +856,6 @@ int potr_connect_thread_start(struct PotrContext_ *ctx)
 }
 
 /**
- *******************************************************************************
  *  @brief          TCP 接続管理スレッドを停止します。
  *  @param[in,out]  ctx  セッションコンテキストへのポインタ。
  *
@@ -870,7 +867,6 @@ int potr_connect_thread_start(struct PotrContext_ *ctx)
  *  5. connect_thread[i] の終了を全 path 待機する。
  *  6. 送信スレッドを停止する (全 path join 後)。
  *  依存スレッド (recv/health) のクリーンアップは各 connect_thread 内で行われる。
- *******************************************************************************
  */
 void potr_connect_thread_stop(struct PotrContext_ *ctx)
 {

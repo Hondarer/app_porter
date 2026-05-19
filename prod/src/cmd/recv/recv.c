@@ -63,7 +63,6 @@ static volatile sig_atomic_t g_shutdown_requested = 0;
 static com_util_pinned_prompt_t *g_screen = NULL;
 
 /**
- *******************************************************************************
  *  @brief          データがテキストかバイナリかを判定する。
  *  @param[in]      data    判定対象のデータ。
  *  @param[in]      len     データのバイト数。
@@ -73,7 +72,6 @@ static com_util_pinned_prompt_t *g_screen = NULL;
  *  全バイトを走査し、NUL (0x00)、\\t / \\n / \\r 以外の C0 制御文字
  *  (0x01-0x08, 0x0B, 0x0C, 0x0E-0x1F)、DEL (0x7F)、
  *  UTF-8 で無効な 0xFE / 0xFF のいずれかが含まれる場合にバイナリと判定します。
- *******************************************************************************
  */
 static int is_text_data(const void *data, size_t len)
 {
@@ -105,11 +103,9 @@ static int is_text_data(const void *data, size_t len)
 }
 
 /**
- *******************************************************************************
  *  @brief          終了要求 callback。
  *  @param[in]      event   終了イベント。
  *  @param[in]      context 未使用。
- *******************************************************************************
  */
 static void recv_shutdown_request_callback(const com_util_shutdown_event_t *event, void *context)
 {
@@ -120,14 +116,12 @@ static void recv_shutdown_request_callback(const com_util_shutdown_event_t *even
 }
 
 /**
- *******************************************************************************
  *  @brief          受信コールバック関数。
  *  @param[in]      service_id  サービスの ID。
  *  @param[in]      peer_id     ピア識別子 (N:1 モード時は非ゼロ、1:1 モード時は 0)。
  *  @param[in]      event       イベント種別。
  *  @param[in]      data        受信データまたは path 状態配列。
  *  @param[in]      len         受信データ長または path index。
- *******************************************************************************
  */
 static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, const void *data, size_t len)
 {
@@ -239,7 +233,6 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
 }
 
 /**
- *******************************************************************************
  *  @brief          トレースフックコールバック。指定レベル以上のメッセージを stderr へ出力する。
  *  @param[in]      prev      チェーン継続用の前エントリ。
  *  @param[in]      handle    trace を行った tracer ハンドル。
@@ -247,7 +240,6 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
  *  @param[in]      timestamp 解決済みタイムスタンプ。
  *  @param[in]      message   解決済みメッセージ文字列。
  *  @param[in]      context   閾値レベル (com_util_trace_level_t *) を指すポインタ。
- *******************************************************************************
  */
 static void trace_console_hook(
     com_util_tracer_hook_entry_t        *prev,
@@ -281,12 +273,10 @@ static void trace_console_hook(
 }
 
 /**
- *******************************************************************************
  *  @brief          ログレベル文字列を com_util_trace_level_t に変換する。
  *  @param[in]      str     レベル文字列 (VERBOSE/INFO/WARNING/ERROR/CRITICAL)。
  *  @param[out]     out     変換結果の格納先。
  *  @return         変換に成功した場合は 1、未知の文字列の場合は 0 を返します。
- *******************************************************************************
  */
 static int parse_trace_level(const char *str, com_util_trace_level_t *out)
 {
@@ -340,11 +330,9 @@ typedef struct
 } BidirSendCtx;
 
 /**
- *******************************************************************************
  *  @brief          文字列先頭の空白を読み飛ばす。
  *  @param[in]      p 文字列。
  *  @return         空白以外の先頭位置を返します。
- *******************************************************************************
  */
 static char *skip_spaces(char *p)
 {
@@ -356,10 +344,8 @@ static char *skip_spaces(char *p)
 }
 
 /**
- *******************************************************************************
  *  @brief          文字列末尾の空白を削除する。
  *  @param[in,out]  s 文字列。
- *******************************************************************************
  */
 static void trim_right(char *s)
 {
@@ -379,11 +365,9 @@ static void trim_right(char *s)
 }
 
 /**
- *******************************************************************************
  *  @brief          次の空白区切りトークンを取得する。
  *  @param[in,out]  cursor 解析位置。
  *  @return         トークン先頭。トークンがない場合は NULL。
- *******************************************************************************
  */
 static char *next_token(char **cursor)
 {
@@ -417,11 +401,9 @@ static char *next_token(char **cursor)
 }
 
 /**
- *******************************************************************************
  *  @brief          前後が同じ引用符なら引用符を外す。
  *  @param[in,out]  value 文字列。
  *  @return         引用符を外した文字列。
- *******************************************************************************
  */
 static char *strip_matching_quotes(char *value)
 {
@@ -442,9 +424,7 @@ static char *strip_matching_quotes(char *value)
 }
 
 /**
- *******************************************************************************
  *  @brief          対話コマンドのヘルプを表示する。
- *******************************************************************************
  */
 static void print_interactive_help(void)
 {
@@ -460,14 +440,12 @@ static void print_interactive_help(void)
 }
 
 /**
- *******************************************************************************
  *  @brief          ファイルをバイナリモードで読み込む。
  *  @param[in]      path        ファイルパス。
  *  @param[out]     out_data    読み込んだデータの格納先 (malloc 確保、呼び出し元が free する)。
  *  @param[out]     out_len     読み込んだデータのバイト数の格納先。
  *  @return         成功時は 0、失敗時は -1 を返します。
  *                  失敗時はエラーメッセージを stderr に出力します。
- *******************************************************************************
  */
 static int read_file_data(const char *path, unsigned char **out_data, size_t *out_len)
 {
@@ -546,12 +524,10 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
 }
 
 /**
- *******************************************************************************
  *  @brief          対話コマンド 1 行を処理する。
  *  @param[in]      handle サービスハンドル。
  *  @param[in,out]  line   入力行。解析中に一部を書き換えます。
  *  @return         1: 継続、0: 終了。
- *******************************************************************************
  */
 static int process_interactive_command(PotrHandle handle, char *line)
 {
@@ -697,10 +673,8 @@ static int process_interactive_command(PotrHandle handle, char *line)
 typedef com_util_thread_t * BidirThread;
 
 /**
- *******************************************************************************
  *  @brief          bidir 送信スレッド関数。
  *  @param[in]      arg BidirSendCtx へのポインタ。
- *******************************************************************************
  */
 static void bidir_send_thread_func(void *arg)
 {
@@ -727,12 +701,10 @@ static void bidir_send_thread_func(void *arg)
 }
 
 /**
- *******************************************************************************
  *  @brief          bidir 送信スレッドを起動する。
  *  @param[out]     thread  スレッドハンドルの格納先。
  *  @param[in]      ctx     スレッドに渡すコンテキスト。
  *  @return         成功時は 1、失敗時は 0 を返します。
- *******************************************************************************
  */
 static int start_bidir_send_thread(BidirThread *thread, BidirSendCtx *ctx)
 {
@@ -740,10 +712,8 @@ static int start_bidir_send_thread(BidirThread *thread, BidirSendCtx *ctx)
 }
 
 /**
- *******************************************************************************
  *  @brief          bidir 送信スレッドの終了を待機して破棄する。
  *  @param[in]      thread  スレッドハンドル。
- *******************************************************************************
  */
 static void join_bidir_send_thread(BidirThread *thread)
 {
@@ -754,12 +724,10 @@ static void join_bidir_send_thread(BidirThread *thread)
 }
 
 /**
- *******************************************************************************
  *  @brief          メインエントリーポイント。
  *  @param[in]      argc コマンドライン引数の数。
  *  @param[in]      argv コマンドライン引数の配列。
  *  @return         成功時は EXIT_SUCCESS、失敗時は EXIT_FAILURE を返します。
- *******************************************************************************
  */
 int main(int argc, char *argv[])
 {

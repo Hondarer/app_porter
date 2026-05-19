@@ -27,7 +27,6 @@
 #include <porter/protocol/window.h>
 
 /**
- *******************************************************************************
  *  @brief          ウィンドウを初期化します。
  *  @param[in,out]  win         初期化するウィンドウ構造体へのポインタ。
  *  @param[in]      initial_seq 初期通番。
@@ -38,7 +37,6 @@
  *  @details
  *  サイズが既存と同一の場合は状態をリセットするのみで再確保は行いません。\n
  *  異なるサイズの場合は既存バッファを解放して再確保します。
- *******************************************************************************
  */
 int window_init(PotrWindow *win, uint32_t initial_seq,
                 uint16_t window_size, uint16_t max_payload)
@@ -103,10 +101,8 @@ int window_init(PotrWindow *win, uint32_t initial_seq,
 }
 
 /**
- *******************************************************************************
  *  @brief          ウィンドウが保持する動的確保バッファを解放します。
  *  @param[in,out]  win  解放するウィンドウ構造体へのポインタ。
- *******************************************************************************
  */
 void window_dispose(PotrWindow *win)
 {
@@ -132,12 +128,10 @@ static uint16_t win_index(const PotrWindow *win, uint32_t seq)
 /* ---------- 送信側 ---------- */
 
 /**
- *******************************************************************************
  *  @brief          送信ウィンドウにパケットを積みます。
  *  @param[in,out]  win     送信ウィンドウ構造体へのポインタ。
  *  @param[in]      packet  積むパケットへのポインタ。
  *  @return         成功時は POTR_SUCCESS、ウィンドウ満杯の場合は POTR_ERROR を返します。
- *******************************************************************************
  */
 int window_send_push(PotrWindow *win, const PotrPacket *packet)
 {
@@ -176,11 +170,9 @@ int window_send_push(PotrWindow *win, const PotrPacket *packet)
 
 
 /**
- *******************************************************************************
  *  @brief          送信ウィンドウが満杯かどうかを返します。
  *  @param[in]      win     送信ウィンドウ構造体へのポインタ。
  *  @return         満杯の場合は 1、空きがある場合は 0 を返します。
- *******************************************************************************
  */
 int window_send_full(const PotrWindow *win)
 {
@@ -192,13 +184,11 @@ int window_send_full(const PotrWindow *win)
 }
 
 /**
- *******************************************************************************
  *  @brief          送信ウィンドウから指定通番のパケットを取得します (再送用)。
  *  @param[in]      win         送信ウィンドウ構造体へのポインタ。
  *  @param[in]      seq_num     取得する通番。
  *  @param[out]     packet_out  取得したパケットを格納する構造体へのポインタ。
  *  @return         成功時は POTR_SUCCESS、エントリが存在しない場合は POTR_ERROR を返します。
- *******************************************************************************
  */
 int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_out)
 {
@@ -229,7 +219,6 @@ int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_
 /* ---------- 受信側 ---------- */
 
 /**
- *******************************************************************************
  *  @brief          受信ウィンドウにパケットを格納します。
  *  @param[in,out]  win     受信ウィンドウ構造体へのポインタ。
  *  @param[in]      packet  格納するパケットへのポインタ。
@@ -238,7 +227,6 @@ int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_
  *  @details
  *  通番が受信ウィンドウ内であればバッファリングします。\n
  *  追い越し (順序外到着) にも対応します。
- *******************************************************************************
  */
 int window_recv_push(PotrWindow *win, const PotrPacket *packet)
 {
@@ -270,12 +258,10 @@ int window_recv_push(PotrWindow *win, const PotrPacket *packet)
 }
 
 /**
- *******************************************************************************
  *  @brief          受信ウィンドウから順序整列済みパケットを取り出します。
  *  @param[in,out]  win     受信ウィンドウ構造体へのポインタ。
  *  @param[out]     packet  取り出したパケットを格納する構造体へのポインタ。
  *  @return         取り出せた場合は POTR_SUCCESS、次のパケットが未着の場合は POTR_ERROR を返します。
- *******************************************************************************
  */
 int window_recv_pop(PotrWindow *win, PotrPacket *packet)
 {
@@ -301,7 +287,6 @@ int window_recv_pop(PotrWindow *win, PotrPacket *packet)
 }
 
 /**
- *******************************************************************************
  *  @brief          受信ウィンドウで指定通番をスキップして次の通番へ前進させます。
  *  @param[in,out]  win     受信ウィンドウ構造体へのポインタ。
  *  @param[in]      seq_num スキップする通番。next_seq と一致する場合のみ動作します。
@@ -309,7 +294,6 @@ int window_recv_pop(PotrWindow *win, PotrPacket *packet)
  *  @details
  *  REJECT 受信時に欠落パケットを「配信済み」として扱い、後続パケットの配信を
  *  継続するために使用します。seq_num が next_seq と一致しない場合は何もしません。
- *******************************************************************************
  */
 void window_recv_skip(PotrWindow *win, uint32_t seq_num)
 {
@@ -327,12 +311,10 @@ void window_recv_skip(PotrWindow *win, uint32_t seq_num)
 }
 
 /**
- *******************************************************************************
  *  @brief          受信ウィンドウで欠番が発生しているか確認し、NACK 番号を返します。
  *  @param[in]      win         受信ウィンドウ構造体へのポインタ。
  *  @param[out]     nack_num    欠番の通番を格納するポインタ。
  *  @return         欠番がある場合は 1、ない場合は 0 を返します。
- *******************************************************************************
  */
 int window_recv_needs_nack(const PotrWindow *win, uint32_t *nack_num)
 {
@@ -365,7 +347,6 @@ int window_recv_needs_nack(const PotrWindow *win, uint32_t *nack_num)
 }
 
 /**
- *******************************************************************************
  *  @brief          受信ウィンドウを新しい基点通番でリセットします。
  *  @param[in,out]  win          受信ウィンドウ構造体へのポインタ。
  *  @param[in]      new_base_seq リセット後の基点通番 (次に期待する通番)。
@@ -374,7 +355,6 @@ int window_recv_needs_nack(const PotrWindow *win, uint32_t *nack_num)
  *  全スロットを無効化し、base_seq / next_seq を new_base_seq に設定します。\n
  *  バッファの再確保は行いません。\n
  *  RAW モードでギャップを検出してセッションをリセットする際に使用します。
- *******************************************************************************
  */
 void window_recv_reset(PotrWindow *win, uint32_t new_base_seq)
 {

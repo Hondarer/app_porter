@@ -20,7 +20,6 @@
 #include <porter/protocol/configParseCommon.h>
 
 /**
- *******************************************************************************
  *  @brief          設定ファイルに登録されているすべてのサービス ID を列挙します。
  *  @param[in]      config_path 設定ファイルのパス。
  *  @param[out]     ids_out     サービス ID 配列へのポインタを格納する変数。
@@ -30,7 +29,6 @@
  *
  *  @details
  *  初期容量 POTR_MAX_SERVICES で配列を確保し、超過時は realloc で 2 倍に拡張します。
- *******************************************************************************
  */
 int config_list_service_ids(const char *config_path, int64_t **ids_out, int *count_out)
 {

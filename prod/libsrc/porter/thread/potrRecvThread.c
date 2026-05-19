@@ -2890,11 +2890,9 @@ static void tcp_recv_thread_func(void *arg)
 }
 
 /**
- *******************************************************************************
  *  @brief          非 TCP 受信スレッドを起動します。
  *  @param[in,out]  ctx  セッションコンテキストへのポインタ。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- *******************************************************************************
  */
 int comm_recv_thread_start(struct PotrContext_ *ctx)
 {
@@ -2922,11 +2920,9 @@ int comm_recv_thread_start(struct PotrContext_ *ctx)
 }
 
 /**
- *******************************************************************************
  *  @brief          非 TCP 受信スレッドを停止します。
  *  @param[in,out]  ctx  セッションコンテキストへのポインタ。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- *******************************************************************************
  */
 int comm_recv_thread_stop(struct PotrContext_ *ctx)
 {
@@ -2959,12 +2955,10 @@ int comm_recv_thread_stop(struct PotrContext_ *ctx)
 }
 
 /**
- *******************************************************************************
  *  @brief          TCP 受信スレッドを path ごとに起動します。
  *  @param[in,out]  ctx       セッションコンテキストへのポインタ。
  *  @param[in]      path_idx  パスインデックス (0 ～ n_path-1)。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- *******************************************************************************
  */
 int tcp_recv_thread_start(struct PotrContext_ *ctx, int path_idx)
 {
@@ -2993,14 +2987,12 @@ int tcp_recv_thread_start(struct PotrContext_ *ctx, int path_idx)
 }
 
 /**
- *******************************************************************************
  *  @brief          TCP 受信スレッドの終了を待機します。
  *  @details        スレッドの停止はソケットクローズ (connect スレッド側) で行います。
  *                  本関数は join のみを担当します。
  *  @param[in,out]  ctx       セッションコンテキストへのポインタ。
  *  @param[in]      path_idx  パスインデックス (0 ～ n_path-1)。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- *******************************************************************************
  */
 int tcp_recv_thread_stop(struct PotrContext_ *ctx, int path_idx)
 {

@@ -46,12 +46,10 @@ static volatile sig_atomic_t running = 1;
  * ============================================================ */
 
 /**
- *******************************************************************************
  *  @brief          SIGCHLD シグナルハンドラ。
  *  @param[in]      sig シグナル番号 (未使用)。
  *
  *  waitpid() でゾンビプロセスを回収します。
- *******************************************************************************
  */
 static void sigchld_handler(int sig) {
     (void)sig;
@@ -59,12 +57,10 @@ static void sigchld_handler(int sig) {
 }
 
 /**
- *******************************************************************************
  *  @brief          SIGINT / SIGTERM シグナルハンドラ。
  *  @param[in]      sig シグナル番号 (未使用)。
  *
  *  running フラグを 0 にセットして prefork のメインループを終了させます。
- *******************************************************************************
  */
 static void shutdown_handler(int sig) {
     (void)sig;
@@ -76,13 +72,11 @@ static void shutdown_handler(int sig) {
  * ============================================================ */
 
 /**
- *******************************************************************************
  *  @brief          listen ソケットを作成してバインドし、待ち受けを開始します。
  *  @param[in]      port 待ち受けポート番号。
  *  @return         listen ソケットのファイルディスクリプタ。
  *
  *  @attention      失敗した場合は exit() で終了します。
- *******************************************************************************
  */
 static int create_listen_socket(int port) {
     int server_fd;
@@ -116,7 +110,6 @@ static int create_listen_socket(int port) {
 }
 
 /**
- *******************************************************************************
  *  @brief          ワーカープロセスのメインループ (prefork モード用)。
  *  @param[in]      server_fd        サーバーソケットのファイルディスクリプタ。
  *  @param[in]      worker_id        ワーカーの識別番号。
@@ -129,7 +122,6 @@ static int create_listen_socket(int port) {
  *    epoll を使ったイベントループで最大 conns_per_worker 本のコネクションを
  *    シングルスレッドで同時処理します。容量に達すると server_fd を epoll から
  *    除去して新規 accept を止め、空きが生じると再登録して受け付けを再開します。
- *******************************************************************************
  */
 static void worker_loop(int server_fd, int worker_id, int conns_per_worker) {
     printf("[ワーカー %d, PID %lu] 起動完了、接続待機\n", worker_id, (unsigned long)get_pid());

@@ -65,7 +65,6 @@ extern "C"
 #endif /* __cplusplus */
 
     /**
-     *******************************************************************************
      *  @brief          設定構造体から指定サービスを開きます。
      *  @param[in]      global      グローバル設定構造体へのポインタ。
      *  @param[in]      service     サービス定義構造体へのポインタ。
@@ -174,13 +173,11 @@ extern "C"
      *                  POTR_ROLE_SENDER かつ callback が NULL でない場合は失敗を返します。\n
      *                  ただし POTR_TYPE_TCP_BIDIR および POTR_TYPE_UNICAST_BIDIR では SENDER にも\n
      *                  コールバックが必須であり、この場合 callback が NULL の場合は失敗を返します。
-     *******************************************************************************
      */
     POTR_EXPORT extern int POTR_API potrOpenService(const PotrGlobalConfig *global, const PotrServiceDef *service,
                                                     PotrRole role, PotrRecvCallback callback, PotrHandle *handle);
 
     /**
-     *******************************************************************************
      *  @brief          設定ファイルから指定サービスを開きます。
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[in]      service_id  開くサービスの ID。
@@ -255,14 +252,12 @@ extern "C"
      *                  POTR_ROLE_SENDER かつ callback が NULL でない場合は失敗を返します。\n
      *                  ただし POTR_TYPE_TCP_BIDIR および POTR_TYPE_UNICAST_BIDIR では SENDER にも\n
      *                  コールバックが必須であり、この場合 callback が NULL の場合は失敗を返します。
-     *******************************************************************************
      */
     POTR_EXPORT extern int POTR_API potrOpenServiceFromConfig(const char *config_path, int64_t service_id,
                                                               PotrRole role, PotrRecvCallback callback,
                                                               PotrHandle *handle);
 
     /**
-     *******************************************************************************
      *  @brief          メッセージを送信します。
      *  @param[in]      handle      potrOpenService() で取得したセッションハンドル。
      *  @param[in]      peer_id     送信先ピア識別子。\n
@@ -332,13 +327,11 @@ extern "C"
      *                  TCP 通信種別 (`POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR`) では、\n
      *                  物理 TCP 接続済みでも CONNECTED 前または全 path 切断中は\n
      *                  POTR_ERROR_DISCONNECTED (1) を返します。
-     *******************************************************************************
      */
     POTR_EXPORT extern int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id, const void *data, size_t len,
                                              int flags);
 
     /**
-     *******************************************************************************
      *  @brief          指定ピアを切断します (N:1 モード専用)。
      *  @param[in]      handle      potrOpenService() で取得したセッションハンドル。
      *  @param[in]      peer_id     切断するピアの識別子 (POTR_PEER_NA および POTR_PEER_ALL 以外)。
@@ -360,12 +353,10 @@ extern "C"
      *                  peer_id = POTR_PEER_NA または POTR_PEER_ALL の場合は失敗を返します。\n
      *                  指定した peer_id が存在しない場合は失敗を返します。\n
      *                  1:1 モードまたは N:1 モード以外で呼び出した場合は失敗を返します。
-     *******************************************************************************
      */
     POTR_EXPORT extern int POTR_API potrDisconnectPeer(PotrHandle handle, PotrPeerId peer_id);
 
     /**
-     *******************************************************************************
      *  @brief          サービスを閉じます。
      *  @param[in]      handle  potrOpenService() で取得したセッションハンドル。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
@@ -391,12 +382,10 @@ extern "C"
      *  本関数を呼び出す前に、同一ハンドルへのすべての potrSend() が完了していることを確認してください。
      *
      *  @warning        handle が NULL の場合は失敗を返します。
-     *******************************************************************************
      */
     POTR_EXPORT extern int POTR_API potrCloseService(PotrHandle handle);
 
     /**
-     *******************************************************************************
      *  @brief          porter 内部トレーサーハンドルを返します。
      *  @return         com_util_tracer_t ハンドル。
      *
@@ -421,12 +410,10 @@ extern "C"
      *
      *  @par            スレッド セーフ
      *  本関数はスレッドセーフです。
-     *******************************************************************************
      */
     POTR_EXPORT com_util_tracer_t * POTR_API potrGetTracer(void);
 
     /**
-     *******************************************************************************
      *  @brief          設定ファイルから指定サービスの通信種別を取得します。
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[in]      service_id  照会するサービスの ID。
@@ -457,7 +444,6 @@ extern "C"
      *
      *  @warning        config_path または type が NULL の場合は失敗を返します。\n
      *                  指定した service_id が設定ファイルに存在しない場合は失敗を返します。
-     *******************************************************************************
      */
     POTR_EXPORT extern int POTR_API potrGetServiceType(const char *config_path, int64_t service_id, PotrType *type);
 

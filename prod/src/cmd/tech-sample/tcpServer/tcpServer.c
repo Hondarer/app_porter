@@ -48,7 +48,6 @@ void handle_client_session(ClientFd fd) {
 }
 
 /**
- *******************************************************************************
  *  @brief          コマンドライン引数を解析します。
  *  @param[in]      argc             引数の数。
  *  @param[in]      argv             引数の配列。
@@ -61,7 +60,6 @@ void handle_client_session(ClientFd fd) {
  *  `--conns-per-worker <num>` を解析します。
  *  内部起動引数 (`--child`, `--worker`) は dispatch_internal_args() で処理済みの
  *  ため、本関数では無視します。
- *******************************************************************************
  */
 static void parse_args(int argc, char *argv[],
                        ServerMode *mode, int *port, int *workers,
@@ -85,7 +83,6 @@ static void parse_args(int argc, char *argv[],
 }
 
 /**
- *******************************************************************************
  *  @brief          メインエントリーポイント。
  *  @param[in]      argc コマンドライン引数の数。
  *  @param[in]      argv コマンドライン引数の配列。
@@ -96,7 +93,6 @@ static void parse_args(int argc, char *argv[],
  *     処理済みの場合は platform_cleanup() して終了します。
  *  3. parse_args() でモード・ポート・ワーカー数を解析。
  *  4. 指定されたモードでサーバーを起動します。
- *******************************************************************************
  */
 /* C4702: Windows 版 run_fork_server / run_prefork_server は while(1) 不脱出ループのため
  * LTCG が関数を noreturn と推論し、後続の platform_cleanup() / return 0 を到達不能と判定する。
