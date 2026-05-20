@@ -9,6 +9,7 @@ SUBDIRS = \
 APP_NAME = $(notdir $(CURDIR))
 MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 WORKSPACE_DIR ?= $(abspath $(MAKEFILE_DIR)/../..)
+CONFIG ?= RelWithDebInfo
 MAKEFW_HOME := $(strip $(MAKEFW_HOME))
 ifeq ($(MAKEFW_HOME),)
     $(error MAKEFW_HOME is required. Export MAKEFW_HOME before running make)
@@ -80,11 +81,14 @@ __ensure-coverity:
 .PHONY: default
 default:
 	@sig_file=$$(mktemp); \
-	if ! MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" > "$$sig_file"; then \
+	signature_available=1; \
+	if ! CONFIG="$(CONFIG)" MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" DEFINES="$(DEFINES)" LIBS="$(LIBS)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" build > "$$sig_file"; then \
+		signature_available=0; \
 		rm -f "$$sig_file"; \
-		exit 1; \
+		sig_file=""; \
+		echo "Warning: failed to calculate build signature. Running build without skip."; \
 	fi; \
-	if [ -f "$(BUILD_LOG)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
+	if [ $$signature_available -eq 1 ] && [ -f "$(BUILD_LOG)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
 		prev_crt=$$(sed -n 's/^MSVC_CRT=//p' "$(BUILD_LOG)"); \
 		if [ -n "$$prev_crt" ] && [ "$$prev_crt" != "$(MSVC_CRT_SUBDIR)" ]; then \
 			rm -f "$$sig_file"; \
@@ -92,8 +96,9 @@ default:
 			exit 1; \
 		fi; \
 	fi; \
-	current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); \
-	if [ "$$current_clean" = "1" ] && [ -f "$(BUILD_LOG)" ] && cmp -s "$$sig_file" "$(BUILD_LOG)"; then \
+	current_clean=0; \
+	if [ $$signature_available -eq 1 ]; then current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); fi; \
+	if [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ] && [ -f "$(BUILD_LOG)" ] && cmp -s "$$sig_file" "$(BUILD_LOG)"; then \
 		echo "INFO: Skipping build (dependencies are unchanged and clean)"; \
 		rm -f "$$sig_file"; \
 	else \
@@ -105,21 +110,24 @@ default:
 				$(MAKE) -C $$dir || { make_exit=$$?; break; }; \
 			fi; \
 		done; \
-		if [ $$make_exit -eq 0 ] && [ "$$current_clean" = "1" ]; then \
+		if [ $$make_exit -eq 0 ] && [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ]; then \
 			cp "$$sig_file" "$(BUILD_LOG)"; \
 		fi; \
-		rm -f "$$sig_file"; \
+		if [ -n "$$sig_file" ]; then rm -f "$$sig_file"; fi; \
 		if [ $$make_exit -ne 0 ]; then exit $$make_exit; fi; \
 	fi
 
 .PHONY: with-cov
 with-cov: __ensure-coverity
 	@sig_file=$$(mktemp); \
-	if ! MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" > "$$sig_file"; then \
+	signature_available=1; \
+	if ! CONFIG="$(CONFIG)" MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" DEFINES="$(DEFINES)" LIBS="$(LIBS)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" build > "$$sig_file"; then \
+		signature_available=0; \
 		rm -f "$$sig_file"; \
-		exit 1; \
+		sig_file=""; \
+		echo "Warning: failed to calculate build signature. Running build without skip."; \
 	fi; \
-	if [ -f "$(BUILD_LOG)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
+	if [ $$signature_available -eq 1 ] && [ -f "$(BUILD_LOG)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
 		prev_crt=$$(sed -n 's/^MSVC_CRT=//p' "$(BUILD_LOG)"); \
 		if [ -n "$$prev_crt" ] && [ "$$prev_crt" != "$(MSVC_CRT_SUBDIR)" ]; then \
 			rm -f "$$sig_file"; \
@@ -127,8 +135,9 @@ with-cov: __ensure-coverity
 			exit 1; \
 		fi; \
 	fi; \
-	current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); \
-	if [ "$$current_clean" = "1" ] && [ -f "$(BUILD_LOG)" ] && cmp -s "$$sig_file" "$(BUILD_LOG)"; then \
+	current_clean=0; \
+	if [ $$signature_available -eq 1 ]; then current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); fi; \
+	if [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ] && [ -f "$(BUILD_LOG)" ] && cmp -s "$$sig_file" "$(BUILD_LOG)"; then \
 		echo "INFO: Skipping build (dependencies are unchanged and clean)"; \
 		rm -f "$$sig_file"; \
 	else \
@@ -145,10 +154,10 @@ with-cov: __ensure-coverity
 				fi; \
 			fi; \
 		done; \
-		if [ $$make_exit -eq 0 ] && [ "$$current_clean" = "1" ]; then \
+		if [ $$make_exit -eq 0 ] && [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ]; then \
 			cp "$$sig_file" "$(BUILD_LOG)"; \
 		fi; \
-		rm -f "$$sig_file"; \
+		if [ -n "$$sig_file" ]; then rm -f "$$sig_file"; fi; \
 		if [ $$make_exit -ne 0 ]; then exit $$make_exit; fi; \
 	fi
 
@@ -162,11 +171,14 @@ clean : $(SUBDIR_TARGETS)
 test :
 	@if [ -f test/makefile ]; then \
 		sig_file=$$(mktemp); \
-		if ! MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" > "$$sig_file"; then \
+		signature_available=1; \
+		if ! CONFIG="$(CONFIG)" MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" DEFINES="$(DEFINES)" LIBS="$(LIBS)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" test > "$$sig_file"; then \
+			signature_available=0; \
 			rm -f "$$sig_file"; \
-			exit 1; \
+			sig_file=""; \
+			echo "Warning: failed to calculate test signature. Running test without skip."; \
 		fi; \
-		if [ -f "$(TEST_LOG)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
+		if [ $$signature_available -eq 1 ] && [ -f "$(TEST_LOG)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
 			prev_crt=$$(sed -n 's/^MSVC_CRT=//p' "$(TEST_LOG)"); \
 			if [ -n "$$prev_crt" ] && [ "$$prev_crt" != "$(MSVC_CRT_SUBDIR)" ]; then \
 				rm -f "$$sig_file"; \
@@ -174,8 +186,9 @@ test :
 				exit 1; \
 			fi; \
 		fi; \
-		current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); \
-		if [ "$$current_clean" = "1" ] && [ -f "$(TEST_LOG)" ] && cmp -s "$$sig_file" "$(TEST_LOG)"; then \
+		current_clean=0; \
+		if [ $$signature_available -eq 1 ]; then current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); fi; \
+		if [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ] && [ -f "$(TEST_LOG)" ] && cmp -s "$$sig_file" "$(TEST_LOG)"; then \
 			echo "INFO: Skipping test (dependencies are unchanged and clean)"; \
 			rm -f "$$sig_file"; \
 			exit 0; \
@@ -184,10 +197,10 @@ test :
 		echo $(MAKE) -C test test; \
 		$(MAKE) -C test test; \
 		make_exit=$$?; \
-		if [ $$make_exit -eq 0 ] && [ "$$current_clean" = "1" ]; then \
+		if [ $$make_exit -eq 0 ] && [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ]; then \
 			cp "$$sig_file" "$(TEST_LOG)"; \
 		fi; \
-		rm -f "$$sig_file"; \
+		if [ -n "$$sig_file" ]; then rm -f "$$sig_file"; fi; \
 		if [ $$make_exit -ne 0 ]; then exit $$make_exit; fi; \
 	else \
 		:; # echo "Skipping directory 'test' (no makefile)"; \
