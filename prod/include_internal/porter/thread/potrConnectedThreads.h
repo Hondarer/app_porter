@@ -38,9 +38,18 @@ typedef struct PotrConnectedThreadsOps_
                                 uint8_t              next_state);
 } PotrConnectedThreadsOps;
 
-extern int potr_start_connected_threads(struct PotrContext_           *ctx,
-                                        int                            path_idx,
-                                        const PotrConnectedThreadsOps *ops);
+    /**
+     *  @brief          接続確立後に send / recv / health スレッドを起動する。
+     *  @details
+     *  起動に失敗した場合は起動済みのスレッドを停止してロールバックする。
+     *  @param[in,out]  ctx      セッションコンテキスト。
+     *  @param[in]      path_idx 接続確立済みパスのインデックス。
+     *  @param[in]      ops      スレッド操作コールバックテーブル。
+     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     */
+    extern int potr_start_connected_threads(struct PotrContext_           *ctx,
+                                            int                            path_idx,
+                                            const PotrConnectedThreadsOps *ops);
 
 #ifdef __cplusplus
 }

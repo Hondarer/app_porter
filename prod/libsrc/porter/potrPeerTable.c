@@ -235,7 +235,7 @@ void peer_table_dispose(struct PotrContext_ *ctx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-PotrPeerContext *peer_find_by_session(struct PotrContext_ *ctx,
+PotrPeerContext *peer_find_by_session(const struct PotrContext_ *ctx,
                                       uint32_t session_id,
                                       int64_t  session_tv_sec,
                                       int32_t  session_tv_nsec)
@@ -252,7 +252,7 @@ PotrPeerContext *peer_find_by_session(struct PotrContext_ *ctx,
             ctx->peers[i].peer_session_tv_sec  == session_tv_sec  &&
             ctx->peers[i].peer_session_tv_nsec == session_tv_nsec)
         {
-            return &ctx->peers[i];
+            return (PotrPeerContext *)&ctx->peers[i];
         }
     }
     return NULL;
@@ -260,7 +260,7 @@ PotrPeerContext *peer_find_by_session(struct PotrContext_ *ctx,
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-PotrPeerContext *peer_find_by_id(struct PotrContext_ *ctx, PotrPeerId peer_id)
+PotrPeerContext *peer_find_by_id(const struct PotrContext_ *ctx, PotrPeerId peer_id)
 {
     int i;
 
@@ -268,7 +268,7 @@ PotrPeerContext *peer_find_by_id(struct PotrContext_ *ctx, PotrPeerId peer_id)
     {
         if (ctx->peers[i].active && ctx->peers[i].peer_id == peer_id)
         {
-            return &ctx->peers[i];
+            return (PotrPeerContext *)&ctx->peers[i];
         }
     }
     return NULL;
@@ -381,7 +381,7 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void peer_path_clear(struct PotrContext_ *ctx, PotrPeerContext *peer, int path_idx)
+void peer_path_clear(const struct PotrContext_ *ctx, PotrPeerContext *peer, int path_idx)
 {
     if (peer->dest_addr[path_idx].sin_family == 0)
     {

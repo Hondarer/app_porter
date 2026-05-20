@@ -56,7 +56,7 @@ extern void potr_sync_peer_path_state_locked(PotrPeerContext         *peer,
 extern void potr_emit_service_path_events_locked(struct PotrContext_          *ctx,
                                                  const PotrPreparedPathEvents *prepared);
 extern void potr_emit_peer_path_events_locked(struct PotrContext_          *ctx,
-                                              PotrPeerContext              *peer,
+                                              const PotrPeerContext        *peer,
                                               const PotrPreparedPathEvents *prepared);
 
 #ifdef __cplusplus

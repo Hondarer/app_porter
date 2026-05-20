@@ -80,23 +80,119 @@ extern "C"
 {
 #endif /* __cplusplus */
 
+    /**
+     *  @brief          送信キューを初期化する。
+     *  @param[in,out]  q           送信キュー。entries・payload_pool を動的確保して設定する。
+     *  @param[in]      depth       キュー容量 (エントリ数)。
+     *  @param[in]      max_payload ペイロード最大長 (バイト)。
+     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     */
     extern int  potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload);
+
+    /**
+     *  @brief          送信キューのリソースを解放する。
+     *  @param[in,out]  q   解放する送信キュー。
+     */
     extern void potr_send_queue_dispose(PotrSendQueue *q);
+
+    /**
+     *  @brief          ペイロードエレメントをキューに追加する。
+     *  @details
+     *  キューが満杯の場合は待機せず即時 POTR_ERROR を返す。
+     *  @param[in,out]  q           送信キュー。
+     *  @param[in]      peer_id     送信先ピア識別子 (1:1 モードでは POTR_PEER_NA を指定)。
+     *  @param[in]      flags       ペイロードエレメントフラグ。
+     *  @param[in]      payload     送信ペイロードデータへのポインタ。
+     *  @param[in]      payload_len 送信ペイロード長 (バイト)。
+     *  @return         成功時は POTR_SUCCESS、満杯時は POTR_ERROR。
+     */
     extern int  potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id,
                                      uint16_t flags,
-                                     const void *payload, uint16_t payload_len);      /* 満杯時は即時 POTR_ERROR */
+                                     const void *payload, uint16_t payload_len);
+
+    /**
+     *  @brief          ペイロードエレメントをキューに追加する (空き待機あり)。
+     *  @details
+     *  キューが満杯の場合は空きが生じるまで待機する。
+     *  @param[in,out]  q           送信キュー。
+     *  @param[in]      peer_id     送信先ピア識別子 (1:1 モードでは POTR_PEER_NA を指定)。
+     *  @param[in]      flags       ペイロードエレメントフラグ。
+     *  @param[in]      payload     送信ペイロードデータへのポインタ。
+     *  @param[in]      payload_len 送信ペイロード長 (バイト)。
+     *  @param[in]      running     実行フラグへのポインタ。0 になると待機を中断する。
+     *  @return         成功時は POTR_SUCCESS、running が 0 になった場合は POTR_ERROR。
+     */
     extern int  potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id,
                                           uint16_t flags,
                                           const void *payload, uint16_t payload_len,
-                                          volatile int *running);                      /* 満杯時は空きを待機 */
+                                          volatile int *running);
+
+    /**
+     *  @brief          先頭エントリを取り出して inflight に移行する (ブロッキング)。
+     *  @details
+     *  キューが空の場合は not_empty 条件変数を待機する。
+     *  @param[in,out]  q       送信キュー。
+     *  @param[out]     out     取り出したエントリの書き戻し先。
+     *  @param[in]      running 実行フラグへのポインタ。0 になると待機を中断する。
+     *  @return         成功時は POTR_SUCCESS、running が 0 になった場合は POTR_ERROR。
+     */
     extern int  potr_send_queue_pop(PotrSendQueue *q, PotrPayloadElem *out,
                                     volatile int *running);
+
+    /**
+     *  @brief          先頭エントリを参照する (inflight へは移行しない)。
+     *  @details
+     *  キューが空の場合は即時 POTR_ERROR を返す。
+     *  @param[in,out]  q   送信キュー (mutex ロック・アンロックを行う)。
+     *  @param[out]     out 先頭エントリの書き戻し先。
+     *  @return         成功時は POTR_SUCCESS、空の場合は POTR_ERROR。
+     */
     extern int  potr_send_queue_peek(PotrSendQueue *q, PotrPayloadElem *out);
+
+    /**
+     *  @brief          先頭エントリを参照する (タイムアウトあり)。
+     *  @details
+     *  キューが空の場合は timeout_ms ミリ秒まで待機する。
+     *  @param[in,out]  q           送信キュー。
+     *  @param[out]     out         先頭エントリの書き戻し先。
+     *  @param[in]      timeout_ms  待機タイムアウト (ミリ秒)。
+     *  @return         成功時は POTR_SUCCESS、タイムアウトまたは空の場合は POTR_ERROR。
+     */
     extern int  potr_send_queue_peek_timed(PotrSendQueue *q, PotrPayloadElem *out,
                                            int timeout_ms);
+
+    /**
+     *  @brief          先頭エントリを取り出して inflight に移行する (ノンブロッキング)。
+     *  @details
+     *  キューが空の場合は即時 POTR_ERROR を返す。
+     *  @param[in,out]  q   送信キュー。
+     *  @param[out]     out 取り出したエントリの書き戻し先。
+     *  @return         成功時は POTR_SUCCESS、空の場合は POTR_ERROR。
+     */
     extern int  potr_send_queue_try_pop(PotrSendQueue *q, PotrPayloadElem *out);
+
+    /**
+     *  @brief          inflight エントリを 1 つ完了としてマークする。
+     *  @details
+     *  inflight をデクリメントし、count == 0 かつ inflight == 0 なら drained を broadcast する。\n
+     *  push_wait で待機中のスレッドを起床させるため not_full もシグナルする。
+     *  @param[in,out]  q   送信キュー。
+     */
     extern void potr_send_queue_complete(PotrSendQueue *q);
+
+    /**
+     *  @brief          count と inflight が共に 0 になるまで待機する。
+     *  @param[in,out]  q   送信キュー。
+     */
     extern void potr_send_queue_wait_drained(PotrSendQueue *q);
+
+    /**
+     *  @brief          待機スレッドを全て起床させてキューをシャットダウンする。
+     *  @details
+     *  not_empty と not_full の条件変数を broadcast し、pop や push_wait で待機中の
+     *  スレッドを起床させる。実際のキュー破棄は potr_send_queue_dispose() で行う。
+     *  @param[in,out]  q   送信キュー。
+     */
     extern void potr_send_queue_shutdown(PotrSendQueue *q);
 
 #ifdef __cplusplus

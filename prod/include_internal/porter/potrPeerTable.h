@@ -77,7 +77,7 @@ extern "C"
      *  @param[in]  session_tv_nsec ピアのセッション開始時刻 ナノ秒部。
      *  @return     見つかった場合はピアコンテキストへのポインタ、見つからない場合は NULL。
      */
-    extern PotrPeerContext *peer_find_by_session(struct PotrContext_ *ctx,
+    extern PotrPeerContext *peer_find_by_session(const struct PotrContext_ *ctx,
                                                  uint32_t session_id,
                                                  int64_t  session_tv_sec,
                                                  int32_t  session_tv_nsec);
@@ -92,7 +92,7 @@ extern "C"
      *  @param[in]  peer_id 検索するピア ID。
      *  @return     見つかった場合はピアコンテキストへのポインタ、見つからない場合は NULL。
      */
-    extern PotrPeerContext *peer_find_by_id(struct PotrContext_ *ctx,
+    extern PotrPeerContext *peer_find_by_id(const struct PotrContext_ *ctx,
                                             PotrPeerId peer_id);
 
     /**
@@ -123,11 +123,11 @@ extern "C"
      *  タイムアウト・TCP FIN/RST などパス断の発生源によらず共通して呼び出す。\n
      *  呼び出し元は peers_mutex を取得してから呼び出すこと。
      *
-     *  @param[in,out]  ctx         セッションコンテキスト。
+     *  @param[in]      ctx         セッションコンテキスト。
      *  @param[in,out]  peer        対象ピアコンテキスト。
      *  @param[in]      path_idx    クリアするパスのインデックス (ctx->sock[] の添字)。
      */
-    extern void peer_path_clear(struct PotrContext_ *ctx, PotrPeerContext *peer, int path_idx);
+    extern void peer_path_clear(const struct PotrContext_ *ctx, PotrPeerContext *peer, int path_idx);
 
     /**
      *  @brief  ピアリソースを解放してスロットをクリアする。

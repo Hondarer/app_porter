@@ -21,12 +21,36 @@ extern "C"
 {
 #endif /* __cplusplus */
 
-    /* 非 TCP 用受信スレッド (単一スレッド) */
+    /**
+     *  @brief          非 TCP 受信スレッドを起動する。
+     *  @param[in,out]  ctx セッションコンテキスト。
+     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     */
     extern int comm_recv_thread_start(struct PotrContext_ *ctx);
+
+    /**
+     *  @brief          非 TCP 受信スレッドを停止する。
+     *  @param[in,out]  ctx セッションコンテキスト。
+     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     */
     extern int comm_recv_thread_stop(struct PotrContext_ *ctx);
 
-    /* TCP 用受信スレッド (path ごと) */
+    /**
+     *  @brief          TCP 受信スレッドを path ごとに起動する。
+     *  @param[in,out]  ctx      セッションコンテキスト。
+     *  @param[in]      path_idx パスインデックス (0 〜 n_path-1)。
+     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     */
     extern int tcp_recv_thread_start(struct PotrContext_ *ctx, int path_idx);
+
+    /**
+     *  @brief          TCP 受信スレッドの終了を待機する。
+     *  @details
+     *  スレッドの停止はソケットクローズ (connect スレッド側) で行う。本関数は join のみを担当する。
+     *  @param[in,out]  ctx      セッションコンテキスト。
+     *  @param[in]      path_idx パスインデックス (0 〜 n_path-1)。
+     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     */
     extern int tcp_recv_thread_stop(struct PotrContext_ *ctx, int path_idx);
 
 #ifdef __cplusplus

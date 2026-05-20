@@ -2889,11 +2889,8 @@ static void tcp_recv_thread_func(void *arg)
     return;
 }
 
-/**
- *  @brief          非 TCP 受信スレッドを起動します。
- *  @param[in,out]  ctx  セッションコンテキストへのポインタ。
- *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int comm_recv_thread_start(struct PotrContext_ *ctx)
 {
     if (ctx == NULL)
@@ -2919,11 +2916,8 @@ int comm_recv_thread_start(struct PotrContext_ *ctx)
     return POTR_SUCCESS;
 }
 
-/**
- *  @brief          非 TCP 受信スレッドを停止します。
- *  @param[in,out]  ctx  セッションコンテキストへのポインタ。
- *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int comm_recv_thread_stop(struct PotrContext_ *ctx)
 {
     if (ctx == NULL)
@@ -2954,12 +2948,8 @@ int comm_recv_thread_stop(struct PotrContext_ *ctx)
     return POTR_SUCCESS;
 }
 
-/**
- *  @brief          TCP 受信スレッドを path ごとに起動します。
- *  @param[in,out]  ctx       セッションコンテキストへのポインタ。
- *  @param[in]      path_idx  パスインデックス (0 ～ n_path-1)。
- *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int tcp_recv_thread_start(struct PotrContext_ *ctx, int path_idx)
 {
     if (ctx == NULL) { return POTR_ERROR; }
@@ -2986,14 +2976,8 @@ int tcp_recv_thread_start(struct PotrContext_ *ctx, int path_idx)
     return POTR_SUCCESS;
 }
 
-/**
- *  @brief          TCP 受信スレッドの終了を待機します。
- *  @details        スレッドの停止はソケットクローズ (connect スレッド側) で行います。
- *                  本関数は join のみを担当します。
- *  @param[in,out]  ctx       セッションコンテキストへのポインタ。
- *  @param[in]      path_idx  パスインデックス (0 ～ n_path-1)。
- *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int tcp_recv_thread_stop(struct PotrContext_ *ctx, int path_idx)
 {
     if (ctx == NULL) { return POTR_ERROR; }

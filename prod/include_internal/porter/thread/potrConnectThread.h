@@ -27,13 +27,23 @@ extern "C"
 #endif /* __cplusplus */
 
     /**
-     *  @brief  TCP 接続管理スレッドを起動します。
-     *  @return  成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @brief          TCP 接続管理スレッドを起動します。
+     *  @details
+     *  呼び出し前提:\n
+     *  - SENDER: dst_addr_resolved[i] および dst_port が設定済みであること (n_path 分)。\n
+     *  - RECEIVER: tcp_listen_sock[i] が listen 状態であること (n_path 分)。\n
+     *  - tcp_state_mutex / tcp_state_cv / tcp_send_mutex[] が初期化済みであること。
+     *  @param[in,out]  ctx セッションコンテキスト。
+     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
     extern int  potr_connect_thread_start(struct PotrContext_ *ctx);
 
     /**
-     *  @brief  TCP 接続管理スレッドを停止します。
+     *  @brief          TCP 接続管理スレッドを停止します。
+     *  @details
+     *  connect_thread_running フラグをクリアし、tcp_state_cv を broadcast して\n
+     *  reconnect sleep を中断する。全 path のソケットをクローズしてスレッド終了を待機する。
+     *  @param[in,out]  ctx セッションコンテキスト。
      */
     extern void potr_connect_thread_stop(struct PotrContext_ *ctx);
 

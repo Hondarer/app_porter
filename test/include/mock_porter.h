@@ -20,7 +20,7 @@ class Mock_porter
 public:
     // Peer table mock methods
     MOCK_METHOD(PotrPeerContext *, peer_find_by_id,
-                (struct PotrContext_ *, PotrPeerId));
+                (const struct PotrContext_ *, PotrPeerId));
     MOCK_METHOD(void, peer_send_fin,
                 (struct PotrContext_ *, PotrPeerContext *));
     MOCK_METHOD(void, peer_free,

@@ -23,6 +23,8 @@
 #include <porter/thread/potrHealthThread.h>
 #include <porter/thread/potrConnectedThreads.h>
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int potr_start_connected_threads(struct PotrContext_           *ctx,
                                  int                            path_idx,
                                  const PotrConnectedThreadsOps *ops)

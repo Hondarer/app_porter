@@ -257,7 +257,7 @@ void potr_emit_service_path_events_locked(struct PotrContext_          *ctx,
 }
 
 void potr_emit_peer_path_events_locked(struct PotrContext_          *ctx,
-                                       PotrPeerContext              *peer,
+                                       const PotrPeerContext        *peer,
                                        const PotrPreparedPathEvents *prepared)
 {
     int k;

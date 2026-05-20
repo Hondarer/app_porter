@@ -486,19 +486,15 @@ static void tcp_health_thread_func(void *arg)
     return;
 }
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int potr_tcp_send_ping_now(struct PotrContext_ *ctx, int path_idx)
 {
     return tcp_send_ping_packet(ctx, path_idx);
 }
 
-/**
- *  @brief          非 TCP ヘルスチェックスレッドを起動します。
- *  @param[in,out]  ctx  セッションコンテキストへのポインタ。
- *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- *
- *  @details
- *  ctx->health_interval_ms が 0 の場合は起動しません (POTR_SUCCESS を返します)。
- */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int potr_health_thread_start(struct PotrContext_ *ctx)
 {
     if (ctx == NULL) { return POTR_ERROR; }
@@ -533,11 +529,8 @@ int potr_health_thread_start(struct PotrContext_ *ctx)
     return POTR_SUCCESS;
 }
 
-/**
- *  @brief          非 TCP ヘルスチェックスレッドを停止します。
- *  @param[in,out]  ctx  セッションコンテキストへのポインタ。
- *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int potr_health_thread_stop(struct PotrContext_ *ctx)
 {
     if (ctx == NULL) { return POTR_ERROR; }
@@ -557,20 +550,15 @@ int potr_health_thread_stop(struct PotrContext_ *ctx)
     return POTR_SUCCESS;
 }
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_health_thread_wake(struct PotrContext_ *ctx)
 {
     signal_health_thread(ctx, 0);
 }
 
-/**
- *  @brief          TCP ヘルスチェックスレッドを path ごとに起動します。
- *  @param[in,out]  ctx       セッションコンテキストへのポインタ。
- *  @param[in]      path_idx  パスインデックス (0 ～ n_path-1)。
- *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- *
- *  @details
- *  ctx->health_interval_ms が 0 の場合は起動しません (POTR_SUCCESS を返します)。
- */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int potr_tcp_health_thread_start(struct PotrContext_ *ctx, int path_idx)
 {
     if (ctx == NULL) { return POTR_ERROR; }
@@ -602,12 +590,8 @@ int potr_tcp_health_thread_start(struct PotrContext_ *ctx, int path_idx)
     return POTR_SUCCESS;
 }
 
-/**
- *  @brief          TCP ヘルスチェックスレッドを停止します。
- *  @param[in,out]  ctx       セッションコンテキストへのポインタ。
- *  @param[in]      path_idx  パスインデックス (0 ～ n_path-1)。
- *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int potr_tcp_health_thread_stop(struct PotrContext_ *ctx, int path_idx)
 {
     if (ctx == NULL) { return POTR_ERROR; }
@@ -624,10 +608,14 @@ int potr_tcp_health_thread_stop(struct PotrContext_ *ctx, int path_idx)
     return POTR_SUCCESS;
 }
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_tcp_health_thread_wake(struct PotrContext_ *ctx, int path_idx)
 {
     signal_health_thread(ctx, path_idx);
 }
+
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_tcp_health_thread_wake_all(struct PotrContext_ *ctx)
 {
