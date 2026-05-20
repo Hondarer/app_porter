@@ -16,6 +16,7 @@ endif
 TESTFW_HOME   ?= $(WORKSPACE_DIR)/framework/testfw
 TESTFW_BANNER = $(TESTFW_HOME)/bin/banner.sh
 APPDEPS_RESOLVER = $(MAKEFW_HOME)/bin/resolve_app_deps.sh
+DOXY_SIGNATURE_GENERATOR = $(MAKEFW_HOME)/bin/doxy_signature.py
 COVERITY_MAKE_WRAPPER = $(MAKEFW_HOME)/bin/cov-build-app.sh
 COVERITY_CONFIG = $(CURDIR)/coverity.mk
 DOXY_WARN_FILE = $(CURDIR)/doxy.warn
@@ -212,11 +213,17 @@ doxy :
 		:; # echo "INFO: $(DOXYFW_HOME) directory not found, skipping."; \
 		exit 0; \
 	fi; \
-	git_hash=$$(git -C "$(CURDIR)" rev-parse HEAD 2>/dev/null); \
-	git_dirty=$$(git -C "$(CURDIR)" status --porcelain 2>/dev/null); \
-	if [ -n "$$git_hash" ] && [ -z "$$git_dirty" ] && \
-	   [ -f "$(DOXY_LOG)" ] && [ "$$(cat '$(DOXY_LOG)')" = "$$git_hash" ]; then \
-		echo "INFO: Skipping doxy (already generated at $$git_hash)"; \
+	sig_file=$$(mktemp); \
+	signature_available=1; \
+	if ! python3 "$(DOXY_SIGNATURE_GENERATOR)" "$(CURDIR)" > "$$sig_file"; then \
+		signature_available=0; \
+		rm -f "$$sig_file"; \
+		sig_file=""; \
+		echo "Warning: failed to calculate doxy signature. Running doxy without skip."; \
+	fi; \
+	if [ $$signature_available -eq 1 ] && [ -f "$(DOXY_LOG)" ] && cmp -s "$$sig_file" "$(DOXY_LOG)"; then \
+		echo "INFO: Skipping doxy (Doxygen inputs are unchanged)"; \
+		rm -f "$$sig_file"; \
 		exit 0; \
 	fi; \
 	rm -f "$(DOXY_LOG)"; \
@@ -242,9 +249,10 @@ doxy :
 		fi; \
 		if [ $$MAKE_EXIT -ne 0 ]; then overall_exit=$$MAKE_EXIT; break; fi; \
 	done; \
-	if [ $$overall_exit -eq 0 ] && [ -n "$$git_hash" ] && [ -z "$$git_dirty" ]; then \
-		echo "$$git_hash" > "$(DOXY_LOG)"; \
+	if [ $$overall_exit -eq 0 ] && [ $$signature_available -eq 1 ]; then \
+		cp "$$sig_file" "$(DOXY_LOG)"; \
 	fi; \
+	if [ -n "$$sig_file" ]; then rm -f "$$sig_file"; fi; \
 	exit $$overall_exit
 
 .PHONY: $(SUBDIR_TARGETS)
