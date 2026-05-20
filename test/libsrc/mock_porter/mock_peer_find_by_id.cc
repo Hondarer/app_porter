@@ -19,7 +19,7 @@ MOCK_WEAK_IMPL(PotrPeerContext *, peer_find_by_id, const struct PotrContext_ *ct
 
     if (getTraceLevel() > TRACE_NONE)
     {
-        printf("  > %s 0x%p, %d", __func__, (void *)ctx, (int)peer_id);
+        printf("  > %s 0x%p, %d", __func__, (const void *)ctx, (int)peer_id);
         if (getTraceLevel() >= TRACE_DETAIL)
         {
             printf(" -> 0x%p\n", (void *)rtc);
