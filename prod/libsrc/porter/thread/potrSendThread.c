@@ -577,7 +577,7 @@ static void send_thread_func(void *arg)
     return;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_send_thread_start(struct PotrContext_ *ctx)
 {
@@ -594,7 +594,7 @@ int potr_send_thread_start(struct PotrContext_ *ctx)
     return POTR_SUCCESS;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_send_thread_stop(struct PotrContext_ *ctx)
 {

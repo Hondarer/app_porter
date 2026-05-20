@@ -17,21 +17,21 @@
 
     #include <porter/infra/potrPlatform.h>
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_sendto(PotrSocket sock, const uint8_t *buf, size_t len, int flags, const struct sockaddr *dest, int dest_len)
 {
     return sendto(sock, (const char *)buf, (int)len, flags, dest, dest_len);
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_recvfrom(PotrSocket sock, uint8_t *buf, size_t len, int flags, struct sockaddr *src, int *src_len)
 {
     return recvfrom(sock, (char *)buf, (int)len, flags, src, src_len);
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_poll_writable(PotrSocket fd, int timeout_ms)
 {
@@ -48,7 +48,7 @@ int potr_poll_writable(PotrSocket fd, int timeout_ms)
     return -1;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_poll_readable(PotrSocket fd, int timeout_ms)
 {
@@ -65,7 +65,7 @@ int potr_poll_readable(PotrSocket fd, int timeout_ms)
     return -1;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len)
 {
@@ -80,7 +80,7 @@ int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len)
     return 0;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
 {
@@ -97,7 +97,7 @@ int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
     return 1;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_socket_lib_init(void)
 {
@@ -110,14 +110,14 @@ int potr_socket_lib_init(void)
     return -1;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_socket_lib_cleanup(void)
 {
     WSACleanup();
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_set_nonblocking(PotrSocket fd)
 {
@@ -130,7 +130,7 @@ int potr_set_nonblocking(PotrSocket fd)
     return -1;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_set_blocking(PotrSocket fd)
 {

@@ -244,19 +244,19 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker) {
  *  プラットフォームフック
  * ============================================================ */
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void platform_init(ClientSessionFn session_fn) {
     g_session_fn = session_fn;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void platform_cleanup(void) {
     /* Linux では後処理不要 */
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int dispatch_internal_args(int argc, char *argv[]) {
     (void)argc;
@@ -268,7 +268,7 @@ int dispatch_internal_args(int argc, char *argv[]) {
  *  サーバー実装
  * ============================================================ */
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void run_fork_server(int port) {
     int                server_fd, client_fd;
@@ -310,7 +310,7 @@ void run_fork_server(int port) {
     }
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void run_prefork_server(int port, int num_workers, int conns_per_worker) {
     int              server_fd;

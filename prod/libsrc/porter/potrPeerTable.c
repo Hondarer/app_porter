@@ -77,7 +77,7 @@ static PotrPeerId allocate_peer_id(struct PotrContext_ *ctx)
     return candidate;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void peer_send_fin(struct PotrContext_ *ctx, PotrPeerContext *peer)
 {
@@ -160,7 +160,7 @@ void peer_send_fin(struct PotrContext_ *ctx, PotrPeerContext *peer)
     }
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 int peer_table_init(struct PotrContext_ *ctx)
 {
@@ -192,7 +192,7 @@ int peer_table_init(struct PotrContext_ *ctx)
     return POTR_SUCCESS;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void peer_table_dispose(struct PotrContext_ *ctx)
 {
@@ -233,7 +233,7 @@ void peer_table_dispose(struct PotrContext_ *ctx)
     ctx->n_peers = 0;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 PotrPeerContext *peer_find_by_session(struct PotrContext_ *ctx,
                                       uint32_t session_id,
@@ -258,7 +258,7 @@ PotrPeerContext *peer_find_by_session(struct PotrContext_ *ctx,
     return NULL;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 PotrPeerContext *peer_find_by_id(struct PotrContext_ *ctx, PotrPeerId peer_id)
 {
@@ -274,7 +274,7 @@ PotrPeerContext *peer_find_by_id(struct PotrContext_ *ctx, PotrPeerId peer_id)
     return NULL;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 PotrPeerContext *peer_create(struct PotrContext_       *ctx,
                               const struct sockaddr_in *sender_addr,
@@ -379,7 +379,7 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
     return peer;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void peer_path_clear(struct PotrContext_ *ctx, PotrPeerContext *peer, int path_idx)
 {
@@ -398,7 +398,7 @@ void peer_path_clear(struct PotrContext_ *ctx, PotrPeerContext *peer, int path_i
     peer->n_paths--;
 }
 
-/* doxygen コメントは、ヘッダーに記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void peer_free(struct PotrContext_ *ctx, PotrPeerContext *peer)
 {
