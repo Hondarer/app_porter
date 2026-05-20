@@ -155,6 +155,7 @@ with-cov: __ensure-coverity
 clean : SUBDIR_GOAL = clean
 clean : $(SUBDIR_TARGETS)
 	@rm -f "$(DOXY_WARN_FILE)" "$(BUILD_LOG)" "$(TEST_LOG)" "$(DOXY_LOG)"
+	@rm -f $(CURDIR)/doxy_*.warn
 
 .PHONY: test
 test :
@@ -193,44 +194,58 @@ test :
 
 .PHONY: doxy
 doxy :
-	@if [ -f prod/Doxyfile.part ]; then \
-		if [ -z "$(DOXYFW_HOME)" ]; then \
-			echo "ERROR: DOXYFW_HOME is not defined."; \
-			exit 1; \
-		fi; \
-		if [ -d "$(DOXYFW_HOME)" ] && [ -f "$(DOXYFW_HOME)/makefile" ]; then \
-			git_hash=$$(git -C "$(CURDIR)" rev-parse HEAD 2>/dev/null); \
-			git_dirty=$$(git -C "$(CURDIR)" status --porcelain 2>/dev/null); \
-			if [ -n "$$git_hash" ] && [ -z "$$git_dirty" ] && \
-			   [ -f "$(DOXY_LOG)" ] && [ "$$(cat '$(DOXY_LOG)')" = "$$git_hash" ]; then \
-				echo "INFO: Skipping doxy (already generated at $$git_hash)"; \
-			else \
-				rm -f "$(DOXY_LOG)"; \
-				echo $(MAKE) -C "$(DOXYFW_HOME)" CATEGORY=$(APP_NAME); \
-				rm -f "$(DOXY_WARN_FILE)"; \
-				$(MAKE) -C "$(DOXYFW_HOME)" CATEGORY=$(APP_NAME); \
-				MAKE_EXIT=$$?; \
-				if [ -z "$(SUPPRESS_DOXY_WARN_PRINT)" ] && [ -s "$(DOXY_WARN_FILE)" ]; then \
-					printf '\n'; \
-					bash "$(TESTFW_BANNER)" WARNING "\e[33m"; \
-					printf '\n'; \
-					printf '\033[33m===== %s =====\033[0m\n' "$(DOXY_WARN_FILE)"; \
-					while IFS= read -r line || [ -n "$$line" ]; do \
-						clean_line=$$(printf '%s' "$$line" | tr -d '\r'); \
-						printf '\033[33m%s\033[0m\n' "$$clean_line"; \
-					done < "$(DOXY_WARN_FILE)"; \
-				fi; \
-				if [ $$MAKE_EXIT -eq 0 ] && [ -n "$$git_hash" ] && [ -z "$$git_dirty" ]; then \
-					echo "$$git_hash" > "$(DOXY_LOG)"; \
-				fi; \
-				if [ $$MAKE_EXIT -ne 0 ]; then exit $$MAKE_EXIT; fi; \
-			fi; \
-		else \
-			:; # echo "INFO: $(DOXYFW_HOME) directory not found, skipping."; \
-		fi; \
-	else \
+	@parts=""; \
+	if [ -f prod/Doxyfile.part ]; then parts="$$parts prod/Doxyfile.part"; fi; \
+	for p in prod/Doxyfile.part.*; do \
+		[ -f "$$p" ] || continue; \
+		parts="$$parts $$p"; \
+	done; \
+	if [ -z "$$parts" ]; then \
 		:; # echo "INFO: Doxygen is not configured for $(APP_NAME), skipping."; \
-	fi
+		exit 0; \
+	fi; \
+	if [ -z "$(DOXYFW_HOME)" ]; then \
+		echo "ERROR: DOXYFW_HOME is not defined."; \
+		exit 1; \
+	fi; \
+	if [ ! -d "$(DOXYFW_HOME)" ] || [ ! -f "$(DOXYFW_HOME)/makefile" ]; then \
+		:; # echo "INFO: $(DOXYFW_HOME) directory not found, skipping."; \
+		exit 0; \
+	fi; \
+	git_hash=$$(git -C "$(CURDIR)" rev-parse HEAD 2>/dev/null); \
+	git_dirty=$$(git -C "$(CURDIR)" status --porcelain 2>/dev/null); \
+	if [ -n "$$git_hash" ] && [ -z "$$git_dirty" ] && \
+	   [ -f "$(DOXY_LOG)" ] && [ "$$(cat '$(DOXY_LOG)')" = "$$git_hash" ]; then \
+		echo "INFO: Skipping doxy (already generated at $$git_hash)"; \
+		exit 0; \
+	fi; \
+	rm -f "$(DOXY_LOG)"; \
+	overall_exit=0; \
+	for p in $$parts; do \
+		case "$$p" in \
+			prod/Doxyfile.part) sub=""; warn="$(CURDIR)/doxy.warn";; \
+			prod/Doxyfile.part.*) sub="$${p#prod/Doxyfile.part.}"; warn="$(CURDIR)/doxy_$$sub.warn";; \
+		esac; \
+		echo $(MAKE) -C "$(DOXYFW_HOME)" CATEGORY=$(APP_NAME) SUBCATEGORY=$$sub; \
+		rm -f "$$warn"; \
+		$(MAKE) -C "$(DOXYFW_HOME)" CATEGORY=$(APP_NAME) SUBCATEGORY=$$sub; \
+		MAKE_EXIT=$$?; \
+		if [ -z "$(SUPPRESS_DOXY_WARN_PRINT)" ] && [ -s "$$warn" ]; then \
+			printf '\n'; \
+			bash "$(TESTFW_BANNER)" WARNING "\e[33m"; \
+			printf '\n'; \
+			printf '\033[33m===== %s =====\033[0m\n' "$$warn"; \
+			while IFS= read -r line || [ -n "$$line" ]; do \
+				clean_line=$$(printf '%s' "$$line" | tr -d '\r'); \
+				printf '\033[33m%s\033[0m\n' "$$clean_line"; \
+			done < "$$warn"; \
+		fi; \
+		if [ $$MAKE_EXIT -ne 0 ]; then overall_exit=$$MAKE_EXIT; break; fi; \
+	done; \
+	if [ $$overall_exit -eq 0 ] && [ -n "$$git_hash" ] && [ -z "$$git_dirty" ]; then \
+		echo "$$git_hash" > "$(DOXY_LOG)"; \
+	fi; \
+	exit $$overall_exit
 
 .PHONY: $(SUBDIR_TARGETS)
 $(SUBDIR_TARGETS) :

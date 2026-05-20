@@ -53,7 +53,8 @@ idir
 __pycache__/
 
 ## doxybook2 によって生成される Markdown
-/docs/doxybook2/
+/docs/doxybook2_public/
+/docs/doxybook2_internal/
 
 ## 成果物
 lib

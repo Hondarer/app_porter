@@ -99,16 +99,30 @@ recv -l TRACE ../sample-config/porter-services.conf 1001
 send -l TRACE ../sample-config/porter-services.conf 1001
 ```
 
-## Doxygen (API 仕様書、モジュール仕様書)
+## API 仕様書
+
+### Doxygen
 
 <!-- docsfw の仕上がりパスに対する相対リンク。この Markdown からの相対パスではないことに注意 -->
-- [doxygen](../../../doxygen/porter/index.html)
+- [doxygen](../../../doxygen/porter_public/index.html)
 
-## 単一ファイル版 Doxygen (API 仕様書、モジュール仕様書)
+### 単一ファイル版
 
-- [calc](doxybook2/Pages/README.md)
-    - [ファイルとページの一覧](doxybook2/index_files_and_pages.md)
+- [porter (public)](doxybook2_public/Pages/README.md)
+    - [ファイルとページの一覧](doxybook2_public/index_files_and_pages.md)
+
+## モジュール仕様書
+
+### Doxygen
+
+<!-- docsfw の仕上がりパスに対する相対リンク。この Markdown からの相対パスではないことに注意 -->
+- [doxygen](../../../doxygen/porter_internal/index.html)
+
+### 単一ファイル版
+
+- [porter (internal)](doxybook2_internal/Pages/README.md)
+    - [ファイルとページの一覧](doxybook2_internal/index_files_and_pages.md)
 
 ## 関連ドキュメント
 
-\toc depth=-1 exclude-basedir=true exclude="doxybook2/*"
+\toc depth=-1 exclude-basedir=true exclude="doxybook2_public/*" exclude="doxybook2_internal/*"
