@@ -83,6 +83,7 @@ static int send_to_peer(struct PotrContext_ *ctx, PotrPeerId peer_id,
 }
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 POTR_EXPORT int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id,
                               const void *data, size_t len, int flags)
 {

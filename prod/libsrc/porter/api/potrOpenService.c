@@ -344,6 +344,7 @@ static int open_socket_tcp_sender(struct PotrContext_ *ctx, int path_idx)
 }
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global,
                                      const PotrServiceDef   *service,
                                      PotrRole                role,

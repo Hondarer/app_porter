@@ -23,6 +23,7 @@
 
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 POTR_EXPORT int POTR_API potrDisconnectPeer(PotrHandle handle, PotrPeerId peer_id)
 {
     struct PotrContext_ *ctx = (struct PotrContext_ *)handle;

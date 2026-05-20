@@ -294,6 +294,7 @@ static void stop_tcp_health_threads(struct PotrContext_ *ctx)
 }
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 POTR_EXPORT int POTR_API potrCloseService(PotrHandle handle)
 {
     struct PotrContext_ *ctx = (struct PotrContext_ *)handle;

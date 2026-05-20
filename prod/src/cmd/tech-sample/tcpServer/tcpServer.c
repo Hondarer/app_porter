@@ -31,6 +31,7 @@
 #include "tcpServer.h"
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 void handle_client_session(ClientFd fd) {
     char buffer[BUFFER_SIZE];
     int  n;

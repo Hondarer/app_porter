@@ -21,12 +21,14 @@
     #include <porter/infra/potrPlatform.h>
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 int potr_sendto(PotrSocket sock, const uint8_t *buf, size_t len, int flags, const struct sockaddr *dest, int dest_len)
 {
     return (int)sendto(sock, buf, len, flags, dest, (socklen_t)dest_len);
 }
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 int potr_recvfrom(PotrSocket sock, uint8_t *buf, size_t len, int flags, struct sockaddr *src, int *src_len)
 {
     socklen_t sl = (socklen_t)*src_len;
@@ -36,6 +38,7 @@ int potr_recvfrom(PotrSocket sock, uint8_t *buf, size_t len, int flags, struct s
 }
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 int potr_poll_writable(PotrSocket fd, int timeout_ms)
 {
     struct pollfd pfd;
@@ -52,6 +55,7 @@ int potr_poll_writable(PotrSocket fd, int timeout_ms)
 }
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 int potr_poll_readable(PotrSocket fd, int timeout_ms)
 {
     struct pollfd pfd;
@@ -68,6 +72,7 @@ int potr_poll_readable(PotrSocket fd, int timeout_ms)
 }
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len)
 {
     size_t sent = 0;
@@ -82,6 +87,7 @@ int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len)
 }
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
 {
     size_t received = 0;
@@ -98,6 +104,7 @@ int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
 }
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 int potr_socket_lib_init(void)
 {
     return 0;
@@ -105,6 +112,7 @@ int potr_socket_lib_init(void)
 void potr_socket_lib_cleanup(void) {}
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 int potr_set_nonblocking(PotrSocket fd)
 {
     int flags = fcntl(fd, F_GETFL, 0);
@@ -119,6 +127,7 @@ int potr_set_nonblocking(PotrSocket fd)
 }
 
 /* doxygen コメントは、ヘッダーに記載 */
+
 int potr_set_blocking(PotrSocket fd)
 {
     int flags = fcntl(fd, F_GETFL, 0);
