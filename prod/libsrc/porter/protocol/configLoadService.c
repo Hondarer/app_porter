@@ -259,7 +259,6 @@ static void apply_service_kv(const char *key, const char *val,
  *  @param[out]     def         読み込み結果を格納する構造体へのポインタ。
  *  @return         成功時は POTR_SUCCESS、サービスが見つからない場合は POTR_ERROR を返します。
  *
- *  @details
  *  [service.id] 形式のセクション名から id 部分を取得し、service_id と照合します。
  *  サービスの識別子はセクション名の id であり、ポート番号とは無関係です。
  */

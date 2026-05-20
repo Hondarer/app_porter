@@ -6,7 +6,6 @@
  *  @date           2026/04/19
  *  @version        1.0.0
  *
- *  @details
  *  porter ライブラリ全体で共有する com_util_tracer_t ハンドルを管理します。\n
  *  トレーサーは初回アクセス時に lazy create され、プロセス終了時に
  *  trace_registry_dispose_all_on_unload() によって自動的に解放されます。\n

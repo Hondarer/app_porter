@@ -16,7 +16,6 @@
 
 /** @defgroup POTR_SEND_FLAG 送信オプションフラグ (potrSend の flags 引数)
  *  @{
- *  @details
  *  `potrSend()` の `flags` 引数に論理和で組み合わせて指定するビットフラグです。\n
  *  0 を指定すると非圧縮・ノンブロッキング送信になります。
  */
@@ -35,7 +34,6 @@
 
 /** @defgroup POTR_OUTER_FLAG 外側パケットフラグ (PotrPacket.flags)
  *  @{
- *  @details
  *  UDP で送受信される外側パケット (PotrPacket) の flags フィールドに設定するフラグです。\n
  *  ペイロードエレメントのフラグ (@ref POTR_ELEM_FLAG) とは独立したビット空間で管理します。
  */
@@ -64,7 +62,6 @@
 
 /** @defgroup POTR_ELEM_FLAG ペイロードエレメントフラグ (パックコンテナ内エレメントヘッダー.flags)
  *  @{
- *  @details
  *  POTR_FLAG_DATA パケットのペイロード内に格納されるペイロードエレメントのヘッダー flags フィールドに設定するフラグです。\n
  *  圧縮・フラグメント化はメッセージ単位で行われ、ペイロードエレメント単位で管理します。\n
  *  外側パケットのフラグ (@ref POTR_OUTER_FLAG) には設定しません。
@@ -106,7 +103,6 @@
 
 /** @defgroup POTR_CRYPTO 暗号化定数 (AES-256-GCM)
  *  @{
- *  @details
  *  POTR_FLAG_ENCRYPTED が設定されたパケットの暗号化・復号に使用する定数です。
  */
 #define POTR_CRYPTO_KEY_SIZE                                                                                           \
@@ -137,7 +133,6 @@
 
 /** @defgroup POTR_PING_STATE PING 受信状態 (PING ペイロードの各パスフィールド値)
  *  @{
- *  @details
  *  PING パケットのペイロードに格納するパスごとの PING 受信状態です。\n
  *  双方向 PING 形態 (UNICAST_BIDIR / UNICAST_BIDIR_N1 / TCP / TCP_BIDIR) では実際の状態を格納します。\n
  *  片方向 PING 形態 (UNICAST / MULTICAST / BROADCAST / RAW 系) では常に UNDEFINED を格納します。

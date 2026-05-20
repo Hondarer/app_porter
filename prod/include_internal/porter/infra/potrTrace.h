@@ -6,7 +6,6 @@
  *  @date           2026/04/19
  *  @version        1.0.0
  *
- *  @details
  *  porter ライブラリ内部でのみ使用するログ出力マクロを定義します。\n
  *  ライブラリ外部には公開しません。\n
  *  公開 API は porter.h の potrGetTracer() を参照してください。
@@ -37,7 +36,6 @@ extern "C"
  *  @brief          グローバルトレーサーハンドルを返します (初回呼び出し時に lazy create)。
  *  @return         com_util_tracer_t ハンドル。NULL を返すことはありません。
  *
- *  @details
  *  本関数を直接呼び出さず、POTR_TRACE マクロを使用してください。
  */
 com_util_tracer_t *potr_trace_get(void);
@@ -45,7 +43,6 @@ com_util_tracer_t *potr_trace_get(void);
 /**
  *  @brief          porter 内部ログ出力マクロ。
  *
- *  @details
  *  __FILE__ と __LINE__ を自動付加する com_util_tracer_writef() マクロを呼び出します。\n
  *  トレーサーが未 start の場合は無視されます。\n
  *  level には com_util_trace_level_t の値を指定してください。

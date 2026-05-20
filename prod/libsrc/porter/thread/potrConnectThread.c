@@ -6,7 +6,6 @@
  *  @date           2026/03/23
  *  @version        1.0.0
  *
- *  @details
  *  SENDER: TCP connect/reconnect ループを管理するスレッドです。\n
  *  RECEIVER: TCP accept ループを管理するスレッドです。\n
  *  接続確立後、送受信・ヘルスチェックスレッドを起動し、\n
@@ -518,11 +517,11 @@ static void sender_connect_loop(struct PotrContext_ *ctx, int path_idx)
  * accept() 直後に最初の 1 パケットを先読みし session_id を取得する。
  * session_establish_mutex 下で ctx の既知セッションと比較し、以下の 3 ケースを判別する。
  *   TCP_SESSION_NEW  : 新セッション (初回 or SENDER 再起動)
- *                      → 他 path の既存接続に切断シグナルを送ってから新規セッションを開始する。
+ *  → 他 path の既存接続に切断シグナルを送ってから新規セッションを開始する。
  *   TCP_SESSION_SAME : 同一セッションの追加パス (マルチパス)
- *                      → reset_connection_state() を呼ばずにパスを追加する。
+ *  → reset_connection_state() を呼ばずにパスを追加する。
  *   TCP_SESSION_OLD  : 旧セッション (再送や遅延パケット等)
- *                      → コネクションを閉じてループ先頭へ戻る。
+ *  → コネクションを閉じてループ先頭へ戻る。
  * 先読みパケットは tcp_first_pkt_buf/len に保存し、recv スレッドが起動直後に処理する。 */
 static void receiver_accept_loop(struct PotrContext_ *ctx, int path_idx)
 {

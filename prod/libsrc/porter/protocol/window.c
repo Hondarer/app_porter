@@ -34,7 +34,6 @@
  *  @param[in]      max_payload エントリごとのペイロード最大長 (バイト)。
  *  @return         成功時は POTR_SUCCESS、malloc 失敗時は POTR_ERROR を返します。
  *
- *  @details
  *  サイズが既存と同一の場合は状態をリセットするのみで再確保は行いません。\n
  *  異なるサイズの場合は既存バッファを解放して再確保します。
  */
@@ -224,7 +223,6 @@ int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_
  *  @param[in]      packet  格納するパケットへのポインタ。
  *  @return         成功時は POTR_SUCCESS、ウィンドウ外の場合は POTR_ERROR を返します。
  *
- *  @details
  *  通番が受信ウィンドウ内であればバッファリングします。\n
  *  追い越し (順序外到着) にも対応します。
  */
@@ -291,7 +289,6 @@ int window_recv_pop(PotrWindow *win, PotrPacket *packet)
  *  @param[in,out]  win     受信ウィンドウ構造体へのポインタ。
  *  @param[in]      seq_num スキップする通番。next_seq と一致する場合のみ動作します。
  *
- *  @details
  *  REJECT 受信時に欠落パケットを「配信済み」として扱い、後続パケットの配信を
  *  継続するために使用します。seq_num が next_seq と一致しない場合は何もしません。
  */
@@ -351,7 +348,6 @@ int window_recv_needs_nack(const PotrWindow *win, uint32_t *nack_num)
  *  @param[in,out]  win          受信ウィンドウ構造体へのポインタ。
  *  @param[in]      new_base_seq リセット後の基点通番 (次に期待する通番)。
  *
- *  @details
  *  全スロットを無効化し、base_seq / next_seq を new_base_seq に設定します。\n
  *  バッファの再確保は行いません。\n
  *  RAW モードでギャップを検出してセッションをリセットする際に使用します。

@@ -6,7 +6,6 @@
  *  @date           2026/04/17
  *  @version        1.0.0
  *
- *  @details
  *  TCP 接続確立後に send / recv / health スレッドを起動し、
  *  途中失敗時の rollback を統一的に扱う内部 helper です。
  *
@@ -40,8 +39,9 @@ typedef struct PotrConnectedThreadsOps_
 
     /**
      *  @brief          接続確立後に send / recv / health スレッドを起動する。
-     *  @details
+     *
      *  起動に失敗した場合は起動済みのスレッドを停止してロールバックする。
+     *
      *  @param[in,out]  ctx      セッションコンテキスト。
      *  @param[in]      path_idx 接続確立済みパスのインデックス。
      *  @param[in]      ops      スレッド操作コールバックテーブル。

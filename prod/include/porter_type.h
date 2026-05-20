@@ -22,7 +22,6 @@
 /**
  *  @brief          ピア識別子。
  *
- *  @details
  *  N:1 モードで各クライアントを識別する ID です。\n
  *  N:1 モードでは有効なピア ID は常に POTR_PEER_NA および POTR_PEER_ALL 以外の値です。\n
  *  1:1 モードおよびその他の通信種別では peer_id は常に POTR_PEER_NA です。
@@ -32,7 +31,6 @@ typedef uint32_t PotrPeerId;
 /**
  *  @brief          通信種別。
  *
- *  @details
  *  サービス定義の通信方式を表します。
  * 
  *  - POTR_TYPE_UNICAST_RAW, POTR_TYPE_MULTICAST_RAW, POTR_TYPE_BROADCAST_RAW\n
@@ -101,7 +99,6 @@ typedef enum
 /**
  *  @brief          役割種別。
  *
- *  @details
  *  potrOpenService() の呼び出し元がデータを送信する役割か受信する役割かを明示します。
  */
 typedef enum
@@ -113,7 +110,6 @@ typedef enum
 /**
  *  @brief          サービス定義。
  *
- *  @details
  *  設定ファイルの [service.N] セクションから読み込まれるサービス設定です。
  *
  *  通信種別によって有効なフィールドが異なります。
@@ -160,7 +156,6 @@ typedef struct
 /**
  *  @brief          グローバル設定。
  *
- *  @details
  *  設定ファイルの [global] セクションから読み込まれる共通プロトコル設定です。
  */
 typedef struct
@@ -180,7 +175,6 @@ typedef struct
 /**
  *  @brief          ネットワーク送受信用パケット構造体。
  *
- *  @details
  *  UDP で送受信される物理パケットのレイアウトです。\n
  *  各フィールドはネットワークバイトオーダー (ビッグエンディアン) で格納します。\n
  *  ヘッダー固定長: offsetof(PotrPacket, payload) = 40 バイト (64 ビット環境)。\n
@@ -218,7 +212,6 @@ typedef struct
 /**
  *  @brief          セッションハンドル。
  *
- *  @details
  *  potrOpenService() が返す不透明ポインタです。\n
  *  内部実装の詳細はライブラリ利用者からは隠蔽されます。
  */
@@ -227,7 +220,6 @@ typedef struct PotrContext_ *PotrHandle;
 /**
  *  @brief          ピア識別子。
  *
- *  @details
  *  N:1 通信モード (`POTR_TYPE_UNICAST_BIDIR` src 情報なし) で各接続ピアを識別する ID です。\n
  *  1:1 通信モードおよびその他の通信種別では常に **`POTR_PEER_NA`** を使用します。\n
  *  有効な N:1 ピア ID は常に `POTR_PEER_NA` および `POTR_PEER_ALL` 以外の値となります（ピア ID 生成ロジックにより保証）。\n
@@ -237,7 +229,6 @@ typedef uint32_t PotrPeerId;
 
 /** @defgroup POTR_PEER ピア ID 予約値
  *  @{
- *  @details
  *  `potrSend()` の `peer_id` 引数および `PotrRecvCallback` の `peer_id` 引数で使用する予約値です。
  */
 #define POTR_PEER_NA  ((PotrPeerId)0U)        /**< ピア ID 未割当を示す予約値。
@@ -251,10 +242,10 @@ typedef uint32_t PotrPeerId;
 /**
  *  @brief          受信イベント種別。
  *
- *  @details
  *  PotrRecvCallback の第 2 引数に渡されるイベント種別です。
  *
  *  @note
+ *
  *  POTR_EVENT_CONNECTED / POTR_EVENT_DISCONNECTED は、data=NULL, len=0 で呼び出されます。\n
  *  POTR_EVENT_PATH_CONNECTED / POTR_EVENT_PATH_DISCONNECTED は、data に `const int*` の
  *  path 状態配列、len に対象 path index を渡します。\n
@@ -285,7 +276,6 @@ typedef enum
 /**
  *  @brief          受信コールバック関数型 (全通信種別共通)。
  *
- *  @details
  *  データ受信またはヘルスチェック状態変化時に、受信スレッドから呼び出されます。\n
  *  コールバック内でブロッキング処理を行わないようにしてください。\n
  *  すべてのイベントは受信スレッドから直列に呼び出されるため、順序性が保証されます。

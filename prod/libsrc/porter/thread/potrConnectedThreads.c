@@ -6,7 +6,6 @@
  *  @date           2026/04/17
  *  @version        1.0.0
  *
- *  @details
  *  send / recv / health スレッドの起動順序、bootstrap PING 送信、
  *  途中失敗時の rollback を所有権ベースで制御します。
  *

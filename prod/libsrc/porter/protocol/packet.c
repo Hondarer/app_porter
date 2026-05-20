@@ -88,7 +88,6 @@ int packet_build_nack(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
  *  @param[in]      health_payload_len ペイロード長 (バイト)。通常 POTR_MAX_PATH。health_payload が NULL の場合は無視。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
  *
- *  @details
  *  ヘルスチェックパケットです。\n
  *  通番には送信側の next_seq（次に送出する DATA に割り当てる通番）を格納します。\n
  *  PING はウィンドウに登録されません（NACK・再送の対象外）。\n
@@ -132,7 +131,6 @@ int packet_build_ping(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
  *  @param[in]      seq_num     再送不能な通番。ack_num フィールドに格納します。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
  *
- *  @details
  *  受信者から NACK を受け取ったが、送信ウィンドウに該当パケットが存在しない場合に
  *  送信者が返すパケットです。受信者はこのパケットを受け取ると即時 DISCONNECTED を
  *  発火し、欠落通番をスキップして後続パケットの配信を継続します。
@@ -162,7 +160,6 @@ int packet_build_reject(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
  *  @param[in]      shdr        セッション識別ヘッダーへのポインタ。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
  *
- *  @details
  *  送信者が potrCloseService 時に送出する終了通知パケットです。ペイロードなし。\n
  *  `POTR_FLAG_FIN_TARGET_VALID` と `ack_num` の設定は呼び出し側が行います。\n
  *  受信者は target 付き FIN の場合のみ `ack_num` を参照して
@@ -221,7 +218,6 @@ int packet_build_fin_ack(PotrPacket *packet, const PotrPacketSessionHdr *shdr,
  *  @param[in]      payload_len     packed_payload のバイト数。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
  *
- *  @details
  *  すべてのデータパケットはパックコンテナ形式で送受信します。\n
  *  ペイロードエレメントが 1 件のみの場合も同じ形式を使用します。\n
  *  再送・順序整列の単位は外側パケット (本関数が構築する UDP ペイロード) であり、
@@ -259,7 +255,6 @@ int packet_build_packed(PotrPacket *out, const PotrPacketSessionHdr *shdr,
  *  @return         ペイロードエレメントを取り出せた場合は POTR_SUCCESS、
  *                  末尾に達した場合またはエラーの場合は POTR_ERROR を返します。
  *
- *  @details
  *  ペイロードエレメントの形式は flags(2) + payload_len(4) + payload(N) です。\n
  *  通番は外側パケットで管理するためペイロードエレメントには含まれません。\n
  *  container->payload_len はホストバイトオーダー (packet_parse() 変換済み) で参照します。\n
@@ -322,7 +317,6 @@ int packet_unpack_next(const PotrPacket *container, size_t *offset,
  *  @param[in]      buf_len     受信バイト列の長さ。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
  *
- *  @details
  *  各フィールドをホストバイトオーダーに変換して構造体に格納します。
  */
 int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
@@ -369,7 +363,6 @@ int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
  *                          渡すと payload_len の ntohs 変換が二重になり誤値を返す。
  *  @return         パケットの送信サイズ (バイト)。packet が NULL の場合は 0。
  *
- *  @details
  *  UDP 送信時に sendto() へ渡すバイト数を求めるために使用します。\n
  *  内部で ntohs(packet->payload_len) を呼ぶため、引数は必ず NBO 状態で渡してください。
  */

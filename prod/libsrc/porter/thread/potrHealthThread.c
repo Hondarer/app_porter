@@ -6,7 +6,6 @@
  *  @date           2026/03/08
  *  @version        1.0.0
  *
- *  @details
  *  非 TCP 通信種別で動作する定周期 PING 送信スレッドです。\n
  *  health_interval_ms 周期で PING パケットを送信します。\n
  *  一方向通信では送信のみ、双方向通信では request/reply 形式の PING 送信を担います。

@@ -6,7 +6,6 @@
  *  @date           2026/03/08
  *  @version        1.0.0
  *
- *  @details
  *  ノンブロッキング送信 (potrSend の flags に POTR_SEND_BLOCKING なし) で使用される
  *  スレッドセーフな送信キューです。\n
  *  ペイロードエレメントをリングバッファに積み、送信スレッドが順に
@@ -33,7 +32,6 @@
 /**
  *  @brief  送信キューの 1 エントリ。ペイロードエレメント 1 個分のデータを保持する。
  *
- *  @details
  *  外側パケットの構築 (seq_num 付与・window_send_push・sendto) は送信スレッドが行う。\n
  *  本エントリはペイロードエレメントのデータのみを保持し、再送バッファには登録しない。\n
  *  payload はキュー初期化時に確保したプールスロットを指す。\n
@@ -50,7 +48,6 @@ typedef struct
 /**
  *  @brief  非同期送信キュー。
  *
- *  @details
  *  リングバッファとミューテックス・条件変数により、
  *  potrSend 呼び出し元スレッドと送信スレッドの間でスレッドセーフに
  *  ペイロードエレメント (メッセージのフラグメント) を受け渡します。\n
@@ -97,8 +94,9 @@ extern "C"
 
     /**
      *  @brief          ペイロードエレメントをキューに追加する。
-     *  @details
+     *
      *  キューが満杯の場合は待機せず即時 POTR_ERROR を返す。
+     *
      *  @param[in,out]  q           送信キュー。
      *  @param[in]      peer_id     送信先ピア識別子 (1:1 モードでは POTR_PEER_NA を指定)。
      *  @param[in]      flags       ペイロードエレメントフラグ。
@@ -112,8 +110,9 @@ extern "C"
 
     /**
      *  @brief          ペイロードエレメントをキューに追加する (空き待機あり)。
-     *  @details
+     *
      *  キューが満杯の場合は空きが生じるまで待機する。
+     *
      *  @param[in,out]  q           送信キュー。
      *  @param[in]      peer_id     送信先ピア識別子 (1:1 モードでは POTR_PEER_NA を指定)。
      *  @param[in]      flags       ペイロードエレメントフラグ。
@@ -129,8 +128,9 @@ extern "C"
 
     /**
      *  @brief          先頭エントリを取り出して inflight に移行する (ブロッキング)。
-     *  @details
+     *
      *  キューが空の場合は not_empty 条件変数を待機する。
+     *
      *  @param[in,out]  q       送信キュー。
      *  @param[out]     out     取り出したエントリの書き戻し先。
      *  @param[in]      running 実行フラグへのポインタ。0 になると待機を中断する。
@@ -141,8 +141,9 @@ extern "C"
 
     /**
      *  @brief          先頭エントリを参照する (inflight へは移行しない)。
-     *  @details
+     *
      *  キューが空の場合は即時 POTR_ERROR を返す。
+     *
      *  @param[in,out]  q   送信キュー (mutex ロック・アンロックを行う)。
      *  @param[out]     out 先頭エントリの書き戻し先。
      *  @return         成功時は POTR_SUCCESS、空の場合は POTR_ERROR。
@@ -151,8 +152,9 @@ extern "C"
 
     /**
      *  @brief          先頭エントリを参照する (タイムアウトあり)。
-     *  @details
+     *
      *  キューが空の場合は timeout_ms ミリ秒まで待機する。
+     *
      *  @param[in,out]  q           送信キュー。
      *  @param[out]     out         先頭エントリの書き戻し先。
      *  @param[in]      timeout_ms  待機タイムアウト (ミリ秒)。
@@ -163,8 +165,9 @@ extern "C"
 
     /**
      *  @brief          先頭エントリを取り出して inflight に移行する (ノンブロッキング)。
-     *  @details
+     *
      *  キューが空の場合は即時 POTR_ERROR を返す。
+     *
      *  @param[in,out]  q   送信キュー。
      *  @param[out]     out 取り出したエントリの書き戻し先。
      *  @return         成功時は POTR_SUCCESS、空の場合は POTR_ERROR。
@@ -173,9 +176,10 @@ extern "C"
 
     /**
      *  @brief          inflight エントリを 1 つ完了としてマークする。
-     *  @details
+     *
      *  inflight をデクリメントし、count == 0 かつ inflight == 0 なら drained を broadcast する。\n
      *  push_wait で待機中のスレッドを起床させるため not_full もシグナルする。
+     *
      *  @param[in,out]  q   送信キュー。
      */
     extern void potr_send_queue_complete(PotrSendQueue *q);
@@ -188,9 +192,10 @@ extern "C"
 
     /**
      *  @brief          待機スレッドを全て起床させてキューをシャットダウンする。
-     *  @details
+     *
      *  not_empty と not_full の条件変数を broadcast し、pop や push_wait で待機中の
      *  スレッドを起床させる。実際のキュー破棄は potr_send_queue_dispose() で行う。
+     *
      *  @param[in,out]  q   送信キュー。
      */
     extern void potr_send_queue_shutdown(PotrSendQueue *q);

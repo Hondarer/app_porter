@@ -27,7 +27,6 @@
  *  @param[out]     count_out   列挙したサービス ID 数。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
  *
- *  @details
  *  初期容量 POTR_MAX_SERVICES で配列を確保し、超過時は realloc で 2 倍に拡張します。
  */
 int config_list_service_ids(const char *config_path, int64_t **ids_out, int *count_out)

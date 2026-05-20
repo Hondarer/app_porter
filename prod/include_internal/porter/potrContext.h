@@ -6,7 +6,6 @@
  *  @date           2026/03/04
  *  @version        1.0.0
  *
- *  @details
  *  PotrHandle の実体定義。ライブラリ外部には公開しない。
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
@@ -118,7 +117,6 @@ typedef struct
 /**
  *  @brief  N:1 モードにおける個別ピアのコンテキスト。
  *
- *  @details
  *  is_multi_peer == 1 のとき有効。ピアごとに独立した送受信状態を保持する。\n
  *  ピアテーブル (PotrContext_::peers[]) に配置される。
  */

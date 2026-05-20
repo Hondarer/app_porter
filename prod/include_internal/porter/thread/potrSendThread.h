@@ -6,7 +6,6 @@
  *  @date           2026/03/08
  *  @version        1.0.0
  *
- *  @details
  *  送信者 (POTR_ROLE_SENDER) が非ブロッキング送信を使用する場合に起動する
  *  送信スレッドの起動・停止 API。\n
  *  送信スレッドは送信キュー (PotrSendQueue) からペイロードエレメントを取り出して
@@ -29,8 +28,9 @@ extern "C"
 
     /**
      *  @brief          非同期送信スレッドを起動する。
-     *  @details
+     *
      *  send_window_mutex を生成し、送信スレッドを起動する。
+     *
      *  @param[in,out]  ctx セッションコンテキスト。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
@@ -38,8 +38,9 @@ extern "C"
 
     /**
      *  @brief          非同期送信スレッドを停止する。
-     *  @details
+     *
      *  send_thread_running フラグをクリアして送信キューをシャットダウンし、スレッド終了を待機する。
+     *
      *  @param[in,out]  ctx セッションコンテキスト。
      */
     extern void potr_send_thread_stop(struct PotrContext_ *ctx);

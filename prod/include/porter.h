@@ -25,7 +25,8 @@
 
     /**
      *  @brief          DLL エクスポート/インポート制御マクロ。
-     *  @details        ビルド条件に応じて以下の値を取ります。
+     *
+     *  ビルド条件に応じて以下の値を取ります。
      *
      *  | 条件                                                  | 値                       |
      *  | ----------------------------------------------------- | ------------------------ |
@@ -39,9 +40,10 @@
 
     /**
      *  @brief          呼び出し規約マクロ。
-     *  @details        Windows 環境では `__stdcall` 呼び出し規約を指定します。\n
-     *                  Linux (非 Windows) 環境では空に展開されます。\n
-     *                  すでに定義済みの場合は再定義されません。
+     *
+     *  Windows 環境では `__stdcall` 呼び出し規約を指定します。\n
+     *  Linux (非 Windows) 環境では空に展開されます。\n
+     *  すでに定義済みの場合は再定義されません。
      */
     #define POTR_API
 
@@ -78,7 +80,6 @@ extern "C"
      *  @param[out]     handle      成功時にセッションハンドルを格納するポインタ。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
      *
-     *  @details
      *  設定構造体からサービス定義を取得し、UDP ソケットを初期化します。\n
      *  role と callback の組み合わせが不正な場合は POTR_ERROR を返します。\n
      *  role と設定の IP アドレスが不整合 (bind 失敗など) の場合も POTR_ERROR を返します。\n
@@ -191,7 +192,6 @@ extern "C"
      *  @param[out]     handle      成功時にセッションハンドルを格納するポインタ。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
      *
-     *  @details
      *  設定ファイルを解析してサービス定義を取得し、potrOpenService() を呼び出します。\n
      *  role と callback の組み合わせが不正な場合は POTR_ERROR を返します。\n
      *  role と設定ファイルの IP アドレスが不整合 (bind 失敗など) の場合も POTR_ERROR を返します。\n
@@ -276,7 +276,6 @@ extern "C"
      *                              | `POTR_SEND_BLOCKING`  | ブロッキング送信を行います。             |
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
      *
-     *  @details
      *  通信種別に応じて以下の宛先へ UDP パケットを送信します。
      *
      *  | 通信種別              | 送信先                                     |
@@ -303,6 +302,7 @@ extern "C"
      *  本関数が返った時点で、自身のメッセージの sendto は完了しています。
      *
      *  @note
+     *
      *  圧縮フォーマットには raw DEFLATE (RFC 1951) を使用します。\n
      *  Linux (zlib) と Windows (Compression API MSZIP|COMPRESS_RAW) は
      *  同一フォーマットを出力するため、クロスプラットフォーム通信に対応します。\n
@@ -337,7 +337,6 @@ extern "C"
      *  @param[in]      peer_id     切断するピアの識別子 (POTR_PEER_NA および POTR_PEER_ALL 以外)。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
      *
-     *  @details
      *  指定したピアへ FIN パケットを送信し、ピアのリソースを解放します。\n
      *  切断完了後に POTR_EVENT_DISCONNECTED コールバックが発火します。\n
      *  N:1 モード (unicast_bidir かつ src 情報省略) 専用です。\n
@@ -361,12 +360,12 @@ extern "C"
      *  @param[in]      handle  potrOpenService() で取得したセッションハンドル。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
      *
-     *  @details
      *  受信スレッドを停止し、ソケットをクローズしてリソースを解放します。\n
      *  マルチキャストの場合はグループから離脱します。\n
      *  本関数呼び出し後、handle は無効となります。
      *
      *  @note
+     *
      *  本関数呼び出し時、POTR_EVENT_DISCONNECTED コールバックは発火しません。\n
      *  アプリケーション自身が明示的にサービスを閉じる操作は、接続状態変化イベントとして通知しない設計です。\n
      *  UDP 通信種別の送信者 (POTR_ROLE_SENDER) が本関数を呼び出した場合は、POTR_FLAG_FIN パケットが送信されます。\n
@@ -389,7 +388,6 @@ extern "C"
      *  @brief          porter 内部トレーサーハンドルを返します。
      *  @return         com_util_tracer_t ハンドル。
      *
-     *  @details
      *  porter ライブラリが内部で使用する com_util_tracer_t ハンドルを返します。\n
      *  本関数は potrOpenService() の前に呼び出すことができます。\n
      *  取得したハンドルに対して com_util_tracer_set_stderr_level() と
@@ -420,7 +418,6 @@ extern "C"
      *  @param[out]     type        成功時に通信種別 (PotrType) を格納するポインタ。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
      *
-     *  @details
      *  設定ファイルを解析して指定サービスの通信種別を返します。\n
      *  potrOpenService() の前に呼び出すことで、ロール・コールバックの要否を
      *  アプリケーション側で判断できます。\n

@@ -6,7 +6,6 @@
  *  @date           2026/03/08
  *  @version        1.0.0
  *
- *  @details
  *  送信者が定周期で PING パケットを送信するスレッドの起動・停止 API。
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
@@ -26,8 +25,9 @@ extern "C"
 
     /**
      *  @brief          非 TCP ヘルスチェックスレッドを起動する。
-     *  @details
+     *
      *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_SUCCESS を返す)。
+     *
      *  @param[in,out]  ctx セッションコンテキスト。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
@@ -56,8 +56,9 @@ extern "C"
 
     /**
      *  @brief          TCP ヘルスチェックスレッドを path ごとに起動する。
-     *  @details
+     *
      *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_SUCCESS を返す)。
+     *
      *  @param[in,out]  ctx      セッションコンテキスト。
      *  @param[in]      path_idx パスインデックス (0 〜 n_path-1)。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。

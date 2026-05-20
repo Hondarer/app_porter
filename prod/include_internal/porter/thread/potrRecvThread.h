@@ -45,8 +45,9 @@ extern "C"
 
     /**
      *  @brief          TCP 受信スレッドの終了を待機する。
-     *  @details
+     *
      *  スレッドの停止はソケットクローズ (connect スレッド側) で行う。本関数は join のみを担当する。
+     *
      *  @param[in,out]  ctx      セッションコンテキスト。
      *  @param[in]      path_idx パスインデックス (0 〜 n_path-1)。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。

@@ -6,7 +6,6 @@
  *  @date           2026/03/08
  *  @version        1.0.0
  *
- *  @details
  *  送信キュー (PotrSendQueue) からペイロードエレメントを取り出して
  *  外側パケット (POTR_FLAG_DATA) を構築し sendto を呼び出す送信スレッド。\n
  *  potrOpenService (POTR_ROLE_SENDER) 時に起動し、potrCloseService 時に停止します。\n

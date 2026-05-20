@@ -6,7 +6,6 @@
  *  @date           2026/03/22
  *  @version        1.3.0
  *
- *  @details
  *  指定サービスでデータを受信し続ける CLI テストコマンドです。\n
  *  Ctrl+C で終了します。\n
  *  \n
@@ -68,7 +67,6 @@ static com_util_pinned_prompt_t *g_screen = NULL;
  *  @param[in]      len     データのバイト数。
  *  @return         テキストと判定した場合は 1、バイナリと判定した場合は 0 を返します。
  *
- *  @details
  *  全バイトを走査し、NUL (0x00)、\\t / \\n / \\r 以外の C0 制御文字
  *  (0x01-0x08, 0x0B, 0x0C, 0x0E-0x1F)、DEL (0x7F)、
  *  UTF-8 で無効な 0xFE / 0xFF のいずれかが含まれる場合にバイナリと判定します。

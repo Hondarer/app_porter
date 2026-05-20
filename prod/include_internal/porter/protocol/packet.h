@@ -24,7 +24,7 @@
 
 /**
  *  @brief  パケットに付与するセッション識別情報。
- *  @details
+ *
  *  potrOpenService 時に決定し、全パケットのヘッダーに格納する。
  */
 typedef struct
