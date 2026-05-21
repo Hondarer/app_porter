@@ -37,10 +37,10 @@ results
 core
 coverage.xml
 
-## ビルド/Doxy スキップ用ログ
-make_build.log
-make_test.log
-make_doxy.log
+## ビルド/Doxy スキップ用スタンプ
+make_build.stamp
+make_test.stamp
+make_doxy.stamp
 
 ## 中間ファイル (Doxygen)
 /xml/
