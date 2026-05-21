@@ -1,13 +1,16 @@
 /**
  *******************************************************************************
  *  @file           porter_internal.h
- *  @brief          porter ライブラリの内部傘ヘッダー (内部 API ひとまとめ)。
+ *  @brief          porter ライブラリの内部アンブレラ ヘッダー。
  *  @author         Tetsuo Honda
  *  @date           2026/05/21
  *  @version        1.0.0
  *
- *  porter ライブラリの内部ヘッダーを 1 つにまとめます。\n
- *  ライブラリ内部実装から `<porter_internal.h>` 1 行で全内部 API にアクセスできます。
+ *  porter ライブラリの内部ヘッダーを 1 つにまとめたヘッダーです。\n
+ *  利用者は `#include <porter_internal.h>` で本ライブラリの全公開 + 全内部 API にアクセスできます。
+ *
+ *  アンブレラ ヘッダーは利便性と引き換えにコンパイル時間がかかります。\n
+ *  個別ヘッダーを利用するか、アンブレラ ヘッダーを利用するかは利用者にて選択してください。
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
  *
@@ -16,6 +19,8 @@
 
 #ifndef PORTER_INTERNAL_H
 #define PORTER_INTERNAL_H
+
+#include <porter.h> /* 内部 API で公開定数、公開型、公開関数などに依存している可能性を考慮 */
 
 #include <porter/potrContext.h>
 #include <porter/potrPathEvent.h>
