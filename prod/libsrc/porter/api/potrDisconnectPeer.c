@@ -13,8 +13,8 @@
 
 #include <com_util/base/platform.h>
 #include <inttypes.h>
-#include <porter_const.h>
-#include <porter.h>
+#include <porter/porter_const.h>
+#include <porter/porter_spec.h>
 
 #include <porter/potrContext.h>
 #include <porter/potrPathEvent.h>

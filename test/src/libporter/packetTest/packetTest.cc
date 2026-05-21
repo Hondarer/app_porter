@@ -5,8 +5,8 @@
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
 
-#include <porter_const.h>
-#include <porter_type.h>
+#include <porter/porter_const.h>
+#include <porter/porter_type.h>
 #include <porter/protocol/packet.h>
 
 #if defined(PLATFORM_LINUX)

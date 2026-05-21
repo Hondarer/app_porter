@@ -16,8 +16,8 @@
 #include <string.h>
 #include <com_util/base/platform.h>
 
-#include <porter.h>
-#include <porter_const.h>
+#include <porter/porter_spec.h>
+#include <porter/porter_const.h>
 
 #include <com_util/crypto/crypto.h>
 #include <porter/infra/potrTrace.h>

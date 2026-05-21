@@ -36,7 +36,7 @@
 #include <string.h>
 #include <inttypes.h>
 
-#include <porter_const.h>
+#include <porter/porter_const.h>
 
 #include <porter/potrContext.h>
 #include <porter/potrPeerTable.h>

@@ -12,8 +12,8 @@
  */
 
 #include <inttypes.h>
-#include <porter_const.h>
-#include <porter.h>
+#include <porter/porter_const.h>
+#include <porter/porter_spec.h>
 
 #include <porter/protocol/config.h>
 #include <porter/infra/potrTrace.h>

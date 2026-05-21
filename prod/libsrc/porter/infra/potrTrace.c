@@ -24,7 +24,7 @@
 
 #include <com_util/trace/tracer.h>
 
-#include <porter.h>
+#include <porter/porter_spec.h>
 
 #include <porter/infra/potrTrace.h>
 

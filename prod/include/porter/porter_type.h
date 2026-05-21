@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <porter_const.h>
+#include <porter/porter_const.h>
 
 /**
  *  @brief          ピア識別子。

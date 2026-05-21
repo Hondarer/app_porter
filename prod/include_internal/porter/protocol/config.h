@@ -14,7 +14,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <porter_type.h>
+#include <porter/porter_type.h>
 
 #ifdef __cplusplus
 extern "C"

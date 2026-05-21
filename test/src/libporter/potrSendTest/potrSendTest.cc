@@ -7,8 +7,8 @@
 #include <mock_com_util.h>
 #include <mock_porter.h>
 
-#include <porter_const.h>
-#include <porter.h>
+#include <porter/porter_const.h>
+#include <porter/porter_spec.h>
 #include <porter/potrContext.h>
 #include <porter/infra/potrSendQueue.h>
 

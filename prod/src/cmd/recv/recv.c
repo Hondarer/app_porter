@@ -52,7 +52,7 @@
 #include <string.h>
 
 #include <com_util/console/console.h>
-#include <porter.h>
+#include <porter/porter_spec.h>
 
 /** 受信ループ継続フラグ。終了要求 callback で 0 に設定される。 */
 static volatile int g_running = 1;

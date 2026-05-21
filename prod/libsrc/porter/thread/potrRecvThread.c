@@ -21,7 +21,7 @@
     #include <sys/select.h>
 #endif /* PLATFORM_LINUX */
 
-#include <porter_const.h>
+#include <porter/porter_const.h>
 
 #include <porter/protocol/packet.h>
 #include <porter/protocol/seqnum.h>

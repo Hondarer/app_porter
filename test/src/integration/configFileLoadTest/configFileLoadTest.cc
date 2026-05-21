@@ -7,7 +7,7 @@
 
 #include <mock_porter.h>
 #include <porter/protocol/config.h>
-#include <porter_const.h>
+#include <porter/porter_const.h>
 #include <porter_test_helper.h>
 
 #include <cstdlib>

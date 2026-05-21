@@ -14,8 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <porter_const.h>
-#include <porter_type.h>
+#include <porter/porter_const.h>
+#include <porter/porter_type.h>
 
 #include <porter/infra/potrTrace.h>
 #include <porter/protocol/config.h>

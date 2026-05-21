@@ -20,7 +20,7 @@
 #include <stdint.h>
 
 #include <com_util/base/platform.h>
-#include <porter_type.h>
+#include <porter/porter_type.h>
 
 #include <porter/protocol/window.h>
 #include <com_util/compress/compress.h>

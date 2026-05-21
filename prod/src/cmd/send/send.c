@@ -55,7 +55,7 @@
 #endif /* PLATFORM_LINUX */
 
 #include <com_util/console/console.h>
-#include <porter.h>
+#include <porter/porter_spec.h>
 
 /** 入力バッファサイズ。POTR_MAX_MESSAGE_SIZE + 改行 + NUL。 */
 #define INPUT_BUF_SIZE (POTR_MAX_MESSAGE_SIZE + 2U)

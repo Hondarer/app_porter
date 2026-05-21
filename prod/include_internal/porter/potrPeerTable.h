@@ -18,7 +18,7 @@
 #ifndef POTR_PEER_TABLE_H
 #define POTR_PEER_TABLE_H
 
-#include <porter_type.h>
+#include <porter/porter_type.h>
 
 #include <porter/potrContext.h>
 

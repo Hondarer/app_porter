@@ -16,7 +16,7 @@
 
 #include <inttypes.h>
 
-#include <porter_const.h>
+#include <porter/porter_const.h>
 
 #include <porter/infra/potrTrace.h>
 #include <porter/thread/potrHealthThread.h>

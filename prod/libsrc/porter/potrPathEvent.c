@@ -13,7 +13,7 @@
 
 #include <string.h>
 
-#include <porter_const.h>
+#include <porter/porter_const.h>
 
 #include <com_util/sync/sync.h>
 #include <porter/potrPathEvent.h>

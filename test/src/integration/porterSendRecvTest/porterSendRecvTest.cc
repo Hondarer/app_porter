@@ -1,6 +1,6 @@
 #include <com_util/base/platform.h>
-#include <porter_const.h>
-#include <porter_type.h>
+#include <porter/porter_const.h>
+#include <porter/porter_type.h>
 #include <porter_test_helper.h>
 #include <testfw.h>
 

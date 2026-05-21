@@ -21,7 +21,7 @@
     #include <com_util/base/windows_sdk.h>
 #endif /* PLATFORM_ */
 
-#include <porter_const.h>
+#include <porter/porter_const.h>
 
 #include <porter/protocol/seqnum.h>
 #include <porter/protocol/window.h>

@@ -9,7 +9,7 @@
 #include <porter/protocol/config.h>
 #include <config_test_helper.h>
 #include <mock_com_util.h>
-#include <porter_const.h>
+#include <porter/porter_const.h>
 
 using namespace testing;
 

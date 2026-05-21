@@ -19,7 +19,7 @@
     #include <netdb.h>
 #endif /* PLATFORM_LINUX */
 
-#include <porter_const.h>
+#include <porter/porter_const.h>
 
 #include <porter/util/potrIpAddr.h>
 

@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <porter_type.h>
+#include <porter/porter_type.h>
 
 /** パケットヘッダーの固定長 (バイト)。payload フィールドの開始オフセット。 */
 #define PACKET_HEADER_SIZE ((size_t)offsetof(PotrPacket, payload))

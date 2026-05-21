@@ -21,8 +21,8 @@
     #include <com_util/base/windows_sdk.h>
 #endif /* PLATFORM_ */
 
-#include <porter_const.h>
-#include <porter_type.h>
+#include <porter/porter_const.h>
+#include <porter/porter_type.h>
 
 #include <porter/protocol/packet.h>
 
