@@ -3,7 +3,7 @@
 
 #include <com_util/base/platform.h>
 #include <testfw.h>
-#include <porter/porter_type.h>
+#include <porter.h>
 #include <porter/potrContext.h>
 #include <com_util/trace/tracer.h>
 
