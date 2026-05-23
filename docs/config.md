@@ -214,7 +214,7 @@ src_addr     = 192.168.1.20   # path 0 の bind アドレス
 src_addr.1   = 192.168.2.20   # path 1 の bind アドレス
 ```
 
-#### SENDER の bind 動作（`src_addr` / `src_port` の組み合わせ）
+#### SENDER の bind 動作（src_addr / src_port の組み合わせ）
 
 各 path[i] に独立して適用されます。
 
@@ -225,7 +225,7 @@ src_addr.1   = 192.168.2.20   # path 1 の bind アドレス
 | 指定 | `0` または省略 | `src_addr:0`（エフェメラルポート）で bind |
 | 指定 | 指定 | `src_addr:src_port` で bind |
 
-#### RECEIVER の接続フィルタ動作（`src_addr` / `src_port` の組み合わせ）
+#### RECEIVER の接続フィルタ動作（src_addr / src_port の組み合わせ）
 
 各 path[i] の `accept()` 後に接続元を検証します。
 

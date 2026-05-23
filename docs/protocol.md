@@ -590,7 +590,7 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 
 ### 双方向 UDP のヘルスチェック動作
 
-#### PING パケットフォーマット（`unicast_bidir` / `unicast_bidir_n1`）
+#### PING パケットフォーマット（unicast_bidir / unicast_bidir_n1）
 
 | 種別 | `flags` | `seq_num` | `ack_num` | `payload_len` |
 |---|---|---|---|---|
@@ -609,7 +609,7 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 
 双方向 UDP の `CONNECTED` は、受信した PING ペイロードの `remote_path_ping_state[]` に少なくとも 1 つ `POTR_PING_STATE_NORMAL` が入った時点で成立します。これは「相手が自端からの PING を正常受信し、その状態を載せた PING を返してきた」ことを意味します。したがって `health_interval_ms = 0`、またはグローバル既定値として `udp_health_interval_ms = 0` かつサービス側で上書きしない構成では、初回 PING が送られず `CONNECTED` は成立しません。
 
-#### 双方向 UDP で `last_recv_tv_sec` 監視だけで十分な理由
+#### 双方向 UDP で last_recv_tv_sec 監視だけで十分な理由
 
 TCP では「OS レベルの接続が生存したままアプリケーション層がハングする」状況が起こり得るため、
 PING 応答の個別タイムアウト監視が必要です。

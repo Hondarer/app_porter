@@ -102,7 +102,7 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 - CONNECTED 後: `DATA` を配送できる
 - CONNECTED の定義: 片方向 (type 1-6) はいずれかのパスで有効な `PING` または `DATA` を受信した時点、双方向 UDP (type 7-8) は受信 `PING` ペイロード内の `remote_path_ping_state[]` に `POTR_PING_STATE_NORMAL` を確認した時点、TCP (type 9-10) は bootstrap PING に対する応答 `PING` のペイロード内に `POTR_PING_STATE_NORMAL` を確認した時点
 
-### type 1-6: `UNICAST_RAW` / `MULTICAST_RAW` / `BROADCAST_RAW` / `UNICAST` / `MULTICAST` / `BROADCAST`
+### type 1-6: UNICAST_RAW / MULTICAST_RAW / BROADCAST_RAW / UNICAST / MULTICAST / BROADCAST
 
 | 状態 | 実装 |
 |---|---|
@@ -111,7 +111,7 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 | CONNECTED 解除 | `health_timeout_ms` 超過、`FIN` 受信、`REJECT` 受信、RAW 系のギャップ検出で `health_alive == 0` に戻り、以後は再び CONNECTED 前と同じ扱いになる。 |
 | PotrEvent 順序 | 初回の有効 `DATA` を受理した場合も、先に `POTR_EVENT_CONNECTED` を発火してから `POTR_EVENT_DATA` を配送する。 |
 
-### type 7: `UNICAST_BIDIR`
+### type 7: UNICAST_BIDIR
 
 | 状態 | 実装 |
 |---|---|
@@ -120,7 +120,7 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 | CONNECTED 解除 | `health_timeout_ms` 超過、`FIN` 受信、`REJECT` 受信で `health_alive == 0` に戻り、以後は再び CONNECTED 前と同じ扱いになる。 |
 | PotrEvent 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しない。 |
 
-### type 8: `UNICAST_BIDIR_N1`
+### type 8: UNICAST_BIDIR_N1
 
 | 状態 | 実装 |
 |---|---|
@@ -129,7 +129,7 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 | CONNECTED 解除 | ピア単位で `health_timeout_ms` 超過または `FIN` 受信時に `peer->health_alive == 0` となり、`peer_free()` でピアを削除する。以後はその peer を未接続として扱い、再接続は再度 `PING` 起点で行う。 |
 | PotrEvent 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しない。未知 peer の初回 `DATA` でも peer table は前進しない。 |
 
-### type 9-10: `TCP` / `TCP_BIDIR`
+### type 9-10: TCP / TCP_BIDIR
 
 | 状態 | 実装 |
 |---|---|
