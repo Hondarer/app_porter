@@ -19,7 +19,7 @@ TESTFW_BANNER = $(TESTFW_HOME)/bin/banner.sh
 APPDEPS_RESOLVER = $(MAKEFW_HOME)/bin/resolve_app_deps.sh
 DOXY_SIGNATURE_GENERATOR = $(MAKEFW_HOME)/bin/doxy_signature.py
 COVERITY_MAKE_WRAPPER = $(MAKEFW_HOME)/bin/cov-build-app.sh
-COVERITY_CONFIG = $(CURDIR)/coverity.mk
+COVERITY_CONFIG = $(CURDIR)/prod/coverity.mk
 DOXY_WARN_FILE = $(CURDIR)/doxy.warn
 BUILD_STAMP = $(CURDIR)/make_build.stamp
 TEST_STAMP = $(CURDIR)/make_test.stamp
@@ -66,7 +66,7 @@ __ensure-coverity:
 		exit 1; \
 	fi
 	@if [ ! -f "$(COVERITY_CONFIG)" ]; then \
-		echo "ERROR: coverity.mk is required for $(CURDIR)/with-cov." >&2; \
+		echo "ERROR: prod/coverity.mk is required for $(CURDIR)/with-cov." >&2; \
 		exit 1; \
 	fi
 	@if [ "$(COVERITY_TOOLCHAIN)" != "c_cpp" ] && [ "$(COVERITY_TOOLCHAIN)" != "dotnet" ]; then \
@@ -154,6 +154,16 @@ with-cov: __ensure-coverity
 				fi; \
 			fi; \
 		done; \
+		if [ $$make_exit -eq 0 ] && [ "$(IDENT)" = "1" ]; then \
+			_idir="$(WORKSPACE_DIR)/app/idir"; \
+			if [ -d "$$_idir" ]; then \
+				echo "IDENT=1: removing _ident_manifest.c emit from Coverity idir"; \
+				"$(COVERITY_HOME)/bin/cov-manage-emit" \
+					--dir "$$_idir" \
+					--tu-pattern "file('*_ident_manifest.c')" \
+					delete; \
+			fi; \
+		fi; \
 		if [ $$make_exit -eq 0 ] && [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ]; then \
 			cp "$$sig_file" "$(BUILD_STAMP)"; \
 		fi; \
