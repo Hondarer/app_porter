@@ -1,0 +1,1 @@
+COVERITY_TOOLCHAIN := c_cpp
