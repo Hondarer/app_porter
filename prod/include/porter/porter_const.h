@@ -15,9 +15,14 @@
 #define PORTER_CONST_H
 
 /** @defgroup POTR_SEND_FLAG 送信オプションフラグ (potrSend の flags 引数)
- *  @{
+ *  @ingroup        PORTER_PUBLIC_API
  *  `potrSend()` の `flags` 引数に論理和で組み合わせて指定するビットフラグです。\n
  *  0 を指定すると非圧縮・ノンブロッキング送信になります。
+ */
+
+/**
+ *  @ingroup        POTR_SEND_FLAG
+ *  @{
  */
 #define POTR_SEND_COMPRESS                                                                                             \
     0x0001U /**< メッセージを圧縮して送信します。圧縮後のサイズが元のサイズ以上の場合は自動的に非圧縮で送信します。 */
@@ -25,6 +30,11 @@
 /** @} */
 
 /** @defgroup POTR_RESULT 戻り値
+ *  @ingroup        PORTER_PUBLIC_API
+ */
+
+/**
+ *  @ingroup        POTR_RESULT
  *  @{
  */
 #define POTR_SUCCESS            0  /**< 成功の戻り値を表す定数。 */
@@ -33,9 +43,14 @@
 /** @} */
 
 /** @defgroup POTR_OUTER_FLAG 外側パケットフラグ (PotrPacket.flags)
- *  @{
+ *  @ingroup        PORTER_PUBLIC_API
  *  UDP で送受信される外側パケット (PotrPacket) の flags フィールドに設定するフラグです。\n
  *  ペイロードエレメントのフラグ (@ref POTR_ELEM_FLAG) とは独立したビット空間で管理します。
+ */
+
+/**
+ *  @ingroup        POTR_OUTER_FLAG
+ *  @{
  */
 #define POTR_FLAG_DATA 0x0001U /**< データパケット (パックコンテナ) であることを示すフラグ。常に設定される。 */
 #define POTR_FLAG_NACK 0x0002U /**< 再送要求パケットであることを示すフラグ。ack_num に要求通番を格納する。 */
@@ -61,10 +76,15 @@
 /** @} */
 
 /** @defgroup POTR_ELEM_FLAG ペイロードエレメントフラグ (パックコンテナ内エレメントヘッダー.flags)
- *  @{
+ *  @ingroup        PORTER_PUBLIC_API
  *  POTR_FLAG_DATA パケットのペイロード内に格納されるペイロードエレメントのヘッダー flags フィールドに設定するフラグです。\n
  *  圧縮・フラグメント化はメッセージ単位で行われ、ペイロードエレメント単位で管理します。\n
  *  外側パケットのフラグ (@ref POTR_OUTER_FLAG) には設定しません。
+ */
+
+/**
+ *  @ingroup        POTR_ELEM_FLAG
+ *  @{
  */
 #define POTR_FLAG_MORE_FRAG                                                                                            \
     0x0001U /**< 後続フラグメントが存在することを示すペイロードエレメントフラグ。メッセージが複数ペイロードエレメントに分割された場合、最終フラグメント以外に設定する。 */
@@ -73,12 +93,22 @@
 /** @} */
 
 /** @defgroup POTR_PROTOCOL プロトコル定数
+ *  @ingroup        PORTER_PUBLIC_API
+ */
+
+/**
+ *  @ingroup        POTR_PROTOCOL
  *  @{
  */
 #define POTR_PROTOCOL_VERSION 1U /**< 現行の porter ワイヤープロトコルバージョン。 */
 /** @} */
 
 /** @defgroup POTR_DEFAULT デフォルト値
+ *  @ingroup        PORTER_PUBLIC_API
+ */
+
+/**
+ *  @ingroup        POTR_DEFAULT
  *  @{
  */
 #define POTR_DEFAULT_WINDOW_SIZE  16U   /**< デフォルトウィンドウサイズ (パケット数)。 */
@@ -102,8 +132,13 @@
 /** @} */
 
 /** @defgroup POTR_CRYPTO 暗号化定数 (AES-256-GCM)
- *  @{
+ *  @ingroup        PORTER_PUBLIC_API
  *  POTR_FLAG_ENCRYPTED が設定されたパケットの暗号化・復号に使用する定数です。
+ */
+
+/**
+ *  @ingroup        POTR_CRYPTO
+ *  @{
  */
 #define POTR_CRYPTO_KEY_SIZE                                                                                           \
     32U /**< AES-256-GCM 鍵サイズ (バイト)。設定ファイルの encrypt_key に 64 文字 hex で指定する。 */
@@ -113,6 +148,11 @@
 /** @} */
 
 /** @defgroup POTR_LIMIT 上限値・デフォルト値
+ *  @ingroup        PORTER_PUBLIC_API
+ */
+
+/**
+ *  @ingroup        POTR_LIMIT
  *  @{
  */
 #define POTR_MAX_ADDR_LEN 64U /**< アドレス文字列の最大長 (バイト、終端 NUL を含む)。 */
@@ -132,10 +172,15 @@
 /** @} */
 
 /** @defgroup POTR_PING_STATE PING 受信状態 (PING ペイロードの各パスフィールド値)
- *  @{
+ *  @ingroup        PORTER_PUBLIC_API
  *  PING パケットのペイロードに格納するパスごとの PING 受信状態です。\n
  *  双方向 PING 形態 (UNICAST_BIDIR / UNICAST_BIDIR_N1 / TCP / TCP_BIDIR) では実際の状態を格納します。\n
  *  片方向 PING 形態 (UNICAST / MULTICAST / BROADCAST / RAW 系) では常に UNDEFINED を格納します。
+ */
+
+/**
+ *  @ingroup        POTR_PING_STATE
+ *  @{
  */
 #define POTR_PING_STATE_UNDEFINED                                                                                      \
     0U /**< 不定: 片方向のため PING を受信しない、またはまだ一度も PING を受信していない。 */

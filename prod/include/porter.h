@@ -17,6 +17,11 @@
  *******************************************************************************
  */
 
+/**
+ *  @defgroup       PORTER_PUBLIC_API 公開 API (porter)
+ *  @brief          porter ライブラリの公開 API です。
+ */
+
 #ifndef PORTER_H
 #define PORTER_H
 

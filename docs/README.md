@@ -104,24 +104,27 @@ send -l TRACE ../sample-config/porter-services.conf 1001
 ### Doxygen
 
 <!-- docsfw の仕上がりパスに対する相対リンク。この Markdown からの相対パスではないことに注意 -->
-- [doxygen](../../../doxygen/porter_public/index.html)
+- [porter (public)](../../../doxygen/porter_public/index.html)
+    - [公開 API (porter)](../../../doxygen/porter_public/group__PORTER__PUBLIC__API.html)
 
 ### 単一ファイル版
 
 - [porter (public)](doxybook2_public/Pages/README.md)
-    - [ファイルとページの一覧](doxybook2_public/index_files_and_pages.md)
+    - [公開 API (porter)](doxybook2_public/Modules/group__PORTER__PUBLIC__API.md)
 
 ## モジュール仕様書
 
 ### Doxygen
 
 <!-- docsfw の仕上がりパスに対する相対リンク。この Markdown からの相対パスではないことに注意 -->
-- [doxygen](../../../doxygen/porter_internal/index.html)
+- [porter (internal)](../../../doxygen/porter_internal/index.html)
+    - [ファイルの一覧](../../../doxygen/porter_internal/files.html)
 
 ### 単一ファイル版
 
 - [porter (internal)](doxybook2_internal/Pages/README.md)
     - [ファイルとページの一覧](doxybook2_internal/index_files_and_pages.md)
+    - [カテゴリの一覧](doxybook2_internal/index_groups.md)
 
 ## 関連ドキュメント
 

@@ -20,6 +20,11 @@
 #include <porter/porter_const.h>
 
 /**
+ *  @ingroup        PORTER_PUBLIC_API
+ *  @{
+ */
+
+/**
  *  @brief          ピア識別子。
  *
  *  N:1 モードで各クライアントを識別する ID です。\n
@@ -228,8 +233,13 @@ typedef struct PotrContext_ *PotrHandle;
 typedef uint32_t PotrPeerId;
 
 /** @defgroup POTR_PEER ピア ID 予約値
- *  @{
+ *  @ingroup        PORTER_PUBLIC_API
  *  `potrSend()` の `peer_id` 引数および `PotrRecvCallback` の `peer_id` 引数で使用する予約値です。
+ */
+
+/**
+ *  @ingroup        POTR_PEER
+ *  @{
  */
 #define POTR_PEER_NA  ((PotrPeerId)0U)        /**< ピア ID 未割当を示す予約値。
                                                 *   1:1 モードのコールバックで渡される (ピアの概念がない)。
@@ -293,5 +303,7 @@ typedef enum
 typedef void (*PotrRecvCallback)(int64_t service_id, PotrPeerId peer_id,
                                  PotrEvent event,
                                  const void *data, size_t len);
+
+/** @} */
 
 #endif /* PORTER_TYPE_H */

@@ -14,6 +14,11 @@
 #ifndef PORTER_EXPORT_H
 #define PORTER_EXPORT_H
 
+/**
+ *  @ingroup        PORTER_PUBLIC_API
+ *  @{
+ */
+
 #ifdef DOXYGEN
 
     /**
@@ -53,5 +58,7 @@
     #define POTR_API    COM_UTIL_DLL_API(POTR)
 
 #endif /* DOXYGEN */
+
+/** @} */
 
 #endif /* PORTER_EXPORT_H */

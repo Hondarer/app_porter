@@ -21,6 +21,11 @@
 #include <porter/porter_export.h>
 #include <com_util/trace/tracer.h>
 
+/**
+ *  @ingroup        PORTER_PUBLIC_API
+ *  @{
+ */
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -407,5 +412,7 @@ extern "C"
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
+
+/** @} */
 
 #endif /* PORTER_SPEC_H */
