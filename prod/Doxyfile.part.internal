@@ -71,3 +71,19 @@ USE_MDFILE_AS_MAINPAGE = ./README.md
 # \image command).
 
 IMAGE_PATH             = .
+
+#---------------------------------------------------------------------------
+# Configuration options related to diagram generator tools
+#---------------------------------------------------------------------------
+
+# The DOT_GRAPH_MAX_NODES tag can be used to set the maximum number of nodes
+# that will be shown in the graph. If the number of nodes in a graph becomes
+# larger than this value, Doxygen will truncate the graph, which is visualized
+# by representing a node as a red box. Note that if the number of direct
+# children of the root node in a graph is already larger than
+# DOT_GRAPH_MAX_NODES then the graph will not be shown at all. Also note that
+# the size of a graph can be further restricted by MAX_DOT_GRAPH_DEPTH.
+# Minimum value: 0, maximum value: 10000, default value: 50.
+# This tag requires that the tag HAVE_DOT is set to YES.
+
+DOT_GRAPH_MAX_NODES    = 200
