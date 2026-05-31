@@ -123,23 +123,23 @@ receiver:
 
 ```text
 送信側                受信側
-DATA[seq=N] ────── (遅延)
-FIN[target_valid, ack_num=N+1] ─→ next_seq != N+1
-                                   → pending_fin=true
+DATA[seq=N] ------ (遅延)
+FIN[target_valid, ack_num=N+1] -> next_seq != N+1
+                                   -> pending_fin=true
 (後から到着)
-DATA[seq=N] ─────────→ pop → callback(DATA)
+DATA[seq=N] --------> pop -> callback(DATA)
                         next_seq == N+1
-                        → DISCONNECTED
+                        -> DISCONNECTED
 ```
 
 ### TCP: sender close 完了待ち
 
 ```text
 sender                         receiver
-DATA[seq=N] ─────────────────→ pop → callback(DATA) return
-FIN[target_valid, ack_num=N+1] ─→ pending または即時解消
+DATA[seq=N] ----------------> pop -> callback(DATA) return
+FIN[target_valid, ack_num=N+1] -> pending または即時解消
                                  target 到達
-                                 → FIN_ACK[ack_num=N+1]
+                                 -> FIN_ACK[ack_num=N+1]
 FIN_ACK 受信
 → potrCloseService() 成功
 → socket teardown

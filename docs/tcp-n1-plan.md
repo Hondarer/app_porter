@@ -54,31 +54,31 @@ SENDER 側の変更は不要。既存の `POTR_TYPE_TCP` または `POTR_TYPE_TC
 
 ```
 [accept スレッド (path 0)]
-  accept() ────────── conn_A が来るまで待機
-     │
-     └─ ctx->tcp_conn_fd[0] = conn_A
-        start_connected_threads()   ← recv/health スレッド起動
-        join_recv_thread()          ← conn_A の切断まで待機 (ブロック)
+  accept() ---------- conn_A が来るまで待機
+     |
+     +- ctx->tcp_conn_fd[0] = conn_A
+        start_connected_threads()   <- recv/health スレッド起動
+        join_recv_thread()          <- conn_A の切断まで待機 (ブロック)
         stop_connected_threads()
-        ← この間は conn_B を accept できない
-     │
-     └─ ループ先頭へ: 次の accept()
+        <- この間は conn_B を accept できない
+     |
+     +- ループ先頭へ: 次の accept()
 ```
 
 #### N:1 accept ループ (並行処理)
 
 ```
 [accept スレッド (path 0)]
-  accept() ──── conn_A が来る
-     │
-     └─ peer_create_tcp(conn_A) → peer_A
-        tcp_peer_recv_thread_start(peer_A)   ← 非同期
-        tcp_peer_health_thread_start(peer_A) ← 非同期 (BIDIR_N1 のみ)
-        ← join しない。即座に次の accept へ
-     │
-  accept() ──── conn_B が来る (conn_A の切断を待たない)
-     │
-     └─ peer_create_tcp(conn_B) → peer_B
+  accept() ---- conn_A が来る
+     |
+     +- peer_create_tcp(conn_A) -> peer_A
+        tcp_peer_recv_thread_start(peer_A)   <- 非同期
+        tcp_peer_health_thread_start(peer_A) <- 非同期 (BIDIR_N1 のみ)
+        <- join しない。即座に次の accept へ
+     |
+  accept() ---- conn_B が来る (conn_A の切断を待たない)
+     |
+     +- peer_create_tcp(conn_B) -> peer_B
         ...
 
 [peer_A の recv スレッド]                [peer_B の recv スレッド]
@@ -350,11 +350,11 @@ static void *tcp_peer_recv_thread_func(void *arg)
 
         /* パケット処理 (peer->recv_window, peer->frag_buf を参照) */
         tcp_process_packet_peer(ctx, peer, &pkt);
-        /* └── データパケット: ctx->callback(service_id, peer->peer_id,
+        /* +-- データパケット: ctx->callback(service_id, peer->peer_id,
                                               POTR_EVENT_DATA, data, len) */
-        /* └── PING パケット: peer->tcp_last_ping_req_recv_ms 更新 + PONG 返送 */
-        /* └── PONG パケット: peer->tcp_last_ping_recv_ms 更新 */
-        /* └── FIN パケット: recv ループ終了 */
+        /* +-- PING パケット: peer->tcp_last_ping_req_recv_ms 更新 + PONG 返送 */
+        /* +-- PONG パケット: peer->tcp_last_ping_recv_ms 更新 */
+        /* +-- FIN パケット: recv ループ終了 */
 
         /* 初回データ受信時: CONNECTED イベント発火 */
         if (!peer->health_alive) {

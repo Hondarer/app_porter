@@ -604,10 +604,10 @@ TCP は各接続でトランスポート層が再送を保証するため `windo
 
 ```
 potrSend()
-  → フラグメント化 → send_queue.push()
-    → send_thread_func() → flush_packed()
-        ├─ UDP: sock[i].sendto()                          (全 path)
-        └─ TCP: tcp_send_all(tcp_conn_fd[i]) (全 path、send() 前に poll() でブロック回避)
+  -> フラグメント化 -> send_queue.push()
+    -> send_thread_func() -> flush_packed()
+        +- UDP: sock[i].sendto()                          (全 path)
+        +- TCP: tcp_send_all(tcp_conn_fd[i]) (全 path、send() 前に poll() でブロック回避)
 ```
 
 ### TCP 受信フロー
