@@ -288,13 +288,13 @@ class porterSendRecvTest : public Test
         string ws = findWorkspaceRoot();
         ASSERT_FALSE(ws.empty());
 #if defined(PLATFORM_LINUX)
-        recv_path = ws + "/app/porter/prod/bin/recv";
-        send_path = ws + "/app/porter/prod/bin/send";
+        recv_path = ws + "/app/porter/prod/cbin/recv";
+        send_path = ws + "/app/porter/prod/cbin/send";
         lib_path = ws + "/app/porter/prod/lib"
                  + ":" + ws + "/app/com_util/prod/lib";
 #elif defined(PLATFORM_WINDOWS)
-        recv_path = ws + "\\app\\porter\\prod\\bin\\recv.exe";
-        send_path = ws + "\\app\\porter\\prod\\bin\\send.exe";
+        recv_path = ws + "\\app\\porter\\prod\\cbin\\recv.exe";
+        send_path = ws + "\\app\\porter\\prod\\cbin\\send.exe";
         lib_path = ws + "\\app\\porter\\prod\\lib"
                  + ";" + ws + "\\app\\com_util\\prod\\lib";
 #endif /* PLATFORM_ */
