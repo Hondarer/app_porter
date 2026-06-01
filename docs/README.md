@@ -110,7 +110,7 @@ send -l TRACE ../sample-config/porter-services.conf 1001
 
 ### 単一ファイル版
 
-- [porter (public)](doxybook2_public/Pages/README.md)
+- [porter (public)](doxybook2_public/Files/README.md)
     - [公開 API (porter)](doxybook2_public/Modules/group__PORTER__PUBLIC__API.md)
 
 ## モジュール仕様書
@@ -124,8 +124,8 @@ send -l TRACE ../sample-config/porter-services.conf 1001
 
 ### 単一ファイル版
 
-- [porter (internal)](doxybook2_internal/Pages/README.md)
-    - [ファイルとページの一覧](doxybook2_internal/index_files_and_pages.md)
+- [porter (internal)](doxybook2_internal/Files/README.md)
+    - [ファイルの一覧](doxybook2_internal/index_files.md)
     - [カテゴリの一覧](doxybook2_internal/index_groups.md)
 
 ## 関連ドキュメント
