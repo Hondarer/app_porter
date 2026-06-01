@@ -59,8 +59,8 @@ __pycache__/
 ## 成果物
 lib
 bin
+cbin
 !/bin
-!/cbin
 *.exe
 *.pdb
 *.warn
