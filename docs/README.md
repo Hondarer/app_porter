@@ -125,8 +125,8 @@ send -l TRACE ../sample-config/porter-services.conf 1001
 ### 単一ファイル版
 
 - [porter (internal)](doxybook2_internal/README.md)
-    - [ファイルの一覧](doxybook2_internal/index_files.md)
-    - [カテゴリの一覧](doxybook2_internal/index_groups.md)
+    - [ファイルの一覧](doxybook2_internal/Files/README.md)
+    - [カテゴリの一覧](doxybook2_internal/Modules/README.md)
 
 ## 関連ドキュメント
 
