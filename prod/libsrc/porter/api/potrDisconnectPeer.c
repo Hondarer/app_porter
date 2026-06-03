@@ -21,12 +21,11 @@
 #include <porter/potrPeerTable.h>
 #include <porter/infra/potrTrace.h>
 
-
 /* Doxygen コメントは、ヘッダーに記載 */
 
-POTR_EXPORT int POTR_API potrDisconnectPeer(PotrHandle handle, PotrPeerId peer_id)
+POTR_EXPORT int POTR_API potrDisconnectPeer(PotrContext *handle, PotrPeerId peer_id)
 {
-    struct PotrContext_ *ctx = (struct PotrContext_ *)handle;
+    PotrContext *ctx = (PotrContext *)handle;
     int64_t service_id;
 
     if (ctx == NULL)
@@ -47,17 +46,16 @@ POTR_EXPORT int POTR_API potrDisconnectPeer(PotrHandle handle, PotrPeerId peer_i
     if (peer_id == POTR_PEER_NA || peer_id == POTR_PEER_ALL)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "potrDisconnectPeer: service_id=%" PRId64 " invalid peer_id=%u"
-                 " (POTR_PEER_NA or POTR_PEER_ALL not allowed)",
-                 service_id, (unsigned)peer_id);
+                   "potrDisconnectPeer: service_id=%" PRId64 " invalid peer_id=%u"
+                   " (POTR_PEER_NA or POTR_PEER_ALL not allowed)",
+                   service_id, (unsigned)peer_id);
         return POTR_ERROR;
     }
 
     if (!ctx->is_multi_peer)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "potrDisconnectPeer: service_id=%" PRId64 " not in N:1 mode",
-                 ctx->service.service_id);
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potrDisconnectPeer: service_id=%" PRId64 " not in N:1 mode",
+                   ctx->service.service_id);
         return POTR_ERROR;
     }
 
@@ -69,22 +67,20 @@ POTR_EXPORT int POTR_API potrDisconnectPeer(PotrHandle handle, PotrPeerId peer_i
         if (peer == NULL)
         {
             com_util_local_lock_unlock(ctx->peers_mutex);
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                     "potrDisconnectPeer: service_id=%" PRId64 " peer_id=%u not found",
-                     ctx->service.service_id, (unsigned)peer_id);
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potrDisconnectPeer: service_id=%" PRId64 " peer_id=%u not found",
+                       ctx->service.service_id, (unsigned)peer_id);
             return POTR_ERROR;
         }
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
-                 "potrDisconnectPeer: service_id=%" PRId64 " peer_id=%u disconnecting",
-                 ctx->service.service_id, (unsigned)peer_id);
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potrDisconnectPeer: service_id=%" PRId64 " peer_id=%u disconnecting",
+                   ctx->service.service_id, (unsigned)peer_id);
 
         /* FIN を送信 */
         peer_send_fin(ctx, peer);
 
         /* 論理接続 path をすべて落としてから DISCONNECTED を発火する */
         {
-            int                    next_states[POTR_MAX_PATH];
+            int next_states[POTR_MAX_PATH];
             PotrPreparedPathEvents prepared;
 
             potr_zero_path_states(next_states);

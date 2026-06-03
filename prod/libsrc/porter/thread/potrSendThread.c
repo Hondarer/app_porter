@@ -49,43 +49,41 @@
 #include <porter/infra/potrTrace.h>
 #include <com_util/crypto/crypto.h>
 
-static int should_track_valid_data_send_time(const struct PotrContext_ *ctx)
+static int should_track_valid_data_send_time(const PotrContext *ctx)
 {
-    return ctx != NULL
-        && !ctx->is_multi_peer
-        && potr_is_oneway_udp_type(ctx->service.type);
+    return ctx != NULL && !ctx->is_multi_peer && potr_is_oneway_udp_type(ctx->service.type);
 }
 
 /* ペイロードエレメントを packed_buf に追記する */
-static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len,
-                               const PotrPayloadElem *entry)
+static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const PotrPayloadElem *entry)
 {
     uint16_t flags_nbo = htons(entry->flags);
-    uint32_t plen_nbo  = htonl((uint32_t)entry->payload_len);
+    uint32_t plen_nbo = htonl((uint32_t)entry->payload_len);
 
-    memcpy(packed_buf + *packed_len, &flags_nbo,       2); *packed_len += 2;
-    memcpy(packed_buf + *packed_len, &plen_nbo,        4); *packed_len += 4;
+    memcpy(packed_buf + *packed_len, &flags_nbo, 2);
+    *packed_len += 2;
+    memcpy(packed_buf + *packed_len, &plen_nbo, 4);
+    *packed_len += 4;
     memcpy(packed_buf + *packed_len, entry->payload, entry->payload_len);
     *packed_len += entry->payload_len;
 }
-
 
 /* send_wire_buf の [PACKET_HEADER_SIZE .. PACKET_HEADER_SIZE+packed_len-1] に
    詰め済みのペイロードから外側コンテナを構築して送信する。
    seq_num を付与する。UDP では再送バッファ (send_window) にも登録する。
    send_wire_buf = [NBO ヘッダー 32B][packed_payload packed_len B] として組み立てる。 */
-static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
+static void flush_packed(PotrContext *ctx, size_t packed_len)
 {
-    PotrPacket           outer_pkt;
+    PotrPacket outer_pkt;
     PotrPacketSessionHdr shdr;
-    uint32_t             seq;
-    size_t               wire_len;
-    uint8_t             *packed_buf = ctx->send_wire_buf + PACKET_HEADER_SIZE;
-    int                  is_tcp     = potr_is_tcp_type(ctx->service.type);
+    uint32_t seq;
+    size_t wire_len;
+    uint8_t *packed_buf = ctx->send_wire_buf + PACKET_HEADER_SIZE;
+    int is_tcp = potr_is_tcp_type(ctx->service.type);
 
-    shdr.service_id      = ctx->service.service_id;
-    shdr.session_id      = ctx->session_id;
-    shdr.session_tv_sec  = ctx->session_tv_sec;
+    shdr.service_id = ctx->service.service_id;
+    shdr.session_id = ctx->session_id;
+    shdr.session_tv_sec = ctx->session_tv_sec;
     shdr.session_tv_nsec = ctx->session_tv_nsec;
 
     /* send_window へのアクセスを排他制御する (送信スレッド・ヘルスチェックスレッド・受信スレッドが競合) */
@@ -93,8 +91,7 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
 
     seq = ctx->send_window.next_seq;
 
-    if (packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len)
-        != POTR_SUCCESS)
+    if (packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len) != POTR_SUCCESS)
     {
         com_util_local_lock_unlock(ctx->send_window_mutex);
         return;
@@ -112,29 +109,25 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
          *      TCP: ウィンドウ登録不要 (再送は TCP 層が担保); next_seq のみインクリメント
          *   7. send_wire_buf に暗号化済みデータを組立て
          */
-        uint8_t  nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t   enc_len = ctx->crypto_buf_size;
+        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
+        size_t enc_len = ctx->crypto_buf_size;
 
-        outer_pkt.flags      |= htons(POTR_FLAG_ENCRYPTED);
+        outer_pkt.flags |= htons(POTR_FLAG_ENCRYPTED);
         outer_pkt.payload_len = htons((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
 
         /* ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
          * outer_pkt の各フィールドはすでに NBO */
-        memcpy(nonce,      &outer_pkt.session_id, 4);
-        memcpy(nonce + 4,  &outer_pkt.flags,      2);
-        memcpy(nonce + 6,  &outer_pkt.seq_num,    4);
-        memset(nonce + 10, 0,                     2);
+        memcpy(nonce, &outer_pkt.session_id, 4);
+        memcpy(nonce + 4, &outer_pkt.flags, 2);
+        memcpy(nonce + 6, &outer_pkt.seq_num, 4);
+        memset(nonce + 10, 0, 2);
 
-        if (com_util_encrypt(ctx->crypto_buf, &enc_len,
-                         packed_buf, packed_len,
-                         ctx->service.encrypt_key,
-                         nonce,
-                         (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != 0)
+        if (com_util_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
+                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != 0)
         {
             com_util_local_lock_unlock(ctx->send_window_mutex);
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                     "sender[service_id=%" PRId64 "]: encrypt failed seq=%u",
-                     ctx->service.service_id, (unsigned)seq);
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: encrypt failed seq=%u",
+                       ctx->service.service_id, (unsigned)seq);
             return;
         }
 
@@ -160,8 +153,8 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
         wire_len = PACKET_HEADER_SIZE + enc_len;
 
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-                 "sender[service_id=%" PRId64 "]: DATA(enc) seq=%u packed_len=%zu enc_len=%zu",
-                 ctx->service.service_id, (unsigned)seq, packed_len, enc_len);
+                   "sender[service_id=%" PRId64 "]: DATA(enc) seq=%u packed_len=%zu enc_len=%zu",
+                   ctx->service.service_id, (unsigned)seq, packed_len, enc_len);
     }
     else
     {
@@ -183,9 +176,8 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
         memcpy(ctx->send_wire_buf, &outer_pkt, PACKET_HEADER_SIZE);
         wire_len = PACKET_HEADER_SIZE + packed_len;
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-                 "sender[service_id=%" PRId64 "]: DATA seq=%u packed_len=%zu",
-                 ctx->service.service_id, (unsigned)seq, packed_len);
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: DATA seq=%u packed_len=%zu",
+                   ctx->service.service_id, (unsigned)seq, packed_len);
     }
 
     if (is_tcp)
@@ -198,14 +190,14 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
             {
                 int pr;
 
-                if (ctx->tcp_conn_fd[i] == POTR_INVALID_SOCKET) continue;
+                if (ctx->tcp_conn_fd[i] == POTR_INVALID_SOCKET)
+                    continue;
 
                 /* 送信バッファの空きを確認 (非ブロッキング) */
                 pr = potr_poll_writable(ctx->tcp_conn_fd[i], 0);
                 if (pr > 0)
                 {
-                    if (ctx->buf_full_suppress_cnt[i] > 0
-                        && ++ctx->buf_full_suppress_cnt[i] > 10)
+                    if (ctx->buf_full_suppress_cnt[i] > 0 && ++ctx->buf_full_suppress_cnt[i] > 10)
                     {
                         ctx->buf_full_suppress_cnt[i] = 0;
                     }
@@ -218,9 +210,9 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
                     if (ctx->buf_full_suppress_cnt[i] == 0)
                     {
                         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                                 "send_thread[service_id=%" PRId64 "]: path[%d]"
-                                 " send buffer full, packet skipped",
-                                 ctx->service.service_id, i);
+                                   "send_thread[service_id=%" PRId64 "]: path[%d]"
+                                   " send buffer full, packet skipped",
+                                   ctx->service.service_id, i);
                         ctx->buf_full_suppress_cnt[i] = 1;
                     }
                 }
@@ -235,8 +227,7 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
         {
             int sent_len;
             sent_len = potr_sendto(ctx->sock[i], ctx->send_wire_buf, wire_len, 0,
-                                   (const struct sockaddr *)&ctx->dest_addr[i],
-                                   (int)sizeof(ctx->dest_addr[i]));
+                                   (const struct sockaddr *)&ctx->dest_addr[i], (int)sizeof(ctx->dest_addr[i]));
             if (sent_len == (int)wire_len)
             {
                 sent_any = 1;
@@ -249,30 +240,27 @@ static void flush_packed(struct PotrContext_ *ctx, size_t packed_len)
             potr_health_thread_wake(ctx);
         }
     }
-
 }
 
 /* N:1 モード専用: ピアの send_window を使ってパックコンテナを構築して sendto する */
-static void flush_packed_peer(struct PotrContext_ *ctx, PotrPeerContext *peer,
-                               size_t packed_len)
+static void flush_packed_peer(PotrContext *ctx, PotrPeerContext *peer, size_t packed_len)
 {
-    PotrPacket           outer_pkt;
+    PotrPacket outer_pkt;
     PotrPacketSessionHdr shdr;
-    uint32_t             seq;
-    size_t               wire_len;
-    uint8_t             *packed_buf = ctx->send_wire_buf + PACKET_HEADER_SIZE;
+    uint32_t seq;
+    size_t wire_len;
+    uint8_t *packed_buf = ctx->send_wire_buf + PACKET_HEADER_SIZE;
 
-    shdr.service_id      = ctx->service.service_id;
-    shdr.session_id      = peer->session_id;
-    shdr.session_tv_sec  = peer->session_tv_sec;
+    shdr.service_id = ctx->service.service_id;
+    shdr.session_id = peer->session_id;
+    shdr.session_tv_sec = peer->session_tv_sec;
     shdr.session_tv_nsec = peer->session_tv_nsec;
 
     com_util_local_lock_lock(peer->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
 
     seq = peer->send_window.next_seq;
 
-    if (packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len)
-        != POTR_SUCCESS)
+    if (packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len) != POTR_SUCCESS)
     {
         com_util_local_lock_unlock(peer->send_window_mutex);
         return;
@@ -281,28 +269,24 @@ static void flush_packed_peer(struct PotrContext_ *ctx, PotrPeerContext *peer,
     if (ctx->service.encrypt_enabled)
     {
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t  enc_len = ctx->crypto_buf_size;
+        size_t enc_len = ctx->crypto_buf_size;
 
-        outer_pkt.flags      |= htons(POTR_FLAG_ENCRYPTED);
+        outer_pkt.flags |= htons(POTR_FLAG_ENCRYPTED);
         outer_pkt.payload_len = htons((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
 
         /* ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
          * outer_pkt の各フィールドはすでに NBO */
-        memcpy(nonce,      &outer_pkt.session_id, 4);
-        memcpy(nonce + 4,  &outer_pkt.flags,      2);
-        memcpy(nonce + 6,  &outer_pkt.seq_num,    4);
-        memset(nonce + 10, 0,                     2);
+        memcpy(nonce, &outer_pkt.session_id, 4);
+        memcpy(nonce + 4, &outer_pkt.flags, 2);
+        memcpy(nonce + 6, &outer_pkt.seq_num, 4);
+        memset(nonce + 10, 0, 2);
 
-        if (com_util_encrypt(ctx->crypto_buf, &enc_len,
-                         packed_buf, packed_len,
-                         ctx->service.encrypt_key,
-                         nonce,
-                         (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != 0)
+        if (com_util_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
+                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != 0)
         {
             com_util_local_lock_unlock(peer->send_window_mutex);
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                     "sender[service_id=%" PRId64 "]: peer=%u encrypt failed seq=%u",
-                     ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq);
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: peer=%u encrypt failed seq=%u",
+                       ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq);
             return;
         }
 
@@ -317,9 +301,8 @@ static void flush_packed_peer(struct PotrContext_ *ctx, PotrPeerContext *peer,
         wire_len = PACKET_HEADER_SIZE + enc_len;
 
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-                 "sender[service_id=%" PRId64 "]: peer=%u DATA(enc) seq=%u packed_len=%zu",
-                 ctx->service.service_id, (unsigned)peer->peer_id,
-                 (unsigned)seq, packed_len);
+                   "sender[service_id=%" PRId64 "]: peer=%u DATA(enc) seq=%u packed_len=%zu", ctx->service.service_id,
+                   (unsigned)peer->peer_id, (unsigned)seq, packed_len);
     }
     else
     {
@@ -331,10 +314,8 @@ static void flush_packed_peer(struct PotrContext_ *ctx, PotrPeerContext *peer,
         memcpy(ctx->send_wire_buf, &outer_pkt, PACKET_HEADER_SIZE);
         wire_len = PACKET_HEADER_SIZE + packed_len;
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-                 "sender[service_id=%" PRId64 "]: peer=%u DATA seq=%u packed_len=%zu",
-                 ctx->service.service_id, (unsigned)peer->peer_id,
-                 (unsigned)seq, packed_len);
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: peer=%u DATA seq=%u packed_len=%zu",
+                   ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq, packed_len);
     }
 
     /* N:1 はインデックス = ctx->sock[] の添字として全パスへ送信する */
@@ -342,22 +323,22 @@ static void flush_packed_peer(struct PotrContext_ *ctx, PotrPeerContext *peer,
         int k;
         for (k = 0; k < (int)POTR_MAX_PATH; k++)
         {
-            if (peer->dest_addr[k].sin_family == 0) continue;
-            potr_sendto(ctx->sock[k], ctx->send_wire_buf, wire_len, 0,
-                        (const struct sockaddr *)&peer->dest_addr[k],
+            if (peer->dest_addr[k].sin_family == 0)
+                continue;
+            potr_sendto(ctx->sock[k], ctx->send_wire_buf, wire_len, 0, (const struct sockaddr *)&peer->dest_addr[k],
                         (int)sizeof(peer->dest_addr[k]));
         }
     }
 }
 
 /* N:1 モード専用: キューからエントリを取り出してピアへパッキング送信する */
-static void send_packed_peer_mode(struct PotrContext_ *ctx, PotrPayloadElem *first)
+static void send_packed_peer_mode(PotrContext *ctx, PotrPayloadElem *first)
 {
-    PotrPeerId       target_peer_id = first->peer_id;
-    PotrPeerContext *peer           = NULL;
-    uint8_t         *packed_buf    = ctx->send_wire_buf + PACKET_HEADER_SIZE;
-    size_t           packed_len    = 0;
-    int              n_dequeued    = 1;
+    PotrPeerId target_peer_id = first->peer_id;
+    PotrPeerContext *peer = NULL;
+    uint8_t *packed_buf = ctx->send_wire_buf + PACKET_HEADER_SIZE;
+    size_t packed_len = 0;
+    int n_dequeued = 1;
 
     /* ピアを検索 (peers_mutex は lookup だけ保護、送信中は解放する) */
     com_util_local_lock_lock(ctx->peers_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
@@ -383,8 +364,10 @@ static void send_packed_peer_mode(struct PotrContext_ *ctx, PotrPayloadElem *fir
             size_t elem_size;
             size_t crypto_tag_overhead;
 
-            if (next.peer_id != target_peer_id) break;
-            if (next.flags & POTR_FLAG_MORE_FRAG) break;
+            if (next.peer_id != target_peer_id)
+                break;
+            if (next.flags & POTR_FLAG_MORE_FRAG)
+                break;
 
             elem_size = POTR_PAYLOAD_ELEM_HDR_SIZE + (size_t)next.payload_len;
 
@@ -426,14 +409,13 @@ static void send_packed_peer_mode(struct PotrContext_ *ctx, PotrPayloadElem *fir
 /* 送信スレッド本体 */
 static void send_thread_func(void *arg)
 {
-    struct PotrContext_ *ctx = (struct PotrContext_ *)arg;
-    PotrPayloadElem        first;
+    PotrContext *ctx = (PotrContext *)arg;
+    PotrPayloadElem first;
 
     for (;;)
     {
         /* キューからエントリを取り出す (ブロッキング) */
-        if (potr_send_queue_pop(&ctx->send_queue, &first,
-                                &ctx->send_thread_running) != POTR_SUCCESS)
+        if (potr_send_queue_pop(&ctx->send_queue, &first, &ctx->send_thread_running) != POTR_SUCCESS)
         {
             break;
         }
@@ -449,8 +431,8 @@ static void send_thread_func(void *arg)
         {
             /* packed_buf は send_wire_buf のヘッダー直後領域を直接使用 (ゼロコピー) */
             uint8_t *packed_buf = ctx->send_wire_buf + PACKET_HEADER_SIZE;
-            size_t   packed_len = 0;
-            int      n_dequeued = 1;
+            size_t packed_len = 0;
+            int n_dequeued = 1;
 
             append_payload_elem(packed_buf, &packed_len, &first);
 
@@ -462,14 +444,14 @@ static void send_thread_func(void *arg)
                 if (pack_wait_ms > 0)
                 {
                     /* パッキング待ちあり: タイムアウトまで追加エントリを待ち合わせる */
-                    uint64_t      deadline = com_util_get_monotonic_ms() + pack_wait_ms;
+                    uint64_t deadline = com_util_get_monotonic_ms() + pack_wait_ms;
                     PotrPayloadElem next;
 
                     for (;;)
                     {
                         uint64_t now = com_util_get_monotonic_ms();
                         uint32_t remaining;
-                        size_t   elem_size;
+                        size_t elem_size;
                         size_t crypto_tag_overhead;
 
                         if (now >= deadline)
@@ -479,8 +461,7 @@ static void send_thread_func(void *arg)
 
                         remaining = (uint32_t)(deadline - now);
 
-                        if (potr_send_queue_peek_timed(&ctx->send_queue, &next, remaining)
-                            != POTR_SUCCESS)
+                        if (potr_send_queue_peek_timed(&ctx->send_queue, &next, remaining) != POTR_SUCCESS)
                         {
                             break; /* タイムアウト (エントリなし) */
                         }
@@ -506,8 +487,7 @@ static void send_thread_func(void *arg)
                             break; /* 容量満杯: 即時送信してタイマーリセット */
                         }
 
-                        if (potr_send_queue_try_pop(&ctx->send_queue, &next)
-                            != POTR_SUCCESS)
+                        if (potr_send_queue_try_pop(&ctx->send_queue, &next) != POTR_SUCCESS)
                         {
                             break; /* 競合防止 (通常発生しない) */
                         }
@@ -547,8 +527,7 @@ static void send_thread_func(void *arg)
                             break;
                         }
 
-                        if (potr_send_queue_try_pop(&ctx->send_queue, &next)
-                            != POTR_SUCCESS)
+                        if (potr_send_queue_try_pop(&ctx->send_queue, &next) != POTR_SUCCESS)
                         {
                             break;
                         }
@@ -578,7 +557,7 @@ static void send_thread_func(void *arg)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_send_thread_start(struct PotrContext_ *ctx)
+int potr_send_thread_start(PotrContext *ctx)
 {
     ctx->send_thread_running = 1;
 
@@ -595,7 +574,7 @@ int potr_send_thread_start(struct PotrContext_ *ctx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void potr_send_thread_stop(struct PotrContext_ *ctx)
+void potr_send_thread_stop(PotrContext *ctx)
 {
     ctx->send_thread_running = 0;
     potr_send_queue_shutdown(&ctx->send_queue);

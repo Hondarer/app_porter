@@ -20,15 +20,12 @@
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-POTR_EXPORT int POTR_API potrOpenServiceFromConfig(const char       *config_path,
-                                               int64_t           service_id,
-                                               PotrRole          role,
-                                               PotrRecvCallback  callback,
-                                               PotrHandle       *handle)
+POTR_EXPORT int POTR_API potrOpenServiceFromConfig(const char *config_path, int64_t service_id, PotrRole role,
+                                                   PotrRecvCallback callback, PotrContext **handle)
 {
     PotrGlobalConfig global;
-    PotrServiceDef   service;
-    const char      *config_label;
+    PotrServiceDef service;
+    const char *config_label;
 
     if (config_path != NULL)
     {
@@ -39,34 +36,30 @@ POTR_EXPORT int POTR_API potrOpenServiceFromConfig(const char       *config_path
         config_label = "(null)";
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-              "potrOpenServiceFromConfig: service_id=%" PRId64 " config=%s",
-              service_id,
-              config_label);
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potrOpenServiceFromConfig: service_id=%" PRId64 " config=%s", service_id,
+               config_label);
 
     if (config_path == NULL || handle == NULL)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "potrOpenServiceFromConfig: invalid argument"
-                 " (config_path=%p handle=%p)",
-                 (const void *)config_path, (const void *)handle);
+                   "potrOpenServiceFromConfig: invalid argument"
+                   " (config_path=%p handle=%p)",
+                   (const void *)config_path, (const void *)handle);
         return POTR_ERROR;
     }
 
     if (config_load_global(config_path, &global) != POTR_SUCCESS)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "potrOpenServiceFromConfig: service_id=%" PRId64
-                 " failed to load global config from '%s'",
-                 service_id, config_path);
+                   "potrOpenServiceFromConfig: service_id=%" PRId64 " failed to load global config from '%s'",
+                   service_id, config_path);
         return POTR_ERROR;
     }
 
     if (config_load_service(config_path, service_id, &service) != POTR_SUCCESS)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "potrOpenServiceFromConfig: service_id=%" PRId64 " not found in '%s'",
-                 service_id, config_path);
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potrOpenServiceFromConfig: service_id=%" PRId64 " not found in '%s'",
+                   service_id, config_path);
         return POTR_ERROR;
     }
 

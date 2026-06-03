@@ -23,29 +23,27 @@ struct CallbackCapture
 {
     struct Entry
     {
-        int64_t    service_id;
+        int64_t service_id;
         PotrPeerId peer_id;
-        PotrEvent  event;
-        size_t     len;
-        int        path_states[POTR_MAX_PATH];
+        PotrEvent event;
+        size_t len;
+        int path_states[POTR_MAX_PATH];
     } entries[8];
     size_t count;
 };
 
 static CallbackCapture g_cb;
 
-static void mock_callback(int64_t service_id, PotrPeerId peer_id, PotrEvent event,
-                          const void *data, size_t len)
+static void mock_callback(int64_t service_id, PotrPeerId peer_id, PotrEvent event, const void *data, size_t len)
 {
     CallbackCapture::Entry *entry = &g_cb.entries[g_cb.count++];
 
     entry->service_id = service_id;
-    entry->peer_id    = peer_id;
-    entry->event      = event;
-    entry->len        = len;
+    entry->peer_id = peer_id;
+    entry->event = event;
+    entry->len = len;
     memset(entry->path_states, 0, sizeof(entry->path_states));
-    if ((event == POTR_EVENT_PATH_CONNECTED || event == POTR_EVENT_PATH_DISCONNECTED)
-        && data != nullptr)
+    if ((event == POTR_EVENT_PATH_CONNECTED || event == POTR_EVENT_PATH_DISCONNECTED) && data != nullptr)
     {
         memcpy(entry->path_states, data, sizeof(entry->path_states));
     }
@@ -53,7 +51,7 @@ static void mock_callback(int64_t service_id, PotrPeerId peer_id, PotrEvent even
 
 class potrDisconnectPeerTest : public Test
 {
-protected:
+  protected:
     void SetUp() override
     {
         memset(&ctx, 0, sizeof(ctx));
@@ -76,8 +74,8 @@ protected:
         com_util_local_lock_destroy(ctx.callback_mutex);
     }
 
-    struct PotrContext_ ctx;
-    PotrPeerContext     peer_ctx; /* peer_find_by_id が返す実体 */
+    PotrContext ctx;
+    PotrPeerContext peer_ctx; /* peer_find_by_id が返す実体 */
 };
 
 /* ---------- 異常系 ---------- */
@@ -86,8 +84,8 @@ protected:
 TEST_F(potrDisconnectPeerTest, handle_null)
 {
     // Arrange
-    NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_porter>  mock_peer_table;
+    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
 
     // Pre-Assert
     EXPECT_CALL(mock_log, _com_util_tracer_writef(_, COM_UTIL_TRACE_LEVEL_ERROR, nullptr,
@@ -106,8 +104,8 @@ TEST_F(potrDisconnectPeerTest, handle_null)
 TEST_F(potrDisconnectPeerTest, peer_id_na)
 {
     // Arrange
-    NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_porter>  mock_peer_table;
+    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
 
     // Pre-Assert
     EXPECT_CALL(mock_log, _com_util_tracer_writef(_, COM_UTIL_TRACE_LEVEL_ERROR, nullptr,
@@ -116,7 +114,8 @@ TEST_F(potrDisconnectPeerTest, peer_id_na)
         .Times(1); // [Pre-Assert確認_異常系] - ERROR ログに "invalid peer_id" が含まれること。
 
     // Act
-    int rtc = potrDisconnectPeer(&ctx, POTR_PEER_NA); // [手順] - peer_id=POTR_PEER_NA で potrDisconnectPeer を呼び出す。
+    int rtc =
+        potrDisconnectPeer(&ctx, POTR_PEER_NA); // [手順] - peer_id=POTR_PEER_NA で potrDisconnectPeer を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - 戻り値が POTR_ERROR であること。
@@ -126,8 +125,8 @@ TEST_F(potrDisconnectPeerTest, peer_id_na)
 TEST_F(potrDisconnectPeerTest, peer_id_all)
 {
     // Arrange
-    NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_porter>  mock_peer_table;
+    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
 
     // Pre-Assert
     EXPECT_CALL(mock_log, _com_util_tracer_writef(_, COM_UTIL_TRACE_LEVEL_ERROR, nullptr,
@@ -136,7 +135,8 @@ TEST_F(potrDisconnectPeerTest, peer_id_all)
         .Times(1); // [Pre-Assert確認_異常系] - ERROR ログに "invalid peer_id" が含まれること。
 
     // Act
-    int rtc = potrDisconnectPeer(&ctx, POTR_PEER_ALL); // [手順] - peer_id=POTR_PEER_ALL で potrDisconnectPeer を呼び出す。
+    int rtc =
+        potrDisconnectPeer(&ctx, POTR_PEER_ALL); // [手順] - peer_id=POTR_PEER_ALL で potrDisconnectPeer を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - 戻り値が POTR_ERROR であること。
@@ -146,8 +146,8 @@ TEST_F(potrDisconnectPeerTest, peer_id_all)
 TEST_F(potrDisconnectPeerTest, not_multi_peer)
 {
     // Arrange
-    NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_porter>  mock_peer_table;
+    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
     ctx.is_multi_peer = 0; // [状態] - N:1 モードでない (is_multi_peer=0) に設定する。
 
     // Pre-Assert
@@ -167,8 +167,8 @@ TEST_F(potrDisconnectPeerTest, not_multi_peer)
 TEST_F(potrDisconnectPeerTest, peer_not_found)
 {
     // Arrange
-    NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_porter>  mock_peer_table;
+    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
     ctx.is_multi_peer = 1; // [状態] - N:1 モードに設定する。
 
     EXPECT_CALL(mock_peer_table, peer_find_by_id(&ctx, (PotrPeerId)99))
@@ -192,11 +192,11 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
 TEST_F(potrDisconnectPeerTest, normal_with_callback)
 {
     // Arrange
-    NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_porter>  mock_peer_table;
-    ctx.is_multi_peer         = 1;               // [状態] - N:1 モードに設定する。
-    ctx.callback              = mock_callback;   // [状態] - 受信コールバックを設定する。
-    peer_ctx.health_alive     = 1;               // [状態] - ピアを疎通済み状態 (health_alive=1) に設定する。
+    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
+    ctx.is_multi_peer = 1;        // [状態] - N:1 モードに設定する。
+    ctx.callback = mock_callback; // [状態] - 受信コールバックを設定する。
+    peer_ctx.health_alive = 1;    // [状態] - ピアを疎通済み状態 (health_alive=1) に設定する。
     peer_ctx.path_logical_alive[0] = 1;
     peer_ctx.path_logical_alive[2] = 1;
 
@@ -218,8 +218,8 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     int rtc = potrDisconnectPeer(&ctx, 1); // [手順] - 正常な状態で potrDisconnectPeer を呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc);                        // [確認_正常系] - 戻り値が POTR_SUCCESS であること。
-    EXPECT_EQ(static_cast<size_t>(3), g_cb.count);      // [確認_正常系] - PATH 2 件 + DISCONNECTED が呼ばれること。
+    EXPECT_EQ(POTR_SUCCESS, rtc);                  // [確認_正常系] - 戻り値が POTR_SUCCESS であること。
+    EXPECT_EQ(static_cast<size_t>(3), g_cb.count); // [確認_正常系] - PATH 2 件 + DISCONNECTED が呼ばれること。
     EXPECT_EQ(42, g_cb.entries[0].service_id);
     EXPECT_EQ((PotrPeerId)1, g_cb.entries[0].peer_id);
     EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED, g_cb.entries[0].event);
@@ -236,7 +236,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     EXPECT_EQ((PotrPeerId)1, g_cb.entries[2].peer_id);
     EXPECT_EQ(POTR_EVENT_DISCONNECTED, g_cb.entries[2].event);
     EXPECT_EQ(0U, g_cb.entries[2].len);
-    EXPECT_EQ(0, peer_ctx.health_alive);                 // [確認_正常系] - health_alive が 0 にクリアされること。
+    EXPECT_EQ(0, peer_ctx.health_alive); // [確認_正常系] - health_alive が 0 にクリアされること。
     EXPECT_EQ(0, peer_ctx.path_logical_alive[0]);
     EXPECT_EQ(0, peer_ctx.path_logical_alive[2]);
 }
@@ -247,11 +247,11 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
 TEST_F(potrDisconnectPeerTest, normal_health_dead)
 {
     // Arrange
-    NiceMock<Mock_com_util>        mock_log;
-    NiceMock<Mock_porter>  mock_peer_table;
-    ctx.is_multi_peer   = 1;               // [状態] - N:1 モードに設定する。
-    ctx.callback        = mock_callback;   // [状態] - 受信コールバックを設定する。
-    peer_ctx.health_alive = 0;             // [状態] - ピアを切断済み状態 (health_alive=0) に設定する。
+    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
+    ctx.is_multi_peer = 1;        // [状態] - N:1 モードに設定する。
+    ctx.callback = mock_callback; // [状態] - 受信コールバックを設定する。
+    peer_ctx.health_alive = 0;    // [状態] - ピアを切断済み状態 (health_alive=0) に設定する。
 
     EXPECT_CALL(mock_peer_table, peer_find_by_id(&ctx, (PotrPeerId)1))
         .WillOnce(Return(&peer_ctx)); // [Pre-Assert確認_正常系] - peer_find_by_id がピアコンテキストを返すこと。
@@ -266,6 +266,7 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
     int rtc = potrDisconnectPeer(&ctx, 1); // [手順] - health_alive=0 の状態で potrDisconnectPeer を呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc);   // [確認_正常系] - 戻り値が POTR_SUCCESS であること。
-    EXPECT_EQ(static_cast<size_t>(0), g_cb.count); // [確認_正常系] - health_alive=0 のためコールバックが呼ばれないこと。
+    EXPECT_EQ(POTR_SUCCESS, rtc); // [確認_正常系] - 戻り値が POTR_SUCCESS であること。
+    EXPECT_EQ(static_cast<size_t>(0),
+              g_cb.count); // [確認_正常系] - health_alive=0 のためコールバックが呼ばれないこと。
 }

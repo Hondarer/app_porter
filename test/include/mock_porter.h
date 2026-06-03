@@ -8,27 +8,24 @@
 #include <com_util/trace/tracer.h>
 
 #if defined(COMPILER_MSVC)
-#pragma comment(linker, "/INCLUDE:_mock_impl_peer_find_by_id")
-#pragma comment(linker, "/INCLUDE:_mock_impl_peer_send_fin")
-#pragma comment(linker, "/INCLUDE:_mock_impl_peer_free")
-#pragma comment(linker, "/INCLUDE:_mock_impl_potr_trace_get")
-#pragma comment(linker, "/INCLUDE:_mock_impl_potrGetTracer")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_peer_find_by_id")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_peer_send_fin")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_peer_free")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_trace_get")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potrGetTracer")
 #endif /* COMPILER_MSVC */
 
 class Mock_porter
 {
-public:
+  public:
     // Peer table mock methods
-    MOCK_METHOD(PotrPeerContext *, peer_find_by_id,
-                (const struct PotrContext_ *, PotrPeerId));
-    MOCK_METHOD(void, peer_send_fin,
-                (struct PotrContext_ *, PotrPeerContext *));
-    MOCK_METHOD(void, peer_free,
-                (struct PotrContext_ *, PotrPeerContext *));
+    MOCK_METHOD(PotrPeerContext *, peer_find_by_id, (const PotrContext *, PotrPeerId));
+    MOCK_METHOD(void, peer_send_fin, (PotrContext *, PotrPeerContext *));
+    MOCK_METHOD(void, peer_free, (PotrContext *, PotrPeerContext *));
 
     // Trace mock methods
-    MOCK_METHOD(com_util_tracer_t *, potr_trace_get, ());
-    MOCK_METHOD(com_util_tracer_t *, potrGetTracer, ());
+    MOCK_METHOD(com_util_tracer *, potr_trace_get, ());
+    MOCK_METHOD(com_util_tracer *, potrGetTracer, ());
 
     Mock_porter();
     ~Mock_porter();

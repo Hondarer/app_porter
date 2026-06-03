@@ -141,7 +141,7 @@ typedef enum {
 既存の UDP 専用フィールド (`dest_addr[]`, `n_paths`, `path_last_recv_sec[]` 等) はそのまま保持し、末尾に TCP N:1 専用フィールドを追加する。
 
 ```c
-typedef struct PotrPeerContext_
+typedef struct PotrPeerContext
 {
     /* ===== 既存フィールド (変更なし) ===== */
     PotrPeerId  peer_id;
@@ -220,7 +220,7 @@ typedef struct PotrPeerContext_
     volatile int       tcp_peer_running;
 
     /* per-peer スレッドから ctx へアクセスするバックポインタ */
-    struct PotrContext_ *ctx_back;
+    PotrContext *ctx_back;
 
 } PotrPeerContext;
 ```
@@ -268,7 +268,7 @@ static inline int potr_is_tcp_type(PotrType t)
  * @return          成功時は新しいピアコンテキストへのポインタ。
  *                  失敗時 (max_peers 超過など) は NULL。
  */
-PotrPeerContext *peer_create_tcp(struct PotrContext_ *ctx,
+PotrPeerContext *peer_create_tcp(PotrContext *ctx,
                                  PotrSocket conn,
                                  const struct sockaddr_in *peer_addr,
                                  int path_idx);
@@ -321,12 +321,12 @@ per-peer の recv スレッドと health スレッドを実装する。既存の
 
 ```c
 /* per-peer recv スレッド起動 */
-int  tcp_peer_recv_thread_start(struct PotrContext_ *ctx,
+int  tcp_peer_recv_thread_start(PotrContext *ctx,
                                 PotrPeerContext *peer,
                                 int path_idx);
 
 /* per-peer health スレッド起動 (BIDIR_N1 のみ) */
-int  tcp_peer_health_thread_start(struct PotrContext_ *ctx,
+int  tcp_peer_health_thread_start(PotrContext *ctx,
                                   PotrPeerContext *peer,
                                   int path_idx);
 ```
@@ -337,7 +337,7 @@ int  tcp_peer_health_thread_start(struct PotrContext_ *ctx,
 static void *tcp_peer_recv_thread_func(void *arg)
 {
     /* TcpPeerThreadArg: { ctx, peer, path_idx } */
-    struct PotrContext_ *ctx      = arg->ctx;
+    PotrContext *ctx      = arg->ctx;
     PotrPeerContext     *peer     = arg->peer;
     int                  path_idx = arg->path_idx;
 
@@ -448,7 +448,7 @@ static void *tcp_peer_health_thread_func(void *arg)
 
 ```c
 /* RECEIVER 用 accept ループ (N:1, TCP_N1 / TCP_BIDIR_N1 専用) */
-static void receiver_accept_n1_loop(struct PotrContext_ *ctx, int path_idx)
+static void receiver_accept_n1_loop(PotrContext *ctx, int path_idx)
 {
     int is_bidir = (ctx->service.type == POTR_TYPE_TCP_BIDIR_N1);
 
@@ -562,7 +562,7 @@ static void *connect_thread_func(void *arg)
 送信先ルーティングの変更のみで対応できる。
 
 ```c
-static void flush_packed_peer(struct PotrContext_ *ctx,
+static void flush_packed_peer(PotrContext *ctx,
                                PotrPeerContext *peer,
                                const uint8_t *wire_buf, size_t wire_len)
 {
@@ -809,9 +809,9 @@ if (potr_is_tcp_n1_type(ctx->service.type))
 | `tcp_last_ping_req_recv_ms[4]` | 32 B |
 | `tcp_recv_thread[4]` (pthread_t) | 32 B |
 | `tcp_health_thread[4]` | 32 B |
-| `tcp_send_mutex[4]` (`com_util_local_lock_t *`) | 32 B |
+| `tcp_send_mutex[4]` (`com_util_local_lock *`) | 32 B |
 | `tcp_health_mutex[4]` | 160 B |
-| `tcp_health_wakeup[4]` (com_util_condvar_t) | 192 B |
+| `tcp_health_wakeup[4]` (com_util_condvar) | 192 B |
 | `tcp_recv_window_mutex` | 40 B |
 | その他整数フィールド | 〜32 B |
 | **合計** | **約 730〜760 B 増加** |

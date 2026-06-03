@@ -7,9 +7,9 @@
 #include <mock_porter.h>
 #include <porter/infra/potrTrace.h>
 
-MOCK_WEAK_IMPL(com_util_tracer_t *, potr_trace_get, void)
+MOCK_WEAK_IMPL(com_util_tracer *, potr_trace_get, void)
 {
-    com_util_tracer_t *rtc = nullptr;
+    com_util_tracer *rtc = nullptr;
 
     if (_mock_porter != nullptr)
     {

@@ -34,7 +34,7 @@ extern "C"
      *  @param[in,out]  ctx セッションコンテキスト。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
-    extern int  potr_send_thread_start(struct PotrContext_ *ctx);
+    extern int potr_send_thread_start(PotrContext *ctx);
 
     /**
      *  @brief          非同期送信スレッドを停止する。
@@ -43,7 +43,7 @@ extern "C"
      *
      *  @param[in,out]  ctx セッションコンテキスト。
      */
-    extern void potr_send_thread_stop(struct PotrContext_ *ctx);
+    extern void potr_send_thread_stop(PotrContext *ctx);
 
 #ifdef __cplusplus
 }

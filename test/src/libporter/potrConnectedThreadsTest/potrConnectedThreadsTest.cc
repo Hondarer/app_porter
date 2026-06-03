@@ -36,20 +36,20 @@ struct ConnectedThreadsCallState
 
 static ConnectedThreadsCallState g_calls;
 
-static int fake_send_start(struct PotrContext_ *ctx)
+static int fake_send_start(PotrContext *ctx)
 {
     g_calls.send_start_calls++;
     ctx->send_thread_running = 1;
     return POTR_SUCCESS;
 }
 
-static void fake_send_stop(struct PotrContext_ *ctx)
+static void fake_send_stop(PotrContext *ctx)
 {
     g_calls.send_stop_calls++;
     ctx->send_thread_running = 0;
 }
 
-static int fake_recv_start(struct PotrContext_ *ctx, int path_idx)
+static int fake_recv_start(PotrContext *ctx, int path_idx)
 {
     g_calls.recv_start_calls++;
     if (g_calls.recv_start_result == POTR_SUCCESS)
@@ -59,7 +59,7 @@ static int fake_recv_start(struct PotrContext_ *ctx, int path_idx)
     return g_calls.recv_start_result;
 }
 
-int potr_tcp_send_ping_now(struct PotrContext_ *ctx, int path_idx)
+int potr_tcp_send_ping_now(PotrContext *ctx, int path_idx)
 {
     (void)ctx;
     g_calls.tcp_send_ping_calls++;
@@ -67,7 +67,7 @@ int potr_tcp_send_ping_now(struct PotrContext_ *ctx, int path_idx)
     return g_calls.tcp_send_ping_result;
 }
 
-static int fake_health_start(struct PotrContext_ *ctx, int path_idx)
+static int fake_health_start(PotrContext *ctx, int path_idx)
 {
     (void)ctx;
     (void)path_idx;
@@ -75,25 +75,23 @@ static int fake_health_start(struct PotrContext_ *ctx, int path_idx)
     return g_calls.health_start_result;
 }
 
-static void fake_close_conn(struct PotrContext_ *ctx, int path_idx)
+static void fake_close_conn(PotrContext *ctx, int path_idx)
 {
     g_calls.close_conn_calls++;
     ctx->tcp_conn_fd[path_idx] = POTR_INVALID_SOCKET;
 }
 
-static void fake_join_recv(struct PotrContext_ *ctx, int path_idx)
+static void fake_join_recv(PotrContext *ctx, int path_idx)
 {
     (void)ctx;
     (void)path_idx;
     g_calls.join_recv_calls++;
 }
 
-static void fake_set_path_ping_state(struct PotrContext_ *ctx,
-                                     int                  path_idx,
-                                     uint8_t              next_state)
+static void fake_set_path_ping_state(PotrContext *ctx, int path_idx, uint8_t next_state)
 {
     g_calls.set_ping_state_calls++;
-    g_calls.last_set_ping_path  = path_idx;
+    g_calls.last_set_ping_path = path_idx;
     g_calls.last_set_ping_state = (int)next_state;
     ctx->path_ping_state[path_idx] = next_state;
 }
@@ -102,7 +100,7 @@ class potrConnectedThreadsTest : public Test
 {
   protected:
     NiceMock<Mock_com_util> mock_com_util;
-    NiceMock<Mock_porter>   mock_porter;
+    NiceMock<Mock_porter> mock_porter;
 
     void SetUp() override
     {
@@ -112,32 +110,24 @@ class potrConnectedThreadsTest : public Test
         memset(&g_calls, 0, sizeof(g_calls));
 
         ctx.service.service_id = 42;
-        ctx.service.type       = POTR_TYPE_TCP_BIDIR;
-        ctx.role               = POTR_ROLE_SENDER;
-        ctx.tcp_conn_fd[0]     = 123;
-        ctx.tcp_conn_fd[1]     = 456;
+        ctx.service.type = POTR_TYPE_TCP_BIDIR;
+        ctx.role = POTR_ROLE_SENDER;
+        ctx.tcp_conn_fd[0] = 123;
+        ctx.tcp_conn_fd[1] = 456;
 
-        g_calls.recv_start_result   = POTR_SUCCESS;
+        g_calls.recv_start_result = POTR_SUCCESS;
         g_calls.tcp_send_ping_result = POTR_SUCCESS;
         g_calls.health_start_result = POTR_SUCCESS;
     }
 
     PotrConnectedThreadsOps make_ops()
     {
-        PotrConnectedThreadsOps ops =
-        {
-            fake_send_start,
-            fake_send_stop,
-            fake_recv_start,
-            fake_health_start,
-            fake_close_conn,
-            fake_join_recv,
-            fake_set_path_ping_state
-        };
+        PotrConnectedThreadsOps ops = {fake_send_start, fake_send_stop, fake_recv_start,         fake_health_start,
+                                       fake_close_conn, fake_join_recv, fake_set_path_ping_state};
         return ops;
     }
 
-    struct PotrContext_ ctx;
+    PotrContext ctx;
 };
 
 TEST_F(potrConnectedThreadsTest, recv_failure_stops_send_started_by_this_call)

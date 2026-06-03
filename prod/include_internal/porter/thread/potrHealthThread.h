@@ -31,20 +31,20 @@ extern "C"
      *  @param[in,out]  ctx セッションコンテキスト。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
-    extern int potr_health_thread_start(struct PotrContext_ *ctx);
+    extern int potr_health_thread_start(PotrContext *ctx);
 
     /**
      *  @brief          非 TCP ヘルスチェックスレッドを停止する。
      *  @param[in,out]  ctx セッションコンテキスト。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
-    extern int potr_health_thread_stop(struct PotrContext_ *ctx);
+    extern int potr_health_thread_stop(PotrContext *ctx);
 
     /**
      *  @brief          非 TCP ヘルスチェックスレッドを即時起床させる。
      *  @param[in,out]  ctx セッションコンテキスト。
      */
-    extern void potr_health_thread_wake(struct PotrContext_ *ctx);
+    extern void potr_health_thread_wake(PotrContext *ctx);
 
     /**
      *  @brief          TCP PING パケットを即時送信する。
@@ -52,7 +52,7 @@ extern "C"
      *  @param[in]      path_idx パスインデックス。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
-    extern int potr_tcp_send_ping_now(struct PotrContext_ *ctx, int path_idx);
+    extern int potr_tcp_send_ping_now(PotrContext *ctx, int path_idx);
 
     /**
      *  @brief          TCP ヘルスチェックスレッドを path ごとに起動する。
@@ -63,7 +63,7 @@ extern "C"
      *  @param[in]      path_idx パスインデックス (0 〜 n_path-1)。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
-    extern int potr_tcp_health_thread_start(struct PotrContext_ *ctx, int path_idx);
+    extern int potr_tcp_health_thread_start(PotrContext *ctx, int path_idx);
 
     /**
      *  @brief          TCP ヘルスチェックスレッドを停止する。
@@ -71,20 +71,20 @@ extern "C"
      *  @param[in]      path_idx パスインデックス (0 〜 n_path-1)。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
-    extern int potr_tcp_health_thread_stop(struct PotrContext_ *ctx, int path_idx);
+    extern int potr_tcp_health_thread_stop(PotrContext *ctx, int path_idx);
 
     /**
      *  @brief          指定パスの TCP ヘルスチェックスレッドを即時起床させる。
      *  @param[in,out]  ctx      セッションコンテキスト。
      *  @param[in]      path_idx パスインデックス。
      */
-    extern void potr_tcp_health_thread_wake(struct PotrContext_ *ctx, int path_idx);
+    extern void potr_tcp_health_thread_wake(PotrContext *ctx, int path_idx);
 
     /**
      *  @brief          全パスの TCP ヘルスチェックスレッドを即時起床させる。
      *  @param[in,out]  ctx セッションコンテキスト。
      */
-    extern void potr_tcp_health_thread_wake_all(struct PotrContext_ *ctx);
+    extern void potr_tcp_health_thread_wake_all(PotrContext *ctx);
 
 #ifdef __cplusplus
 }

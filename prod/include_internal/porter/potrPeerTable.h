@@ -36,7 +36,7 @@ extern "C"
      *  @param[in,out]  ctx     セッションコンテキスト。
      *  @param[in]      peer    FIN を送信するピアコンテキスト。
      */
-    extern void peer_send_fin(struct PotrContext_ *ctx, PotrPeerContext *peer);
+    extern void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer);
 
     /**
      *  @brief  ピアテーブルを初期化する。
@@ -47,7 +47,7 @@ extern "C"
      *  @param[in,out]  ctx         セッションコンテキスト。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
-    extern int peer_table_init(struct PotrContext_ *ctx);
+    extern int peer_table_init(PotrContext *ctx);
 
     /**
      *  @brief  ピアテーブルを破棄する。
@@ -57,7 +57,7 @@ extern "C"
      *
      *  @param[in,out]  ctx         セッションコンテキスト。
      */
-    extern void peer_table_dispose(struct PotrContext_ *ctx);
+    extern void peer_table_dispose(PotrContext *ctx);
 
     /**
      *  @brief  session_triplet でピアを検索する。
@@ -72,10 +72,8 @@ extern "C"
      *  @param[in]  session_tv_nsec ピアのセッション開始時刻 ナノ秒部。
      *  @return     見つかった場合はピアコンテキストへのポインタ、見つからない場合は NULL。
      */
-    extern PotrPeerContext *peer_find_by_session(const struct PotrContext_ *ctx,
-                                                 uint32_t session_id,
-                                                 int64_t  session_tv_sec,
-                                                 int32_t  session_tv_nsec);
+    extern PotrPeerContext *peer_find_by_session(const PotrContext *ctx, uint32_t session_id, int64_t session_tv_sec,
+                                                 int32_t session_tv_nsec);
 
     /**
      *  @brief  peer_id でピアを検索する。
@@ -86,8 +84,7 @@ extern "C"
      *  @param[in]  peer_id 検索するピア ID。
      *  @return     見つかった場合はピアコンテキストへのポインタ、見つからない場合は NULL。
      */
-    extern PotrPeerContext *peer_find_by_id(const struct PotrContext_ *ctx,
-                                            PotrPeerId peer_id);
+    extern PotrPeerContext *peer_find_by_id(const PotrContext *ctx, PotrPeerId peer_id);
 
     /**
      *  @brief  新規ピアを作成する。
@@ -104,9 +101,7 @@ extern "C"
      *  @param[in]      path_idx    パケットを受信したサーバソケットのインデックス (ctx->sock[] の添字)。
      *  @return         成功時はピアコンテキストへのポインタ、失敗時は NULL。
      */
-    extern PotrPeerContext *peer_create(struct PotrContext_ *ctx,
-                                        const struct sockaddr_in *sender_addr,
-                                        int path_idx);
+    extern PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_addr, int path_idx);
 
     /**
      *  @brief  ピアの特定パスをクリアしてスロットを未使用に戻す。
@@ -119,7 +114,7 @@ extern "C"
      *  @param[in,out]  peer        対象ピアコンテキスト。
      *  @param[in]      path_idx    クリアするパスのインデックス (ctx->sock[] の添字)。
      */
-    extern void peer_path_clear(const struct PotrContext_ *ctx, PotrPeerContext *peer, int path_idx);
+    extern void peer_path_clear(const PotrContext *ctx, PotrPeerContext *peer, int path_idx);
 
     /**
      *  @brief  ピアリソースを解放してスロットをクリアする。
@@ -131,7 +126,7 @@ extern "C"
      *  @param[in,out]  ctx     セッションコンテキスト。
      *  @param[in,out]  peer    解放するピアコンテキスト。
      */
-    extern void peer_free(struct PotrContext_ *ctx, PotrPeerContext *peer);
+    extern void peer_free(PotrContext *ctx, PotrPeerContext *peer);
 
 #ifdef __cplusplus
 }

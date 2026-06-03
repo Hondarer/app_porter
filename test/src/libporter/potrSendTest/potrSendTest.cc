@@ -29,12 +29,12 @@ class potrSendTest : public Test
         memset(&ctx, 0, sizeof(ctx));
         memset(peers, 0, sizeof(peers));
 
-        ctx.service.service_id      = 42;
-        ctx.global.max_payload      = 1400;
+        ctx.service.service_id = 42;
+        ctx.global.max_payload = 1400;
         ctx.global.max_message_size = 4096;
-        ctx.send_thread_running     = 1;
-        ctx.max_peers               = (int)(sizeof(peers) / sizeof(peers[0]));
-        ctx.peers                   = peers;
+        ctx.send_thread_running = 1;
+        ctx.max_peers = (int)(sizeof(peers) / sizeof(peers[0]));
+        ctx.peers = peers;
 
         ASSERT_EQ(POTR_SUCCESS, potr_send_queue_init(&ctx.send_queue, 8, 1400));
         com_util_local_lock_create(&ctx.peers_mutex);
@@ -54,59 +54,56 @@ class potrSendTest : public Test
         return elem;
     }
 
-    struct PotrContext_ ctx;
-    PotrPeerContext     peers[2];
+    PotrContext ctx;
+    PotrPeerContext peers[2];
 };
 
 TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
 {
-    NiceMock<Mock_com_util>       mock_log;
+    NiceMock<Mock_com_util> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "tcp-before-connected";
 
-    ctx.service.type     = POTR_TYPE_TCP_BIDIR;
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
     ctx.tcp_active_paths = 1;
-    ctx.health_alive     = 0;
+    ctx.health_alive = 0;
 
-    EXPECT_EQ(POTR_ERROR_DISCONNECTED,
-              potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0));
+    EXPECT_EQ(POTR_ERROR_DISCONNECTED, potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0));
     EXPECT_EQ(0U, ctx.send_queue.count);
 }
 
 TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
 {
-    NiceMock<Mock_com_util>       mock_log;
+    NiceMock<Mock_com_util> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "n1-broadcast";
 
-    ctx.service.type   = POTR_TYPE_UNICAST_BIDIR_N1;
-    ctx.is_multi_peer  = 1;
-    peers[0].active    = 1;
-    peers[0].peer_id   = 10;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1;
+    peers[0].active = 1;
+    peers[0].peer_id = 10;
     peers[0].health_alive = 0;
 
-    EXPECT_EQ(POTR_ERROR_DISCONNECTED,
-              potrSend(&ctx, POTR_PEER_ALL, payload, strlen(payload), 0));
+    EXPECT_EQ(POTR_ERROR_DISCONNECTED, potrSend(&ctx, POTR_PEER_ALL, payload, strlen(payload), 0));
     EXPECT_EQ(0U, ctx.send_queue.count);
 }
 
 TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
 {
-    NiceMock<Mock_com_util>       mock_log;
+    NiceMock<Mock_com_util> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "n1-connected-peer";
 
-    ctx.service.type   = POTR_TYPE_UNICAST_BIDIR_N1;
-    ctx.is_multi_peer  = 1;
-    peers[0].active    = 1;
-    peers[0].peer_id   = 10;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1;
+    peers[0].active = 1;
+    peers[0].peer_id = 10;
     peers[0].health_alive = 1;
-    peers[1].active    = 1;
-    peers[1].peer_id   = 11;
+    peers[1].active = 1;
+    peers[1].peer_id = 11;
     peers[1].health_alive = 0;
 
-    EXPECT_EQ(POTR_SUCCESS,
-              potrSend(&ctx, POTR_PEER_ALL, payload, strlen(payload), 0));
+    EXPECT_EQ(POTR_SUCCESS, potrSend(&ctx, POTR_PEER_ALL, payload, strlen(payload), 0));
     EXPECT_EQ(1U, ctx.send_queue.count);
 
     {
@@ -119,15 +116,14 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
 
 TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
 {
-    NiceMock<Mock_com_util>       mock_log;
+    NiceMock<Mock_com_util> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "one-way-still-sendable";
 
     ctx.service.type = POTR_TYPE_UNICAST;
     ctx.health_alive = 0;
 
-    EXPECT_EQ(POTR_SUCCESS,
-              potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0));
+    EXPECT_EQ(POTR_SUCCESS, potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0));
     EXPECT_EQ(1U, ctx.send_queue.count);
 
     {

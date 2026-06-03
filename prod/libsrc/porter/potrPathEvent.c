@@ -43,18 +43,17 @@ static int any_path_alive(const int *states)
     return 0;
 }
 
-void potr_callback_mutex_init(struct PotrContext_ *ctx)
+void potr_callback_mutex_init(PotrContext *ctx)
 {
     com_util_local_lock_create(&ctx->callback_mutex);
 }
 
-void potr_callback_mutex_dispose(struct PotrContext_ *ctx)
+void potr_callback_mutex_dispose(PotrContext *ctx)
 {
     com_util_local_lock_destroy(ctx->callback_mutex);
 }
 
-void potr_callback_emit_locked(struct PotrContext_ *ctx, PotrPeerId peer_id,
-                               PotrEvent event, const void *data, size_t len)
+void potr_callback_emit_locked(PotrContext *ctx, PotrPeerId peer_id, PotrEvent event, const void *data, size_t len)
 {
     if (ctx != NULL && ctx->callback != NULL)
     {
@@ -62,8 +61,7 @@ void potr_callback_emit_locked(struct PotrContext_ *ctx, PotrPeerId peer_id,
     }
 }
 
-void potr_callback_emit(struct PotrContext_ *ctx, PotrPeerId peer_id,
-                        PotrEvent event, const void *data, size_t len)
+void potr_callback_emit(PotrContext *ctx, PotrPeerId peer_id, PotrEvent event, const void *data, size_t len)
 {
     if (ctx == NULL || ctx->callback == NULL)
     {
@@ -80,7 +78,7 @@ void potr_zero_path_states(int *states)
     memset(states, 0, sizeof(int) * POTR_MAX_PATH);
 }
 
-void potr_copy_oneway_path_states(const struct PotrContext_ *ctx, int *states)
+void potr_copy_oneway_path_states(const PotrContext *ctx, int *states)
 {
     int k;
 
@@ -90,14 +88,14 @@ void potr_copy_oneway_path_states(const struct PotrContext_ *ctx, int *states)
     }
 }
 
-void potr_copy_bidir_udp_path_states(const struct PotrContext_ *ctx, int *states)
+void potr_copy_bidir_udp_path_states(const PotrContext *ctx, int *states)
 {
     int k;
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
-        states[k] = path_state_is_normal(ctx->path_ping_state[k])
-                 && path_state_is_normal(ctx->remote_path_ping_state[k]);
+        states[k] =
+            path_state_is_normal(ctx->path_ping_state[k]) && path_state_is_normal(ctx->remote_path_ping_state[k]);
     }
 }
 
@@ -107,26 +105,23 @@ void potr_copy_bidir_n1_path_states(const PotrPeerContext *peer, int *states)
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
-        states[k] = path_state_is_normal(peer->path_ping_state[k])
-                 && path_state_is_normal(peer->remote_path_ping_state[k]);
+        states[k] =
+            path_state_is_normal(peer->path_ping_state[k]) && path_state_is_normal(peer->remote_path_ping_state[k]);
     }
 }
 
-void potr_copy_tcp_path_states(const struct PotrContext_ *ctx, int *states)
+void potr_copy_tcp_path_states(const PotrContext *ctx, int *states)
 {
     int k;
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
-        states[k] = (ctx->tcp_conn_fd[k] != POTR_INVALID_SOCKET)
-                 && path_state_is_normal(ctx->path_ping_state[k])
-                 && path_state_is_normal(ctx->remote_path_ping_state[k]);
+        states[k] = (ctx->tcp_conn_fd[k] != POTR_INVALID_SOCKET) && path_state_is_normal(ctx->path_ping_state[k]) &&
+                    path_state_is_normal(ctx->remote_path_ping_state[k]);
     }
 }
 
-void potr_sync_service_path_state_locked(struct PotrContext_   *ctx,
-                                         const int             *next_states,
-                                         PotrPreparedPathEvents *prepared)
+void potr_sync_service_path_state_locked(PotrContext *ctx, const int *next_states, PotrPreparedPathEvents *prepared)
 {
     int k;
     int old_alive;
@@ -180,9 +175,7 @@ void potr_sync_service_path_state_locked(struct PotrContext_   *ctx,
     }
 }
 
-void potr_sync_peer_path_state_locked(PotrPeerContext         *peer,
-                                      const int               *next_states,
-                                      PotrPreparedPathEvents  *prepared)
+void potr_sync_peer_path_state_locked(PotrPeerContext *peer, const int *next_states, PotrPreparedPathEvents *prepared)
 {
     int k;
     int old_alive;
@@ -236,43 +229,35 @@ void potr_sync_peer_path_state_locked(PotrPeerContext         *peer,
     }
 }
 
-void potr_emit_service_path_events_locked(struct PotrContext_          *ctx,
-                                          const PotrPreparedPathEvents *prepared)
+void potr_emit_service_path_events_locked(PotrContext *ctx, const PotrPreparedPathEvents *prepared)
 {
     int k;
 
     for (k = 0; k < prepared->changed_count; k++)
     {
-        potr_callback_emit_locked(ctx, POTR_PEER_NA,
-                                  prepared->changed_events[k],
-                                  prepared->final_states,
+        potr_callback_emit_locked(ctx, POTR_PEER_NA, prepared->changed_events[k], prepared->final_states,
                                   (size_t)prepared->changed_paths[k]);
     }
 
     if (prepared->session_event != 0)
     {
-        potr_callback_emit_locked(ctx, POTR_PEER_NA,
-                                  prepared->session_event, NULL, 0);
+        potr_callback_emit_locked(ctx, POTR_PEER_NA, prepared->session_event, NULL, 0);
     }
 }
 
-void potr_emit_peer_path_events_locked(struct PotrContext_          *ctx,
-                                       const PotrPeerContext        *peer,
+void potr_emit_peer_path_events_locked(PotrContext *ctx, const PotrPeerContext *peer,
                                        const PotrPreparedPathEvents *prepared)
 {
     int k;
 
     for (k = 0; k < prepared->changed_count; k++)
     {
-        potr_callback_emit_locked(ctx, peer->peer_id,
-                                  prepared->changed_events[k],
-                                  prepared->final_states,
+        potr_callback_emit_locked(ctx, peer->peer_id, prepared->changed_events[k], prepared->final_states,
                                   (size_t)prepared->changed_paths[k]);
     }
 
     if (prepared->session_event != 0)
     {
-        potr_callback_emit_locked(ctx, peer->peer_id,
-                                  prepared->session_event, NULL, 0);
+        potr_callback_emit_locked(ctx, peer->peer_id, prepared->session_event, NULL, 0);
     }
 }

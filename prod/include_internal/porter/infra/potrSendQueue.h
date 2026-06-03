@@ -37,12 +37,12 @@
  *  payload はキュー初期化時に確保したプールスロットを指す。\n
  *  N:1 モードでは peer_id が送信先ピアを示す。1:1 モードでは 0。
  */
-typedef struct
+typedef struct PotrPayloadElem
 {
-    PotrPeerId peer_id;     /**< 送信先ピア識別子 (N:1 モード用。1:1 モードでは 0)。 */
-    uint16_t  flags;        /**< ペイロードエレメントフラグ (MORE_FRAG, COMPRESSED など)。 */
-    uint16_t  payload_len;  /**< ペイロード長 (バイト)。 */
-    uint8_t  *payload;      /**< ペイロードデータへのポインタ (プールスロット内を指す)。 */
+    PotrPeerId peer_id;   /**< 送信先ピア識別子 (N:1 モード用。1:1 モードでは 0)。 */
+    uint16_t flags;       /**< ペイロードエレメントフラグ (MORE_FRAG, COMPRESSED など)。 */
+    uint16_t payload_len; /**< ペイロード長 (バイト)。 */
+    uint8_t *payload;     /**< ペイロードデータへのポインタ (プールスロット内を指す)。 */
 } PotrPayloadElem;
 
 /**
@@ -57,19 +57,19 @@ typedef struct
  *  - not_full 条件変数: count + inflight < depth になったことを通知 (push_wait が待機)\n
  *  - drained 条件変数: count == 0 かつ inflight == 0 を通知 (ブロッキング送信が待機)
  */
-typedef struct
+typedef struct PotrSendQueue
 {
-    PotrPayloadElem *entries;      /**< ペイロードエレメントバッファ (動的確保。depth 要素)。 */
-    uint8_t         *payload_pool; /**< ペイロードプール (動的確保。depth × max_payload バイト)。 */
-    size_t           depth;        /**< キュー容量 (エントリ数)。 */
-    size_t           head;         /**< 読み出し位置 (送信スレッドが使用)。 */
-    size_t           tail;         /**< 書き込み位置 (potrSend 呼び出し元が使用)。 */
-    size_t           count;        /**< キュー内エントリ数。 */
-    size_t           inflight;     /**< sendto 実行中エントリ数。 */
-    com_util_local_lock_t *        mutex;        /**< 排他制御。 */
-    com_util_condvar_t *      not_empty;    /**< count > 0 になったことを通知する条件変数。 */
-    com_util_condvar_t *      not_full;     /**< count + inflight < depth になったことを通知する条件変数。 */
-    com_util_condvar_t *      drained;      /**< count == 0 && inflight == 0 を通知する条件変数。 */
+    PotrPayloadElem *entries;    /**< ペイロードエレメントバッファ (動的確保。depth 要素)。 */
+    uint8_t *payload_pool;       /**< ペイロードプール (動的確保。depth × max_payload バイト)。 */
+    size_t depth;                /**< キュー容量 (エントリ数)。 */
+    size_t head;                 /**< 読み出し位置 (送信スレッドが使用)。 */
+    size_t tail;                 /**< 書き込み位置 (potrSend 呼び出し元が使用)。 */
+    size_t count;                /**< キュー内エントリ数。 */
+    size_t inflight;             /**< sendto 実行中エントリ数。 */
+    com_util_local_lock *mutex;  /**< 排他制御。 */
+    com_util_condvar *not_empty; /**< count > 0 になったことを通知する条件変数。 */
+    com_util_condvar *not_full;  /**< count + inflight < depth になったことを通知する条件変数。 */
+    com_util_condvar *drained;   /**< count == 0 && inflight == 0 を通知する条件変数。 */
 } PotrSendQueue;
 
 #ifdef __cplusplus
@@ -84,7 +84,7 @@ extern "C"
      *  @param[in]      max_payload ペイロード最大長 (バイト)。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
-    extern int  potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload);
+    extern int potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload);
 
     /**
      *  @brief          送信キューのリソースを解放する。
@@ -104,9 +104,8 @@ extern "C"
      *  @param[in]      payload_len 送信ペイロード長 (バイト)。
      *  @return         成功時は POTR_SUCCESS、満杯時は POTR_ERROR。
      */
-    extern int  potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id,
-                                     uint16_t flags,
-                                     const void *payload, uint16_t payload_len);
+    extern int potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id, uint16_t flags, const void *payload,
+                                    uint16_t payload_len);
 
     /**
      *  @brief          ペイロードエレメントをキューに追加する (空き待機あり)。
@@ -121,10 +120,8 @@ extern "C"
      *  @param[in]      running     実行フラグへのポインタ。0 になると待機を中断する。
      *  @return         成功時は POTR_SUCCESS、running が 0 になった場合は POTR_ERROR。
      */
-    extern int  potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id,
-                                          uint16_t flags,
-                                          const void *payload, uint16_t payload_len,
-                                          volatile int *running);
+    extern int potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id, uint16_t flags, const void *payload,
+                                         uint16_t payload_len, volatile int *running);
 
     /**
      *  @brief          先頭エントリを取り出して inflight に移行する (ブロッキング)。
@@ -136,8 +133,7 @@ extern "C"
      *  @param[in]      running 実行フラグへのポインタ。0 になると待機を中断する。
      *  @return         成功時は POTR_SUCCESS、running が 0 になった場合は POTR_ERROR。
      */
-    extern int  potr_send_queue_pop(PotrSendQueue *q, PotrPayloadElem *out,
-                                    volatile int *running);
+    extern int potr_send_queue_pop(PotrSendQueue *q, PotrPayloadElem *out, volatile int *running);
 
     /**
      *  @brief          先頭エントリを参照する (inflight へは移行しない)。
@@ -148,7 +144,7 @@ extern "C"
      *  @param[out]     out 先頭エントリの書き戻し先。
      *  @return         成功時は POTR_SUCCESS、空の場合は POTR_ERROR。
      */
-    extern int  potr_send_queue_peek(PotrSendQueue *q, PotrPayloadElem *out);
+    extern int potr_send_queue_peek(PotrSendQueue *q, PotrPayloadElem *out);
 
     /**
      *  @brief          先頭エントリを参照する (タイムアウトあり)。
@@ -160,8 +156,7 @@ extern "C"
      *  @param[in]      timeout_ms  待機タイムアウト (ミリ秒)。
      *  @return         成功時は POTR_SUCCESS、タイムアウトまたは空の場合は POTR_ERROR。
      */
-    extern int  potr_send_queue_peek_timed(PotrSendQueue *q, PotrPayloadElem *out,
-                                           int timeout_ms);
+    extern int potr_send_queue_peek_timed(PotrSendQueue *q, PotrPayloadElem *out, int timeout_ms);
 
     /**
      *  @brief          先頭エントリを取り出して inflight に移行する (ノンブロッキング)。
@@ -172,7 +167,7 @@ extern "C"
      *  @param[out]     out 取り出したエントリの書き戻し先。
      *  @return         成功時は POTR_SUCCESS、空の場合は POTR_ERROR。
      */
-    extern int  potr_send_queue_try_pop(PotrSendQueue *q, PotrPayloadElem *out);
+    extern int potr_send_queue_try_pop(PotrSendQueue *q, PotrPayloadElem *out);
 
     /**
      *  @brief          inflight エントリを 1 つ完了としてマークする。

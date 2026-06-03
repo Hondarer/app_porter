@@ -62,7 +62,7 @@ void on_event(int64_t service_id, PotrEvent event, const void *data, size_t len)
 }
 
 int main(void) {
-    PotrHandle handle;
+    PotrContext *handle;
     potrLogConfig(POTR_TRACE_INFO, NULL, 1);
     potrOpenService("porter-services.conf", 1001, POTR_ROLE_RECEIVER, on_event, &handle);
     /* ... 待機 ... */
@@ -77,7 +77,7 @@ int main(void) {
 #include "porter.h"
 
 int main(void) {
-    PotrHandle handle;
+    PotrContext *handle;
     potrLogConfig(POTR_TRACE_INFO, NULL, 1);
     potrOpenService("porter-services.conf", 1001, POTR_ROLE_SENDER, NULL, &handle);
 

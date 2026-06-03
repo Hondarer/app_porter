@@ -24,18 +24,16 @@ extern "C"
 {
 #endif /* __cplusplus */
 
-typedef struct PotrConnectedThreadsOps_
-{
-    int  (*send_start)(struct PotrContext_ *ctx);
-    void (*send_stop)(struct PotrContext_ *ctx);
-    int  (*recv_start)(struct PotrContext_ *ctx, int path_idx);
-    int  (*health_start)(struct PotrContext_ *ctx, int path_idx);
-    void (*close_conn)(struct PotrContext_ *ctx, int path_idx);
-    void (*join_recv)(struct PotrContext_ *ctx, int path_idx);
-    void (*set_path_ping_state)(struct PotrContext_ *ctx,
-                                int                  path_idx,
-                                uint8_t              next_state);
-} PotrConnectedThreadsOps;
+    typedef struct PotrConnectedThreadsOps
+    {
+        int (*send_start)(PotrContext *ctx);
+        void (*send_stop)(PotrContext *ctx);
+        int (*recv_start)(PotrContext *ctx, int path_idx);
+        int (*health_start)(PotrContext *ctx, int path_idx);
+        void (*close_conn)(PotrContext *ctx, int path_idx);
+        void (*join_recv)(PotrContext *ctx, int path_idx);
+        void (*set_path_ping_state)(PotrContext *ctx, int path_idx, uint8_t next_state);
+    } PotrConnectedThreadsOps;
 
     /**
      *  @brief          接続確立後に send / recv / health スレッドを起動する。
@@ -47,9 +45,7 @@ typedef struct PotrConnectedThreadsOps_
      *  @param[in]      ops      スレッド操作コールバックテーブル。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
-    extern int potr_start_connected_threads(struct PotrContext_           *ctx,
-                                            int                            path_idx,
-                                            const PotrConnectedThreadsOps *ops);
+    extern int potr_start_connected_threads(PotrContext *ctx, int path_idx, const PotrConnectedThreadsOps *ops);
 
 #ifdef __cplusplus
 }

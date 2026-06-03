@@ -24,9 +24,7 @@
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_start_connected_threads(struct PotrContext_           *ctx,
-                                 int                            path_idx,
-                                 const PotrConnectedThreadsOps *ops)
+int potr_start_connected_threads(PotrContext *ctx, int path_idx, const PotrConnectedThreadsOps *ops)
 {
     int is_bidir;
     int is_sender;
@@ -37,16 +35,15 @@ int potr_start_connected_threads(struct PotrContext_           *ctx,
         return POTR_ERROR;
     }
 
-    is_bidir  = (ctx->service.type == POTR_TYPE_TCP_BIDIR);
+    is_bidir = (ctx->service.type == POTR_TYPE_TCP_BIDIR);
     is_sender = (ctx->role == POTR_ROLE_SENDER);
 
     if ((is_sender || is_bidir) && path_idx == 0 && !ctx->send_thread_running)
     {
         if (ops->send_start(ctx) != POTR_SUCCESS)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                     "connect_thread[service_id=%" PRId64 "]: send_thread_start failed",
-                     ctx->service.service_id);
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "connect_thread[service_id=%" PRId64 "]: send_thread_start failed",
+                       ctx->service.service_id);
             return POTR_ERROR;
         }
         started_send_thread = 1;
@@ -55,9 +52,9 @@ int potr_start_connected_threads(struct PotrContext_           *ctx,
     if (ops->recv_start(ctx, path_idx) != POTR_SUCCESS)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "connect_thread[service_id=%" PRId64 "]: tcp_recv_thread_start failed"
-                 " (path=%d)",
-                 ctx->service.service_id, path_idx);
+                   "connect_thread[service_id=%" PRId64 "]: tcp_recv_thread_start failed"
+                   " (path=%d)",
+                   ctx->service.service_id, path_idx);
         ops->close_conn(ctx, path_idx);
         if (started_send_thread)
         {
@@ -71,9 +68,9 @@ int potr_start_connected_threads(struct PotrContext_           *ctx,
     if (potr_tcp_send_ping_now(ctx, path_idx) != POTR_SUCCESS)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "connect_thread[service_id=%" PRId64 "]: bootstrap TCP PING failed"
-                 " (path=%d)",
-                 ctx->service.service_id, path_idx);
+                   "connect_thread[service_id=%" PRId64 "]: bootstrap TCP PING failed"
+                   " (path=%d)",
+                   ctx->service.service_id, path_idx);
         ctx->running[path_idx] = 0;
         ops->close_conn(ctx, path_idx);
         ops->join_recv(ctx, path_idx);
@@ -87,9 +84,9 @@ int potr_start_connected_threads(struct PotrContext_           *ctx,
     if (ops->health_start(ctx, path_idx) != POTR_SUCCESS)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "connect_thread[service_id=%" PRId64 "]: tcp_health_thread_start failed"
-                 " (path=%d)",
-                 ctx->service.service_id, path_idx);
+                   "connect_thread[service_id=%" PRId64 "]: tcp_health_thread_start failed"
+                   " (path=%d)",
+                   ctx->service.service_id, path_idx);
         ctx->running[path_idx] = 0;
         ops->close_conn(ctx, path_idx);
         ops->join_recv(ctx, path_idx);

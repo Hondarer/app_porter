@@ -67,7 +67,7 @@ int main(void)
     signal(SIGINT,  sig_handler);
     signal(SIGTERM, sig_handler);
 
-    PotrHandle handle;
+    PotrContext *handle;
     potrOpenService(..., &handle);
 
     while (g_running)
@@ -124,7 +124,7 @@ sigaddset(&mask, SIGTERM);
 /* ここでマスクすると、以降に生成される内部スレッドは SIGINT/SIGTERM をマスクして生成される */
 pthread_sigmask(SIG_BLOCK, &mask, NULL);
 
-PotrHandle handle;
+PotrContext *handle;
 potrOpenService(..., &handle);
 
 /* メインスレッドだけマスクを解除して受け取る */

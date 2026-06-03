@@ -6,7 +6,7 @@
  *  @date           2026/04/19
  *  @version        1.0.0
  *
- *  porter ライブラリ全体で共有する com_util_tracer_t ハンドルを管理します。\n
+ *  porter ライブラリ全体で共有する com_util_tracer ハンドルを管理します。\n
  *  トレーサーは初回アクセス時に lazy create され、プロセス終了時に
  *  trace_registry_dispose_all_on_unload() によって自動的に解放されます。\n
  *  出力開始 (com_util_tracer_start) はライブラリ利用者が potrGetTracer() 経由で
@@ -31,12 +31,12 @@
 /* ── グローバルトレーサー状態 ──────────────────────────────────────────────── */
 
 /** トレースプロバイダハンドル。potr_trace_get() で一度だけ初期化する。 */
-static com_util_tracer_t *s_trace = NULL;
+static com_util_tracer *s_trace = NULL;
 
 /* ── 内部 API ─────────────────────────────────────────────────────────── */
 
 /* doxygen コメントは potrTrace.h に記載 */
-com_util_tracer_t *potr_trace_get(void)
+com_util_tracer *potr_trace_get(void)
 {
     if (s_trace == NULL)
     {
@@ -54,7 +54,7 @@ com_util_tracer_t *potr_trace_get(void)
 /* ── 公開 API ─────────────────────────────────────────────────────────── */
 
 /* doxygen コメントは porter.h に記載 */
-POTR_EXPORT com_util_tracer_t * POTR_API potrGetTracer(void)
+POTR_EXPORT com_util_tracer *POTR_API potrGetTracer(void)
 {
     return potr_trace_get();
 }

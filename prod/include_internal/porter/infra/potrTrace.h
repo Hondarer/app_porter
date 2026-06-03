@@ -32,13 +32,13 @@ extern "C"
 {
 #endif /* __cplusplus */
 
-/**
+    /**
  *  @brief          グローバルトレーサーハンドルを返します (初回呼び出し時に lazy create)。
- *  @return         com_util_tracer_t ハンドル。NULL を返すことはありません。
+ *  @return         com_util_tracer ハンドル。NULL を返すことはありません。
  *
  *  本関数を直接呼び出さず、POTR_TRACE マクロを使用してください。
  */
-com_util_tracer_t *potr_trace_get(void);
+    com_util_tracer *potr_trace_get(void);
 
 /**
  *  @brief          porter 内部ログ出力マクロ。
@@ -54,8 +54,7 @@ com_util_tracer_t *potr_trace_get(void);
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,   "socket() failed");
  *  @endcode
  */
-#define POTR_TRACE(level, ...) \
-    com_util_tracer_writef(potr_trace_get(), (level), NULL, __VA_ARGS__)
+#define POTR_TRACE(level, ...) com_util_tracer_writef(potr_trace_get(), (level), NULL, __VA_ARGS__)
 
 #ifdef __cplusplus
 }

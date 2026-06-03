@@ -65,7 +65,7 @@ static volatile int g_running = 1;
 /** 終了要求の受信有無。main 側の表示制御に使う。 */
 static volatile sig_atomic_t g_shutdown_requested = 0;
 /** pinned prompt ハンドル。on_recv や trace hook から参照する。 */
-static com_util_pinned_prompt_t *g_screen = NULL;
+static com_util_pinned_prompt *g_screen = NULL;
 
 /**
  *  @brief          データがテキストかバイナリかを判定する。
@@ -111,7 +111,7 @@ static int is_text_data(const void *data, size_t len)
  *  @param[in]      event   終了イベント。
  *  @param[in]      context 未使用。
  */
-static void send_shutdown_request_callback(const com_util_shutdown_event_t *event, void *context)
+static void send_shutdown_request_callback(const com_util_shutdown_event *event, void *context)
 {
     (void)event;
     (void)context;
@@ -120,7 +120,7 @@ static void send_shutdown_request_callback(const com_util_shutdown_event_t *even
 
 #if defined(PLATFORM_LINUX)
     close(STDIN_FILENO); /* fgets のブロックを解除する */
-#endif /* PLATFORM_ */
+#endif                   /* PLATFORM_ */
 }
 
 /**
@@ -136,7 +136,7 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
     char buf[POTR_MAX_PAYLOAD + 1];
     size_t copy_len;
     const int *path_states;
-    int        path_idx;
+    int path_idx;
 
     (void)peer_id;
     switch (event)
@@ -160,7 +160,7 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
         int path_state2;
         int path_state3;
         path_states = (const int *)data;
-        path_idx    = (int)len;
+        path_idx = (int)len;
         if (event == POTR_EVENT_PATH_CONNECTED)
         {
             path_event_str = "CONNECTED";
@@ -202,14 +202,8 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
             path_state3 = 0;
         }
         com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "\n[サービス %" PRId64 "] path[%d] %s states={%d,%d,%d,%d}\n",
-                                      service_id,
-                                      path_idx,
-                                      path_event_str,
-                                      path_state0,
-                                      path_state1,
-                                      path_state2,
-                                      path_state3);
+                                      "\n[サービス %" PRId64 "] path[%d] %s states={%d,%d,%d,%d}\n", service_id,
+                                      path_idx, path_event_str, path_state0, path_state1, path_state2, path_state3);
         break;
     }
 
@@ -232,14 +226,15 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
         }
         else
         {
-            char  tmp_path[PLATFORM_PATH_MAX];
+            char tmp_path[PLATFORM_PATH_MAX];
             FILE *fp = com_util_fopen_temp("ptr", "wb", tmp_path, sizeof(tmp_path), NULL);
 
             if (fp != NULL && com_util_fwrite(data, 1, len, fp) == len)
             {
                 com_util_fclose(fp);
                 com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
-                                              "\n[サービス %" PRId64 "] 受信 (%zu バイト): バイナリデータを保存しました: %s\n",
+                                              "\n[サービス %" PRId64
+                                              "] 受信 (%zu バイト): バイナリデータを保存しました: %s\n",
                                               service_id, len, tmp_path);
             }
             else
@@ -249,7 +244,8 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
                     com_util_fclose(fp);
                 }
                 com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
-                                              "\n[サービス %" PRId64 "] 受信 (%zu バイト): バイナリデータの保存に失敗しました。\n",
+                                              "\n[サービス %" PRId64
+                                              "] 受信 (%zu バイト): バイナリデータの保存に失敗しました。\n",
                                               service_id, len);
             }
         }
@@ -266,13 +262,8 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
  *  @param[in]      message   解決済みメッセージ文字列。
  *  @param[in]      context   閾値レベル (com_util_trace_level_t *) を指すポインタ。
  */
-static void trace_console_hook(
-    com_util_tracer_hook_entry_t        *prev,
-    com_util_tracer_t                   *handle,
-    com_util_trace_level_t               level,
-    const com_util_realtime_timestamp_t *timestamp,
-    const char                          *message,
-    void                                *context)
+static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer *handle, com_util_trace_level_t level,
+                               const com_util_realtime_timestamp *timestamp, const char *message, void *context)
 {
     static const char lc_table[] = {'C', 'E', 'W', 'I', 'V', 'D'};
     com_util_trace_level_t threshold = *(const com_util_trace_level_t *)context;
@@ -289,10 +280,8 @@ static void trace_console_hook(
         {
             lc = 'D';
         }
-        com_util_format_realtime_iso8601_local(ts, sizeof(ts),
-                                               timestamp->tv_sec, timestamp->tv_nsec);
-        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "%s %c %s\n", ts, lc, message);
+        com_util_format_realtime_iso8601_local(ts, sizeof(ts), timestamp->tv_sec, timestamp->tv_nsec);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR, "%s %c %s\n", ts, lc, message);
     }
     com_util_tracer_call_next_hook(prev, handle, level, timestamp, message);
 }
@@ -311,8 +300,9 @@ static int parse_trace_level(const char *str, com_util_trace_level_t *out)
         com_util_trace_level_t level;
         uint32_t _pad;
     } tbl[] = {
-        {"VERBOSE", COM_UTIL_TRACE_LEVEL_VERBOSE, 0U}, {"INFO", COM_UTIL_TRACE_LEVEL_INFO, 0U},         {"WARNING", COM_UTIL_TRACE_LEVEL_WARNING, 0U},
-        {"ERROR", COM_UTIL_TRACE_LEVEL_ERROR, 0U},     {"CRITICAL", COM_UTIL_TRACE_LEVEL_CRITICAL, 0U},
+        {"VERBOSE", COM_UTIL_TRACE_LEVEL_VERBOSE, 0U},   {"INFO", COM_UTIL_TRACE_LEVEL_INFO, 0U},
+        {"WARNING", COM_UTIL_TRACE_LEVEL_WARNING, 0U},   {"ERROR", COM_UTIL_TRACE_LEVEL_ERROR, 0U},
+        {"CRITICAL", COM_UTIL_TRACE_LEVEL_CRITICAL, 0U},
     };
     char upper[16];
     size_t i;
@@ -426,9 +416,7 @@ static char *strip_matching_quotes(char *value)
     trim_right(value);
 
     len = strlen(value);
-    if (len >= 2U
-        && ((value[0] == '"' && value[len - 1U] == '"')
-            || (value[0] == '\'' && value[len - 1U] == '\'')))
+    if (len >= 2U && ((value[0] == '"' && value[len - 1U] == '"') || (value[0] == '\'' && value[len - 1U] == '\'')))
     {
         value[len - 1U] = '\0';
         value++;
@@ -460,7 +448,7 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
  *  @param[in,out]  line   入力行。解析中に一部を書き換えます。
  *  @return         1: 継続、0: 終了、-1: 送信失敗。
  */
-static int process_interactive_command(PotrHandle handle, char *line)
+static int process_interactive_command(PotrContext *handle, char *line)
 {
     char *cursor;
     char *command;
@@ -503,14 +491,13 @@ static int process_interactive_command(PotrHandle handle, char *line)
 
     is_file = (strcmp(command, "file") == 0);
     payload = skip_spaces(cursor);
-    if (strncmp(payload, "-c", 2) == 0
-        && (payload[2] == '\0' || payload[2] == ' ' || payload[2] == '\t'))
+    if (strncmp(payload, "-c", 2) == 0 && (payload[2] == '\0' || payload[2] == ' ' || payload[2] == '\t'))
     {
         compress = 1;
         payload = skip_spaces(payload + 2);
     }
-    else if (strncmp(payload, "--compress", 10) == 0
-             && (payload[10] == '\0' || payload[10] == ' ' || payload[10] == '\t'))
+    else if (strncmp(payload, "--compress", 10) == 0 &&
+             (payload[10] == '\0' || payload[10] == ' ' || payload[10] == '\t'))
     {
         compress = 1;
         payload = skip_spaces(payload + 10);
@@ -574,8 +561,7 @@ static int process_interactive_command(PotrHandle handle, char *line)
     {
         send_flags = 0;
     }
-    send_rtc = potrSend(handle, POTR_PEER_NA, send_data, send_len,
-                        send_flags | POTR_SEND_BLOCKING);
+    send_rtc = potrSend(handle, POTR_PEER_NA, send_data, send_len, send_flags | POTR_SEND_BLOCKING);
     if (send_rtc != POTR_SUCCESS)
     {
         if (send_rtc == POTR_ERROR_DISCONNECTED)
@@ -649,8 +635,7 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
 
     if (file_size == 0)
     {
-        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: ファイルが空です。\n");
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR, "エラー: ファイルが空です。\n");
         com_util_fclose(fp);
         return -1;
     }
@@ -658,7 +643,8 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
     if ((uint64_t)file_size > POTR_MAX_MESSAGE_SIZE)
     {
         com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: ファイルサイズ (%" PRId64 " バイト) が最大送信サイズ (%u バイト) を超えています。\n",
+                                      "エラー: ファイルサイズ (%" PRId64
+                                      " バイト) が最大送信サイズ (%u バイト) を超えています。\n",
                                       file_size, (unsigned)POTR_MAX_MESSAGE_SIZE);
         com_util_fclose(fp);
         return -1;
@@ -700,7 +686,7 @@ int main(int argc, char *argv[])
 {
     const char *config_path;
     int64_t service_id;
-    PotrHandle handle;
+    PotrContext *handle;
     char line[INPUT_BUF_SIZE];
     int ret = EXIT_SUCCESS;
     int i;
@@ -765,7 +751,7 @@ int main(int argc, char *argv[])
     /* トレーサー設定 (フック経由コンソール出力) */
     if (trace_level_set)
     {
-        com_util_tracer_t *tracer = potrGetTracer();
+        com_util_tracer *tracer = potrGetTracer();
         com_util_tracer_set_hook(tracer, trace_console_hook, &trace_level);
         com_util_tracer_start(tracer);
     }
@@ -783,8 +769,8 @@ int main(int argc, char *argv[])
 
     /* サービス種別を取得して双方向サービスかどうか判定する */
     is_bidir = 0;
-    if (potrGetServiceType(config_path, service_id, &svc_type) == POTR_SUCCESS
-        && (svc_type == POTR_TYPE_UNICAST_BIDIR || svc_type == POTR_TYPE_TCP_BIDIR))
+    if (potrGetServiceType(config_path, service_id, &svc_type) == POTR_SUCCESS &&
+        (svc_type == POTR_TYPE_UNICAST_BIDIR || svc_type == POTR_TYPE_TCP_BIDIR))
     {
         is_bidir = 1;
     }
@@ -820,13 +806,13 @@ int main(int argc, char *argv[])
     while (g_running)
     {
         int command_result;
-        if (com_util_pinned_prompt_readline_fmt(g_screen, line, sizeof(line),
-                                                "porter-send[%" PRId64 "]> ", service_id) == 0)
+        if (com_util_pinned_prompt_readline_fmt(g_screen, line, sizeof(line), "porter-send[%" PRId64 "]> ",
+                                                service_id) == 0)
         {
             break;
         }
-        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "porter-send[%" PRId64 "]> %s\n", service_id, line);
+        com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT, "porter-send[%" PRId64 "]> %s\n",
+                                      service_id, line);
 
         command_result = process_interactive_command(handle, line);
         if (command_result == 0)

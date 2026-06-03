@@ -40,11 +40,11 @@ static void peer_generate_session(PotrPeerContext *peer)
 }
 
 /* 使用中でない peer_id を単調増加カウンタから生成する (peers_mutex 取得済みの文脈で呼ぶ) */
-static PotrPeerId allocate_peer_id(struct PotrContext_ *ctx)
+static PotrPeerId allocate_peer_id(PotrContext *ctx)
 {
     PotrPeerId candidate = ctx->next_peer_id;
-    int        i;
-    int        in_use;
+    int i;
+    int in_use;
 
     for (;;)
     {
@@ -79,18 +79,18 @@ static PotrPeerId allocate_peer_id(struct PotrContext_ *ctx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void peer_send_fin(struct PotrContext_ *ctx, PotrPeerContext *peer)
+void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
 {
-    PotrPacket           fin_pkt;
+    PotrPacket fin_pkt;
     PotrPacketSessionHdr shdr;
-    uint32_t             wire_target_seq = 0U;
-    int                  has_data = 0;
-    size_t               wire_len;
-    int                  i;
+    uint32_t wire_target_seq = 0U;
+    int has_data = 0;
+    size_t wire_len;
+    int i;
 
-    shdr.service_id      = ctx->service.service_id;
-    shdr.session_id      = peer->session_id;
-    shdr.session_tv_sec  = peer->session_tv_sec;
+    shdr.service_id = ctx->service.service_id;
+    shdr.session_id = peer->session_id;
+    shdr.session_tv_sec = peer->session_tv_sec;
     shdr.session_tv_nsec = peer->session_tv_nsec;
 
     if (packet_build_fin(&fin_pkt, &shdr) != POTR_SUCCESS)
@@ -101,36 +101,33 @@ void peer_send_fin(struct PotrContext_ *ctx, PotrPeerContext *peer)
     /* 現セッションで DATA を送っている場合のみ FIN target を有効化する。 */
     com_util_local_lock_lock(peer->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     wire_target_seq = peer->send_window.next_seq;
-    has_data        = peer->send_has_data;
+    has_data = peer->send_has_data;
     com_util_local_lock_unlock(peer->send_window_mutex);
 
     if (has_data)
     {
-        fin_pkt.flags  |= htons(POTR_FLAG_FIN_TARGET_VALID);
+        fin_pkt.flags |= htons(POTR_FLAG_FIN_TARGET_VALID);
         fin_pkt.ack_num = htonl(wire_target_seq);
     }
 
     if (ctx->service.encrypt_enabled)
     {
-        uint8_t  wire_buf[PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
-        uint8_t  nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t   enc_out = POTR_CRYPTO_TAG_SIZE;
+        uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
+        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
+        size_t enc_out = POTR_CRYPTO_TAG_SIZE;
 
-        fin_pkt.flags      |= htons(POTR_FLAG_ENCRYPTED);
+        fin_pkt.flags |= htons(POTR_FLAG_ENCRYPTED);
         fin_pkt.payload_len = htons((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         /* ノンス: session_id(4B) + flags(2B, FIN|ENCRYPTED NBO) + 0(4B) + padding(2B) */
-        memcpy(nonce,      &fin_pkt.session_id, 4);
-        memcpy(nonce + 4,  &fin_pkt.flags,      2);
-        memset(nonce + 6,  0,                   4);
-        memset(nonce + 10, 0,                   2);
+        memcpy(nonce, &fin_pkt.session_id, 4);
+        memcpy(nonce + 4, &fin_pkt.flags, 2);
+        memset(nonce + 6, 0, 4);
+        memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, &fin_pkt, PACKET_HEADER_SIZE);
-        if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out,
-                         NULL, 0,
-                         ctx->service.encrypt_key,
-                         nonce,
-                         wire_buf, PACKET_HEADER_SIZE) != 0)
+        if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
+                             wire_buf, PACKET_HEADER_SIZE) != 0)
         {
             return;
         }
@@ -138,10 +135,11 @@ void peer_send_fin(struct PotrContext_ *ctx, PotrPeerContext *peer)
 
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            if (peer->dest_addr[i].sin_family == 0) continue;
-            if (ctx->sock[i] == POTR_INVALID_SOCKET) continue;
-            potr_sendto(ctx->sock[i], wire_buf, wire_len, 0,
-                        (const struct sockaddr *)&peer->dest_addr[i],
+            if (peer->dest_addr[i].sin_family == 0)
+                continue;
+            if (ctx->sock[i] == POTR_INVALID_SOCKET)
+                continue;
+            potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&peer->dest_addr[i],
                         (int)sizeof(peer->dest_addr[i]));
         }
     }
@@ -151,28 +149,27 @@ void peer_send_fin(struct PotrContext_ *ctx, PotrPeerContext *peer)
 
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            if (peer->dest_addr[i].sin_family == 0) continue;
-            if (ctx->sock[i] == POTR_INVALID_SOCKET) continue;
+            if (peer->dest_addr[i].sin_family == 0)
+                continue;
+            if (ctx->sock[i] == POTR_INVALID_SOCKET)
+                continue;
             potr_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, 0,
-                        (const struct sockaddr *)&peer->dest_addr[i],
-                        (int)sizeof(peer->dest_addr[i]));
+                        (const struct sockaddr *)&peer->dest_addr[i], (int)sizeof(peer->dest_addr[i]));
         }
     }
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int peer_table_init(struct PotrContext_ *ctx)
+int peer_table_init(PotrContext *ctx)
 {
     int i;
 
-    ctx->peers = (PotrPeerContext *)calloc((size_t)ctx->max_peers,
-                                           sizeof(PotrPeerContext));
+    ctx->peers = (PotrPeerContext *)calloc((size_t)ctx->max_peers, sizeof(PotrPeerContext));
     if (ctx->peers == NULL)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "peer_table_init: service_id=%" PRId64 " calloc failed (max_peers=%d)",
-                 ctx->service.service_id, ctx->max_peers);
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "peer_table_init: service_id=%" PRId64 " calloc failed (max_peers=%d)",
+                   ctx->service.service_id, ctx->max_peers);
         return POTR_ERROR;
     }
 
@@ -182,19 +179,18 @@ int peer_table_init(struct PotrContext_ *ctx)
     }
 
     com_util_local_lock_create(&ctx->peers_mutex);
-    ctx->n_peers      = 0;
+    ctx->n_peers = 0;
     ctx->next_peer_id = 1U;
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-             "peer_table_init: service_id=%" PRId64 " max_peers=%d",
-             ctx->service.service_id, ctx->max_peers);
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "peer_table_init: service_id=%" PRId64 " max_peers=%d",
+               ctx->service.service_id, ctx->max_peers);
 
     return POTR_SUCCESS;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void peer_table_dispose(struct PotrContext_ *ctx)
+void peer_table_dispose(PotrContext *ctx)
 {
     int i;
 
@@ -203,9 +199,8 @@ void peer_table_dispose(struct PotrContext_ *ctx)
         return;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-             "peer_table_dispose: service_id=%" PRId64 " n_peers=%d",
-             ctx->service.service_id, ctx->n_peers);
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "peer_table_dispose: service_id=%" PRId64 " n_peers=%d",
+               ctx->service.service_id, ctx->n_peers);
 
     for (i = 0; i < ctx->max_peers; i++)
     {
@@ -223,22 +218,20 @@ void peer_table_dispose(struct PotrContext_ *ctx)
         com_util_local_lock_destroy(ctx->peers[i].send_window_mutex);
         free(ctx->peers[i].frag_buf);
         ctx->peers[i].frag_buf = NULL;
-        ctx->peers[i].active   = 0;
+        ctx->peers[i].active = 0;
     }
 
     com_util_local_lock_destroy(ctx->peers_mutex);
 
     free(ctx->peers);
-    ctx->peers   = NULL;
+    ctx->peers = NULL;
     ctx->n_peers = 0;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-PotrPeerContext *peer_find_by_session(const struct PotrContext_ *ctx,
-                                      uint32_t session_id,
-                                      int64_t  session_tv_sec,
-                                      int32_t  session_tv_nsec)
+PotrPeerContext *peer_find_by_session(const PotrContext *ctx, uint32_t session_id, int64_t session_tv_sec,
+                                      int32_t session_tv_nsec)
 {
     int i;
 
@@ -248,8 +241,7 @@ PotrPeerContext *peer_find_by_session(const struct PotrContext_ *ctx,
         {
             continue;
         }
-        if (ctx->peers[i].peer_session_id      == session_id      &&
-            ctx->peers[i].peer_session_tv_sec  == session_tv_sec  &&
+        if (ctx->peers[i].peer_session_id == session_id && ctx->peers[i].peer_session_tv_sec == session_tv_sec &&
             ctx->peers[i].peer_session_tv_nsec == session_tv_nsec)
         {
             return (PotrPeerContext *)&ctx->peers[i];
@@ -260,7 +252,7 @@ PotrPeerContext *peer_find_by_session(const struct PotrContext_ *ctx,
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-PotrPeerContext *peer_find_by_id(const struct PotrContext_ *ctx, PotrPeerId peer_id)
+PotrPeerContext *peer_find_by_id(const PotrContext *ctx, PotrPeerId peer_id)
 {
     int i;
 
@@ -276,11 +268,9 @@ PotrPeerContext *peer_find_by_id(const struct PotrContext_ *ctx, PotrPeerId peer
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-PotrPeerContext *peer_create(struct PotrContext_       *ctx,
-                              const struct sockaddr_in *sender_addr,
-                              int                       path_idx)
+PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_addr, int path_idx)
 {
-    int              i;
+    int i;
     PotrPeerContext *peer = NULL;
 
     /* max_peers 超過チェック */
@@ -289,10 +279,9 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &sender_addr->sin_addr, ip_str, sizeof(ip_str));
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "peer_create: service_id=%" PRId64 " max_peers=%d reached, "
-                 "rejecting new connection from %s:%u",
-                 ctx->service.service_id, ctx->max_peers,
-                 ip_str, (unsigned)ntohs(sender_addr->sin_port));
+                   "peer_create: service_id=%" PRId64 " max_peers=%d reached, "
+                   "rejecting new connection from %s:%u",
+                   ctx->service.service_id, ctx->max_peers, ip_str, (unsigned)ntohs(sender_addr->sin_port));
         return NULL;
     }
 
@@ -309,9 +298,8 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
     if (peer == NULL)
     {
         /* n_peers < max_peers のはずなのにスロットが見つからない (内部整合性エラー) */
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "peer_create: service_id=%" PRId64 " no free slot (internal error)",
-                 ctx->service.service_id);
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "peer_create: service_id=%" PRId64 " no free slot (internal error)",
+                   ctx->service.service_id);
         return NULL;
     }
 
@@ -319,31 +307,27 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
     memset(peer, 0, sizeof(*peer));
 
     peer->peer_id = allocate_peer_id(ctx);
-    peer->active  = 1;
+    peer->active = 1;
 
     /* 自セッション生成 */
     peer_generate_session(peer);
     peer->send_has_data = 0;
 
     /* ウィンドウ初期化 */
-    if (window_init(&peer->send_window, 0,
-                    ctx->global.window_size, ctx->global.max_payload) != POTR_SUCCESS)
+    if (window_init(&peer->send_window, 0, ctx->global.window_size, ctx->global.max_payload) != POTR_SUCCESS)
     {
         peer->active = 0;
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "peer_create: service_id=%" PRId64 " send_window init failed",
-                 ctx->service.service_id);
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "peer_create: service_id=%" PRId64 " send_window init failed",
+                   ctx->service.service_id);
         return NULL;
     }
 
-    if (window_init(&peer->recv_window, 0,
-                    ctx->global.window_size, ctx->global.max_payload) != POTR_SUCCESS)
+    if (window_init(&peer->recv_window, 0, ctx->global.window_size, ctx->global.max_payload) != POTR_SUCCESS)
     {
         window_dispose(&peer->send_window);
         peer->active = 0;
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "peer_create: service_id=%" PRId64 " recv_window init failed",
-                 ctx->service.service_id);
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "peer_create: service_id=%" PRId64 " recv_window init failed",
+                   ctx->service.service_id);
         return NULL;
     }
 
@@ -357,59 +341,55 @@ PotrPeerContext *peer_create(struct PotrContext_       *ctx,
         window_dispose(&peer->send_window);
         com_util_local_lock_destroy(peer->send_window_mutex);
         peer->active = 0;
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
-                 "peer_create: service_id=%" PRId64 " frag_buf alloc failed",
-                 ctx->service.service_id);
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "peer_create: service_id=%" PRId64 " frag_buf alloc failed",
+                   ctx->service.service_id);
         return NULL;
     }
-    peer->frag_buf_len    = 0;
+    peer->frag_buf_len = 0;
     peer->frag_compressed = 0;
 
     /* 送信元アドレスを最初のパスとして記録 (インデックス = path_idx = ctx->sock[] の添字) */
-    peer->dest_addr[path_idx]           = *sender_addr;
-    peer->path_last_recv_sec[path_idx]  = 0; /* n1_update_path_recv() で更新される */
-    peer->n_paths                       = 1;
+    peer->dest_addr[path_idx] = *sender_addr;
+    peer->path_last_recv_sec[path_idx] = 0; /* n1_update_path_recv() で更新される */
+    peer->n_paths = 1;
 
     ctx->n_peers++;
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
-             "peer_create: service_id=%" PRId64 " peer_id=%u created (n_peers=%d)",
-             ctx->service.service_id, (unsigned)peer->peer_id, ctx->n_peers);
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "peer_create: service_id=%" PRId64 " peer_id=%u created (n_peers=%d)",
+               ctx->service.service_id, (unsigned)peer->peer_id, ctx->n_peers);
 
     return peer;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void peer_path_clear(const struct PotrContext_ *ctx, PotrPeerContext *peer, int path_idx)
+void peer_path_clear(const PotrContext *ctx, PotrPeerContext *peer, int path_idx)
 {
     if (peer->dest_addr[path_idx].sin_family == 0)
     {
         return; /* すでに未使用スロット */
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
-             "peer_path_clear: service_id=%" PRId64 " peer=%u path %d cleared",
-             ctx->service.service_id, (unsigned)peer->peer_id, path_idx);
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING, "peer_path_clear: service_id=%" PRId64 " peer=%u path %d cleared",
+               ctx->service.service_id, (unsigned)peer->peer_id, path_idx);
 
     memset(&peer->dest_addr[path_idx], 0, sizeof(peer->dest_addr[path_idx]));
-    peer->path_last_recv_sec[path_idx]  = 0;
+    peer->path_last_recv_sec[path_idx] = 0;
     peer->path_last_recv_nsec[path_idx] = 0;
     peer->n_paths--;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void peer_free(struct PotrContext_ *ctx, PotrPeerContext *peer)
+void peer_free(PotrContext *ctx, PotrPeerContext *peer)
 {
     if (peer == NULL || !peer->active)
     {
         return;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
-             "peer_free: service_id=%" PRId64 " peer_id=%u freed",
-             ctx->service.service_id, (unsigned)peer->peer_id);
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "peer_free: service_id=%" PRId64 " peer_id=%u freed", ctx->service.service_id,
+               (unsigned)peer->peer_id);
 
     window_dispose(&peer->send_window);
     window_dispose(&peer->recv_window);

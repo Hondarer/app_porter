@@ -91,7 +91,7 @@ extern "C"
         strncpy(service.src_addr[0], "127.0.0.1", POTR_MAX_ADDR_LEN - 1);
         strncpy(service.dst_addr[0], "127.0.0.1", POTR_MAX_ADDR_LEN - 1);
 
-        PotrHandle handle;
+        PotrContext * handle;
         if (potrOpenService(&global, &service,
                             POTR_ROLE_RECEIVER, on_recv, &handle) == POTR_SUCCESS) {
             // 受信待機中 (受信スレッドが動作)
@@ -118,7 +118,7 @@ extern "C"
         strncpy(service.src_addr[0], "127.0.0.1", POTR_MAX_ADDR_LEN - 1);
         strncpy(service.dst_addr[0], "127.0.0.1", POTR_MAX_ADDR_LEN - 1);
 
-        PotrHandle handle;
+        PotrContext * handle;
         if (potrOpenService(&global, &service,
                             POTR_ROLE_SENDER, NULL, &handle) == POTR_SUCCESS) {
             potrSend(handle, POTR_PEER_NA, "hello", 5, 0);
@@ -141,7 +141,7 @@ extern "C"
      *                  コールバックが必須であり、この場合 callback が NULL の場合は失敗を返します。
      */
     POTR_EXPORT extern int POTR_API potrOpenService(const PotrGlobalConfig *global, const PotrServiceDef *service,
-                                                    PotrRole role, PotrRecvCallback callback, PotrHandle *handle);
+                                                    PotrRole role, PotrRecvCallback callback, PotrContext **handle);
 
     /**
      *  @brief          設定ファイルから指定サービスを開きます。
@@ -186,7 +186,7 @@ extern "C"
                 printf("service %" PRId64 ": received %zu bytes\n", service_id, len);
         }
 
-        PotrHandle handle;
+        PotrContext * handle;
         if (potrOpenServiceFromConfig("porter-services.conf", 1001,
                                       POTR_ROLE_RECEIVER, on_recv, &handle) == POTR_SUCCESS) {
             // 受信待機中 (受信スレッドが動作)
@@ -196,7 +196,7 @@ extern "C"
      *
      *  @par            使用例 (送信者)
      *  @code{.c}
-        PotrHandle handle;
+        PotrContext * handle;
         if (potrOpenServiceFromConfig("porter-services.conf", 1001,
                                       POTR_ROLE_SENDER, NULL, &handle) == POTR_SUCCESS) {
             potrSend(handle, POTR_PEER_NA, "hello", 5, 0);
@@ -220,7 +220,7 @@ extern "C"
      */
     POTR_EXPORT extern int POTR_API potrOpenServiceFromConfig(const char *config_path, int64_t service_id,
                                                               PotrRole role, PotrRecvCallback callback,
-                                                              PotrHandle *handle);
+                                                              PotrContext **handle);
 
     /**
      *  @brief          メッセージを送信します。
@@ -293,7 +293,7 @@ extern "C"
      *                  物理 TCP 接続済みでも CONNECTED 前または全 path 切断中は\n
      *                  POTR_ERROR_DISCONNECTED (1) を返します。
      */
-    POTR_EXPORT extern int POTR_API potrSend(PotrHandle handle, PotrPeerId peer_id, const void *data, size_t len,
+    POTR_EXPORT extern int POTR_API potrSend(PotrContext *handle, PotrPeerId peer_id, const void *data, size_t len,
                                              int flags);
 
     /**
@@ -318,7 +318,7 @@ extern "C"
      *                  指定した peer_id が存在しない場合は失敗を返します。\n
      *                  1:1 モードまたは N:1 モード以外で呼び出した場合は失敗を返します。
      */
-    POTR_EXPORT extern int POTR_API potrDisconnectPeer(PotrHandle handle, PotrPeerId peer_id);
+    POTR_EXPORT extern int POTR_API potrDisconnectPeer(PotrContext *handle, PotrPeerId peer_id);
 
     /**
      *  @brief          サービスを閉じます。
@@ -347,20 +347,20 @@ extern "C"
      *
      *  @warning        handle が NULL の場合は失敗を返します。
      */
-    POTR_EXPORT extern int POTR_API potrCloseService(PotrHandle handle);
+    POTR_EXPORT extern int POTR_API potrCloseService(PotrContext *handle);
 
     /**
      *  @brief          porter 内部トレーサーハンドルを返します。
-     *  @return         com_util_tracer_t ハンドル。
+     *  @return         com_util_tracer ハンドル。
      *
-     *  porter ライブラリが内部で使用する com_util_tracer_t ハンドルを返します。\n
+     *  porter ライブラリが内部で使用する com_util_tracer ハンドルを返します。\n
      *  本関数は potrOpenService() の前に呼び出すことができます。\n
      *  取得したハンドルに対して com_util_tracer_set_stderr_level() と
      *  com_util_tracer_start() を呼び出すことで、stderr へのトレース出力を有効化できます。
      *
      *  @par            stderr 出力を有効にする例
      *  @code{.c}
-        com_util_tracer_t *tracer = potrGetTracer();
+        com_util_tracer *tracer = potrGetTracer();
         com_util_tracer_set_stderr_level(tracer, COM_UTIL_TRACE_LEVEL_INFO);
         com_util_tracer_start(tracer);
      *  @endcode
@@ -374,7 +374,7 @@ extern "C"
      *  @par            スレッド セーフ
      *  本関数はスレッドセーフです。
      */
-    POTR_EXPORT com_util_tracer_t * POTR_API potrGetTracer(void);
+    POTR_EXPORT com_util_tracer *POTR_API potrGetTracer(void);
 
     /**
      *  @brief          設定ファイルから指定サービスの通信種別を取得します。

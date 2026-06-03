@@ -17,26 +17,24 @@ using namespace testing;
 struct CapturedEvent
 {
     PotrPeerId peer_id;
-    PotrEvent  event;
-    size_t     len;
-    int        path_states[POTR_MAX_PATH];
+    PotrEvent event;
+    size_t len;
+    int path_states[POTR_MAX_PATH];
 };
 
 static CapturedEvent g_events[8];
-static int           g_event_count;
+static int g_event_count;
 
-static void capture_callback(int64_t service_id, PotrPeerId peer_id, PotrEvent event,
-                             const void *data, size_t len)
+static void capture_callback(int64_t service_id, PotrPeerId peer_id, PotrEvent event, const void *data, size_t len)
 {
     CapturedEvent *entry = &g_events[g_event_count++];
 
     EXPECT_EQ(42, service_id);
     entry->peer_id = peer_id;
-    entry->event   = event;
-    entry->len     = len;
+    entry->event = event;
+    entry->len = len;
     memset(entry->path_states, 0, sizeof(entry->path_states));
-    if ((event == POTR_EVENT_PATH_CONNECTED || event == POTR_EVENT_PATH_DISCONNECTED)
-        && data != nullptr)
+    if ((event == POTR_EVENT_PATH_CONNECTED || event == POTR_EVENT_PATH_DISCONNECTED) && data != nullptr)
     {
         memcpy(entry->path_states, data, sizeof(entry->path_states));
     }
@@ -53,12 +51,12 @@ class potrPathEventTest : public Test
         g_event_count = 0;
 
         ctx.service.service_id = 42;
-        ctx.callback           = capture_callback;
-        peer.peer_id           = 7;
+        ctx.callback = capture_callback;
+        peer.peer_id = 7;
     }
 
-    struct PotrContext_ ctx;
-    PotrPeerContext     peer;
+    PotrContext ctx;
+    PotrPeerContext peer;
 };
 
 TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
@@ -98,7 +96,7 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
     PotrPreparedPathEvents prepared;
     int next_states[POTR_MAX_PATH] = {0, 0, 0, 0};
 
-    peer.health_alive         = 1;
+    peer.health_alive = 1;
     peer.path_logical_alive[1] = 1;
     peer.path_logical_alive[3] = 1;
 
