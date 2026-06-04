@@ -11,8 +11,14 @@
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
  *
+ *
+ *  @hideincludedbygraph
+ *
  *******************************************************************************
  */
+
+/* NOTE: このヘッダーは多数のソース ファイルから参照されるため、            */
+/*       @hideincludedbygraph によって "Included by" グラフを無効にします。 */
 
 #ifndef POTR_CONNECTED_THREADS_H
 #define POTR_CONNECTED_THREADS_H

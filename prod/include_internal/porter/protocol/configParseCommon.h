@@ -1,3 +1,16 @@
+/**
+ *******************************************************************************
+ *  @file           configParseCommon.h
+ *  @brief          configParseCommon.h ヘッダー。
+ *
+ *  @hideincludedbygraph
+ *
+ *******************************************************************************
+ */
+
+/* NOTE: このヘッダーは多数のソース ファイルから参照されるため、            */
+/*       @hideincludedbygraph によって "Included by" グラフを無効にします。 */
+
 #ifndef PORTER_PROTOCOL_CONFIG_PARSE_COMMON_H
 #define PORTER_PROTOCOL_CONFIG_PARSE_COMMON_H
 
