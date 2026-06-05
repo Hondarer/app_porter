@@ -943,34 +943,34 @@ TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 
 以下の順序で実装することで、各ステップでビルドを通しながら進められる。
 
 1. **型定義** (`porter_type.h`, `potrContext.h`)
-   - `POTR_TYPE_TCP_N1`, `POTR_TYPE_TCP_BIDIR_N1` を追加
-   - `PotrPeerContext` に TCP N:1 フィールドを追加
-   - `potr_is_tcp_n1_type()` を追加
-   - `potr_is_tcp_type()` を拡張
-   - → ビルド確認 (既存コードへの影響なし)
+    - `POTR_TYPE_TCP_N1`, `POTR_TYPE_TCP_BIDIR_N1` を追加
+    - `PotrPeerContext` に TCP N:1 フィールドを追加
+    - `potr_is_tcp_n1_type()` を追加
+    - `potr_is_tcp_type()` を拡張
+    - → ビルド確認 (既存コードへの影響なし)
 
 2. **ピア テーブル拡張** (`potrPeerTable.c`)
-   - `peer_create_tcp()` を実装
-   - `peer_free()` を拡張
-   - → ビルド確認
+    - `peer_create_tcp()` を実装
+    - `peer_free()` を拡張
+    - → ビルド確認
 
 3. **per-peer スレッド実装** (`potrTcpPeerThread.c`)
-   - recv スレッド関数を実装 (パケット処理は既存ロジックを流用)
-   - health スレッド関数を実装
-   - → ビルド確認
+    - recv スレッド関数を実装 (パケット処理は既存ロジックを流用)
+    - health スレッド関数を実装
+    - → ビルド確認
 
 4. **N:1 accept ループ** (`potrConnectThread.c`)
-   - `receiver_accept_n1_loop()` を実装
-   - `connect_thread_func()` に分岐を追加
-   - → ビルド確認
+    - `receiver_accept_n1_loop()` を実装
+    - `connect_thread_func()` に分岐を追加
+    - → ビルド確認
 
 5. **送信スレッド拡張** (`potrSendThread.c`)
-   - `flush_packed_peer()` に TCP N:1 分岐を追加
-   - → ビルド確認
+    - `flush_packed_peer()` に TCP N:1 分岐を追加
+    - → ビルド確認
 
 6. **API 対応** (`potrOpenService.c`, `potrCloseService.c`, `potrSend.c`, `potrDisconnectPeer.c`)
-   - 各 API に TCP N:1 の `case` / 分岐を追加
-   - → ビルド確認
+    - 各 API に TCP N:1 の `case` / 分岐を追加
+    - → ビルド確認
 
 ---
 
