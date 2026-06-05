@@ -31,7 +31,7 @@ signal(SIGPIPE, SIG_IGN);
 ```
 
 ```c
-/* 方法 B: SIGPIPE を独自ハンドラで受け取る */
+/* 方法 B: SIGPIPE を独自ハンドラーで受け取る */
 void sigpipe_handler(int sig) { (void)sig; /* 何もしない or ログ */ }
 signal(SIGPIPE, sigpipe_handler);
 ```
@@ -72,10 +72,10 @@ int main(void)
 
     while (g_running)
     {
-        /* メインループ処理 */
+        /* メイン ループ処理 */
     }
 
-    potrCloseService(handle);  /* シグナルハンドラの外で呼ぶ */
+    potrCloseService(handle);  /* シグナル ハンドラーの外で呼ぶ */
     return 0;
 }
 ```
@@ -127,7 +127,7 @@ pthread_sigmask(SIG_BLOCK, &mask, NULL);
 PotrContext *handle;
 potrOpenService(..., &handle);
 
-/* メインスレッドだけマスクを解除して受け取る */
+/* メイン スレッドだけマスクを解除して受け取る */
 pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
 ```
 
@@ -172,7 +172,7 @@ do {
 struct sigaction sa;
 sa.sa_handler = sig_handler;
 sigemptyset(&sa.sa_mask);
-sa.sa_flags = SA_RESTART;   /* 中断されたシステムコールを自動再試行 */
+sa.sa_flags = SA_RESTART;   /* 中断されたシステム コールを自動再試行 */
 sigaction(SIGINT, &sa, NULL);
 ```
 

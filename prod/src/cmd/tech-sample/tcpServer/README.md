@@ -221,7 +221,7 @@ app/porter/prod/bin/tcpServer --mode fork
 # ポート・ワーカー数変更
 app/porter/prod/bin/tcpServer --port 9090 --workers 8
 
-# イベント駆動型: 4ワーカー × 8同時接続 = 最大32同時接続
+# イベント駆動型: 4 ワーカー × 8 同時接続 = 最大 32 同時接続
 app/porter/prod/bin/tcpServer --mode prefork --workers 4 --conns-per-worker 8
 
 # 別ターミナルから接続

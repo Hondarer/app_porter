@@ -531,7 +531,7 @@ typedef enum {
 PotrSendQueue     send_queue;       /* 送信キュー */
 PotrSendWindow    send_window;      /* 送信ウィンドウ */
 PotrThread        send_thread;      /* 送信スレッド */
-PotrThread        health_thread;    /* ヘルスチェックスレッド */
+PotrThread        health_thread;    /* ヘルスチェック スレッド */
 PotrMutex         health_mutex;
 PotrCondVar       health_wakeup;
 ```
