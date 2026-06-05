@@ -706,7 +706,7 @@ static void join_bidir_send_thread(com_util_thread **thread)
 }
 
 /**
- *  @brief          メインエントリーポイント。
+ *  @brief          メインエントリ ポイント。
  *  @param[in]      argc コマンドライン引数の数。
  *  @param[in]      argv コマンドライン引数の配列。
  *  @return         成功時は EXIT_SUCCESS、失敗時は EXIT_FAILURE を返します。

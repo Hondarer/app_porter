@@ -9,7 +9,7 @@
  *  プラットフォーム共通の処理を実装します。
  *  - handle_client_session() : TCP 通信メインループ (受信 → printf → 送信)
  *  - parse_args()            : コマンドライン引数解析
- *  - main()                  : エントリーポイント
+ *  - main()                  : エントリ ポイント
  *
  *  プラットフォーム差異は tcpServer.h のマクロ
  *  (ClientFd / client_recv / client_send / client_close / get_pid)
@@ -84,7 +84,7 @@ static void parse_args(int argc, char *argv[],
 }
 
 /**
- *  @brief          メインエントリーポイント。
+ *  @brief          メインエントリ ポイント。
  *  @param[in]      argc コマンドライン引数の数。
  *  @param[in]      argv コマンドライン引数の配列。
  *  @return         正常終了時は 0 を返します。

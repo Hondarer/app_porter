@@ -36,7 +36,7 @@ tcpServer [--mode fork|prefork] [--port <num>] [--workers <num>] [--conns-per-wo
 tcpServer/
 +-- tcpServer.h             # 共通定数・型定義・プロトタイプ
 +-- tcpServer_common.c      # 共通変数定義 (g_session_fn)
-+-- tcpServer.c             # エントリーポイント (handle_client_session / parse_args / main)
++-- tcpServer.c             # エントリ ポイント (handle_client_session / parse_args / main)
 +-- tcpServer_linux.c       # Linux 実装 (platform_init / run_fork_server / run_prefork_server)
 +-- tcpServer_windows.c     # Windows 実装 (platform_init / run_fork_server / run_prefork_server)
 +-- makefile                # makefw テンプレート呼び出し
