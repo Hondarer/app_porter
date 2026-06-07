@@ -64,3 +64,6 @@ cbin
 *.exe
 *.pdb
 *.warn
+
+## トレース
+log/
