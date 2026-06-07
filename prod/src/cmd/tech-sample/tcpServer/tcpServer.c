@@ -7,13 +7,13 @@
  *  @version        1.0.0
  *
  *  プラットフォーム共通の処理を実装します。
- *  - handle_client_session() : TCP 通信メインループ (受信 → printf → 送信)
- *  - parse_args()            : コマンドライン引数解析
+ *  - handle_client_session() : TCP 通信メイン ループ (受信 → printf → 送信)
+ *  - parse_args()            : コマンド ライン引数解析
  *  - main()                  : エントリ ポイント
  *
  *  プラットフォーム差異は tcpServer.h のマクロ
  *  (ClientFd / client_recv / client_send / client_close / get_pid)
- *  および各プラットフォームファイルが実装するフック関数
+ *  および各プラットフォーム ファイルが実装するフック関数
  *  (platform_init / platform_cleanup / dispatch_internal_args)
  *  で吸収します。
  *
@@ -49,7 +49,7 @@ void handle_client_session(ClientFd fd) {
 }
 
 /**
- *  @brief          コマンドライン引数を解析します。
+ *  @brief          コマンド ライン引数を解析します。
  *  @param[in]      argc             引数の数。
  *  @param[in]      argv             引数の配列。
  *  @param[out]     mode             動作モード (MODE_FORK / MODE_PREFORK)。
@@ -84,9 +84,9 @@ static void parse_args(int argc, char *argv[],
 }
 
 /**
- *  @brief          メインエントリ ポイント。
- *  @param[in]      argc コマンドライン引数の数。
- *  @param[in]      argv コマンドライン引数の配列。
+ *  @brief          メイン エントリ ポイント。
+ *  @param[in]      argc コマンド ライン引数の数。
+ *  @param[in]      argv コマンド ライン引数の配列。
  *  @return         正常終了時は 0 を返します。
  *
  *  1. platform_init() でプラットフォーム初期化。

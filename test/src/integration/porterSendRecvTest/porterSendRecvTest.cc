@@ -18,8 +18,8 @@
 #endif /* PLATFORM_ */
 
 /**
- * テスト用の一時バイナリファイルを作成するヘルパー。
- * デストラクタでファイルを削除する。
+ * テスト用の一時バイナリ ファイルを作成するヘルパー。
+ * デストラクターでファイルを削除する。
  */
 class TempBinaryFile
 {
@@ -280,7 +280,7 @@ class porterSendRecvTest : public Test
   protected:
     string recv_path, send_path, lib_path;
 
-    // TearDown でのクリーンアップ用。テスト失敗時もプロセスリークを防ぐ。
+    // TearDown でのクリーンアップ用。テスト失敗時もプロセス リークを防ぐ。
     AsyncProcessHandle recv_h_, send_h_;
 
     void SetUp() override
@@ -905,7 +905,7 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
     PorterConfigBuilder client_cfg;
     /*
      * 実運用では、関連ノードに同一の定義ファイルを配布し、同じ service_id の定義を用いて
-     * unicast_bidir_n1 サーバと unicast_bidir クライアントが通信する。
+     * unicast_bidir_n1 サーバーと unicast_bidir クライアントが通信する。
      * 本テストでは PorterConfigBuilder が 1 ファイル内に同じ service_id の複数定義を持てないため、
      * server/client 用に別ファイルを生成して同一 service_id の構成を模擬する。
      */
@@ -1147,7 +1147,7 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
     EXPECT_NE(string::npos, getStdout(recv_h_).find("tcp-timeout-ignored"));
 }
 
-// バイナリファイル送信テスト: 受信側で一時ファイルに保存されることを確認する
+// バイナリ ファイル送信テスト: 受信側で一時ファイルに保存されることを確認する
 TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
 {
     // Arrange
@@ -1156,12 +1156,12 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
         cfg.addUnicastService(10, 19013)
             .build(); // [状態] - 127.0.0.1 で ポート 19013 を送受信に利用する unicast サービスを定義する。
 
-    // バイナリファイルを作成する (NUL バイトを含むデータ)
+    // バイナリ ファイルを作成する (NUL バイトを含むデータ)
     TempBinaryFile bin_file;
     vector<uint8_t> bin_content = {0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0x80, 0x7F,
                                    0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70};
-    string bin_path = bin_file.create(bin_content); // [状態] - NUL バイトを含む 16 バイトのバイナリファイルを作成する。
-    ASSERT_FALSE(bin_path.empty());                 // [確認] - バイナリファイルが作成されること。
+    string bin_path = bin_file.create(bin_content); // [状態] - NUL バイトを含む 16 バイトのバイナリ ファイルを作成する。
+    ASSERT_FALSE(bin_path.empty());                 // [確認] - バイナリ ファイルが作成されること。
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ = startProcessAsync(recv_path, {config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
@@ -1186,7 +1186,7 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
 
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "バイナリデータを保存しました", 3000)); // [手順] - RECIEVER が保存メッセージを出力するまで待機する。
+        waitForOutput(recv_h_, "バイナリ データを保存しました", 3000)); // [手順] - RECIEVER が保存メッセージを出力するまで待機する。
 
     writeLineStdin(send_h_, "exit");
 
@@ -1200,12 +1200,12 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
     string recv_out = getStdout(recv_h_);
     EXPECT_EQ(0, send_exit);                        // [確認] - SENDER の終了コードが 0 であること。
     EXPECT_NE(string::npos,
-              recv_out.find("バイナリデータを保存しました")); // [確認] - RECIEVER がバイナリデータを一時ファイルに保存したこと。
+              recv_out.find("バイナリ データを保存しました")); // [確認] - RECIEVER がバイナリ データを一時ファイルに保存したこと。
     EXPECT_NE(string::npos,
               recv_out.find("受信 (16 バイト)")); // [確認] - RECIEVER の受信バイト数が 16 バイトであること。
 }
 
-// テキストメッセージ送信テスト: recv.c の変更後もテキストが正しく表示されることを確認する
+// テキスト メッセージ送信テスト: recv.c の変更後もテキストが正しく表示されることを確認する
 TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
 {
     // Arrange
@@ -1248,7 +1248,7 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
     EXPECT_EQ(0, send_exit);                                       // [確認] - SENDER の終了コードが 0 であること。
     EXPECT_NE(string::npos, recv_out.find("Hello Text"));          // [確認] - RECIEVER が "Hello Text" をテキストとして表示していること。
     EXPECT_EQ(string::npos,
-              recv_out.find("バイナリデータを保存しました")); // [確認] - RECIEVER がバイナリ保存メッセージを出力していないこと。
+              recv_out.find("バイナリ データを保存しました")); // [確認] - RECIEVER がバイナリ保存メッセージを出力していないこと。
 }
 
 // サイズ超過ファイル送信テスト: 65535 バイトを超えるファイルの送信が拒否されることを確認する

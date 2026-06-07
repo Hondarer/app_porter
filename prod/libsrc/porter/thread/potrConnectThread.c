@@ -1,14 +1,14 @@
 /**
  *******************************************************************************
  *  @file           potrConnectThread.c
- *  @brief          TCP 接続管理スレッドモジュール。
+ *  @brief          TCP 接続管理スレッド モジュール。
  *  @author         Tetsuo Honda
  *  @date           2026/03/23
  *  @version        1.0.0
  *
  *  SENDER: TCP connect/reconnect ループを管理するスレッドです。\n
  *  RECEIVER: TCP accept ループを管理するスレッドです。\n
- *  接続確立後、送受信・ヘルスチェックスレッドを起動し、\n
+ *  接続確立後、送受信・ヘルスチェック スレッドを起動し、\n
  *  recv スレッドが切断を検知して終了するまで待機してから再接続サイクルへ移行します。
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
@@ -49,7 +49,7 @@ typedef struct ConnectArg
     int _pad;
 } ConnectArg;
 
-/* 静的に確保した引数バッファ (path 数分) */
+/* 静的に確保した引数バッファー (path 数分) */
 static ConnectArg s_connect_args[POTR_MAX_PATH];
 
 static void sync_tcp_service_path_state_locked(PotrContext *ctx)
@@ -181,7 +181,7 @@ static void join_recv_thread(PotrContext *ctx, int path_idx)
 }
 
 /* 接続確立前のコンテキスト状態をリセットする。
-   フラグメントバッファや peer_session 状態をクリアする。
+   フラグメント バッファーや peer_session 状態をクリアする。
    TCP v2 マルチパスでは send_window 通番と health_alive は保持する
    (部分切断・再接続時のセッション継続のため)。
    呼び出しタイミング: start_connected_threads 前 (他スレッド未起動)。 */
@@ -307,7 +307,7 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
         return sock;
     }
 
-    /* タイムアウト付き接続: ノンブロッキングモードで writable ポーリングを使う。
+    /* タイムアウト付き接続: 非ブロッキング モードで writable ポーリングを使う。
        停止シグナルに素早く応答するため 100ms 単位でポーリングする。 */
     potr_set_nonblocking(sock);
     {
@@ -332,7 +332,7 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
         }
     }
 
-    /* writable ポーリングループ (共通) */
+    /* writable ポーリング ループ (共通) */
     {
         uint32_t elapsed_ms = 0U;
         int ready = 0;
@@ -429,7 +429,7 @@ static void sender_connect_loop(PotrContext *ctx, int path_idx)
         ctx->tcp_conn_fd[path_idx] = sock;
         ctx->tcp_last_ping_recv_ms[path_idx] = com_util_get_monotonic_ms();
 
-        /* tcp_active_paths カウンタをインクリメント (tcp_state_mutex 保護) */
+        /* tcp_active_paths カウンターをインクリメント (tcp_state_mutex 保護) */
         com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
         active_count = ++ctx->tcp_active_paths;
         com_util_local_lock_unlock(ctx->tcp_state_mutex);
@@ -445,7 +445,7 @@ static void sender_connect_loop(PotrContext *ctx, int path_idx)
 
         if (start_connected_threads(ctx, path_idx) != POTR_SUCCESS)
         {
-            /* スレッド起動失敗: カウンタを戻す */
+            /* スレッド起動失敗: カウンターを戻す */
             com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
             active_count = --ctx->tcp_active_paths;
             com_util_local_lock_unlock(ctx->tcp_state_mutex);
@@ -477,7 +477,7 @@ static void sender_connect_loop(PotrContext *ctx, int path_idx)
         sync_tcp_service_path_state_locked(ctx);
         com_util_local_lock_unlock(ctx->tcp_state_mutex);
 
-        /* tcp_active_paths カウンタをデクリメント (tcp_state_mutex 保護) */
+        /* tcp_active_paths カウンターをデクリメント (tcp_state_mutex 保護) */
         com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
         active_count = --ctx->tcp_active_paths;
         com_util_local_lock_unlock(ctx->tcp_state_mutex);
@@ -524,7 +524,7 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
     int is_bidir = (ctx->service.type == POTR_TYPE_TCP_BIDIR);
     int is_reconnect = 0;
 
-    /* 先読みタイムアウト: TCP ヘルスタイムアウトの 3 倍、未設定時は 30 秒 */
+    /* 先読みタイムアウト: TCP ヘルスチェック タイムアウトの 3 倍、未設定時は 30 秒 */
     uint32_t first_pkt_timeout_ms =
         (ctx->global.tcp_health_timeout_ms > 0U) ? ctx->global.tcp_health_timeout_ms * 3U : 30000U;
 
@@ -552,7 +552,7 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
 
         inet_ntop(AF_INET, &peer_addr.sin_addr, peer_addr_str, sizeof(peer_addr_str));
 
-        /* 接続元フィルタ: src_addr[path_idx] / src_port が指定されていれば一致確認 */
+        /* 接続元フィルター: src_addr[path_idx] / src_port が指定されていれば一致確認 */
         {
             int filtered = 0;
             if (ctx->service.src_addr[path_idx][0] != '\0')
@@ -650,13 +650,13 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
 
             ctx->tcp_conn_fd[path_idx] = conn;
             ctx->tcp_last_ping_recv_ms[path_idx] = com_util_get_monotonic_ms();
-            ctx->tcp_first_pkt_len[path_idx] = pkt_len; /* 先読みバッファ有効化 */
+            ctx->tcp_first_pkt_len[path_idx] = pkt_len; /* 先読みバッファー有効化 */
 
             com_util_local_lock_unlock(ctx->session_establish_mutex);
         }
         /* ── セッション判定ここまで ── */
 
-        /* tcp_active_paths カウンタをインクリメント (tcp_state_mutex 保護) */
+        /* tcp_active_paths カウンターをインクリメント (tcp_state_mutex 保護) */
         com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
         active_count = ++ctx->tcp_active_paths;
         com_util_local_lock_unlock(ctx->tcp_state_mutex);
@@ -677,7 +677,7 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
             {
                 reset_all_paths_disconnected(ctx);
             }
-            ctx->tcp_first_pkt_len[path_idx] = 0; /* 先読みバッファを無効化 */
+            ctx->tcp_first_pkt_len[path_idx] = 0; /* 先読みバッファーを無効化 */
             close_tcp_conn(ctx, path_idx);
             is_reconnect = 1;
             continue;
@@ -696,10 +696,10 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
         sync_tcp_service_path_state_locked(ctx);
         com_util_local_lock_unlock(ctx->tcp_state_mutex);
 
-        /* 先読みバッファをクリア (recv スレッドが未処理のまま終了した場合の安全策) */
+        /* 先読みバッファーをクリア (recv スレッドが未処理のまま終了した場合の安全策) */
         ctx->tcp_first_pkt_len[path_idx] = 0;
 
-        /* tcp_active_paths カウンタをデクリメント (tcp_state_mutex 保護) */
+        /* tcp_active_paths カウンターをデクリメント (tcp_state_mutex 保護) */
         com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
         active_count = --ctx->tcp_active_paths;
         com_util_local_lock_unlock(ctx->tcp_state_mutex);
@@ -776,7 +776,7 @@ int potr_connect_thread_start(PotrContext *ctx)
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: starting %d path(s)",
                ctx->service.service_id, ctx->n_path);
 
-    /* RECEIVER: session_establish_mutex と先読みバッファを初期化する */
+    /* RECEIVER: session_establish_mutex と先読みバッファーを初期化する */
     if (ctx->role == POTR_ROLE_RECEIVER)
     {
         com_util_local_lock_create(&ctx->session_establish_mutex);
@@ -859,7 +859,7 @@ void potr_connect_thread_stop(PotrContext *ctx)
     com_util_condvar_broadcast(ctx->tcp_state_cv);
     com_util_local_lock_unlock(ctx->tcp_state_mutex);
 
-    /* 3. RECEIVER: 全 path の listen ソケットをクローズして accept をアンブロック */
+    /* 3. RECEIVER: 全 path の listen ソケットをクローズして accept のブロックを解除 */
     if (ctx->role == POTR_ROLE_RECEIVER)
     {
         for (i = 0; i < ctx->n_path; i++)
@@ -872,7 +872,7 @@ void potr_connect_thread_stop(PotrContext *ctx)
         }
     }
 
-    /* 4. 全 path の接続ソケットをクローズして recv ループをアンブロック */
+    /* 4. 全 path の接続ソケットをクローズして recv ループのブロックを解除 */
     for (i = 0; i < ctx->n_path; i++)
     {
         if (ctx->tcp_conn_fd[i] == POTR_INVALID_SOCKET)
@@ -891,7 +891,7 @@ void potr_connect_thread_stop(PotrContext *ctx)
     /* 6. 送信スレッドを停止する (全 path join 後) */
     potr_send_thread_stop(ctx);
 
-    /* 7. RECEIVER: session_establish_mutex と先読みバッファを破棄する */
+    /* 7. RECEIVER: session_establish_mutex と先読みバッファーを破棄する */
     if (ctx->role == POTR_ROLE_RECEIVER)
     {
         for (i = 0; i < ctx->n_path; i++)

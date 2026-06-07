@@ -18,7 +18,7 @@
 
 using namespace testing;
 
-/* コールバックキャプチャ */
+/* コールバック キャプチャ */
 struct CallbackCapture
 {
     struct Entry
@@ -201,7 +201,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     peer_ctx.path_logical_alive[2] = 1;
 
     EXPECT_CALL(mock_peer_table, peer_find_by_id(&ctx, (PotrPeerId)1))
-        .WillOnce(Return(&peer_ctx)); // [Pre-Assert確認_正常系] - peer_find_by_id がピアコンテキストを返すこと。
+        .WillOnce(Return(&peer_ctx)); // [Pre-Assert確認_正常系] - peer_find_by_id がピア コンテキストを返すこと。
 
     EXPECT_CALL(mock_log, _com_util_tracer_writef(_, COM_UTIL_TRACE_LEVEL_INFO, nullptr,
                                                   AllOf(HasSubstr("potrDisconnectPeer.c"),
@@ -241,7 +241,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     EXPECT_EQ(0, peer_ctx.path_logical_alive[2]);
 }
 
-/* ---------- 正常系（切断済みピア） ---------- */
+/* ---------- 正常系 (切断済みピア) ---------- */
 
 // ピアが存在し health_alive=0 の場合に切断処理のみ行われコールバックが発火しないことの確認
 TEST_F(potrDisconnectPeerTest, normal_health_dead)
@@ -254,7 +254,7 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
     peer_ctx.health_alive = 0;    // [状態] - ピアを切断済み状態 (health_alive=0) に設定する。
 
     EXPECT_CALL(mock_peer_table, peer_find_by_id(&ctx, (PotrPeerId)1))
-        .WillOnce(Return(&peer_ctx)); // [Pre-Assert確認_正常系] - peer_find_by_id がピアコンテキストを返すこと。
+        .WillOnce(Return(&peer_ctx)); // [Pre-Assert確認_正常系] - peer_find_by_id がピア コンテキストを返すこと。
 
     EXPECT_CALL(mock_peer_table, peer_send_fin(&ctx, &peer_ctx))
         .Times(1); // [Pre-Assert確認_正常系] - peer_send_fin が 1 回呼ばれること。

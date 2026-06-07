@@ -181,7 +181,7 @@ POTR_EXPORT int POTR_API potrSend(PotrContext *handle, PotrPeerId peer_id, const
 
         if (peer_id == POTR_PEER_ALL)
         {
-            /* 全アクティブピアへ送信: peers_mutex を保持しない状態で送信するため
+            /* 全アクティブ ピアへ送信: peers_mutex を保持しない状態で送信するため
              * まず peer_id リストを収集してからキューに積む */
             PotrPeerId *ids;
             int n_ids = 0;

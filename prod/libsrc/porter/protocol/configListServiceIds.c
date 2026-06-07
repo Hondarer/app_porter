@@ -22,7 +22,7 @@
 /**
  *  @brief          設定ファイルに登録されているすべてのサービス ID を列挙します。
  *  @param[in]      config_path 設定ファイルのパス。
- *  @param[out]     ids_out     サービス ID 配列へのポインタを格納する変数。
+ *  @param[out]     ids_out     サービス ID 配列へのポインターを格納する変数。
  *                              呼び出し元が free(*ids_out) の責務を持つ。
  *  @param[out]     count_out   列挙したサービス ID 数。
  *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。

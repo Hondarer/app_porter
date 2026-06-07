@@ -1,12 +1,12 @@
 /**
  *******************************************************************************
  *  @file           recv.c
- *  @brief          受信テストコマンド。
+ *  @brief          受信テスト コマンド。
  *  @author         Tetsuo Honda
  *  @date           2026/03/22
  *  @version        1.3.0
  *
- *  指定サービスでデータを受信し続ける CLI テストコマンドです。\n
+ *  指定サービスでデータを受信し続ける CLI テスト コマンドです。\n
  *  Ctrl+C で終了します。\n
  *  \n
  *  受信データがテキストと判定された場合はそのまま表示し、\n
@@ -207,7 +207,7 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
                 com_util_fclose(fp);
                 com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
                                               "[サービス %" PRId64
-                                              "] 受信 (%zu バイト): バイナリデータを保存しました: %s\n",
+                                              "] 受信 (%zu バイト): バイナリ データを保存しました: %s\n",
                                               service_id, len, tmp_path);
             }
             else
@@ -218,7 +218,7 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
                 }
                 com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
                                               "[サービス %" PRId64
-                                              "] 受信 (%zu バイト): バイナリデータの保存に失敗しました。\n",
+                                              "] 受信 (%zu バイト): バイナリ データの保存に失敗しました。\n",
                                               service_id, len);
             }
         }
@@ -227,13 +227,13 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
 }
 
 /**
- *  @brief          トレースフックコールバック。指定レベル以上のメッセージを stderr へ出力する。
+ *  @brief          トレース フック コールバック。指定レベル以上のメッセージを stderr へ出力する。
  *  @param[in]      prev      チェーン継続用の前エントリ。
  *  @param[in]      handle    trace を行った tracer ハンドル。
  *  @param[in]      level     trace レベル。
  *  @param[in]      timestamp 解決済みタイムスタンプ。
  *  @param[in]      message   解決済みメッセージ文字列。
- *  @param[in]      context   閾値レベル (com_util_trace_level_t *) を指すポインタ。
+ *  @param[in]      context   閾値レベル (com_util_trace_level_t *) を指すポインター。
  */
 static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer *handle, com_util_trace_level_t level,
                                const com_util_realtime_timestamp *timestamp, const char *message, void *context)
@@ -260,7 +260,7 @@ static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer
 }
 
 /**
- *  @brief          ログレベル文字列を com_util_trace_level_t に変換する。
+ *  @brief          ログ レベル文字列を com_util_trace_level_t に変換する。
  *  @param[in]      str     レベル文字列 (VERBOSE/INFO/WARNING/ERROR/CRITICAL)。
  *  @param[out]     out     変換結果の格納先。
  *  @return         変換に成功した場合は 1、未知の文字列の場合は 0 を返します。
@@ -426,12 +426,12 @@ static void print_interactive_help(void)
 }
 
 /**
- *  @brief          ファイルをバイナリモードで読み込む。
- *  @param[in]      path        ファイルパス。
+ *  @brief          ファイルをバイナリ モードで読み込む。
+ *  @param[in]      path        ファイル パス。
  *  @param[out]     out_data    読み込んだデータの格納先 (malloc 確保、呼び出し元が free する)。
  *  @param[out]     out_len     読み込んだデータのバイト数の格納先。
  *  @return         成功時は 0、失敗時は -1 を返します。
- *                  失敗時はエラーメッセージを stderr に出力します。
+ *                  失敗時はエラー メッセージを stderr に出力します。
  */
 static int read_file_data(const char *path, unsigned char **out_data, size_t *out_len)
 {
@@ -511,7 +511,7 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
 
 /**
  *  @brief          対話コマンド 1 行を処理する。
- *  @param[in]      handle サービスハンドル。
+ *  @param[in]      handle サービス ハンドル。
  *  @param[in,out]  line   入力行。解析中に一部を書き換えます。
  *  @return         1: 継続、0: 終了。
  */
@@ -656,7 +656,7 @@ static int process_interactive_command(PotrContext *handle, char *line)
 
 /**
  *  @brief          bidir 送信スレッド関数。
- *  @param[in]      arg BidirSendCtx へのポインタ。
+ *  @param[in]      arg BidirSendCtx へのポインター。
  */
 static void bidir_send_thread_func(void *arg)
 {
@@ -684,7 +684,7 @@ static void bidir_send_thread_func(void *arg)
 
 /**
  *  @brief          bidir 送信スレッドを起動する。
- *  @param[out]     thread  スレッドハンドルの格納先。
+ *  @param[out]     thread  スレッド ハンドルの格納先。
  *  @param[in]      ctx     スレッドに渡すコンテキスト。
  *  @return         成功時は 1、失敗時は 0 を返します。
  */
@@ -695,7 +695,7 @@ static int start_bidir_send_thread(com_util_thread **thread, BidirSendCtx *ctx)
 
 /**
  *  @brief          bidir 送信スレッドの終了を待機して破棄する。
- *  @param[in]      thread  スレッドハンドル。
+ *  @param[in]      thread  スレッド ハンドル。
  */
 static void join_bidir_send_thread(com_util_thread **thread)
 {
@@ -706,9 +706,9 @@ static void join_bidir_send_thread(com_util_thread **thread)
 }
 
 /**
- *  @brief          メインエントリ ポイント。
- *  @param[in]      argc コマンドライン引数の数。
- *  @param[in]      argv コマンドライン引数の配列。
+ *  @brief          メイン エントリ ポイント。
+ *  @param[in]      argc コマンド ライン引数の数。
+ *  @param[in]      argv コマンド ライン引数の配列。
  *  @return         成功時は EXIT_SUCCESS、失敗時は EXIT_FAILURE を返します。
  */
 int main(int argc, char *argv[])

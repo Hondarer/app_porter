@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potrRecvThread.c
- *  @brief          受信スレッドモジュール。
+ *  @brief          受信スレッド モジュール。
  *  @author         Tetsuo Honda
  *  @date           2026/03/04
  *  @version        1.0.0
@@ -211,7 +211,7 @@ static int send_tcp_fin_ack(PotrContext *ctx, uint32_t fin_target_seq)
 }
 
 /* ================================================================
- * N:1 モード専用: ピアコンテキストを使ったパケット処理関数群
+ * N:1 モード専用: ピア コンテキストを使ったパケット処理関数群
  * ================================================================ */
 
 static void n1_send_nack(PotrContext *ctx, PotrPeerContext *peer, uint32_t nack_seq)
@@ -372,7 +372,7 @@ static void n1_recv_deliver(PotrContext *ctx, PotrPeerContext *peer, const uint8
     }
 }
 
-/* N:1: ペイロードエレメントをフラグメント結合してコールバックに渡す */
+/* N:1: ペイロード エレメントをフラグメント結合してコールバックに渡す */
 static void n1_deliver_payload_elem(PotrContext *ctx, PotrPeerContext *peer, const PotrPacket *elem)
 {
     /* 未接続ピアの DATA は破棄する */
@@ -547,7 +547,7 @@ static void n1_process_outer_pkt(PotrContext *ctx, PotrPeerContext *peer, const 
     }
 }
 
-/* N:1: セッション照合・更新 (ピアコンテキスト版) */
+/* N:1: セッション照合・更新 (ピア コンテキスト版) */
 static int n1_check_and_update_session(PotrContext *ctx, PotrPeerContext *peer, const PotrPacket *pkt)
 {
     if (!peer->peer_session_known)
@@ -564,7 +564,7 @@ static int n1_check_and_update_session(PotrContext *ctx, PotrPeerContext *peer, 
 
     if (pkt->session_tv_sec > peer->peer_session_tv_sec)
     {
-        /* 新セッション: フォールスルーして採用 */
+        /* 新セッション: フォール スルーして採用 */
     }
     else if (pkt->session_tv_sec < peer->peer_session_tv_sec)
     {
@@ -572,7 +572,7 @@ static int n1_check_and_update_session(PotrContext *ctx, PotrPeerContext *peer, 
     }
     else if (pkt->session_tv_nsec > peer->peer_session_tv_nsec)
     {
-        /* 新セッション: フォールスルーして採用 */
+        /* 新セッション: フォール スルーして採用 */
     }
     else if (pkt->session_tv_nsec < peer->peer_session_tv_nsec)
     {
@@ -580,7 +580,7 @@ static int n1_check_and_update_session(PotrContext *ctx, PotrPeerContext *peer, 
     }
     else if (pkt->session_id > peer->peer_session_id)
     {
-        /* 新セッション: フォールスルーして採用 */
+        /* 新セッション: フォール スルーして採用 */
     }
     else
     {
@@ -634,7 +634,7 @@ static int n1_update_path_health(PotrPeerContext *peer, int path_idx)
     return set_path_ping_state(&peer->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
 }
 
-/* N:1: select() タイムアウト時にヘルスタイムアウトを確認する */
+/* N:1: select() タイムアウト時にヘルスチェック タイムアウトを確認する */
 static void n1_check_health_timeout(PotrContext *ctx)
 {
     int64_t now_sec;
@@ -939,7 +939,7 @@ static int check_and_update_session(PotrContext *ctx, const PotrPacket *pkt)
     }
 
     /* (session_tv_sec, session_tv_nsec, session_id) の辞書順で新旧を判定する。
-       - pkt > 既知セッション: 新セッション。return せずにフォールスルーし、
+       - pkt > 既知セッション: 新セッション。return せずにフォール スルーし、
          関数末尾の「新セッション採用」ブロックで採用処理を行う。
        - pkt < 既知セッション: 旧セッション。即 return 0 で破棄する。
        - pkt == 既知セッション: 同一セッション。即 return 1 で通常受信を継続する。
@@ -947,7 +947,7 @@ static int check_and_update_session(PotrContext *ctx, const PotrPacket *pkt)
        if-else チェーンを抜けた後に必ず末尾の採用ブロックに到達する。 */
     if (pkt->session_tv_sec > ctx->peer_session_tv_sec)
     {
-        /* 新セッション (tv_sec が大): フォールスルーして採用 */
+        /* 新セッション (tv_sec が大): フォール スルーして採用 */
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
                    "recv[service_id=%" PRId64 "]: new session (tv_sec %lld > %lld)"
                    ", old_id=%u new_id=%u",
@@ -960,7 +960,7 @@ static int check_and_update_session(PotrContext *ctx, const PotrPacket *pkt)
     }
     else if (pkt->session_tv_nsec > ctx->peer_session_tv_nsec)
     {
-        /* 新セッション (tv_sec 同一・tv_nsec が大): フォールスルーして採用 */
+        /* 新セッション (tv_sec 同一・tv_nsec が大): フォール スルーして採用 */
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
                    "recv[service_id=%" PRId64 "]: new session (tv_nsec %d > %d)"
                    ", old_id=%u new_id=%u",
@@ -973,7 +973,7 @@ static int check_and_update_session(PotrContext *ctx, const PotrPacket *pkt)
     }
     else if (pkt->session_id > ctx->peer_session_id)
     {
-        /* 新セッション (タイムスタンプ完全一致・session_id が大): フォールスルーして採用 */
+        /* 新セッション (タイムスタンプ完全一致・session_id が大): フォール スルーして採用 */
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: new session (id tiebreak %u > %u)",
                    ctx->service.service_id, pkt->session_id, ctx->peer_session_id);
     }
@@ -1071,7 +1071,7 @@ static void update_path_recv(PotrContext *ctx, int path_idx, const struct sockad
 
     /* unicast_bidir で送信先アドレスが未確定の場合は受信パケットの送信元から動的学習する。
        - src_addr 省略 (動的 1:1 RECEIVER): IP アドレスが 0 → 送信元 IP で更新
-       - src_port=0 (エフェメラルポート動的学習): ポートが 0 → 送信元ポートで更新 */
+       - src_port=0 (エフェメラル ポート動的学習): ポートが 0 → 送信元ポートで更新 */
     if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
     {
         if (ctx->service.src_addr[0][0] == '\0' && ctx->dest_addr[path_idx].sin_addr.s_addr == 0)
@@ -1136,7 +1136,7 @@ static void check_health_timeout(PotrContext *ctx)
                 }
                 if (ctx->service.src_port == 0)
                 {
-                    /* エフェメラルポート動的学習: ポートをリセット */
+                    /* エフェメラル ポート動的学習: ポートをリセット */
                     ctx->dest_addr[i].sin_port = 0;
                 }
             }
@@ -1458,9 +1458,9 @@ static void recv_deliver(PotrContext *ctx, const uint8_t *payload, size_t payloa
     }
 }
 
-/* ペイロードエレメント 1 件のフラグメント結合・展開・コールバック処理。
+/* ペイロード エレメント 1 件のフラグメント結合・展開・コールバック処理。
    window_recv_pop で取り出した外側パケットを packet_unpack_next で展開した
-   各ペイロードエレメントに対して呼び出す。 */
+   各ペイロード エレメントに対して呼び出す。 */
 static void deliver_payload_elem(PotrContext *ctx, const PotrPacket *elem)
 {
     /* 未接続状態では DATA を破棄する。接続確立前/DISCONNECTED 後の DATA が
@@ -1474,7 +1474,7 @@ static void deliver_payload_elem(PotrContext *ctx, const PotrPacket *elem)
 
     if (elem->flags & POTR_FLAG_MORE_FRAG)
     {
-        /* 中間フラグメント: バッファに追記 */
+        /* 中間フラグメント: バッファーに追記 */
         if (ctx->frag_buf_len + elem->payload_len <= ctx->global.max_message_size)
         {
             if (ctx->frag_buf_len == 0)
@@ -1499,7 +1499,7 @@ static void deliver_payload_elem(PotrContext *ctx, const PotrPacket *elem)
     }
     else if (ctx->frag_buf_len > 0)
     {
-        /* 最終フラグメント: バッファに追記してコールバック */
+        /* 最終フラグメント: バッファーに追記してコールバック */
         if (ctx->frag_buf_len + elem->payload_len <= ctx->global.max_message_size)
         {
             memcpy(ctx->frag_buf + ctx->frag_buf_len, elem->payload, elem->payload_len);
@@ -1532,7 +1532,7 @@ static void deliver_payload_elem(PotrContext *ctx, const PotrPacket *elem)
     }
 }
 
-/* FIN 受信時の DISCONNECTED 発火とセッションリセットを行う。
+/* FIN 受信時の DISCONNECTED 発火とセッション リセットを行う。
    pending_fin の即時解消パスと drain_recv_window() 経由の遅延解消パスの両方から呼ぶ。 */
 static void fire_disconnected_by_fin(PotrContext *ctx, uint32_t fin_target_seq)
 {
@@ -1573,7 +1573,7 @@ static void fire_disconnected_by_fin(PotrContext *ctx, uint32_t fin_target_seq)
     com_util_local_lock_unlock(ctx->recv_window_mutex);
 }
 
-/* recv_window から順序整列済みの外側パケットを取り出してペイロードエレメントを配信する。
+/* recv_window から順序整列済みの外側パケットを取り出してペイロード エレメントを配信する。
    REJECT 処理後と通常受信処理の両方から呼び出す。 */
 static void drain_recv_window(PotrContext *ctx)
 {
@@ -1595,10 +1595,10 @@ static void drain_recv_window(PotrContext *ctx)
 
         if (pop_pkt.flags & POTR_FLAG_PING)
         {
-            continue; /* PING: 生存確認のみ、ペイロードエレメント展開不要 */
+            continue; /* PING: 生存確認のみ、ペイロード エレメント展開不要 */
         }
 
-        /* DATA: ペイロードエレメントを順に展開して配信 */
+        /* DATA: ペイロード エレメントを順に展開して配信 */
         {
             size_t offset = 0;
             PotrPacket elem;
@@ -1618,8 +1618,8 @@ static void drain_recv_window(PotrContext *ctx)
 }
 
 /* RAW モード用: DISCONNECTED イベントを発行してセッション状態を部分的にリセットする。
-   ウィンドウリセットは呼び出し元が行う (新しい基点通番が確定してから呼ぶため)。
-   フラグメント組み立てバッファも破棄する。 */
+   ウィンドウ リセットは呼び出し元が行う (新しい基点通番が確定してから呼ぶため)。
+   フラグメント組み立てバッファーも破棄する。 */
 static void raw_session_disconnect(PotrContext *ctx)
 {
     set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
@@ -1676,7 +1676,7 @@ static void process_outer_pkt(PotrContext *ctx, const PotrPacket *pkt, int path_
     }
 
     /* ウィンドウ利用率チェック: 今回のパケットが占める先頭からの距離で推定する。
-       stretch = pkt->seq_num - base_seq + 1 。push 成功後は [1, window_size] の範囲。 */
+       stretch = pkt->seq_num - base_seq + 1。push 成功後は [1, window_size] の範囲。 */
     stretch = (uint32_t)(pkt->seq_num - ctx->recv_window.base_seq) + 1U;
     if (stretch * 10U >= (uint32_t)ctx->recv_window.window_size * 8U)
     {
@@ -1694,7 +1694,7 @@ static void process_outer_pkt(PotrContext *ctx, const PotrPacket *pkt, int path_
             /* ギャップ検出: リオーダー待機を確認してから DISCONNECTED を発行する。
                reorder_timeout_ms > 0 のとき、タイムアウト前はウィンドウに今のパケットを
                残したまま待機する。タイムアウト後または即時モードでは reset + 再 push。
-               skip ループは push 済みパケットのスロットマッピングを壊すため使用しない。 */
+               skip ループは push 済みパケットのスロット マッピングを壊すため使用しない。 */
             if (reorder_gap_ready(ctx, nack_num))
             {
                 raw_session_disconnect(ctx);
@@ -1816,7 +1816,7 @@ static void recv_thread_func(void *arg)
         }
 
 #if defined(PLATFORM_WINDOWS)
-        /* Windows: select の第1引数は無視されるが 0 でなく n_path を渡す */
+        /* Windows: select の第 1 引数は無視されるが 0 でなく n_path を渡す */
         maxfd = ctx->n_path;
 #endif /* PLATFORM_WINDOWS */
 
@@ -1870,7 +1870,7 @@ static void recv_thread_func(void *arg)
             if (recv_len <= 0)
             {
                 if (!ctx->running[0])
-                    break; /* 正常終了: ソケットクローズによる割り込み */
+                    break; /* 正常終了: ソケット クローズによる割り込み */
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: recvfrom returned %d",
                            ctx->service.service_id, recv_len);
                 continue;
@@ -2073,7 +2073,7 @@ static void recv_thread_func(void *arg)
                 {
                     int ping_state_changed;
 
-                    /* ヘルスチェックタイムアウト用受信時刻と受信状態を更新する (PING 限定) */
+                    /* ヘルスチェック タイムアウト用受信時刻と受信状態を更新する (PING 限定) */
                     ping_state_changed = n1_update_path_health(peer, i);
 
                     /* PING ペイロード (相手端のパス受信状態) を格納する */
@@ -2111,7 +2111,7 @@ static void recv_thread_func(void *arg)
             /* ── 送信者ロール: NACK のみ処理 ── */
             if (ctx->role == POTR_ROLE_SENDER)
             {
-                /* RAW モードは再送バッファを持たないため NACK を無視する */
+                /* RAW モードは再送バッファーを持たないため NACK を無視する */
                 if (potr_is_raw_type(ctx->service.type))
                 {
                     continue;
@@ -2153,9 +2153,9 @@ static void recv_thread_func(void *arg)
                         int get_result;
                         size_t wire_len = 0;
 
-                        /* send_window へのアクセスを排他制御する (送信スレッド・ヘルスチェックスレッドと競合)。
+                        /* send_window へのアクセスを排他制御する (送信スレッド・ヘルスチェック スレッドと競合)。
                            ミューテックス保持中に recv_buf へ wire データを組み立て、
-                           プールスロットが上書きされる前にコピーを完了させる。 */
+                           プール スロットが上書きされる前にコピーを完了させる。 */
                         com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
                         get_result = window_send_get(&ctx->send_window, pkt.ack_num, &resend_pkt);
 
@@ -2198,7 +2198,7 @@ static void recv_thread_func(void *arg)
                 {
                     continue;
                 }
-                /* UNICAST_BIDIR SENDER: フォールスルーして受信者処理 (FIN/REJECT/DATA/PING) へ */
+                /* UNICAST_BIDIR SENDER: フォール スルーして受信者処理 (FIN/REJECT/DATA/PING) へ */
             }
 
             /* ── 受信者ロール: FIN / REJECT / DATA / PING を処理 ── */
@@ -2217,7 +2217,7 @@ static void recv_thread_func(void *arg)
 
                 /* target 付き FIN かつ recv_window.next_seq が目標値に未到達: FIN をペンディング。
                  * 後着の DATA がウィンドウを満たした時点で fire_disconnected_by_fin() が呼ばれる。
-                 * セッションリセットを遅延することで後着 DATA を引き続き受け入れ可能にする。 */
+                 * セッション リセットを遅延することで後着 DATA を引き続き受け入れ可能にする。 */
                 if (fin_packet_has_target(&pkt) &&
                     !recv_window_reached_fin_target(ctx->recv_window.next_seq, pkt.ack_num))
                 {
@@ -2302,7 +2302,7 @@ static void recv_thread_func(void *arg)
             {
                 int ping_state_changed;
 
-                /* ヘルスチェックタイムアウト用受信時刻と受信状態を更新する (PING 限定) */
+                /* ヘルスチェック タイムアウト用受信時刻と受信状態を更新する (PING 限定) */
                 ping_state_changed = update_path_health(ctx, i);
 
                 /* PING ペイロード (相手端のパス受信状態) を格納する */
@@ -2476,16 +2476,16 @@ static void tcp_recv_thread_func(void *arg)
             break;
         }
 
-        /* ── 先読みバッファ処理 ──
+        /* ── 先読みバッファー処理 ──
          * accept スレッドが session 判定のために読み取ったパケットが残っている場合、
-         * ソケットからの読み取りをスキップしてバッファの内容をそのまま使用する。
+         * ソケットからの読み取りをスキップしてバッファーの内容をそのまま使用する。
          * accept スレッドは recv スレッド起動前に書き込みを完了しているため mutex 不要。 */
         if (ctx->tcp_first_pkt_len[path_idx] > 0)
         {
-            /* accept スレッドの先読みバッファを recv バッファにコピーする */
+            /* accept スレッドの先読みバッファーを recv バッファーにコピーする */
             size_t first_len = ctx->tcp_first_pkt_len[path_idx];
             memcpy(buf, ctx->tcp_first_pkt_buf[path_idx], first_len);
-            ctx->tcp_first_pkt_len[path_idx] = 0; /* 先読みバッファをクリア */
+            ctx->tcp_first_pkt_len[path_idx] = 0; /* 先読みバッファーをクリア */
             {
                 uint16_t wpl;
                 memcpy(&wpl, buf + 34, sizeof(wpl));
@@ -2495,7 +2495,7 @@ static void tcp_recv_thread_func(void *arg)
         else
         {
             /* タイムアウト付きポーリングで PING 受信を監視する。
-         * データが届くまで poll_ms 待機し、タイムアウト時は PING 受信時刻を確認する。 */
+             * データが届くまで poll_ms 待機し、タイムアウト時は PING 受信時刻を確認する。 */
             if (use_recv_timeout)
             {
                 int readable = tcp_wait_readable(fd, poll_ms);
@@ -2505,7 +2505,7 @@ static void tcp_recv_thread_func(void *arg)
                     break; /* エラー */
                 if (readable == 0)
                 {
-                    /* ポーリングタイムアウト: PING 受信時刻を確認する */
+                    /* ポーリング タイムアウト: PING 受信時刻を確認する */
                     uint64_t last = ctx->tcp_last_ping_recv_ms[path_idx];
                     uint64_t elapsed = com_util_get_monotonic_ms() - last;
                     if (last > 0 && elapsed > (uint64_t)ctx->health_timeout_ms)
@@ -2562,7 +2562,7 @@ static void tcp_recv_thread_func(void *arg)
                     break;
                 }
             }
-        } /* else (先読みバッファなし) ここまで */
+        } /* else (先読みバッファーなし) ここまで */
 
         /* 5. パケット解析 */
         if (packet_parse(&pkt, buf, PACKET_HEADER_SIZE + wire_payload_len) != POTR_SUCCESS)

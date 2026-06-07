@@ -6,14 +6,14 @@
  *  @date           2026/03/08
  *  @version        1.0.0
  *
- *  送信キュー (PotrSendQueue) からペイロードエレメントを取り出して
+ *  送信キュー (PotrSendQueue) からペイロード エレメントを取り出して
  *  外側パケット (POTR_FLAG_DATA) を構築し sendto を呼び出す送信スレッド。\n
  *  potrOpenService (POTR_ROLE_SENDER) 時に起動し、potrCloseService 時に停止します。\n
  *  potrSend の flags 引数の値によらず常に起動しており、
- *  ノンブロッキング送信 (POTR_SEND_BLOCKING なし) 時のみキューが使用されます。
+ *  非ブロッキング送信 (POTR_SEND_BLOCKING なし) 時のみキューが使用されます。
  *
  *  @par            通番管理
- *  すべてのデータパケットはパックコンテナ形式で送受信します。\n
+ *  すべてのデータ パケットはパック コンテナー形式で送受信します。\n
  *  再送・順序整列の単位は外側パケット (UDP datagram) であり、\n
  *  通番は本スレッドが外側パケットを構築する際に付与します。\n
  *  送信ウィンドウ (ctx->send_window) への登録も本スレッドが行います。
@@ -22,7 +22,7 @@
  *  POTR_MAX_PAYLOAD - POTR_PAYLOAD_ELEM_HDR_SIZE 以下のフラグメントが
  *  複数キューに滞留している場合、送信スレッドが 1 つの外側パケットに
  *  まとめて送信します。\n
- *  以下の場合は単体 (ペイロードエレメント 1 件) のコンテナとして送信します。
+ *  以下の場合は単体 (ペイロード エレメント 1 件) のコンテナーとして送信します。
  *  - MORE_FRAG フラグが付いているエントリ (フラグメント化メッセージの途中)
  *  - キューに追加エントリが存在しない場合
  *
@@ -54,7 +54,7 @@ static int should_track_valid_data_send_time(const PotrContext *ctx)
     return ctx != NULL && !ctx->is_multi_peer && potr_is_oneway_udp_type(ctx->service.type);
 }
 
-/* ペイロードエレメントを packed_buf に追記する */
+/* ペイロード エレメントを packed_buf に追記する */
 static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const PotrPayloadElem *entry)
 {
     uint16_t flags_nbo = htons(entry->flags);
@@ -69,8 +69,8 @@ static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const P
 }
 
 /* send_wire_buf の [PACKET_HEADER_SIZE .. PACKET_HEADER_SIZE+packed_len-1] に
-   詰め済みのペイロードから外側コンテナを構築して送信する。
-   seq_num を付与する。UDP では再送バッファ (send_window) にも登録する。
+   詰め済みのペイロードから外側コンテナーを構築して送信する。
+   seq_num を付与する。UDP では再送バッファー (send_window) にも登録する。
    send_wire_buf = [NBO ヘッダー 32B][packed_payload packed_len B] として組み立てる。 */
 static void flush_packed(PotrContext *ctx, size_t packed_len)
 {
@@ -86,7 +86,7 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
     shdr.session_tv_sec = ctx->session_tv_sec;
     shdr.session_tv_nsec = ctx->session_tv_nsec;
 
-    /* send_window へのアクセスを排他制御する (送信スレッド・ヘルスチェックスレッド・受信スレッドが競合) */
+    /* send_window へのアクセスを排他制御する (送信スレッド・ヘルスチェック スレッド・受信スレッドが競合) */
     com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
 
     seq = ctx->send_window.next_seq;
@@ -193,7 +193,7 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
                 if (ctx->tcp_conn_fd[i] == POTR_INVALID_SOCKET)
                     continue;
 
-                /* 送信バッファの空きを確認 (非ブロッキング) */
+                /* 送信バッファーの空きを確認 (非ブロッキング) */
                 pr = potr_poll_writable(ctx->tcp_conn_fd[i], 0);
                 if (pr > 0)
                 {
@@ -242,7 +242,7 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
     }
 }
 
-/* N:1 モード専用: ピアの send_window を使ってパックコンテナを構築して sendto する */
+/* N:1 モード専用: ピアの send_window を使ってパック コンテナーを構築して sendto する */
 static void flush_packed_peer(PotrContext *ctx, PotrPeerContext *peer, size_t packed_len)
 {
     PotrPacket outer_pkt;
@@ -429,14 +429,14 @@ static void send_thread_func(void *arg)
 
         /* パッキング試行 */
         {
-            /* packed_buf は send_wire_buf のヘッダー直後領域を直接使用 (ゼロコピー) */
+            /* packed_buf は send_wire_buf のヘッダー直後領域を直接使用 (ゼロ コピー) */
             uint8_t *packed_buf = ctx->send_wire_buf + PACKET_HEADER_SIZE;
             size_t packed_len = 0;
             int n_dequeued = 1;
 
             append_payload_elem(packed_buf, &packed_len, &first);
 
-            /* MORE_FRAG エントリはパッキング不可。そのまま単体コンテナとして送信。 */
+            /* MORE_FRAG エントリはパッキング不可。そのまま単体コンテナーとして送信。 */
             if (!(first.flags & POTR_FLAG_MORE_FRAG))
             {
                 uint32_t pack_wait_ms = ctx->service.pack_wait_ms;

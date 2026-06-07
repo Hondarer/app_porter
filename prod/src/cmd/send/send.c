@@ -1,14 +1,14 @@
 /**
  *******************************************************************************
  *  @file           send.c
- *  @brief          送信テストコマンド。
+ *  @brief          送信テスト コマンド。
  *  @author         Tetsuo Honda
  *  @date           2026/03/22
  *  @version        1.4.0
  *
- *  指定サービスへデータを対話式に送信する CLI テストコマンドです。\n
+ *  指定サービスへデータを対話式に送信する CLI テスト コマンドです。\n
  *  1 回のセッション内でメッセージを連続して送信できます。\n
- *  各送信ごとにテキストメッセージまたはファイル (バイナリ) を選択できます。\n
+ *  各送信ごとにテキスト メッセージまたはファイル (バイナリ) を選択できます。\n
  *  各送信後に次のメッセージを送るか終了するかを選択できます。\n
  *  \n
  *  サービス種別が unicast_bidir または tcp_bidir の場合は双方向モードで動作します。\n
@@ -57,7 +57,7 @@
 #include <com_util/console/console.h>
 #include <porter.h>
 
-/** 入力バッファサイズ。POTR_MAX_MESSAGE_SIZE + 改行 + NUL。 */
+/** 入力バッファー サイズ。POTR_MAX_MESSAGE_SIZE + 改行 + NUL。 */
 #define INPUT_BUF_SIZE (POTR_MAX_MESSAGE_SIZE + 2U)
 
 /** 送信ループ継続フラグ。終了要求 callback で 0 に設定される。 */
@@ -234,7 +234,7 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
                 com_util_fclose(fp);
                 com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
                                               "\n[サービス %" PRId64
-                                              "] 受信 (%zu バイト): バイナリデータを保存しました: %s\n",
+                                              "] 受信 (%zu バイト): バイナリ データを保存しました: %s\n",
                                               service_id, len, tmp_path);
             }
             else
@@ -245,7 +245,7 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
                 }
                 com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
                                               "\n[サービス %" PRId64
-                                              "] 受信 (%zu バイト): バイナリデータの保存に失敗しました。\n",
+                                              "] 受信 (%zu バイト): バイナリ データの保存に失敗しました。\n",
                                               service_id, len);
             }
         }
@@ -254,13 +254,13 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
 }
 
 /**
- *  @brief          トレースフックコールバック。指定レベル以上のメッセージを stderr へ出力する。
+ *  @brief          トレース フック コールバック。指定レベル以上のメッセージを stderr へ出力する。
  *  @param[in]      prev      チェーン継続用の前エントリ。
  *  @param[in]      handle    trace を行った tracer ハンドル。
  *  @param[in]      level     trace レベル。
  *  @param[in]      timestamp 解決済みタイムスタンプ。
  *  @param[in]      message   解決済みメッセージ文字列。
- *  @param[in]      context   閾値レベル (com_util_trace_level_t *) を指すポインタ。
+ *  @param[in]      context   閾値レベル (com_util_trace_level_t *) を指すポインター。
  */
 static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer *handle, com_util_trace_level_t level,
                                const com_util_realtime_timestamp *timestamp, const char *message, void *context)
@@ -287,7 +287,7 @@ static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer
 }
 
 /**
- *  @brief          ログレベル文字列を com_util_trace_level_t に変換する。
+ *  @brief          ログ レベル文字列を com_util_trace_level_t に変換する。
  *  @param[in]      str     レベル文字列 (VERBOSE/INFO/WARNING/ERROR/CRITICAL)。
  *  @param[out]     out     変換結果の格納先。
  *  @return         変換に成功した場合は 1、未知の文字列の場合は 0 を返します。
@@ -444,7 +444,7 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
 
 /**
  *  @brief          対話コマンド 1 行を処理する。
- *  @param[in]      handle サービスハンドル。
+ *  @param[in]      handle サービス ハンドル。
  *  @param[in,out]  line   入力行。解析中に一部を書き換えます。
  *  @return         1: 継続、0: 終了、-1: 送信失敗。
  */
@@ -593,12 +593,12 @@ static int process_interactive_command(PotrContext *handle, char *line)
 }
 
 /**
- *  @brief          ファイルをバイナリモードで読み込む。
- *  @param[in]      path        ファイルパス。
+ *  @brief          ファイルをバイナリ モードで読み込む。
+ *  @param[in]      path        ファイル パス。
  *  @param[out]     out_data    読み込んだデータの格納先 (malloc 確保、呼び出し元が free する)。
  *  @param[out]     out_len     読み込んだデータのバイト数の格納先。
  *  @return         成功時は 0、失敗時は -1 を返します。
- *                  失敗時はエラーメッセージを stderr に出力します。
+ *                  失敗時はエラー メッセージを stderr に出力します。
  */
 static int read_file_data(const char *path, unsigned char **out_data, size_t *out_len)
 {
@@ -677,9 +677,9 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
 }
 
 /**
- *  @brief          メインエントリ ポイント。
- *  @param[in]      argc コマンドライン引数の数。
- *  @param[in]      argv コマンドライン引数の配列。
+ *  @brief          メイン エントリ ポイント。
+ *  @param[in]      argc コマンド ライン引数の数。
+ *  @param[in]      argv コマンド ライン引数の配列。
  *  @return         成功時は EXIT_SUCCESS、失敗時は EXIT_FAILURE を返します。
  */
 int main(int argc, char *argv[])

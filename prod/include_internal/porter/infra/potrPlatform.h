@@ -76,11 +76,11 @@ static inline void potr_shutdown_socket(PotrSocket fd)
 }
 
 /**
- *  @brief  ソケットオプションを設定する。
+ *  @brief  ソケット オプションを設定する。
  *  @param[in]  sock     対象ソケット。
- *  @param[in]  level    プロトコルレベル (SOL_SOCKET, IPPROTO_IP 等)。
+ *  @param[in]  level    プロトコル レベル (SOL_SOCKET, IPPROTO_IP 等)。
  *  @param[in]  optname  オプション名。
- *  @param[in]  optval   オプション値へのポインタ。
+ *  @param[in]  optval   オプション値へのポインター。
  *  @param[in]  optlen   オプション値のバイト数。
  *  @return  0: 成功、-1: 失敗。
  */
@@ -119,8 +119,8 @@ extern int potr_sendto(PotrSocket sock, const uint8_t *buf, size_t len,
 /**
  *  @brief  UDP データグラムを受信する。
  *  @param[in]  sock     受信ソケット。
- *  @param[out] buf      受信バッファ。
- *  @param[in]  len      バッファサイズ。
+ *  @param[out] buf      受信バッファー。
+ *  @param[in]  len      バッファー サイズ。
  *  @param[in]  flags    受信フラグ。
  *  @param[out] src      送信元アドレス格納先。
  *  @param[in,out] src_len  送信元アドレス長。
@@ -159,32 +159,32 @@ extern int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len);
 /**
  *  @brief  TCP ソケットから正確に n バイト読み取る。
  *  @param[in]   fd   受信ソケット。
- *  @param[out]  buf  受信バッファ (n バイト以上)。
+ *  @param[out]  buf  受信バッファー (n バイト以上)。
  *  @param[in]   n    受信バイト数。
  *  @return  1: 成功、0: 切断 (recv が 0 を返した)、-1: エラー。
  */
 extern int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n);
 
 /**
- *  @brief  ソケットライブラリを初期化する (Windows: WSAStartup、Linux: no-op)。
+ *  @brief  ソケット ライブラリを初期化する (Windows: WSAStartup、Linux: no-op)。
  *  @return  0: 成功、-1: 失敗。
  */
 extern int potr_socket_lib_init(void);
 
 /**
- *  @brief  ソケットライブラリを終了する (Windows: WSACleanup、Linux: no-op)。
+ *  @brief  ソケット ライブラリを終了する (Windows: WSACleanup、Linux: no-op)。
  */
 extern void potr_socket_lib_cleanup(void);
 
 /**
- *  @brief  ソケットをノンブロッキングモードに設定する。
+ *  @brief  ソケットをノンブロッキング モードに設定する。
  *  @param[in]  fd  対象ソケット。
  *  @return  0: 成功、-1: 失敗。
  */
 extern int potr_set_nonblocking(PotrSocket fd);
 
 /**
- *  @brief  ソケットをブロッキングモードに戻す。
+ *  @brief  ソケットをブロッキング モードに戻す。
  *  @param[in]  fd  対象ソケット。
  *  @return  0: 成功、-1: 失敗。
  */

@@ -90,7 +90,7 @@ POTR_EXPORT int POTR_API potrDisconnectPeer(PotrContext *handle, PotrPeerId peer
             com_util_local_lock_unlock(ctx->callback_mutex);
         }
 
-        /* ピアリソースを解放 */
+        /* ピア リソースを解放 */
         peer_free(ctx, peer);
     }
 

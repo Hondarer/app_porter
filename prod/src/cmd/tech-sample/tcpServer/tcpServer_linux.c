@@ -8,9 +8,9 @@
  *
  *  Linux 固有のサーバー処理を実装します。
  *  - fork()  を使った接続ごとプロセス生成 (run_fork_server)
- *  - fork()  を使ったプリフォーク       (run_prefork_server)
- *  - プラットフォームフック              (platform_init / platform_cleanup /
- *                                        dispatch_internal_args)
+ *  - fork()  を使ったプリフォーク         (run_prefork_server)
+ *  - プラットフォーム フック              (platform_init / platform_cleanup /
+ *                                          dispatch_internal_args)
  *
  *  main() / handle_client_session() / parse_args() は tcpServer.c に実装します。
  *  g_session_fn の実体は tcpServer_common.c に定義されます。
@@ -42,14 +42,14 @@
 static volatile sig_atomic_t running = 1;
 
 /* ============================================================
- *  シグナルハンドラ
+ *  シグナル ハンドラー
  * ============================================================ */
 
 /**
- *  @brief          SIGCHLD シグナルハンドラ。
+ *  @brief          SIGCHLD シグナル ハンドラー。
  *  @param[in]      sig シグナル番号 (未使用)。
  *
- *  waitpid() でゾンビプロセスを回収します。
+ *  waitpid() でゾンビ プロセスを回収します。
  */
 static void sigchld_handler(int sig) {
     (void)sig;
@@ -57,10 +57,10 @@ static void sigchld_handler(int sig) {
 }
 
 /**
- *  @brief          SIGINT / SIGTERM シグナルハンドラ。
+ *  @brief          SIGINT / SIGTERM シグナル ハンドラー。
  *  @param[in]      sig シグナル番号 (未使用)。
  *
- *  running フラグを 0 にセットして prefork のメインループを終了させます。
+ *  running フラグを 0 にセットして prefork のメイン ループを終了させます。
  */
 static void shutdown_handler(int sig) {
     (void)sig;
@@ -74,7 +74,7 @@ static void shutdown_handler(int sig) {
 /**
  *  @brief          listen ソケットを作成してバインドし、待ち受けを開始します。
  *  @param[in]      port 待ち受けポート番号。
- *  @return         listen ソケットのファイルディスクリプタ。
+ *  @return         listen ソケットのファイル記述子。
  *
  *  @attention      失敗した場合は exit() で終了します。
  */
@@ -110,8 +110,8 @@ static int create_listen_socket(int port) {
 }
 
 /**
- *  @brief          ワーカープロセスのメインループ (prefork モード用)。
- *  @param[in]      server_fd        サーバーソケットのファイルディスクリプタ。
+ *  @brief          ワーカー プロセスのメイン ループ (prefork モード用)。
+ *  @param[in]      server_fd        サーバーソケットのファイル記述子。
  *  @param[in]      worker_id        ワーカーの識別番号。
  *  @param[in]      conns_per_worker 同時接続数。1 の場合は逐次処理、2 以上は epoll 多重処理。
  *
@@ -119,7 +119,7 @@ static int create_listen_socket(int port) {
  *    accept() → g_session_fn() を繰り返す従来の逐次処理。
  *
  *  conns_per_worker > 1 の場合:
- *    epoll を使ったイベントループで最大 conns_per_worker 本のコネクションを
+ *    epoll を使ったイベント ループで最大 conns_per_worker 本のコネクションを
  *    シングルスレッドで同時処理します。容量に達すると server_fd を epoll から
  *    除去して新規 accept を止め、空きが生じると再登録して受け付けを再開します。
  */
@@ -241,7 +241,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker) {
 }
 
 /* ============================================================
- *  プラットフォームフック
+ *  プラットフォーム フック
  * ============================================================ */
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -276,7 +276,7 @@ void run_fork_server(int port) {
     socklen_t          addr_len = sizeof(addr);
     struct sigaction   sa;
 
-    /* SIGCHLD ハンドラ設定 (ゾンビプロセス回避) */
+    /* SIGCHLD ハンドラー設定 (ゾンビ プロセス回避) */
     sa.sa_handler = sigchld_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
@@ -316,14 +316,14 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker) {
     int              server_fd;
     struct sigaction sa;
 
-    /* SIGINT/SIGTERM ハンドラ設定 */
+    /* SIGINT/SIGTERM ハンドラー設定 */
     sa.sa_handler = shutdown_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT,  &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
 
-    /* SIGCHLD ハンドラ設定 */
+    /* SIGCHLD ハンドラー設定 */
     sa.sa_handler = sigchld_handler;
     sa.sa_flags   = SA_RESTART;
     sigaction(SIGCHLD, &sa, NULL);

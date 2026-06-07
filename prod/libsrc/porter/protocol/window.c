@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           window.c
- *  @brief          スライディングウィンドウ管理モジュール。
+ *  @brief          スライディング ウィンドウ管理モジュール。
  *  @author         Tetsuo Honda
  *  @date           2026/03/04
  *  @version        1.0.0
@@ -28,14 +28,14 @@
 
 /**
  *  @brief          ウィンドウを初期化します。
- *  @param[in,out]  win         初期化するウィンドウ構造体へのポインタ。
+ *  @param[in,out]  win         初期化するウィンドウ構造体へのポインター。
  *  @param[in]      initial_seq 初期通番。
- *  @param[in]      window_size ウィンドウサイズ (パケット数)。
+ *  @param[in]      window_size ウィンドウ サイズ (パケット数)。
  *  @param[in]      max_payload エントリごとのペイロード最大長 (バイト)。
  *  @return         成功時は POTR_SUCCESS、malloc 失敗時は POTR_ERROR を返します。
  *
  *  サイズが既存と同一の場合は状態をリセットするのみで再確保は行いません。\n
- *  異なるサイズの場合は既存バッファを解放して再確保します。
+ *  異なるサイズの場合は既存バッファーを解放して再確保します。
  */
 int window_init(PotrWindow *win, uint32_t initial_seq,
                 uint16_t window_size, uint16_t max_payload)
@@ -47,7 +47,7 @@ int window_init(PotrWindow *win, uint32_t initial_seq,
         return POTR_ERROR;
     }
 
-    /* 既存バッファがあり、サイズが一致する場合は状態リセットのみ */
+    /* 既存バッファーがあり、サイズが一致する場合は状態リセットのみ */
     if (win->packets != NULL
         && win->window_size == window_size
         && win->max_payload == max_payload)
@@ -58,7 +58,7 @@ int window_init(PotrWindow *win, uint32_t initial_seq,
         return POTR_SUCCESS;
     }
 
-    /* 既存バッファを解放 */
+    /* 既存バッファーを解放 */
     free(win->packets);
     free(win->valid);
     free(win->payload_pool);
@@ -84,7 +84,7 @@ int window_init(PotrWindow *win, uint32_t initial_seq,
 
     memset(win->valid, 0, (size_t)window_size);
 
-    /* 各エントリの payload ポインタをプールスロットへ設定 */
+    /* 各エントリの payload ポインターをプール スロットへ設定 */
     for (i = 0; i < window_size; i++)
     {
         memset(&win->packets[i], 0, sizeof(PotrPacket));
@@ -100,8 +100,8 @@ int window_init(PotrWindow *win, uint32_t initial_seq,
 }
 
 /**
- *  @brief          ウィンドウが保持する動的確保バッファを解放します。
- *  @param[in,out]  win  解放するウィンドウ構造体へのポインタ。
+ *  @brief          ウィンドウが保持する動的確保バッファーを解放します。
+ *  @param[in,out]  win  解放するウィンドウ構造体へのポインター。
  */
 void window_dispose(PotrWindow *win)
 {
@@ -128,8 +128,8 @@ static uint16_t win_index(const PotrWindow *win, uint32_t seq)
 
 /**
  *  @brief          送信ウィンドウにパケットを積みます。
- *  @param[in,out]  win     送信ウィンドウ構造体へのポインタ。
- *  @param[in]      packet  積むパケットへのポインタ。
+ *  @param[in,out]  win     送信ウィンドウ構造体へのポインター。
+ *  @param[in]      packet  積むパケットへのポインター。
  *  @return         成功時は POTR_SUCCESS、ウィンドウ満杯の場合は POTR_ERROR を返します。
  */
 int window_send_push(PotrWindow *win, const PotrPacket *packet)
@@ -152,12 +152,12 @@ int window_send_push(PotrWindow *win, const PotrPacket *packet)
 
     idx = win_index(win, win->next_seq);
 
-    /* プールスロットへ深コピー (packet->payload_len は NBO: packet_build_packed が設定) */
+    /* プール スロットへディープ コピー (packet->payload_len は NBO: packet_build_packed が設定) */
     {
-        /* プールスロットアドレスをインデックスから直接計算することで const 除去キャストを回避する */
+        /* プール スロット アドレスをインデックスから直接計算することで const 除去キャストを回避する */
         uint8_t *slot     = win->payload_pool + idx * (size_t)win->max_payload;
         win->packets[idx] = *packet;                   /* 構造体コピー */
-        win->packets[idx].payload = slot;              /* プールスロットを設定 */
+        win->packets[idx].payload = slot;              /* プール スロットを設定 */
         memcpy(slot, packet->payload, (size_t)ntohs(packet->payload_len));
     }
 
@@ -170,7 +170,7 @@ int window_send_push(PotrWindow *win, const PotrPacket *packet)
 
 /**
  *  @brief          送信ウィンドウが満杯かどうかを返します。
- *  @param[in]      win     送信ウィンドウ構造体へのポインタ。
+ *  @param[in]      win     送信ウィンドウ構造体へのポインター。
  *  @return         満杯の場合は 1、空きがある場合は 0 を返します。
  */
 int window_send_full(const PotrWindow *win)
@@ -184,9 +184,9 @@ int window_send_full(const PotrWindow *win)
 
 /**
  *  @brief          送信ウィンドウから指定通番のパケットを取得します (再送用)。
- *  @param[in]      win         送信ウィンドウ構造体へのポインタ。
+ *  @param[in]      win         送信ウィンドウ構造体へのポインター。
  *  @param[in]      seq_num     取得する通番。
- *  @param[out]     packet_out  取得したパケットを格納する構造体へのポインタ。
+ *  @param[out]     packet_out  取得したパケットを格納する構造体へのポインター。
  *  @return         成功時は POTR_SUCCESS、エントリが存在しない場合は POTR_ERROR を返します。
  */
 int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_out)
@@ -219,8 +219,8 @@ int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_
 
 /**
  *  @brief          受信ウィンドウにパケットを格納します。
- *  @param[in,out]  win     受信ウィンドウ構造体へのポインタ。
- *  @param[in]      packet  格納するパケットへのポインタ。
+ *  @param[in,out]  win     受信ウィンドウ構造体へのポインター。
+ *  @param[in]      packet  格納するパケットへのポインター。
  *  @return         成功時は POTR_SUCCESS、ウィンドウ外の場合は POTR_ERROR を返します。
  *
  *  通番が受信ウィンドウ内であればバッファリングします。\n
@@ -243,8 +243,8 @@ int window_recv_push(PotrWindow *win, const PotrPacket *packet)
     idx = win_index(win, packet->seq_num);
     if (!win->valid[idx])
     {
-        /* プールスロットへ深コピー (packet->payload_len はホストバイトオーダー: packet_parse が変換済み) */
-        /* プールスロットアドレスをインデックスから直接計算することで const 除去キャストを回避する */
+        /* プール スロットへディープ コピー (packet->payload_len はホスト バイト オーダー: packet_parse が変換済み) */
+        /* プール スロット アドレスをインデックスから直接計算することで const 除去キャストを回避する */
         uint8_t *slot     = win->payload_pool + idx * (size_t)win->max_payload;
         win->packets[idx] = *packet;
         win->packets[idx].payload = slot;
@@ -257,8 +257,8 @@ int window_recv_push(PotrWindow *win, const PotrPacket *packet)
 
 /**
  *  @brief          受信ウィンドウから順序整列済みパケットを取り出します。
- *  @param[in,out]  win     受信ウィンドウ構造体へのポインタ。
- *  @param[out]     packet  取り出したパケットを格納する構造体へのポインタ。
+ *  @param[in,out]  win     受信ウィンドウ構造体へのポインター。
+ *  @param[out]     packet  取り出したパケットを格納する構造体へのポインター。
  *  @return         取り出せた場合は POTR_SUCCESS、次のパケットが未着の場合は POTR_ERROR を返します。
  */
 int window_recv_pop(PotrWindow *win, PotrPacket *packet)
@@ -286,7 +286,7 @@ int window_recv_pop(PotrWindow *win, PotrPacket *packet)
 
 /**
  *  @brief          受信ウィンドウで指定通番をスキップして次の通番へ前進させます。
- *  @param[in,out]  win     受信ウィンドウ構造体へのポインタ。
+ *  @param[in,out]  win     受信ウィンドウ構造体へのポインター。
  *  @param[in]      seq_num スキップする通番。next_seq と一致する場合のみ動作します。
  *
  *  REJECT 受信時に欠落パケットを「配信済み」として扱い、後続パケットの配信を
@@ -309,8 +309,8 @@ void window_recv_skip(PotrWindow *win, uint32_t seq_num)
 
 /**
  *  @brief          受信ウィンドウで欠番が発生しているか確認し、NACK 番号を返します。
- *  @param[in]      win         受信ウィンドウ構造体へのポインタ。
- *  @param[out]     nack_num    欠番の通番を格納するポインタ。
+ *  @param[in]      win         受信ウィンドウ構造体へのポインター。
+ *  @param[out]     nack_num    欠番の通番を格納するポインター。
  *  @return         欠番がある場合は 1、ない場合は 0 を返します。
  */
 int window_recv_needs_nack(const PotrWindow *win, uint32_t *nack_num)
@@ -345,11 +345,11 @@ int window_recv_needs_nack(const PotrWindow *win, uint32_t *nack_num)
 
 /**
  *  @brief          受信ウィンドウを新しい基点通番でリセットします。
- *  @param[in,out]  win          受信ウィンドウ構造体へのポインタ。
+ *  @param[in,out]  win          受信ウィンドウ構造体へのポインター。
  *  @param[in]      new_base_seq リセット後の基点通番 (次に期待する通番)。
  *
  *  全スロットを無効化し、base_seq / next_seq を new_base_seq に設定します。\n
- *  バッファの再確保は行いません。\n
+ *  バッファーの再確保は行いません。\n
  *  RAW モードでギャップを検出してセッションをリセットする際に使用します。
  */
 void window_recv_reset(PotrWindow *win, uint32_t new_base_seq)

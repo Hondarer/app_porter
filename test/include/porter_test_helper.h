@@ -15,7 +15,7 @@
 
 /**
  * テスト用 porter サービス定義を一時ファイルに書き出すビルダー。
- * デストラクタで一時ファイルを削除する。
+ * デストラクターで一時ファイルを削除する。
  *
  * 使用例:
  *   PorterConfigBuilder cfg;
@@ -55,7 +55,7 @@ public:
         return *this;
     }
 
-    /** unicast サービスエントリを追加する。 */
+    /** unicast サービス エントリを追加する。 */
     PorterConfigBuilder& addUnicastService(int64_t service_id, int port,
                                            const std::string& host = "127.0.0.1",
                                            const std::string& encrypt_key = "")
@@ -72,7 +72,7 @@ public:
         return *this;
     }
 
-    /** unicast_bidir サービスエントリを追加する。 */
+    /** unicast_bidir サービス エントリを追加する。 */
     PorterConfigBuilder& addUnicastBidirService(int64_t service_id, int port,
                                                 const std::string& host = "127.0.0.1",
                                                 const std::string& encrypt_key = "")
@@ -89,7 +89,7 @@ public:
         return *this;
     }
 
-    /** unicast_bidir_n1 サービスエントリを追加する。 */
+    /** unicast_bidir_n1 サービス エントリを追加する。 */
     PorterConfigBuilder& addUnicastBidirN1Service(int64_t service_id, int port,
                                                   int max_peers,
                                                   const std::string& bind_addr = "0.0.0.0",
@@ -107,7 +107,7 @@ public:
         return *this;
     }
 
-    /** tcp_bidir サービスエントリを追加する。 */
+    /** tcp_bidir サービス エントリを追加する。 */
     PorterConfigBuilder& addTcpBidirService(int64_t service_id, int port,
                                             const std::string& host = "127.0.0.1",
                                             const std::string& encrypt_key = "")

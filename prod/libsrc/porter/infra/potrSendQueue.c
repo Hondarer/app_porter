@@ -108,7 +108,7 @@ int potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id,
     com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
 
     /* count + inflight < depth が保証されるまで待機する。
-       inflight エントリもプールスロットを占有するため、count だけでは不足。 */
+       inflight エントリもプール スロットを占有するため、count だけでは不足。 */
     while (q->count + q->inflight >= q->depth)
     {
         if (!*running)

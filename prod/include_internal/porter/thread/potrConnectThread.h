@@ -8,7 +8,7 @@
  *
  *  SENDER: TCP connect / 自動再接続ループを管理するスレッドです。\n
  *  RECEIVER: TCP accept ループを管理するスレッドです。\n
- *  接続確立後、送受信・ヘルスチェックスレッドを起動します。
+ *  接続確立後、送受信・ヘルスチェック スレッドを起動します。
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
  *
@@ -39,7 +39,7 @@ extern "C"
      *  - RECEIVER: tcp_listen_sock[i] が listen 状態であること (n_path 分)。\n
      *  - tcp_state_mutex / tcp_state_cv / tcp_send_mutex[] が初期化済みであること。
      *
-     *  @param[in,out]  ctx セッションコンテキスト。
+     *  @param[in,out]  ctx セッション コンテキスト。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
     extern int potr_connect_thread_start(PotrContext *ctx);
@@ -50,7 +50,7 @@ extern "C"
      *  connect_thread_running フラグをクリアし、tcp_state_cv を broadcast して\n
      *  reconnect sleep を中断する。全 path のソケットをクローズしてスレッド終了を待機する。
      *
-     *  @param[in,out]  ctx セッションコンテキスト。
+     *  @param[in,out]  ctx セッション コンテキスト。
      */
     extern void potr_connect_thread_stop(PotrContext *ctx);
 

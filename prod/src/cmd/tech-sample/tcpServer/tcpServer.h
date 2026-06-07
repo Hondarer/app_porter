@@ -27,7 +27,7 @@
     #include <sys/types.h>
     #include <unistd.h>
 
-    /** クライアントソケットの型。Linux では int、Windows では SOCKET。 */
+    /** クライアント ソケットの型。Linux では int、Windows では SOCKET。 */
     typedef int     ClientFd;
     /** プロセス ID の型。Linux では pid_t、Windows では DWORD。 */
     typedef pid_t   PidType;
@@ -38,14 +38,14 @@
     #define client_recv(fd, buf, len)    read((fd), (buf), (len))
     /** クライアントへデータを送信する。 */
     #define client_send(fd, buf, len)    write((fd), (buf), (len))
-    /** クライアントソケットを閉じる。 */
+    /** クライアント ソケットを閉じる。 */
     #define client_close(fd)             close(fd)
 
 #elif defined(PLATFORM_WINDOWS)
 
     #include <com_util/base/windows_sdk.h>
 
-    /** クライアントソケットの型。Linux では int、Windows では SOCKET。 */
+    /** クライアント ソケットの型。Linux では int、Windows では SOCKET。 */
     typedef SOCKET  ClientFd;
     /** プロセス ID の型。Linux では pid_t、Windows では DWORD。 */
     typedef DWORD   PidType;
@@ -56,7 +56,7 @@
     #define client_recv(fd, buf, len)    recv((fd), (buf), (int)(len), 0)
     /** クライアントへデータを送信する。 */
     #define client_send(fd, buf, len)    send((fd), (buf), (int)(len), 0)
-    /** クライアントソケットを閉じる。 */
+    /** クライアント ソケットを閉じる。 */
     #define client_close(fd)             closesocket(fd)
 
 #endif /* PLATFORM_ */
@@ -71,7 +71,7 @@
 #define DEFAULT_WORKERS          4
 /** デフォルト 1 ワーカーあたりの同時接続数。 */
 #define DEFAULT_CONNS_PER_WORKER 1
-/** 送受信バッファサイズ (バイト)。 */
+/** 送受信バッファー サイズ (バイト)。 */
 #define BUFFER_SIZE              1024
 
 /* ============================================================
@@ -82,14 +82,14 @@
  *  @brief          サーバー動作モード。
  */
 typedef enum {
-    MODE_PREFORK = 0, /**< プリフォークモード (デフォルト)。 */
+    MODE_PREFORK = 0, /**< プリフォーク モード (デフォルト)。 */
     MODE_FORK    = 1  /**< 接続ごと fork モード。 */
 } ServerMode;
 
 /**
  *  @brief          セッション処理関数の型。
  *
- *  クライアントソケットを受け取り、通信処理を行い、ソケットを閉じます。
+ *  クライアント ソケットを受け取り、通信処理を行い、ソケットを閉じます。
  */
 typedef void (*ClientSessionFn)(ClientFd fd);
 
@@ -113,15 +113,15 @@ extern ClientSessionFn g_session_fn;
 /* --- 共通実装 (tcpServer.c) --- */
 
 /**
- *  @brief          TCP 通信メインループ (デフォルト実装)。
- *  @param[in]      fd クライアントソケット。
+ *  @brief          TCP 通信メイン ループ (デフォルト実装)。
+ *  @param[in]      fd クライアント ソケット。
  *
  *  受信したデータをそのまま返します。クライアントが切断すると戻ります。
  *  ソケットは本関数内で閉じます。fork モード・prefork モード共用。
  */
 void handle_client_session(ClientFd fd);
 
-/* --- プラットフォームフック (各プラットフォームファイルで実装) --- */
+/* --- プラットフォーム フック (各プラットフォーム ファイルで実装) --- */
 
 /**
  *  @brief          プラットフォーム初期化 (Windows: WSAStartup / Linux: no-op)。
@@ -136,8 +136,8 @@ void platform_cleanup(void);
 
 /**
  *  @brief          内部起動引数を処理します。
- *  @param[in]      argc コマンドライン引数の数。
- *  @param[in]      argv コマンドライン引数の配列。
+ *  @param[in]      argc コマンド ライン引数の数。
+ *  @param[in]      argv コマンド ライン引数の配列。
  *  @return         内部起動引数を処理した場合は 1、通常起動の場合は 0 を返します。
  *
  *  Windows では `--child <handle>` / `--worker <pipe>` を検出して処理します。
@@ -154,7 +154,7 @@ void run_fork_server(int port);
 /**
  *  @brief          prefork モードのサーバーを起動します。
  *  @param[in]      port             待ち受けポート番号。
- *  @param[in]      num_workers      事前生成するワーカープロセス数。
+ *  @param[in]      num_workers      事前生成するワーカー プロセス数。
  *  @param[in]      conns_per_worker 1 ワーカーあたりの同時接続数。
  *                                   1 の場合は従来の逐次処理。
  *                                   2 以上の場合はイベント駆動型の多重接続処理。

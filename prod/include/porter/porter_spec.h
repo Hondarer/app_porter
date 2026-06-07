@@ -1,7 +1,7 @@
 ﻿/**
  *******************************************************************************
  *  @file           porter_spec.h
- *  @brief          通信ライブラリ (動的リンク用) のヘッダーファイル。
+ *  @brief          通信ライブラリ (動的リンク用) のヘッダー ファイル。
  *  @author         Tetsuo Honda
  *  @date           2026/03/04
  *  @version        1.0.0
@@ -39,8 +39,8 @@ extern "C"
 
     /**
      *  @brief          設定構造体から指定サービスを開きます。
-     *  @param[in]      global      グローバル設定構造体へのポインタ。
-     *  @param[in]      service     サービス定義構造体へのポインタ。
+     *  @param[in]      global      グローバル設定構造体へのポインター。
+     *  @param[in]      service     サービス定義構造体へのポインター。
      *  @param[in]      role        役割種別。POTR_ROLE_SENDER または POTR_ROLE_RECEIVER。
      *  @param[in]      callback    イベント発生時に呼び出されるコールバック関数 (PotrRecvCallback)。
      *                              POTR_ROLE_RECEIVER の場合は必須。データ受信・接続検知・切断検知を受け取る。
@@ -48,7 +48,7 @@ extern "C"
      *                              ただし POTR_TYPE_TCP_BIDIR および POTR_TYPE_UNICAST_BIDIR では
      *                              SENDER にもコールバックが必須。これらの種別では POTR_ROLE_SENDER でも
      *                              callback が NULL の場合は失敗を返します。
-     *  @param[out]     handle      成功時にセッションハンドルを格納するポインタ。
+     *  @param[out]     handle      成功時にセッション ハンドルを格納するポインター。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
      *
      *  設定構造体からサービス定義を取得し、UDP ソケットを初期化します。\n
@@ -133,9 +133,9 @@ extern "C"
      *  @endcode
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッドセーフです。\n
+     *  本関数はスレッド セーフです。\n
      *  異なるスレッドから独立したハンドルを取得するために並行して呼び出すことができます。\n
-     *  ただし取得したハンドルはスレッドセーフではありません。\n
+     *  ただし取得したハンドルはスレッド セーフではありません。\n
      *  同一ハンドルに対する操作は 1 スレッドから行ってください。
      *
      *  @warning        global が NULL の場合は失敗を返します。\n
@@ -160,7 +160,7 @@ extern "C"
      *                              ただし POTR_TYPE_TCP_BIDIR および POTR_TYPE_UNICAST_BIDIR では
      *                              SENDER にもコールバックが必須。これらの種別では POTR_ROLE_SENDER でも
      *                              callback が NULL の場合は失敗を返します。
-     *  @param[out]     handle      成功時にセッションハンドルを格納するポインタ。
+     *  @param[out]     handle      成功時にセッション ハンドルを格納するポインター。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
      *
      *  設定ファイルを解析してサービス定義を取得し、potrOpenService() を呼び出します。\n
@@ -211,9 +211,9 @@ extern "C"
      *  @endcode
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッドセーフです。\n
+     *  本関数はスレッド セーフです。\n
      *  異なるスレッドから独立したハンドルを取得するために並行して呼び出すことができます。\n
-     *  ただし取得したハンドルはスレッドセーフではありません。\n
+     *  ただし取得したハンドルはスレッド セーフではありません。\n
      *  同一ハンドルに対する操作は 1 スレッドから行ってください。
      *
      *  @warning        handle が NULL の場合は失敗を返します。\n
@@ -230,15 +230,15 @@ extern "C"
 
     /**
      *  @brief          メッセージを送信します。
-     *  @param[in]      handle      potrOpenService() で取得したセッションハンドル。
+     *  @param[in]      handle      potrOpenService() で取得したセッション ハンドル。
      *  @param[in]      peer_id     送信先ピア識別子。\n
      *                              N:1 モード: 有効なピア ID (`POTR_PEER_NA` / `POTR_PEER_ALL` 以外) を指定します。\n
      *                              N:1 モード: POTR_PEER_ALL を指定すると全接続ピアへ一斉送信します。\n
      *                              N:1 モード: POTR_PEER_NA を指定すると POTR_ERROR を返します。\n
      *                              1:1 モードおよびその他の通信種別: POTR_PEER_NA または POTR_PEER_ALL を指定します (通常は POTR_PEER_NA を使用)。
-     *  @param[in]      data        送信するメッセージへのポインタ。
+     *  @param[in]      data        送信するメッセージへのポインター。
      *  @param[in]      len         送信するメッセージのバイト数。
-     *  @param[in]      flags       送信オプションフラグ。以下のフラグを論理和で組み合わせて指定します。
+     *  @param[in]      flags       送信オプション フラグ。以下のフラグを論理和で組み合わせて指定します。
      *                              0 を指定すると非圧縮・ノンブロッキング送信になります。
      *
      *                              | フラグ                | 説明                                     |
@@ -281,7 +281,7 @@ extern "C"
      *  内部で非圧縮に切り替えて送信します。送受信のデータ内容に影響はありません。
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッドセーフではありません。\n
+     *  本関数はスレッド セーフではありません。\n
      *  同一ハンドルへの並行呼び出しは未定義動作です。\n
      *  送信は 1 スレッドから行ってください。
      *
@@ -304,7 +304,7 @@ extern "C"
 
     /**
      *  @brief          指定ピアを切断します (N:1 モード専用)。
-     *  @param[in]      handle      potrOpenService() で取得したセッションハンドル。
+     *  @param[in]      handle      potrOpenService() で取得したセッション ハンドル。
      *  @param[in]      peer_id     切断するピアの識別子 (POTR_PEER_NA および POTR_PEER_ALL 以外)。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
      *
@@ -314,7 +314,7 @@ extern "C"
      *  1:1 モードおよびその他の通信種別では POTR_ERROR を返します。
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッドセーフです。\n
+     *  本関数はスレッド セーフです。\n
      *  内部で peers_mutex により排他制御されるため、複数スレッドから並行して呼び出せます。\n
      *  ただし PotrRecvCallback の内部から本関数を呼び出すとデッドロックが発生します。\n
      *  コールバック内からの呼び出しは避けてください。
@@ -328,7 +328,7 @@ extern "C"
 
     /**
      *  @brief          サービスを閉じます。
-     *  @param[in]      handle  potrOpenService() で取得したセッションハンドル。
+     *  @param[in]      handle  potrOpenService() で取得したセッション ハンドル。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
      *
      *  受信スレッドを停止し、ソケットをクローズしてリソースを解放します。\n
@@ -347,7 +347,7 @@ extern "C"
      *  いずれの場合も、相手側では POTR_EVENT_DISCONNECTED が発火します。
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッドセーフではありません。\n
+     *  本関数はスレッド セーフではありません。\n
      *  同一ハンドルに対して他の porter API と並行して呼び出さないでください。\n
      *  本関数を呼び出す前に、同一ハンドルへのすべての potrSend() が完了していることを確認してください。
      *
@@ -371,14 +371,14 @@ extern "C"
         com_util_tracer_start(tracer);
      *  @endcode
      *
-     *  @par            ログフォーマット (stderr)
+     *  @par            ログ フォーマット (stderr)
      *  @code
         YYYY-MM-DD HH:MM:SS.mmm L [file.c:line] message
      *  @endcode
      *  タイムスタンプは UTC。L はレベル文字 (C/E/W/I/V)。
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッドセーフです。
+     *  本関数はスレッド セーフです。
      */
     POTR_EXPORT com_util_tracer *POTR_API potrGetTracer(void);
 
@@ -386,7 +386,7 @@ extern "C"
      *  @brief          設定ファイルから指定サービスの通信種別を取得します。
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[in]      service_id  照会するサービスの ID。
-     *  @param[out]     type        成功時に通信種別 (PotrType) を格納するポインタ。
+     *  @param[out]     type        成功時に通信種別 (PotrType) を格納するポインター。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
      *
      *  設定ファイルを解析して指定サービスの通信種別を返します。\n
@@ -407,7 +407,7 @@ extern "C"
      *  @endcode
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッドセーフです。\n
+     *  本関数はスレッド セーフです。\n
      *  グローバルな共有状態にアクセスしないため、複数スレッドから並行して呼び出せます。
      *
      *  @warning        config_path または type が NULL の場合は失敗を返します。\n

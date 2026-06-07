@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potrPeerTable.c
- *  @brief          N:1 モード用ピアテーブル管理の実装。
+ *  @brief          N:1 モード用ピア テーブル管理の実装。
  *  @author         Tetsuo Honda
  *  @date           2026/03/23
  *  @version        1.0.0
@@ -39,7 +39,7 @@ static void peer_generate_session(PotrPeerContext *peer)
     com_util_get_realtime(&peer->session_tv_sec, &peer->session_tv_nsec);
 }
 
-/* 使用中でない peer_id を単調増加カウンタから生成する (peers_mutex 取得済みの文脈で呼ぶ) */
+/* 使用中でない peer_id を単調増加カウンターから生成する (peers_mutex 取得済みの文脈で呼ぶ) */
 static PotrPeerId allocate_peer_id(PotrContext *ctx)
 {
     PotrPeerId candidate = ctx->next_peer_id;
@@ -333,7 +333,7 @@ PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_
 
     com_util_local_lock_create(&peer->send_window_mutex);
 
-    /* フラグメント結合バッファ確保 */
+    /* フラグメント結合バッファー確保 */
     peer->frag_buf = (uint8_t *)malloc(ctx->global.max_message_size);
     if (peer->frag_buf == NULL)
     {

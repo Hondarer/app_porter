@@ -46,9 +46,9 @@ extern "C"
      *
      *  起動に失敗した場合は起動済みのスレッドを停止してロールバックする。
      *
-     *  @param[in,out]  ctx      セッションコンテキスト。
+     *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx 接続確立済みパスのインデックス。
-     *  @param[in]      ops      スレッド操作コールバックテーブル。
+     *  @param[in]      ops      スレッド操作コールバック テーブル。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
     extern int potr_start_connected_threads(PotrContext *ctx, int path_idx, const PotrConnectedThreadsOps *ops);

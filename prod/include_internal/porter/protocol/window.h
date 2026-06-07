@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           window.h
- *  @brief          スライディングウィンドウ管理モジュールの内部ヘッダー。
+ *  @brief          スライディング ウィンドウ管理モジュールの内部ヘッダー。
  *  @author         Tetsuo Honda
  *  @date           2026/03/04
  *  @version        1.0.0
@@ -26,19 +26,19 @@
 #include <porter/porter_type.h>
 
 /**
- *  @brief  スライディングウィンドウ管理構造体。
+ *  @brief  スライディング ウィンドウ管理構造体。
  *
- *  パケットバッファ・有効フラグ・ペイロードプールは動的確保する。\n
+ *  パケット バッファ・有効フラグ・ペイロード プールは動的確保する。\n
  *  window_init() で確保し、window_dispose() で解放すること。
  */
 typedef struct PotrWindow
 {
-    PotrPacket *packets;   /**< パケットバッファ (動的確保。window_size 要素)。 */
-    uint8_t *valid;        /**< バッファ有効フラグ配列 (動的確保。window_size バイト)。 */
-    uint8_t *payload_pool; /**< ペイロードプール (動的確保。window_size × max_payload バイト)。 */
+    PotrPacket *packets;   /**< パケット バッファー (動的確保。window_size 要素)。 */
+    uint8_t *valid;        /**< バッファー有効フラグ配列 (動的確保。window_size バイト)。 */
+    uint8_t *payload_pool; /**< ペイロード プール (動的確保。window_size × max_payload バイト)。 */
     uint32_t base_seq;     /**< ウィンドウ先頭の通番。 */
     uint32_t next_seq;     /**< 送信側: 次に割り当てる通番。受信側: 次に期待する通番。 */
-    uint16_t window_size;  /**< ウィンドウサイズ (パケット数)。 */
+    uint16_t window_size;  /**< ウィンドウ サイズ (パケット数)。 */
     uint16_t max_payload;  /**< エントリごとのペイロード最大長 (バイト)。 */
     uint32_t _pad;         /**< パディング (構造体サイズを 8 バイト境界に揃える)。 */
 } PotrWindow;

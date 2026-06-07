@@ -73,8 +73,8 @@ static void generate_session(PotrContext *ctx)
     ctx->last_valid_data_send_ms = 0U;
 }
 
-/* マルチキャストソケットを作成して bind・グループ参加する。
-   src_if: 使用するローカルインターフェース (INADDR_ANY = OS 自動選択)。
+/* マルチキャスト ソケットを作成して bind・グループ参加する。
+   src_if: 使用するローカル インターフェース (INADDR_ANY = OS 自動選択)。
    is_receiver: 1 = 受信者、0 = 送信者。 */
 static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_addr src_if, int is_receiver)
 {
@@ -112,7 +112,7 @@ static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_add
         return POTR_INVALID_SOCKET;
     }
 
-    /* マルチキャストグループへ参加 (送受信ともに参加する) */
+    /* マルチキャスト グループへ参加 (送受信ともに参加する) */
     memset(&mreq, 0, sizeof(mreq));
     if (parse_ipv4_addr(def->multicast_group, &mreq.imr_multiaddr) != POTR_SUCCESS)
     {
@@ -136,10 +136,10 @@ static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_add
     return sock;
 }
 
-/* ブロードキャストソケットを作成して bind する。
+/* ブロードキャスト ソケットを作成して bind する。
    src_port: 送信者の送信元 bind ポート (0 = OS 自動選定)。
    dst_port: 受信者の listen ポート / 送信者の送信先ポート (省略不可)。
-   src_if: 送信者が使用するローカルインターフェース (INADDR_ANY = OS 自動選択)。
+   src_if: 送信者が使用するローカル インターフェース (INADDR_ANY = OS 自動選択)。
    is_receiver: 1 = 受信者 (INADDR_ANY で bind)、0 = 送信者 (src_if で bind)。 */
 static PotrSocket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, struct in_addr src_if, int is_receiver)
 {
@@ -204,7 +204,7 @@ static void cleanup_sockets(PotrContext *ctx)
 }
 
 /* コンテキストが保持するすべてのリソースを解放して ctx 本体を free する。
-   memset(ctx, 0, ...) 後であれば、未初期化ポインタ (NULL) に対しても安全に呼び出せる。 */
+   memset(ctx, 0, ...) 後であれば、未初期化ポインター (NULL) に対しても安全に呼び出せる。 */
 static void ctx_cleanup(PotrContext *ctx)
 {
     potr_callback_mutex_dispose(ctx);
@@ -246,7 +246,7 @@ static void ctx_cleanup(PotrContext *ctx)
 
 /* TCP RECEIVER: path_idx 番目の listen ソケットを作成して bind・listen する。
    dst_addr[path_idx] が指定されていれば dst_addr_resolved[path_idx] に解決する。
-   src_addr[path_idx] が指定されていれば src_addr_resolved[path_idx] にも解決する（接続元フィルタ用）。
+   src_addr[path_idx] が指定されていれば src_addr_resolved[path_idx] にも解決する (接続元フィルター用)。
    成功時は ctx->tcp_listen_sock[path_idx] に格納して POTR_SUCCESS を返す。 */
 static int open_socket_tcp_receiver(PotrContext *ctx, int path_idx)
 {
@@ -673,8 +673,8 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global, const P
         }
         else
         {
-            /* 1:1 モード: src_addr/dst_addr ペアループ。
-                   SENDER は src_addr 省略時に INADDR_ANY で bind する (OS がアダプタを自動選択)。
+            /* 1:1 モード: src_addr/dst_addr ペア ループ。
+                   SENDER は src_addr 省略時に INADDR_ANY で bind する (OS がアダプターを自動選択)。
                    RECEIVER はここには src_addr がある場合のみ到達する。 */
             int i;
 
@@ -706,7 +706,7 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global, const P
 
                 if (role == POTR_ROLE_SENDER)
                 {
-                    /* src_addr 省略時は INADDR_ANY で bind し OS がアダプタを自動選択 */
+                    /* src_addr 省略時は INADDR_ANY で bind し OS がアダプターを自動選択 */
                     if (ctx->service.src_addr[i][0] != '\0')
                         bind_addr = ctx->src_addr_resolved[i];
                     else
@@ -738,8 +738,8 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global, const P
 
     case POTR_TYPE_UNICAST_BIDIR_N1:
     {
-        /* N:1 サーバ: dst_addr[i]:dst_port ごとにソケットを bind する。
-               dst_addr が全て省略されている場合は INADDR_ANY で 1 ソケットのみ作成する。 */
+        /* N:1 サーバー: dst_addr[i]:dst_port ごとにソケットを bind する。
+               dst_addr がすべて省略されている場合は INADDR_ANY で 1 ソケットのみ作成する。 */
         int i;
 
         ctx->is_multi_peer = 1;
@@ -757,7 +757,7 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global, const P
 
         if (ctx->service.dst_addr[0][0] == '\0')
         {
-            /* dst_addr 全て省略: INADDR_ANY で 1 ソケット */
+            /* dst_addr すべて省略: INADDR_ANY で 1 ソケット */
             struct in_addr any_addr;
             any_addr.s_addr = htonl(INADDR_ANY);
             ctx->sock[0] = open_socket_unicast(any_addr, ctx->service.dst_port);
@@ -794,7 +794,7 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global, const P
             }
         }
 
-        /* ピアテーブル初期化 */
+        /* ピア テーブル初期化 */
         ctx->max_peers = (int)ctx->service.max_peers;
         if (ctx->max_peers <= 0)
         {
@@ -916,7 +916,7 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global, const P
     ctx->callback = callback;
     ctx->role = role;
 
-    /* 送信先ソケットアドレスを設定 (RAW 型はベース型に正規化してから判定)
+    /* 送信先ソケット アドレスを設定 (RAW 型はベース型に正規化してから判定)
        UNICAST_BIDIR は両端 (SENDER / RECEIVER) ともに dest_addr を設定する */
     if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
     {
@@ -1021,7 +1021,7 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global, const P
         return POTR_ERROR;
     }
 
-    /* 動的バッファを確保 */
+    /* 動的バッファーを確保 */
     ctx->frag_buf = (uint8_t *)malloc(ctx->global.max_message_size);
     if (ctx->frag_buf == NULL)
     {
@@ -1138,7 +1138,7 @@ POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global, const P
         }
 
         /* 非 TCP 送信者 / UNICAST_BIDIR / UNICAST_BIDIR_N1 受信者:
-           送信キュー・送信スレッド・ヘルスチェックスレッド・受信スレッドを起動 */
+           送信キュー・送信スレッド・ヘルスチェック スレッド・受信スレッドを起動 */
         if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR ||
             ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1)
         {

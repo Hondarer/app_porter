@@ -181,7 +181,7 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
     EXPECT_EQ(0, def.encrypt_enabled);                 // [確認_異常系] - hash 失敗時に暗号化を無効として扱うこと。
     EXPECT_EQ(0, memcmp(def.encrypt_key,
                         std::array<uint8_t, POTR_CRYPTO_KEY_SIZE>{}.data(),
-                        POTR_CRYPTO_KEY_SIZE));        // [確認_異常系] - hash 失敗時に鍵をゼロクリアすること。
+                        POTR_CRYPTO_KEY_SIZE));        // [確認_異常系] - hash 失敗時に鍵をゼロ クリアすること。
 }
 
 TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)

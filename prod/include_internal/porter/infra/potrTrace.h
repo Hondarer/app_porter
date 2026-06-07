@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potrTrace.h
- *  @brief          porter 内部トレースマクロ定義ヘッダー。
+ *  @brief          porter 内部トレース マクロ定義ヘッダー。
  *  @author         Tetsuo Honda
  *  @date           2026/04/19
  *  @version        1.0.0
@@ -39,7 +39,7 @@ extern "C"
 #endif /* __cplusplus */
 
     /**
- *  @brief          グローバルトレーサーハンドルを返します (初回呼び出し時に lazy create)。
+ *  @brief          グローバル トレーサー ハンドルを返します (初回呼び出し時に lazy create)。
  *  @return         com_util_tracer ハンドル。NULL を返すことはありません。
  *
  *  本関数を直接呼び出さず、POTR_TRACE マクロを使用してください。

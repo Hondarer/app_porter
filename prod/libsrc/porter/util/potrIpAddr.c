@@ -23,7 +23,7 @@
 
 #include <porter/util/potrIpAddr.h>
 
-/* IPv4 文字列をネットワークバイトオーダーへ変換する。 */
+/* IPv4 文字列をネットワーク バイト オーダーへ変換する。 */
 int parse_ipv4_addr(const char *ip_str, struct in_addr *out_addr)
 {
     if (ip_str == NULL || out_addr == NULL)

@@ -8,16 +8,16 @@
  *
  *  Windows 固有のサーバー処理を実装します。
  *  - CreateProcess() を使った接続ごとプロセス生成 (run_fork_server)
- *  - 名前付きパイプを使ったプリフォーク         (run_prefork_server)
- *  - プラットフォームフック                      (platform_init / platform_cleanup /
- *                                                 dispatch_internal_args)
+ *  - 名前付きパイプを使ったプリフォーク           (run_prefork_server)
+ *  - プラットフォーム フック                      (platform_init / platform_cleanup /
+ *                                                  dispatch_internal_args)
  *
  *  main() / handle_client_session() / parse_args() は tcpServer.c に実装します。
  *  g_session_fn の実体は tcpServer_common.c に定義されます。
  *
  *  内部起動パターン (ユーザーは直接使わない):
  *  - `tcpServer --child <socket_handle>` : fork 版の子プロセス
- *  - `tcpServer --worker <pipe_name>`    : prefork 版のワーカープロセス
+ *  - `tcpServer --worker <pipe_name>`    : prefork 版のワーカー プロセス
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
  *
@@ -44,12 +44,12 @@
  * ============================================================ */
 
 /**
- *  @brief          ワーカープロセスの情報を管理する構造体。
+ *  @brief          ワーカー プロセスの情報を管理する構造体。
  */
 typedef struct WorkerInfo
 {
     HANDLE pipe;    /**< ワーカーとの通信用パイプ。 */
-    HANDLE process; /**< ワーカープロセスのハンドル。 */
+    HANDLE process; /**< ワーカー プロセスのハンドル。 */
     int conn_count; /**< 現在処理中のアクティブ接続数。 */
 } WorkerInfo;
 
@@ -59,8 +59,8 @@ typedef struct WorkerInfo
 typedef struct WorkerMonitorArg
 {
     int id;               /**< ワーカー ID。 */
-    WorkerInfo *workers;  /**< ワーカー情報配列へのポインタ。 */
-    HANDLE *events;       /**< ワーカーイベント配列へのポインタ。 */
+    WorkerInfo *workers;  /**< ワーカー情報配列へのポインター。 */
+    HANDLE *events;       /**< ワーカーイベント配列へのポインター。 */
     int conns_per_worker; /**< 1 ワーカーあたりの同時接続数上限。 */
 } WorkerMonitorArg;
 
@@ -121,9 +121,9 @@ static SOCKET create_listen_socket(int port)
 
 /**
  *  @brief          fork モードの子プロセスとして起動された場合のクライアント処理。
- *  @param[in]      client_socket `--child` 引数で受け取ったクライアントソケット。
+ *  @param[in]      client_socket `--child` 引数で受け取ったクライアント ソケット。
  *
- *  g_session_fn() で通信メインループを実行し、platform_cleanup() 後に ExitProcess() で終了します。
+ *  g_session_fn() で通信メイン ループを実行し、platform_cleanup() 後に ExitProcess() で終了します。
  */
 __declspec(noreturn) static void run_as_fork_child(SOCKET client_socket)
 {
@@ -133,7 +133,7 @@ __declspec(noreturn) static void run_as_fork_child(SOCKET client_socket)
 }
 
 /**
- *  @brief          prefork モードのワーカープロセスとして起動された場合の処理。
+ *  @brief          prefork モードのワーカー プロセスとして起動された場合の処理。
  *  @param[in]      pipe_name        `--worker` 引数で受け取ったパイプ名。
  *  @param[in]      conns_per_worker 同時接続数。1 の場合は逐次処理、2 以上は多重処理。
  *
@@ -141,8 +141,8 @@ __declspec(noreturn) static void run_as_fork_child(SOCKET client_socket)
  *    パイプからソケットを受け取り g_session_fn() で処理し完了通知を返す従来の逐次処理。
  *
  *  conns_per_worker > 1 の場合:
- *    PeekNamedPipe() でパイプを非ブロッキングチェックしながら、select() で
- *    アクティブな複数ソケットを監視するイベントループ。接続が閉じるたびに親へ
+ *    PeekNamedPipe() でパイプを非ブロッキング チェックしながら、select() で
+ *    アクティブな複数ソケットを監視するイベント ループ。接続が閉じるたびに親へ
  *    完了通知 (done=1) を 1 バイト送信します。
  */
 static void worker_loop(const char *pipe_name, int conns_per_worker)
@@ -198,7 +198,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
 
         while (1)
         {
-            /* パイプから新規ソケットを非ブロッキングチェック */
+            /* パイプから新規ソケットを非ブロッキング チェック */
             DWORD avail = 0;
             if (!PeekNamedPipe(pipe, NULL, 0, NULL, &avail, NULL))
             {
@@ -221,7 +221,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
                 continue;
             }
 
-            /* select で全アクティブソケットを監視 (10ms タイムアウト) */
+            /* select で全アクティブ ソケットを監視 (10ms タイムアウト) */
             fd_set read_fds;
             FD_ZERO(&read_fds);
             for (int i = 0; i < active_count; i++)
@@ -266,7 +266,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
 
 /**
  *  @brief          ワーカーの完了を監視するスレッド。
- *  @param[in]      arg WorkerMonitorArg へのポインタ。
+ *  @param[in]      arg WorkerMonitorArg へのポインター。
  *  @return         スレッド終了時は 0 を返します。
  *
  *  ワーカーからの完了通知を受け取ると、ワーカーの状態を「空き」に更新し
@@ -328,7 +328,7 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
 }
 
 /**
- *  @brief          n 個のワーカープロセスを起動します。
+ *  @brief          n 個のワーカー プロセスを起動します。
  *  @param[in]      workers ワーカー情報配列。
  *  @param[in]      events  ワーカーイベント配列。
  *  @param[in]      n       ワーカー数。
@@ -371,7 +371,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         /* イベント作成 (初期状態: 空き) */
         events[i] = CreateEvent(NULL, FALSE, TRUE, NULL);
 
-        /* ワーカープロセス起動 (--conns-per-worker を渡す) */
+        /* ワーカー プロセス起動 (--conns-per-worker を渡す) */
         sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --worker %s --conns-per-worker %d", exepath, pipe_name,
                   conns_per_worker);
 
@@ -414,7 +414,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
 }
 
 /* ============================================================
- *  プラットフォームフック
+ *  プラットフォーム フック
  * ============================================================ */
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -491,7 +491,7 @@ void run_fork_server(int port)
 
         printf("[親プロセス] 接続受付、子プロセス生成\n");
 
-        /* ソケットハンドルを継承可能に設定 */
+        /* ソケット ハンドルを継承可能に設定 */
         SetHandleInformation((HANDLE)client_socket, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
 
         char cmdline[PLATFORM_PATH_MAX + 64];

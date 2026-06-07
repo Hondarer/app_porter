@@ -29,22 +29,22 @@ extern "C"
 
     /**
      *  @brief          非 TCP 受信スレッドを起動する。
-     *  @param[in,out]  ctx セッションコンテキスト。
+     *  @param[in,out]  ctx セッション コンテキスト。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
     extern int comm_recv_thread_start(PotrContext *ctx);
 
     /**
      *  @brief          非 TCP 受信スレッドを停止する。
-     *  @param[in,out]  ctx セッションコンテキスト。
+     *  @param[in,out]  ctx セッション コンテキスト。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
     extern int comm_recv_thread_stop(PotrContext *ctx);
 
     /**
      *  @brief          TCP 受信スレッドを path ごとに起動する。
-     *  @param[in,out]  ctx      セッションコンテキスト。
-     *  @param[in]      path_idx パスインデックス (0 〜 n_path-1)。
+     *  @param[in,out]  ctx      セッション コンテキスト。
+     *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
     extern int tcp_recv_thread_start(PotrContext *ctx, int path_idx);
@@ -52,10 +52,10 @@ extern "C"
     /**
      *  @brief          TCP 受信スレッドの終了を待機する。
      *
-     *  スレッドの停止はソケットクローズ (connect スレッド側) で行う。本関数は join のみを担当する。
+     *  スレッドの停止はソケット クローズ (connect スレッド側) で行う。本関数は join のみを担当する。
      *
-     *  @param[in,out]  ctx      セッションコンテキスト。
-     *  @param[in]      path_idx パスインデックス (0 〜 n_path-1)。
+     *  @param[in,out]  ctx      セッション コンテキスト。
+     *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
      */
     extern int tcp_recv_thread_stop(PotrContext *ctx, int path_idx);
