@@ -1,4 +1,4 @@
-﻿/**
+/**
  *******************************************************************************
  *  @file           porter_spec.h
  *  @brief          通信ライブラリ (動的リンク用) のヘッダー ファイル。
@@ -10,7 +10,6 @@
  *  Linux / Windows クロスプラットフォーム対応の DLL として提供されます。
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
- *
  *
  *  @hideincludedbygraph
  *
