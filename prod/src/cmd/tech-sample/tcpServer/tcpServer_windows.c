@@ -31,6 +31,7 @@
     #include "tcpServer.h" /* WIN32_LEAN_AND_MEAN / windows.h / winsock2.h / ws2tcpip.h を内包 */
     #include <com_util/crt/path.h>
     #include <com_util/sync/sync.h>
+    #include <com_util/win32/win32.h>
 
     #include <stdio.h>
     #include <stdlib.h>
@@ -151,7 +152,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
 
     printf("[ワーカー PID %lu] 起動完了\n", GetCurrentProcessId());
 
-    HANDLE pipe = CreateFileA(pipe_name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    HANDLE pipe = CreateFileU(pipe_name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
 
     if (pipe == INVALID_HANDLE_VALUE)
     {
@@ -344,7 +345,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
     char cmdline[PLATFORM_PATH_MAX + 128];
     char exepath[PLATFORM_PATH_MAX];
 
-    GetModuleFileNameA(NULL, exepath, PLATFORM_PATH_MAX);
+    GetModuleFileNameU(NULL, exepath, PLATFORM_PATH_MAX);
 
     /* 監視スレッド引数はプロセス終了まで有効である必要があるため heap 確保 */
     WorkerMonitorArg *args = (WorkerMonitorArg *)malloc((size_t)n * sizeof(WorkerMonitorArg));
@@ -358,7 +359,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
     {
         sprintf_s(pipe_name, sizeof(pipe_name), TCPSERVER_PIPE_NAME_FMT, i);
 
-        workers[i].pipe = CreateNamedPipeA(pipe_name, PIPE_ACCESS_DUPLEX,
+        workers[i].pipe = CreateNamedPipeU(pipe_name, PIPE_ACCESS_DUPLEX,
                                            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4096, 4096, 0, NULL);
 
         if (workers[i].pipe == INVALID_HANDLE_VALUE)
@@ -375,10 +376,10 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --worker %s --conns-per-worker %d", exepath, pipe_name,
                   conns_per_worker);
 
-        STARTUPINFOA si = {sizeof(si)};
+        STARTUPINFOW si = {sizeof(si)};
         PROCESS_INFORMATION pi;
 
-        if (!CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
+        if (!CreateProcessU(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
         {
             fprintf(stderr, "ワーカー起動失敗: %d\n", i);
             free(args);
@@ -477,7 +478,7 @@ void run_fork_server(int port)
 {
     SOCKET listen_socket = create_listen_socket(port);
     char exepath[PLATFORM_PATH_MAX];
-    GetModuleFileNameA(NULL, exepath, PLATFORM_PATH_MAX);
+    GetModuleFileNameU(NULL, exepath, PLATFORM_PATH_MAX);
 
     printf("[親プロセス %lu] fork モード、ポート %d で待ち受け開始\n", GetCurrentProcessId(), port);
 
@@ -497,10 +498,10 @@ void run_fork_server(int port)
         char cmdline[PLATFORM_PATH_MAX + 64];
         sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --child %llu", exepath, (unsigned long long)client_socket);
 
-        STARTUPINFOA si = {sizeof(si)};
+        STARTUPINFOW si = {sizeof(si)};
         PROCESS_INFORMATION pi;
 
-        if (CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
+        if (CreateProcessU(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
         {
             CloseHandle(pi.hProcess);
             CloseHandle(pi.hThread);
