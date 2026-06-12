@@ -44,7 +44,9 @@ com_util_tracer *potr_trace_get(void)
         if (s_trace != NULL)
         {
             com_util_tracer_set_name(s_trace, "porter", 0);
-            /* OS レベルは COM_UTIL_TRACE_LEVEL_INFO (デフォルト値)、stderr は COM_UTIL_TRACE_LEVEL_NONE (デフォルト値)。
+            /* set_name は OS トレースの識別名のみに作用する。出力先はデフォルト設定に従い、
+             * デフォルトはファイル トレースのみ (実行ファイルのディレクトリ配下の
+             * log/{実行ファイル名}.log、OS と stderr は COM_UTIL_TRACE_LEVEL_NONE)。
              * start は potrGetTracer() 経由で利用者が明示的に呼ぶ。 */
         }
     }
