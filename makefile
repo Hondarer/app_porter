@@ -176,6 +176,7 @@ clean : SUBDIR_GOAL = clean
 clean : $(SUBDIR_TARGETS)
 	@rm -f "$(DOXY_WARN_FILE)" "$(BUILD_STAMP)" "$(TEST_STAMP)" "$(DOXY_STAMP)"
 	@rm -f $(CURDIR)/doxy_*.warn
+	@find "$(CURDIR)" -type d -name log -prune -exec rm -rf {} +
 
 .PHONY: test
 test :
