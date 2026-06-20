@@ -19,23 +19,15 @@
 #include <porter/protocol/config.h>
 #include <porter/protocol/configParseCommon.h>
 
-/**
- *  @brief          設定ファイルに登録されているすべてのサービス ID を列挙します。
- *  @param[in]      config_path 設定ファイルのパス。
- *  @param[out]     ids_out     サービス ID 配列へのポインターを格納する変数。
- *                              呼び出し元が free(*ids_out) の責務を持つ。
- *  @param[out]     count_out   列挙したサービス ID 数。
- *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
- *
- *  初期容量 POTR_MAX_SERVICES で配列を確保し、超過時は realloc で 2 倍に拡張します。
- */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int config_list_service_ids(const char *config_path, int64_t **ids_out, int *count_out)
 {
-    FILE    *fp;
-    char     line[CONFIG_LINE_MAX];
+    FILE *fp;
+    char line[CONFIG_LINE_MAX];
     int64_t *ids;
-    int      capacity;
-    int      count;
+    int capacity;
+    int count;
 
     if (config_path == NULL || ids_out == NULL || count_out == NULL)
     {
@@ -49,8 +41,8 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
     }
 
     capacity = (int)POTR_MAX_SERVICES;
-    count    = 0;
-    ids      = (int64_t *)malloc((size_t)capacity * sizeof(int64_t));
+    count = 0;
+    ids = (int64_t *)malloc((size_t)capacity * sizeof(int64_t));
     if (ids == NULL)
     {
         com_util_fclose(fp);
@@ -75,7 +67,7 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
 
         if (count >= capacity)
         {
-            int      new_capacity = capacity * 2;
+            int new_capacity = capacity * 2;
             int64_t *new_ids;
 
             new_ids = (int64_t *)realloc(ids, (size_t)new_capacity * sizeof(int64_t));
@@ -85,7 +77,7 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
                 com_util_fclose(fp);
                 return POTR_ERROR;
             }
-            ids      = new_ids;
+            ids = new_ids;
             capacity = new_capacity;
         }
 
@@ -93,7 +85,7 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
     }
 
     com_util_fclose(fp);
-    *ids_out   = ids;
+    *ids_out = ids;
     *count_out = count;
     return POTR_SUCCESS;
 }

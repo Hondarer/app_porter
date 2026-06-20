@@ -33,13 +33,13 @@
 #include <porter/infra/potrSendQueue.h>
 #include <porter/infra/potrPlatform.h>
 
-/** TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) か判定する。 */
+/** TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) か判定します。 */
 static inline int potr_is_tcp_type(PotrType t)
 {
     return t == POTR_TYPE_TCP || t == POTR_TYPE_TCP_BIDIR;
 }
 
-/** RAW 系通信種別 (POTR_TYPE_*_RAW) か判定する。 */
+/** RAW 系通信種別 (POTR_TYPE_*_RAW) か判定します。 */
 static inline int potr_is_raw_type(PotrType t)
 {
     return t == POTR_TYPE_UNICAST_RAW || t == POTR_TYPE_MULTICAST_RAW || t == POTR_TYPE_BROADCAST_RAW;
@@ -68,7 +68,7 @@ static inline PotrType potr_raw_base_type(PotrType t)
     }
 }
 
-/** 片方向 UDP 系通信種別 (type 1-6) か判定する。 */
+/** 片方向 UDP 系通信種別 (type 1-6) か判定します。 */
 static inline int potr_is_oneway_udp_type(PotrType t)
 {
     PotrType base = potr_raw_base_type(t);
@@ -76,13 +76,13 @@ static inline int potr_is_oneway_udp_type(PotrType t)
     return base == POTR_TYPE_UNICAST || base == POTR_TYPE_MULTICAST || base == POTR_TYPE_BROADCAST;
 }
 
-/** open 直後の即時 PING を使う通信種別か判定する。 */
+/** open 直後の即時 PING を使う通信種別か判定します。 */
 static inline int potr_type_uses_immediate_health_ping(PotrType t)
 {
     return !potr_is_oneway_udp_type(t);
 }
 
-/** volatile な path_ping_state 配列を通常配列へコピーする。 */
+/** volatile な path_ping_state 配列を通常配列へコピーします。 */
 static inline void potr_copy_path_ping_state(uint8_t *dst, const volatile uint8_t *src, size_t count)
 {
     size_t i;
@@ -93,7 +93,7 @@ static inline void potr_copy_path_ping_state(uint8_t *dst, const volatile uint8_
     }
 }
 
-/** volatile な path_ping_state 配列を同一値で初期化する。 */
+/** volatile な path_ping_state 配列を同一値で初期化します。 */
 static inline void potr_fill_path_ping_state(volatile uint8_t *dst, uint8_t value, size_t count)
 {
     size_t i;
@@ -118,7 +118,7 @@ typedef struct PotrNackDedupEntry
 /**
  *  @brief  N:1 モードにおける個別ピアのコンテキスト。
  *
- *  is_multi_peer == 1 のとき有効。ピアごとに独立した送受信状態を保持する。\n
+ *  is_multi_peer == 1 のとき有効。ピアごとに独立した送受信状態を保持します。\n
  *  ピア テーブル (PotrContext::peers[]) に配置される。
  */
 typedef struct PotrPeerContext
@@ -154,7 +154,7 @@ typedef struct PotrPeerContext
     volatile int health_alive;             /**< 疎通状態 (1: alive, 0: dead/未接続)。 */
     int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。 */
     volatile uint8_t path_ping_state
-        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新、ヘルスチェック スレッドが読む。 */
+        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。 */
     uint8_t remote_path_ping_state
         [POTR_MAX_PATH];       /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     int64_t last_recv_tv_sec;  /**< 最終受信時刻 秒部 (CLOCK_MONOTONIC)。0 = 未受信。 */
@@ -178,11 +178,11 @@ typedef struct PotrPeerContext
     uint32_t fin_target_seq; /**< FIN の ack_num に埋め込まれた受信完了目標 next_seq。 */
 
     /* マルチパス: ピアごとの送信先 (recvfrom で学習)
-     * インデックスは ctx->sock[] / src_addr[] と直接対応する。
-     * 未使用スロットは dest_addr[k].sin_family == 0 (AF_UNSPEC) で判定する。 */
+     * インデックスは ctx->sock[] / src_addr[] と直接対応します。
+     * 未使用スロットは dest_addr[k].sin_family == 0 (AF_UNSPEC) で判定します。 */
     struct sockaddr_in dest_addr
         [POTR_MAX_PATH]; /**< 送信先ソケット アドレス (インデックス = ctx->sock[] の添字)。未使用スロットは sin_family == 0。 */
-    int n_paths;         /**< アクティブ パス数。ループ境界には使わず管理カウンターとして使用する。 */
+    int n_paths;         /**< アクティブ パス数。ループ境界には使わず管理カウンターとして使用します。 */
     int64_t path_last_recv_sec[POTR_MAX_PATH];  /**< パスごとの最終受信時刻 秒部。未使用スロットは 0。 */
     int32_t path_last_recv_nsec[POTR_MAX_PATH]; /**< パスごとの最終受信時刻 ナノ秒部。 */
 } PotrPeerContext;
@@ -197,11 +197,12 @@ struct PotrContext
     com_util_thread *recv_thread[POTR_MAX_PATH];   /**< 受信スレッド ハンドル (path ごと)。 */
     com_util_thread *health_thread[POTR_MAX_PATH]; /**< ヘルスチェック スレッド ハンドル (path ごと、TCP: 全ロール)。 */
     com_util_local_lock *health_mutex[POTR_MAX_PATH]; /**< ヘルスチェック スレッド停止用ミューテックス (path ごと)。 */
-    com_util_condvar *health_wakeup[POTR_MAX_PATH]; /**< ヘルスチェック スレッドを即時起床させる条件変数 (path ごと)。 */
-    PotrServiceDef service;                         /**< サービス定義。 */
-    PotrGlobalConfig global;                        /**< プロトコル別のグローバル既定値。 */
-    uint32_t health_interval_ms;                    /**< 通信種別とサービス上書きを解決した実効 PING 送信間隔。 */
-    PotrWindow send_window; /**< 送信バッファー (過去 N パケット保持。NACK 再送・REJECT 判定に使用)。 */
+    com_util_condvar
+        *health_wakeup[POTR_MAX_PATH]; /**< ヘルスチェック スレッドを即時起床させる条件変数 (path ごと)。 */
+    PotrServiceDef service;            /**< サービス定義。 */
+    PotrGlobalConfig global;           /**< プロトコル別のグローバル既定値。 */
+    uint32_t health_interval_ms;       /**< 通信種別とサービス上書きを解決した実効 PING 送信間隔。 */
+    PotrWindow send_window;            /**< 送信バッファー (過去 N パケット保持。NACK 再送・REJECT 判定に使用)。 */
     com_util_local_lock *
         send_window_mutex; /**< send_window 保護用ミューテックス (送信スレッド・ヘルスチェック スレッド・受信スレッドが競合するため)。 */
     PotrWindow recv_window;     /**< 受信ウィンドウ (順序整列・欠番検出)。 */
@@ -219,7 +220,7 @@ struct PotrContext
     volatile int health_alive; /**< 疎通状態 (1: alive, 0: dead/未接続)。UDP 用。受信者が管理。 */
     int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。 */
     volatile uint8_t path_ping_state
-        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新、ヘルスチェック スレッドが読む。 */
+        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。 */
     volatile uint64_t
         last_ping_send_ms; /**< 送信側 health 用 PING 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。 */
     volatile uint64_t
@@ -263,8 +264,8 @@ struct PotrContext
     size_t compress_buf_size; /**< compress_buf のサイズ (バイト)。 */
     uint8_t *crypto_buf;      /**< 暗号化・復号用一時バッファー (動的確保)。 */
     size_t crypto_buf_size;   /**< crypto_buf のサイズ (バイト)。 */
-    uint8_t
-        *recv_buf; /**< 受信バッファー / 再送 wire 組立バッファー (動的確保。PACKET_HEADER_SIZE + max_payload バイト)。 */
+    uint8_t *
+        recv_buf; /**< 受信バッファー / 再送 wire 組立バッファー (動的確保。PACKET_HEADER_SIZE + max_payload バイト)。 */
     uint8_t *
         send_wire_buf; /**< 送信 wire 組立バッファー (動的確保。PACKET_HEADER_SIZE + max_payload バイト)。送信スレッドのみ使用。 */
 
@@ -340,13 +341,13 @@ struct PotrContext
         [POTR_MAX_PATH]; /**< path ごとの送信バッファー満杯ログ抑制カウンター (0: 抑制なし、1-10: 抑制中)。 */
 
     /* TCP セッション確立排他制御 (RECEIVER TCP のみ使用)。
-     * 複数 path の accept スレッドが並行して session_id 判定を行う際の競合を防ぐ。
-     * potr_connect_thread_start で初期化、potr_connect_thread_stop で破棄する。 */
+     * 複数 path の accept スレッドが並行して session_id 判定を行う際の競合を防ぎます。
+     * potr_connect_thread_start で初期化、potr_connect_thread_stop で破棄します。 */
     com_util_local_lock *session_establish_mutex;
 
     /* TCP 先読みバッファー (path ごと)。
      * accept スレッドが session 判定のために読み取った最初の 1 パケット分のバイト列を
-     * recv スレッドに引き渡す。accept スレッドが書き込み後に recv スレッドを起動するため
+     * recv スレッドに引き渡します。accept スレッドが書き込み後に recv スレッドを起動するため
      * 書き込み→起動→読み出しの順序が保証され、mutex は不要。
      * recv スレッドは起動直後に先読みパケットを処理し tcp_first_pkt_len[i] を 0 に戻す。 */
     uint8_t *tcp_first_pkt_buf

@@ -29,7 +29,7 @@
 #endif /* PLATFORM_ */
 
 /**
- *  @brief      IPv4 アドレス文字列を struct in_addr に変換する。
+ *  @brief      IPv4 アドレス文字列を struct in_addr に変換します。
  *  @param[in]  ip_str   変換する IPv4 アドレス文字列 (例: "192.168.0.1")。
  *  @param[out] out_addr 変換結果の書き戻し先。
  *  @return     成功時は 0、失敗時は -1。
@@ -37,10 +37,10 @@
 int parse_ipv4_addr(const char *ip_str, struct in_addr *out_addr);
 
 /**
- *  @brief      ホスト名または IPv4 アドレス文字列を struct in_addr に解決する。
+ *  @brief      ホスト名または IPv4 アドレス文字列を struct in_addr に解決します。
  *
- *  getaddrinfo() を使用して AF_INET で名前解決する。\n
- *  複数のアドレスが返された場合は先頭のアドレスを採用する。
+ *  getaddrinfo() を使用して AF_INET で名前解決します。\n
+ *  複数のアドレスが返された場合は先頭のアドレスを採用します。
  *
  *  @param[in]  host     解決するホスト名または IPv4 アドレス文字列。
  *  @param[out] out_addr 解決結果の書き戻し先。

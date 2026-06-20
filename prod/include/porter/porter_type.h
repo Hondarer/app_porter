@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           porter_type.h
- *  @brief          通信ライブラリの型定義ファイル。
+ *  @brief          porter ライブラリの型定義ファイル。
  *  @author         Tetsuo Honda
  *  @date           2026/03/04
  *  @version        1.0.0
@@ -30,15 +30,6 @@
  */
 
 /**
- *  @brief          ピア識別子。
- *
- *  N:1 モードで各クライアントを識別する ID です。\n
- *  N:1 モードでは有効なピア ID は常に POTR_PEER_NA および POTR_PEER_ALL 以外の値です。\n
- *  1:1 モードおよびその他の通信種別では peer_id は常に POTR_PEER_NA です。
- */
-typedef uint32_t PotrPeerId;
-
-/**
  *  @brief          通信種別。
  *
  *  サービス定義の通信方式を表します。
@@ -46,7 +37,7 @@ typedef uint32_t PotrPeerId;
  *  - POTR_TYPE_UNICAST_RAW, POTR_TYPE_MULTICAST_RAW, POTR_TYPE_BROADCAST_RAW\n
  *    RAW モード (再送なし、ベスト エフォート)。\n
  *    受信ウィンドウによる順序整列とセッション管理は有効。\n
- *    ギャップ検出時は NACK の代わりに POTR_EVENT_DISCONNECTED を発行する。\n
+ *    ギャップ検出時は NACK の代わりに POTR_EVENT_DISCONNECTED を発行します。\n
  *    通番は AES ノンス用にインクリメントするが、再送制御には使用しない。\n
  *    potrSend は常にブロッキング送信。マルチパス対応。\n
  *    PING ヘルスチェックは health_interval_ms / health_timeout_ms の設定に従う。
@@ -54,27 +45,27 @@ typedef uint32_t PotrPeerId;
  *  - POTR_TYPE_UNICAST, POTR_TYPE_MULTICAST, POTR_TYPE_BROADCAST\n
  *    再送制御あり UDP モード。\n
  *    NACK / 再送・スライディング ウィンドウによる信頼性・順序保証。\n
- *    ギャップ検出時は RECEIVER が SENDER に NACK を送信し再送を要求する。\n
- *    再送不可能な場合は REJECT を送出し POTR_EVENT_DISCONNECTED を発行する。\n
+ *    ギャップ検出時は RECEIVER が SENDER に NACK を送信し再送を要求します。\n
+ *    再送不可能な場合は REJECT を送出し POTR_EVENT_DISCONNECTED を発行します。\n
  *    potrSend は送信ウィンドウに空きがある場合は非同期、満杯の場合はブロッキング。\n
  * 
  *  - POTR_TYPE_UNICAST_BIDIR\n
  *    双方向 1:1 通信 (UDP ユニキャスト)。\n
- *    SENDER / RECEIVER ともに送受信・NACK・ヘルスチェックを独立して行う。\n
- *    両端それぞれが src_addr:src_port で bind し、相手の dst_addr:dst_port へ送信する。\n
+ *    SENDER / RECEIVER ともに送受信・NACK・ヘルスチェックを独立して行います。\n
+ *    両端それぞれが src_addr:src_port で bind し、相手の dst_addr:dst_port へ送信します。\n
  *    src_port = 0 を指定すると SENDER はエフェメラル ポートで bind し、\n
- *    RECEIVER は最初のパケット受信時に SENDER のポートを動的学習して返信する。\n
+ *    RECEIVER は最初のパケット受信時に SENDER のポートを動的学習して返信します。\n
  *    src_addr を省略した場合:\n
- *      SENDER  : INADDR_ANY で bind し、OS がルーティングに基づきアダプターを自動選択する。\n
+ *      SENDER  : INADDR_ANY で bind し、OS がルーティングに基づきアダプターを自動選択します。\n
  *      RECEIVER: 最初の受信パケットから SENDER のアドレスを動的学習する (1:1 通信を維持)。\n
  *    SENDER も callback が必須。
  * 
  *  - POTR_TYPE_UNICAST_BIDIR_N1\n
  *    N:1 双方向通信 (UDP ユニキャスト)。\n
  *    サーバー側は dst_addr:dst_port で bind し、複数クライアントを同時に受け入れる。\n
- *    クライアントは POTR_TYPE_UNICAST_BIDIR (1:1) として接続する。\n
+ *    クライアントは POTR_TYPE_UNICAST_BIDIR (1:1) として接続します。\n
  *    max_peers で最大同時接続数を制御 (省略時: 1024)。\n
- *    src_addr は不要。src_port 指定でポート フィルター付き N:1 になる。
+ *    src_addr は不要。src_port 指定でポート フィルター付き N:1 になります。
  * 
  *  - POTR_TYPE_TCP, POTR_TYPE_TCP_BIDIR\n
  *    TCP ユニキャスト通信。\n
@@ -82,7 +73,7 @@ typedef uint32_t PotrPeerId;
  *    NACK / 再送なし (TCP 自体が信頼性・順序を保証)。\n
  *    スライディング ウィンドウなし (TCP のフロー制御に委ねる)。\n
  *    SENDER 側は reconnect_interval_ms / connect_timeout_ms で再接続挙動を制御。\n
- *    接続切断時は POTR_EVENT_DISCONNECTED を発行する。
+ *    接続切断時は POTR_EVENT_DISCONNECTED を発行します。
  * 
  */
 typedef enum
@@ -140,7 +131,7 @@ typedef struct PotrServiceDef
     uint8_t ttl;     /**< マルチキャスト TTL。(multicast のみ) */
     uint8_t _pad[3]; /**< パディング (pack_wait_ms を 4 バイト境界に揃える)。 */
     uint32_t
-        pack_wait_ms; /**< パッキング待ち時間 (ミリ秒)。最初の送信要求からこの時間だけ待ち合わせ、複数メッセージを 1 パケットにまとめる。0 = 即時送信 (パッキング待ちなし)。パケット容量が満杯になった場合はタイマーを無視して即時送信する。 */
+        pack_wait_ms; /**< パッキング待ち時間 (ミリ秒)。最初の送信要求からこの時間だけ待ち合わせ、複数メッセージを 1 パケットにまとめる。0 = 即時送信 (パッキング待ちなし)。パケット容量が満杯になった場合はタイマーを無視して即時送信します。 */
 
     char multicast_group[POTR_MAX_ADDR_LEN]; /**< マルチキャスト グループ アドレス。(multicast のみ) */
     char broadcast_addr
@@ -164,9 +155,9 @@ typedef struct PotrServiceDef
 
     /* サービス単位のヘルスチェック上書き (0 = グローバル値を使用) */
     uint32_t
-        health_interval_ms; /**< グローバルの udp/tcp_health_interval_ms をサービス単位で上書きする。0 = グローバル値を使用。 */
+        health_interval_ms; /**< グローバルの udp/tcp_health_interval_ms をサービス単位で上書きします。0 = グローバル値を使用。 */
     uint32_t
-        health_timeout_ms; /**< グローバルの udp/tcp_health_timeout_ms をサービス単位で上書きする。0 = グローバル値を使用。 */
+        health_timeout_ms; /**< グローバルの udp/tcp_health_timeout_ms をサービス単位で上書きします。0 = グローバル値を使用。 */
 
     /* TCP 固有フィールド (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR 以外では無視) */
     uint32_t
@@ -190,11 +181,11 @@ typedef struct PotrGlobalConfig
         max_message_size; /**< 1 回の potrSend で送信できる最大メッセージ長 (バイト)。デフォルト: POTR_MAX_MESSAGE_SIZE。 */
     uint32_t send_queue_depth; /**< 非同期送信キューの最大エントリ数。デフォルト: POTR_SEND_QUEUE_DEPTH。 */
     uint32_t
-        udp_health_interval_ms; /**< UDP 通信種別の既定 PING 送信間隔 (ミリ秒)。設定周期ごとに PING を送信する。0 = 無効。設定ファイル キー: udp_health_interval_ms。 */
+        udp_health_interval_ms; /**< UDP 通信種別の既定 PING 送信間隔 (ミリ秒)。設定周期ごとに PING を送信します。0 = 無効。設定ファイル キー: udp_health_interval_ms。 */
     uint32_t
         udp_health_timeout_ms; /**< UDP 通信種別の既定 PING 応答待機タイムアウト (ミリ秒)。0 = 無効。設定ファイル キー: udp_health_timeout_ms。 */
     uint32_t
-        tcp_health_interval_ms; /**< TCP 通信種別の既定 PING 送信間隔 (ミリ秒)。設定周期ごとに PING を送信する。0 = 無効。設定ファイル キー: tcp_health_interval_ms。 */
+        tcp_health_interval_ms; /**< TCP 通信種別の既定 PING 送信間隔 (ミリ秒)。設定周期ごとに PING を送信します。0 = 無効。設定ファイル キー: tcp_health_interval_ms。 */
     uint32_t
         tcp_health_timeout_ms; /**< TCP 通信種別の既定 PING 応答待機タイムアウト (ミリ秒)。0 = 無効。設定ファイル キー: tcp_health_timeout_ms。 */
     uint32_t
@@ -226,17 +217,18 @@ typedef struct PotrGlobalConfig
  */
 typedef struct PotrPacket
 {
-    int64_t service_id;      /**< サービス識別子 (NBO)。受信時に照合する。 */
+    int64_t service_id;      /**< サービス識別子 (NBO)。受信時に照合します。 */
     int64_t session_tv_sec;  /**< セッション開始時刻 秒部 (NBO)。struct timespec の tv_sec 相当。 */
     uint32_t session_id;     /**< セッション識別子 (NBO)。potrOpenService 時に決定する乱数。 */
     int32_t session_tv_nsec; /**< セッション開始時刻 ナノ秒部 (NBO)。struct timespec の tv_nsec 相当。 */
     uint32_t seq_num;        /**< 通番。送信側が付与する連番 (NBO)。 */
-    uint32_t ack_num; /**< 再送要求番号 / 再送不能通番 (NBO)。NACK では要求通番、REJECT では再送不能通番を格納する。 */
-    uint16_t flags;   /**< パケット種別フラグ (POTR_FLAG_*) (NBO)。 */
+    uint32_t
+        ack_num;    /**< 再送要求番号 / 再送不能通番 (NBO)。NACK では要求通番、REJECT では再送不能通番を格納します。 */
+    uint16_t flags; /**< パケット種別フラグ (POTR_FLAG_*) (NBO)。 */
     uint16_t payload_len;      /**< ペイロード長 (バイト) (NBO)。 */
-    uint32_t protocol_version; /**< プロトコル バージョン (NBO)。POTR_PROTOCOL_VERSION と照合する。 */
-    const uint8_t
-        *payload; /**< ペイロード データへのポインター (読み取り専用)。ウィンドウ プールまたは受信バッファー内を指す。 */
+    uint32_t protocol_version; /**< プロトコル バージョン (NBO)。POTR_PROTOCOL_VERSION と照合します。 */
+    const uint8_t *
+        payload; /**< ペイロード データへのポインター (読み取り専用)。ウィンドウ プールまたは受信バッファー内を指す。 */
 } PotrPacket;
 
 /**
@@ -269,11 +261,11 @@ typedef uint32_t PotrPeerId;
 #define POTR_PEER_NA \
     ((PotrPeerId)0U) /**< ピア ID 未割当を示す予約値。
                                                 *   1:1 モードのコールバックで渡される (ピアの概念がない)。
-                                                *   `potrSend()` に N:1 モードで指定した場合はエラーを返す。 */
+                                                *   `potrSend()` に N:1 モードで指定した場合はエラーを返します。 */
 #define POTR_PEER_ALL \
     ((PotrPeerId)UINT32_MAX) /**< 全接続ピアへの一斉送信を指示する予約ピア ID。
-                                                *   N:1 モードでは全アクティブ ピアへユニキャスト送信する。
-                                                *   1:1 モードでは唯一のピアへの送信として動作する。 */
+                                                *   N:1 モードでは全アクティブ ピアへユニキャスト送信します。
+                                                *   1:1 モードでは唯一のピアへの送信として動作します。 */
 /** @} */
 
 /**

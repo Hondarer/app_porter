@@ -36,11 +36,11 @@
     #include <unistd.h>
     #include <sys/socket.h>
     #include <poll.h>
-    typedef int    PotrSocket;
+typedef int PotrSocket;
     #define POTR_INVALID_SOCKET (-1)
 #elif defined(PLATFORM_WINDOWS)
     #include <com_util/base/windows_sdk.h>
-    typedef SOCKET PotrSocket;
+typedef SOCKET PotrSocket;
     #define POTR_INVALID_SOCKET INVALID_SOCKET
 #endif /* PLATFORM_ */
 
@@ -49,7 +49,7 @@
  * ============================================================ */
 
 /**
- *  @brief  ソケットを閉じる。
+ *  @brief  ソケットを閉じます。
  *  @param[in]  fd  閉じるソケット。
  */
 static inline void potr_close_socket(PotrSocket fd)
@@ -62,7 +62,7 @@ static inline void potr_close_socket(PotrSocket fd)
 }
 
 /**
- *  @brief  ソケットの送受信を停止する (shutdown)。
+ *  @brief  ソケットの送受信を停止します (shutdown)。
  *  @param[in]  fd  停止するソケット。
  */
 static inline void potr_shutdown_socket(PotrSocket fd)
@@ -75,7 +75,7 @@ static inline void potr_shutdown_socket(PotrSocket fd)
 }
 
 /**
- *  @brief  ソケット オプションを設定する。
+ *  @brief  ソケット オプションを設定します。
  *  @param[in]  sock     対象ソケット。
  *  @param[in]  level    プロトコル レベル (SOL_SOCKET, IPPROTO_IP 等)。
  *  @param[in]  optname  オプション名。
@@ -83,8 +83,7 @@ static inline void potr_shutdown_socket(PotrSocket fd)
  *  @param[in]  optlen   オプション値のバイト数。
  *  @return  0: 成功、-1: 失敗。
  */
-static inline int potr_setsockopt(PotrSocket sock, int level, int optname,
-                                   const void *optval, int optlen)
+static inline int potr_setsockopt(PotrSocket sock, int level, int optname, const void *optval, int optlen)
 {
 #if defined(PLATFORM_LINUX)
     return setsockopt(sock, level, optname, optval, (socklen_t)optlen);
@@ -101,8 +100,8 @@ extern "C"
 {
 #endif /* __cplusplus */
 
-/**
- *  @brief  UDP データグラムを送信する。
+    /**
+ *  @brief  UDP データグラムを送信します。
  *  @param[in]  sock      送信ソケット。
  *  @param[in]  buf       送信データ。
  *  @param[in]  len       送信バイト数。
@@ -111,12 +110,11 @@ extern "C"
  *  @param[in]  dest_len  送信先アドレス長。
  *  @return 送信バイト数 (負値: エラー)。
  */
-extern int potr_sendto(PotrSocket sock, const uint8_t *buf, size_t len,
-                       int flags,
-                       const struct sockaddr *dest, int dest_len);
+    extern int potr_sendto(PotrSocket sock, const uint8_t *buf, size_t len, int flags, const struct sockaddr *dest,
+                           int dest_len);
 
-/**
- *  @brief  UDP データグラムを受信する。
+    /**
+ *  @brief  UDP データグラムを受信します。
  *  @param[in]  sock     受信ソケット。
  *  @param[out] buf      受信バッファー。
  *  @param[in]  len      バッファー サイズ。
@@ -125,69 +123,67 @@ extern int potr_sendto(PotrSocket sock, const uint8_t *buf, size_t len,
  *  @param[in,out] src_len  送信元アドレス長。
  *  @return 受信バイト数 (負値: エラー)。
  */
-extern int potr_recvfrom(PotrSocket sock, uint8_t *buf, size_t len,
-                         int flags,
-                         struct sockaddr *src, int *src_len);
+    extern int potr_recvfrom(PotrSocket sock, uint8_t *buf, size_t len, int flags, struct sockaddr *src, int *src_len);
 
-/**
- *  @brief  ソケットが書き込み可能か確認する (poll/WSAPoll)。
+    /**
+ *  @brief  ソケットが書き込み可能か確認します (poll/WSAPoll)。
  *  @param[in]  fd         対象ソケット。
  *  @param[in]  timeout_ms タイムアウト (ミリ秒、0 = 即時)。
  *  @return  1: 書き込み可能、0: タイムアウト、-1: エラー。
  */
-extern int potr_poll_writable(PotrSocket fd, int timeout_ms);
+    extern int potr_poll_writable(PotrSocket fd, int timeout_ms);
 
-/**
- *  @brief  ソケットが読み取り可能か確認する (poll/WSAPoll)。
+    /**
+ *  @brief  ソケットが読み取り可能か確認します (poll/WSAPoll)。
  *  @param[in]  fd         対象ソケット。
  *  @param[in]  timeout_ms タイムアウト (ミリ秒、0 = 即時)。
  *  @return  1: 読み取り可能、0: タイムアウト、-1: エラー。
  */
-extern int potr_poll_readable(PotrSocket fd, int timeout_ms);
+    extern int potr_poll_readable(PotrSocket fd, int timeout_ms);
 
-/**
- *  @brief  TCP ソケットへ全バイトを確実に送信する。
+    /**
+ *  @brief  TCP ソケットへ全バイトを確実に送信します。
  *  @param[in]  fd   送信ソケット。
  *  @param[in]  buf  送信データ。
  *  @param[in]  len  送信バイト数。
  *  @return  0: 成功 (全バイト送信)、-1: 切断またはエラー。
- *  @note    呼び出し前に送信ミューテックスを取得しておく必要がある。
+ *  @note    呼び出し前に送信ミューテックスを取得しておく必要があります。
  */
-extern int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len);
+    extern int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len);
 
-/**
- *  @brief  TCP ソケットから正確に n バイト読み取る。
+    /**
+ *  @brief  TCP ソケットから正確に n バイト読み取ります。
  *  @param[in]   fd   受信ソケット。
  *  @param[out]  buf  受信バッファー (n バイト以上)。
  *  @param[in]   n    受信バイト数。
  *  @return  1: 成功、0: 切断 (recv が 0 を返した)、-1: エラー。
  */
-extern int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n);
+    extern int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n);
 
-/**
- *  @brief  ソケット ライブラリを初期化する (Windows: WSAStartup、Linux: no-op)。
+    /**
+ *  @brief  ソケット ライブラリを初期化します (Windows は WSAStartup、Linux は no-op)。
  *  @return  0: 成功、-1: 失敗。
  */
-extern int potr_socket_lib_init(void);
+    extern int potr_socket_lib_init(void);
 
-/**
- *  @brief  ソケット ライブラリを終了する (Windows: WSACleanup、Linux: no-op)。
+    /**
+ *  @brief  ソケット ライブラリを終了します (Windows は WSACleanup、Linux は no-op)。
  */
-extern void potr_socket_lib_cleanup(void);
+    extern void potr_socket_lib_cleanup(void);
 
-/**
- *  @brief  ソケットをノンブロッキング モードに設定する。
+    /**
+ *  @brief  ソケットをノンブロッキング モードに設定します。
  *  @param[in]  fd  対象ソケット。
  *  @return  0: 成功、-1: 失敗。
  */
-extern int potr_set_nonblocking(PotrSocket fd);
+    extern int potr_set_nonblocking(PotrSocket fd);
 
-/**
- *  @brief  ソケットをブロッキング モードに戻す。
+    /**
+ *  @brief  ソケットをブロッキング モードに戻します。
  *  @param[in]  fd  対象ソケット。
  *  @return  0: 成功、-1: 失敗。
  */
-extern int potr_set_blocking(PotrSocket fd);
+    extern int potr_set_blocking(PotrSocket fd);
 
 #ifdef __cplusplus
 }

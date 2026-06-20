@@ -23,7 +23,8 @@
 
 #include <porter/util/potrIpAddr.h>
 
-/* IPv4 文字列をネットワーク バイト オーダーへ変換する。 */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int parse_ipv4_addr(const char *ip_str, struct in_addr *out_addr)
 {
     if (ip_str == NULL || out_addr == NULL)
@@ -41,12 +42,13 @@ int parse_ipv4_addr(const char *ip_str, struct in_addr *out_addr)
     }
 }
 
-/* ホスト名または IPv4 アドレス文字列を struct in_addr に解決する。 */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int resolve_ipv4_addr(const char *host, struct in_addr *out_addr)
 {
-    struct addrinfo  hints;
+    struct addrinfo hints;
     struct addrinfo *res = NULL;
-    int              ret;
+    int ret;
 
     if (host == NULL || out_addr == NULL)
     {
@@ -54,7 +56,7 @@ int resolve_ipv4_addr(const char *host, struct in_addr *out_addr)
     }
 
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family   = AF_INET;
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
 
     ret = getaddrinfo(host, NULL, &hints, &res);

@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           porter_spec.h
- *  @brief          通信ライブラリ (動的リンク用) のヘッダー ファイル。
+ *  @brief          porter ライブラリ (動的リンク用) のヘッダー ファイル。
  *  @author         Tetsuo Honda
  *  @date           2026/03/04
  *  @version        1.0.0
@@ -255,7 +255,7 @@ extern "C"
      *  | POTR_TYPE_BROADCAST   | broadcast_addr:dst_port へ送信             |
      *  | POTR_TYPE_UNICAST_BIDIR (N:1) | peer_id で指定したピアへ送信       |
      *
-     *  compress に `POTR_SEND_COMPRESS` を指定した場合、内部で圧縮処理を行ってから送信します。\n
+     *  flags に `POTR_SEND_COMPRESS` を指定した場合、内部で圧縮処理を行ってから送信します。\n
      *  圧縮後のサイズが元のサイズ以上になった場合は、自動的に非圧縮で送信します。\n
      *  受信側の PotrRecvCallback には、展開済みの元メッセージが渡されます。\n
      *  送受信ともにフラグメント化と組み合わせて使用できます。

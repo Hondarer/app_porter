@@ -41,9 +41,9 @@ extern "C"
     } PotrConnectedThreadsOps;
 
     /**
-     *  @brief          接続確立後に send / recv / health スレッドを起動する。
+     *  @brief          接続確立後に send / recv / health スレッドを起動します。
      *
-     *  起動に失敗した場合は起動済みのスレッドを停止してロールバックする。
+     *  起動に失敗した場合は起動済みのスレッドを停止してロールバックします。
      *
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx 接続確立済みパスのインデックス。

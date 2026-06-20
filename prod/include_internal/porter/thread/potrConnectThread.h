@@ -47,7 +47,7 @@ extern "C"
      *  @brief          TCP 接続管理スレッドを停止します。
      *
      *  connect_thread_running フラグをクリアし、tcp_state_cv を broadcast して\n
-     *  reconnect sleep を中断する。全 path のソケットをクローズしてスレッド終了を待機する。
+     *  reconnect sleep を中断します。全 path のソケットをクローズしてスレッド終了を待機します。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
      */

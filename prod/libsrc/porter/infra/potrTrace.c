@@ -35,7 +35,8 @@ static com_util_tracer *s_trace = NULL;
 
 /* ── 内部 API ─────────────────────────────────────────────────────────── */
 
-/* doxygen コメントは potrTrace.h に記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 com_util_tracer *potr_trace_get(void)
 {
     if (s_trace == NULL)
@@ -55,7 +56,8 @@ com_util_tracer *potr_trace_get(void)
 
 /* ── 公開 API ─────────────────────────────────────────────────────────── */
 
-/* doxygen コメントは porter.h に記載 */
+/* Doxygen コメントは、ヘッダーに記載 */
+
 POTR_EXPORT com_util_tracer *POTR_API potrGetTracer(void)
 {
     return potr_trace_get();

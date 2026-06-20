@@ -16,13 +16,12 @@
 
 #include <porter/protocol/configParseCommon.h>
 
-/* "key = value" 行を解析して key_out, val_out に格納する。成功時は 1 を返す。 */
-static int config_parse_kv(const char *line, char *key_out, size_t key_size,
-                           char *val_out, size_t val_size)
+/* "key = value" 行を解析して key_out, val_out に格納します。成功時は 1 を返します。 */
+static int config_parse_kv(const char *line, char *key_out, size_t key_size, char *val_out, size_t val_size)
 {
     const char *eq;
-    char        key_raw[CONFIG_KEY_MAX];
-    size_t      key_len;
+    char key_raw[CONFIG_KEY_MAX];
+    size_t key_len;
 
     if (line == NULL || key_out == NULL || val_out == NULL)
     {

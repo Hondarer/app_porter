@@ -19,6 +19,11 @@
 #include <porter/potrPathEvent.h>
 #include <porter/infra/potrPlatform.h>
 
+/**
+ *  @brief          PING 受信状態が NORMAL かどうかを判定します。
+ *  @param[in]      state   判定する PING 受信状態 (POTR_PING_STATE_*)。
+ *  @return         POTR_PING_STATE_NORMAL の場合は 1、それ以外は 0 を返します。
+ */
 static int path_state_is_normal(uint8_t state)
 {
     if (state == POTR_PING_STATE_NORMAL)
@@ -29,6 +34,11 @@ static int path_state_is_normal(uint8_t state)
     return 0;
 }
 
+/**
+ *  @brief          論理接続中の path が 1 本以上存在するかを判定します。
+ *  @param[in]      states  POTR_MAX_PATH 要素の path 論理接続状態配列。
+ *  @return         1 本以上が接続中の場合は 1、すべて切断の場合は 0 を返します。
+ */
 static int any_path_alive(const int *states)
 {
     int k;
@@ -43,15 +53,21 @@ static int any_path_alive(const int *states)
     return 0;
 }
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_callback_mutex_init(PotrContext *ctx)
 {
     com_util_local_lock_create(&ctx->callback_mutex);
 }
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_callback_mutex_dispose(PotrContext *ctx)
 {
     com_util_local_lock_destroy(ctx->callback_mutex);
 }
+
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_callback_emit_locked(PotrContext *ctx, PotrPeerId peer_id, PotrEvent event, const void *data, size_t len)
 {
@@ -60,6 +76,8 @@ void potr_callback_emit_locked(PotrContext *ctx, PotrPeerId peer_id, PotrEvent e
         ctx->callback(ctx->service.service_id, peer_id, event, data, len);
     }
 }
+
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_callback_emit(PotrContext *ctx, PotrPeerId peer_id, PotrEvent event, const void *data, size_t len)
 {
@@ -73,10 +91,14 @@ void potr_callback_emit(PotrContext *ctx, PotrPeerId peer_id, PotrEvent event, c
     com_util_local_lock_unlock(ctx->callback_mutex);
 }
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_zero_path_states(int *states)
 {
     memset(states, 0, sizeof(int) * POTR_MAX_PATH);
 }
+
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_copy_oneway_path_states(const PotrContext *ctx, int *states)
 {
@@ -87,6 +109,8 @@ void potr_copy_oneway_path_states(const PotrContext *ctx, int *states)
         states[k] = path_state_is_normal(ctx->path_ping_state[k]);
     }
 }
+
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_copy_bidir_udp_path_states(const PotrContext *ctx, int *states)
 {
@@ -99,6 +123,8 @@ void potr_copy_bidir_udp_path_states(const PotrContext *ctx, int *states)
     }
 }
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_copy_bidir_n1_path_states(const PotrPeerContext *peer, int *states)
 {
     int k;
@@ -110,6 +136,8 @@ void potr_copy_bidir_n1_path_states(const PotrPeerContext *peer, int *states)
     }
 }
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_copy_tcp_path_states(const PotrContext *ctx, int *states)
 {
     int k;
@@ -120,6 +148,8 @@ void potr_copy_tcp_path_states(const PotrContext *ctx, int *states)
                     path_state_is_normal(ctx->remote_path_ping_state[k]);
     }
 }
+
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_sync_service_path_state_locked(PotrContext *ctx, const int *next_states, PotrPreparedPathEvents *prepared)
 {
@@ -175,6 +205,8 @@ void potr_sync_service_path_state_locked(PotrContext *ctx, const int *next_state
     }
 }
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_sync_peer_path_state_locked(PotrPeerContext *peer, const int *next_states, PotrPreparedPathEvents *prepared)
 {
     int k;
@@ -229,6 +261,8 @@ void potr_sync_peer_path_state_locked(PotrPeerContext *peer, const int *next_sta
     }
 }
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_emit_service_path_events_locked(PotrContext *ctx, const PotrPreparedPathEvents *prepared)
 {
     int k;
@@ -244,6 +278,8 @@ void potr_emit_service_path_events_locked(PotrContext *ctx, const PotrPreparedPa
         potr_callback_emit_locked(ctx, POTR_PEER_NA, prepared->session_event, NULL, 0);
     }
 }
+
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_emit_peer_path_events_locked(PotrContext *ctx, const PotrPeerContext *peer,
                                        const PotrPreparedPathEvents *prepared)

@@ -32,9 +32,9 @@ extern "C"
 #endif /* __cplusplus */
 
     /**
-     *  @brief          非同期送信スレッドを起動する。
+     *  @brief          非同期送信スレッドを起動します。
      *
-     *  send_window_mutex を生成し、送信スレッドを起動する。
+     *  send_window_mutex を生成し、送信スレッドを起動します。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
@@ -42,9 +42,9 @@ extern "C"
     extern int potr_send_thread_start(PotrContext *ctx);
 
     /**
-     *  @brief          非同期送信スレッドを停止する。
+     *  @brief          非同期送信スレッドを停止します。
      *
-     *  send_thread_running フラグをクリアして送信キューをシャットダウンし、スレッド終了を待機する。
+     *  send_thread_running フラグをクリアして送信キューをシャットダウンし、スレッド終了を待機します。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
      */

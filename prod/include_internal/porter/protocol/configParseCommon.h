@@ -31,7 +31,7 @@
 /** 値文字列の最大長。 */
 #define CONFIG_VAL_MAX 128
 
-/* 読み取り専用で設定ファイルを開く。失敗時は NULL を返す。 */
+/* 読み取り専用で設定ファイルを開く。失敗時は NULL を返します。 */
 static FILE *config_open_file_read(const char *path)
 {
     if (path == NULL)
@@ -42,11 +42,11 @@ static FILE *config_open_file_read(const char *path)
     return com_util_fopen(path, "r", NULL);
 }
 
-/* 文字列の先頭・末尾の空白を除去して buf に格納する。 */
+/* 文字列の先頭・末尾の空白を除去して buf に格納します。 */
 static void config_trim(const char *src, char *buf, size_t buf_size)
 {
     const char *start;
-    size_t      len;
+    size_t len;
 
     if (buf == NULL || buf_size == 0)
     {
@@ -80,13 +80,11 @@ static void config_trim(const char *src, char *buf, size_t buf_size)
     buf[len] = '\0';
 }
 
-/* "[section]" 形式の行から section 名を抽出する。成功時は 1 を返す。 */
-static int config_parse_section_name(const char *line,
-                                     char       *section_out,
-                                     size_t      section_size)
+/* "[section]" 形式の行から section 名を抽出します。成功時は 1 を返します。 */
+static int config_parse_section_name(const char *line, char *section_out, size_t section_size)
 {
     const char *close;
-    size_t      section_len;
+    size_t section_len;
 
     if (line == NULL || section_out == NULL || section_size == 0U)
     {

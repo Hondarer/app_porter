@@ -25,7 +25,12 @@
 #include <porter/protocol/configParseCommon.h>
 #include <porter/protocol/configParseKvCommon.h>
 
-/* src を dst に切り詰めコピーする。 */
+/**
+ *  @brief          src を dst に終端 NUL 付きで切り詰めコピーします。
+ *  @param[out]     dst      コピー先バッファーへのポインター。
+ *  @param[in]      dst_size コピー先バッファーのサイズ (バイト)。
+ *  @param[in]      src      コピー元文字列へのポインター。NULL の場合は空文字列を設定します。
+ */
 static void copy_cstr_trunc(char *dst, size_t dst_size, const char *src)
 {
     size_t len;
@@ -51,9 +56,13 @@ static void copy_cstr_trunc(char *dst, size_t dst_size, const char *src)
     dst[len] = '\0';
 }
 
-/* service セクションの 1 エントリ分を current に読み込む共通処理。 */
-static void apply_service_kv(const char *key, const char *val,
-                             PotrServiceDef *current)
+/**
+ *  @brief          service セクションのキーと値 1 組をサービス定義へ反映します。
+ *  @param[in]      key     設定キー。
+ *  @param[in]      val     設定値の文字列。
+ *  @param[in,out]  current 反映先のサービス定義構造体へのポインター。
+ */
+static void apply_service_kv(const char *key, const char *val, PotrServiceDef *current)
 {
     if (strcmp(key, "type") == 0)
     {
@@ -108,9 +117,7 @@ static void apply_service_kv(const char *key, const char *val,
     }
     else if (strcmp(key, "multicast_group") == 0)
     {
-        copy_cstr_trunc(current->multicast_group,
-                        sizeof(current->multicast_group),
-                        val);
+        copy_cstr_trunc(current->multicast_group, sizeof(current->multicast_group), val);
     }
     else if (strcmp(key, "ttl") == 0)
     {
@@ -118,9 +125,7 @@ static void apply_service_kv(const char *key, const char *val,
     }
     else if (strcmp(key, "broadcast_addr") == 0)
     {
-        copy_cstr_trunc(current->broadcast_addr,
-                        sizeof(current->broadcast_addr),
-                        val);
+        copy_cstr_trunc(current->broadcast_addr, sizeof(current->broadcast_addr), val);
     }
     else if (strncmp(key, "src_addr", 8) == 0)
     {
@@ -183,8 +188,8 @@ static void apply_service_kv(const char *key, const char *val,
     else if (strcmp(key, "encrypt_key") == 0)
     {
         size_t hex_len = strlen(val);
-        int    i;
-        int    is_hex = 1;
+        int i;
+        int is_hex = 1;
 
         if (hex_len == POTR_CRYPTO_KEY_SIZE * 2U)
         {
@@ -206,8 +211,8 @@ static void apply_service_kv(const char *key, const char *val,
         {
             for (i = 0; i < (int)POTR_CRYPTO_KEY_SIZE; i++)
             {
-                char          byte_str[3];
-                char         *endp;
+                char byte_str[3];
+                char *endp;
                 unsigned long byte_val;
 
                 byte_str[0] = val[i * 2];
@@ -218,59 +223,47 @@ static void apply_service_kv(const char *key, const char *val,
                 current->encrypt_key[i] = (uint8_t)byte_val;
             }
             current->encrypt_enabled = 1;
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
-                     "config: encrypt_key loaded as hex key (service_id=%" PRId64 ")",
-                     current->service_id);
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "config: encrypt_key loaded as hex key (service_id=%" PRId64 ")",
+                       current->service_id);
         }
         else if (hex_len > 0U)
         {
-            if (com_util_passphrase_to_key(current->encrypt_key,
-                                           (const uint8_t *)val, hex_len) == 0)
+            if (com_util_passphrase_to_key(current->encrypt_key, (const uint8_t *)val, hex_len) == 0)
             {
                 current->encrypt_enabled = 1;
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
-                         "config: encrypt_key treated as passphrase (SHA-256, service_id=%" PRId64 ")",
-                         current->service_id);
+                           "config: encrypt_key treated as passphrase (SHA-256, service_id=%" PRId64 ")",
+                           current->service_id);
             }
             else
             {
                 memset(current->encrypt_key, 0, sizeof(current->encrypt_key));
                 current->encrypt_enabled = 0;
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
-                         "config: encrypt_key passphrase hashing failed (service_id=%" PRId64 ")",
-                         current->service_id);
+                           "config: encrypt_key passphrase hashing failed (service_id=%" PRId64 ")",
+                           current->service_id);
             }
         }
         else
         {
             memset(current->encrypt_key, 0, sizeof(current->encrypt_key));
             current->encrypt_enabled = 0;
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
-                     "config: encrypt_key is empty, ignored (service_id=%" PRId64 ")",
-                     current->service_id);
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING, "config: encrypt_key is empty, ignored (service_id=%" PRId64 ")",
+                       current->service_id);
         }
     }
 }
 
-/**
- *  @brief          設定ファイルから指定サービスの定義を読み込みます。
- *  @param[in]      config_path 設定ファイルのパス。
- *  @param[in]      service_id  読み込むサービスの ID。
- *  @param[out]     def         読み込み結果を格納する構造体へのポインター。
- *  @return         成功時は POTR_SUCCESS、サービスが見つからない場合は POTR_ERROR を返します。
- *
- *  [service.id] 形式のセクション名から id 部分を取得し、service_id と照合します。
- *  サービスの識別子はセクション名の id であり、ポート番号とは無関係です。
- */
-int config_load_service(const char *config_path, int64_t service_id,
-                        PotrServiceDef *def)
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int config_load_service(const char *config_path, int64_t service_id, PotrServiceDef *def)
 {
     FILE *fp;
-    char  line[CONFIG_LINE_MAX];
-    char  key[CONFIG_KEY_MAX];
-    char  val[CONFIG_VAL_MAX];
-    int   in_target;
-    int   found;
+    char line[CONFIG_LINE_MAX];
+    char key[CONFIG_KEY_MAX];
+    char val[CONFIG_VAL_MAX];
+    int in_target;
+    int found;
 
     if (config_path == NULL || def == NULL)
     {
@@ -284,7 +277,7 @@ int config_load_service(const char *config_path, int64_t service_id,
     }
 
     in_target = 0;
-    found     = 0;
+    found = 0;
 
     while (com_util_fgets(line, (int)sizeof(line), fp) != NULL)
     {
@@ -305,21 +298,20 @@ int config_load_service(const char *config_path, int64_t service_id,
                 break;
             }
 
-            if (config_parse_section_name(trimmed, section, sizeof(section)) &&
-                strncmp(section, "service.", 8) == 0 &&
+            if (config_parse_section_name(trimmed, section, sizeof(section)) && strncmp(section, "service.", 8) == 0 &&
                 strtoll(section + 8, NULL, 10) == service_id)
             {
                 memset(def, 0, sizeof(*def));
-                def->ttl                   = (uint8_t)POTR_DEFAULT_TTL;
-                def->pack_wait_ms          = (uint32_t)POTR_DEFAULT_PACK_WAIT_MS;
-                def->max_peers             = 1024U;
-                def->service_id            = service_id;
-                def->health_interval_ms    = 0U;
-                def->health_timeout_ms     = 0U;
+                def->ttl = (uint8_t)POTR_DEFAULT_TTL;
+                def->pack_wait_ms = (uint32_t)POTR_DEFAULT_PACK_WAIT_MS;
+                def->max_peers = 1024U;
+                def->service_id = service_id;
+                def->health_interval_ms = 0U;
+                def->health_timeout_ms = 0U;
                 def->reconnect_interval_ms = (uint32_t)POTR_DEFAULT_RECONNECT_INTERVAL_MS;
-                def->connect_timeout_ms    = (uint32_t)POTR_DEFAULT_CONNECT_TIMEOUT_MS;
+                def->connect_timeout_ms = (uint32_t)POTR_DEFAULT_CONNECT_TIMEOUT_MS;
                 in_target = 1;
-                found     = 1;
+                found = 1;
             }
             continue;
         }
@@ -344,10 +336,9 @@ int config_load_service(const char *config_path, int64_t service_id,
     }
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-             "service loaded: service_id=%" PRId64 " type=%d "
-             "src_addr1=%s dst_addr1=%s dst_port=%u src_port=%u",
-             def->service_id, (int)def->type,
-             def->src_addr[0], def->dst_addr[0],
-             (unsigned)def->dst_port, (unsigned)def->src_port);
+               "service loaded: service_id=%" PRId64 " type=%d "
+               "src_addr1=%s dst_addr1=%s dst_port=%u src_port=%u",
+               def->service_id, (int)def->type, def->src_addr[0], def->dst_addr[0], (unsigned)def->dst_port,
+               (unsigned)def->src_port);
     return POTR_SUCCESS;
 }

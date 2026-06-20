@@ -33,9 +33,9 @@ extern "C"
 #endif /* __cplusplus */
 
     /**
-     *  @brief  ピアの全パスへ FIN パケットを送信する。
+     *  @brief  ピアの全パスへ FIN パケットを送信します。
      *
-     *  ピアの dest_addr[] に対して FIN パケットを直接 sendto する。\\n
+     *  ピアの dest_addr[] に対して FIN パケットを直接 sendto します。\\n
      *  呼び出し元は peers_mutex を取得してから呼び出すこと。
      *
      *  @param[in,out]  ctx     セッション コンテキスト。
@@ -44,10 +44,10 @@ extern "C"
     extern void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer);
 
     /**
-     *  @brief  ピア テーブルを初期化する。
+     *  @brief  ピア テーブルを初期化します。
      *
-     *  ctx->peers を max_peers 分確保し、peers_mutex を初期化する。\n
-     *  ctx->max_peers, ctx->n_peers, ctx->next_peer_id を設定する。
+     *  ctx->peers を max_peers 分確保し、peers_mutex を初期化します。\n
+     *  ctx->max_peers, ctx->n_peers, ctx->next_peer_id を設定します。
      *
      *  @param[in,out]  ctx         セッション コンテキスト。
      *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
@@ -55,20 +55,20 @@ extern "C"
     extern int peer_table_init(PotrContext *ctx);
 
     /**
-     *  @brief  ピア テーブルを破棄する。
+     *  @brief  ピア テーブルを破棄します。
      *
-     *  全アクティブ ピアに FIN を送信し、リソースを解放する。\n
-     *  peers_mutex を解放する。
+     *  全アクティブ ピアに FIN を送信し、リソースを解放します。\n
+     *  peers_mutex を解放します。
      *
      *  @param[in,out]  ctx         セッション コンテキスト。
      */
     extern void peer_table_dispose(PotrContext *ctx);
 
     /**
-     *  @brief  session_triplet でピアを検索する。
+     *  @brief  session_triplet でピアを検索します。
      *
      *  ピア テーブルを線形探索し、session_id / session_tv_sec / session_tv_nsec が
-     *  一致するアクティブなエントリを返す。\n
+     *  一致するアクティブなエントリを返します。\n
      *  呼び出し元は peers_mutex を取得してから呼び出すこと。
      *
      *  @param[in]  ctx             セッション コンテキスト。
@@ -81,7 +81,7 @@ extern "C"
                                                  int32_t session_tv_nsec);
 
     /**
-     *  @brief  peer_id でピアを検索する。
+     *  @brief  peer_id でピアを検索します。
      *
      *  呼び出し元は peers_mutex を取得してから呼び出すこと。
      *
@@ -92,13 +92,13 @@ extern "C"
     extern PotrPeerContext *peer_find_by_id(const PotrContext *ctx, PotrPeerId peer_id);
 
     /**
-     *  @brief  新規ピアを作成する。
+     *  @brief  新規ピアを作成します。
      *
-     *  空きスロットを確保し、session_id/session_tv を生成してウィンドウを初期化する。\n
-     *  送信元アドレスを dest_addr[path_idx] に記録し、n_paths を 1 に設定する。\n
-     *  dest_addr[] のインデックスは ctx->sock[] / src_addr[] と直接対応する。\n
+     *  空きスロットを確保し、session_id/session_tv を生成してウィンドウを初期化します。\n
+     *  送信元アドレスを dest_addr[path_idx] に記録し、n_paths を 1 に設定します。\n
+     *  dest_addr[] のインデックスは ctx->sock[] / src_addr[] と直接対応します。\n
      *  path_last_recv_sec[path_idx] は後続の n1_update_path_recv() 呼び出しで設定される。\n
-     *  max_peers 超過時はログ エラー後 NULL を返す。\n
+     *  max_peers 超過時はログ エラー後 NULL を返します。\n
      *  呼び出し元は peers_mutex を取得してから呼び出すこと。
      *
      *  @param[in,out]  ctx         セッション コンテキスト。
@@ -111,7 +111,7 @@ extern "C"
     /**
      *  @brief  ピアの特定パスをクリアしてスロットを未使用に戻す。
      *
-     *  dest_addr[path_idx] をゼロ クリアし、path_last_recv_sec/nsec をリセット後 n_paths を減算する。\n
+     *  dest_addr[path_idx] をゼロ クリアし、path_last_recv_sec/nsec をリセット後 n_paths を減算します。\n
      *  タイムアウト・TCP FIN/RST などパス断の発生源によらず共通して呼び出す。\n
      *  呼び出し元は peers_mutex を取得してから呼び出すこと。
      *
@@ -122,9 +122,9 @@ extern "C"
     extern void peer_path_clear(const PotrContext *ctx, PotrPeerContext *peer, int path_idx);
 
     /**
-     *  @brief  ピア リソースを解放してスロットをクリアする。
+     *  @brief  ピア リソースを解放してスロットをクリアします。
      *
-     *  ウィンドウ破棄・frag_buf 解放・send_window_mutex 解放・スロット クリアを行う。\n
+     *  ウィンドウ破棄・frag_buf 解放・send_window_mutex 解放・スロット クリアを行います。\n
      *  呼び出し元は peers_mutex を取得してから呼び出すこと。\n
      *  FIN の送信は呼び出し元が行うこと (本関数は送信しない)。
      *

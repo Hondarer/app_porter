@@ -38,11 +38,11 @@ extern "C"
 #endif /* __cplusplus */
 
     /**
- *  @brief          グローバル トレーサー ハンドルを返します (初回呼び出し時に lazy create)。
- *  @return         com_util_tracer ハンドル。NULL を返すことはありません。
- *
- *  本関数を直接呼び出さず、POTR_TRACE マクロを使用してください。
- */
+     *  @brief          グローバル トレーサー ハンドルを返します (初回呼び出し時に lazy create)。
+     *  @return         com_util_tracer ハンドル。NULL を返すことはありません。
+     *
+     *  本関数を直接呼び出さず、POTR_TRACE マクロを使用してください。
+     */
     com_util_tracer *potr_trace_get(void);
 
 /**

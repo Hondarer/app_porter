@@ -62,7 +62,7 @@ static volatile sig_atomic_t g_shutdown_requested = 0;
 static com_util_pinned_prompt *g_screen = NULL;
 
 /**
- *  @brief          データがテキストかバイナリかを判定する。
+ *  @brief          データがテキストかバイナリかを判定します。
  *  @param[in]      data    判定対象のデータ。
  *  @param[in]      len     データのバイト数。
  *  @return         テキストと判定した場合は 1、バイナリと判定した場合は 0 を返します。
@@ -227,7 +227,7 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
 }
 
 /**
- *  @brief          トレース フック コールバック。指定レベル以上のメッセージを stderr へ出力する。
+ *  @brief          トレース フック コールバック。指定レベル以上のメッセージを stderr へ出力します。
  *  @param[in]      prev      チェーン継続用の前エントリ。
  *  @param[in]      handle    trace を行った tracer ハンドル。
  *  @param[in]      level     trace レベル。
@@ -260,7 +260,7 @@ static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer
 }
 
 /**
- *  @brief          ログ レベル文字列を com_util_trace_level_t に変換する。
+ *  @brief          ログ レベル文字列を com_util_trace_level_t に変換します。
  *  @param[in]      str     レベル文字列 (VERBOSE/INFO/WARNING/ERROR/CRITICAL)。
  *  @param[out]     out     変換結果の格納先。
  *  @return         変換に成功した場合は 1、未知の文字列の場合は 0 を返します。
@@ -332,7 +332,7 @@ static char *skip_spaces(char *p)
 }
 
 /**
- *  @brief          文字列末尾の空白を削除する。
+ *  @brief          文字列末尾の空白を削除します。
  *  @param[in,out]  s 文字列。
  */
 static void trim_right(char *s)
@@ -353,7 +353,7 @@ static void trim_right(char *s)
 }
 
 /**
- *  @brief          次の空白区切りトークンを取得する。
+ *  @brief          次の空白区切りトークンを取得します。
  *  @param[in,out]  cursor 解析位置。
  *  @return         トークン先頭。トークンがない場合は NULL。
  */
@@ -410,7 +410,7 @@ static char *strip_matching_quotes(char *value)
 }
 
 /**
- *  @brief          対話コマンドのヘルプを表示する。
+ *  @brief          対話コマンドのヘルプを表示します。
  */
 static void print_interactive_help(void)
 {
@@ -510,7 +510,7 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
 }
 
 /**
- *  @brief          対話コマンド 1 行を処理する。
+ *  @brief          対話コマンド 1 行を処理します。
  *  @param[in]      handle サービス ハンドル。
  *  @param[in,out]  line   入力行。解析中に一部を書き換えます。
  *  @return         1: 継続、0: 終了。
@@ -683,7 +683,7 @@ static void bidir_send_thread_func(void *arg)
 }
 
 /**
- *  @brief          bidir 送信スレッドを起動する。
+ *  @brief          bidir 送信スレッドを起動します。
  *  @param[out]     thread  スレッド ハンドルの格納先。
  *  @param[in]      ctx     スレッドに渡すコンテキスト。
  *  @return         成功時は 1、失敗時は 0 を返します。
@@ -694,7 +694,7 @@ static int start_bidir_send_thread(com_util_thread **thread, BidirSendCtx *ctx)
 }
 
 /**
- *  @brief          bidir 送信スレッドの終了を待機して破棄する。
+ *  @brief          bidir 送信スレッドの終了を待機して破棄します。
  *  @param[in]      thread  スレッド ハンドル。
  */
 static void join_bidir_send_thread(com_util_thread **thread)
