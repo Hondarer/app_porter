@@ -990,13 +990,13 @@ make -C app/porter/prod
 
 ```
 # RECEIVER 起動 (POTR_TYPE_TCP_N1)
-./recv --service-id 1  # 設定ファイルで type=TCP_N1 を指定
+./porter-test receiver porter-services.conf 1  # 設定ファイルで type=TCP_N1 を指定
 
 # SENDER A 接続 (POTR_TYPE_TCP)
-./send --service-id 1 --data "hello from A"
+./porter-test sender porter-services.conf 1    # 対話コンソールで send hello from A
 
 # SENDER B 接続 (別プロセス)
-./send --service-id 1 --data "hello from B"
+./porter-test sender porter-services.conf 1    # 対話コンソールで send hello from B
 
 # 期待動作:
 # - RECEIVER の callback が peer_id=A で "hello from A" を受信

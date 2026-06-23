@@ -288,13 +288,13 @@ class porterSendRecvTest : public Test
         string ws = findWorkspaceRoot();
         ASSERT_FALSE(ws.empty());
 #if defined(PLATFORM_LINUX)
-        recv_path = ws + "/app/porter/prod/cbin/recv";
-        send_path = ws + "/app/porter/prod/cbin/send";
+        recv_path = ws + "/app/porter/prod/cbin/porter-test";
+        send_path = ws + "/app/porter/prod/cbin/porter-test";
         lib_path = ws + "/app/porter/prod/lib"
                  + ":" + ws + "/app/com_util/prod/lib";
 #elif defined(PLATFORM_WINDOWS)
-        recv_path = ws + "\\app\\porter\\prod\\cbin\\recv.exe";
-        send_path = ws + "\\app\\porter\\prod\\cbin\\send.exe";
+        recv_path = ws + "\\app\\porter\\prod\\cbin\\porter-test.exe";
+        send_path = ws + "\\app\\porter\\prod\\cbin\\porter-test.exe";
         lib_path = ws + "\\app\\porter\\prod\\lib"
                  + ";" + ws + "\\app\\com_util\\prod\\lib";
 #endif /* PLATFORM_ */
@@ -346,20 +346,20 @@ TEST_F(porterSendRecvTest, send_single_message)
             .build(); // [状態] - 127.0.0.1 で ポート 19010 を送受信に利用する unicast サービスを定義する。
 
     // RECIEVER を先に起動してリスナー確立を待つ
-    recv_h_ = startProcessAsync(recv_path, {config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_);                                             // [確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
     // [確認] - RECIEVER が "受信待機中" を出力すること。
 
     // SENDER を起動して最初のプロンプトを待つ
-    send_h_ = startProcessAsync(send_path, {config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
+    send_h_ = startProcessAsync(send_path, {"sender",config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);                                             // [確認] - SENDER が起動すること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, "send Hello Porter"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "Hello Porter", 3000)); // [手順] - RECIEVER が "Hello Porter" を出力するまで待機する。
@@ -394,14 +394,14 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
             .build(); // [状態] - 127.0.0.1 で ポート 19011 を送受信に利用する unicast サービスを定義する。
 
     // RECIEVER を先に起動してリスナー確立を待つ
-    recv_h_ = startProcessAsync(recv_path, {config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_);                                             // [確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
     // [確認] - RECIEVER が "受信待機中" を出力すること。
 
     // SENDER を起動して最初のプロンプトを待つ
-    send_h_ = startProcessAsync(send_path, {config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
+    send_h_ = startProcessAsync(send_path, {"sender",config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);                                             // [確認] - SENDER が起動すること。
 
     // Act
@@ -411,11 +411,11 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
     // [確認] - 以下を 3 回繰り返す。
     for (size_t i = 0; i < messages.size(); i++)
     {
-        ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+        ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
         ASSERT_TRUE(writeLineStdin(send_h_, string("send ") + messages[i]));
     }
 
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
@@ -442,7 +442,7 @@ TEST_F(porterSendRecvTest, recv_exits_cleanly_on_sigint)
             .build(); // [状態] - 127.0.0.1 で ポート 19012 を送受信に利用する unicast サービスを定義する。
 
     // RECIEVER を先に起動してリスナー確立を待つ
-    recv_h_ = startProcessAsync(recv_path, {config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_);                                             // [確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
@@ -468,7 +468,7 @@ TEST_F(porterSendRecvTest, unicast_initial_data_establishes_connected_without_pi
             .addUnicastService(11, 19016)
             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "11"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "11"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
@@ -499,13 +499,13 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
             .addUnicastService(13, 19018)
             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "13"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "13"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
-    send_h_ = startProcessAsync(send_path, {config_path, "13"}, makeOpts());
+    send_h_ = startProcessAsync(send_path, {"sender",config_path, "13"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
 
     sleep_ms(250);
     EXPECT_EQ(string::npos, getStdout(recv_h_).find("接続確立"));
@@ -529,7 +529,7 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
             .addUnicastService(12, 19017)
             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "12"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "12"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
@@ -570,16 +570,16 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
     PorterConfigBuilder cfg;
     string config_path = cfg.addUnicastService(53, 19053).build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "53"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "53"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
-    send_h_ = startProcessAsync(send_path, {config_path, "53"}, makeOpts());
+    send_h_ = startProcessAsync(send_path, {"sender",config_path, "53"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
 
     ASSERT_TRUE(writeLineStdin(send_h_, string("send ") + payload));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
 
     /* sender 側は追加送信せず即 close する。 */
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
@@ -607,7 +607,7 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
     PorterConfigBuilder cfg;
     string config_path = cfg.addUnicastService(56, 19056).build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "56"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "56"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
@@ -639,7 +639,7 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
     const string payload = "wrap-fin-target-zero";
     string config_path = cfg.addUnicastService(57, 19057).build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "57"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "57"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
@@ -686,19 +686,19 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
     string client_config_path =
         client_cfg.addUnicastBidirService(54, 19054).build();
 
-    recv_h_ = startProcessAsync(recv_path, {server_config_path, "54"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",server_config_path, "54"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
-    send_h_ = startProcessAsync(send_path, {client_config_path, "54"}, makeOpts());
+    send_h_ = startProcessAsync(send_path, {"sender",client_config_path, "54"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
     ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000));
 
     ASSERT_TRUE(writeLineStdin(send_h_, string("send ") + payload));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
 
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
@@ -728,7 +728,7 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
                             .addUnicastService(55, 19055)
                             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "55"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "55"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
@@ -772,21 +772,21 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
             .addUnicastService(14, 19019)
             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "14"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "14"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
-    send_h_ = startProcessAsync(send_path, {"-l", "VERBOSE", config_path, "14"}, makeOpts());
+    send_h_ = startProcessAsync(send_path, {"sender","-l", "VERBOSE", config_path, "14"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
 
     ASSERT_TRUE(writeLineStdin(send_h_, "send ping-delay-1"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "ping-delay-1", 3000));
 
     sleep_ms(250);
     ASSERT_TRUE(writeLineStdin(send_h_, "send ping-delay-2"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "ping-delay-2", 3000));
 
     sleep_ms(250);
@@ -824,27 +824,27 @@ TEST_F(porterSendRecvTest, bidir_echo)
             .build(); // [状態] - 127.0.0.1 で ポート 19020 を送受信に利用する unicast_bidir サービスを定義する。
 
     // RECIEVER を先に起動してリスナー確立を待つ
-    recv_h_ = startProcessAsync(recv_path, {config_path, "20"}, makeOpts()); // [手順] - RECIEVER を起動する。
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "20"}, makeOpts()); // [手順] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_);                                             // [確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
     // [確認] - RECIEVER が "受信待機中" を出力すること。
 
     // SENDER を起動して最初のプロンプトを待つ
-    send_h_ = startProcessAsync(send_path, {config_path, "20"}, makeOpts()); // [手順] - SENDER を起動する。
+    send_h_ = startProcessAsync(send_path, {"sender",config_path, "20"}, makeOpts()); // [手順] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);                                             // [確認] - SENDER が起動すること。
     ASSERT_NO_THROW(
         waitForOutput(send_h_, "双方向モード", 5000)); // [手順] - SENDER が "双方向モード" を出力するまで待機する。
     // [確認] - SENDER が "双方向モード" を出力すること。
     ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-send[", 3000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-    // [確認] - SENDER が "porter-send[" を出力すること。
+        waitForOutput(send_h_, "porter-test[sender:", 3000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+    // [確認] - SENDER が "porter-test[sender:" を出力すること。
     /* TCP は接続確立の完了後に最初の PING 周期へ入るため、UDP より少し余裕を持たせる。 */
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800));
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, "send bidir-test"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
@@ -867,7 +867,7 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
         cfg.addUnicastService(30, 19030, "127.0.0.1", "mysecretphrase")
             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "30"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "30"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
@@ -876,12 +876,12 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
                      19030));
     sleep_ms(300);
 
-    send_h_ = startProcessAsync(send_path, {config_path, "30"}, makeOpts());
+    send_h_ = startProcessAsync(send_path, {"sender",config_path, "30"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
 
     ASSERT_TRUE(writeLineStdin(send_h_, "send encrypted-ok"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
@@ -916,7 +916,7 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
         client_cfg.addUnicastBidirService(50, 19050, "127.0.0.1", "mysecretphrase")
             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {server_config_path, "50"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",server_config_path, "50"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
@@ -927,10 +927,10 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
 
     EXPECT_EQ(string::npos, getStdout(recv_h_).find("接続確立"));
 
-    send_h_ = startProcessAsync(send_path, {client_config_path, "50"}, makeOpts());
+    send_h_ = startProcessAsync(send_path, {"sender",client_config_path, "50"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
     ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
 
     /* 状態変化時の割り込み PING により、双方向 CONNECTED が 2 周期未満で成立することを確認する。 */
     /* TCP は接続確立の完了後に最初の PING 周期へ入るため、UDP より少し余裕を持たせる。 */
@@ -938,7 +938,7 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800));
 
     ASSERT_TRUE(writeLineStdin(send_h_, "send n1-secure-ok"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
@@ -965,7 +965,7 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
         client_cfg.addUnicastBidirService(52, 19052)
             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {server_config_path, "52"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",server_config_path, "52"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
@@ -977,15 +977,15 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
     EXPECT_EQ(string::npos, getStdout(recv_h_).find("接続確立"));
     EXPECT_EQ(string::npos, getStdout(recv_h_).find("plain-n1-drop"));
 
-    send_h_ = startProcessAsync(send_path, {client_config_path, "52"}, makeOpts());
+    send_h_ = startProcessAsync(send_path, {"sender",client_config_path, "52"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
     ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 5000));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 5000));
 
     ASSERT_TRUE(writeLineStdin(send_h_, "send n1-after-ping-ok"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
@@ -1014,20 +1014,20 @@ TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
         client_cfg.addUnicastBidirService(51, 19051, "127.0.0.1", "mysecretphrase")
             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {server_config_path, "51"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",server_config_path, "51"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
-    send_h_ = startProcessAsync(send_path, {client_config_path, "51"}, makeOpts());
+    send_h_ = startProcessAsync(send_path, {"sender",client_config_path, "51"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
     ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
 
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800));
 
     ASSERT_TRUE(writeLineStdin(send_h_, "send n1-connected-ok"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
@@ -1050,19 +1050,19 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
         cfg.addTcpBidirService(60, 19060, "127.0.0.1", "mysecretphrase")
             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "60"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "60"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
-    send_h_ = startProcessAsync(send_path, {"-l", "VERBOSE", config_path, "60"}, makeOpts());
+    send_h_ = startProcessAsync(send_path, {"sender","-l", "VERBOSE", config_path, "60"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
 
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800));
 
     ASSERT_TRUE(writeLineStdin(send_h_, "send tcp-encrypted-ok"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
@@ -1087,18 +1087,18 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
             .addTcpBidirService(61, 19061)
             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "61"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "61"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
-    send_h_ = startProcessAsync(send_path, {"-l", "VERBOSE", config_path, "61"}, makeOpts());
+    send_h_ = startProcessAsync(send_path, {"sender","-l", "VERBOSE", config_path, "61"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000));
 
     ASSERT_TRUE(writeLineStdin(send_h_, "send tcp-before-connected"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
@@ -1121,20 +1121,20 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
             .addTcpBidirService(62, 19062)
             .build();
 
-    recv_h_ = startProcessAsync(recv_path, {config_path, "62"}, makeOpts());
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "62"}, makeOpts());
     ASSERT_NE(nullptr, recv_h_);
     ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000));
 
-    send_h_ = startProcessAsync(send_path, {"-l", "VERBOSE", config_path, "62"}, makeOpts());
+    send_h_ = startProcessAsync(send_path, {"sender","-l", "VERBOSE", config_path, "62"}, makeOpts());
     ASSERT_NE(nullptr, send_h_);
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 5000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000));
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000));
 
     sleep_ms(1200);
 
     ASSERT_TRUE(writeLineStdin(send_h_, "send tcp-timeout-ignored"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
@@ -1164,18 +1164,18 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
     ASSERT_FALSE(bin_path.empty());                 // [確認] - バイナリ ファイルが作成されること。
 
     // RECIEVER を先に起動してリスナー確立を待つ
-    recv_h_ = startProcessAsync(recv_path, {config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_);                                             // [確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
     // [確認] - RECIEVER が "受信待機中" を出力すること。
 
     // SENDER を起動してプロンプトを待つ
-    send_h_ = startProcessAsync(send_path, {config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
+    send_h_ = startProcessAsync(send_path, {"sender",config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);                                             // [確認] - SENDER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-send[", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-    // [確認] - SENDER が "porter-send[" を出力すること。
+        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+    // [確認] - SENDER が "porter-test[sender:" を出力すること。
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + bin_path));
@@ -1183,7 +1183,7 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
                                   3000)); // [手順] - SENDER が "ファイル送信完了" を出力するまで待機する。
     // [確認] - SENDER が "ファイル送信完了" を出力すること。
 
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "バイナリ データを保存しました", 3000)); // [手順] - RECIEVER が保存メッセージを出力するまで待機する。
@@ -1215,22 +1215,22 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
             .build(); // [状態] - 127.0.0.1 で ポート 19014 を送受信に利用する unicast サービスを定義する。
 
     // RECIEVER を先に起動してリスナー確立を待つ
-    recv_h_ = startProcessAsync(recv_path, {config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
+    recv_h_ = startProcessAsync(recv_path, {"receiver",config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_);                                             // [確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
     // [確認] - RECIEVER が "受信待機中" を出力すること。
 
     // SENDER を起動してプロンプトを待つ
-    send_h_ = startProcessAsync(send_path, {config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
+    send_h_ = startProcessAsync(send_path, {"sender",config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);                                             // [確認] - SENDER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-send[", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-    // [確認] - SENDER が "porter-send[" を出力すること。
+        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+    // [確認] - SENDER が "porter-test[sender:" を出力すること。
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, "send Hello Text"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "Hello Text", 3000)); // [手順] - RECIEVER が "Hello Text" を出力するまで待機する。
@@ -1267,14 +1267,14 @@ TEST_F(porterSendRecvTest, send_file_too_large_fails)
     ASSERT_FALSE(large_path.empty()); // [確認] - ファイルが作成されること。
 
     // SENDER を起動してプロンプトを待つ (RECIEVER は不要: 送信されないため)
-    send_h_ = startProcessAsync(send_path, {config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
+    send_h_ = startProcessAsync(send_path, {"sender",config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);                                             // [確認] - SENDER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-send[", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + large_path));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-send[", 3000));
+    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     // [確認] - SENDER がエラー後も対話を継続していること。
 
     writeLineStdin(send_h_, "exit");
