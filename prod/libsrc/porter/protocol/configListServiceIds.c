@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           configListServiceIds.c
- *  @brief          service ID 列挙の実装。
+ *  @brief          設定内の service ID を列挙する機能を実装します。
  *  @author         Tetsuo Honda
  *  @date           2026/04/26
  *  @version        1.0.0

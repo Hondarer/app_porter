@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           tcpServer_linux.c
- *  @brief          TCP サーバーサンプル Linux 実装。
+ *  @brief          TCP サーバー サンプルの Linux 向け処理を実装します。
  *  @author         Tetsuo Honda
  *  @date           2026/03/17
  *  @version        1.0.0

@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potrOpenService.c
- *  @brief          potrOpenService 関数の実装。
+ *  @brief          porter サービスを開始する potrOpenService 関数を提供します。
  *  @author         Tetsuo Honda
  *  @date           2026/03/04
  *  @version        1.0.0

@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potrConnectedThreads.h
- *  @brief          接続確立後スレッド起動 helper の内部ヘッダー。
+ *  @brief          接続確立後のスレッドを起動する内部 helper を宣言します。
  *  @author         Tetsuo Honda
  *  @date           2026/04/17
  *  @version        1.0.0

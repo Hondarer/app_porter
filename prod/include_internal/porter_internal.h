@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           porter_internal.h
- *  @brief          porter ライブラリの公開 + 内部アンブレラ ヘッダー。
+ *  @brief          porter ライブラリの公開 API と内部 API をまとめて取り込みます。
  *  @author         Tetsuo Honda
  *  @date           2026/05/21
  *  @version        1.0.0

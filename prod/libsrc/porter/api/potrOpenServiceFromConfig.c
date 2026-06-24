@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potrOpenServiceFromConfig.c
- *  @brief          potrOpenServiceFromConfig 関数の実装。
+ *  @brief          設定ファイルから porter サービスを開始する potrOpenServiceFromConfig 関数を提供します。
  *  @author         Tetsuo Honda
  *  @date           2026/03/28
  *  @version        1.0.0

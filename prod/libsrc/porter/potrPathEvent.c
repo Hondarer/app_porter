@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potrPathEvent.c
- *  @brief          PATH イベント内部 helper の実装。
+ *  @brief          PATH イベントを処理する内部 helper を実装します。
  *  @author         Tetsuo Honda
  *  @date           2026/04/19
  *  @version        1.0.0

@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potrGetServiceType.c
- *  @brief          potrGetServiceType 関数の実装。
+ *  @brief          サービス種別を取得する potrGetServiceType 関数を提供します。
  *  @author         Tetsuo Honda
  *  @date           2026/03/22
  *  @version        1.0.0

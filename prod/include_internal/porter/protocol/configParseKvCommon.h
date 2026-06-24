@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           configParseKvCommon.h
- *  @brief          configParseKvCommon.h ヘッダー。
+ *  @brief          キーと値からなる設定項目を解析する共通内部 API を提供します。
  *
  *  @hideincludedbygraph
  *

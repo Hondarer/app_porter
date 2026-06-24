@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           porter_export.h
- *  @brief          porter の Windows DLL エクスポート/呼び出し規約マクロ。
+ *  @brief          porter の Windows DLL エクスポートおよび呼び出し規約マクロを定義します。
  *  @author         Tetsuo Honda
  *  @date           2026/03/04
  *  @version        1.0.0

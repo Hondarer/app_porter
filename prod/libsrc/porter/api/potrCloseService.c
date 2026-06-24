@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potrCloseService.c
- *  @brief          potrCloseService 関数の実装。
+ *  @brief          porter サービスを終了する potrCloseService 関数を提供します。
  *  @author         Tetsuo Honda
  *  @date           2026/03/04
  *  @version        1.0.0

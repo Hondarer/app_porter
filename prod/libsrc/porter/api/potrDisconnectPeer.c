@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potrDisconnectPeer.c
- *  @brief          potrDisconnectPeer 関数の実装。
+ *  @brief          ピアとの接続を切断する potrDisconnectPeer 関数を提供します。
  *  @author         Tetsuo Honda
  *  @date           2026/03/23
  *  @version        1.0.0

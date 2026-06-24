@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           configParseCommon.h
- *  @brief          configParseCommon.h ヘッダー。
+ *  @brief          設定項目を解析する共通内部 API を提供します。
  *
  *  @hideincludedbygraph
  *

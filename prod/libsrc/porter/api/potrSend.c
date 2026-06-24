@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potrSend.c
- *  @brief          potrSend 関数の実装。
+ *  @brief          データを送信する potrSend 関数を提供します。
  *  @author         Tetsuo Honda
  *  @date           2026/03/04
  *  @version        1.0.0
