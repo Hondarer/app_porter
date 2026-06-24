@@ -288,7 +288,7 @@ static void stop_tcp_health_threads(PotrContext *ctx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-POTR_EXPORT int POTR_API potrCloseService(PotrContext *handle)
+int potrCloseService(PotrContext *handle)
 {
     PotrContext *ctx = (PotrContext *)handle;
     int ret = POTR_SUCCESS;

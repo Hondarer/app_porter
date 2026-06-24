@@ -81,7 +81,7 @@ static int send_to_peer(PotrContext *ctx, PotrPeerId peer_id, const uint8_t *ptr
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-POTR_EXPORT int POTR_API potrSend(PotrContext *handle, PotrPeerId peer_id, const void *data, size_t len, int flags)
+int potrSend(PotrContext *handle, PotrPeerId peer_id, const void *data, size_t len, int flags)
 {
     PotrContext *ctx = (PotrContext *)handle;
     const uint8_t *ptr = (const uint8_t *)data;

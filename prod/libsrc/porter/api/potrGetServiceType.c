@@ -18,9 +18,7 @@
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-POTR_EXPORT int POTR_API potrGetServiceType(const char *config_path,
-                                            int64_t     service_id,
-                                            PotrType   *type)
+int potrGetServiceType(const char *config_path, int64_t service_id, PotrType *type)
 {
     PotrServiceDef def;
 

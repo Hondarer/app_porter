@@ -23,7 +23,7 @@
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-POTR_EXPORT int POTR_API potrDisconnectPeer(PotrContext *handle, PotrPeerId peer_id)
+int potrDisconnectPeer(PotrContext *handle, PotrPeerId peer_id)
 {
     PotrContext *ctx = (PotrContext *)handle;
     int64_t service_id;

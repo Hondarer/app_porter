@@ -20,8 +20,8 @@
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-POTR_EXPORT int POTR_API potrOpenServiceFromConfig(const char *config_path, int64_t service_id, PotrRole role,
-                                                   PotrRecvCallback callback, PotrContext **handle)
+int potrOpenServiceFromConfig(const char *config_path, int64_t service_id, PotrRole role, PotrRecvCallback callback,
+                              PotrContext **handle)
 {
     PotrGlobalConfig global;
     PotrServiceDef service;

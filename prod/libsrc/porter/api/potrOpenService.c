@@ -334,8 +334,8 @@ static int open_socket_tcp_sender(PotrContext *ctx, int path_idx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-POTR_EXPORT int POTR_API potrOpenService(const PotrGlobalConfig *global, const PotrServiceDef *service, PotrRole role,
-                                         PotrRecvCallback callback, PotrContext **handle)
+int potrOpenService(const PotrGlobalConfig *global, const PotrServiceDef *service, PotrRole role,
+                    PotrRecvCallback callback, PotrContext **handle)
 {
     PotrContext *ctx;
 

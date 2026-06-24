@@ -58,7 +58,7 @@ com_util_tracer *potr_trace_get(void)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-POTR_EXPORT com_util_tracer *POTR_API potrGetTracer(void)
+com_util_tracer *potrGetTracer(void)
 {
     return potr_trace_get();
 }
