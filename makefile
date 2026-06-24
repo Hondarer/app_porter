@@ -17,6 +17,16 @@ endif
 TESTFW_HOME   ?= $(WORKSPACE_DIR)/framework/testfw
 TESTFW_BANNER = $(TESTFW_HOME)/bin/banner.sh
 APPDEPS_RESOLVER = $(MAKEFW_HOME)/bin/resolve_app_deps.sh
+
+# app 依存パスはアプリ単位で不変なので、test 用を含めて 1 回だけ解決して子 make へ渡す。
+MAKEFW_APP_PATHS_CACHE_APP := $(CURDIR)
+MAKEFW_APP_PATHS_CACHE := $(shell bash "$(APPDEPS_RESOLVER)" --paths-all "$(CURDIR)" test)
+ifneq ($(strip $(.SHELLSTATUS)),0)
+    $(error Failed to resolve app dependencies for $(CURDIR))
+endif
+export MAKEFW_APP_PATHS_CACHE_APP
+export MAKEFW_APP_PATHS_CACHE
+
 DOXY_SIGNATURE_GENERATOR = $(MAKEFW_HOME)/bin/doxy_signature.py
 COVERITY_MAKE_WRAPPER = $(MAKEFW_HOME)/bin/cov-build-app.sh
 COVERITY_CONFIG = $(CURDIR)/prod/coverity.mk
