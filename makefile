@@ -1,4 +1,4 @@
-# app 直下 makefile テンプレート
+# 各 app 直下 makefile テンプレート
 # すべての app/<app_name>/makefile で使用する標準テンプレート
 # 本ファイルの直接編集は禁止する。
 
