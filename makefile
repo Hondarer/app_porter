@@ -216,8 +216,8 @@ test :
 			exit 0; \
 		fi; \
 		rm -f "$(TEST_STAMP)"; \
-		echo $(MAKE) -C test test; \
-		$(MAKE) -C test test; \
+		echo $(MAKE) -C test _test_run; \
+		$(MAKE) -C test _test_run; \
 		make_exit=$$?; \
 		if [ $$make_exit -eq 0 ] && [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ]; then \
 			cp "$$sig_file" "$(TEST_STAMP)"; \
