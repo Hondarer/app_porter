@@ -1063,6 +1063,11 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
 
     ASSERT_TRUE(writeLineStdin(send_h_, "send tcp-encrypted-ok"));
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // send 側プロンプト復帰後でも recv 側 stdout への反映には遅延が出るため、
+    // exit/interrupt の前に recv 側で受信文字列の出力を確認する。CPU 高負荷下
+    // (テスト並列実行下) では recv 側の出力反映よりも interrupt が先行し、
+    // recv_out に "tcp-encrypted-ok" が残らないことがある。
+    ASSERT_NO_THROW(waitForOutput(recv_h_, "tcp-encrypted-ok", 5000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
