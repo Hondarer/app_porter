@@ -127,6 +127,16 @@ default:
 		if [ $$make_exit -ne 0 ]; then exit $$make_exit; fi; \
 	fi
 
+.PHONY: _makefw_with_cov_or_default
+_makefw_with_cov_or_default:
+	@if [ -f "$(COVERITY_CONFIG)" ]; then \
+		echo $(MAKE) with-cov; \
+		$(MAKE) with-cov; \
+	else \
+		echo $(MAKE); \
+		$(MAKE); \
+	fi
+
 .PHONY: with-cov
 with-cov: __ensure-coverity
 	@sig_file=$$(mktemp); \
