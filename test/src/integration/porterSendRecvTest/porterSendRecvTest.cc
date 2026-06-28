@@ -413,6 +413,7 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
     {
         ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
         ASSERT_TRUE(writeLineStdin(send_h_, string("send ") + messages[i]));
+        ASSERT_NO_THROW(waitForOutput(recv_h_, messages[i], 3000));
     }
 
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
