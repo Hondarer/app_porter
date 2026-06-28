@@ -141,8 +141,6 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
         return POTR_ERROR;
     }
 
-    potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
-
     com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
@@ -157,11 +155,16 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
         return POTR_ERROR;
     }
 
+    /* path_ping_state スナップショットの採取と TCP 書き込みを同一クリティカル セクション
+     * に閉じ込め、同一 path で送る PING が「古いスナップショットを後に届ける」 順序逆転を
+     * 起こさないようにする。順序が崩れると peer 側の remote_path_ping_state が
+     * NORMAL から UNDEFINED へ後退し、瞬間的に DISCONNECTED と判定される。 */
     if (ctx->service.encrypt_enabled)
     {
         uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
+        int encrypt_failed = 0;
 
         ping_pkt.flags |= htons(POTR_FLAG_ENCRYPTED);
         ping_pkt.payload_len = htons((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
@@ -172,31 +175,41 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
         memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
-        memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-        if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE, POTR_MAX_PATH,
-                             ctx->service.encrypt_key, nonce, wire_buf, PACKET_HEADER_SIZE) != 0)
-        {
-            return POTR_ERROR;
-        }
-        wire_len = PACKET_HEADER_SIZE + enc_out;
 
         com_util_local_lock_lock(ctx->tcp_send_mutex[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
         if (ctx->tcp_conn_fd[path_idx] != POTR_INVALID_SOCKET)
         {
-            send_ok = (potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len) == 0);
+            potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
+            memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+            if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE, POTR_MAX_PATH,
+                                 ctx->service.encrypt_key, nonce, wire_buf, PACKET_HEADER_SIZE) != 0)
+            {
+                encrypt_failed = 1;
+            }
+            else
+            {
+                wire_len = PACKET_HEADER_SIZE + enc_out;
+                send_ok = (potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len) == 0);
+            }
         }
         com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
+
+        if (encrypt_failed)
+        {
+            return POTR_ERROR;
+        }
     }
     else
     {
         uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_MAX_PATH];
         memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
-        memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
         wire_len = PACKET_HEADER_SIZE + POTR_MAX_PATH;
 
         com_util_local_lock_lock(ctx->tcp_send_mutex[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
         if (ctx->tcp_conn_fd[path_idx] != POTR_INVALID_SOCKET)
         {
+            potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
+            memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
             send_ok = (potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len) == 0);
         }
         com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);

@@ -1036,6 +1036,25 @@ static int set_all_path_ping_states(volatile uint8_t *states, size_t count, uint
     return changed;
 }
 
+/* PING ペイロード (相手端のパス受信状態ベクトル) を remote_path_ping_state[] に取り込む。
+ * 入力バイトが POTR_PING_STATE_UNDEFINED の場合は当該スロットを更新しない。
+ * これは bootstrap PING や送信競合で stale な UNDEFINED が後着した場合に、確立済みの
+ * NORMAL を後退させて瞬間 DISCONNECTED を起こさないための防御。
+ * NORMAL / ABNORMAL への遷移のみ反映する。
+ * see: /home/user/.claude/plans/prompt-logs-76433196230-zip-ci-ci-fuzzy-moore.md */
+static void apply_remote_path_ping_state_payload(volatile uint8_t *dst, const uint8_t *src, size_t count)
+{
+    size_t i;
+
+    for (i = 0; i < count; i++)
+    {
+        if (src[i] != POTR_PING_STATE_UNDEFINED)
+        {
+            dst[i] = src[i];
+        }
+    }
+}
+
 static void wake_udp_interrupt_ping_if_needed(PotrContext *ctx, int state_changed)
 {
     if (state_changed && ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
@@ -2079,7 +2098,7 @@ static void recv_thread_func(void *arg)
                     /* PING ペイロード (相手端のパス受信状態) を格納する */
                     if (pkt.payload_len >= POTR_MAX_PATH && pkt.payload != NULL)
                     {
-                        memcpy(peer->remote_path_ping_state, pkt.payload, POTR_MAX_PATH);
+                        apply_remote_path_ping_state_payload(peer->remote_path_ping_state, pkt.payload, POTR_MAX_PATH);
                     }
 
                     sync_peer_path_state(ctx, peer);
@@ -2308,7 +2327,7 @@ static void recv_thread_func(void *arg)
                 /* PING ペイロード (相手端のパス受信状態) を格納する */
                 if (pkt.payload_len >= POTR_MAX_PATH && pkt.payload != NULL)
                 {
-                    memcpy(ctx->remote_path_ping_state, pkt.payload, POTR_MAX_PATH);
+                    apply_remote_path_ping_state_payload(ctx->remote_path_ping_state, pkt.payload, POTR_MAX_PATH);
                 }
 
                 /* PING はウィンドウ外: NACK・再送の対象外。
@@ -2645,7 +2664,7 @@ static void tcp_recv_thread_func(void *arg)
             ping_state_changed = set_path_ping_state(&ctx->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
             if (pkt.payload_len >= POTR_MAX_PATH && pkt.payload != NULL)
             {
-                memcpy(ctx->remote_path_ping_state, pkt.payload, POTR_MAX_PATH);
+                apply_remote_path_ping_state_payload(ctx->remote_path_ping_state, pkt.payload, POTR_MAX_PATH);
             }
             sync_service_path_state(ctx);
             com_util_local_lock_unlock(ctx->tcp_state_mutex);
