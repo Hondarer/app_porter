@@ -850,6 +850,9 @@ TEST_F(porterSendRecvTest, bidir_echo)
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
+    ASSERT_NO_THROW(
+        waitForOutput(recv_h_, "bidir-test", 3000)); // [手順] - RECIEVER が "bidir-test" を出力するまで待機する。
+
     // RECIEVER を停止して出力を回収する
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -943,6 +946,8 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
+
+    ASSERT_NO_THROW(waitForOutput(recv_h_, "n1-secure-ok", 3000));
 
     interruptProcess(recv_h_);
     waitForExit(recv_h_, 3000);
@@ -1111,6 +1116,8 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
+    ASSERT_NO_THROW(waitForOutput(recv_h_, "tcp-before-connected", 3000));
+
     interruptProcess(recv_h_);
     waitForExit(recv_h_, 3000);
 
@@ -1146,6 +1153,8 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
+
+    ASSERT_NO_THROW(waitForOutput(recv_h_, "tcp-timeout-ignored", 3000));
 
     interruptProcess(recv_h_);
     waitForExit(recv_h_, 3000);
