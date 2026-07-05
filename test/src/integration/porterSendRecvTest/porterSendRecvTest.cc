@@ -1033,6 +1033,8 @@ TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
 
     EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
+    ASSERT_NO_THROW(waitForOutput(recv_h_, "n1-connected-ok", 3000));
+
     interruptProcess(recv_h_);
     waitForExit(recv_h_, 3000);
 
