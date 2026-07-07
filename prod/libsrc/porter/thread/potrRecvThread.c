@@ -64,6 +64,7 @@ typedef struct RecvSlot
     PotrContext *ctx;      /* 所属コンテキスト */
     PotrPeerContext *peer; /* N:1 のピア。1:1 モードでは NULL */
     PotrPeerId peer_id;    /* コールバック用ピア識別子 (1:1 は POTR_PEER_NA) */
+    int pad;               /* パディング (recv_window をポインター境界に揃える) */
     PotrWindow *recv_window;
     uint32_t *peer_session_id;
     int64_t *peer_session_tv_sec;
@@ -89,6 +90,7 @@ static void recv_slot_init_ctx(RecvSlot *slot, PotrContext *ctx)
     slot->ctx = ctx;
     slot->peer = NULL;
     slot->peer_id = POTR_PEER_NA;
+    slot->pad = 0;
     slot->recv_window = &ctx->recv_window;
     slot->peer_session_id = &ctx->peer_session_id;
     slot->peer_session_tv_sec = &ctx->peer_session_tv_sec;
@@ -114,6 +116,7 @@ static void recv_slot_init_peer(RecvSlot *slot, PotrContext *ctx, PotrPeerContex
     slot->ctx = ctx;
     slot->peer = peer;
     slot->peer_id = peer->peer_id;
+    slot->pad = 0;
     slot->recv_window = &peer->recv_window;
     slot->peer_session_id = &peer->peer_session_id;
     slot->peer_session_tv_sec = &peer->peer_session_tv_sec;
