@@ -41,17 +41,6 @@
 #include <porter/thread/potrSendThread.h>
 #include <porter/thread/potrHealthThread.h>
 
-/* connect/accept スレッドに渡す引数 */
-typedef struct ConnectArg
-{
-    PotrContext *ctx;
-    int path_idx;
-    int _pad;
-} ConnectArg;
-
-/* 静的に確保した引数バッファー (path 数分) */
-static ConnectArg s_connect_args[POTR_MAX_PATH];
-
 static void sync_tcp_service_path_state_locked(PotrContext *ctx)
 {
     int next_states[POTR_MAX_PATH];
@@ -524,9 +513,12 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
     int is_bidir = (ctx->service.type == POTR_TYPE_TCP_BIDIR);
     int is_reconnect = 0;
 
-    /* 先読みタイムアウト: TCP ヘルスチェック タイムアウトの 3 倍、未設定時は 30 秒 */
-    uint32_t first_pkt_timeout_ms =
-        (ctx->global.tcp_health_timeout_ms > 0U) ? ctx->global.tcp_health_timeout_ms * 3U : 30000U;
+    /* 先読みタイムアウト: TCP ヘルスチェック タイムアウトの POTR_TCP_FIRST_PKT_TIMEOUT_SCALE 倍、未設定時は既定値 */
+    uint32_t first_pkt_timeout_ms = POTR_DEFAULT_TCP_FIRST_PKT_TIMEOUT_MS;
+    if (ctx->global.tcp_health_timeout_ms > 0U)
+    {
+        first_pkt_timeout_ms = ctx->global.tcp_health_timeout_ms * POTR_TCP_FIRST_PKT_TIMEOUT_SCALE;
+    }
 
     while (ctx->connect_thread_running[path_idx])
     {
@@ -714,10 +706,10 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
     }
 }
 
-/* 接続管理スレッド本体 (ConnectArg* を受け取り、path ごとに動作) */
+/* 接続管理スレッド本体 (PotrPathThreadArg* を受け取り、path ごとに動作) */
 static void connect_thread_func(void *arg)
 {
-    ConnectArg *carg = (ConnectArg *)arg;
+    PotrPathThreadArg *carg = (PotrPathThreadArg *)arg;
     PotrContext *ctx = carg->ctx;
     int path_idx = carg->path_idx;
     const char *role_str;
@@ -807,10 +799,10 @@ int potr_connect_thread_start(PotrContext *ctx)
     for (i = 0; i < ctx->n_path; i++)
     {
         ctx->connect_thread_running[i] = 1;
-        s_connect_args[i].ctx = ctx;
-        s_connect_args[i].path_idx = i;
+        ctx->connect_args[i].ctx = ctx;
+        ctx->connect_args[i].path_idx = i;
 
-        if (com_util_thread_create(&ctx->connect_thread[i], connect_thread_func, &s_connect_args[i]) != 0)
+        if (com_util_thread_create(&ctx->connect_thread[i], connect_thread_func, &ctx->connect_args[i]) != 0)
         {
             ctx->connect_thread_running[i] = 0;
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,

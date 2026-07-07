@@ -188,6 +188,20 @@ typedef struct PotrPeerContext
 } PotrPeerContext;
 
 /**
+ *  @brief  path 単位スレッド (connect/accept、TCP 受信、TCP ヘルスチェック) に渡す引数。
+ *
+ *  PotrContext のメンバー配列として保持し、スレッド生存中は不変です。\n
+ *  ファイル スコープの static 配列に置くと複数コンテキストの並行 open で上書きされるため、
+ *  コンテキストごとに保持します。
+ */
+typedef struct PotrPathThreadArg
+{
+    PotrContext *ctx; /**< 所属するセッション コンテキスト。 */
+    int path_idx;     /**< パス インデックス。 */
+    int _pad;         /**< パディング。 */
+} PotrPathThreadArg;
+
+/**
  *  @brief  セッション コンテキスト構造体。PotrContext の実体。
  */
 struct PotrContext
@@ -353,6 +367,11 @@ struct PotrContext
     uint8_t *tcp_first_pkt_buf
         [POTR_MAX_PATH]; /**< 先読みパケット バッファー (動的確保、PACKET_HEADER_SIZE + max_payload バイト)。 */
     size_t tcp_first_pkt_len[POTR_MAX_PATH]; /**< 先読みパケットのバイト数 (0: 先読みなし)。 */
+
+    /* path 単位スレッドの引数 (スレッド起動前に書き込み、スレッド生存中は不変) */
+    PotrPathThreadArg connect_args[POTR_MAX_PATH];  /**< connect/accept スレッド引数 (path ごと)。 */
+    PotrPathThreadArg tcp_recv_args[POTR_MAX_PATH]; /**< TCP 受信スレッド引数 (path ごと)。 */
+    PotrPathThreadArg health_args[POTR_MAX_PATH];   /**< TCP ヘルスチェック スレッド引数 (path ごと)。 */
 };
 
 #endif /* POTR_CONTEXT_H */

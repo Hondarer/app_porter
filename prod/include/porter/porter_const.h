@@ -134,6 +134,10 @@
     31000U /**< TCP 通信種別に適用する既定ヘルスチェック タイムアウト (ミリ秒)。0 = 無効。 */
 #define POTR_DEFAULT_TCP_CLOSE_TIMEOUT_MS \
     5000U /**< TCP 通信種別に適用する close 完了待機タイムアウト (ミリ秒)。0 = 待機なし。 */
+#define POTR_TCP_FIRST_PKT_TIMEOUT_SCALE \
+    3U /**< TCP 先読みパケット タイムアウトの係数。tcp_health_timeout_ms にこの値を乗じて先読みタイムアウトを算出します。 */
+#define POTR_DEFAULT_TCP_FIRST_PKT_TIMEOUT_MS \
+    30000U /**< TCP 先読みパケット タイムアウトの既定値 (ミリ秒)。tcp_health_timeout_ms が 0 (無効) の場合に使用します。 */
 /** @} */
 
 /** @defgroup POTR_CRYPTO 暗号化定数 (AES-256-GCM)

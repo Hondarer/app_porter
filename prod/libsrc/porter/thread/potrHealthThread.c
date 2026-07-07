@@ -31,16 +31,6 @@
 #include <porter/infra/potrPlatform.h>
 #include <com_util/crypto/crypto.h>
 
-/* TCP health スレッドに渡す引数 (path ごと) */
-typedef struct HealthArg
-{
-    PotrContext *ctx;
-    int path_idx;
-    int _pad;
-} HealthArg;
-
-static HealthArg s_health_args[POTR_MAX_PATH];
-
 static uint64_t get_last_health_signal_send_ms(const PotrContext *ctx)
 {
     uint64_t last_ping = ctx->last_ping_send_ms;
@@ -452,7 +442,7 @@ static void health_thread_func(void *arg)
  * ==================================================================== */
 static void tcp_health_thread_func(void *arg)
 {
-    HealthArg *harg = (HealthArg *)arg;
+    PotrPathThreadArg *harg = (PotrPathThreadArg *)arg;
     PotrContext *ctx = harg->ctx;
     int path_idx = harg->path_idx;
 
@@ -567,12 +557,12 @@ int potr_tcp_health_thread_start(PotrContext *ctx, int path_idx)
         return POTR_SUCCESS;
     }
 
-    s_health_args[path_idx].ctx = ctx;
-    s_health_args[path_idx].path_idx = path_idx;
+    ctx->health_args[path_idx].ctx = ctx;
+    ctx->health_args[path_idx].path_idx = path_idx;
 
     ctx->health_running[path_idx] = 1;
 
-    if (com_util_thread_create(&ctx->health_thread[path_idx], tcp_health_thread_func, &s_health_args[path_idx]) != 0)
+    if (com_util_thread_create(&ctx->health_thread[path_idx], tcp_health_thread_func, &ctx->health_args[path_idx]) != 0)
     {
         ctx->health_running[path_idx] = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,

@@ -108,11 +108,16 @@ void window_dispose(PotrWindow *win)
  *  @brief          通番に対応するウィンドウ内インデックスを計算します。
  *  @param[in]      win  ウィンドウ構造体へのポインター。
  *  @param[in]      seq  インデックスを求める通番。
- *  @return         base_seq からの相対位置を window_size で剰余したインデックス。
+ *  @return         通番を window_size で剰余したインデックス。
+ *
+ *  base_seq を基準にすると pop / evict による base_seq の前進で
+ *  格納時と取り出し時のインデックスがずれるため、通番のみから決まる
+ *  安定したマッピングを使用します。連続する window_size 個の通番は
+ *  互いに異なるインデックスへ写像されるため衝突しません。
  */
 static uint16_t win_index(const PotrWindow *win, uint32_t seq)
 {
-    return (uint16_t)((seq - win->base_seq) % win->window_size);
+    return (uint16_t)(seq % win->window_size);
 }
 
 /* ---------- 送信側 ---------- */
