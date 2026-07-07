@@ -26,6 +26,7 @@
 
 #include <com_util/base/platform.h>
 #include <com_util/clock/clock.h>
+#include <com_util/crt/unistd.h>
 #include <com_util/sync/sync.h>
 
 /* ============================================================
@@ -55,7 +56,7 @@ typedef SOCKET PotrSocket;
 static inline void potr_close_socket(PotrSocket fd)
 {
 #if defined(PLATFORM_LINUX)
-    close(fd);
+    com_util_close(fd);
 #elif defined(PLATFORM_WINDOWS)
     closesocket(fd);
 #endif /* PLATFORM_ */

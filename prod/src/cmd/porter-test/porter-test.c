@@ -46,6 +46,7 @@
 #include <com_util/base/platform.h>
 #include <com_util/crt/path.h>
 #include <com_util/crt/stdio.h>
+#include <com_util/crt/unistd.h>
 #include <com_util/prompt/pinned_prompt.h>
 #include <com_util/runtime/shutdown.h>
 #include <inttypes.h>
@@ -140,8 +141,8 @@ static void porter_test_shutdown_request_callback(const com_util_shutdown_event 
     g_running = 0;
 
 #if defined(PLATFORM_LINUX)
-    close(STDIN_FILENO); /* readline (fgets) のブロックを解除する */
-#endif                   /* PLATFORM_LINUX */
+    com_util_close(STDIN_FILENO); /* readline (fgets) のブロックを解除する */
+#endif                            /* PLATFORM_LINUX */
 }
 
 /**

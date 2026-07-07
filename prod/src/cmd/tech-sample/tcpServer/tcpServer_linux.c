@@ -24,6 +24,8 @@
 
 #if defined(PLATFORM_LINUX)
 
+#include <com_util/crt/unistd.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -196,7 +198,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker) {
                     ev.data.fd = client_fd;
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev) < 0) {
                         perror("epoll_ctl add client_fd");
-                        close(client_fd);
+                        com_util_close(client_fd);
                         continue;
                     }
 
@@ -233,7 +235,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker) {
             }
         }
 
-        close(epoll_fd);
+        com_util_close(epoll_fd);
     }
 
     printf("[ワーカー %d] 終了\n", worker_id);
@@ -297,15 +299,15 @@ void run_fork_server(int port) {
         pid_t pid = fork();
         if (pid < 0) {
             perror("fork");
-            close(client_fd);
+            com_util_close(client_fd);
         } else if (pid == 0) {
             /* 子プロセス */
-            close(server_fd);
+            com_util_close(server_fd);
             g_session_fn(client_fd);
             exit(0);
         } else {
             /* 親プロセス */
-            close(client_fd);
+            com_util_close(client_fd);
         }
     }
 }
@@ -373,7 +375,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker) {
     }
 
     free(worker_pids);
-    close(server_fd);
+    com_util_close(server_fd);
     printf("[親プロセス] 終了\n");
 }
 

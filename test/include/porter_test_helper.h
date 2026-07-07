@@ -4,6 +4,7 @@
 #include <com_util/base/platform.h>
 #include <com_util/crt/path.h>
 #include <com_util/crt/stdio.h>
+#include <com_util/crt/unistd.h>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -134,7 +135,7 @@ public:
             char tmpl[] = "/tmp" PLATFORM_PATH_SEP "porter_test_XXXXXX.conf";
             int fd = mkstemps(tmpl, 5); /* ".conf" = 5 文字 */
             if (fd == -1) { return ""; }
-            close(fd);
+            com_util_close(fd);
             tmp_path_ = tmpl;
 #elif defined(PLATFORM_WINDOWS)
             char tmp_dir[PLATFORM_PATH_MAX] = {};
