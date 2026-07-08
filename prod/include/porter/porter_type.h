@@ -202,7 +202,7 @@ typedef struct PotrGlobalConfig
  *  送信時は PotrContext の send_wire_buf / recv_buf に wire データを組み立ててください。
  *
  *  ワイヤーフォーマット (バイト オフセット):
- *  @code
+    @code
      0: service_id       (int64_t,  8 bytes)
      8: session_tv_sec   (int64_t,  8 bytes)
     16: session_id       (uint32_t, 4 bytes)
@@ -213,7 +213,7 @@ typedef struct PotrGlobalConfig
     34: payload_len      (uint16_t, 2 bytes)
     36: protocol_version (uint32_t, 4 bytes)
     40: payload          (pointer)
- *  @endcode
+    @endcode
  */
 typedef struct PotrPacket
 {

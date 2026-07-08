@@ -11,11 +11,11 @@
  *  公開 API は porter.h の potrGetTracer() を参照してください。
  *
  *  使用方法:
- *  @code{.c}
+    @code{.c}
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,  "service_id=%" PRId64 " opened", service_id);
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "socket bind failed: port=%u", port);
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "PING sent: seq=%u", seq);
- *  @endcode
+    @endcode
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
  *
@@ -53,11 +53,11 @@ extern "C"
  *  level には com_util_trace_level_t の値を指定してください。
  *
  *  @par            例
- *  @code{.c}
+    @code{.c}
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,    "potrOpenService: service_id=%" PRId64 "", service_id);
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING, "NACK received: seq=%u", seq);
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,   "socket() failed");
- *  @endcode
+    @endcode
  */
 #define POTR_TRACE(level, ...) com_util_tracer_writef(potr_trace_get(), (level), NULL, __VA_ARGS__)
 

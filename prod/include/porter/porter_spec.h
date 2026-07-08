@@ -67,7 +67,7 @@ extern "C"
      *  POTR_ROLE_RECEIVER の場合、内部で受信スレッドを起動します。
      *
      *  @par            使用例 (受信者)
-     *  @code{.c}
+        @code{.c}
         void on_recv(int64_t service_id, PotrPeerId peer_id,
                      PotrEvent event, const void *data, size_t len) {
             (void)peer_id;  // 1:1 モードでは常に POTR_PEER_NA
@@ -102,10 +102,10 @@ extern "C"
             // 受信待機中 (受信スレッドが動作)
             potrCloseService(handle);
         }
-     *  @endcode
+        @endcode
      *
      *  @par            使用例 (送信者)
-     *  @code{.c}
+        @code{.c}
         PotrGlobalConfig global = {0};
         global.window_size        = 16;
         global.max_payload        = 1400;
@@ -129,7 +129,7 @@ extern "C"
             potrSend(handle, POTR_PEER_NA, "hello", 5, 0);
             potrCloseService(handle);
         }
-     *  @endcode
+        @endcode
      *
      *  @par            スレッド セーフ
      *  本関数はスレッド セーフです。\n
@@ -179,7 +179,7 @@ extern "C"
      *  POTR_ROLE_RECEIVER の場合、内部で受信スレッドを起動します。
      *
      *  @par            使用例 (受信者)
-     *  @code{.c}
+        @code{.c}
         void on_recv(int64_t service_id, PotrPeerId peer_id,
                      PotrEvent event, const void *data, size_t len) {
             (void)peer_id;  // 1:1 モードでは常に POTR_PEER_NA
@@ -197,17 +197,17 @@ extern "C"
             // 受信待機中 (受信スレッドが動作)
             potrCloseService(handle);
         }
-     *  @endcode
+        @endcode
      *
      *  @par            使用例 (送信者)
-     *  @code{.c}
+        @code{.c}
         PotrContext * handle;
         if (potrOpenServiceFromConfig("porter-services.conf", 1001,
                                       POTR_ROLE_SENDER, NULL, &handle) == POTR_SUCCESS) {
             potrSend(handle, POTR_PEER_NA, "hello", 5, 0);
             potrCloseService(handle);
         }
-     *  @endcode
+        @endcode
      *
      *  @par            スレッド セーフ
      *  本関数はスレッド セーフです。\n
@@ -364,16 +364,16 @@ extern "C"
      *  com_util_tracer_start() を呼び出すことで、stderr へのトレース出力を有効化できます。
      *
      *  @par            stderr 出力を有効にする例
-     *  @code{.c}
+        @code{.c}
         com_util_tracer *tracer = potrGetTracer();
         com_util_tracer_set_stderr_level(tracer, COM_UTIL_TRACE_LEVEL_INFO);
         com_util_tracer_start(tracer);
-     *  @endcode
+        @endcode
      *
      *  @par            ログ フォーマット (stderr)
-     *  @code
+        @code
         YYYY-MM-DD HH:MM:SS.mmm L [file.c:line] message
-     *  @endcode
+        @endcode
      *  タイムスタンプは UTC。L はレベル文字 (C/E/W/I/V)。
      *
      *  @par            スレッド セーフ
@@ -394,7 +394,7 @@ extern "C"
      *  本関数はソケットの作成や通信スレッドの起動を行いません。
      *
      *  @par            使用例
-     *  @code{.c}
+        @code{.c}
         PotrType type;
         if (potrGetServiceType("porter-services.conf", 1031, &type) == POTR_SUCCESS) {
             if (type == POTR_TYPE_UNICAST_BIDIR) {
@@ -403,7 +403,7 @@ extern "C"
                                 POTR_ROLE_SENDER, on_recv, &handle);
             }
         }
-     *  @endcode
+        @endcode
      *
      *  @par            スレッド セーフ
      *  本関数はスレッド セーフです。\n

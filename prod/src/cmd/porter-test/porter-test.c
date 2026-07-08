@@ -17,9 +17,9 @@
  *  受信データがバイナリと判定された場合は一時ファイルに保存してパスを表示します。
  *
  *  @par            使用方法
- *  @code{.sh}
+    @code{.sh}
     porter-test [-l <level>] [<role> <config_path> <service_id>]
- *  @endcode
+    @endcode
  *
  *  @par            オプション
  *  | オプション       | 説明                                                        |
@@ -31,12 +31,12 @@
  *  位置引数 (role/config_path/service_id) を省略した場合は対話コンソールで open を実行します。
  *
  *  @par            使用例
- *  @code{.sh}
+    @code{.sh}
     porter-test sender porter-services.conf 10
     porter-test receiver porter-services.conf 10
     porter-test -l INFO sender porter-services.conf 10
     porter-test
- *  @endcode
+    @endcode
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
  *
