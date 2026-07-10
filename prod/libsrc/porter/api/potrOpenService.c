@@ -67,7 +67,7 @@ static void generate_session(PotrContext *ctx)
 {
     srand((unsigned int)com_util_get_monotonic_ms());
     ctx->session_id = (uint32_t)rand();
-    com_util_get_realtime(&ctx->session_tv_sec, &ctx->session_tv_nsec);
+    com_util_get_realtime(&ctx->session_ts);
 
     ctx->last_ping_send_ms = 0U;
     ctx->last_valid_data_send_ms = 0U;

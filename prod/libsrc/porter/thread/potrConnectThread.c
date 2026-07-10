@@ -144,16 +144,18 @@ static int tcp_read_first_packet(PotrSocket fd, uint8_t *buf, size_t max_buf, si
  * 呼び出し前提: session_establish_mutex を取得済みであること。 */
 static int tcp_session_compare(const PotrContext *ctx, const PotrPacket *pkt)
 {
+    com_util_timespec pkt_session_ts;
+    int ts_cmp;
+
     if (!ctx->peer_session_known)
         return TCP_SESSION_NEW;
 
-    if (pkt->session_tv_sec > ctx->peer_session_tv_sec)
+    potr_session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
+    ts_cmp = com_util_timespec_cmp(&pkt_session_ts, &ctx->peer_session_ts);
+
+    if (ts_cmp > 0)
         return TCP_SESSION_NEW;
-    else if (pkt->session_tv_sec < ctx->peer_session_tv_sec)
-        return TCP_SESSION_OLD;
-    else if (pkt->session_tv_nsec > ctx->peer_session_tv_nsec)
-        return TCP_SESSION_NEW;
-    else if (pkt->session_tv_nsec < ctx->peer_session_tv_nsec)
+    else if (ts_cmp < 0)
         return TCP_SESSION_OLD;
     else if (pkt->session_id > ctx->peer_session_id)
         return TCP_SESSION_NEW;

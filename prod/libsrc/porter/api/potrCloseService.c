@@ -46,8 +46,7 @@ static void send_fin(PotrContext *ctx)
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    shdr.session_tv_sec = ctx->session_tv_sec;
-    shdr.session_tv_nsec = ctx->session_tv_nsec;
+    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     if (packet_build_fin(&fin_pkt, &shdr) != POTR_SUCCESS)
         return;
@@ -132,8 +131,7 @@ static int send_tcp_fin(PotrContext *ctx, uint32_t fin_target_seq)
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    shdr.session_tv_sec = ctx->session_tv_sec;
-    shdr.session_tv_nsec = ctx->session_tv_nsec;
+    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     if (packet_build_fin(&fin_pkt, &shdr) != POTR_SUCCESS)
     {

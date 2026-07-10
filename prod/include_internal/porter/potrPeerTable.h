@@ -67,18 +67,17 @@ extern "C"
     /**
      *  @brief  session_triplet でピアを検索します。
      *
-     *  ピア テーブルを線形探索し、session_id / session_tv_sec / session_tv_nsec が
+     *  ピア テーブルを線形探索し、session_id / セッション開始時刻が
      *  一致するアクティブなエントリを返します。\n
      *  呼び出し元は peers_mutex を取得してから呼び出すこと。
      *
-     *  @param[in]  ctx             セッション コンテキスト。
-     *  @param[in]  session_id      ピアのセッション識別子。
-     *  @param[in]  session_tv_sec  ピアのセッション開始時刻 秒部。
-     *  @param[in]  session_tv_nsec ピアのセッション開始時刻 ナノ秒部。
+     *  @param[in]  ctx         セッション コンテキスト。
+     *  @param[in]  session_id  ピアのセッション識別子。
+     *  @param[in]  session_ts  ピアのセッション開始時刻。
      *  @return     見つかった場合はピア コンテキストへのポインター、見つからない場合は NULL。
      */
-    extern PotrPeerContext *peer_find_by_session(const PotrContext *ctx, uint32_t session_id, int64_t session_tv_sec,
-                                                 int32_t session_tv_nsec);
+    extern PotrPeerContext *peer_find_by_session(const PotrContext *ctx, uint32_t session_id,
+                                                 const com_util_timespec *session_ts);
 
     /**
      *  @brief  peer_id でピアを検索します。

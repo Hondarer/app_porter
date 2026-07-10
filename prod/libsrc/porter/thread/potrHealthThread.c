@@ -134,8 +134,7 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
     com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    shdr.session_tv_sec = ctx->session_tv_sec;
-    shdr.session_tv_nsec = ctx->session_tv_nsec;
+    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
     seq = ctx->send_window.next_seq;
     build_result = packet_build_ping(&ping_pkt, &shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
     com_util_local_lock_unlock(ctx->send_window_mutex);
@@ -229,8 +228,7 @@ static void health_thread_func(void *arg)
     if (!ctx->is_multi_peer)
     {
         shdr.session_id = ctx->session_id;
-        shdr.session_tv_sec = ctx->session_tv_sec;
-        shdr.session_tv_nsec = ctx->session_tv_nsec;
+        potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
     }
 
     while (ctx->health_running[0])
@@ -272,8 +270,8 @@ static void health_thread_func(void *arg)
 
                 peer_shdr.service_id = ctx->service.service_id;
                 peer_shdr.session_id = ctx->peers[i].session_id;
-                peer_shdr.session_tv_sec = ctx->peers[i].session_tv_sec;
-                peer_shdr.session_tv_nsec = ctx->peers[i].session_tv_nsec;
+                potr_session_ts_to_hdr(&ctx->peers[i].session_ts, &peer_shdr.session_tv_sec,
+                                       &peer_shdr.session_tv_nsec);
 
                 com_util_local_lock_lock(ctx->peers[i].send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
                 seq = ctx->peers[i].send_window.next_seq;

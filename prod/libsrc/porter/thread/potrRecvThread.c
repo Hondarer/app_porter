@@ -67,8 +67,7 @@ typedef struct RecvSlot
     int pad;               /* パディング (recv_window をポインター境界に揃える) */
     PotrWindow *recv_window;
     uint32_t *peer_session_id;
-    int64_t *peer_session_tv_sec;
-    int32_t *peer_session_tv_nsec;
+    com_util_timespec *peer_session_ts;
     int *peer_session_known;
     int *reorder_pending;
     int *pending_fin;
@@ -77,10 +76,8 @@ typedef struct RecvSlot
     size_t *frag_buf_len;
     int *frag_compressed;
     volatile int *health_alive;
-    int64_t *last_recv_tv_sec;
-    int32_t *last_recv_tv_nsec;
-    int64_t *path_last_recv_sec;
-    int32_t *path_last_recv_nsec;
+    com_util_timespec *last_recv_ts;
+    com_util_timespec *path_last_recv_ts;
     volatile uint8_t *path_ping_state;
 } RecvSlot;
 
@@ -93,8 +90,7 @@ static void recv_slot_init_ctx(RecvSlot *slot, PotrContext *ctx)
     slot->pad = 0;
     slot->recv_window = &ctx->recv_window;
     slot->peer_session_id = &ctx->peer_session_id;
-    slot->peer_session_tv_sec = &ctx->peer_session_tv_sec;
-    slot->peer_session_tv_nsec = &ctx->peer_session_tv_nsec;
+    slot->peer_session_ts = &ctx->peer_session_ts;
     slot->peer_session_known = &ctx->peer_session_known;
     slot->reorder_pending = &ctx->reorder_pending;
     slot->pending_fin = &ctx->pending_fin;
@@ -103,10 +99,8 @@ static void recv_slot_init_ctx(RecvSlot *slot, PotrContext *ctx)
     slot->frag_buf_len = &ctx->frag_buf_len;
     slot->frag_compressed = &ctx->frag_compressed;
     slot->health_alive = &ctx->health_alive;
-    slot->last_recv_tv_sec = &ctx->last_recv_tv_sec;
-    slot->last_recv_tv_nsec = &ctx->last_recv_tv_nsec;
-    slot->path_last_recv_sec = ctx->path_last_recv_sec;
-    slot->path_last_recv_nsec = ctx->path_last_recv_nsec;
+    slot->last_recv_ts = &ctx->last_recv_ts;
+    slot->path_last_recv_ts = ctx->path_last_recv_ts;
     slot->path_ping_state = ctx->path_ping_state;
 }
 
@@ -119,8 +113,7 @@ static void recv_slot_init_peer(RecvSlot *slot, PotrContext *ctx, PotrPeerContex
     slot->pad = 0;
     slot->recv_window = &peer->recv_window;
     slot->peer_session_id = &peer->peer_session_id;
-    slot->peer_session_tv_sec = &peer->peer_session_tv_sec;
-    slot->peer_session_tv_nsec = &peer->peer_session_tv_nsec;
+    slot->peer_session_ts = &peer->peer_session_ts;
     slot->peer_session_known = &peer->peer_session_known;
     slot->reorder_pending = &peer->reorder_pending;
     slot->pending_fin = &peer->pending_fin;
@@ -129,10 +122,8 @@ static void recv_slot_init_peer(RecvSlot *slot, PotrContext *ctx, PotrPeerContex
     slot->frag_buf_len = &peer->frag_buf_len;
     slot->frag_compressed = &peer->frag_compressed;
     slot->health_alive = &peer->health_alive;
-    slot->last_recv_tv_sec = &peer->last_recv_tv_sec;
-    slot->last_recv_tv_nsec = &peer->last_recv_tv_nsec;
-    slot->path_last_recv_sec = peer->path_last_recv_sec;
-    slot->path_last_recv_nsec = peer->path_last_recv_nsec;
+    slot->last_recv_ts = &peer->last_recv_ts;
+    slot->path_last_recv_ts = peer->path_last_recv_ts;
     slot->path_ping_state = peer->path_ping_state;
 }
 
@@ -287,8 +278,7 @@ static int send_tcp_fin_ack(PotrContext *ctx, uint32_t fin_target_seq)
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    shdr.session_tv_sec = ctx->session_tv_sec;
-    shdr.session_tv_nsec = ctx->session_tv_nsec;
+    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     if (packet_build_fin_ack(&fin_ack_pkt, &shdr, fin_target_seq) != POTR_SUCCESS)
     {
@@ -328,8 +318,7 @@ static void n1_send_nack(PotrContext *ctx, PotrPeerContext *peer, uint32_t nack_
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = peer->session_id;
-    shdr.session_tv_sec = peer->session_tv_sec;
-    shdr.session_tv_nsec = peer->session_tv_nsec;
+    potr_session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     if (packet_build_nack(&nack_pkt, &shdr, nack_seq) != POTR_SUCCESS)
         return;
@@ -344,8 +333,7 @@ static void n1_send_reject(PotrContext *ctx, PotrPeerContext *peer, uint32_t seq
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = peer->session_id;
-    shdr.session_tv_sec = peer->session_tv_sec;
-    shdr.session_tv_nsec = peer->session_tv_nsec;
+    potr_session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     if (packet_build_reject(&reject_pkt, &shdr, seq_num) != POTR_SUCCESS)
         return;
@@ -405,25 +393,21 @@ static void n1_update_path_recv(PotrPeerContext *peer, const struct sockaddr_in 
    片方向 type 1-6 では PING / 有効 DATA、双方向 type 7/8 では PING 受信時のみ呼ぶこと。 */
 static int slot_update_path_health(RecvSlot *slot, int path_idx)
 {
-    int64_t s;
-    int32_t ns;
+    com_util_timespec now_ts;
 
-    com_util_get_monotonic(&s, &ns);
-    *slot->last_recv_tv_sec = s;
-    *slot->last_recv_tv_nsec = ns;
-    slot->path_last_recv_sec[path_idx] = s;
-    slot->path_last_recv_nsec[path_idx] = ns;
+    com_util_get_monotonic(&now_ts);
+    *slot->last_recv_ts = now_ts;
+    slot->path_last_recv_ts[path_idx] = now_ts;
     return set_path_ping_state(&slot->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
 }
 
 /* N:1: select() タイムアウト時にヘルスチェック タイムアウトを確認する */
 static void n1_check_health_timeout(PotrContext *ctx)
 {
-    int64_t now_sec;
-    int32_t now_nsec;
+    com_util_timespec now_ts;
     int i;
 
-    com_util_get_monotonic(&now_sec, &now_nsec);
+    com_util_get_monotonic(&now_ts);
     int k;
     int should_wake_health = 0;
 
@@ -449,11 +433,10 @@ static void n1_check_health_timeout(PotrContext *ctx)
 
             if (ctx->peers[i].dest_addr[k].sin_family == 0)
                 continue; /* 未使用 */
-            if (ctx->peers[i].path_last_recv_sec[k] == 0)
+            if (ctx->peers[i].path_last_recv_ts[k].tv_sec == 0)
                 continue; /* 初回受信前 */
 
-            path_elapsed = (now_sec - ctx->peers[i].path_last_recv_sec[k]) * 1000LL +
-                           (now_nsec - ctx->peers[i].path_last_recv_nsec[k]) / 1000000L;
+            path_elapsed = com_util_timespec_diff_ms(&now_ts, &ctx->peers[i].path_last_recv_ts[k]);
 
             if (path_elapsed >= (int64_t)ctx->health_timeout_ms)
             {
@@ -470,11 +453,10 @@ static void n1_check_health_timeout(PotrContext *ctx)
         }
 
         /* ピア単位のタイムアウト: 全パス消滅、または最終受信から切断判定 */
-        if (ctx->peers[i].last_recv_tv_sec == 0)
+        if (ctx->peers[i].last_recv_ts.tv_sec == 0)
             continue;
 
-        elapsed_ms = (now_sec - ctx->peers[i].last_recv_tv_sec) * 1000LL +
-                     (now_nsec - ctx->peers[i].last_recv_tv_nsec) / 1000000L;
+        elapsed_ms = com_util_timespec_diff_ms(&now_ts, &ctx->peers[i].last_recv_ts);
 
         if (elapsed_ms >= (int64_t)ctx->health_timeout_ms)
         {
@@ -710,8 +692,7 @@ static int slot_check_and_update_session(RecvSlot *slot, const PotrPacket *pkt)
            FIN/タイムアウト後は送信者が同一セッションのまま任意の seq から
            再開する可能性があるため pkt->seq_num を使用する。 */
         *slot->peer_session_id = pkt->session_id;
-        *slot->peer_session_tv_sec = pkt->session_tv_sec;
-        *slot->peer_session_tv_nsec = pkt->session_tv_nsec;
+        potr_session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, slot->peer_session_ts);
         *slot->peer_session_known = 1;
         *slot->reorder_pending = 0;
         slot_clear_pending_fin(slot);
@@ -722,38 +703,30 @@ static int slot_check_and_update_session(RecvSlot *slot, const PotrPacket *pkt)
         return 1;
     }
 
-    /* (session_tv_sec, session_tv_nsec, session_id) の辞書順で新旧を判定する。
+    /* (セッション開始時刻, session_id) の辞書順で新旧を判定する。
        - pkt > 既知セッション: 新セッション。return せずにフォール スルーし、
          関数末尾の「新セッション採用」ブロックで採用処理を行う。
        - pkt < 既知セッション: 旧セッション。即 return 0 で破棄する。
        - pkt == 既知セッション: 同一セッション。即 return 1 で通常受信を継続する。
        新セッションと判定された分岐は LOG のみで return しないため、
        if-else チェーンを抜けた後に必ず末尾の採用ブロックに到達する。 */
-    if (pkt->session_tv_sec > *slot->peer_session_tv_sec)
+    com_util_timespec pkt_session_ts;
+    potr_session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
+    int ts_cmp = com_util_timespec_cmp(&pkt_session_ts, slot->peer_session_ts);
+
+    if (ts_cmp > 0)
     {
-        /* 新セッション (tv_sec が大): フォール スルーして採用 */
+        /* 新セッション (セッション開始時刻が大): フォール スルーして採用 */
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-                   "recv[service_id=%" PRId64 "]: new session (tv_sec %lld > %lld)"
+                   "recv[service_id=%" PRId64 "]: new session (ts %lld.%09lld > %lld.%09lld)"
                    ", old_id=%u new_id=%u",
-                   ctx->service.service_id, (long long)pkt->session_tv_sec, (long long)*slot->peer_session_tv_sec,
+                   ctx->service.service_id, (long long)pkt_session_ts.tv_sec, (long long)pkt_session_ts.tv_nsec,
+                   (long long)slot->peer_session_ts->tv_sec, (long long)slot->peer_session_ts->tv_nsec,
                    *slot->peer_session_id, pkt->session_id);
     }
-    else if (pkt->session_tv_sec < *slot->peer_session_tv_sec)
+    else if (ts_cmp < 0)
     {
-        return 0; /* 旧セッション (tv_sec が小): 破棄 */
-    }
-    else if (pkt->session_tv_nsec > *slot->peer_session_tv_nsec)
-    {
-        /* 新セッション (tv_sec 同一・tv_nsec が大): フォール スルーして採用 */
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-                   "recv[service_id=%" PRId64 "]: new session (tv_nsec %d > %d)"
-                   ", old_id=%u new_id=%u",
-                   ctx->service.service_id, pkt->session_tv_nsec, *slot->peer_session_tv_nsec, *slot->peer_session_id,
-                   pkt->session_id);
-    }
-    else if (pkt->session_tv_nsec < *slot->peer_session_tv_nsec)
-    {
-        return 0; /* 旧セッション (tv_sec 同一・tv_nsec が小): 破棄 */
+        return 0; /* 旧セッション (セッション開始時刻が小): 破棄 */
     }
     else if (pkt->session_id > *slot->peer_session_id)
     {
@@ -763,7 +736,7 @@ static int slot_check_and_update_session(RecvSlot *slot, const PotrPacket *pkt)
     }
     else
     {
-        /* ここに到達するのは tv_sec == tv_sec かつ tv_nsec == tv_nsec かつ
+        /* ここに到達するのはセッション開始時刻が完全一致かつ
            session_id <= peer_session_id の場合のみ。
            新セッション分岐はこの else には入らない。 */
         if (pkt->session_id == *slot->peer_session_id)
@@ -781,8 +754,7 @@ static int slot_check_and_update_session(RecvSlot *slot, const PotrPacket *pkt)
        送信済みの seq に直接同期し、不要な NACK/REJECT サイクルを発生させない。
        送信者を先に起動して受信者が後から参加した場合も同様に機能する。 */
     *slot->peer_session_id = pkt->session_id;
-    *slot->peer_session_tv_sec = pkt->session_tv_sec;
-    *slot->peer_session_tv_nsec = pkt->session_tv_nsec;
+    *slot->peer_session_ts = pkt_session_ts;
     *slot->reorder_pending = 0;
     slot_clear_pending_fin(slot);
     window_init(slot->recv_window, pkt->seq_num, ctx->global.window_size, ctx->global.max_payload);
@@ -891,8 +863,7 @@ static void update_path_recv(PotrContext *ctx, int path_idx, const struct sockad
 /* タイムアウト時に経過時間を確認し、必要なら peer_port クリアと DISCONNECTED イベントを発火する */
 static void check_health_timeout(PotrContext *ctx)
 {
-    int64_t now_sec;
-    int32_t now_nsec;
+    com_util_timespec now_ts;
     int i;
     int should_wake_health = 0;
     int path_state_changed = 0;
@@ -900,18 +871,17 @@ static void check_health_timeout(PotrContext *ctx)
     if (ctx->health_timeout_ms == 0)
         return;
 
-    com_util_get_monotonic(&now_sec, &now_nsec);
+    com_util_get_monotonic(&now_ts);
 
     /* パスごとのタイムアウト: peer_port をクリア */
     for (i = 0; i < ctx->n_path; i++)
     {
         int64_t elapsed_ms;
 
-        if (ctx->path_last_recv_sec[i] == 0)
+        if (ctx->path_last_recv_ts[i].tv_sec == 0)
             continue;
 
-        elapsed_ms =
-            (now_sec - ctx->path_last_recv_sec[i]) * 1000LL + (now_nsec - ctx->path_last_recv_nsec[i]) / 1000000L;
+        elapsed_ms = com_util_timespec_diff_ms(&now_ts, &ctx->path_last_recv_ts[i]);
 
         if (elapsed_ms >= (int64_t)ctx->health_timeout_ms)
         {
@@ -919,7 +889,7 @@ static void check_health_timeout(PotrContext *ctx)
             should_wake_health |= state_changed;
             path_state_changed |= state_changed;
             ctx->peer_port[i] = 0;
-            ctx->path_last_recv_sec[i] = 0;
+            ctx->path_last_recv_ts[i].tv_sec = 0;
             /* unicast_bidir で動的学習したアドレス・ポートをリセットする (再接続を許可) */
             if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
             {
@@ -943,12 +913,12 @@ static void check_health_timeout(PotrContext *ctx)
     }
 
     /* 全体の health_alive 判定 */
-    if (!ctx->health_alive || ctx->last_recv_tv_sec == 0)
+    if (!ctx->health_alive || ctx->last_recv_ts.tv_sec == 0)
         return;
 
     {
         int64_t elapsed_ms;
-        elapsed_ms = (now_sec - ctx->last_recv_tv_sec) * 1000LL + (now_nsec - ctx->last_recv_tv_nsec) / 1000000L;
+        elapsed_ms = com_util_timespec_diff_ms(&now_ts, &ctx->last_recv_ts);
 
         if (elapsed_ms >= (int64_t)ctx->health_timeout_ms)
         {
@@ -962,7 +932,7 @@ static void check_health_timeout(PotrContext *ctx)
             clear_pending_fin_ctx(ctx);
             ctx->peer_session_known = 0;
             ctx->reorder_pending = 0;
-            ctx->last_recv_tv_sec = 0;
+            ctx->last_recv_ts.tv_sec = 0;
             /* 次の接続到来まで受信状態を不定に戻す */
             should_wake_health |=
                 set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
@@ -982,8 +952,7 @@ static void check_health_timeout(PotrContext *ctx)
    同一欠番でタイムアウト経過後は reorder_pending を 0 にクリアして 1 を返す。 */
 static int reorder_gap_ready(PotrContext *ctx, uint32_t nack_num)
 {
-    int64_t now_sec;
-    int32_t now_nsec;
+    com_util_timespec now_ts;
     uint32_t ms;
 
     if (ctx->global.reorder_timeout_ms == 0U)
@@ -995,35 +964,28 @@ static int reorder_gap_ready(PotrContext *ctx, uint32_t nack_num)
     if (!ctx->reorder_pending || ctx->reorder_nack_num != nack_num)
     {
         uint32_t effective_ms;
-        com_util_get_monotonic(&now_sec, &now_nsec);
+        com_util_get_monotonic(&now_ts);
 
         /* マルチキャスト/ブロードキャスト通常モードでは NACK 送出タイミングを分散させる。
            複数受信者が同一欠番を同時に NACK すると送信者側で輻輳が発生するため、
            タイマー値を reorder_timeout_ms の 100%〜200% の範囲でジッタを付加する。
-           ジッタ源: now_nsec の下位ビット (外部 RNG 不要・移植性高)。
+           ジッタ源: 現在時刻のナノ秒部の下位ビット (外部 RNG 不要・移植性高)。
            RAW 系は POTR_TYPE_MULTICAST_RAW / BROADCAST_RAW であり条件に該当しないため対象外。 */
         effective_ms = ms;
         if (ctx->service.type == POTR_TYPE_MULTICAST || ctx->service.type == POTR_TYPE_BROADCAST)
         {
-            effective_ms = ms + (uint32_t)((uint32_t)now_nsec % ms);
+            effective_ms = ms + (uint32_t)((uint64_t)now_ts.tv_nsec % ms);
         }
 
         ctx->reorder_pending = 1;
         ctx->reorder_nack_num = nack_num;
-        ctx->reorder_deadline_sec = now_sec + (int64_t)(effective_ms / 1000U);
-        ctx->reorder_deadline_nsec = now_nsec + (int32_t)((effective_ms % 1000U) * 1000000U);
-        if (ctx->reorder_deadline_nsec >= 1000000000L)
-        {
-            ctx->reorder_deadline_sec++;
-            ctx->reorder_deadline_nsec -= 1000000000L;
-        }
+        com_util_timespec_add_ms(&now_ts, (uint64_t)effective_ms, &ctx->reorder_deadline_ts);
         return 0; /* 待機開始 */
     }
 
     /* 同一欠番: タイムアウト確認 */
-    com_util_get_monotonic(&now_sec, &now_nsec);
-    if (now_sec > ctx->reorder_deadline_sec ||
-        (now_sec == ctx->reorder_deadline_sec && now_nsec >= ctx->reorder_deadline_nsec))
+    com_util_get_monotonic(&now_ts);
+    if (com_util_timespec_cmp(&now_ts, &ctx->reorder_deadline_ts) >= 0)
     {
         ctx->reorder_pending = 0;
         return 1; /* タイムアウト: 処理進行 */
@@ -1050,7 +1012,7 @@ static void check_reorder_timeout(PotrContext *ctx)
            自然に再同期する。 */
         raw_session_disconnect(ctx);
         ctx->peer_session_known = 0;
-        ctx->last_recv_tv_sec = 0;
+        ctx->last_recv_ts.tv_sec = 0;
         window_init(&ctx->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
     }
     else
@@ -1072,8 +1034,7 @@ static void send_nack(PotrContext *ctx, uint32_t nack_seq)
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    shdr.session_tv_sec = ctx->session_tv_sec;
-    shdr.session_tv_nsec = ctx->session_tv_nsec;
+    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     if (packet_build_nack(&nack_pkt, &shdr, nack_seq) != POTR_SUCCESS)
         return;
@@ -1128,8 +1089,7 @@ static void send_reject(PotrContext *ctx, uint32_t seq_num)
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    shdr.session_tv_sec = ctx->session_tv_sec;
-    shdr.session_tv_nsec = ctx->session_tv_nsec;
+    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     if (packet_build_reject(&reject_pkt, &shdr, seq_num) != POTR_SUCCESS)
         return;
@@ -1282,7 +1242,7 @@ static void fire_disconnected_by_fin(PotrContext *ctx, uint32_t fin_target_seq)
     clear_pending_fin_ctx(ctx);
     ctx->peer_session_known = 0;
     ctx->reorder_pending = 0;
-    ctx->last_recv_tv_sec = 0;
+    ctx->last_recv_ts.tv_sec = 0;
     com_util_local_lock_lock(ctx->recv_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     window_init(&ctx->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
     com_util_local_lock_unlock(ctx->recv_window_mutex);
@@ -1506,7 +1466,9 @@ static void n1_handle_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *w
     com_util_local_lock_lock(ctx->peers_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
 
     /* session_triplet でピアを検索 */
-    peer = peer_find_by_session(ctx, pkt->session_id, pkt->session_tv_sec, pkt->session_tv_nsec);
+    com_util_timespec pkt_session_ts;
+    potr_session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
+    peer = peer_find_by_session(ctx, pkt->session_id, &pkt_session_ts);
 
     if (peer == NULL)
     {
@@ -1516,8 +1478,7 @@ static void n1_handle_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *w
             if (peer != NULL)
             {
                 peer->peer_session_id = pkt->session_id;
-                peer->peer_session_tv_sec = pkt->session_tv_sec;
-                peer->peer_session_tv_nsec = pkt->session_tv_nsec;
+                peer->peer_session_ts = pkt_session_ts;
                 peer->peer_session_known = 1;
                 window_init(&peer->recv_window, pkt->seq_num, ctx->global.window_size, ctx->global.max_payload);
                 is_new_peer = 1;

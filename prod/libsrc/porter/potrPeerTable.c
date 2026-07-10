@@ -36,7 +36,7 @@ static void peer_generate_session(PotrPeerContext *peer)
 {
     srand((unsigned int)com_util_get_monotonic_ms());
     peer->session_id = (uint32_t)rand();
-    com_util_get_realtime(&peer->session_tv_sec, &peer->session_tv_nsec);
+    com_util_get_realtime(&peer->session_ts);
 }
 
 /* 使用中でない peer_id を単調増加カウンターから生成する (peers_mutex 取得済みの文脈で呼ぶ) */
@@ -90,8 +90,7 @@ void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = peer->session_id;
-    shdr.session_tv_sec = peer->session_tv_sec;
-    shdr.session_tv_nsec = peer->session_tv_nsec;
+    potr_session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     if (packet_build_fin(&fin_pkt, &shdr) != POTR_SUCCESS)
     {
@@ -230,8 +229,7 @@ void peer_table_dispose(PotrContext *ctx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-PotrPeerContext *peer_find_by_session(const PotrContext *ctx, uint32_t session_id, int64_t session_tv_sec,
-                                      int32_t session_tv_nsec)
+PotrPeerContext *peer_find_by_session(const PotrContext *ctx, uint32_t session_id, const com_util_timespec *session_ts)
 {
     int i;
 
@@ -241,8 +239,8 @@ PotrPeerContext *peer_find_by_session(const PotrContext *ctx, uint32_t session_i
         {
             continue;
         }
-        if (ctx->peers[i].peer_session_id == session_id && ctx->peers[i].peer_session_tv_sec == session_tv_sec &&
-            ctx->peers[i].peer_session_tv_nsec == session_tv_nsec)
+        if (ctx->peers[i].peer_session_id == session_id &&
+            com_util_timespec_cmp(&ctx->peers[i].peer_session_ts, session_ts) == 0)
         {
             return (PotrPeerContext *)&ctx->peers[i];
         }
@@ -350,7 +348,7 @@ PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_
 
     /* 送信元アドレスを最初のパスとして記録 (インデックス = path_idx = ctx->sock[] の添字) */
     peer->dest_addr[path_idx] = *sender_addr;
-    peer->path_last_recv_sec[path_idx] = 0; /* n1_update_path_recv() で更新される */
+    peer->path_last_recv_ts[path_idx].tv_sec = 0; /* n1_update_path_recv() で更新される */
     peer->n_paths = 1;
 
     ctx->n_peers++;
@@ -374,8 +372,8 @@ void peer_path_clear(const PotrContext *ctx, PotrPeerContext *peer, int path_idx
                ctx->service.service_id, (unsigned)peer->peer_id, path_idx);
 
     memset(&peer->dest_addr[path_idx], 0, sizeof(peer->dest_addr[path_idx]));
-    peer->path_last_recv_sec[path_idx] = 0;
-    peer->path_last_recv_nsec[path_idx] = 0;
+    peer->path_last_recv_ts[path_idx].tv_sec = 0;
+    peer->path_last_recv_ts[path_idx].tv_nsec = 0;
     peer->n_paths--;
 }
 

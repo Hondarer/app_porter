@@ -25,6 +25,7 @@
 #include <stdint.h>
 
 #include <com_util/base/platform.h>
+#include <com_util/clock/timespec.h>
 #include <porter/porter_type.h>
 
 #include <porter/protocol/window.h>
@@ -127,16 +128,14 @@ typedef struct PotrPeerContext
     int active;         /**< 1: 有効スロット, 0: 空き。 */
 
     /* 自セッション (このピア宛の送信に使用) */
-    uint32_t session_id;     /**< 自セッション識別子 (乱数)。 */
-    uint32_t _pad_session;   /**< パディング (session_tv_sec を 8 バイト境界に揃える)。 */
-    int64_t session_tv_sec;  /**< 自セッション開始時刻 秒部。 */
-    int32_t session_tv_nsec; /**< 自セッション開始時刻 ナノ秒部。 */
+    uint32_t session_id;          /**< 自セッション識別子 (乱数)。 */
+    uint32_t _pad_session;        /**< パディング (session_ts を 8 バイト境界に揃える)。 */
+    com_util_timespec session_ts; /**< 自セッション開始時刻。 */
 
     /* ピア セッション追跡 */
-    uint32_t peer_session_id;     /**< 追跡中のピア セッション識別子。 */
-    int64_t peer_session_tv_sec;  /**< 追跡中のピア セッション開始時刻 秒部。 */
-    int32_t peer_session_tv_nsec; /**< 追跡中のピア セッション開始時刻 ナノ秒部。 */
-    int peer_session_known;       /**< ピア セッションが初期化済みか (0: 未初期化)。 */
+    uint32_t peer_session_id;          /**< 追跡中のピア セッション識別子。 */
+    int peer_session_known;            /**< ピア セッションが初期化済みか (0: 未初期化)。 */
+    com_util_timespec peer_session_ts; /**< 追跡中のピア セッション開始時刻。 */
 
     /* 送受信ウィンドウ (ピアごと独立) */
     PotrWindow send_window;                 /**< 送信ウィンドウ (NACK 再送用)。 */
@@ -157,9 +156,7 @@ typedef struct PotrPeerContext
         [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。 */
     uint8_t remote_path_ping_state
         [POTR_MAX_PATH];       /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
-    int64_t last_recv_tv_sec;  /**< 最終受信時刻 秒部 (CLOCK_MONOTONIC)。0 = 未受信。 */
-    int32_t last_recv_tv_nsec; /**< 最終受信時刻 ナノ秒部。 */
-    uint32_t _pad_nack_dedup;  /**< パディング (nack_dedup_buf を 8 バイト境界に揃える)。 */
+    com_util_timespec last_recv_ts; /**< 最終受信時刻 (CLOCK_MONOTONIC)。tv_sec == 0 は未受信。 */
 
     /* NACK 重複抑制 */
     PotrNackDedupEntry nack_dedup_buf[POTR_NACK_DEDUP_SLOTS]; /**< NACK 重複抑制バッファー。 */
@@ -167,11 +164,10 @@ typedef struct PotrPeerContext
     uint8_t _pad_reorder[3]; /**< パディング (reorder_pending を 4 バイト境界に揃える)。 */
 
     /* リオーダー バッファー タイムアウト管理 */
-    int reorder_pending;           /**< リオーダー待機中 (1: 待機中, 0: 待機なし)。 */
-    uint32_t reorder_nack_num;     /**< 待機中の欠番通番。 */
-    uint32_t _pad_reorder_dl;      /**< パディング (reorder_deadline_sec を 8 バイト境界に揃える)。 */
-    int64_t reorder_deadline_sec;  /**< タイムアウト期限 秒部 (CLOCK_MONOTONIC)。 */
-    int32_t reorder_deadline_nsec; /**< タイムアウト期限 ナノ秒部。 */
+    int reorder_pending;                   /**< リオーダー待機中 (1: 待機中, 0: 待機なし)。 */
+    uint32_t reorder_nack_num;             /**< 待機中の欠番通番。 */
+    uint32_t _pad_reorder_dl;              /**< パディング (reorder_deadline_ts を 8 バイト境界に揃える)。 */
+    com_util_timespec reorder_deadline_ts; /**< タイムアウト期限 (CLOCK_MONOTONIC)。 */
 
     /* pending FIN 管理 (FIN を先受信したが受信ウィンドウが未追い付きの場合) */
     int pending_fin;         /**< FIN 受信ペンディング中 (1: 待機中, 0: なし)。 */
@@ -183,8 +179,9 @@ typedef struct PotrPeerContext
     struct sockaddr_in dest_addr
         [POTR_MAX_PATH]; /**< 送信先ソケット アドレス (インデックス = ctx->sock[] の添字)。未使用スロットは sin_family == 0。 */
     int n_paths;         /**< アクティブ パス数。ループ境界には使わず管理カウンターとして使用します。 */
-    int64_t path_last_recv_sec[POTR_MAX_PATH];  /**< パスごとの最終受信時刻 秒部。未使用スロットは 0。 */
-    int32_t path_last_recv_nsec[POTR_MAX_PATH]; /**< パスごとの最終受信時刻 ナノ秒部。 */
+    uint32_t _pad_path_recv; /**< パディング (path_last_recv_ts を 8 バイト境界に揃える)。 */
+    com_util_timespec
+        path_last_recv_ts[POTR_MAX_PATH]; /**< パスごとの最終受信時刻 (CLOCK_MONOTONIC)。tv_sec == 0 は未受信。 */
 } PotrPeerContext;
 
 /**
@@ -249,26 +246,23 @@ struct PotrContext
     struct sockaddr_in dest_addr[POTR_MAX_PATH];     /**< 送信先ソケット アドレス (送信者が sendto に使用)。 */
 
     /* 自セッション識別子 (potrOpenService 時に決定) */
-    int64_t session_tv_sec;  /**< 自セッション開始時刻 秒部。 */
-    uint32_t session_id;     /**< 自セッション識別子 (乱数)。 */
-    int32_t session_tv_nsec; /**< 自セッション開始時刻 ナノ秒部。 */
+    com_util_timespec session_ts; /**< 自セッション開始時刻。 */
+    uint32_t session_id;          /**< 自セッション識別子 (乱数)。 */
 
     /* 相手セッション追跡 (受信者が使用) */
-    int64_t peer_session_tv_sec;  /**< 追跡中の相手セッション開始時刻 秒部。 */
-    uint32_t peer_session_id;     /**< 追跡中の相手セッション識別子。 */
-    int32_t peer_session_tv_nsec; /**< 追跡中の相手セッション開始時刻 ナノ秒部。 */
-    int peer_session_known;       /**< 相手セッションが初期化済みか (0: 未初期化)。 */
+    int peer_session_known;            /**< 相手セッションが初期化済みか (0: 未初期化)。 */
+    com_util_timespec peer_session_ts; /**< 追跡中の相手セッション開始時刻。 */
+    uint32_t peer_session_id;          /**< 追跡中の相手セッション識別子。 */
 
     /* 受信者: パスごとの送信者ポート キャッシュ (src_port=0 対応) */
     uint16_t peer_port[POTR_MAX_PATH]; /**< 各パスで観測した送信者ポート (NBO)。0 = 未観測。 */
 
     /* ヘルスチェック: 最終受信時刻 (受信者が使用。CLOCK_MONOTONIC 基準)。 */
-    int32_t last_recv_tv_nsec; /**< 最終受信時刻 ナノ秒部。 */
-    int64_t last_recv_tv_sec;  /**< 最終受信時刻 秒部。0 = 未受信。 */
+    uint32_t _pad_last_recv;        /**< パディング (last_recv_ts を 8 バイト境界に揃える)。 */
+    com_util_timespec last_recv_ts; /**< 最終受信時刻。tv_sec == 0 は未受信。 */
 
     /* 受信者: パスごとの最終受信時刻 (パス単位の peer_port クリア用。CLOCK_MONOTONIC 基準)。 */
-    int64_t path_last_recv_sec[POTR_MAX_PATH];  /**< パスごとの最終受信時刻 秒部。0 = 未受信。 */
-    int32_t path_last_recv_nsec[POTR_MAX_PATH]; /**< パスごとの最終受信時刻 ナノ秒部。 */
+    com_util_timespec path_last_recv_ts[POTR_MAX_PATH]; /**< パスごとの最終受信時刻。tv_sec == 0 は未受信。 */
 
     size_t frag_buf_len;      /**< フラグメント結合バッファーの現在のデータ長 (バイト)。 */
     int frag_compressed;      /**< フラグメント受信中の圧縮フラグ (非 0: 圧縮あり)。 */
@@ -300,16 +294,13 @@ struct PotrContext
     uint32_t tcp_close_ack_seq;          /**< 受信済み FIN_ACK の ack_num。 */
 
     /* 受信者: リオーダー バッファー タイムアウト管理 (reorder_timeout_ms > 0 のときのみ使用) */
-    int reorder_pending;           /**< リオーダー待機中か (1: 待機中、0: 待機なし)。 */
-    uint32_t reorder_nack_num;     /**< 待機中の欠番通番。 */
-    int64_t reorder_deadline_sec;  /**< タイムアウト期限 秒部 (CLOCK_MONOTONIC)。 */
-    int32_t reorder_deadline_nsec; /**< タイムアウト期限 ナノ秒部。 */
+    int reorder_pending;                   /**< リオーダー待機中か (1: 待機中、0: 待機なし)。 */
+    uint32_t reorder_nack_num;             /**< 待機中の欠番通番。 */
+    com_util_timespec reorder_deadline_ts; /**< タイムアウト期限 (CLOCK_MONOTONIC)。 */
 
     /* pending FIN 管理 (FIN を先受信したが受信ウィンドウが未追い付きの場合) */
     int pending_fin;         /**< FIN 受信ペンディング中 (1: 待機中, 0: なし)。 */
     uint32_t fin_target_seq; /**< FIN の ack_num に埋め込まれた受信完了目標 next_seq。 */
-
-    uint32_t _pad_reorder; /**< パディング (send_queue を 8 バイト境界に揃える)。 */
 
     PotrSendQueue send_queue; /**< 非同期送信キュー。 */
 

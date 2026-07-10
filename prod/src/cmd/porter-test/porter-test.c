@@ -268,7 +268,7 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
  *  @param[in]      context   閾値レベル (com_util_trace_level_t *) を指すポインター。
  */
 static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer *handle, com_util_trace_level_t level,
-                               const com_util_realtime_timestamp *timestamp, const char *message, void *context)
+                               const com_util_timespec *timestamp, const char *message, void *context)
 {
     static const char lc_table[] = {'C', 'E', 'W', 'I', 'V', 'D'};
     com_util_trace_level_t threshold = *(const com_util_trace_level_t *)context;
@@ -285,7 +285,7 @@ static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer
         {
             lc = 'D';
         }
-        com_util_format_realtime_iso8601_local(ts, sizeof(ts), timestamp->tv_sec, timestamp->tv_nsec);
+        com_util_format_realtime_iso8601_local(ts, sizeof(ts), timestamp);
         com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR, "%s %c %s\n", ts, lc, message);
     }
     com_util_tracer_call_next_hook(prev, handle, level, timestamp, message);

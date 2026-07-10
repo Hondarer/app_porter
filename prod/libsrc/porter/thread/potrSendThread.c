@@ -83,8 +83,7 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    shdr.session_tv_sec = ctx->session_tv_sec;
-    shdr.session_tv_nsec = ctx->session_tv_nsec;
+    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     /* send_window へのアクセスを排他制御する (送信スレッド・ヘルスチェック スレッド・受信スレッドが競合) */
     com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
@@ -253,8 +252,7 @@ static void flush_packed_peer(PotrContext *ctx, PotrPeerContext *peer, size_t pa
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = peer->session_id;
-    shdr.session_tv_sec = peer->session_tv_sec;
-    shdr.session_tv_nsec = peer->session_tv_nsec;
+    potr_session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     com_util_local_lock_lock(peer->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
 
