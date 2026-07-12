@@ -43,6 +43,7 @@
  *******************************************************************************
  */
 
+#include <com_util/argparser/argparser.h>
 #include <com_util/base/platform.h>
 #include <com_util/crt/path.h>
 #include <com_util/crt/stdio.h>
@@ -991,8 +992,9 @@ int main(int argc, char *argv[])
 {
     char line[INPUT_BUF_SIZE];
     char prompt_state[PROMPT_STATE_SIZE];
-    int i;
-    const char *positionals[3];
+    const char *role_arg = NULL;
+    const char *config_path_arg = NULL;
+    const char *service_id_arg = NULL;
     int positional_count = 0;
     PorterTestSession session;
 
@@ -1005,49 +1007,69 @@ int main(int argc, char *argv[])
     session.is_bidir = 0;
     session.can_send = 0;
 
-    /* オプションと位置引数の解析。-l は位置引数の前後どちらに置かれてもよい。 */
-    for (i = 1; i < argc; i++)
+    int need_help = 0;
+    const char *log_level = NULL;
+
+    com_util_argparser_init("porter の送受信動作を対話的に検証します。");
+    com_util_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
+    com_util_argparser_register_option_string("-l", NULL, "level", "ログレベル。", 0, &log_level);
+    com_util_argparser_register_positional_string("role", "sender または receiver。", 0, &role_arg);
+    com_util_argparser_register_positional_string("config_path", "設定ファイル。", 0, &config_path_arg);
+    com_util_argparser_register_positional_string("service_id", "サービス ID。", 0, &service_id_arg);
+
+    if (com_util_argparser_get_register_error_count() > 0)
     {
-        if (strcmp(argv[i], "-l") == 0)
+        com_util_argparser_print_register_error_messages(stderr);
+        return EXIT_FAILURE;
+    }
+
+    int parse_result = com_util_argparser_parse(argc, argv);
+
+    if (need_help != 0)
+    {
+        com_util_argparser_print_usage(stdout);
+        return EXIT_SUCCESS;
+    }
+
+    if (parse_result != COM_UTIL_ARGPARSER_OK)
+    {
+        com_util_argparser_print_error_messages(stderr);
+        com_util_argparser_print_usage(stderr);
+        return EXIT_FAILURE;
+    }
+
+    if (role_arg != NULL)
+    {
+        positional_count++;
+    }
+    if (config_path_arg != NULL)
+    {
+        positional_count++;
+    }
+    if (service_id_arg != NULL)
+    {
+        positional_count++;
+    }
+
+    if (log_level != NULL)
+    {
+        if (!parse_trace_level(log_level, &g_trace_level))
         {
-            if (i + 1 >= argc)
-            {
-                fprintf(stderr, "エラー: -l オプションにレベルを指定してください。\n");
-                fprintf(stderr, "使用方法: %s [-l <level>] [<role> <config_path> <service_id>]\n", argv[0]);
-                return EXIT_FAILURE;
-            }
-            i++;
-            if (!parse_trace_level(argv[i], &g_trace_level))
-            {
-                fprintf(stderr,
-                        "エラー: 不明なログレベル \"%s\"。"
-                        "VERBOSE/INFO/WARNING/ERROR/CRITICAL のいずれかを指定してください。\n",
-                        argv[i]);
-                return EXIT_FAILURE;
-            }
-            g_tracer_started = 0; /* 後段の ensure_tracer_started で開始する。 */
-            ensure_tracer_started();
-        }
-        else if (positional_count < 3)
-        {
-            positionals[positional_count] = argv[i];
-            positional_count++;
-        }
-        else
-        {
-            fprintf(stderr, "エラー: 引数が多すぎます。\n");
-            fprintf(stderr, "使用方法: %s [-l <level>] [<role> <config_path> <service_id>]\n", argv[0]);
+            fprintf(stderr,
+                    "エラー: 不明なログレベル \"%s\"。"
+                    "VERBOSE/INFO/WARNING/ERROR/CRITICAL のいずれかを指定してください。\n\n",
+                    log_level);
+            com_util_argparser_print_usage(stderr);
             return EXIT_FAILURE;
         }
+        g_tracer_started = 0; /* 後段の ensure_tracer_started で開始する。 */
+        ensure_tracer_started();
     }
 
     if (positional_count != 0 && positional_count != 3)
     {
-        fprintf(stderr, "使用方法: %s [-l <level>] [<role> <config_path> <service_id>]\n", argv[0]);
-        fprintf(stderr, "  role        sender | receiver\n");
-        fprintf(stderr, "  -l <level>  ログレベル (VERBOSE/INFO/WARNING/ERROR/CRITICAL)\n");
-        fprintf(stderr, "例: %s sender porter-services.conf 10\n", argv[0]);
-        fprintf(stderr, "例: %s -l INFO receiver porter-services.conf 10\n", argv[0]);
+        fprintf(stderr, "エラー: role、config_path、service_id は 3 個すべてを指定してください。\n\n");
+        com_util_argparser_print_usage(stderr);
         return EXIT_FAILURE;
     }
 
@@ -1073,16 +1095,16 @@ int main(int argc, char *argv[])
     if (positional_count == 3)
     {
         PotrRole role;
-        if (!parse_role(positionals[0], &role))
+        if (!parse_role(role_arg, &role))
         {
             com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
                                           "エラー: 不明なロール \"%s\"。sender または receiver を指定してください。\n",
-                                          positionals[0]);
+                                          role_arg);
         }
         else
         {
-            int64_t service_id = (int64_t)strtoll(positionals[2], NULL, 10);
-            do_open(&session, role, positionals[1], service_id);
+            int64_t service_id = (int64_t)strtoll(service_id_arg, NULL, 10);
+            do_open(&session, role, config_path_arg, service_id);
         }
     }
     else

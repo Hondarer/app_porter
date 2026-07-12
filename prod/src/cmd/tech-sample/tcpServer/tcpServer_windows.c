@@ -12,7 +12,7 @@
  *  - プラットフォーム フック                      (platform_init / platform_cleanup /
  *                                                  dispatch_internal_args)
  *
- *  main() / handle_client_session() / parse_args() は tcpServer.c に実装します。
+ *  main() / handle_client_session() は tcpServer.c に実装します。
  *  g_session_fn の実体は tcpServer_common.c に定義されます。
  *
  *  内部起動パターン (ユーザーは直接使わない):
@@ -462,9 +462,11 @@ int dispatch_internal_args(int argc, char *argv[])
                 }
             }
             worker_loop(argv[i + 1], conns_per_worker);
+
             return 1;
         }
     }
+
     return 0;
 }
 
