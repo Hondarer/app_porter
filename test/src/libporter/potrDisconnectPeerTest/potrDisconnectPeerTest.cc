@@ -179,6 +179,8 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
                                                         HasSubstr("not found"))))
         .Times(1); // [Pre-Assert確認_異常系] - ERROR ログに "not found" が含まれること。
 
+    // Pre-Assert
+
     // Act
     int rtc = potrDisconnectPeer(&ctx, 99); // [手順] - 存在しない peer_id=99 で potrDisconnectPeer を呼び出す。
 
@@ -213,6 +215,8 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
 
     EXPECT_CALL(mock_peer_table, peer_free(&ctx, &peer_ctx))
         .Times(1); // [Pre-Assert確認_正常系] - peer_free が 1 回呼ばれること。
+
+    // Pre-Assert
 
     // Act
     int rtc = potrDisconnectPeer(&ctx, 1); // [手順] - 正常な状態で potrDisconnectPeer を呼び出す。
@@ -261,6 +265,8 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
 
     EXPECT_CALL(mock_peer_table, peer_free(&ctx, &peer_ctx))
         .Times(1); // [Pre-Assert確認_正常系] - peer_free が 1 回呼ばれること。
+
+    // Pre-Assert
 
     // Act
     int rtc = potrDisconnectPeer(&ctx, 1); // [手順] - health_alive=0 の状態で potrDisconnectPeer を呼び出す。

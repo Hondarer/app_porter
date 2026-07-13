@@ -59,9 +59,7 @@ class windowTest : public Test
     }
 };
 
-// - win が NULL の場合に POTR_ERROR を返すこと。
-// - 初期化後に base_seq / next_seq が initial_seq になること。
-// - 同一サイズで再初期化した場合にバッファーを再確保せず状態のみリセットすること。
+// 初期化と同一サイズ再初期化でバッファーが再確保されず状態がリセットされることの確認
 TEST_F(windowTest, initInitializesStateAndReusesBuffersOnSameSize)
 {
     // Arrange
@@ -79,11 +77,11 @@ TEST_F(windowTest, initInitializesStateAndReusesBuffersOnSameSize)
     EXPECT_EQ(POTR_ERROR, rtc_null);       // [確認_異常系] - win が NULL の場合に POTR_ERROR を返すこと。
     EXPECT_EQ(POTR_SUCCESS, rtc_first);    // [確認_正常系] - 初期化が成功すること。
     EXPECT_EQ(POTR_SUCCESS, rtc_second);   // [確認_正常系] - 同一サイズの再初期化が成功すること。
-    EXPECT_EQ(200U, win.base_seq);         // [確認] - base_seq が再初期化時の initial_seq になること。
-    EXPECT_EQ(200U, win.next_seq);         // [確認] - next_seq が再初期化時の initial_seq になること。
-    EXPECT_EQ(first_packets, win.packets); // [確認] - 同一サイズの再初期化でバッファーが再確保されないこと。
-    EXPECT_EQ(8U, win.window_size);        // [確認] - window_size が保持されること。
-    EXPECT_EQ(128U, win.max_payload);      // [確認] - max_payload が保持されること。
+    EXPECT_EQ(200U, win.base_seq);         // [確認_正常系] - base_seq が再初期化時の initial_seq になること。
+    EXPECT_EQ(200U, win.next_seq);         // [確認_正常系] - next_seq が再初期化時の initial_seq になること。
+    EXPECT_EQ(first_packets, win.packets); // [確認_正常系] - 同一サイズの再初期化でバッファーが再確保されないこと。
+    EXPECT_EQ(8U, win.window_size);        // [確認_正常系] - window_size が保持されること。
+    EXPECT_EQ(128U, win.max_payload);      // [確認_正常系] - max_payload が保持されること。
 }
 
 // - 送信ウィンドウが満杯のとき push で最古エントリが evict されること。
@@ -114,10 +112,10 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
     int rtc_latest = window_send_get(&win, 4U, &out);  // [手順] - 最新の通番 4 を取得する。
 
     // Assert
-    EXPECT_EQ(1, full_after_4);          // [確認] - window_size 件 push で満杯になること。
+    EXPECT_EQ(1, full_after_4);          // [確認_正常系] - window_size 件 push で満杯になること。
     EXPECT_EQ(POTR_ERROR, rtc_evicted);  // [確認_異常系] - evict された通番の取得が POTR_ERROR になること。
     EXPECT_EQ(POTR_SUCCESS, rtc_latest); // [確認_正常系] - 最新エントリの取得が成功すること。
-    EXPECT_EQ(1U, win.base_seq);         // [確認] - evict により base_seq が前進すること。
+    EXPECT_EQ(1U, win.base_seq);         // [確認_正常系] - evict により base_seq が前進すること。
 }
 
 // - send_get がプール スロットへディープ コピーされたペイロードを返すこと。
@@ -125,7 +123,7 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
 TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
 {
     // Arrange
-    uint8_t payload[3] = {0x01, 0x02, 0x03}; // [状態] - ディープ コピー検証用のペイロード。
+    uint8_t payload[3] = {0x01, 0x02, 0x03}; // [状態] - ディープ コピー検証用のペイロード 3 バイトを用意する。
     PotrPacket out;
 
     ASSERT_EQ(POTR_SUCCESS, window_init(&win, 0U, 4U, 16U)); // [状態] - window_size=4 で初期化する。
@@ -142,8 +140,8 @@ TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
     int rtc_out_of_range = window_send_get(&win, 99U, &out); // [手順] - 範囲外の通番で取得する。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc_get);        // [確認_正常系] - 保持中の通番の取得が成功すること。
-    EXPECT_EQ(0x01, out.payload[0]);         // [確認] - push 時点のペイロードが保持されること (ディープ コピー)。
+    EXPECT_EQ(POTR_SUCCESS, rtc_get); // [確認_正常系] - 保持中の通番の取得が成功すること。
+    EXPECT_EQ(0x01, out.payload[0]);  // [確認_正常系] - push 時点のペイロードが保持されること (ディープ コピー)。
     EXPECT_EQ(POTR_ERROR, rtc_out_of_range); // [確認_異常系] - 範囲外の通番に POTR_ERROR を返すこと。
 }
 
@@ -152,7 +150,7 @@ TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
 TEST_F(windowTest, recvPushAndPopDeliversInOrder)
 {
     // Arrange
-    uint8_t payload[2] = {0x10, 0x20}; // [状態] - 受信パケットのペイロード。
+    uint8_t payload[2] = {0x10, 0x20}; // [状態] - 受信パケットのペイロード 2 バイトを用意する。
     PotrPacket out;
 
     ASSERT_EQ(POTR_SUCCESS, window_init(&win, 0U, 4U, 16U)); // [状態] - base_seq=0 で初期化する。
@@ -174,9 +172,9 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
 
     // Assert
     EXPECT_EQ(POTR_SUCCESS, rtc_pop0);    // [確認_正常系] - 1 件目の pop が成功すること。
-    EXPECT_EQ(0U, seq0);                  // [確認] - 通番順に取り出されること。
+    EXPECT_EQ(0U, seq0);                  // [確認_正常系] - 1 件目が通番 0 で取り出されること。
     EXPECT_EQ(POTR_SUCCESS, rtc_pop1);    // [確認_正常系] - 2 件目の pop が成功すること。
-    EXPECT_EQ(1U, seq1);                  // [確認] - 通番順に取り出されること。
+    EXPECT_EQ(1U, seq1);                  // [確認_正常系] - 2 件目が通番 1 で取り出され、通番順が保たれること。
     EXPECT_EQ(POTR_ERROR, rtc_pop_empty); // [確認_異常系] - 未着の通番の pop が POTR_ERROR になること。
 }
 
@@ -185,7 +183,7 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
 TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
 {
     // Arrange
-    uint8_t payload[1] = {0x77}; // [状態] - 受信パケットのペイロード。
+    uint8_t payload[1] = {0x77}; // [状態] - 受信パケットのペイロード 1 バイトを用意する。
     PotrPacket out;
     uint32_t nack_num = 999U;
 
@@ -214,10 +212,10 @@ TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
     }
 
     // Assert
-    EXPECT_EQ(1, rtc_gap);                  // [確認] - 先行パケット到着時に欠番が検出されること。
-    EXPECT_EQ(0U, nack_num);                // [確認] - NACK 対象が next_seq (0) であること。
+    EXPECT_EQ(1, rtc_gap);                  // [確認_正常系] - 先行パケット到着時に欠番が検出されること。
+    EXPECT_EQ(0U, nack_num);                // [確認_正常系] - NACK 対象が next_seq (0) であること。
     EXPECT_EQ(POTR_ERROR, rtc_pop_blocked); // [確認_異常系] - 欠番未解消のまま pop できないこと。
-    EXPECT_EQ(0, rtc_no_gap);               // [確認] - 欠番解消後は NACK 不要になること。
+    EXPECT_EQ(0, rtc_no_gap);               // [確認_正常系] - 欠番解消後は NACK 不要になること。
     EXPECT_EQ(3, pop_count);                // [確認_正常系] - 3 件すべて順に取り出せること。
 }
 
@@ -226,7 +224,7 @@ TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
 TEST_F(windowTest, recvPushRejectsOutOfWindowAndAcceptsDuplicate)
 {
     // Arrange
-    uint8_t payload[1] = {0x55}; // [状態] - 受信パケットのペイロード。
+    uint8_t payload[1] = {0x55}; // [状態] - 受信パケットのペイロード 1 バイトを用意する。
 
     ASSERT_EQ(POTR_SUCCESS, window_init(&win, 0U, 4U, 16U)); // [状態] - window_size=4 で初期化する。
 
@@ -259,16 +257,16 @@ TEST_F(windowTest, recvSkipAdvancesOnlyOnNextSeq)
     window_recv_skip(&win, 10U); // [手順] - next_seq と一致する通番で skip する。
 
     // Assert
-    EXPECT_EQ(10U, next_after_mismatch); // [確認] - 不一致の skip では前進しないこと。
-    EXPECT_EQ(11U, win.next_seq);        // [確認] - 一致した skip で next_seq が前進すること。
-    EXPECT_EQ(11U, win.base_seq);        // [確認] - 一致した skip で base_seq が前進すること。
+    EXPECT_EQ(10U, next_after_mismatch); // [確認_正常系] - 不一致の skip では前進しないこと。
+    EXPECT_EQ(11U, win.next_seq);        // [確認_正常系] - 一致した skip で next_seq が前進すること。
+    EXPECT_EQ(11U, win.base_seq);        // [確認_正常系] - 一致した skip で base_seq が前進すること。
 }
 
 // - reset が全スロットを無効化し base_seq / next_seq を新基点に設定すること。
 TEST_F(windowTest, recvResetClearsSlotsAndSetsNewBase)
 {
     // Arrange
-    uint8_t payload[1] = {0x99}; // [状態] - 受信パケットのペイロード。
+    uint8_t payload[1] = {0x99}; // [状態] - 受信パケットのペイロード 1 バイトを用意する。
     PotrPacket out;
 
     ASSERT_EQ(POTR_SUCCESS, window_init(&win, 0U, 4U, 16U)); // [状態] - base_seq=0 で初期化する。
@@ -284,7 +282,7 @@ TEST_F(windowTest, recvResetClearsSlotsAndSetsNewBase)
     int rtc_pop = window_recv_pop(&win, &out);
 
     // Assert
-    EXPECT_EQ(500U, win.base_seq);  // [確認] - base_seq が新基点になること。
-    EXPECT_EQ(500U, win.next_seq);  // [確認] - next_seq が新基点になること。
-    EXPECT_EQ(POTR_ERROR, rtc_pop); // [確認] - リセットにより格納済みスロットが無効化されること。
+    EXPECT_EQ(500U, win.base_seq);  // [確認_正常系] - base_seq が新基点になること。
+    EXPECT_EQ(500U, win.next_seq);  // [確認_正常系] - next_seq が新基点になること。
+    EXPECT_EQ(POTR_ERROR, rtc_pop); // [確認_正常系] - リセットにより格納済みスロットが無効化されること。
 }
