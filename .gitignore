@@ -31,11 +31,15 @@
 ## 中間ファイル
 obj
 gcov
+*.gcda
+*.gcno
+*.gcov
 lcov
 coverage
 results
 core
 coverage.xml
+LastCoverageResults.log
 .gitignore.tmp.*
 
 ## ビルド/Doxy スキップ用スタンプ
