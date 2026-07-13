@@ -15,6 +15,7 @@
 // 実ファイルから global、service、service ID 一覧が読み込めることの確認
 TEST(configFileLoadTest, loadsGlobalServiceAndServiceIdsFromRealFile)
 {
+    // Arrange
     PorterConfigBuilder builder;
     PotrGlobalConfig global = {};
     PotrServiceDef service = {};
@@ -30,7 +31,6 @@ TEST(configFileLoadTest, loadsGlobalServiceAndServiceIdsFromRealFile)
                                   .addTcpBidirService(2002, 6002, "127.0.0.1")
                                   .build();
 
-    // Arrange
     ASSERT_FALSE(config_path.empty()); // [状態] - 実ファイルへ [global] と 2 つの service section を書き出す。
 
     // Pre-Assert

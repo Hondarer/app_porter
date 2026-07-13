@@ -692,8 +692,8 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
 // FIN target が 0 に wrap する場合でも、flag により pending FIN が正しく解消されることを確認する
 TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
 {
-    PorterConfigBuilder cfg;
     // Arrange
+    PorterConfigBuilder cfg;
     const string payload = "wrap-fin-target-zero"; // [状態] - 最終 DATA のメッセージを "wrap-fin-target-zero" とする。
     string config_path =
         cfg.addUnicastService(57, 19057).build(); // [状態] - unicast サービスをポート 19057 で定義する。
