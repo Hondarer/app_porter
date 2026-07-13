@@ -88,7 +88,9 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
     int rtc = config_load_service("config.conf", 42, &def); // [手順] - service_id 42 の設定を読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc);               // [確認_正常系] - 対象 service の読み込みに成功すること。
+    EXPECT_EQ(
+        POTR_SUCCESS,
+        rtc); // [確認_正常系] - config_load_service の戻り値から、対象 service の読み込みに成功したと判断できること。
     EXPECT_EQ(42, def.service_id);              // [確認_正常系] - service_id を section 名から設定すること。
     EXPECT_EQ(POTR_TYPE_TCP_BIDIR, def.type);   // [確認_正常系] - type を読み込むこと。
     EXPECT_EQ(5001U, def.dst_port);             // [確認_正常系] - dst_port を読み込むこと。
@@ -152,7 +154,8 @@ TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
                                   &def); // [手順] - passphrase 形式の encrypt_key を含む service を読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc);         // [確認_正常系] - 読み込みに成功すること。
+    EXPECT_EQ(POTR_SUCCESS,
+              rtc); // [確認_正常系] - config_load_service の戻り値から、読み込みに成功したと判断できること。
     EXPECT_EQ(1, def.encrypt_enabled);    // [確認_正常系] - passphrase から鍵導出できた場合に暗号化を有効化すること。
     EXPECT_EQ(0x5A, def.encrypt_key[0]);  // [確認_正常系] - 導出した鍵を構造体へ格納すること。
     EXPECT_EQ(0x5A, def.encrypt_key[31]); // [確認_正常系] - 導出した鍵を末尾まで保持すること。
@@ -191,7 +194,8 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
     int rtc = config_load_service("config.conf", 56, &def); // [手順] - hash 失敗を起こす service を読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc);      // [確認_正常系] - service の読込自体は成功すること。
+    EXPECT_EQ(POTR_SUCCESS,
+              rtc); // [確認_正常系] - config_load_service の戻り値から、service の読込自体は成功したと判断できること。
     EXPECT_EQ(0, def.encrypt_enabled); // [確認_異常系] - hash 失敗時に暗号化を無効として扱うこと。
     EXPECT_EQ(0, memcmp(def.encrypt_key, std::array<uint8_t, POTR_CRYPTO_KEY_SIZE>{}.data(),
                         POTR_CRYPTO_KEY_SIZE)); // [確認_異常系] - hash 失敗時に鍵をゼロ クリアすること。

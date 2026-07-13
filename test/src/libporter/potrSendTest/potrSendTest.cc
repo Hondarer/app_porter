@@ -76,7 +76,7 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
     int rtc = potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potrSend で送信を試みる。
 
     // Assert
-    EXPECT_EQ(POTR_ERROR_DISCONNECTED, rtc); // [確認_異常系] - POTR_ERROR_DISCONNECTED が返ること。
+    EXPECT_EQ(POTR_ERROR_DISCONNECTED, rtc); // [確認_異常系] - potrSend の戻り値が POTR_ERROR_DISCONNECTED であること。
     EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
 
@@ -101,7 +101,7 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
                        0); // [手順] - POTR_PEER_ALL 宛てに potrSend で送信を試みる。
 
     // Assert
-    EXPECT_EQ(POTR_ERROR_DISCONNECTED, rtc); // [確認_異常系] - POTR_ERROR_DISCONNECTED が返ること。
+    EXPECT_EQ(POTR_ERROR_DISCONNECTED, rtc); // [確認_異常系] - potrSend の戻り値が POTR_ERROR_DISCONNECTED であること。
     EXPECT_EQ(0U, ctx.send_queue.count);     // [確認_異常系] - 送信キューに積まれないこと。
 }
 
@@ -129,7 +129,7 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
                        0); // [手順] - POTR_PEER_ALL 宛てに potrSend で送信する。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc);        // [確認_正常系] - POTR_SUCCESS が返ること。
+    EXPECT_EQ(POTR_SUCCESS, rtc);        // [確認_正常系] - potrSend の戻り値が POTR_SUCCESS であること。
     EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - 送信キューに 1 件だけ積まれること。
 
     {
@@ -157,7 +157,7 @@ TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
     int rtc = potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potrSend で送信する。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc);        // [確認_正常系] - POTR_SUCCESS が返ること。
+    EXPECT_EQ(POTR_SUCCESS, rtc);        // [確認_正常系] - potrSend の戻り値が POTR_SUCCESS であること。
     EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - 送信キューに 1 件積まれること。
 
     {

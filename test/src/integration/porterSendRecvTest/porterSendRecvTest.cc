@@ -368,7 +368,7 @@ TEST_F(porterSendRecvTest, send_single_message)
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
-    EXPECT_EQ(0, send_exit); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, send_exit); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
     EXPECT_NE(
         string::npos,
         getStdout(recv_h_).find("Hello Porter")); // [確認_正常系] - RECIEVER が "Hello Porter" を受信していること。
@@ -424,7 +424,7 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
 
     // Assert
     string recv_out = getStdout(recv_h_);
-    EXPECT_EQ(0, send_exit);                        // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, send_exit); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
     EXPECT_NE(string::npos, recv_out.find("msg1")); // [確認_正常系] - RECIEVER が "msg1" を受信していること。
     EXPECT_NE(string::npos, recv_out.find("msg2")); // [確認_正常系] - RECIEVER が "msg2" を受信していること。
     EXPECT_NE(string::npos, recv_out.find("msg3")); // [確認_正常系] - RECIEVER が "msg3" を受信していること。
@@ -454,7 +454,7 @@ TEST_F(porterSendRecvTest, recv_exits_cleanly_on_sigint)
     int recv_exit = waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
-    EXPECT_EQ(0, recv_exit); // [確認_正常系] - RECIEVER の終了コードが 0 であること。
+    EXPECT_EQ(0, recv_exit); // [確認_正常系] - waitForExit の戻り値として、RECIEVER の終了コードが 0 であること。
     EXPECT_NE(
         string::npos,
         getStdout(recv_h_).find("終了しました")); // [確認_正常系] - RECIEVER が "終了しました" を出力していること。
@@ -530,7 +530,8 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
               getStdout(recv_h_).find("接続確立")); // [確認_正常系] - open 直後の時点で "接続確立" が出力されないこと。
 
     interruptProcess(send_h_);                // [手順] - SENDER に SIGINT (Ctrl + C) を入力する。
-    EXPECT_EQ(0, waitForExit(send_h_, 5000)); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, waitForExit(send_h_,
+                             5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -626,7 +627,8 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
 
     /* sender 側は追加送信せず即 close する。 */
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - 送信直後に "exit" で SENDER を close する。
-    EXPECT_EQ(0, waitForExit(send_h_, 5000));     // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, waitForExit(send_h_,
+                             5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
     ASSERT_NO_THROW(
@@ -769,7 +771,8 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
 
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));           // [手順] - 送信直後に "exit" で SENDER を close する。
-    EXPECT_EQ(0, waitForExit(send_h_, 5000));               // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, waitForExit(send_h_,
+                             5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
@@ -899,7 +902,8 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
             "health[service_id=14]: PING seq=")); // [確認_正常系] - 最後の DATA 基準で periodic PING が再開されること。
 
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
-    EXPECT_EQ(0, waitForExit(send_h_, 5000));     // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, waitForExit(send_h_,
+                             5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -959,7 +963,7 @@ TEST_F(porterSendRecvTest, bidir_echo)
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
-    EXPECT_EQ(0, send_exit); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, send_exit); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
     EXPECT_NE(string::npos,
               getStdout(recv_h_).find("bidir-test")); // [確認_正常系] - RECIEVER が "bidir-test" を受信していること。
 }
@@ -995,7 +999,8 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
 
-    EXPECT_EQ(0, waitForExit(send_h_, 5000)); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, waitForExit(send_h_,
+                             5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "encrypted-ok", 3000)); // [手順] - RECIEVER が暗号化経路の受信を出力するまで待機する。
@@ -1062,7 +1067,8 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
 
-    EXPECT_EQ(0, waitForExit(send_h_, 5000)); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, waitForExit(send_h_,
+                             5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(waitForOutput(recv_h_, "n1-secure-ok", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
 
@@ -1122,7 +1128,8 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
 
-    EXPECT_EQ(0, waitForExit(send_h_, 5000)); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, waitForExit(send_h_,
+                             5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "n1-after-ping-ok", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
@@ -1175,7 +1182,8 @@ TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
 
-    EXPECT_EQ(0, waitForExit(send_h_, 5000)); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, waitForExit(send_h_,
+                             5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "n1-connected-ok", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
@@ -1229,7 +1237,8 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
         waitForOutput(recv_h_, "tcp-encrypted-ok", 5000)); // [手順] - RECIEVER が受信を出力するまで待機する。
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));          // [手順] - "exit" で SENDER を終了させる。
 
-    EXPECT_EQ(0, waitForExit(send_h_, 5000)); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, waitForExit(send_h_,
+                             5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -1276,7 +1285,8 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
 
-    EXPECT_EQ(0, waitForExit(send_h_, 5000)); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, waitForExit(send_h_,
+                             5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "tcp-before-connected", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
@@ -1327,7 +1337,8 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
 
-    EXPECT_EQ(0, waitForExit(send_h_, 5000)); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, waitForExit(send_h_,
+                             5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "tcp-timeout-ignored", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
@@ -1400,7 +1411,7 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
 
     // Assert
     string recv_out = getStdout(recv_h_);
-    EXPECT_EQ(0, send_exit); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, send_exit); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
     EXPECT_NE(
         string::npos,
         recv_out.find(
@@ -1452,7 +1463,7 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
 
     // Assert
     string recv_out = getStdout(recv_h_);
-    EXPECT_EQ(0, send_exit); // [確認_正常系] - SENDER の終了コードが 0 であること。
+    EXPECT_EQ(0, send_exit); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
     EXPECT_NE(
         string::npos,
         recv_out.find("Hello Text")); // [確認_正常系] - RECIEVER が "Hello Text" をテキストとして表示していること。
@@ -1496,7 +1507,9 @@ TEST_F(porterSendRecvTest, send_file_too_large_fails)
 
     // Assert
     string send_err = getStderr(send_h_);
-    EXPECT_EQ(0, send_exit); // [確認_正常系] - SENDER の終了コードが 0 であること (エラーはループ内で処理される)。
+    EXPECT_EQ(
+        0,
+        send_exit); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であり、エラーがループ内で処理されること。
     EXPECT_NE(
         string::npos,
         send_err.find("最大送信サイズ")); // [確認_異常系] - SENDER の stderr にサイズ超過エラーが出力されていること。

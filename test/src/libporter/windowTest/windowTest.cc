@@ -75,8 +75,9 @@ TEST_F(windowTest, initInitializesStateAndReusesBuffersOnSameSize)
 
     // Assert
     EXPECT_EQ(POTR_ERROR, rtc_null);       // [確認_異常系] - win が NULL の場合に POTR_ERROR を返すこと。
-    EXPECT_EQ(POTR_SUCCESS, rtc_first);    // [確認_正常系] - 初期化が成功すること。
-    EXPECT_EQ(POTR_SUCCESS, rtc_second);   // [確認_正常系] - 同一サイズの再初期化が成功すること。
+    EXPECT_EQ(POTR_SUCCESS, rtc_first); // [確認_正常系] - window_init の戻り値から、初期化が成功したと判断できること。
+    EXPECT_EQ(POTR_SUCCESS,
+              rtc_second); // [確認_正常系] - window_init の戻り値から、同一サイズの再初期化が成功したと判断できること。
     EXPECT_EQ(200U, win.base_seq);         // [確認_正常系] - base_seq が再初期化時の initial_seq になること。
     EXPECT_EQ(200U, win.next_seq);         // [確認_正常系] - next_seq が再初期化時の initial_seq になること。
     EXPECT_EQ(first_packets, win.packets); // [確認_正常系] - 同一サイズの再初期化でバッファーが再確保されないこと。
@@ -107,7 +108,9 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
     {
         PotrPacket pkt = make_send_packet(4U, payload, sizeof(payload));
         int rtc_push = window_send_push(&win, &pkt); // [手順] - 満杯状態で 5 件目を push する。
-        ASSERT_EQ(POTR_SUCCESS, rtc_push);           // [確認_正常系] - 5 件目の push が成功すること。
+        ASSERT_EQ(
+            POTR_SUCCESS,
+            rtc_push); // [確認_正常系] - window_send_push の戻り値から、5 件目の push が成功したと判断できること。
     }
     int rtc_evicted = window_send_get(&win, 0U, &out); // [手順] - evict された通番 0 を取得する。
     int rtc_latest = window_send_get(&win, 4U, &out);  // [手順] - 最新の通番 4 を取得する。
@@ -115,7 +118,9 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
     // Assert
     EXPECT_EQ(1, full_after_4);          // [確認_正常系] - window_size 件 push で満杯になること。
     EXPECT_EQ(POTR_ERROR, rtc_evicted);  // [確認_異常系] - evict された通番の取得が POTR_ERROR になること。
-    EXPECT_EQ(POTR_SUCCESS, rtc_latest); // [確認_正常系] - 最新エントリの取得が成功すること。
+    EXPECT_EQ(
+        POTR_SUCCESS,
+        rtc_latest); // [確認_正常系] - window_send_get の戻り値から、最新エントリの取得が成功したと判断できること。
     EXPECT_EQ(1U, win.base_seq);         // [確認_正常系] - evict により base_seq が前進すること。
 }
 
@@ -141,7 +146,8 @@ TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
     int rtc_out_of_range = window_send_get(&win, 99U, &out); // [手順] - 範囲外の通番で取得する。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc_get); // [確認_正常系] - 保持中の通番の取得が成功すること。
+    EXPECT_EQ(POTR_SUCCESS,
+              rtc_get); // [確認_正常系] - window_send_get の戻り値から、保持中の通番の取得が成功したと判断できること。
     EXPECT_EQ(0x01, out.payload[0]);  // [確認_正常系] - push 時点のペイロードがディープ コピーで保持されること。
     EXPECT_EQ(POTR_ERROR, rtc_out_of_range); // [確認_異常系] - 範囲外の通番に POTR_ERROR を返すこと。
 }
@@ -163,9 +169,13 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
         PotrPacket pkt0 = make_recv_packet(0U, payload, sizeof(payload));
         PotrPacket pkt1 = make_recv_packet(1U, payload, sizeof(payload));
         int rtc_push0 = window_recv_push(&win, &pkt0); // [手順] - seq=0, 1 を順に push する。
-        ASSERT_EQ(POTR_SUCCESS, rtc_push0);            // [確認_正常系] - seq=0 の push が成功すること。
+        ASSERT_EQ(
+            POTR_SUCCESS,
+            rtc_push0); // [確認_正常系] - window_recv_push の戻り値から、seq=0 の push が成功したと判断できること。
         int rtc_push1 = window_recv_push(&win, &pkt1);
-        ASSERT_EQ(POTR_SUCCESS, rtc_push1); // [確認_正常系] - seq=1 の push が成功すること。
+        ASSERT_EQ(
+            POTR_SUCCESS,
+            rtc_push1); // [確認_正常系] - window_recv_push の戻り値から、seq=1 の push が成功したと判断できること。
     }
     int rtc_pop0 = window_recv_pop(&win, &out);
     uint32_t seq0 = out.seq_num;
@@ -174,9 +184,11 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
     int rtc_pop_empty = window_recv_pop(&win, &out); // [手順] - 空になったウィンドウから pop する。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc_pop0);    // [確認_正常系] - 1 件目の pop が成功すること。
+    EXPECT_EQ(POTR_SUCCESS,
+              rtc_pop0); // [確認_正常系] - window_recv_pop の戻り値から、1 件目の pop が成功したと判断できること。
     EXPECT_EQ(0U, seq0);                  // [確認_正常系] - 1 件目が通番 0 で取り出されること。
-    EXPECT_EQ(POTR_SUCCESS, rtc_pop1);    // [確認_正常系] - 2 件目の pop が成功すること。
+    EXPECT_EQ(POTR_SUCCESS,
+              rtc_pop1); // [確認_正常系] - window_recv_pop の戻り値から、2 件目の pop が成功したと判断できること。
     EXPECT_EQ(1U, seq1);                  // [確認_正常系] - 2 件目が通番 1 で取り出され、通番順が保たれること。
     EXPECT_EQ(POTR_ERROR, rtc_pop_empty); // [確認_異常系] - 未着の通番の pop が POTR_ERROR になること。
 }
@@ -198,7 +210,9 @@ TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
     {
         PotrPacket pkt2 = make_recv_packet(2U, payload, sizeof(payload));
         int rtc_push2 = window_recv_push(&win, &pkt2); // [手順] - seq=2 を先行して push する。
-        ASSERT_EQ(POTR_SUCCESS, rtc_push2);            // [確認_正常系] - seq=2 の push が成功すること。
+        ASSERT_EQ(
+            POTR_SUCCESS,
+            rtc_push2); // [確認_正常系] - window_recv_push の戻り値から、seq=2 の push が成功したと判断できること。
     }
     int rtc_gap = window_recv_needs_nack(&win, &nack_num); // [手順] - 欠番判定を行う。
     int rtc_pop_blocked = window_recv_pop(&win, &out);     // [手順] - 欠番未解消のまま pop する。
@@ -206,9 +220,13 @@ TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
         PotrPacket pkt0 = make_recv_packet(0U, payload, sizeof(payload));
         PotrPacket pkt1 = make_recv_packet(1U, payload, sizeof(payload));
         int rtc_push0 = window_recv_push(&win, &pkt0); // [手順] - 欠番 seq=0, 1 を埋める。
-        ASSERT_EQ(POTR_SUCCESS, rtc_push0);            // [確認_正常系] - seq=0 の push が成功すること。
+        ASSERT_EQ(
+            POTR_SUCCESS,
+            rtc_push0); // [確認_正常系] - window_recv_push の戻り値から、seq=0 の push が成功したと判断できること。
         int rtc_push1 = window_recv_push(&win, &pkt1);
-        ASSERT_EQ(POTR_SUCCESS, rtc_push1); // [確認_正常系] - seq=1 の push が成功すること。
+        ASSERT_EQ(
+            POTR_SUCCESS,
+            rtc_push1); // [確認_正常系] - window_recv_push の戻り値から、seq=1 の push が成功したと判断できること。
     }
     int rtc_no_gap = window_recv_needs_nack(&win, &nack_num);
     int pop_count = 0;
@@ -245,7 +263,8 @@ TEST_F(windowTest, recvPushRejectsOutOfWindowAndAcceptsDuplicate)
 
     // Assert
     EXPECT_EQ(POTR_ERROR, rtc_out);     // [確認_異常系] - ウィンドウ範囲外の push が POTR_ERROR になること。
-    EXPECT_EQ(POTR_SUCCESS, rtc_first); // [確認_正常系] - 範囲内の push が成功すること。
+    EXPECT_EQ(POTR_SUCCESS,
+              rtc_first); // [確認_正常系] - window_recv_push の戻り値から、範囲内の push が成功したと判断できること。
     EXPECT_EQ(POTR_SUCCESS, rtc_dup);   // [確認_正常系] - 重複 push が成功扱いになること。
 }
 

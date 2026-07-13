@@ -97,7 +97,7 @@ TEST_F(potrDisconnectPeerTest, handle_null)
     int rtc = potrDisconnectPeer(NULL, 1); // [手順] - handle=NULL で potrDisconnectPeer を呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - 戻り値が POTR_ERROR であること。
+    EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - potrDisconnectPeer の戻り値が POTR_ERROR であること。
 }
 
 // peer_id に POTR_PEER_NA を指定した場合に POTR_ERROR を返すことの確認
@@ -118,7 +118,7 @@ TEST_F(potrDisconnectPeerTest, peer_id_na)
         potrDisconnectPeer(&ctx, POTR_PEER_NA); // [手順] - peer_id=POTR_PEER_NA で potrDisconnectPeer を呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - 戻り値が POTR_ERROR であること。
+    EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - potrDisconnectPeer の戻り値が POTR_ERROR であること。
 }
 
 // peer_id に POTR_PEER_ALL を指定した場合に POTR_ERROR を返すことの確認
@@ -139,7 +139,7 @@ TEST_F(potrDisconnectPeerTest, peer_id_all)
         potrDisconnectPeer(&ctx, POTR_PEER_ALL); // [手順] - peer_id=POTR_PEER_ALL で potrDisconnectPeer を呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - 戻り値が POTR_ERROR であること。
+    EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - potrDisconnectPeer の戻り値が POTR_ERROR であること。
 }
 
 // N:1 モードでない場合に POTR_ERROR を返すことの確認
@@ -160,7 +160,7 @@ TEST_F(potrDisconnectPeerTest, not_multi_peer)
     int rtc = potrDisconnectPeer(&ctx, 1); // [手順] - is_multi_peer=0 の状態で potrDisconnectPeer を呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - 戻り値が POTR_ERROR であること。
+    EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - potrDisconnectPeer の戻り値が POTR_ERROR であること。
 }
 
 // 指定した peer_id のピアが存在しない場合に POTR_ERROR を返すことの確認
@@ -185,7 +185,7 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
     int rtc = potrDisconnectPeer(&ctx, 99); // [手順] - 存在しない peer_id=99 で potrDisconnectPeer を呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - 戻り値が POTR_ERROR であること。
+    EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - potrDisconnectPeer の戻り値が POTR_ERROR であること。
 }
 
 /* ---------- 正常系 ---------- */
@@ -222,7 +222,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     int rtc = potrDisconnectPeer(&ctx, 1); // [手順] - 正常な状態で potrDisconnectPeer を呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc);                  // [確認_正常系] - 戻り値が POTR_SUCCESS であること。
+    EXPECT_EQ(POTR_SUCCESS, rtc); // [確認_正常系] - potrDisconnectPeer の戻り値が POTR_SUCCESS であること。
     EXPECT_EQ(static_cast<size_t>(3), g_cb.count); // [確認_正常系] - PATH 2 件 + DISCONNECTED が呼ばれること。
     EXPECT_EQ(42, g_cb.entries[0].service_id);
     EXPECT_EQ((PotrPeerId)1, g_cb.entries[0].peer_id);
@@ -272,7 +272,7 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
     int rtc = potrDisconnectPeer(&ctx, 1); // [手順] - health_alive=0 の状態で potrDisconnectPeer を呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, rtc); // [確認_正常系] - 戻り値が POTR_SUCCESS であること。
+    EXPECT_EQ(POTR_SUCCESS, rtc); // [確認_正常系] - potrDisconnectPeer の戻り値が POTR_SUCCESS であること。
     EXPECT_EQ(static_cast<size_t>(0),
               g_cb.count); // [確認_正常系] - health_alive=0 のためコールバックが呼ばれないこと。
 }
