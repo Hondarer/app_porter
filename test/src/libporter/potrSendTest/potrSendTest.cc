@@ -73,10 +73,10 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
     // Pre-Assert
 
     // Act
+    int rtc = potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potrSend で送信を試みる。
+
     // Assert
-    EXPECT_EQ(POTR_ERROR_DISCONNECTED,
-              potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0)); // [手順] - potrSend で送信を試みる。
-    // [確認_異常系] - POTR_ERROR_DISCONNECTED が返ること。
+    EXPECT_EQ(POTR_ERROR_DISCONNECTED, rtc); // [確認_異常系] - POTR_ERROR_DISCONNECTED が返ること。
     EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
 
@@ -97,11 +97,12 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
     // Pre-Assert
 
     // Act
+    int rtc = potrSend(&ctx, POTR_PEER_ALL, payload, strlen(payload),
+                       0); // [手順] - POTR_PEER_ALL 宛てに potrSend で送信を試みる。
+
     // Assert
-    EXPECT_EQ(POTR_ERROR_DISCONNECTED, potrSend(&ctx, POTR_PEER_ALL, payload, strlen(payload),
-                                                0)); // [手順] - POTR_PEER_ALL 宛てに potrSend で送信を試みる。
-                                                     // [確認_異常系] - POTR_ERROR_DISCONNECTED が返ること。
-    EXPECT_EQ(0U, ctx.send_queue.count);             // [確認_異常系] - 送信キューに積まれないこと。
+    EXPECT_EQ(POTR_ERROR_DISCONNECTED, rtc); // [確認_異常系] - POTR_ERROR_DISCONNECTED が返ること。
+    EXPECT_EQ(0U, ctx.send_queue.count);     // [確認_異常系] - 送信キューに積まれないこと。
 }
 
 // N:1 の全 peer 送信が接続済み peer だけへ送られることの確認
@@ -124,11 +125,12 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
     // Pre-Assert
 
     // Act
+    int rtc = potrSend(&ctx, POTR_PEER_ALL, payload, strlen(payload),
+                       0); // [手順] - POTR_PEER_ALL 宛てに potrSend で送信する。
+
     // Assert
-    EXPECT_EQ(POTR_SUCCESS, potrSend(&ctx, POTR_PEER_ALL, payload, strlen(payload),
-                                     0)); // [手順] - POTR_PEER_ALL 宛てに potrSend で送信する。
-                                          // [確認_正常系] - POTR_SUCCESS が返ること。
-    EXPECT_EQ(1U, ctx.send_queue.count);  // [確認_正常系] - 送信キューに 1 件だけ積まれること。
+    EXPECT_EQ(POTR_SUCCESS, rtc);        // [確認_正常系] - POTR_SUCCESS が返ること。
+    EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - 送信キューに 1 件だけ積まれること。
 
     {
         PotrPayloadElem elem = popQueuedElem();
@@ -152,10 +154,10 @@ TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
     // Pre-Assert
 
     // Act
+    int rtc = potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potrSend で送信する。
+
     // Assert
-    EXPECT_EQ(POTR_SUCCESS,
-              potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0)); // [手順] - potrSend で送信する。
-                                                                          // [確認_正常系] - POTR_SUCCESS が返ること。
+    EXPECT_EQ(POTR_SUCCESS, rtc);        // [確認_正常系] - POTR_SUCCESS が返ること。
     EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - 送信キューに 1 件積まれること。
 
     {
@@ -174,20 +176,32 @@ TEST_F(potrSendTest, data_based_health_ping_suppression_applies_only_to_type_1_t
     // Pre-Assert
 
     // Act
+    // [手順] - 各 type を potr_is_oneway_udp_type で判定する。
+    int oneway_unicast_raw = potr_is_oneway_udp_type(POTR_TYPE_UNICAST_RAW);
+    int oneway_multicast_raw = potr_is_oneway_udp_type(POTR_TYPE_MULTICAST_RAW);
+    int oneway_broadcast_raw = potr_is_oneway_udp_type(POTR_TYPE_BROADCAST_RAW);
+    int oneway_unicast = potr_is_oneway_udp_type(POTR_TYPE_UNICAST);
+    int oneway_multicast = potr_is_oneway_udp_type(POTR_TYPE_MULTICAST);
+    int oneway_broadcast = potr_is_oneway_udp_type(POTR_TYPE_BROADCAST);
+    int oneway_unicast_bidir = potr_is_oneway_udp_type(POTR_TYPE_UNICAST_BIDIR);
+    int oneway_unicast_bidir_n1 = potr_is_oneway_udp_type(POTR_TYPE_UNICAST_BIDIR_N1);
+    int oneway_tcp = potr_is_oneway_udp_type(POTR_TYPE_TCP);
+    int oneway_tcp_bidir = potr_is_oneway_udp_type(POTR_TYPE_TCP_BIDIR);
+
     // Assert
     // [確認_正常系] - 片方向 UDP 系の type 1〜6 が potr_is_oneway_udp_type で真と判定されること。
-    EXPECT_TRUE(potr_is_oneway_udp_type(POTR_TYPE_UNICAST_RAW));
-    EXPECT_TRUE(potr_is_oneway_udp_type(POTR_TYPE_MULTICAST_RAW));
-    EXPECT_TRUE(potr_is_oneway_udp_type(POTR_TYPE_BROADCAST_RAW));
-    EXPECT_TRUE(potr_is_oneway_udp_type(POTR_TYPE_UNICAST));
-    EXPECT_TRUE(potr_is_oneway_udp_type(POTR_TYPE_MULTICAST));
-    EXPECT_TRUE(potr_is_oneway_udp_type(POTR_TYPE_BROADCAST));
+    EXPECT_TRUE(oneway_unicast_raw);
+    EXPECT_TRUE(oneway_multicast_raw);
+    EXPECT_TRUE(oneway_broadcast_raw);
+    EXPECT_TRUE(oneway_unicast);
+    EXPECT_TRUE(oneway_multicast);
+    EXPECT_TRUE(oneway_broadcast);
 
     // [確認_正常系] - 双方向系と TCP 系が potr_is_oneway_udp_type で偽と判定されること。
-    EXPECT_FALSE(potr_is_oneway_udp_type(POTR_TYPE_UNICAST_BIDIR));
-    EXPECT_FALSE(potr_is_oneway_udp_type(POTR_TYPE_UNICAST_BIDIR_N1));
-    EXPECT_FALSE(potr_is_oneway_udp_type(POTR_TYPE_TCP));
-    EXPECT_FALSE(potr_is_oneway_udp_type(POTR_TYPE_TCP_BIDIR));
+    EXPECT_FALSE(oneway_unicast_bidir);
+    EXPECT_FALSE(oneway_unicast_bidir_n1);
+    EXPECT_FALSE(oneway_tcp);
+    EXPECT_FALSE(oneway_tcp_bidir);
 }
 
 // 接続直後の immediate health ping が type 1〜6 (片方向 UDP 系) だけで無効になることの確認
@@ -198,18 +212,30 @@ TEST_F(potrSendTest, immediate_health_ping_is_disabled_only_for_type_1_to_6)
     // Pre-Assert
 
     // Act
+    // [手順] - 各 type を potr_type_uses_immediate_health_ping で判定する。
+    int immediate_unicast_raw = potr_type_uses_immediate_health_ping(POTR_TYPE_UNICAST_RAW);
+    int immediate_multicast_raw = potr_type_uses_immediate_health_ping(POTR_TYPE_MULTICAST_RAW);
+    int immediate_broadcast_raw = potr_type_uses_immediate_health_ping(POTR_TYPE_BROADCAST_RAW);
+    int immediate_unicast = potr_type_uses_immediate_health_ping(POTR_TYPE_UNICAST);
+    int immediate_multicast = potr_type_uses_immediate_health_ping(POTR_TYPE_MULTICAST);
+    int immediate_broadcast = potr_type_uses_immediate_health_ping(POTR_TYPE_BROADCAST);
+    int immediate_unicast_bidir = potr_type_uses_immediate_health_ping(POTR_TYPE_UNICAST_BIDIR);
+    int immediate_unicast_bidir_n1 = potr_type_uses_immediate_health_ping(POTR_TYPE_UNICAST_BIDIR_N1);
+    int immediate_tcp = potr_type_uses_immediate_health_ping(POTR_TYPE_TCP);
+    int immediate_tcp_bidir = potr_type_uses_immediate_health_ping(POTR_TYPE_TCP_BIDIR);
+
     // Assert
     // [確認_正常系] - 片方向 UDP 系の type 1〜6 が potr_type_uses_immediate_health_ping で偽と判定されること。
-    EXPECT_FALSE(potr_type_uses_immediate_health_ping(POTR_TYPE_UNICAST_RAW));
-    EXPECT_FALSE(potr_type_uses_immediate_health_ping(POTR_TYPE_MULTICAST_RAW));
-    EXPECT_FALSE(potr_type_uses_immediate_health_ping(POTR_TYPE_BROADCAST_RAW));
-    EXPECT_FALSE(potr_type_uses_immediate_health_ping(POTR_TYPE_UNICAST));
-    EXPECT_FALSE(potr_type_uses_immediate_health_ping(POTR_TYPE_MULTICAST));
-    EXPECT_FALSE(potr_type_uses_immediate_health_ping(POTR_TYPE_BROADCAST));
+    EXPECT_FALSE(immediate_unicast_raw);
+    EXPECT_FALSE(immediate_multicast_raw);
+    EXPECT_FALSE(immediate_broadcast_raw);
+    EXPECT_FALSE(immediate_unicast);
+    EXPECT_FALSE(immediate_multicast);
+    EXPECT_FALSE(immediate_broadcast);
 
     // [確認_正常系] - 双方向系と TCP 系が potr_type_uses_immediate_health_ping で真と判定されること。
-    EXPECT_TRUE(potr_type_uses_immediate_health_ping(POTR_TYPE_UNICAST_BIDIR));
-    EXPECT_TRUE(potr_type_uses_immediate_health_ping(POTR_TYPE_UNICAST_BIDIR_N1));
-    EXPECT_TRUE(potr_type_uses_immediate_health_ping(POTR_TYPE_TCP));
-    EXPECT_TRUE(potr_type_uses_immediate_health_ping(POTR_TYPE_TCP_BIDIR));
+    EXPECT_TRUE(immediate_unicast_bidir);
+    EXPECT_TRUE(immediate_unicast_bidir_n1);
+    EXPECT_TRUE(immediate_tcp);
+    EXPECT_TRUE(immediate_tcp_bidir);
 }

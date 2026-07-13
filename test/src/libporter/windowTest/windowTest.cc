@@ -106,7 +106,8 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
     int full_after_4 = window_send_full(&win); // [手順] - 4 件 push した直後の満杯判定を取得する。
     {
         PotrPacket pkt = make_send_packet(4U, payload, sizeof(payload));
-        ASSERT_EQ(POTR_SUCCESS, window_send_push(&win, &pkt)); // [手順] - 満杯状態で 5 件目を push する。
+        int rtc_push = window_send_push(&win, &pkt); // [手順] - 満杯状態で 5 件目を push する。
+        ASSERT_EQ(POTR_SUCCESS, rtc_push);           // [確認_正常系] - 5 件目の push が成功すること。
     }
     int rtc_evicted = window_send_get(&win, 0U, &out); // [手順] - evict された通番 0 を取得する。
     int rtc_latest = window_send_get(&win, 4U, &out);  // [手順] - 最新の通番 4 を取得する。
@@ -141,7 +142,7 @@ TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
 
     // Assert
     EXPECT_EQ(POTR_SUCCESS, rtc_get); // [確認_正常系] - 保持中の通番の取得が成功すること。
-    EXPECT_EQ(0x01, out.payload[0]);  // [確認_正常系] - push 時点のペイロードが保持されること (ディープ コピー)。
+    EXPECT_EQ(0x01, out.payload[0]);  // [確認_正常系] - push 時点のペイロードがディープ コピーで保持されること。
     EXPECT_EQ(POTR_ERROR, rtc_out_of_range); // [確認_異常系] - 範囲外の通番に POTR_ERROR を返すこと。
 }
 
@@ -161,8 +162,10 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
     {
         PotrPacket pkt0 = make_recv_packet(0U, payload, sizeof(payload));
         PotrPacket pkt1 = make_recv_packet(1U, payload, sizeof(payload));
-        ASSERT_EQ(POTR_SUCCESS, window_recv_push(&win, &pkt0)); // [手順] - seq=0, 1 を順に push する。
-        ASSERT_EQ(POTR_SUCCESS, window_recv_push(&win, &pkt1));
+        int rtc_push0 = window_recv_push(&win, &pkt0); // [手順] - seq=0, 1 を順に push する。
+        ASSERT_EQ(POTR_SUCCESS, rtc_push0);            // [確認_正常系] - seq=0 の push が成功すること。
+        int rtc_push1 = window_recv_push(&win, &pkt1);
+        ASSERT_EQ(POTR_SUCCESS, rtc_push1); // [確認_正常系] - seq=1 の push が成功すること。
     }
     int rtc_pop0 = window_recv_pop(&win, &out);
     uint32_t seq0 = out.seq_num;
@@ -194,15 +197,18 @@ TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
     // Act
     {
         PotrPacket pkt2 = make_recv_packet(2U, payload, sizeof(payload));
-        ASSERT_EQ(POTR_SUCCESS, window_recv_push(&win, &pkt2)); // [手順] - seq=2 を先行して push する。
+        int rtc_push2 = window_recv_push(&win, &pkt2); // [手順] - seq=2 を先行して push する。
+        ASSERT_EQ(POTR_SUCCESS, rtc_push2);            // [確認_正常系] - seq=2 の push が成功すること。
     }
     int rtc_gap = window_recv_needs_nack(&win, &nack_num); // [手順] - 欠番判定を行う。
     int rtc_pop_blocked = window_recv_pop(&win, &out);     // [手順] - 欠番未解消のまま pop する。
     {
         PotrPacket pkt0 = make_recv_packet(0U, payload, sizeof(payload));
         PotrPacket pkt1 = make_recv_packet(1U, payload, sizeof(payload));
-        ASSERT_EQ(POTR_SUCCESS, window_recv_push(&win, &pkt0)); // [手順] - 欠番 seq=0, 1 を埋める。
-        ASSERT_EQ(POTR_SUCCESS, window_recv_push(&win, &pkt1));
+        int rtc_push0 = window_recv_push(&win, &pkt0); // [手順] - 欠番 seq=0, 1 を埋める。
+        ASSERT_EQ(POTR_SUCCESS, rtc_push0);            // [確認_正常系] - seq=0 の push が成功すること。
+        int rtc_push1 = window_recv_push(&win, &pkt1);
+        ASSERT_EQ(POTR_SUCCESS, rtc_push1); // [確認_正常系] - seq=1 の push が成功すること。
     }
     int rtc_no_gap = window_recv_needs_nack(&win, &nack_num);
     int pop_count = 0;
