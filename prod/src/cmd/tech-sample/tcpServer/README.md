@@ -213,16 +213,16 @@ make -C app/porter/prod/src/tcpServer
 
 ```bash
 # prefork モード (デフォルト)
-app/porter/prod/bin/tcpServer
+app/porter/prod/cbin/tcpServer
 
 # fork モード
-app/porter/prod/bin/tcpServer --mode fork
+app/porter/prod/cbin/tcpServer --mode fork
 
 # ポート・ワーカー数変更
-app/porter/prod/bin/tcpServer --port 9090 --workers 8
+app/porter/prod/cbin/tcpServer --port 9090 --workers 8
 
 # イベント駆動型: 4 ワーカー × 8 同時接続 = 最大 32 同時接続
-app/porter/prod/bin/tcpServer --mode prefork --workers 4 --conns-per-worker 8
+app/porter/prod/cbin/tcpServer --mode prefork --workers 4 --conns-per-worker 8
 
 # 別ターミナルから接続
 nc localhost 8080
