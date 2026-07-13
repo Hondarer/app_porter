@@ -71,5 +71,6 @@ TEST(configFileLoadTest, loadsGlobalServiceAndServiceIdsFromRealFile)
     EXPECT_EQ(1001, ids[0]);                      // [確認_正常系] - 1 件目の service ID を保持すること。
     EXPECT_EQ(2002, ids[1]);                      // [確認_正常系] - 2 件目の service ID を保持すること。
 
+    // Cleanup
     free(ids);
 }

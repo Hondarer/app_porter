@@ -90,5 +90,6 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
     EXPECT_EQ(1000, ids[0]);      // [確認_正常系] - 先頭 service ID を保持すること。
     EXPECT_EQ(1069, ids[69]);     // [確認_正常系] - 64 件超でも末尾 service ID を保持すること。
 
+    // Cleanup
     free(ids);
 }
