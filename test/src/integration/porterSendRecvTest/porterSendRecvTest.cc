@@ -943,15 +943,22 @@ TEST_F(porterSendRecvTest, bidir_echo)
     ASSERT_NO_THROW(waitForOutput(
         send_h_, "porter-test[sender:", 3000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
     // [確認_正常系] - SENDER が "porter-test[sender:" を出力すること。
-    /* TCP は接続確立の完了後に最初の PING 周期へ入るため、UDP より少し余裕を持たせる。 */
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800));
+    /* UDP 双方向通信は各プロセスが PING を受信した時点で個別に接続確立となるため、
+       RECIEVER と SENDER の両方の接続確立を待つ。 */
+    ASSERT_NO_THROW(
+        waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
+    // [確認_正常系] - RECIEVER が "接続確立" を出力すること。
+    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000)); // [手順] - SENDER が "接続確立" を出力するまで待機する。
+    // [確認_正常系] - SENDER が "接続確立" を出力すること。
 
     // Pre-Assert
 
     // Act
-    ASSERT_TRUE(writeLineStdin(send_h_, "send bidir-test"));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send bidir-test")); // [手順] - SENDER から "bidir-test" を送信する。
+    ASSERT_NO_THROW(
+        waitForOutput(send_h_, "送信完了。", 3000)); // [手順] - SENDER が "送信完了。" を出力するまで待機する。
+    // [確認_正常系] - SENDER が "送信完了。" を出力すること。
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
@@ -964,6 +971,9 @@ TEST_F(porterSendRecvTest, bidir_echo)
 
     // Assert
     EXPECT_EQ(0, send_exit); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
+    EXPECT_EQ(string::npos,
+              getStderr(send_h_).find(
+                  "未接続のため送信できません")); // [確認_正常系] - SENDER に未接続エラーが発生しないこと。
     EXPECT_NE(string::npos,
               getStdout(recv_h_).find("bidir-test")); // [確認_正常系] - RECIEVER が "bidir-test" を受信していること。
 }
