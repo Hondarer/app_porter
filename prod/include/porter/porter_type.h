@@ -249,6 +249,8 @@ typedef struct PotrContext PotrContext;
  */
 typedef uint32_t PotrPeerId;
 
+/** @} */
+
 /** @defgroup POTR_PEER ピア ID 予約値
  *  @ingroup        PORTER_PUBLIC_API
  *  `potrSend()` の `peer_id` 引数および `PotrRecvCallback` の `peer_id` 引数で使用する予約値です。
@@ -267,6 +269,11 @@ typedef uint32_t PotrPeerId;
                                                 *   N:1 モードでは全アクティブ ピアへユニキャスト送信します。
                                                 *   1:1 モードでは唯一のピアへの送信として動作します。 */
 /** @} */
+
+/**
+ *  @ingroup        PORTER_PUBLIC_API
+ *  @{
+ */
 
 /**
  *  @brief          受信イベント種別。
