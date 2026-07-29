@@ -77,6 +77,8 @@ static void health_sleep(PotrContext *ctx, int path_idx, uint32_t interval_ms)
     com_util_local_lock_unlock(ctx->health_mutex[path_idx]);
 }
 
+/* 次回 PING 送信時刻まで待機する。PING を送るべきなら 1、health_running 停止なら 0 を返す。
+   待機結果の判定 (真偽値) を返す述語のため共通結果コードの適用対象外。 */
 static int wait_oneway_udp_ping_due(PotrContext *ctx, uint64_t initial_ping_due_ms, uint64_t *last_logged_data_ms)
 {
     while (ctx->health_running[0])
@@ -128,7 +130,7 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
     if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH || ctx->close_requested ||
         ctx->tcp_active_paths == 0 || ctx->tcp_conn_fd[path_idx] == POTR_INVALID_SOCKET)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
@@ -139,9 +141,9 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
     build_result = packet_build_ping(&ping_pkt, &shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
     com_util_local_lock_unlock(ctx->send_window_mutex);
 
-    if (build_result != POTR_SUCCESS)
+    if (build_result != POTR_OK)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     /* path_ping_state スナップショットの採取と TCP 書き込みを同一クリティカル セクション
@@ -171,21 +173,21 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
             potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
             if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE, POTR_MAX_PATH,
-                                 ctx->service.encrypt_key, nonce, wire_buf, PACKET_HEADER_SIZE) != 0)
+                                 ctx->service.encrypt_key, nonce, wire_buf, PACKET_HEADER_SIZE) != COM_UTIL_OK)
             {
                 encrypt_failed = 1;
             }
             else
             {
                 wire_len = PACKET_HEADER_SIZE + enc_out;
-                send_ok = (potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len) == 0);
+                send_ok = (potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len) == POTR_OK);
             }
         }
         com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
 
         if (encrypt_failed)
         {
-            return POTR_ERROR;
+            return POTR_ERR_UNKNOWN;
         }
     }
     else
@@ -199,17 +201,17 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
         {
             potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-            send_ok = (potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len) == 0);
+            send_ok = (potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len) == POTR_OK);
         }
         com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
     }
 
     if (send_ok)
     {
-        return POTR_SUCCESS;
+        return POTR_OK;
     }
 
-    return POTR_ERROR;
+    return POTR_ERR_UNKNOWN;
 }
 
 /* ====================================================================
@@ -298,7 +300,7 @@ static void health_thread_func(void *arg)
                     memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
                     if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
                                          POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
-                                         PACKET_HEADER_SIZE) != 0)
+                                         PACKET_HEADER_SIZE) != COM_UTIL_OK)
                     {
                         continue;
                     }
@@ -363,7 +365,7 @@ static void health_thread_func(void *arg)
             build_result = packet_build_ping(&ping_pkt, &shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
             com_util_local_lock_unlock(ctx->send_window_mutex);
 
-            if (build_result != POTR_SUCCESS)
+            if (build_result != POTR_OK)
             {
                 continue;
             }
@@ -388,7 +390,8 @@ static void health_thread_func(void *arg)
                 memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
                 memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
                 if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
-                                     POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf, PACKET_HEADER_SIZE) != 0)
+                                     POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
+                                     PACKET_HEADER_SIZE) != COM_UTIL_OK)
                 {
                     continue;
                 }
@@ -476,14 +479,14 @@ int potr_health_thread_start(PotrContext *ctx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     if (ctx->health_interval_ms == 0)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
                    "health_thread[service_id=%" PRId64 "]: disabled (health_interval_ms=0)", ctx->service.service_id);
-        return POTR_SUCCESS;
+        return POTR_OK;
     }
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "health_thread[service_id=%" PRId64 "]: starting (interval=%ums)",
@@ -499,10 +502,10 @@ int potr_health_thread_start(PotrContext *ctx)
         ctx->health_running[0] = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "health_thread[service_id=%" PRId64 "]: thread create failed",
                    ctx->service.service_id);
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -511,11 +514,11 @@ int potr_health_thread_stop(PotrContext *ctx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
     if (!ctx->health_running[0])
     {
-        return POTR_SUCCESS;
+        return POTR_OK;
     }
 
     ctx->health_running[0] = 0;
@@ -529,7 +532,7 @@ int potr_health_thread_stop(PotrContext *ctx)
     com_util_condvar_destroy(ctx->health_wakeup[0]);
     com_util_local_lock_destroy(ctx->health_mutex[0]);
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -545,14 +548,14 @@ int potr_tcp_health_thread_start(PotrContext *ctx, int path_idx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     if (ctx->health_interval_ms == 0)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "tcp_health_thread[service_id=%" PRId64 " path=%d]: disabled",
                    ctx->service.service_id, path_idx);
-        return POTR_SUCCESS;
+        return POTR_OK;
     }
 
     ctx->health_args[path_idx].ctx = ctx;
@@ -567,10 +570,10 @@ int potr_tcp_health_thread_start(PotrContext *ctx, int path_idx)
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                    "tcp_health_thread[service_id=%" PRId64 " path=%d]: thread create failed", ctx->service.service_id,
                    path_idx);
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -579,11 +582,11 @@ int potr_tcp_health_thread_stop(PotrContext *ctx, int path_idx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
     if (!ctx->health_running[path_idx])
     {
-        return POTR_SUCCESS;
+        return POTR_OK;
     }
 
     ctx->health_running[path_idx] = 0;
@@ -594,7 +597,7 @@ int potr_tcp_health_thread_stop(PotrContext *ctx, int path_idx)
 
     com_util_thread_join(ctx->health_thread[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

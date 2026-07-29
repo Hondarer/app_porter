@@ -31,12 +31,7 @@ static int tcp_send_all_locked(PotrSocket fd, com_util_local_lock *mtx, const ui
     result = potr_tcp_send(fd, buf, len);
     com_util_local_lock_unlock(mtx);
 
-    if (result == 0)
-    {
-        return POTR_SUCCESS;
-    }
-
-    return POTR_ERROR;
+    return result;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -50,7 +45,7 @@ int potr_tcp_send_control_packet(const PotrContext *ctx, PotrPacket *pkt, uint32
 
     if (ctx == NULL || pkt == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     if (ctx->service.encrypt_enabled)
@@ -69,9 +64,9 @@ int potr_tcp_send_control_packet(const PotrContext *ctx, PotrPacket *pkt, uint32
 
         memcpy(wire_buf, pkt, PACKET_HEADER_SIZE);
         if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, PACKET_HEADER_SIZE) != 0)
+                             wire_buf, PACKET_HEADER_SIZE) != COM_UTIL_OK)
         {
-            return POTR_ERROR;
+            return POTR_ERR_UNKNOWN;
         }
         wire_len = PACKET_HEADER_SIZE + enc_out;
     }
@@ -87,7 +82,7 @@ int potr_tcp_send_control_packet(const PotrContext *ctx, PotrPacket *pkt, uint32
         {
             continue;
         }
-        if (tcp_send_all_locked(ctx->tcp_conn_fd[i], ctx->tcp_send_mutex[i], wire_buf, wire_len) == POTR_SUCCESS)
+        if (tcp_send_all_locked(ctx->tcp_conn_fd[i], ctx->tcp_send_mutex[i], wire_buf, wire_len) == POTR_OK)
         {
             sent_any = 1;
         }
@@ -95,8 +90,8 @@ int potr_tcp_send_control_packet(const PotrContext *ctx, PotrPacket *pkt, uint32
 
     if (sent_any)
     {
-        return POTR_SUCCESS;
+        return POTR_OK;
     }
 
-    return POTR_ERROR;
+    return POTR_ERR_UNKNOWN;
 }

@@ -34,19 +34,19 @@
 #include <porter/infra/potrSendQueue.h>
 #include <porter/infra/potrPlatform.h>
 
-/** TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) か判定します。 */
+/** TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
 static inline int potr_is_tcp_type(PotrType t)
 {
     return t == POTR_TYPE_TCP || t == POTR_TYPE_TCP_BIDIR;
 }
 
-/** RAW 系通信種別 (POTR_TYPE_*_RAW) か判定します。 */
+/** RAW 系通信種別 (POTR_TYPE_*_RAW) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
 static inline int potr_is_raw_type(PotrType t)
 {
     return t == POTR_TYPE_UNICAST_RAW || t == POTR_TYPE_MULTICAST_RAW || t == POTR_TYPE_BROADCAST_RAW;
 }
 
-/** RAW 系通信種別をベース通信種別に変換する (非 RAW 型はそのまま返す)。 */
+/** RAW 系通信種別をベース通信種別に変換する (非 RAW 型はそのまま返す)。値をそのまま返す関数のため共通結果コードの適用対象外。 */
 static inline PotrType potr_raw_base_type(PotrType t)
 {
     switch (t)
@@ -69,7 +69,7 @@ static inline PotrType potr_raw_base_type(PotrType t)
     }
 }
 
-/** 片方向 UDP 系通信種別 (type 1-6) か判定します。 */
+/** 片方向 UDP 系通信種別 (type 1-6) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
 static inline int potr_is_oneway_udp_type(PotrType t)
 {
     PotrType base = potr_raw_base_type(t);
@@ -77,7 +77,7 @@ static inline int potr_is_oneway_udp_type(PotrType t)
     return base == POTR_TYPE_UNICAST || base == POTR_TYPE_MULTICAST || base == POTR_TYPE_BROADCAST;
 }
 
-/** open 直後の即時 PING を使う通信種別か判定します。 */
+/** open 直後の即時 PING を使う通信種別か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
 static inline int potr_type_uses_immediate_health_ping(PotrType t)
 {
     return !potr_is_oneway_udp_type(t);

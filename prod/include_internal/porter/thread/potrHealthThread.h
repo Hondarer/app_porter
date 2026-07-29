@@ -31,17 +31,17 @@ extern "C"
     /**
      *  @brief          非 TCP ヘルスチェック スレッドを起動します。
      *
-     *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_SUCCESS を返す)。
+     *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_OK を返す)。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
      */
     extern int potr_health_thread_start(PotrContext *ctx);
 
     /**
      *  @brief          非 TCP ヘルスチェック スレッドを停止します。
      *  @param[in,out]  ctx セッション コンテキスト。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
      */
     extern int potr_health_thread_stop(PotrContext *ctx);
 
@@ -55,18 +55,18 @@ extern "C"
      *  @brief          TCP PING パケットを即時送信します。
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
      */
     extern int potr_tcp_send_ping_now(PotrContext *ctx, int path_idx);
 
     /**
      *  @brief          TCP ヘルスチェック スレッドを path ごとに起動します。
      *
-     *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_SUCCESS を返す)。
+     *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_OK を返す)。
      *
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
      */
     extern int potr_tcp_health_thread_start(PotrContext *ctx, int path_idx);
 
@@ -74,7 +74,7 @@ extern "C"
      *  @brief          TCP ヘルスチェック スレッドを停止します。
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
      */
     extern int potr_tcp_health_thread_stop(PotrContext *ctx, int path_idx);
 

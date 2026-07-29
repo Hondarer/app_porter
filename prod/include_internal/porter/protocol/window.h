@@ -53,7 +53,8 @@ extern "C"
      *  @param[in]      initial_seq 初期通番。
      *  @param[in]      window_size ウィンドウ サイズ (パケット数)。
      *  @param[in]      max_payload エントリごとのペイロード最大長 (バイト)。
-     *  @return         成功時は POTR_SUCCESS、malloc 失敗時は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、win が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
+     *                  メモリ確保に失敗した場合は POTR_ERR_OUT_OF_MEMORY を返します。
      *
      *  サイズが既存と同一の場合は状態をリセットするのみで再確保は行いません。\n
      *  異なるサイズの場合は既存バッファーを解放して再確保します。
@@ -70,9 +71,9 @@ extern "C"
      *  @brief          送信ウィンドウにパケットを積みます。
      *  @param[in,out]  win     送信ウィンドウ構造体へのポインター。
      *  @param[in]      packet  積むパケットへのポインター。
-     *  @return         成功時は POTR_SUCCESS、ウィンドウ満杯の場合は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT を返します。
      *
-     *  ACK なし設計のため、満杯の場合は最古エントリを evict して循環利用します。\n
+     *  ACK なし設計のため、満杯の場合も失敗とせず、最古エントリを evict して循環利用します。\n
      *  evict されたエントリへの NACK は REJECT で応答します。
      */
     extern int window_send_push(PotrWindow *win, const PotrPacket *packet);
@@ -81,6 +82,7 @@ extern "C"
      *  @brief          送信ウィンドウが満杯かどうかを返します。
      *  @param[in]      win     送信ウィンドウ構造体へのポインター。
      *  @return         満杯の場合は 1、空きがある場合は 0 を返します。
+     *                  失敗モードのない述語のため、共通結果コード (POTR_RESULT) の適用対象外です。
      */
     extern int window_send_full(const PotrWindow *win);
 
@@ -89,7 +91,8 @@ extern "C"
      *  @param[in]      win         送信ウィンドウ構造体へのポインター。
      *  @param[in]      seq_num     取得する通番。
      *  @param[out]     packet_out  取得したパケットを格納する構造体へのポインター。
-     *  @return         成功時は POTR_SUCCESS、エントリが存在しない場合は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
+     *                  通番が範囲外またはエントリが存在しない場合は POTR_ERR_NOT_FOUND を返します。
      */
     extern int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_out);
 
@@ -97,7 +100,8 @@ extern "C"
      *  @brief          受信ウィンドウにパケットを格納します。
      *  @param[in,out]  win     受信ウィンドウ構造体へのポインター。
      *  @param[in]      packet  格納するパケットへのポインター。
-     *  @return         成功時は POTR_SUCCESS、ウィンドウ外の場合は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
+     *                  通番が受信ウィンドウ外の場合は POTR_ERR_OUT_OF_WINDOW を返します。
      *
      *  通番が受信ウィンドウ内であればバッファリングします。\n
      *  追い越し (順序外到着) にも対応します。
@@ -108,7 +112,8 @@ extern "C"
      *  @brief          受信ウィンドウから順序整列済みパケットを取り出します。
      *  @param[in,out]  win     受信ウィンドウ構造体へのポインター。
      *  @param[out]     packet  取り出したパケットを格納する構造体へのポインター。
-     *  @return         取り出せた場合は POTR_SUCCESS、次のパケットが未着の場合は POTR_ERROR を返します。
+     *  @return         取り出せた場合は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
+     *                  次のパケットが未着の場合は POTR_ERR_EMPTY を返します。
      */
     extern int window_recv_pop(PotrWindow *win, PotrPacket *packet);
 
@@ -117,6 +122,7 @@ extern "C"
      *  @param[in]      win         受信ウィンドウ構造体へのポインター。
      *  @param[out]     nack_num    欠番の通番を格納するポインター。
      *  @return         欠番がある場合は 1、ない場合は 0 を返します。
+     *                  失敗モードのない述語のため、共通結果コード (POTR_RESULT) の適用対象外です。
      */
     extern int window_recv_needs_nack(const PotrWindow *win, uint32_t *nack_num);
 

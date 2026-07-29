@@ -64,7 +64,7 @@ TCP (`POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR`) の送信側 `potrCloseService()` 
 6. FIN_ACK 受信後に connect thread / socket teardown
 ```
 
-待機時間は global 設定 `tcp_close_timeout_ms` で制御します。タイムアウト時は強制 close を行い `POTR_ERROR` を返します。
+待機時間は global 設定 `tcp_close_timeout_ms` で制御します。タイムアウト時は強制 close を行い `POTR_ERR_TIMEOUT` を返します。
 
 ## 受信側
 
@@ -161,7 +161,7 @@ FIN_TARGET_VALID なし
 | 欠番 DATA が後着 | `window_recv_push()` → `drain_recv_window()` 末尾で `pending_fin` 解消 |
 | UDP で送信側が NACK に REJECT で応答 | `window_recv_skip()` 後の `drain_recv_window()` で解消 |
 | `reorder_timeout_ms` タイムアウト | `window_recv_skip()` 後の `drain_recv_window()` で解消 |
-| TCP close wait 中に FIN_ACK 未着 | `tcp_close_timeout_ms` 超過で強制 close、`potrCloseService()` は `POTR_ERROR` |
+| TCP close wait 中に FIN_ACK 未着 | `tcp_close_timeout_ms` 超過で強制 close、`potrCloseService()` は `POTR_ERR_TIMEOUT` |
 | `send_window.next_seq` が wrap して 0 | `FIN_TARGET_VALID` の有無で no-data FIN と区別するため問題なし |
 
 ## 対象通信種別

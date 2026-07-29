@@ -92,7 +92,8 @@ static void reconnect_wait(PotrContext *ctx, int path_idx, int wait_ms)
 
 /* accept 直後の TCP ソケットから 1 パケット分を buf に読み取る。
  * buf は PACKET_HEADER_SIZE + max_payload バイト以上確保されていること。
- * 戻り値: 1 = 成功 (*out_len にバイト数を格納)、0 = タイムアウト、-1 = EOF/エラー/不正。 */
+ * 戻り値: 成功時 (*out_len にバイト数を格納) は POTR_OK、タイムアウト時は POTR_ERR_TIMEOUT、
+ * EOF/エラー/不正時は POTR_ERR_UNKNOWN。 */
 static int tcp_read_first_packet(PotrSocket fd, uint8_t *buf, size_t max_buf, size_t *out_len, int timeout_ms)
 {
     int ready;
@@ -102,14 +103,14 @@ static int tcp_read_first_packet(PotrSocket fd, uint8_t *buf, size_t max_buf, si
     /* タイムアウト付き待機 */
     ready = potr_poll_readable(fd, (int)timeout_ms);
     if (ready == 0)
-        return 0; /* タイムアウト */
+        return POTR_ERR_TIMEOUT;
     if (ready < 0)
-        return -1; /* エラー */
+        return POTR_ERR_UNKNOWN;
 
     /* 固定長ヘッダー読み取り */
     r = potr_tcp_recv_all(fd, buf, PACKET_HEADER_SIZE);
-    if (r <= 0)
-        return -1;
+    if (r != POTR_OK)
+        return POTR_ERR_UNKNOWN;
 
     /* payload_len は固定長ヘッダー末尾の offset 34 に格納される */
     {
@@ -120,21 +121,22 @@ static int tcp_read_first_packet(PotrSocket fd, uint8_t *buf, size_t max_buf, si
 
     /* ペイロード長バリデーション */
     if (PACKET_HEADER_SIZE + (size_t)wire_payload_len > max_buf)
-        return -1;
+        return POTR_ERR_UNKNOWN;
 
     /* ペイロード読み取り */
     if (wire_payload_len > 0)
     {
         r = potr_tcp_recv_all(fd, buf + PACKET_HEADER_SIZE, (size_t)wire_payload_len);
-        if (r <= 0)
-            return -1;
+        if (r != POTR_OK)
+            return POTR_ERR_UNKNOWN;
     }
 
     *out_len = PACKET_HEADER_SIZE + (size_t)wire_payload_len;
-    return 1;
+    return POTR_OK;
 }
 
-/* session triplet 比較の戻り値 */
+/* session triplet 比較の戻り値。成否ではなく 3 状態の比較結果を表すため
+   共通結果コードの適用対象外。 */
 #define TCP_SESSION_NEW  (1)  /* 新セッション (または初回接続) */
 #define TCP_SESSION_SAME (0)  /* 同一セッション                 */
 #define TCP_SESSION_OLD  (-1) /* 旧セッション (破棄すべき)      */
@@ -214,7 +216,7 @@ static void reset_send_queue(PotrContext *ctx)
 /* 接続確立後に依存スレッドを起動する (path ごと)。
    SENDER および TCP_BIDIR RECEIVER: path_idx==0 の初回のみ send スレッドを起動する。
    各 path で recv スレッドと health スレッドを起動 (全ロール共通)。
-   失敗時は起動済みスレッドをすべて停止してから POTR_ERROR を返す。 */
+   失敗時は起動済みスレッドをすべて停止してから POTR_ERR_UNKNOWN を返す。 */
 static int start_connected_threads(PotrContext *ctx, int path_idx)
 {
     const PotrConnectedThreadsOps ops = {potr_send_thread_start,       potr_send_thread_stop, tcp_recv_thread_start,
@@ -434,7 +436,7 @@ static void sender_connect_loop(PotrContext *ctx, int path_idx)
             reset_send_queue(ctx);
         }
 
-        if (start_connected_threads(ctx, path_idx) != POTR_SUCCESS)
+        if (start_connected_threads(ctx, path_idx) != POTR_OK)
         {
             /* スレッド起動失敗: カウンターを戻す */
             com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
@@ -585,7 +587,7 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
 
             r = tcp_read_first_packet(conn, ctx->tcp_first_pkt_buf[path_idx],
                                       PACKET_HEADER_SIZE + ctx->global.max_payload, &pkt_len, first_pkt_timeout_ms);
-            if (r <= 0)
+            if (r != POTR_OK)
             {
                 /* タイムアウトまたは EOF/エラー */
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
@@ -596,7 +598,7 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
                 continue;
             }
 
-            if (packet_parse(&pkt, ctx->tcp_first_pkt_buf[path_idx], pkt_len) != POTR_SUCCESS)
+            if (packet_parse(&pkt, ctx->tcp_first_pkt_buf[path_idx], pkt_len) != POTR_OK)
             {
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
                            "connect_thread[service_id=%" PRId64 " path=%d]: "
@@ -662,7 +664,7 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
             reset_send_queue(ctx);
         }
 
-        if (start_connected_threads(ctx, path_idx) != POTR_SUCCESS)
+        if (start_connected_threads(ctx, path_idx) != POTR_OK)
         {
             com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
             active_count = --ctx->tcp_active_paths;
@@ -764,7 +766,7 @@ int potr_connect_thread_start(PotrContext *ctx)
 
     if (ctx == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: starting %d path(s)",
@@ -793,7 +795,7 @@ int potr_connect_thread_start(PotrContext *ctx)
                     ctx->tcp_first_pkt_buf[j] = NULL;
                 }
                 com_util_local_lock_destroy(ctx->session_establish_mutex);
-                return POTR_ERROR;
+                return POTR_ERR_UNKNOWN;
             }
         }
     }
@@ -810,11 +812,11 @@ int potr_connect_thread_start(PotrContext *ctx)
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                        "connect_thread[service_id=%" PRId64 " path=%d]: thread create failed", ctx->service.service_id,
                        i);
-            return POTR_ERROR;
+            return POTR_ERR_UNKNOWN;
         }
     }
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

@@ -77,7 +77,7 @@ int packet_build_nack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint
 {
     if (packet == NULL || shdr == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     memset(packet, 0, PACKET_HEADER_SIZE);
@@ -88,7 +88,7 @@ int packet_build_nack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint
     packet->flags = htons(POTR_FLAG_NACK);
     packet->payload_len = 0;
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -101,7 +101,7 @@ int packet_build_ping(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint
 {
     if (packet == NULL || shdr == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     memset(packet, 0, PACKET_HEADER_SIZE);
@@ -121,7 +121,7 @@ int packet_build_ping(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint
         packet->payload_len = 0;
     }
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -130,7 +130,7 @@ int packet_build_reject(PotrPacket *packet, const PotrPacketSessionHdr *shdr, ui
 {
     if (packet == NULL || shdr == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     memset(packet, 0, PACKET_HEADER_SIZE);
@@ -141,7 +141,7 @@ int packet_build_reject(PotrPacket *packet, const PotrPacketSessionHdr *shdr, ui
     packet->flags = htons(POTR_FLAG_REJECT);
     packet->payload_len = 0;
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -150,7 +150,7 @@ int packet_build_fin(PotrPacket *packet, const PotrPacketSessionHdr *shdr)
 {
     if (packet == NULL || shdr == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     memset(packet, 0, PACKET_HEADER_SIZE);
@@ -161,7 +161,7 @@ int packet_build_fin(PotrPacket *packet, const PotrPacketSessionHdr *shdr)
     packet->flags = htons(POTR_FLAG_FIN);
     packet->payload_len = 0;
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -170,7 +170,7 @@ int packet_build_fin_ack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, u
 {
     if (packet == NULL || shdr == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     memset(packet, 0, PACKET_HEADER_SIZE);
@@ -181,7 +181,7 @@ int packet_build_fin_ack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, u
     packet->flags = htons(POTR_FLAG_FIN_ACK);
     packet->payload_len = 0;
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -191,7 +191,7 @@ int packet_build_packed(PotrPacket *out, const PotrPacketSessionHdr *shdr, uint3
 {
     if (out == NULL || shdr == NULL || packed_payload == NULL || payload_len == 0 || payload_len > POTR_MAX_PAYLOAD)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     memset(out, 0, PACKET_HEADER_SIZE);
@@ -203,7 +203,7 @@ int packet_build_packed(PotrPacket *out, const PotrPacketSessionHdr *shdr, uint3
     /* ゼロ コピー: 呼び出し元バッファーを直接指す */
     out->payload = (const uint8_t *)packed_payload;
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -217,13 +217,13 @@ int packet_unpack_next(const PotrPacket *container, size_t *offset, PotrPacket *
 
     if (container == NULL || offset == NULL || elem_out == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     /* 末尾チェック (container->payload_len はホスト バイト オーダー) */
     if (*offset + POTR_PAYLOAD_ELEM_HDR_SIZE > (size_t)container->payload_len)
     {
-        return POTR_ERROR;
+        return POTR_ERR_EOF;
     }
 
     p = container->payload + *offset;
@@ -236,7 +236,7 @@ int packet_unpack_next(const PotrPacket *container, size_t *offset, PotrPacket *
     if (*offset + POTR_PAYLOAD_ELEM_HDR_SIZE + payload_len > (size_t)container->payload_len ||
         payload_len > POTR_MAX_PAYLOAD)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     memset(elem_out, 0, PACKET_HEADER_SIZE);
@@ -254,7 +254,7 @@ int packet_unpack_next(const PotrPacket *container, size_t *offset, PotrPacket *
     elem_out->payload = p + POTR_PAYLOAD_ELEM_HDR_SIZE;
 
     *offset += POTR_PAYLOAD_ELEM_HDR_SIZE + payload_len;
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -266,9 +266,15 @@ int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
     uint64_t tmp64;
     uint16_t tmp16;
 
-    if (packet == NULL || buf == NULL || buf_len < PACKET_HEADER_SIZE)
+    if (packet == NULL || buf == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    /* ヘッダー長未満の受信データは不正パケットとして扱う */
+    if (buf_len < PACKET_HEADER_SIZE)
+    {
+        return POTR_ERR_UNKNOWN;
     }
 
     memcpy(&tmp64, b + 0, 8);
@@ -293,14 +299,14 @@ int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
     if (packet->protocol_version != POTR_PROTOCOL_VERSION || packet->payload_len > POTR_MAX_PAYLOAD ||
         (size_t)packet->payload_len + PACKET_HEADER_SIZE > buf_len)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     /* ゼロ コピー: 受信バッファー内のペイロード領域を直接指す
        呼び出し元バッファー (recv_buf) の生存期間中のみ有効 */
     packet->payload = b + PACKET_HEADER_SIZE;
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

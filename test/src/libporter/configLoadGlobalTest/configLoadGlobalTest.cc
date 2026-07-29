@@ -13,7 +13,7 @@
 
 using namespace testing;
 
-// 引数不正またはファイル open 失敗時に POTR_ERROR を返すことの確認
+// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_UNKNOWN を返すことの確認
 TEST(configLoadGlobalTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened)
 {
     // Arrange
@@ -31,9 +31,15 @@ TEST(configLoadGlobalTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened
         config_load_global("missing.conf", &global); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_ERROR, rtc_null_path); // [確認_異常系] - config_path が NULL の場合に POTR_ERROR を返すこと。
-    EXPECT_EQ(POTR_ERROR, rtc_null_out);  // [確認_異常系] - 出力先が NULL の場合に POTR_ERROR を返すこと。
-    EXPECT_EQ(POTR_ERROR, rtc_open_fail); // [確認_異常系] - open 失敗時に POTR_ERROR を返すこと。
+    EXPECT_EQ(
+        POTR_ERR_INVALID_ARGUMENT,
+        rtc_null_path); // [確認_異常系] - config_path が NULL の場合に config_load_global の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(
+        POTR_ERR_INVALID_ARGUMENT,
+        rtc_null_out); // [確認_異常系] - 出力先が NULL の場合に config_load_global の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(
+        POTR_ERR_UNKNOWN,
+        rtc_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に config_load_global の戻り値が POTR_ERR_UNKNOWN であること。
 }
 
 // [global] の設定値が読み込まれ、他 section と未知キーが無視されることの確認
@@ -78,7 +84,7 @@ TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
     int rtc = config_load_global("config.conf", &global); // [手順] - [global] を含む設定を読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS,
+    EXPECT_EQ(POTR_OK,
               rtc); // [確認_正常系] - config_load_global の戻り値から、読み込みに成功したと判断できること。
     EXPECT_EQ(32U, global.window_size);             // [確認_正常系] - window_size を設定値で上書きすること。
     EXPECT_EQ(1200U, global.max_payload);           // [確認_正常系] - max_payload を設定値で上書きすること。
@@ -119,7 +125,7 @@ TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
     int rtc = config_load_global("service-only.conf", &global); // [手順] - [global] を含まない設定を読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS,
+    EXPECT_EQ(POTR_OK,
               rtc); // [確認_正常系] - config_load_global の戻り値から、[global] が無くても成功したと判断できること。
     EXPECT_EQ(POTR_DEFAULT_WINDOW_SIZE, global.window_size); // [確認_正常系] - window_size が既定値のままであること。
     EXPECT_EQ(POTR_DEFAULT_MAX_PAYLOAD, global.max_payload); // [確認_正常系] - max_payload が既定値のままであること。

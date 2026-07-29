@@ -39,7 +39,7 @@ extern "C"
      *  - tcp_state_mutex / tcp_state_cv / tcp_send_mutex[] が初期化済みであること。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
      */
     extern int potr_connect_thread_start(PotrContext *ctx);
 

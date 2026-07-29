@@ -16,7 +16,7 @@
 
 using namespace testing;
 
-// 引数不正またはファイル open 失敗時に POTR_ERROR を返すことの確認
+// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_UNKNOWN を返すことの確認
 TEST(configLoadServiceTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened)
 {
     // Arrange
@@ -34,9 +34,15 @@ TEST(configLoadServiceTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpene
         config_load_service("missing.conf", 10, &def); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_ERROR, rtc_null_path); // [確認_異常系] - config_path が NULL の場合に POTR_ERROR を返すこと。
-    EXPECT_EQ(POTR_ERROR, rtc_null_out);  // [確認_異常系] - 出力先が NULL の場合に POTR_ERROR を返すこと。
-    EXPECT_EQ(POTR_ERROR, rtc_open_fail); // [確認_異常系] - open 失敗時に POTR_ERROR を返すこと。
+    EXPECT_EQ(
+        POTR_ERR_INVALID_ARGUMENT,
+        rtc_null_path); // [確認_異常系] - config_path が NULL の場合に config_load_service の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(
+        POTR_ERR_INVALID_ARGUMENT,
+        rtc_null_out); // [確認_異常系] - 出力先が NULL の場合に config_load_service の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(
+        POTR_ERR_UNKNOWN,
+        rtc_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に config_load_service の戻り値が POTR_ERR_UNKNOWN であること。
 }
 
 // 指定 service の設定が読み込まれ、service 単位の既定値が維持されることの確認
@@ -89,7 +95,7 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
 
     // Assert
     EXPECT_EQ(
-        POTR_SUCCESS,
+        POTR_OK,
         rtc); // [確認_正常系] - config_load_service の戻り値から、対象 service の読み込みに成功したと判断できること。
     EXPECT_EQ(42, def.service_id);              // [確認_正常系] - service_id を section 名から設定すること。
     EXPECT_EQ(POTR_TYPE_TCP_BIDIR, def.type);   // [確認_正常系] - type を読み込むこと。
@@ -154,7 +160,7 @@ TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
                                   &def); // [手順] - passphrase 形式の encrypt_key を含む service を読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS,
+    EXPECT_EQ(POTR_OK,
               rtc); // [確認_正常系] - config_load_service の戻り値から、読み込みに成功したと判断できること。
     EXPECT_EQ(1, def.encrypt_enabled);    // [確認_正常系] - passphrase から鍵導出できた場合に暗号化を有効化すること。
     EXPECT_EQ(0x5A, def.encrypt_key[0]);  // [確認_正常系] - 導出した鍵を構造体へ格納すること。
@@ -194,14 +200,14 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
     int rtc = config_load_service("config.conf", 56, &def); // [手順] - hash 失敗を起こす service を読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_SUCCESS,
+    EXPECT_EQ(POTR_OK,
               rtc); // [確認_正常系] - config_load_service の戻り値から、service の読込自体は成功したと判断できること。
     EXPECT_EQ(0, def.encrypt_enabled); // [確認_異常系] - hash 失敗時に暗号化を無効として扱うこと。
     EXPECT_EQ(0, memcmp(def.encrypt_key, std::array<uint8_t, POTR_CRYPTO_KEY_SIZE>{}.data(),
                         POTR_CRYPTO_KEY_SIZE)); // [確認_異常系] - hash 失敗時に鍵をゼロ クリアすること。
 }
 
-// 指定 service が存在しない場合に POTR_ERROR を返すことの確認
+// 指定 service が存在しない場合に POTR_ERR_NOT_FOUND を返すことの確認
 TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
 {
     // Arrange
@@ -227,5 +233,7 @@ TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
     int rtc = config_load_service("config.conf", 42, &def); // [手順] - 存在しない service_id を指定して読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_ERROR, rtc); // [確認_異常系] - 対象 service が無い場合に POTR_ERROR を返すこと。
+    EXPECT_EQ(
+        POTR_ERR_NOT_FOUND,
+        rtc); // [確認_異常系] - 対象 service が存在しない場合に config_load_service の戻り値が POTR_ERR_NOT_FOUND であること。
 }

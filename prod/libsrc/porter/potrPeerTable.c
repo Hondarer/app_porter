@@ -92,7 +92,7 @@ void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
     shdr.session_id = peer->session_id;
     potr_session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    if (packet_build_fin(&fin_pkt, &shdr) != POTR_SUCCESS)
+    if (packet_build_fin(&fin_pkt, &shdr) != POTR_OK)
     {
         return;
     }
@@ -126,7 +126,7 @@ void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
 
         memcpy(wire_buf, &fin_pkt, PACKET_HEADER_SIZE);
         if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, PACKET_HEADER_SIZE) != 0)
+                             wire_buf, PACKET_HEADER_SIZE) != COM_UTIL_OK)
         {
             return;
         }
@@ -169,7 +169,7 @@ int peer_table_init(PotrContext *ctx)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "peer_table_init: service_id=%" PRId64 " calloc failed (max_peers=%d)",
                    ctx->service.service_id, ctx->max_peers);
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     for (i = 0; i < ctx->max_peers; i++)
@@ -184,7 +184,7 @@ int peer_table_init(PotrContext *ctx)
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "peer_table_init: service_id=%" PRId64 " max_peers=%d",
                ctx->service.service_id, ctx->max_peers);
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -312,7 +312,7 @@ PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_
     peer->send_has_data = 0;
 
     /* ウィンドウ初期化 */
-    if (window_init(&peer->send_window, 0, ctx->global.window_size, ctx->global.max_payload) != POTR_SUCCESS)
+    if (window_init(&peer->send_window, 0, ctx->global.window_size, ctx->global.max_payload) != POTR_OK)
     {
         peer->active = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "peer_create: service_id=%" PRId64 " send_window init failed",
@@ -320,7 +320,7 @@ PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_
         return NULL;
     }
 
-    if (window_init(&peer->recv_window, 0, ctx->global.window_size, ctx->global.max_payload) != POTR_SUCCESS)
+    if (window_init(&peer->recv_window, 0, ctx->global.window_size, ctx->global.max_payload) != POTR_OK)
     {
         window_dispose(&peer->send_window);
         peer->active = 0;

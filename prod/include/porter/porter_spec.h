@@ -48,11 +48,11 @@ extern "C"
      *                              SENDER にもコールバックが必須。これらの種別では POTR_ROLE_SENDER でも
      *                              callback が NULL の場合は失敗を返します。
      *  @param[out]     handle      成功時にセッション ハンドルを格納するポインター。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN を返します。
      *
      *  設定構造体からサービス定義を取得し、UDP ソケットを初期化します。\n
-     *  role と callback の組み合わせが不正な場合は POTR_ERROR を返します。\n
-     *  role と設定の IP アドレスが不整合 (bind 失敗など) の場合も POTR_ERROR を返します。\n
+     *  role と callback の組み合わせが不正な場合は POTR_ERR_UNKNOWN を返します。\n
+     *  role と設定の IP アドレスが不整合 (bind 失敗など) の場合も POTR_ERR_UNKNOWN を返します。\n
      *  通信種別・役割に応じて以下のソケット設定を行います。
      *
      *  | 通信種別              | 役割     | bind アドレス     | bind ポート   |
@@ -98,7 +98,7 @@ extern "C"
 
         PotrContext * handle;
         if (potrOpenService(&global, &service,
-                            POTR_ROLE_RECEIVER, on_recv, &handle) == POTR_SUCCESS) {
+                            POTR_ROLE_RECEIVER, on_recv, &handle) == POTR_OK) {
             // 受信待機中 (受信スレッドが動作)
             potrCloseService(handle);
         }
@@ -125,7 +125,7 @@ extern "C"
 
         PotrContext * handle;
         if (potrOpenService(&global, &service,
-                            POTR_ROLE_SENDER, NULL, &handle) == POTR_SUCCESS) {
+                            POTR_ROLE_SENDER, NULL, &handle) == POTR_OK) {
             potrSend(handle, POTR_PEER_NA, "hello", 5, 0);
             potrCloseService(handle);
         }
@@ -160,11 +160,11 @@ extern "C"
      *                              SENDER にもコールバックが必須。これらの種別では POTR_ROLE_SENDER でも
      *                              callback が NULL の場合は失敗を返します。
      *  @param[out]     handle      成功時にセッション ハンドルを格納するポインター。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN を返します。
      *
      *  設定ファイルを解析してサービス定義を取得し、potrOpenService() を呼び出します。\n
-     *  role と callback の組み合わせが不正な場合は POTR_ERROR を返します。\n
-     *  role と設定ファイルの IP アドレスが不整合 (bind 失敗など) の場合も POTR_ERROR を返します。\n
+     *  role と callback の組み合わせが不正な場合は POTR_ERR_UNKNOWN を返します。\n
+     *  role と設定ファイルの IP アドレスが不整合 (bind 失敗など) の場合も POTR_ERR_UNKNOWN を返します。\n
      *  通信種別・役割に応じて以下のソケット設定を行います。
      *
      *  | 通信種別              | 役割     | bind アドレス     | bind ポート   |
@@ -193,7 +193,7 @@ extern "C"
 
         PotrContext * handle;
         if (potrOpenServiceFromConfig("porter-services.conf", 1001,
-                                      POTR_ROLE_RECEIVER, on_recv, &handle) == POTR_SUCCESS) {
+                                      POTR_ROLE_RECEIVER, on_recv, &handle) == POTR_OK) {
             // 受信待機中 (受信スレッドが動作)
             potrCloseService(handle);
         }
@@ -203,7 +203,7 @@ extern "C"
         @code{.c}
         PotrContext * handle;
         if (potrOpenServiceFromConfig("porter-services.conf", 1001,
-                                      POTR_ROLE_SENDER, NULL, &handle) == POTR_SUCCESS) {
+                                      POTR_ROLE_SENDER, NULL, &handle) == POTR_OK) {
             potrSend(handle, POTR_PEER_NA, "hello", 5, 0);
             potrCloseService(handle);
         }
@@ -233,18 +233,20 @@ extern "C"
      *  @param[in]      peer_id     送信先ピア識別子。\n
      *                              N:1 モード: 有効なピア ID (`POTR_PEER_NA` / `POTR_PEER_ALL` 以外) を指定します。\n
      *                              N:1 モード: POTR_PEER_ALL を指定すると全接続ピアへ一斉送信します。\n
-     *                              N:1 モード: POTR_PEER_NA を指定すると POTR_ERROR を返します。\n
+     *                              N:1 モード: POTR_PEER_NA を指定すると POTR_ERR_UNKNOWN を返します。\n
      *                              1:1 モードおよびその他の通信種別: POTR_PEER_NA または POTR_PEER_ALL を指定します (通常は POTR_PEER_NA を使用)。
      *  @param[in]      data        送信するメッセージへのポインター。
      *  @param[in]      len         送信するメッセージのバイト数。
      *  @param[in]      flags       送信オプション フラグ。以下のフラグを論理和で組み合わせて指定します。
-     *                              0 を指定すると非圧縮・ノンブロッキング送信になります。
+     *                              0 を指定すると非圧縮・非ブロッキング送信になります。
      *
      *                              | フラグ                | 説明                                     |
      *                              | --------------------- | ---------------------------------------- |
      *                              | `POTR_SEND_COMPRESS`  | メッセージを圧縮して送信します。         |
      *                              | `POTR_SEND_BLOCKING`  | ブロッキング送信を行います。             |
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @retval         POTR_OK                 メッセージを送信キューへ登録しました。
+     *  @retval         POTR_ERR_DISCONNECTED   送信先が論理 CONNECTED 前または切断中です。
+     *  @return         上記以外の失敗時は POTR_ERR_UNKNOWN を返します。
      *
      *  通信種別に応じて以下の宛先へ UDP パケットを送信します。
      *
@@ -260,13 +262,13 @@ extern "C"
      *  受信側の PotrRecvCallback には、展開済みの元メッセージが渡されます。\n
      *  送受信ともにフラグメント化と組み合わせて使用できます。
      *
-     *  @par            ノンブロッキング送信 (flags に POTR_SEND_BLOCKING を指定しない場合)
+     *  @par            非ブロッキング送信 (flags に POTR_SEND_BLOCKING を指定しない場合)
      *  メッセージを内部送信キューに登録して即座に返ります。\n
      *  実際の sendto はバックグラウンド送信スレッドが非同期に実行します。\n
      *  キューが満杯の場合は空きが生じるまで待機してからメッセージを登録し、登録後に返ります。
      *
      *  @par            ブロッキング送信 (flags に POTR_SEND_BLOCKING を指定した場合)
-     *  呼び出し前に滞留しているノンブロッキング送信のメッセージが
+     *  呼び出し前に滞留している非ブロッキング送信のメッセージが
      *  すべて sendto 完了するまで待機します。\n
      *  その後、本呼び出しのメッセージをキューを通じて sendto して返ります。\n
      *  本関数が返った時点で、自身のメッセージの sendto は完了しています。
@@ -291,12 +293,12 @@ extern "C"
      *                  送信スレッドが停止している場合 (potrCloseService 呼び出し後など) は失敗を返します。\n
      *                  N:1 モードで peer_id = POTR_PEER_NA (0) を指定した場合は失敗を返します。\n
      *                  `unicast_bidir` で CONNECTED 前に呼び出した場合は\n
-     *                  POTR_ERROR_DISCONNECTED (1) を返します。\n
+     *                  POTR_ERR_DISCONNECTED を返します。\n
      *                  N:1 モードでは未接続 peer への送信、および `POTR_PEER_ALL` 指定時に\n
-     *                  接続済み peer が 0 件のとき POTR_ERROR_DISCONNECTED (1) を返します。\n
+     *                  接続済み peer が 0 件のとき POTR_ERR_DISCONNECTED を返します。\n
      *                  TCP 通信種別 (`POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR`) では、\n
      *                  物理 TCP 接続済みでも CONNECTED 前または全 path 切断中は\n
-     *                  POTR_ERROR_DISCONNECTED (1) を返します。
+     *                  POTR_ERR_DISCONNECTED を返します。
      */
     POTR_EXPORT extern int POTR_API potrSend(PotrContext *handle, PotrPeerId peer_id, const void *data, size_t len,
                                              int flags);
@@ -305,12 +307,16 @@ extern "C"
      *  @brief          指定ピアを切断します (N:1 モード専用)。
      *  @param[in]      handle      potrOpenService() で取得したセッション ハンドル。
      *  @param[in]      peer_id     切断するピアの識別子 (POTR_PEER_NA および POTR_PEER_ALL 以外)。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @retval         POTR_OK                    指定ピアを切断しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  handle が NULL、または peer_id に POTR_PEER_NA / POTR_PEER_ALL を指定しました。
+     *  @retval         POTR_ERR_NOT_FOUND         指定した peer_id のピアが存在しません。
+     *  @retval         POTR_ERR_UNSUPPORTED       N:1 モード以外のサービスで呼び出しました。
+     *  @return         上記以外の失敗時は POTR_ERR_UNKNOWN を返します。
      *
      *  指定したピアへ FIN パケットを送信し、ピアのリソースを解放します。\n
      *  切断完了後に POTR_EVENT_DISCONNECTED コールバックが発火します。\n
      *  N:1 モード (unicast_bidir かつ src 情報省略) 専用です。\n
-     *  1:1 モードおよびその他の通信種別では POTR_ERROR を返します。
+     *  1:1 モードおよびその他の通信種別では POTR_ERR_UNSUPPORTED を返します。
      *
      *  @par            スレッド セーフ
      *  本関数はスレッド セーフです。\n
@@ -328,7 +334,10 @@ extern "C"
     /**
      *  @brief          サービスを閉じます。
      *  @param[in]      handle  potrOpenService() で取得したセッション ハンドル。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @retval         POTR_OK                    サービスを閉じました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  handle が NULL です。
+     *  @retval         POTR_ERR_TIMEOUT           TCP close 待機が tcp_close_timeout_ms を超過しました。
+     *  @return         上記以外の失敗時は POTR_ERR_UNKNOWN を返します。
      *
      *  受信スレッドを停止し、ソケットをクローズしてリソースを解放します。\n
      *  マルチキャストの場合はグループから離脱します。\n
@@ -342,7 +351,7 @@ extern "C"
      *  TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) では、送信キューの drain 完了後に
      *  protocol-level の POTR_FLAG_FIN / POTR_FLAG_FIN_ACK を交換してからソケットを閉じます。\n
      *  TCP close 待機は global 設定 tcp_close_timeout_ms の範囲で行い、タイムアウト時は強制 close して
-     *  POTR_ERROR を返します。\n
+     *  POTR_ERR_TIMEOUT を返します。\n
      *  いずれの場合も、相手側では POTR_EVENT_DISCONNECTED が発火します。
      *
      *  @par            スレッド セーフ
@@ -356,7 +365,7 @@ extern "C"
 
     /**
      *  @brief          porter 内部トレーサーハンドルを返します。
-     *  @return         com_util_tracer ハンドル。
+     *  @return         com_util_tracer ハンドル。NULL を返すことはありません。
      *
      *  porter ライブラリが内部で使用する com_util_tracer ハンドルを返します。\n
      *  本関数は potrOpenService() の前に呼び出すことができます。\n
@@ -386,7 +395,7 @@ extern "C"
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[in]      service_id  照会するサービスの ID。
      *  @param[out]     type        成功時に通信種別 (PotrType) を格納するポインター。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN を返します。
      *
      *  設定ファイルを解析して指定サービスの通信種別を返します。\n
      *  potrOpenService() の前に呼び出すことで、ロール・コールバックの要否を
@@ -396,7 +405,7 @@ extern "C"
      *  @par            使用例
         @code{.c}
         PotrType type;
-        if (potrGetServiceType("porter-services.conf", 1031, &type) == POTR_SUCCESS) {
+        if (potrGetServiceType("porter-services.conf", 1031, &type) == POTR_OK) {
             if (type == POTR_TYPE_UNICAST_BIDIR) {
                 // unicast_bidir: コールバックが必須
                 potrOpenService("porter-services.conf", 1031,

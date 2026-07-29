@@ -6,7 +6,7 @@
  *  @date           2026/03/08
  *  @version        1.0.0
  *
- *  ノンブロッキング送信 (potrSend の flags に POTR_SEND_BLOCKING なし) で使用される
+ *  非ブロッキング送信 (potrSend の flags に POTR_SEND_BLOCKING なし) で使用される
  *  スレッド セーフな送信キューです。\n
  *  ペイロード エレメントをリング バッファーに積み、送信スレッドが順に
  *  sendto で送出します。\n
@@ -87,7 +87,7 @@ extern "C"
      *  @param[in,out]  q           送信キュー。entries・payload_pool を動的確保して設定します。
      *  @param[in]      depth       キュー容量 (エントリ数)。
      *  @param[in]      max_payload ペイロード最大長 (バイト)。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     *  @return         成功時は POTR_OK、メモリ確保に失敗した場合は POTR_ERR_OUT_OF_MEMORY。
      */
     extern int potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload);
 
@@ -100,14 +100,14 @@ extern "C"
     /**
      *  @brief          ペイロード エレメントをキューに追加します。
      *
-     *  キューが満杯の場合は待機せず即時 POTR_ERROR を返します。
+     *  キューが満杯の場合は待機せず即時 POTR_ERR_FULL を返します。
      *
      *  @param[in,out]  q           送信キュー。
      *  @param[in]      peer_id     送信先ピア識別子 (1:1 モードでは POTR_PEER_NA を指定)。
      *  @param[in]      flags       ペイロード エレメント フラグ。
      *  @param[in]      payload     送信ペイロード データへのポインター。
      *  @param[in]      payload_len 送信ペイロード長 (バイト)。
-     *  @return         成功時は POTR_SUCCESS、満杯時は POTR_ERROR。
+     *  @return         成功時は POTR_OK、満杯時は POTR_ERR_FULL。
      */
     extern int potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id, uint16_t flags, const void *payload,
                                     uint16_t payload_len);
@@ -123,7 +123,7 @@ extern "C"
      *  @param[in]      payload     送信ペイロード データへのポインター。
      *  @param[in]      payload_len 送信ペイロード長 (バイト)。
      *  @param[in]      running     実行フラグへのポインター。0 になると待機を中断します。
-     *  @return         成功時は POTR_SUCCESS、running が 0 になった場合は POTR_ERROR。
+     *  @return         成功時は POTR_OK、running が 0 になった場合は POTR_ERR_CANCELED。
      */
     extern int potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id, uint16_t flags, const void *payload,
                                          uint16_t payload_len, volatile int *running);
@@ -136,18 +136,18 @@ extern "C"
      *  @param[in,out]  q       送信キュー。
      *  @param[out]     out     取り出したエントリの書き戻し先。
      *  @param[in]      running 実行フラグへのポインター。0 になると待機を中断します。
-     *  @return         成功時は POTR_SUCCESS、running が 0 になった場合は POTR_ERROR。
+     *  @return         成功時は POTR_OK、running が 0 になった場合は POTR_ERR_CANCELED。
      */
     extern int potr_send_queue_pop(PotrSendQueue *q, PotrPayloadElem *out, volatile int *running);
 
     /**
      *  @brief          先頭エントリを参照する (inflight へは移行しない)。
      *
-     *  キューが空の場合は即時 POTR_ERROR を返します。
+     *  キューが空の場合は即時 POTR_ERR_EMPTY を返します。
      *
      *  @param[in,out]  q   送信キュー (mutex ロック・ロック解除を行う)。
      *  @param[out]     out 先頭エントリの書き戻し先。
-     *  @return         成功時は POTR_SUCCESS、空の場合は POTR_ERROR。
+     *  @return         成功時は POTR_OK、空の場合は POTR_ERR_EMPTY。
      */
     extern int potr_send_queue_peek(PotrSendQueue *q, PotrPayloadElem *out);
 
@@ -159,18 +159,18 @@ extern "C"
      *  @param[in,out]  q           送信キュー。
      *  @param[out]     out         先頭エントリの書き戻し先。
      *  @param[in]      timeout_ms  待機タイムアウト (ミリ秒)。
-     *  @return         成功時は POTR_SUCCESS、タイムアウトまたは空の場合は POTR_ERROR。
+     *  @return         成功時は POTR_OK、timeout_ms 以内にエントリが到着しなかった場合は POTR_ERR_TIMEOUT。
      */
     extern int potr_send_queue_peek_timed(PotrSendQueue *q, PotrPayloadElem *out, int timeout_ms);
 
     /**
-     *  @brief          先頭エントリを取り出して inflight に移行する (ノンブロッキング)。
+     *  @brief          先頭エントリを取り出して inflight に移行する (非ブロッキング)。
      *
-     *  キューが空の場合は即時 POTR_ERROR を返します。
+     *  キューが空の場合は即時 POTR_ERR_EMPTY を返します。
      *
      *  @param[in,out]  q   送信キュー。
      *  @param[out]     out 取り出したエントリの書き戻し先。
-     *  @return         成功時は POTR_SUCCESS、空の場合は POTR_ERROR。
+     *  @return         成功時は POTR_OK、空の場合は POTR_ERR_EMPTY。
      */
     extern int potr_send_queue_try_pop(PotrSendQueue *q, PotrPayloadElem *out);
 

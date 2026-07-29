@@ -16,7 +16,7 @@
 
 using namespace testing;
 
-// 引数不正またはファイル open 失敗時に POTR_ERROR を返すことの確認
+// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_UNKNOWN を返すことの確認
 TEST(configListServiceIdsTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened)
 {
     // Arrange
@@ -38,10 +38,18 @@ TEST(configListServiceIdsTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOp
                                                 &count); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_ERROR, rtc_null_path);  // [確認_異常系] - config_path が NULL の場合に POTR_ERROR を返すこと。
-    EXPECT_EQ(POTR_ERROR, rtc_null_ids);   // [確認_異常系] - ids_out が NULL の場合に POTR_ERROR を返すこと。
-    EXPECT_EQ(POTR_ERROR, rtc_null_count); // [確認_異常系] - count_out が NULL の場合に POTR_ERROR を返すこと。
-    EXPECT_EQ(POTR_ERROR, rtc_open_fail);  // [確認_異常系] - open 失敗時に POTR_ERROR を返すこと。
+    EXPECT_EQ(
+        POTR_ERR_INVALID_ARGUMENT,
+        rtc_null_path); // [確認_異常系] - config_path が NULL の場合に config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(
+        POTR_ERR_INVALID_ARGUMENT,
+        rtc_null_ids); // [確認_異常系] - ids_out が NULL の場合に config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(
+        POTR_ERR_INVALID_ARGUMENT,
+        rtc_null_count); // [確認_異常系] - count_out が NULL の場合に config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(
+        POTR_ERR_UNKNOWN,
+        rtc_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に config_list_service_ids の戻り値が POTR_ERR_UNKNOWN であること。
 }
 
 // service section だけが列挙され、既定容量 64 件を超えても拡張されることの確認
@@ -83,7 +91,7 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
                                       &count); // [手順] - 複数 service section を含む設定から ID を列挙する。
 
     // Assert
-    ASSERT_EQ(POTR_SUCCESS,
+    ASSERT_EQ(POTR_OK,
               rtc); // [確認_正常系] - config_list_service_ids の戻り値から、列挙に成功したと判断できること。
     ASSERT_NE(nullptr, ids);      // [確認_正常系] - service ID 配列が確保されること。
     EXPECT_EQ(70, count);         // [確認_正常系] - 非 service section を除いた 70 件が列挙されること。

@@ -45,22 +45,22 @@ int potrOpenServiceFromConfig(const char *config_path, int64_t service_id, PotrR
                    "potrOpenServiceFromConfig: invalid argument"
                    " (config_path=%p handle=%p)",
                    (const void *)config_path, (const void *)handle);
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
-    if (config_load_global(config_path, &global) != POTR_SUCCESS)
+    if (config_load_global(config_path, &global) != POTR_OK)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                    "potrOpenServiceFromConfig: service_id=%" PRId64 " failed to load global config from '%s'",
                    service_id, config_path);
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
-    if (config_load_service(config_path, service_id, &service) != POTR_SUCCESS)
+    if (config_load_service(config_path, service_id, &service) != POTR_OK)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potrOpenServiceFromConfig: service_id=%" PRId64 " not found in '%s'",
                    service_id, config_path);
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     return potrOpenService(&global, &service, role, callback, handle);

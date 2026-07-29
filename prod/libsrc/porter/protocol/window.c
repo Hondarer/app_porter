@@ -34,7 +34,7 @@ int window_init(PotrWindow *win, uint32_t initial_seq, uint16_t window_size, uin
 
     if (win == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     /* 既存バッファーがあり、サイズが一致する場合は状態リセットのみ */
@@ -43,7 +43,7 @@ int window_init(PotrWindow *win, uint32_t initial_seq, uint16_t window_size, uin
         memset(win->valid, 0, window_size);
         win->base_seq = initial_seq;
         win->next_seq = initial_seq;
-        return POTR_SUCCESS;
+        return POTR_OK;
     }
 
     /* 既存バッファーを解放 */
@@ -67,7 +67,7 @@ int window_init(PotrWindow *win, uint32_t initial_seq, uint16_t window_size, uin
         win->packets = NULL;
         win->valid = NULL;
         win->payload_pool = NULL;
-        return POTR_ERROR;
+        return POTR_ERR_OUT_OF_MEMORY;
     }
 
     memset(win->valid, 0, (size_t)window_size);
@@ -84,7 +84,7 @@ int window_init(PotrWindow *win, uint32_t initial_seq, uint16_t window_size, uin
     win->window_size = window_size;
     win->max_payload = max_payload;
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -130,7 +130,7 @@ int window_send_push(PotrWindow *win, const PotrPacket *packet)
 
     if (win == NULL || packet == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     /* ACK なし設計のため、満杯の場合は最古エントリを evict して循環利用する。
@@ -156,7 +156,7 @@ int window_send_push(PotrWindow *win, const PotrPacket *packet)
     win->valid[idx] = 1;
     win->next_seq++;
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -178,23 +178,23 @@ int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_
 
     if (win == NULL || packet_out == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     /* 通番がウィンドウ範囲外 */
     if (!seqnum_in_window(seq_num, win->base_seq, (uint16_t)(win->next_seq - win->base_seq)))
     {
-        return POTR_ERROR;
+        return POTR_ERR_NOT_FOUND;
     }
 
     idx = win_index(win, seq_num);
     if (!win->valid[idx])
     {
-        return POTR_ERROR;
+        return POTR_ERR_NOT_FOUND;
     }
 
     *packet_out = win->packets[idx];
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* ---------- 受信側 ---------- */
@@ -207,12 +207,12 @@ int window_recv_push(PotrWindow *win, const PotrPacket *packet)
 
     if (win == NULL || packet == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     if (!seqnum_in_window(packet->seq_num, win->base_seq, win->window_size))
     {
-        return POTR_ERROR;
+        return POTR_ERR_OUT_OF_WINDOW;
     }
 
     idx = win_index(win, packet->seq_num);
@@ -227,7 +227,7 @@ int window_recv_push(PotrWindow *win, const PotrPacket *packet)
         win->valid[idx] = 1;
     }
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -238,13 +238,13 @@ int window_recv_pop(PotrWindow *win, PotrPacket *packet)
 
     if (win == NULL || packet == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     idx = win_index(win, win->next_seq);
     if (!win->valid[idx])
     {
-        return POTR_ERROR;
+        return POTR_ERR_EMPTY;
     }
 
     *packet = win->packets[idx];
@@ -252,7 +252,7 @@ int window_recv_pop(PotrWindow *win, PotrPacket *packet)
     win->base_seq++;
     win->next_seq++;
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

@@ -29,16 +29,16 @@ int parse_ipv4_addr(const char *ip_str, struct in_addr *out_addr)
 {
     if (ip_str == NULL || out_addr == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     if (inet_pton(AF_INET, ip_str, out_addr) == 1)
     {
-        return POTR_SUCCESS;
+        return POTR_OK;
     }
     else
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 }
 
@@ -52,7 +52,7 @@ int resolve_ipv4_addr(const char *host, struct in_addr *out_addr)
 
     if (host == NULL || out_addr == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     memset(&hints, 0, sizeof(hints));
@@ -62,12 +62,12 @@ int resolve_ipv4_addr(const char *host, struct in_addr *out_addr)
     ret = getaddrinfo(host, NULL, &hints, &res);
     if (ret != 0 || res == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     /* 複数アドレスが返された場合は先頭を採用する */
     *out_addr = ((struct sockaddr_in *)res->ai_addr)->sin_addr;
 
     freeaddrinfo(res);
-    return POTR_SUCCESS;
+    return POTR_OK;
 }

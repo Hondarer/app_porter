@@ -18,6 +18,8 @@
     #include <errno.h>
     #include <fcntl.h>
 
+    #include <porter/porter_const.h>
+
     #include <porter/infra/potrPlatform.h>
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -80,10 +82,10 @@ int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len)
     {
         ssize_t n = send(fd, buf + sent, len - sent, 0);
         if (n <= 0)
-            return -1;
+            return POTR_ERR_UNKNOWN;
         sent += (size_t)n;
     }
-    return 0;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -95,12 +97,12 @@ int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
     {
         ssize_t r = recv(fd, buf + received, n - received, 0);
         if (r < 0)
-            return -1;
+            return POTR_ERR_UNKNOWN;
         if (r == 0)
-            return 0;
+            return POTR_ERR_EOF;
         received += (size_t)r;
     }
-    return 1;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

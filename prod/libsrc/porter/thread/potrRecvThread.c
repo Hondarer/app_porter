@@ -135,7 +135,8 @@ static void slot_clear_pending_fin(RecvSlot *slot)
 }
 
 /* 欠番 nack_num に対するリオーダー待機の完了判定。
-   N:1 モードは現状リオーダー待機を持たないため常に 1 (即時処理) を返す。 */
+   N:1 モードは現状リオーダー待機を持たないため常に 1 (即時処理) を返す。
+   真偽値を返す述語のため共通結果コードの適用対象外。 */
 static int slot_gap_ready(RecvSlot *slot, uint32_t nack_num)
 {
     if (slot->peer != NULL)
@@ -162,7 +163,7 @@ static void slot_send_nack(RecvSlot *slot, uint32_t nack_seq)
 /* NACK/REJECT 制御パケットを wire 形式へ直列化する。暗号化有効時はヘッダーを
    AAD とする GCM 認証タグを付加し、ノンスの seq_or_ack_num 部には ack_num を使う。
    wire_buf は PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE バイト以上であること。
-   成功時 1、暗号化失敗時 0 を返す。 */
+   成功時は POTR_OK、暗号化失敗時は POTR_ERR_UNKNOWN を返す。 */
 static int build_ctrl_pkt_wire(const PotrContext *ctx, PotrPacket *pkt, uint8_t *wire_buf, size_t *wire_len)
 {
     if (ctx->service.encrypt_enabled)
@@ -181,17 +182,17 @@ static int build_ctrl_pkt_wire(const PotrContext *ctx, PotrPacket *pkt, uint8_t 
 
         memcpy(wire_buf, pkt, PACKET_HEADER_SIZE);
         if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, PACKET_HEADER_SIZE) != 0)
+                             wire_buf, PACKET_HEADER_SIZE) != COM_UTIL_OK)
         {
-            return 0;
+            return POTR_ERR_UNKNOWN;
         }
         *wire_len = PACKET_HEADER_SIZE + enc_out;
-        return 1;
+        return POTR_OK;
     }
 
     memcpy(wire_buf, pkt, PACKET_HEADER_SIZE);
     *wire_len = packet_wire_size(pkt);
-    return 1;
+    return POTR_OK;
 }
 
 static void sync_service_path_state(PotrContext *ctx)
@@ -280,9 +281,9 @@ static int send_tcp_fin_ack(PotrContext *ctx, uint32_t fin_target_seq)
     shdr.session_id = ctx->session_id;
     potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    if (packet_build_fin_ack(&fin_ack_pkt, &shdr, fin_target_seq) != POTR_SUCCESS)
+    if (packet_build_fin_ack(&fin_ack_pkt, &shdr, fin_target_seq) != POTR_OK)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     return potr_tcp_send_control_packet(ctx, &fin_ack_pkt, fin_target_seq);
@@ -299,7 +300,7 @@ static void n1_send_ctrl_to_peer_paths(PotrContext *ctx, PotrPeerContext *peer, 
     size_t wire_len;
     int k;
 
-    if (!build_ctrl_pkt_wire(ctx, pkt, wire_buf, &wire_len))
+    if (build_ctrl_pkt_wire(ctx, pkt, wire_buf, &wire_len) != POTR_OK)
         return;
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
@@ -320,7 +321,7 @@ static void n1_send_nack(PotrContext *ctx, PotrPeerContext *peer, uint32_t nack_
     shdr.session_id = peer->session_id;
     potr_session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    if (packet_build_nack(&nack_pkt, &shdr, nack_seq) != POTR_SUCCESS)
+    if (packet_build_nack(&nack_pkt, &shdr, nack_seq) != POTR_OK)
         return;
 
     n1_send_ctrl_to_peer_paths(ctx, peer, &nack_pkt);
@@ -335,7 +336,7 @@ static void n1_send_reject(PotrContext *ctx, PotrPeerContext *peer, uint32_t seq
     shdr.session_id = peer->session_id;
     potr_session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    if (packet_build_reject(&reject_pkt, &shdr, seq_num) != POTR_SUCCESS)
+    if (packet_build_reject(&reject_pkt, &shdr, seq_num) != POTR_OK)
         return;
 
     n1_send_ctrl_to_peer_paths(ctx, peer, &reject_pkt);
@@ -485,7 +486,8 @@ static void n1_check_health_timeout(PotrContext *ctx)
  * ================================================================ */
 
 /* 受信パケットの暗号化要件と GCM 認証を検証する。
-   encrypt_enabled 時は ENCRYPTED フラグを必須とし、成功時のみ後続処理へ進める。 */
+   encrypt_enabled 時は ENCRYPTED フラグを必須とし、成功時のみ後続処理へ進める。
+   成功時は POTR_OK、検証失敗時は POTR_ERR_UNKNOWN を返す。 */
 static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *wire_hdr, const char *log_prefix,
                                     int path_idx)
 {
@@ -493,7 +495,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
     {
         if (!ctx->service.encrypt_enabled)
         {
-            return 1;
+            return POTR_OK;
         }
 
         if (path_idx >= 0)
@@ -508,7 +510,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
                        "%s[service_id=%" PRId64 "]: missing ENCRYPTED flag, dropping flags=0x%04x", log_prefix,
                        ctx->service.service_id, (unsigned)pkt->flags);
         }
-        return 0;
+        return POTR_ERR_UNKNOWN;
     }
 
     if ((pkt->flags & POTR_FLAG_ENCRYPTED) && (pkt->flags & (POTR_FLAG_DATA | POTR_FLAG_PING)))
@@ -525,7 +527,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
         memset(nonce + 10, 0, 2);
 
         if (com_util_decrypt(ctx->crypto_buf, &dec_len, pkt->payload, pkt->payload_len, ctx->service.encrypt_key, nonce,
-                             wire_hdr, PACKET_HEADER_SIZE) != 0)
+                             wire_hdr, PACKET_HEADER_SIZE) != COM_UTIL_OK)
         {
             if (path_idx >= 0)
             {
@@ -538,13 +540,13 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 "]: decrypt failed (auth) seq=%u",
                            log_prefix, ctx->service.service_id, (unsigned)pkt->seq_num);
             }
-            return 0;
+            return POTR_ERR_UNKNOWN;
         }
 
         pkt->payload = ctx->crypto_buf;
         pkt->payload_len = (uint16_t)dec_len;
         pkt->flags = (uint16_t)(pkt->flags & ~POTR_FLAG_ENCRYPTED);
-        return 1;
+        return POTR_OK;
     }
 
     if (pkt->payload_len != POTR_CRYPTO_TAG_SIZE)
@@ -561,7 +563,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
                        "%s[service_id=%" PRId64 "]: encrypted control pkt bad len=%u flags=0x%04x", log_prefix,
                        ctx->service.service_id, (unsigned)pkt->payload_len, (unsigned)pkt->flags);
         }
-        return 0;
+        return POTR_ERR_UNKNOWN;
     }
 
     {
@@ -589,7 +591,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
         memset(nonce + 10, 0, 2);
 
         if (com_util_decrypt(dummy, &dummy_len, pkt->payload, POTR_CRYPTO_TAG_SIZE, ctx->service.encrypt_key, nonce,
-                             wire_hdr, PACKET_HEADER_SIZE) != 0)
+                             wire_hdr, PACKET_HEADER_SIZE) != COM_UTIL_OK)
         {
             if (path_idx >= 0)
             {
@@ -602,14 +604,14 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 "]: tag verify failed flags=0x%04x",
                            log_prefix, ctx->service.service_id, (unsigned)pkt->flags);
             }
-            return 0;
+            return POTR_ERR_UNKNOWN;
         }
     }
 
     pkt->flags = (uint16_t)(pkt->flags & ~POTR_FLAG_ENCRYPTED);
     pkt->payload_len = 0;
     pkt->payload = NULL;
-    return 1;
+    return POTR_OK;
 }
 
 /* 送信元 IP が期待アドレスのいずれかと一致するか確認する。
@@ -677,7 +679,8 @@ static int check_src_addr(const PotrContext *ctx, const struct sockaddr_in *send
 }
 
 /* セッションの採用判定を行い、必要であればスロットの相手セッション情報を更新する。
-   採用すべきセッションなら 1、破棄すべき旧セッションなら 0 を返す。 */
+   採用すべきセッションなら 1、破棄すべき旧セッションなら 0 を返す。
+   採用可否の判定 (真偽値) を返す述語のため共通結果コードの適用対象外。 */
 static int slot_check_and_update_session(RecvSlot *slot, const PotrPacket *pkt)
 {
     PotrContext *ctx = slot->ctx;
@@ -947,6 +950,7 @@ static void check_health_timeout(PotrContext *ctx)
 
 /* 欠番 nack_num に対してリオーダー待機が完了しているか確認する。
    返値: 1 = 処理進行 (NACK/DISCONNECT を発行すべき)、0 = まだ待機中。
+   真偽値を返す述語のため共通結果コードの適用対象外。
    reorder_timeout_ms == 0 の場合は常に 1 を返す (即時)。
    新しいギャップまたは欠番通番が変わった場合はタイマーをリセットして 0 を返す。
    同一欠番でタイムアウト経過後は reorder_pending を 0 にクリアして 1 を返す。 */
@@ -1036,10 +1040,10 @@ static void send_nack(PotrContext *ctx, uint32_t nack_seq)
     shdr.session_id = ctx->session_id;
     potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    if (packet_build_nack(&nack_pkt, &shdr, nack_seq) != POTR_SUCCESS)
+    if (packet_build_nack(&nack_pkt, &shdr, nack_seq) != POTR_OK)
         return;
 
-    if (!build_ctrl_pkt_wire(ctx, &nack_pkt, wire_buf, &wire_len))
+    if (build_ctrl_pkt_wire(ctx, &nack_pkt, wire_buf, &wire_len) != POTR_OK)
         return;
 
     for (i = 0; i < ctx->n_path; i++)
@@ -1091,10 +1095,10 @@ static void send_reject(PotrContext *ctx, uint32_t seq_num)
     shdr.session_id = ctx->session_id;
     potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    if (packet_build_reject(&reject_pkt, &shdr, seq_num) != POTR_SUCCESS)
+    if (packet_build_reject(&reject_pkt, &shdr, seq_num) != POTR_OK)
         return;
 
-    if (!build_ctrl_pkt_wire(ctx, &reject_pkt, wire_buf, &wire_len))
+    if (build_ctrl_pkt_wire(ctx, &reject_pkt, wire_buf, &wire_len) != POTR_OK)
         return;
 
     for (i = 0; i < ctx->n_path; i++)
@@ -1213,7 +1217,7 @@ static void fire_disconnected_by_fin(PotrContext *ctx, uint32_t fin_target_seq)
 {
     if (ctx->service.type == POTR_TYPE_TCP || ctx->service.type == POTR_TYPE_TCP_BIDIR)
     {
-        if (send_tcp_fin_ack(ctx, fin_target_seq) == POTR_SUCCESS)
+        if (send_tcp_fin_ack(ctx, fin_target_seq) == POTR_OK)
         {
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "tcp_recv[service_id=%" PRId64 "]: FIN_ACK sent ack=%u",
                        ctx->service.service_id, (unsigned)fin_target_seq);
@@ -1255,7 +1259,7 @@ static void slot_drain_recv_window(RecvSlot *slot)
     PotrContext *ctx = slot->ctx;
     PotrPacket pop_pkt;
 
-    while (window_recv_pop(slot->recv_window, &pop_pkt) == POTR_SUCCESS)
+    while (window_recv_pop(slot->recv_window, &pop_pkt) == POTR_OK)
     {
         const char *pkt_type_str;
         if (pop_pkt.flags & POTR_FLAG_PING)
@@ -1279,7 +1283,7 @@ static void slot_drain_recv_window(RecvSlot *slot)
             size_t offset = 0;
             PotrPacket elem;
 
-            while (packet_unpack_next(&pop_pkt, &offset, &elem) == POTR_SUCCESS)
+            while (packet_unpack_next(&pop_pkt, &offset, &elem) == POTR_OK)
             {
                 slot_deliver_payload_elem(slot, &elem);
             }
@@ -1327,7 +1331,7 @@ static void slot_process_outer_pkt(RecvSlot *slot, const PotrPacket *pkt, int pa
     /* RAW 系は 1:1 モード限定の通信種別 (N:1 の type は UNICAST_BIDIR_N1 のみ) */
     int is_raw = potr_is_raw_type(ctx->service.type);
 
-    if (window_recv_push(slot->recv_window, pkt) != POTR_SUCCESS)
+    if (window_recv_push(slot->recv_window, pkt) != POTR_OK)
     {
         if (is_raw)
         {
@@ -1338,7 +1342,7 @@ static void slot_process_outer_pkt(RecvSlot *slot, const PotrPacket *pkt, int pa
                        ctx->service.service_id, (unsigned)pkt->seq_num);
             raw_session_disconnect(ctx);
             window_recv_reset(slot->recv_window, pkt->seq_num);
-            if (window_recv_push(slot->recv_window, pkt) != POTR_SUCCESS)
+            if (window_recv_push(slot->recv_window, pkt) != POTR_OK)
             {
                 /* リセット直後の再投入失敗は想定外 */
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
@@ -1385,7 +1389,7 @@ static void slot_process_outer_pkt(RecvSlot *slot, const PotrPacket *pkt, int pa
             {
                 raw_session_disconnect(ctx);
                 window_recv_reset(slot->recv_window, pkt->seq_num);
-                if (window_recv_push(slot->recv_window, pkt) != POTR_SUCCESS)
+                if (window_recv_push(slot->recv_window, pkt) != POTR_OK)
                 {
                     /* リセット直後の再投入失敗は想定外 */
                     POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
@@ -1458,7 +1462,7 @@ static void n1_handle_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *w
     int is_new_peer = 0;
     RecvSlot peer_slot;
 
-    if (!recv_authenticate_packet(ctx, pkt, wire_hdr, "recv", -1))
+    if (recv_authenticate_packet(ctx, pkt, wire_hdr, "recv", -1) != POTR_OK)
     {
         return;
     }
@@ -1549,7 +1553,7 @@ static void n1_handle_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *w
 
         com_util_local_lock_lock(peer->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
         get_result = window_send_get(&peer->send_window, pkt->ack_num, &resend_pkt);
-        if (get_result == POTR_SUCCESS)
+        if (get_result == POTR_OK)
         {
             wire_len = packet_wire_size(&resend_pkt);
             memcpy(ctx->recv_buf, &resend_pkt, PACKET_HEADER_SIZE);
@@ -1557,7 +1561,7 @@ static void n1_handle_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *w
         }
         com_util_local_lock_unlock(peer->send_window_mutex);
 
-        if (get_result == POTR_SUCCESS)
+        if (get_result == POTR_OK)
         {
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: peer=%u NACK seq=%u -> retransmit",
                        ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)pkt->ack_num);
@@ -1718,7 +1722,7 @@ static int sender_handle_packet(PotrContext *ctx, const PotrPacket *pkt)
             com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
             get_result = window_send_get(&ctx->send_window, pkt->ack_num, &resend_pkt);
 
-            if (get_result == POTR_SUCCESS)
+            if (get_result == POTR_OK)
             {
                 /* [NBO ヘッダー][ペイロード] を recv_buf に組み立てる */
                 wire_len = packet_wire_size(&resend_pkt);
@@ -1728,7 +1732,7 @@ static int sender_handle_packet(PotrContext *ctx, const PotrPacket *pkt)
 
             com_util_local_lock_unlock(ctx->send_window_mutex);
 
-            if (get_result == POTR_SUCCESS)
+            if (get_result == POTR_OK)
             {
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
                            "sender[service_id=%" PRId64 "]: NACK received seq=%u"
@@ -2065,7 +2069,7 @@ static void recv_thread_func(void *arg)
                 continue;
             }
 
-            if (packet_parse(&pkt, buf, (size_t)recv_len) != POTR_SUCCESS)
+            if (packet_parse(&pkt, buf, (size_t)recv_len) != POTR_OK)
             {
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: packet parse failed (len=%d)",
                            ctx->service.service_id, recv_len);
@@ -2088,7 +2092,7 @@ static void recv_thread_func(void *arg)
                 continue;
             }
 
-            if (!recv_authenticate_packet(ctx, &pkt, buf, "recv", -1))
+            if (recv_authenticate_packet(ctx, &pkt, buf, "recv", -1) != POTR_OK)
                 continue;
 
             /* ── 送信者ロール: NACK のみ処理 ── */
@@ -2121,7 +2125,7 @@ static int tcp_wait_readable(PotrSocket fd, int wait_ms)
 }
 
 /* TCP ソケットから正確に n バイト読み取る。
- * 戻り値: 1 = 成功、0 = 切断 (recv が 0 を返した)、-1 = エラー。 */
+ * 戻り値: 成功時は POTR_OK、切断時 (recv が 0 を返した) は POTR_ERR_EOF、エラー時は POTR_ERR_UNKNOWN。 */
 static int tcp_read_all(PotrSocket fd, uint8_t *buf, size_t n)
 {
     return potr_tcp_recv_all(fd, buf, n);
@@ -2242,7 +2246,7 @@ static void tcp_recv_thread_func(void *arg)
 
             /* 1. 固定長ヘッダー読み取り */
             r = tcp_read_all(fd, buf, PACKET_HEADER_SIZE);
-            if (r <= 0)
+            if (r != POTR_OK)
             {
                 break; /* 切断 or エラー */
             }
@@ -2268,7 +2272,7 @@ static void tcp_recv_thread_func(void *arg)
             if (wire_payload_len > 0)
             {
                 r = tcp_read_all(fd, buf + PACKET_HEADER_SIZE, wire_payload_len);
-                if (r <= 0)
+                if (r != POTR_OK)
                 {
                     break;
                 }
@@ -2276,7 +2280,7 @@ static void tcp_recv_thread_func(void *arg)
         } /* else (先読みバッファーなし) ここまで */
 
         /* 5. パケット解析 */
-        if (packet_parse(&pkt, buf, PACKET_HEADER_SIZE + wire_payload_len) != POTR_SUCCESS)
+        if (packet_parse(&pkt, buf, PACKET_HEADER_SIZE + wire_payload_len) != POTR_OK)
         {
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 "]: packet_parse failed",
                        ctx->service.service_id);
@@ -2292,7 +2296,7 @@ static void tcp_recv_thread_func(void *arg)
             continue;
         }
 
-        if (!recv_authenticate_packet(ctx, &pkt, buf, "tcp_recv", path_idx))
+        if (recv_authenticate_packet(ctx, &pkt, buf, "tcp_recv", path_idx) != POTR_OK)
             continue;
 
         /* 8. パケット種別処理 */
@@ -2382,7 +2386,7 @@ static void tcp_recv_thread_func(void *arg)
                 pushed = window_recv_push(&ctx->recv_window, &pkt);
                 com_util_local_lock_unlock(ctx->recv_window_mutex);
 
-                if (pushed != POTR_SUCCESS)
+                if (pushed != POTR_OK)
                 {
                     /* 重複パケット → スキップ */
                     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
@@ -2399,12 +2403,12 @@ static void tcp_recv_thread_func(void *arg)
                 com_util_local_lock_lock(ctx->recv_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
                 {
                     PotrPacket out;
-                    while (window_recv_pop(&ctx->recv_window, &out) == POTR_SUCCESS)
+                    while (window_recv_pop(&ctx->recv_window, &out) == POTR_OK)
                     {
                         size_t offset = 0;
                         PotrPacket elem;
                         com_util_local_lock_unlock(ctx->recv_window_mutex);
-                        while (packet_unpack_next(&out, &offset, &elem) == POTR_SUCCESS)
+                        while (packet_unpack_next(&out, &offset, &elem) == POTR_OK)
                         {
                             slot_deliver_payload_elem(&svc_slot, &elem);
                         }
@@ -2443,7 +2447,7 @@ int comm_recv_thread_start(PotrContext *ctx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     ctx->running[0] = 1;
@@ -2455,10 +2459,10 @@ int comm_recv_thread_start(PotrContext *ctx)
         ctx->running[0] = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "recv_thread[service_id=%" PRId64 "]: thread create failed",
                    ctx->service.service_id);
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -2467,7 +2471,7 @@ int comm_recv_thread_stop(PotrContext *ctx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     ctx->running[0] = 0;
@@ -2490,7 +2494,7 @@ int comm_recv_thread_stop(PotrContext *ctx)
 
     com_util_thread_join(ctx->recv_thread[0], COM_UTIL_SYNC_WAIT_FOREVER);
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -2499,7 +2503,7 @@ int tcp_recv_thread_start(PotrContext *ctx, int path_idx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     ctx->running[path_idx] = 1;
@@ -2516,10 +2520,10 @@ int tcp_recv_thread_start(PotrContext *ctx, int path_idx)
         ctx->running[path_idx] = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "tcp_recv_thread[service_id=%" PRId64 " path=%d]: thread create failed",
                    ctx->service.service_id, path_idx);
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -2528,12 +2532,12 @@ int tcp_recv_thread_stop(PotrContext *ctx, int path_idx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     ctx->running[path_idx] = 0;
 
     com_util_thread_join(ctx->recv_thread[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }

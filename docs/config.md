@@ -37,7 +37,7 @@ porter は INI 形式のテキスト ファイルでサービスを定義しま�
 | `udp_health_timeout_ms`  | uint32 | 10,000 | UDP 通信種別の受信タイムアウト (ms)。片方向 type 1-6 では有効な `PING` / `DATA`、双方向 UDP では `PING` の最終受信から本値を超えたら DISCONNECTED。0 でタイムアウト検知を無効化 |
 | `tcp_health_interval_ms` | uint32 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。接続直後の bootstrap PING とは別に、設定周期ごとに PING を送信する。0 の場合は定周期 PING を無効化するが、初回接続確立用の bootstrap PING は送信する |
 | `tcp_health_timeout_ms`  | uint32 | 31,000 | TCP 通信種別の PING 応答待機タイムアウト (ms)。`tcp_health_interval_ms > 0` のときだけ有効で、SENDER 側が PING 応答を本値以内に受信できなければ DISCONNECTED。0 でタイムアウト検知を無効化 |
-| `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potrCloseService()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送り、本値以内に `FIN_ACK` が返らなければ強制 close して `POTR_ERROR` を返す。0 の場合は待機せず teardown へ進む |
+| `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potrCloseService()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送り、本値以内に `FIN_ACK` が返らなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む |
 | `reorder_timeout_ms` | uint32 | 0 | 受信ウィンドウで欠番を検出してから NACK 送出 (通常モード) または DISCONNECTED 発行 (RAW モード) を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 で即時 (デフォルト)。推奨値: LAN/マルチパス = 10〜30 ms、遠距離 WAN = 30〜100 ms |
 
 ### window_size の影響
@@ -144,7 +144,7 @@ RAW モードは通常モード (`unicast` / `multicast` / `broadcast`) と同�
 |---|---|---|
 | 再送制御 | NACK ベース再送あり | 再送なし |
 | ギャップ検出時 | NACK を返送して欠落パケットを待機 | 即 `POTR_EVENT_DISCONNECTED` を発行し、次の正規パケットで `POTR_EVENT_CONNECTED` |
-| `potrSend` の動作 | `flags` 引数に従う (ノンブロッキング / ブロッキング) | 常にブロッキング送信 (`POTR_SEND_BLOCKING` 相当) |
+| `potrSend` の動作 | `flags` 引数に従う (非ブロッキング / ブロッキング) | 常にブロッキング送信 (`POTR_SEND_BLOCKING` 相当) |
 | 通番 (`seq_num`) | 再送制御・ウィンドウ管理に使用 | AES ノンス生成用のみ (再送制御には使用しない) |
 | ヘルスチェック | `health_interval_ms` / `health_timeout_ms` に従う | 同左 (制限なし) |
 

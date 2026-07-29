@@ -267,13 +267,13 @@ int config_load_service(const char *config_path, int64_t service_id, PotrService
 
     if (config_path == NULL || def == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     fp = config_open_file_read(config_path);
     if (fp == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     in_target = 0;
@@ -332,7 +332,7 @@ int config_load_service(const char *config_path, int64_t service_id, PotrService
     com_util_fclose(fp);
     if (!found)
     {
-        return POTR_ERROR;
+        return POTR_ERR_NOT_FOUND;
     }
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
@@ -340,5 +340,5 @@ int config_load_service(const char *config_path, int64_t service_id, PotrService
                "src_addr1=%s dst_addr1=%s dst_port=%u src_port=%u",
                def->service_id, (int)def->type, def->src_addr[0], def->dst_addr[0], (unsigned)def->dst_port,
                (unsigned)def->src_port);
-    return POTR_SUCCESS;
+    return POTR_OK;
 }

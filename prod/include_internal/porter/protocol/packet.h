@@ -81,7 +81,7 @@ extern "C"
      *  @param[out]     packet      構築結果を格納するパケット構造体へのポインター。
      *  @param[in]      shdr        セッション識別ヘッダーへのポインター。
      *  @param[in]      nack_num    再送要求する通番。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      */
     extern int packet_build_nack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint32_t nack_num);
 
@@ -93,7 +93,7 @@ extern "C"
      *  @param[in]      health_payload     パス PING 受信状態ペイロードへのポインター (POTR_PING_STATE_* 値の配列)。
      *                                     NULL の場合はペイロードなし (payload_len=0)。
      *  @param[in]      health_payload_len ペイロード長 (バイト)。通常 POTR_MAX_PATH。health_payload が NULL の場合は無視。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      *
      *  ヘルスチェック パケットです。\n
      *  通番には送信側の next_seq (次に送出する DATA に割り当てる通番) を格納します。\n
@@ -109,7 +109,7 @@ extern "C"
      *  @param[out]     packet      構築結果を格納するパケット構造体へのポインター。
      *  @param[in]      shdr        セッション識別ヘッダーへのポインター。
      *  @param[in]      seq_num     再送不能な通番。ack_num フィールドに格納します。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      *
      *  受信者から NACK を受け取ったが、送信ウィンドウに該当パケットが存在しない場合に
      *  送信者が返すパケットです。受信者はこのパケットを受け取ると即時 DISCONNECTED を
@@ -121,7 +121,7 @@ extern "C"
      *  @brief          正常終了通知 (FIN) パケットを構築します。
      *  @param[out]     packet      構築結果を格納するパケット構造体へのポインター。
      *  @param[in]      shdr        セッション識別ヘッダーへのポインター。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      *
      *  送信者が potrCloseService 時に送出する終了通知パケットです。ペイロードなし。\n
      *  `POTR_FLAG_FIN_TARGET_VALID` と `ack_num` の設定は呼び出し側が行います。\n
@@ -135,7 +135,7 @@ extern "C"
      *  @param[out]     packet          構築結果を格納するパケット構造体へのポインター。
      *  @param[in]      shdr            セッション識別ヘッダーへのポインター。
      *  @param[in]      fin_target_seq  完了した FIN target 通番。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      */
     extern int packet_build_fin_ack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint32_t fin_target_seq);
 
@@ -146,7 +146,7 @@ extern "C"
      *  @param[in]      seq_num         外側パケットの通番。再送・順序整列に使用します。
      *  @param[in]      packed_payload  送信スレッドが構築したペイロード エレメント列。
      *  @param[in]      payload_len     packed_payload のバイト数。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      *
      *  すべてのデータ パケットはパック コンテナー形式で送受信します。\n
      *  ペイロード エレメントが 1 件のみの場合も同じ形式を使用します。\n
@@ -163,8 +163,9 @@ extern "C"
      *  @param[in]      container  packet_parse() 済みのデータ パケット (POTR_FLAG_DATA)。
      *  @param[in,out]  offset     コンテナー payload 内の読み取り位置。呼び出し毎に更新。
      *  @param[out]     elem_out   取り出したペイロード エレメントを格納する構造体へのポインター。
-     *  @return         ペイロード エレメントを取り出せた場合は POTR_SUCCESS、
-     *                  末尾に達した場合またはエラーの場合は POTR_ERROR を返します。
+     *  @return         ペイロード エレメントを取り出せた場合は POTR_OK、引数が NULL の場合は
+     *                  POTR_ERR_INVALID_ARGUMENT、末尾に達した場合は POTR_ERR_EOF、
+     *                  エレメントが不正な場合は POTR_ERR_UNKNOWN を返します。
      *
      *  ペイロード エレメントの形式は flags(2) + payload_len(4) + payload(N) です。\n
      *  通番は外側パケットで管理するためペイロード エレメントには含まれません。\n
@@ -178,7 +179,9 @@ extern "C"
      *  @param[out]     packet      解析結果を格納するパケット構造体へのポインター。
      *  @param[in]      buf         受信バイト列へのポインター。
      *  @param[in]      buf_len     受信バイト列の長さ。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR を返します。
+     *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
+     *                  受信データが不正 (ヘッダー長未満、バージョン不一致、長さ不整合) な場合は
+     *                  POTR_ERR_UNKNOWN を返します。
      *
      *  各フィールドをホスト バイト オーダーに変換して構造体に格納します。
      */

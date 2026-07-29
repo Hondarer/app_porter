@@ -90,7 +90,7 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
 
     seq = ctx->send_window.next_seq;
 
-    if (packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len) != POTR_SUCCESS)
+    if (packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len) != POTR_OK)
     {
         com_util_local_lock_unlock(ctx->send_window_mutex);
         return;
@@ -122,7 +122,7 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
         memset(nonce + 10, 0, 2);
 
         if (com_util_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
-                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != 0)
+                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != COM_UTIL_OK)
         {
             com_util_local_lock_unlock(ctx->send_window_mutex);
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: encrypt failed seq=%u",
@@ -258,7 +258,7 @@ static void flush_packed_peer(PotrContext *ctx, PotrPeerContext *peer, size_t pa
 
     seq = peer->send_window.next_seq;
 
-    if (packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len) != POTR_SUCCESS)
+    if (packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len) != POTR_OK)
     {
         com_util_local_lock_unlock(peer->send_window_mutex);
         return;
@@ -280,7 +280,7 @@ static void flush_packed_peer(PotrContext *ctx, PotrPeerContext *peer, size_t pa
         memset(nonce + 10, 0, 2);
 
         if (com_util_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
-                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != 0)
+                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != COM_UTIL_OK)
         {
             com_util_local_lock_unlock(peer->send_window_mutex);
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: peer=%u encrypt failed seq=%u",
@@ -357,7 +357,7 @@ static void send_packed_peer_mode(PotrContext *ctx, PotrPayloadElem *first)
     {
         PotrPayloadElem next;
 
-        while (potr_send_queue_peek(&ctx->send_queue, &next) == POTR_SUCCESS)
+        while (potr_send_queue_peek(&ctx->send_queue, &next) == POTR_OK)
         {
             size_t elem_size;
             size_t crypto_tag_overhead;
@@ -383,7 +383,7 @@ static void send_packed_peer_mode(PotrContext *ctx, PotrPayloadElem *first)
                 break;
             }
 
-            if (potr_send_queue_try_pop(&ctx->send_queue, &next) != POTR_SUCCESS)
+            if (potr_send_queue_try_pop(&ctx->send_queue, &next) != POTR_OK)
             {
                 break;
             }
@@ -413,7 +413,7 @@ static void send_thread_func(void *arg)
     for (;;)
     {
         /* キューからエントリを取り出す (ブロッキング) */
-        if (potr_send_queue_pop(&ctx->send_queue, &first, &ctx->send_thread_running) != POTR_SUCCESS)
+        if (potr_send_queue_pop(&ctx->send_queue, &first, &ctx->send_thread_running) != POTR_OK)
         {
             break;
         }
@@ -459,7 +459,7 @@ static void send_thread_func(void *arg)
 
                         remaining = (uint32_t)(deadline - now);
 
-                        if (potr_send_queue_peek_timed(&ctx->send_queue, &next, remaining) != POTR_SUCCESS)
+                        if (potr_send_queue_peek_timed(&ctx->send_queue, &next, remaining) != POTR_OK)
                         {
                             break; /* タイムアウト (エントリなし) */
                         }
@@ -485,7 +485,7 @@ static void send_thread_func(void *arg)
                             break; /* 容量満杯: 即時送信してタイマーリセット */
                         }
 
-                        if (potr_send_queue_try_pop(&ctx->send_queue, &next) != POTR_SUCCESS)
+                        if (potr_send_queue_try_pop(&ctx->send_queue, &next) != POTR_OK)
                         {
                             break; /* 競合防止 (通常発生しない) */
                         }
@@ -499,7 +499,7 @@ static void send_thread_func(void *arg)
                     /* パッキング待ちなし: キューにあるエントリを即時まとめる */
                     PotrPayloadElem next;
 
-                    while (potr_send_queue_peek(&ctx->send_queue, &next) == POTR_SUCCESS)
+                    while (potr_send_queue_peek(&ctx->send_queue, &next) == POTR_OK)
                     {
                         size_t elem_size;
                         size_t crypto_tag_overhead;
@@ -525,7 +525,7 @@ static void send_thread_func(void *arg)
                             break;
                         }
 
-                        if (potr_send_queue_try_pop(&ctx->send_queue, &next) != POTR_SUCCESS)
+                        if (potr_send_queue_try_pop(&ctx->send_queue, &next) != POTR_OK)
                         {
                             break;
                         }
@@ -564,10 +564,10 @@ int potr_send_thread_start(PotrContext *ctx)
     {
         ctx->send_thread_running = 0;
         com_util_local_lock_destroy(ctx->send_window_mutex);
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

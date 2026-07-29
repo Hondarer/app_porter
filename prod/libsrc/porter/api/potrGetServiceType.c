@@ -24,14 +24,14 @@ int potrGetServiceType(const char *config_path, int64_t service_id, PotrType *ty
 
     if (config_path == NULL || type == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
-    if (config_load_service(config_path, service_id, &def) != POTR_SUCCESS)
+    if (config_load_service(config_path, service_id, &def) != POTR_OK)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     *type = def.type;
-    return POTR_SUCCESS;
+    return POTR_OK;
 }

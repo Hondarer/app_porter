@@ -31,13 +31,13 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
 
     if (config_path == NULL || ids_out == NULL || count_out == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     fp = config_open_file_read(config_path);
     if (fp == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     capacity = (int)POTR_MAX_SERVICES;
@@ -46,7 +46,7 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
     if (ids == NULL)
     {
         com_util_fclose(fp);
-        return POTR_ERROR;
+        return POTR_ERR_OUT_OF_MEMORY;
     }
 
     while (com_util_fgets(line, (int)sizeof(line), fp) != NULL)
@@ -75,7 +75,7 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
             {
                 free(ids);
                 com_util_fclose(fp);
-                return POTR_ERROR;
+                return POTR_ERR_OUT_OF_MEMORY;
             }
             ids = new_ids;
             capacity = new_capacity;
@@ -87,5 +87,5 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
     com_util_fclose(fp);
     *ids_out = ids;
     *count_out = count;
-    return POTR_SUCCESS;
+    return POTR_OK;
 }

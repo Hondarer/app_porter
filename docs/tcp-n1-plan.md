@@ -507,7 +507,7 @@ static void receiver_accept_n1_loop(PotrContext *ctx, int path_idx)
                  ctx->service.service_id, path_idx, peer->peer_id);
 
         /* per-peer スレッド起動 (join しない → 即座に次の accept へ) */
-        if (tcp_peer_recv_thread_start(ctx, peer, path_idx) != POTR_SUCCESS)
+        if (tcp_peer_recv_thread_start(ctx, peer, path_idx) != POTR_OK)
         {
             POTR_TRACE(POTR_TRACE_ERROR, "connect_thread: tcp_peer_recv_thread_start failed");
             POTR_MUTEX_LOCK(&ctx->peers_mutex);
@@ -519,7 +519,7 @@ static void receiver_accept_n1_loop(PotrContext *ctx, int path_idx)
 
         if (is_bidir)
         {
-            if (tcp_peer_health_thread_start(ctx, peer, path_idx) != POTR_SUCCESS)
+            if (tcp_peer_health_thread_start(ctx, peer, path_idx) != POTR_OK)
             {
                 POTR_TRACE(POTR_TRACE_ERROR,
                          "connect_thread: tcp_peer_health_thread_start failed");
@@ -582,7 +582,7 @@ static void flush_packed_peer(PotrContext *ctx,
             {
                 if (tcp_send_all(peer->tcp_conn_fd[k],
                                  &peer->tcp_send_mutex[k],
-                                 wire_buf, wire_len) != POTR_SUCCESS)
+                                 wire_buf, wire_len) != POTR_OK)
                 {
                     POTR_TRACE(POTR_TRACE_WARNING,
                              "send_thread: peer[%u] path[%d]: tcp_send_all failed",
@@ -628,15 +628,15 @@ case POTR_TYPE_TCP_BIDIR_N1:
             ctx->tcp_listen_sock[i] = open_socket_tcp_receiver(ctx, i);
             if (ctx->tcp_listen_sock[i] == POTR_INVALID_SOCKET) {
                 ctx_cleanup(ctx);
-                return POTR_ERROR;
+                return POTR_ERR_UNKNOWN;
             }
         }
 
         /* 2. ピア テーブル初期化 */
         ctx->is_multi_peer = 1;
-        if (peer_table_init(ctx) != POTR_SUCCESS) {
+        if (peer_table_init(ctx) != POTR_OK) {
             ctx_cleanup(ctx);
-            return POTR_ERROR;
+            return POTR_ERR_UNKNOWN;
         }
 
         /* 3. TCP mutex/condvar 初期化 (ctx レベル: peers_mutex は peer_table_init で初期化済み) */
@@ -649,20 +649,20 @@ case POTR_TYPE_TCP_BIDIR_N1:
         if (is_bidir_n1) {
             if (potr_send_queue_init(&ctx->send_queue,
                                      POTR_SEND_QUEUE_DEPTH,
-                                     (uint16_t)ctx->global.max_payload) != POTR_SUCCESS) {
+                                     (uint16_t)ctx->global.max_payload) != POTR_OK) {
                 ctx_cleanup(ctx);
-                return POTR_ERROR;
+                return POTR_ERR_UNKNOWN;
             }
-            if (potr_send_thread_start(ctx) != POTR_SUCCESS) {
+            if (potr_send_thread_start(ctx) != POTR_OK) {
                 ctx_cleanup(ctx);
-                return POTR_ERROR;
+                return POTR_ERR_UNKNOWN;
             }
         }
 
         /* 5. accept スレッド起動 → receiver_accept_n1_loop が呼ばれる */
-        if (potr_connect_thread_start(ctx) != POTR_SUCCESS) {
+        if (potr_connect_thread_start(ctx) != POTR_OK) {
             ctx_cleanup(ctx);
-            return POTR_ERROR;
+            return POTR_ERR_UNKNOWN;
         }
     }
     else /* POTR_ROLE_SENDER */
@@ -670,18 +670,18 @@ case POTR_TYPE_TCP_BIDIR_N1:
         /* SENDER 側: 既存 TCP/TCP_BIDIR SENDER と同一 */
         /* (宛先アドレス解決 + connect スレッド起動) */
         for (i = 0; i < ctx->n_path; i++) {
-            if (resolve_dst_addr(ctx, i) != POTR_SUCCESS) {
+            if (resolve_dst_addr(ctx, i) != POTR_OK) {
                 ctx_cleanup(ctx);
-                return POTR_ERROR;
+                return POTR_ERR_UNKNOWN;
             }
         }
-        if (init_send_resources(ctx) != POTR_SUCCESS) {
+        if (init_send_resources(ctx) != POTR_OK) {
             ctx_cleanup(ctx);
-            return POTR_ERROR;
+            return POTR_ERR_UNKNOWN;
         }
-        if (potr_connect_thread_start(ctx) != POTR_SUCCESS) {
+        if (potr_connect_thread_start(ctx) != POTR_OK) {
             ctx_cleanup(ctx);
-            return POTR_ERROR;
+            return POTR_ERR_UNKNOWN;
         }
     }
     break;
@@ -760,7 +760,7 @@ int is_bidir = (ctx->service.type == POTR_TYPE_TCP_BIDIR)
             || (ctx->service.type == POTR_TYPE_TCP_BIDIR_N1);  /* 追加 */
 
 if (ctx->role == POTR_ROLE_RECEIVER && !is_bidir) {
-    return POTR_ERROR;  /* 単方向 RECEIVER は送信不可 */
+    return POTR_ERR_UNKNOWN;  /* 単方向 RECEIVER は送信不可 */
 }
 
 /* TCP N:1: peer_id が POTR_PEER_NA なら全ピアへ送信 (ブロードキャスト相当)

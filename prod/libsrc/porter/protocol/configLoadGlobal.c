@@ -53,7 +53,7 @@ int config_load_global(const char *config_path, PotrGlobalConfig *global)
 
     if (config_path == NULL || global == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     config_set_global_defaults(global);
@@ -61,7 +61,7 @@ int config_load_global(const char *config_path, PotrGlobalConfig *global)
     fp = config_open_file_read(config_path);
     if (fp == NULL)
     {
-        return POTR_ERROR;
+        return POTR_ERR_UNKNOWN;
     }
 
     section[0] = '\0';
@@ -153,5 +153,5 @@ int config_load_global(const char *config_path, PotrGlobalConfig *global)
                (unsigned)global->reorder_timeout_ms);
 
     com_util_fclose(fp);
-    return POTR_SUCCESS;
+    return POTR_OK;
 }

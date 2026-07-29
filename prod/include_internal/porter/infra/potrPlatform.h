@@ -8,6 +8,12 @@
  *
  *  OS ごとに異なるスレッド・同期・ソケット・時刻 API を共通インターフェースで抽象化します。
  *
+ *  本ヘッダーの OS ラッパー関数は、元 API (BSD ソケット / Winsock) の戻り値規約を
+ *  保存する層であるため、共通結果コード (@ref POTR_RESULT) の適用対象外です。\n
+ *  ただし、複数の OS 呼び出しを合成するヘルパー (potr_tcp_send()、potr_tcp_recv_all())
+ *  は独自の規約を持つため、共通結果コードの適用対象とします。\n
+ *  詳細は docs/coding-guideline.md の「適用対象外」を参照してください。
+ *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
  *
  *  @hideincludedbygraph
@@ -82,7 +88,7 @@ static inline void potr_shutdown_socket(PotrSocket fd)
  *  @param[in]  optname  オプション名。
  *  @param[in]  optval   オプション値へのポインター。
  *  @param[in]  optlen   オプション値のバイト数。
- *  @return  0: 成功、-1: 失敗。
+ *  @return  0: 成功、-1: 失敗。setsockopt の規約を保存するため共通結果コードの適用対象外。
  */
 static inline int potr_setsockopt(PotrSocket sock, int level, int optname, const void *optval, int optlen)
 {
@@ -109,7 +115,7 @@ extern "C"
  *  @param[in]  flags     送信フラグ。
  *  @param[in]  dest      送信先アドレス。
  *  @param[in]  dest_len  送信先アドレス長。
- *  @return 送信バイト数 (負値: エラー)。
+ *  @return 送信バイト数 (負値: エラー)。sendto の規約を保存するため共通結果コードの適用対象外。
  */
     extern int potr_sendto(PotrSocket sock, const uint8_t *buf, size_t len, int flags, const struct sockaddr *dest,
                            int dest_len);
@@ -122,7 +128,7 @@ extern "C"
  *  @param[in]  flags    受信フラグ。
  *  @param[out] src      送信元アドレス格納先。
  *  @param[in,out] src_len  送信元アドレス長。
- *  @return 受信バイト数 (負値: エラー)。
+ *  @return 受信バイト数 (負値: エラー)。recvfrom の規約を保存するため共通結果コードの適用対象外。
  */
     extern int potr_recvfrom(PotrSocket sock, uint8_t *buf, size_t len, int flags, struct sockaddr *src, int *src_len);
 
@@ -130,7 +136,7 @@ extern "C"
  *  @brief  ソケットが書き込み可能か確認します (poll/WSAPoll)。
  *  @param[in]  fd         対象ソケット。
  *  @param[in]  timeout_ms タイムアウト (ミリ秒、0 = 即時)。
- *  @return  1: 書き込み可能、0: タイムアウト、-1: エラー。
+ *  @return  1: 書き込み可能、0: タイムアウト、-1: エラー。poll の規約を保存するため共通結果コードの適用対象外。
  */
     extern int potr_poll_writable(PotrSocket fd, int timeout_ms);
 
@@ -138,7 +144,7 @@ extern "C"
  *  @brief  ソケットが読み取り可能か確認します (poll/WSAPoll)。
  *  @param[in]  fd         対象ソケット。
  *  @param[in]  timeout_ms タイムアウト (ミリ秒、0 = 即時)。
- *  @return  1: 読み取り可能、0: タイムアウト、-1: エラー。
+ *  @return  1: 読み取り可能、0: タイムアウト、-1: エラー。poll の規約を保存するため共通結果コードの適用対象外。
  */
     extern int potr_poll_readable(PotrSocket fd, int timeout_ms);
 
@@ -147,8 +153,9 @@ extern "C"
  *  @param[in]  fd   送信ソケット。
  *  @param[in]  buf  送信データ。
  *  @param[in]  len  送信バイト数。
- *  @return  0: 成功 (全バイト送信)、-1: 切断またはエラー。
- *  @note    呼び出し前に送信ミューテックスを取得しておく必要があります。
+ *  @return  成功時 (全バイト送信) は POTR_OK、切断またはエラー時は POTR_ERR_UNKNOWN。
+ *  @note    複数の OS 呼び出しを合成するヘルパーのため、共通結果コード (POTR_RESULT) の適用対象。\n
+ *           呼び出し前に送信ミューテックスを取得しておく必要があります。
  */
     extern int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len);
 
@@ -157,13 +164,14 @@ extern "C"
  *  @param[in]   fd   受信ソケット。
  *  @param[out]  buf  受信バッファー (n バイト以上)。
  *  @param[in]   n    受信バイト数。
- *  @return  1: 成功、0: 切断 (recv が 0 を返した)、-1: エラー。
+ *  @return  成功時は POTR_OK、切断時 (recv が 0 を返した) は POTR_ERR_EOF、エラー時は POTR_ERR_UNKNOWN。
+ *  @note    複数の OS 呼び出しを合成するヘルパーのため、共通結果コード (POTR_RESULT) の適用対象。
  */
     extern int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n);
 
     /**
  *  @brief  ソケット ライブラリを初期化します (Windows は WSAStartup、Linux は no-op)。
- *  @return  0: 成功、-1: 失敗。
+ *  @return  0: 成功、-1: 失敗。WSAStartup 系の規約を保存するため共通結果コードの適用対象外。
  */
     extern int potr_socket_lib_init(void);
 
@@ -173,16 +181,16 @@ extern "C"
     extern void potr_socket_lib_cleanup(void);
 
     /**
- *  @brief  ソケットをノンブロッキング モードに設定します。
+ *  @brief  ソケットを非ブロッキング モードに設定します。
  *  @param[in]  fd  対象ソケット。
- *  @return  0: 成功、-1: 失敗。
+ *  @return  0: 成功、-1: 失敗。fcntl/ioctlsocket の規約を保存するため共通結果コードの適用対象外。
  */
     extern int potr_set_nonblocking(PotrSocket fd);
 
     /**
  *  @brief  ソケットをブロッキング モードに戻します。
  *  @param[in]  fd  対象ソケット。
- *  @return  0: 成功、-1: 失敗。
+ *  @return  0: 成功、-1: 失敗。fcntl/ioctlsocket の規約を保存するため共通結果コードの適用対象外。
  */
     extern int potr_set_blocking(PotrSocket fd);
 

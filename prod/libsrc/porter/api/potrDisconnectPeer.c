@@ -31,7 +31,7 @@ int potrDisconnectPeer(PotrContext *handle, PotrPeerId peer_id)
     if (ctx == NULL)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potrDisconnectPeer: handle is NULL");
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     if (ctx != NULL)
@@ -49,14 +49,14 @@ int potrDisconnectPeer(PotrContext *handle, PotrPeerId peer_id)
                    "potrDisconnectPeer: service_id=%" PRId64 " invalid peer_id=%u"
                    " (POTR_PEER_NA or POTR_PEER_ALL not allowed)",
                    service_id, (unsigned)peer_id);
-        return POTR_ERROR;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     if (!ctx->is_multi_peer)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potrDisconnectPeer: service_id=%" PRId64 " not in N:1 mode",
                    ctx->service.service_id);
-        return POTR_ERROR;
+        return POTR_ERR_UNSUPPORTED;
     }
 
     com_util_local_lock_lock(ctx->peers_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
@@ -69,7 +69,7 @@ int potrDisconnectPeer(PotrContext *handle, PotrPeerId peer_id)
             com_util_local_lock_unlock(ctx->peers_mutex);
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potrDisconnectPeer: service_id=%" PRId64 " peer_id=%u not found",
                        ctx->service.service_id, (unsigned)peer_id);
-            return POTR_ERROR;
+            return POTR_ERR_NOT_FOUND;
         }
 
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potrDisconnectPeer: service_id=%" PRId64 " peer_id=%u disconnecting",
@@ -95,5 +95,5 @@ int potrDisconnectPeer(PotrContext *handle, PotrPeerId peer_id)
     }
 
     com_util_local_lock_unlock(ctx->peers_mutex);
-    return POTR_SUCCESS;
+    return POTR_OK;
 }

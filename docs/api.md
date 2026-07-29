@@ -27,13 +27,13 @@
 
 ### potrSend() の戻り値
 
-| 戻り値 | 定数 | 意味 |
-|---|---|---|
-| `0` | `POTR_SUCCESS` | 送信キューへの積み込み成功 |
-| `1` | `POTR_ERROR_DISCONNECTED` | 論理 CONNECTED 前または切断中。`unicast_bidir`、`unicast_bidir_n1` の未接続 peer、`POTR_PEER_ALL` で接続済み peer 0 件、`tcp` / `tcp_bidir` の CONNECTED 前または全 path 切断中が該当 |
-| `-1` | `POTR_ERROR` | その他のエラー (NULL ハンドルなど) |
+| 戻り値 | 意味 |
+|---|---|
+| `POTR_OK` | 送信キューへの積み込み成功 |
+| `POTR_ERR_DISCONNECTED` | 論理 CONNECTED 前または切断中。`unicast_bidir`、`unicast_bidir_n1` の未接続 peer、`POTR_PEER_ALL` で接続済み peer 0 件、`tcp` / `tcp_bidir` の CONNECTED 前または全 path 切断中が該当 |
+| `POTR_ERR_UNKNOWN` | その他のエラー (NULL ハンドルなど) |
 
-`POTR_ERROR_DISCONNECTED` は「送信先が論理的に CONNECTED していない」ことを示します。  
+`POTR_ERR_DISCONNECTED` は「送信先が論理的に CONNECTED していない」ことを示します。  
 片方向 type 1-6 は受信側が有効な `PING` または `DATA` を契機に CONNECTED しますが、送信側はその状態を観測できないため、本戻り値の対象外です。
 
 ヘッダー定義と引数条件の正本は `app/porter/prod/include/porter.h` および Doxygen 出力を参照してください。
@@ -50,7 +50,6 @@
 | `potrCloseService()` | **いいえ** | 他の API と同一ハンドルへ並行して呼ばないこと |
 | `potrDisconnectPeer()` | はい (条件付き) | コールバック内からは呼ばないこと (デッドロック) |
 | `potrGetServiceType()` | はい | グローバル状態なし |
-| `potrLogConfig()` | はい | 内部でミューテックスを使用 |
 
 ### サービスを開く API の使い分け
 

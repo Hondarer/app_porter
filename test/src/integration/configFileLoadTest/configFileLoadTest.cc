@@ -44,13 +44,13 @@ TEST(configFileLoadTest, loadsGlobalServiceAndServiceIdsFromRealFile)
 
     // Assert
     ASSERT_EQ(
-        POTR_SUCCESS,
+        POTR_OK,
         rtc_global); // [確認_正常系] - config_load_global の戻り値から、[global] の読込に成功したと判断できること。
     ASSERT_EQ(
-        POTR_SUCCESS,
+        POTR_OK,
         rtc_service); // [確認_正常系] - config_load_service の戻り値から、service の読込に成功したと判断できること。
     ASSERT_EQ(
-        POTR_SUCCESS,
+        POTR_OK,
         rtc_ids); // [確認_正常系] - config_list_service_ids の戻り値から、service ID 列挙に成功したと判断できること。
     EXPECT_EQ(16U, global.window_size);   // [確認_正常系] - Builder が出力した window_size を読み込むこと。
     EXPECT_EQ(1400U, global.max_payload); // [確認_正常系] - Builder が出力した max_payload を読み込むこと。

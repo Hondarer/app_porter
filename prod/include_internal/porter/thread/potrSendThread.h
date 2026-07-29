@@ -37,7 +37,7 @@ extern "C"
      *  send_window_mutex を生成し、送信スレッドを起動します。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
      */
     extern int potr_send_thread_start(PotrContext *ctx);
 

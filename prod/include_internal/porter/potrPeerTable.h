@@ -50,7 +50,7 @@ extern "C"
      *  ctx->max_peers, ctx->n_peers, ctx->next_peer_id を設定します。
      *
      *  @param[in,out]  ctx         セッション コンテキスト。
-     *  @return         成功時は POTR_SUCCESS、失敗時は POTR_ERROR。
+     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
      */
     extern int peer_table_init(PotrContext *ctx);
 

@@ -37,7 +37,7 @@ int potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload)
         free(q->payload_pool);
         q->entries      = NULL;
         q->payload_pool = NULL;
-        return POTR_ERROR;
+        return POTR_ERR_OUT_OF_MEMORY;
     }
 
     q->depth = depth;
@@ -54,7 +54,7 @@ int potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload)
     com_util_condvar_create(&q->not_empty);
     com_util_condvar_create(&q->not_full);
     com_util_condvar_create(&q->drained);
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -82,7 +82,7 @@ int potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id,
     if (q->count + q->inflight >= q->depth)
     {
         com_util_local_lock_unlock(q->mutex);
-        return POTR_ERROR;
+        return POTR_ERR_FULL;
     }
 
     q->entries[q->tail].peer_id     = peer_id;
@@ -95,7 +95,7 @@ int potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id,
     com_util_condvar_signal(q->not_empty);
     com_util_local_lock_unlock(q->mutex);
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -114,7 +114,7 @@ int potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id,
         if (!*running)
         {
             com_util_local_lock_unlock(q->mutex);
-            return POTR_ERROR;
+            return POTR_ERR_CANCELED;
         }
         com_util_condvar_wait(q->not_full, q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     }
@@ -129,7 +129,7 @@ int potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id,
     com_util_condvar_signal(q->not_empty);
     com_util_local_lock_unlock(q->mutex);
 
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -143,7 +143,7 @@ int potr_send_queue_pop(PotrSendQueue *q, PotrPayloadElem *out, volatile int *ru
         if (!*running)
         {
             com_util_local_lock_unlock(q->mutex);
-            return POTR_ERROR;
+            return POTR_ERR_CANCELED;
         }
         com_util_condvar_wait(q->not_empty, q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     }
@@ -156,7 +156,7 @@ int potr_send_queue_pop(PotrSendQueue *q, PotrPayloadElem *out, volatile int *ru
     /* count + inflight は変化しない (count-- と inflight++ が相殺) ため
        not_full シグナルは complete() が担う */
     com_util_local_lock_unlock(q->mutex);
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -168,13 +168,13 @@ int potr_send_queue_peek(PotrSendQueue *q, PotrPayloadElem *out)
     if (q->count == 0)
     {
         com_util_local_lock_unlock(q->mutex);
-        return POTR_ERROR;
+        return POTR_ERR_EMPTY;
     }
 
     *out = q->entries[q->head]; /* head は送信スレッドのみが変更するので安全 */
 
     com_util_local_lock_unlock(q->mutex);
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -192,13 +192,13 @@ int potr_send_queue_peek_timed(PotrSendQueue *q, PotrPayloadElem *out,
     if (q->count == 0)
     {
         com_util_local_lock_unlock(q->mutex);
-        return POTR_ERROR;
+        return POTR_ERR_TIMEOUT;
     }
 
     *out = q->entries[q->head];
 
     com_util_local_lock_unlock(q->mutex);
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -210,7 +210,7 @@ int potr_send_queue_try_pop(PotrSendQueue *q, PotrPayloadElem *out)
     if (q->count == 0)
     {
         com_util_local_lock_unlock(q->mutex);
-        return POTR_ERROR;
+        return POTR_ERR_EMPTY;
     }
 
     *out    = q->entries[q->head];
@@ -219,7 +219,7 @@ int potr_send_queue_try_pop(PotrSendQueue *q, PotrPayloadElem *out)
     q->inflight++;
 
     com_util_local_lock_unlock(q->mutex);
-    return POTR_SUCCESS;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

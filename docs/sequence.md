@@ -29,7 +29,7 @@ OPEN -> RT**: 受信スレッド起動
 OPEN -> ST**: 送信スレッド起動
 OPEN -> HT**: ヘルスチェックスレッド起動\n(health_interval_ms > 0 のみ)
 
-OPEN --> APP: POTR_SUCCESS, *handle
+OPEN --> APP: POTR_OK, *handle
 deactivate OPEN
 
 activate RT
@@ -65,7 +65,7 @@ OPEN -> OPEN: 受信ウィンドウ初期化
 
 OPEN -> RT**: 受信スレッド起動
 
-OPEN --> APP: POTR_SUCCESS, *handle
+OPEN --> APP: POTR_OK, *handle
 deactivate OPEN
 
 activate RT
@@ -74,13 +74,13 @@ note over RT: DATA/PING/FIN を\n待機するポーリングループ\nヘルス
 @enduml
 ```
 
-## 正常送受信 (ノンブロッキング)
+## 正常送受信 (非ブロッキング)
 
 `POTR_SEND_BLOCKING` を指定せずに `potrSend()` を呼び出したときのデータフローです。片方向 type 1-6 では初回の有効 `DATA` 受信でも CONNECTED が成立します。
 
 ```plantuml
-@startuml 正常送受信 (ノンブロッキング)
-caption 正常送受信 (ノンブロッキング)
+@startuml 正常送受信 (非ブロッキング)
+caption 正常送受信 (非ブロッキング)
 
 participant "アプリ\n(送信側)" as SAPP
 participant "送信キュー" as Q
@@ -90,7 +90,7 @@ participant "受信スレッド\n(受信者)" as RRT
 participant "アプリ\n(受信側)" as RAPP
 
 SAPP -> Q: potrSend(handle, POTR_PEER_NA, data, len, 0)\n→ エレメントを push して即座に返る
-SAPP <-- Q: POTR_SUCCESS
+SAPP <-- Q: POTR_OK
 
 note over Q, ST: 非同期に処理
 
@@ -138,7 +138,7 @@ ST -> Q: complete() (inflight デクリメント)
 
 Q -> Q: (3) drained 待機\n count == 0 && inflight == 0
 
-Q --> SAPP: POTR_SUCCESS
+Q --> SAPP: POTR_OK
 deactivate SAPP
 
 note over SAPP: 返却時点で UDP 送信済み
@@ -466,7 +466,7 @@ CLOSE -> RT: 停止シグナル
 CLOSE -> CLOSE: 各スレッドの終了を待機
 CLOSE -> CLOSE: ソケット・ウィンドウ・\nキュー等のリソース解放
 
-CLOSE --> SAPP: POTR_SUCCESS
+CLOSE --> SAPP: POTR_OK
 deactivate CLOSE
 
 note over SAPP: handle は以後使用不可
@@ -529,7 +529,7 @@ note over RAPP: 受信者側の potrCloseService() は\n送信者への通知な
 
 CLOSE -> CLOSE: ソケット・ウィンドウ等の\nリソース解放
 
-CLOSE --> RAPP: POTR_SUCCESS
+CLOSE --> RAPP: POTR_OK
 deactivate CLOSE
 
 @enduml
@@ -806,7 +806,7 @@ OPEN -> OPEN: 送信キュー / ウィンドウ初期化
 OPEN -> OPEN: tcp_state_mutex / tcp_state_cv 初期化
 
 OPEN -> CT**: connect スレッド起動
-OPEN --> APP: POTR_SUCCESS, *handle
+OPEN --> APP: POTR_OK, *handle
 deactivate OPEN
 
 activate CT
@@ -839,7 +839,7 @@ OPEN -> OPEN: 設定ファイル解析
 OPEN -> OPEN: TCP listen ソケット作成\nbind(dst_addr, dst_port) → listen()
 
 OPEN -> AT**: accept スレッド起動
-OPEN --> APP: POTR_SUCCESS, *handle
+OPEN --> APP: POTR_OK, *handle
 deactivate OPEN
 
 activate AT

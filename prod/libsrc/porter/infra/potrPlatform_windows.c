@@ -15,6 +15,8 @@
 
 #if defined(PLATFORM_WINDOWS)
 
+    #include <porter/porter_const.h>
+
     #include <porter/infra/potrPlatform.h>
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -74,10 +76,10 @@ int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len)
     {
         int n = send(fd, (const char *)(buf + sent), (int)(len - sent), 0);
         if (n <= 0)
-            return -1;
+            return POTR_ERR_UNKNOWN;
         sent += (size_t)n;
     }
-    return 0;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -89,12 +91,12 @@ int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
     {
         int r = recv(fd, (char *)(buf + received), (int)(n - received), 0);
         if (r == SOCKET_ERROR)
-            return -1;
+            return POTR_ERR_UNKNOWN;
         if (r == 0)
-            return 0;
+            return POTR_ERR_EOF;
         received += (size_t)r;
     }
-    return 1;
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

@@ -655,9 +655,9 @@ static void apply_send_command(PotrContext *handle, int is_file, char *cursor)
         send_flags = 0;
     }
     send_rtc = potrSend(handle, POTR_PEER_NA, send_data, send_len, send_flags | POTR_SEND_BLOCKING);
-    if (send_rtc != POTR_SUCCESS)
+    if (send_rtc != POTR_OK)
     {
-        if (send_rtc == POTR_ERROR_DISCONNECTED)
+        if (send_rtc == POTR_ERR_DISCONNECTED)
         {
             com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
                                           "エラー: 未接続のため送信できません。\n");
@@ -729,7 +729,7 @@ static int do_open(PorterTestSession *session, PotrRole role, const char *config
     /* サービス種別を取得して双方向サービスかどうか判定する。 */
     /* sender は unicast_bidir / tcp_bidir の双方を、receiver は unicast_bidir を双方向として扱う */
     /* (送受信コマンド統合前の send / recv それぞれの判定を踏襲)。 */
-    if (potrGetServiceType(config_path, service_id, &svc_type) == POTR_SUCCESS)
+    if (potrGetServiceType(config_path, service_id, &svc_type) == POTR_OK)
     {
         if (role == POTR_ROLE_SENDER)
         {
@@ -762,7 +762,7 @@ static int do_open(PorterTestSession *session, PotrRole role, const char *config
         }
     }
 
-    if (potrOpenServiceFromConfig(config_path, service_id, role, callback, &handle) != POTR_SUCCESS)
+    if (potrOpenServiceFromConfig(config_path, service_id, role, callback, &handle) != POTR_OK)
     {
         com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
                                       "エラー: サービス %" PRId64 " を開けませんでした。\n", service_id);

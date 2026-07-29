@@ -22,7 +22,7 @@
 /** @defgroup POTR_SEND_FLAG 送信オプション フラグ (potrSend の flags 引数)
  *  @ingroup        PORTER_PUBLIC_API
  *  `potrSend()` の `flags` 引数に論理和で組み合わせて指定するビット フラグです。\n
- *  0 を指定すると非圧縮・ノンブロッキング送信になります。
+ *  0 を指定すると非圧縮・非ブロッキング送信になります。
  */
 
 /**
@@ -31,20 +31,45 @@
  */
 #define POTR_SEND_COMPRESS \
     0x0001U /**< メッセージを圧縮して送信します。圧縮後のサイズが元のサイズ以上の場合は自動的に非圧縮で送信します。 */
-#define POTR_SEND_BLOCKING 0x0002U /**< ブロッキング送信を行います。0 を指定するとノンブロッキング送信を行います。 */
+#define POTR_SEND_BLOCKING 0x0002U /**< ブロッキング送信を行います。0 を指定すると非ブロッキング送信を行います。 */
 /** @} */
 
-/** @defgroup POTR_RESULT 戻り値
+/** @defgroup POTR_RESULT 共通結果コード
  *  @ingroup        PORTER_PUBLIC_API
+ *
+ *  porter の公開 API および内部関数が戻り値として使用する共通の結果コードです。\n
+ *  成功は @ref POTR_OK (0) のみとし、非 0 はすべて
+ *  「要求した操作が完遂されなかった」ことを表します。エラーは負値です。
+ *
+ *  @ref POTR_ERR_UNKNOWN (-1) は、-2 以下の分類済みコードに該当しない
+ *  その他のエラーを表します。
+ *
+ *  判定は @c != @ref POTR_OK の名前比較を正とします。
+ *  全エラーが負値のため @c < 0 判定も等価ですが、名前比較を推奨します。
+ *  @c -1 などの数値リテラルとの比較は行いません。
+ *
+ *  @attention      各コードの値は ABI として凍結します。既存の値の変更は
+ *                  禁止し、コードの追加は末尾 (より小さい負値) への追記
+ *                  のみとします。
  */
 
 /**
  *  @ingroup        POTR_RESULT
  *  @{
  */
-#define POTR_SUCCESS            0  /**< 成功の戻り値を表す定数。 */
-#define POTR_ERROR              -1 /**< 失敗の戻り値を表す定数。 */
-#define POTR_ERROR_DISCONNECTED 1  /**< 論理 CONNECTED 前または切断中に potrSend() を呼んだ場合の戻り値。 */
+#define POTR_OK                   0     /**< 処理に成功しました。 */
+#define POTR_ERR_UNKNOWN          (-1)  /**< -2 以下の分類済みコードに該当しない、その他のエラーです。 */
+#define POTR_ERR_DISCONNECTED     (-2)  /**< 送信先が論理 CONNECTED 前または切断中です。 */
+#define POTR_ERR_INVALID_ARGUMENT (-3)  /**< API 引数が不正です (NULL、サイズ 0 など)。 */
+#define POTR_ERR_TIMEOUT          (-4)  /**< タイムアウトが発生しました。 */
+#define POTR_ERR_FULL             (-5)  /**< キューまたはウィンドウが満杯です。 */
+#define POTR_ERR_EMPTY            (-6)  /**< キューが空、または順序整列済みパケットが未着です。 */
+#define POTR_ERR_EOF              (-7)  /**< 終端に達したか、TCP 接続が切断されました。 */
+#define POTR_ERR_CANCELED         (-8)  /**< シャットダウンにより待機を中断しました。 */
+#define POTR_ERR_OUT_OF_MEMORY    (-9)  /**< メモリを確保できません。 */
+#define POTR_ERR_NOT_FOUND        (-10) /**< 対象のエントリが存在しません。 */
+#define POTR_ERR_OUT_OF_WINDOW    (-11) /**< 受信ウィンドウの範囲外です。 */
+#define POTR_ERR_UNSUPPORTED      (-12) /**< 現在の通信種別または状態では操作がサポートされていません。 */
 /** @} */
 
 /** @defgroup POTR_OUTER_FLAG 外側パケット フラグ (PotrPacket.flags)
