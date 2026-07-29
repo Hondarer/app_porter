@@ -32,13 +32,15 @@
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void handle_client_session(ClientFd fd) {
+void handle_client_session(ClientFd fd)
+{
     char buffer[BUFFER_SIZE];
-    int  n;
+    int n;
 
     printf("[PID %lu] クライアント処理開始\n", (unsigned long)get_pid());
 
-    while ((n = (int)client_recv(fd, buffer, sizeof(buffer) - 1)) > 0) {
+    while ((n = (int)client_recv(fd, buffer, sizeof(buffer) - 1)) > 0)
+    {
         buffer[n] = '\0';
         printf("[PID %lu] 受信: %s", (unsigned long)get_pid(), buffer);
         client_send(fd, buffer, (size_t)n);
@@ -67,22 +69,24 @@ void handle_client_session(ClientFd fd) {
  * Linux 版は SIGINT/SIGTERM で正常脱出して以下に到達するため、コード自体は仕様上必要。
  * プラットフォーム差異による副次警告のため main 関数全体に push/pop で局所抑制をかける。 */
 #if defined(COMPILER_MSVC)
-#pragma warning(push)
-#pragma warning(disable: 4702)
+    #pragma warning(push)
+    #pragma warning(disable : 4702)
 #endif
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     com_util_console_init();
     platform_init(handle_client_session);
 
-    if (dispatch_internal_args(argc, argv)) {
+    if (dispatch_internal_args(argc, argv))
+    {
         platform_cleanup();
         return EXIT_SUCCESS;
     }
 
-    ServerMode mode             = MODE_PREFORK;
-    int        port             = DEFAULT_PORT;
-    int        workers          = DEFAULT_WORKERS;
-    int        conns_per_worker = DEFAULT_CONNS_PER_WORKER;
+    ServerMode mode = MODE_PREFORK;
+    int port = DEFAULT_PORT;
+    int workers = DEFAULT_WORKERS;
+    int conns_per_worker = DEFAULT_CONNS_PER_WORKER;
     int need_help = 0;
     const char *mode_str = NULL;
 
@@ -110,7 +114,7 @@ int main(int argc, char *argv[]) {
         return EXIT_SUCCESS;
     }
 
-    if (parse_result != COM_UTIL_ARGPARSER_OK)
+    if (parse_result != COM_UTIL_OK)
     {
         com_util_argparser_print_error_messages(stderr);
         com_util_argparser_print_usage(stderr);
@@ -137,9 +141,12 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (mode == MODE_FORK) {
+    if (mode == MODE_FORK)
+    {
         run_fork_server(port);
-    } else {
+    }
+    else
+    {
         run_prefork_server(port, workers, conns_per_worker);
     }
 
@@ -148,5 +155,5 @@ int main(int argc, char *argv[]) {
     return EXIT_SUCCESS;
 }
 #if defined(COMPILER_MSVC)
-#pragma warning(pop)
+    #pragma warning(pop)
 #endif

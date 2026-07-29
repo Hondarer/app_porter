@@ -804,7 +804,7 @@ int potr_connect_thread_start(PotrContext *ctx)
         ctx->connect_args[i].ctx = ctx;
         ctx->connect_args[i].path_idx = i;
 
-        if (com_util_thread_create(&ctx->connect_thread[i], connect_thread_func, &ctx->connect_args[i]) != 0)
+        if (com_util_thread_create(&ctx->connect_thread[i], connect_thread_func, &ctx->connect_args[i]) != COM_UTIL_OK)
         {
             ctx->connect_thread_running[i] = 0;
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,

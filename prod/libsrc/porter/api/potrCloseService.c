@@ -177,7 +177,7 @@ static int wait_for_tcp_close_ack(PotrContext *ctx, int timeout_ms)
     com_util_local_lock_lock(ctx->tcp_close_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     while (ctx->tcp_close_waiting_ack && !ctx->tcp_close_ack_received)
     {
-        if (com_util_condvar_wait(ctx->tcp_close_cv, ctx->tcp_close_mutex, timeout_ms) != 0)
+        if (com_util_condvar_wait(ctx->tcp_close_cv, ctx->tcp_close_mutex, timeout_ms) != COM_UTIL_OK)
         {
             result = POTR_ERROR;
             break;

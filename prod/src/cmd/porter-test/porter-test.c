@@ -1031,7 +1031,7 @@ int main(int argc, char *argv[])
         return EXIT_SUCCESS;
     }
 
-    if (parse_result != COM_UTIL_ARGPARSER_OK)
+    if (parse_result != COM_UTIL_OK)
     {
         com_util_argparser_print_error_messages(stderr);
         com_util_argparser_print_usage(stderr);
@@ -1083,7 +1083,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if (com_util_shutdown_request_register(porter_test_shutdown_request_callback, NULL) != 0)
+    if (com_util_shutdown_request_register(porter_test_shutdown_request_callback, NULL) != COM_UTIL_OK)
     {
         com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
                                       "エラー: 終了要求 callback の登録に失敗しました。\n");
@@ -1117,7 +1117,8 @@ int main(int argc, char *argv[])
     while (g_running)
     {
         build_prompt_state(&session, prompt_state, sizeof(prompt_state));
-        if (com_util_pinned_prompt_readline_fmt(g_screen, line, sizeof(line), "porter-test[%s]> ", prompt_state) == 0)
+        if (com_util_pinned_prompt_readline_fmt(g_screen, line, sizeof(line), "porter-test[%s]> ", prompt_state) !=
+            COM_UTIL_OK)
         {
             break;
         }

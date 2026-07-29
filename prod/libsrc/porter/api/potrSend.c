@@ -143,7 +143,7 @@ int potrSend(PotrContext *handle, PotrPeerId peer_id, const void *data, size_t l
     {
         size_t cmp_len = ctx->compress_buf_size;
 
-        if (com_util_compress(ctx->compress_buf, &cmp_len, (const uint8_t *)data, len) != 0)
+        if (com_util_compress(ctx->compress_buf, &cmp_len, (const uint8_t *)data, len) != COM_UTIL_OK)
         {
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potrSend: service_id=%" PRId64 " compression failed (len=%zu)",
                        ctx->service.service_id, len);

@@ -1113,7 +1113,7 @@ static void slot_recv_deliver(RecvSlot *slot, const uint8_t *payload, size_t pay
     {
         size_t dec_len = ctx->compress_buf_size;
 
-        if (com_util_decompress(ctx->compress_buf, &dec_len, payload, payload_len) == 0)
+        if (com_util_decompress(ctx->compress_buf, &dec_len, payload, payload_len) == COM_UTIL_OK)
         {
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: decompress %zu -> %zu bytes",
                        ctx->service.service_id, payload_len, dec_len);
@@ -2450,7 +2450,7 @@ int comm_recv_thread_start(PotrContext *ctx)
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "recv_thread[service_id=%" PRId64 "]: starting", ctx->service.service_id);
 
-    if (com_util_thread_create(&ctx->recv_thread[0], recv_thread_func, ctx) != 0)
+    if (com_util_thread_create(&ctx->recv_thread[0], recv_thread_func, ctx) != COM_UTIL_OK)
     {
         ctx->running[0] = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "recv_thread[service_id=%" PRId64 "]: thread create failed",
@@ -2510,7 +2510,8 @@ int tcp_recv_thread_start(PotrContext *ctx, int path_idx)
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "tcp_recv_thread[service_id=%" PRId64 " path=%d]: starting",
                ctx->service.service_id, path_idx);
 
-    if (com_util_thread_create(&ctx->recv_thread[path_idx], tcp_recv_thread_func, &ctx->tcp_recv_args[path_idx]) != 0)
+    if (com_util_thread_create(&ctx->recv_thread[path_idx], tcp_recv_thread_func, &ctx->tcp_recv_args[path_idx]) !=
+        COM_UTIL_OK)
     {
         ctx->running[path_idx] = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "tcp_recv_thread[service_id=%" PRId64 " path=%d]: thread create failed",

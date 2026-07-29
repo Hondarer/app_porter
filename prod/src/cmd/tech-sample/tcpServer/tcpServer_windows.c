@@ -400,7 +400,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         args[i].workers = workers;
         args[i].events = events;
         args[i].conns_per_worker = conns_per_worker;
-        if (com_util_thread_create(&monitor_thread, worker_monitor_thread, (void *)&args[i]) != 0)
+        if (com_util_thread_create(&monitor_thread, worker_monitor_thread, (void *)&args[i]) != COM_UTIL_OK)
         {
             fprintf(stderr, "監視スレッド起動失敗: %d\n", i);
             free(args);

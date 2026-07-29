@@ -494,7 +494,7 @@ int potr_health_thread_start(PotrContext *ctx)
 
     ctx->health_running[0] = 1;
 
-    if (com_util_thread_create(&ctx->health_thread[0], health_thread_func, ctx) != 0)
+    if (com_util_thread_create(&ctx->health_thread[0], health_thread_func, ctx) != COM_UTIL_OK)
     {
         ctx->health_running[0] = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "health_thread[service_id=%" PRId64 "]: thread create failed",
@@ -560,7 +560,8 @@ int potr_tcp_health_thread_start(PotrContext *ctx, int path_idx)
 
     ctx->health_running[path_idx] = 1;
 
-    if (com_util_thread_create(&ctx->health_thread[path_idx], tcp_health_thread_func, &ctx->health_args[path_idx]) != 0)
+    if (com_util_thread_create(&ctx->health_thread[path_idx], tcp_health_thread_func, &ctx->health_args[path_idx]) !=
+        COM_UTIL_OK)
     {
         ctx->health_running[path_idx] = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,

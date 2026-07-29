@@ -228,7 +228,7 @@ static void apply_service_kv(const char *key, const char *val, PotrServiceDef *c
         }
         else if (hex_len > 0U)
         {
-            if (com_util_passphrase_to_key(current->encrypt_key, (const uint8_t *)val, hex_len) == 0)
+            if (com_util_passphrase_to_key(current->encrypt_key, (const uint8_t *)val, hex_len) == COM_UTIL_OK)
             {
                 current->encrypt_enabled = 1;
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,

@@ -560,7 +560,7 @@ int potr_send_thread_start(PotrContext *ctx)
     ctx->send_thread_running = 1;
 
     com_util_local_lock_create(&ctx->send_window_mutex);
-    if (com_util_thread_create(&ctx->send_thread, send_thread_func, ctx) != 0)
+    if (com_util_thread_create(&ctx->send_thread, send_thread_func, ctx) != COM_UTIL_OK)
     {
         ctx->send_thread_running = 0;
         com_util_local_lock_destroy(ctx->send_window_mutex);
