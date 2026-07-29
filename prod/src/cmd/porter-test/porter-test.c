@@ -970,15 +970,15 @@ static void build_prompt_state(const PorterTestSession *session, char *buf, size
 {
     if (!session->is_open)
     {
-        snprintf(buf, size, "closed");
+        com_util_snprintf(buf, size, "closed");
     }
     else if (session->role == POTR_ROLE_SENDER)
     {
-        snprintf(buf, size, "sender:%" PRId64, session->service_id);
+        com_util_snprintf(buf, size, "sender:%" PRId64, session->service_id);
     }
     else
     {
-        snprintf(buf, size, "receiver:%" PRId64, session->service_id);
+        com_util_snprintf(buf, size, "receiver:%" PRId64, session->service_id);
     }
 }
 
