@@ -46,11 +46,11 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
     ids = (int64_t *)malloc((size_t)capacity * sizeof(int64_t));
     if (ids == NULL)
     {
-        com_util_fclose(fp);
+        fclose(fp);
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
-    while (com_util_fgets(line, (int)sizeof(line), fp) != NULL)
+    while (fgets(line, (int)sizeof(line), fp) != NULL)
     {
         char trimmed[CONFIG_LINE_MAX];
         char section[CONFIG_SECTION_MAX];
@@ -75,7 +75,7 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
             if (new_ids == NULL)
             {
                 free(ids);
-                com_util_fclose(fp);
+                fclose(fp);
                 return POTR_ERR_OUT_OF_MEMORY;
             }
             ids = new_ids;
@@ -85,7 +85,7 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
         ids[count++] = strtoll(section + 8, NULL, 10);
     }
 
-    com_util_fclose(fp);
+    fclose(fp);
     *ids_out = ids;
     *count_out = count;
     return POTR_OK;

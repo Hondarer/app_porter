@@ -236,9 +236,9 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
             char tmp_path[PLATFORM_PATH_MAX];
             FILE *fp = com_util_fopen_temp("ptr", "wb", tmp_path, sizeof(tmp_path), NULL);
 
-            if (fp != NULL && com_util_fwrite(data, 1, len, fp) == len)
+            if (fp != NULL && fwrite(data, 1, len, fp) == len)
             {
-                com_util_fclose(fp);
+                fclose(fp);
                 com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDOUT,
                                               "[サービス %" PRId64
                                               "] 受信 (%zu バイト): バイナリ データを保存しました: %s\n",
@@ -248,7 +248,7 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
             {
                 if (fp != NULL)
                 {
-                    com_util_fclose(fp);
+                    fclose(fp);
                 }
                 com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
                                               "[サービス %" PRId64
@@ -508,7 +508,7 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
     {
         com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
                                       "エラー: ファイルの読み込みに失敗しました。\n");
-        com_util_fclose(fp);
+        fclose(fp);
         return -1;
     }
 
@@ -517,14 +517,14 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
     {
         com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
                                       "エラー: ファイルの読み込みに失敗しました。\n");
-        com_util_fclose(fp);
+        fclose(fp);
         return -1;
     }
 
     if (file_size == 0)
     {
         com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR, "エラー: ファイルが空です。\n");
-        com_util_fclose(fp);
+        fclose(fp);
         return -1;
     }
 
@@ -534,7 +534,7 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
                                       "エラー: ファイルサイズ (%" PRId64
                                       " バイト) が最大送信サイズ (%u バイト) を超えています。\n",
                                       file_size, (unsigned)POTR_MAX_MESSAGE_SIZE);
-        com_util_fclose(fp);
+        fclose(fp);
         return -1;
     }
 
@@ -543,13 +543,13 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
     {
         com_util_pinned_prompt_printf(g_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
                                       "エラー: メモリ確保に失敗しました。\n");
-        com_util_fclose(fp);
+        fclose(fp);
         return -1;
     }
 
-    com_util_rewind(fp);
-    read_count = com_util_fread(buf, 1, (size_t)file_size, fp);
-    com_util_fclose(fp);
+    rewind(fp);
+    read_count = fread(buf, 1, (size_t)file_size, fp);
+    fclose(fp);
 
     if (read_count != (size_t)file_size)
     {
@@ -971,15 +971,15 @@ static void build_prompt_state(const PorterTestSession *session, char *buf, size
 {
     if (!session->is_open)
     {
-        com_util_snprintf(buf, size, "closed");
+        snprintf(buf, size, "closed");
     }
     else if (session->role == POTR_ROLE_SENDER)
     {
-        com_util_snprintf(buf, size, "sender:%" PRId64, session->service_id);
+        snprintf(buf, size, "sender:%" PRId64, session->service_id);
     }
     else
     {
-        com_util_snprintf(buf, size, "receiver:%" PRId64, session->service_id);
+        snprintf(buf, size, "receiver:%" PRId64, session->service_id);
     }
 }
 

@@ -68,7 +68,7 @@ int config_load_global(const char *config_path, PotrGlobalConfig *global)
     section[0] = '\0';
     in_global = 0;
 
-    while (com_util_fgets(line, (int)sizeof(line), fp) != NULL)
+    while (fgets(line, (int)sizeof(line), fp) != NULL)
     {
         char trimmed[CONFIG_LINE_MAX];
         config_trim(line, trimmed, sizeof(trimmed));
@@ -153,6 +153,6 @@ int config_load_global(const char *config_path, PotrGlobalConfig *global)
                (unsigned)global->tcp_health_timeout_ms, (unsigned)global->tcp_close_timeout_ms,
                (unsigned)global->reorder_timeout_ms);
 
-    com_util_fclose(fp);
+    fclose(fp);
     return POTR_OK;
 }

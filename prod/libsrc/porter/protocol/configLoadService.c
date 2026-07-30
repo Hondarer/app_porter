@@ -280,7 +280,7 @@ int config_load_service(const char *config_path, int64_t service_id, PotrService
     in_target = 0;
     found = 0;
 
-    while (com_util_fgets(line, (int)sizeof(line), fp) != NULL)
+    while (fgets(line, (int)sizeof(line), fp) != NULL)
     {
         char trimmed[CONFIG_LINE_MAX];
         config_trim(line, trimmed, sizeof(trimmed));
@@ -330,7 +330,7 @@ int config_load_service(const char *config_path, int64_t service_id, PotrService
         apply_service_kv(key, val, def);
     }
 
-    com_util_fclose(fp);
+    fclose(fp);
     if (!found)
     {
         return POTR_ERR_NOT_FOUND;
