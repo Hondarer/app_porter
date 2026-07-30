@@ -34,6 +34,7 @@
     #include <com_util/win32/win32.h>
 
     #include <stdio.h>
+    #include <com_util/runtime/shutdown.h>
     #include <stdlib.h>
     #include <string.h>
 
@@ -74,7 +75,7 @@ typedef struct WorkerMonitorArg
  *  @param[in]      port 待ち受けポート番号。
  *  @return         listen ソケット。
  *
- *  @attention      失敗した場合は exit() で終了します。
+ *  @attention      失敗した場合は com_util_exit() で終了します。
  */
 static SOCKET create_listen_socket(int port)
 {
@@ -91,7 +92,7 @@ static SOCKET create_listen_socket(int port)
     if (getaddrinfo(NULL, port_str, &hints, &result) != 0)
     {
         fprintf(stderr, "getaddrinfo 失敗\n");
-        exit(1);
+        com_util_exit(1);
     }
 
     SOCKET listen_socket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
@@ -99,14 +100,14 @@ static SOCKET create_listen_socket(int port)
     {
         fprintf(stderr, "socket 失敗\n");
         freeaddrinfo(result);
-        exit(1);
+        com_util_exit(1);
     }
 
     if (bind(listen_socket, result->ai_addr, (int)result->ai_addrlen) == SOCKET_ERROR)
     {
         fprintf(stderr, "bind 失敗\n");
         freeaddrinfo(result);
-        exit(1);
+        com_util_exit(1);
     }
 
     freeaddrinfo(result);
@@ -114,7 +115,7 @@ static SOCKET create_listen_socket(int port)
     if (listen(listen_socket, 128) == SOCKET_ERROR)
     {
         fprintf(stderr, "listen 失敗\n");
-        exit(1);
+        com_util_exit(1);
     }
 
     return listen_socket;
@@ -337,7 +338,7 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
  *  各ワーカーに名前付きパイプと監視スレッドを作成し、
  *  自分自身を `--worker <pipe_name>` 引数付きで再起動します。
  *
- *  @attention      パイプ作成またはプロセス起動に失敗した場合は exit() で終了します。
+ *  @attention      パイプ作成またはプロセス起動に失敗した場合は com_util_exit() で終了します。
  */
 static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, int conns_per_worker)
 {
@@ -352,7 +353,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
     if (!args)
     {
         fprintf(stderr, "malloc 失敗\n");
-        exit(1);
+        com_util_exit(1);
     }
 
     for (int i = 0; i < n; i++)
@@ -366,7 +367,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         {
             fprintf(stderr, "パイプ作成失敗: %d\n", i);
             free(args);
-            exit(1);
+            com_util_exit(1);
         }
 
         /* イベント作成 (初期状態: 空き) */
@@ -383,7 +384,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         {
             fprintf(stderr, "ワーカー起動失敗: %d\n", i);
             free(args);
-            exit(1);
+            com_util_exit(1);
         }
 
         workers[i].process = pi.hProcess;
@@ -404,7 +405,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         {
             fprintf(stderr, "監視スレッド起動失敗: %d\n", i);
             free(args);
-            exit(1);
+            com_util_exit(1);
         }
         com_util_thread_detach(monitor_thread);
 
@@ -426,7 +427,7 @@ void platform_init(ClientSessionFn session_fn)
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
     {
         fprintf(stderr, "WSAStartup 失敗\n");
-        exit(1);
+        com_util_exit(1);
     }
     g_session_fn = session_fn;
 }
@@ -523,7 +524,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
     if (!workers || !events)
     {
         fprintf(stderr, "malloc 失敗\n");
-        exit(1);
+        com_util_exit(1);
     }
 
     SOCKET listen_socket = create_listen_socket(port);

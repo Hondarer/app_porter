@@ -99,8 +99,8 @@ extern "C"
         service.service_id = 1001;
         service.type       = POTR_TYPE_UNICAST;
         service.dst_port   = 49001;
-        strncpy(service.src_addr[0], "127.0.0.1", POTR_MAX_ADDR_LEN - 1);
-        strncpy(service.dst_addr[0], "127.0.0.1", POTR_MAX_ADDR_LEN - 1);
+        com_util_strcpy(service.src_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
+        com_util_strcpy(service.dst_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
 
         PotrContext * handle;
         if (potrOpenService(&global, &service,
@@ -126,8 +126,8 @@ extern "C"
         service.service_id = 1001;
         service.type       = POTR_TYPE_UNICAST;
         service.dst_port   = 49001;
-        strncpy(service.src_addr[0], "127.0.0.1", POTR_MAX_ADDR_LEN - 1);
-        strncpy(service.dst_addr[0], "127.0.0.1", POTR_MAX_ADDR_LEN - 1);
+        com_util_strcpy(service.src_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
+        com_util_strcpy(service.dst_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
 
         PotrContext * handle;
         if (potrOpenService(&global, &service,

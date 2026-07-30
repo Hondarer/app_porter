@@ -25,21 +25,22 @@
 #if defined(PLATFORM_LINUX)
 
 #include <com_util/crt/unistd.h>
+    #include <com_util/runtime/shutdown.h>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/epoll.h>
-#include <sys/wait.h>
-#include <netinet/in.h>
-#include <signal.h>
-#include <errno.h>
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <sys/socket.h>
+    #include <sys/epoll.h>
+    #include <sys/wait.h>
+    #include <netinet/in.h>
+    #include <signal.h>
+    #include <errno.h>
 
-/** epoll_wait で一度に取得する最大イベント数。 */
-#define MAX_EPOLL_EVENTS 64
+    /** epoll_wait で一度に取得する最大イベント数。 */
+    #define MAX_EPOLL_EVENTS 64
 
-#include "tcpServer.h"
+    #include "tcpServer.h"
 
 static volatile sig_atomic_t running = 1;
 
@@ -78,7 +79,7 @@ static void shutdown_handler(int sig) {
  *  @param[in]      port 待ち受けポート番号。
  *  @return         listen ソケットのファイル記述子。
  *
- *  @attention      失敗した場合は exit() で終了します。
+ *  @attention      失敗した場合は com_util_exit() で終了します。
  */
 static int create_listen_socket(int port) {
     int server_fd;
@@ -88,7 +89,7 @@ static int create_listen_socket(int port) {
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
         perror("socket");
-        exit(1);
+        com_util_exit(1);
     }
 
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -100,12 +101,12 @@ static int create_listen_socket(int port) {
 
     if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind");
-        exit(1);
+        com_util_exit(1);
     }
 
     if (listen(server_fd, 128) < 0) {
         perror("listen");
-        exit(1);
+        com_util_exit(1);
     }
 
     return server_fd;
@@ -125,6 +126,9 @@ static int create_listen_socket(int port) {
  *    シングルスレッドで同時処理します。容量に達すると server_fd を epoll から
  *    除去して新規 accept を止め、空きが生じると再登録して受け付けを再開します。
  */
+/* 本関数は fork() した子プロセスからのみ呼び出される。
+   子で com_util_exit() を使うと、親が登録したシャットダウン コールバックを
+   fork で継承したまま子側で実行してしまうため、生の exit() を使用する。 */
 static void worker_loop(int server_fd, int worker_id, int conns_per_worker) {
     printf("[ワーカー %d, PID %lu] 起動完了、接続待機\n", worker_id, (unsigned long)get_pid());
 
@@ -302,7 +306,9 @@ void run_fork_server(int port) {
             perror("fork");
             com_util_close(client_fd);
         } else if (pid == 0) {
-            /* 子プロセス */
+            /* 子プロセス。
+               com_util_exit() は親が登録したシャットダウン コールバックを
+               fork で継承したまま実行してしまうため、生の exit() を使用する。 */
             com_util_close(server_fd);
             g_session_fn(client_fd);
             exit(0);
@@ -339,7 +345,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker) {
     pid_t *worker_pids = malloc((size_t)num_workers * sizeof(pid_t));
     if (!worker_pids) {
         perror("malloc");
-        exit(1);
+        com_util_exit(1);
     }
 
     for (int i = 0; i < num_workers; i++) {
@@ -347,7 +353,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker) {
         if (pid < 0) {
             perror("fork");
             free(worker_pids);
-            exit(1);
+            com_util_exit(1);
         } else if (pid == 0) {
             free(worker_pids);
             worker_loop(server_fd, i, conns_per_worker);
