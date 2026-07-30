@@ -11,6 +11,7 @@
  *******************************************************************************
  */
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_spec.h>
 
@@ -21,15 +22,17 @@
 int potrGetServiceType(const char *config_path, int64_t service_id, PotrType *type)
 {
     PotrServiceDef def;
+    int result;
 
     if (config_path == NULL || type == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (config_load_service(config_path, service_id, &def) != POTR_OK)
+    result = config_load_service(config_path, service_id, &def);
+    if (result != POTR_OK)
     {
-        return POTR_ERR_UNKNOWN;
+        return result;
     }
 
     *type = def.type;

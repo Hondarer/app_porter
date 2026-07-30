@@ -15,6 +15,7 @@
 
 #if defined(PLATFORM_WINDOWS)
 
+    #include <porter/porter_result.h>
     #include <porter/porter_const.h>
 
     #include <porter/infra/potrPlatform.h>
@@ -76,7 +77,7 @@ int potr_tcp_send(PotrSocket fd, const uint8_t *buf, size_t len)
     {
         int n = send(fd, (const char *)(buf + sent), (int)(len - sent), 0);
         if (n <= 0)
-            return POTR_ERR_UNKNOWN;
+            return POTR_ERR_IO;
         sent += (size_t)n;
     }
     return POTR_OK;
@@ -91,7 +92,7 @@ int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n)
     {
         int r = recv(fd, (char *)(buf + received), (int)(n - received), 0);
         if (r == SOCKET_ERROR)
-            return POTR_ERR_UNKNOWN;
+            return POTR_ERR_IO;
         if (r == 0)
             return POTR_ERR_EOF;
         received += (size_t)r;

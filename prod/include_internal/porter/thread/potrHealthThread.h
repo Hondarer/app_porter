@@ -21,6 +21,7 @@
 #ifndef POTR_HEALTH_THREAD_H
 #define POTR_HEALTH_THREAD_H
 
+#include <porter/porter_result.h>
 #include <porter/potrContext.h>
 
 #ifdef __cplusplus
@@ -34,14 +35,17 @@ extern "C"
      *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_OK を返す)。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    起動に成功したか、起動が不要です。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
+     *  @retval         POTR_ERR_UNKNOWN           スレッド生成に失敗しました。
      */
     extern int potr_health_thread_start(PotrContext *ctx);
 
     /**
      *  @brief          非 TCP ヘルスチェック スレッドを停止します。
      *  @param[in,out]  ctx セッション コンテキスト。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    停止に成功したか、停止済みです。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
      */
     extern int potr_health_thread_stop(PotrContext *ctx);
 
@@ -55,7 +59,12 @@ extern "C"
      *  @brief          TCP PING パケットを即時送信します。
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    送信に成功しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx または path_idx が不正です。
+     *  @retval         POTR_ERR_DISCONNECTED      送信可能なパスがありません。
+     *  @retval         POTR_ERR_CANCELED          終了処理中です。
+     *  @retval         POTR_ERR_IO                送信に失敗しました。
+     *  @retval         POTR_ERR_UNKNOWN           暗号化に失敗しました。
      */
     extern int potr_tcp_send_ping_now(PotrContext *ctx, int path_idx);
 
@@ -66,7 +75,9 @@ extern "C"
      *
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    起動に成功したか、起動が不要です。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx または path_idx が不正です。
+     *  @retval         POTR_ERR_UNKNOWN           スレッド生成に失敗しました。
      */
     extern int potr_tcp_health_thread_start(PotrContext *ctx, int path_idx);
 
@@ -74,7 +85,8 @@ extern "C"
      *  @brief          TCP ヘルスチェック スレッドを停止します。
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    停止に成功したか、停止済みです。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx または path_idx が不正です。
      */
     extern int potr_tcp_health_thread_stop(PotrContext *ctx, int path_idx);
 

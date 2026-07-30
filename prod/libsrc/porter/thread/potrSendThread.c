@@ -36,6 +36,7 @@
 #include <string.h>
 #include <inttypes.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <porter/potrContext.h>
@@ -557,6 +558,11 @@ static void send_thread_func(void *arg)
 
 int potr_send_thread_start(PotrContext *ctx)
 {
+    if (ctx == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
     ctx->send_thread_running = 1;
 
     com_util_local_lock_create(&ctx->send_window_mutex);
@@ -564,6 +570,7 @@ int potr_send_thread_start(PotrContext *ctx)
     {
         ctx->send_thread_running = 0;
         com_util_local_lock_destroy(ctx->send_window_mutex);
+        /* com_util のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
         return POTR_ERR_UNKNOWN;
     }
 

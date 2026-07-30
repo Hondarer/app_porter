@@ -19,6 +19,7 @@
     #include <netdb.h>
 #endif /* PLATFORM_LINUX */
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <porter/util/potrIpAddr.h>
@@ -29,7 +30,7 @@ int parse_ipv4_addr(const char *ip_str, struct in_addr *out_addr)
 {
     if (ip_str == NULL || out_addr == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     if (inet_pton(AF_INET, ip_str, out_addr) == 1)
@@ -38,7 +39,7 @@ int parse_ipv4_addr(const char *ip_str, struct in_addr *out_addr)
     }
     else
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 }
 
@@ -52,7 +53,7 @@ int resolve_ipv4_addr(const char *host, struct in_addr *out_addr)
 
     if (host == NULL || out_addr == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     memset(&hints, 0, sizeof(hints));
@@ -62,7 +63,7 @@ int resolve_ipv4_addr(const char *host, struct in_addr *out_addr)
     ret = getaddrinfo(host, NULL, &hints, &res);
     if (ret != 0 || res == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_IO;
     }
 
     /* 複数アドレスが返された場合は先頭を採用する */

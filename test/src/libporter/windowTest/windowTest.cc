@@ -5,6 +5,7 @@
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_type.h>
 #include <porter/protocol/window.h>

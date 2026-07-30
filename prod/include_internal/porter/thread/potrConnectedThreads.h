@@ -22,6 +22,7 @@
 #ifndef POTR_CONNECTED_THREADS_H
 #define POTR_CONNECTED_THREADS_H
 
+#include <porter/porter_result.h>
 #include <porter/potrContext.h>
 
 #ifdef __cplusplus
@@ -48,7 +49,9 @@ extern "C"
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx 接続確立済みパスのインデックス。
      *  @param[in]      ops      スレッド操作コールバック テーブル。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    起動に成功しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx または ops が NULL です。
+     *  @return         依存する起動処理または PING 送信に失敗した場合は、その結果コードを返します。
      */
     extern int potr_start_connected_threads(PotrContext *ctx, int path_idx, const PotrConnectedThreadsOps *ops);
 

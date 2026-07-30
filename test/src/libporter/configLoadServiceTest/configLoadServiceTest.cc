@@ -9,6 +9,7 @@
 #include <porter/protocol/config.h>
 #include <config_test_helper.h>
 #include <mock_com_util.h>
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <array>
@@ -16,7 +17,7 @@
 
 using namespace testing;
 
-// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_UNKNOWN を返すことの確認
+// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_IO を返すことの確認
 TEST(configLoadServiceTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened)
 {
     // Arrange
@@ -41,8 +42,8 @@ TEST(configLoadServiceTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpene
         POTR_ERR_INVALID_ARGUMENT,
         rtc_null_out); // [確認_異常系] - 出力先が NULL の場合に config_load_service の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
-        POTR_ERR_UNKNOWN,
-        rtc_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に config_load_service の戻り値が POTR_ERR_UNKNOWN であること。
+        POTR_ERR_IO,
+        rtc_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に config_load_service の戻り値が POTR_ERR_IO であること。
 }
 
 // 指定 service の設定が読み込まれ、service 単位の既定値が維持されることの確認

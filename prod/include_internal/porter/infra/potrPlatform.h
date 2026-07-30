@@ -34,6 +34,7 @@
 #include <com_util/clock/clock.h>
 #include <com_util/crt/unistd.h>
 #include <com_util/sync/sync.h>
+#include <porter/porter_result.h>
 
 /* ============================================================
  * 型定義 (PotrSocket)
@@ -153,7 +154,7 @@ extern "C"
  *  @param[in]  fd   送信ソケット。
  *  @param[in]  buf  送信データ。
  *  @param[in]  len  送信バイト数。
- *  @return  成功時 (全バイト送信) は POTR_OK、切断またはエラー時は POTR_ERR_UNKNOWN。
+ *  @return  成功時 (全バイト送信) は POTR_OK、切断またはエラー時は POTR_ERR_IO。
  *  @note    複数の OS 呼び出しを合成するヘルパーのため、共通結果コード (POTR_RESULT) の適用対象。\n
  *           呼び出し前に送信ミューテックスを取得しておく必要があります。
  */
@@ -164,7 +165,7 @@ extern "C"
  *  @param[in]   fd   受信ソケット。
  *  @param[out]  buf  受信バッファー (n バイト以上)。
  *  @param[in]   n    受信バイト数。
- *  @return  成功時は POTR_OK、切断時 (recv が 0 を返した) は POTR_ERR_EOF、エラー時は POTR_ERR_UNKNOWN。
+ *  @return  成功時は POTR_OK、切断時 (recv が 0 を返した) は POTR_ERR_EOF、エラー時は POTR_ERR_IO。
  *  @note    複数の OS 呼び出しを合成するヘルパーのため、共通結果コード (POTR_RESULT) の適用対象。
  */
     extern int potr_tcp_recv_all(PotrSocket fd, uint8_t *buf, size_t n);

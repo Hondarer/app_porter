@@ -36,7 +36,7 @@ void sigpipe_handler(int sig) { (void)sig; /* 何もしない or ログ */ }
 signal(SIGPIPE, sigpipe_handler);
 ```
 
-方法 A が最も簡便。TCP の切断はエラーとして `potrSend()` の戻り値 (`POTR_ERR_UNKNOWN`) で検知できるため、SIGPIPE によるプロセス終了を避けて戻り値ベースのエラー処理に統一できる。
+方法 A が最も簡便です。porter 内部の TCP 送信失敗は `POTR_ERR_IO` として処理され、接続状態が切断へ遷移した後の `potrSend()` は `POTR_ERR_DISCONNECTED` を返します。SIGPIPE によるプロセス終了を避けることで、エラー処理を結果コードと接続イベントに統一できます。
 
 UDP のみ使用する場合 (`POTR_TYPE_UNICAST` / `POTR_TYPE_MULTICAST` / `POTR_TYPE_BROADCAST`) は SIGPIPE は発生しない。
 

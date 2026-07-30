@@ -26,6 +26,7 @@
     #include <errno.h>
 #endif /* PLATFORM_LINUX */
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <porter/potrContext.h>
@@ -93,7 +94,7 @@ static void reconnect_wait(PotrContext *ctx, int path_idx, int wait_ms)
 /* accept 直後の TCP ソケットから 1 パケット分を buf に読み取る。
  * buf は PACKET_HEADER_SIZE + max_payload バイト以上確保されていること。
  * 戻り値: 成功時 (*out_len にバイト数を格納) は POTR_OK、タイムアウト時は POTR_ERR_TIMEOUT、
- * EOF/エラー/不正時は POTR_ERR_UNKNOWN。 */
+ * EOF 時は POTR_ERR_EOF、I/O エラー時は POTR_ERR_IO、不正時は POTR_ERR_PROTOCOL。 */
 static int tcp_read_first_packet(PotrSocket fd, uint8_t *buf, size_t max_buf, size_t *out_len, int timeout_ms)
 {
     int ready;
@@ -105,12 +106,12 @@ static int tcp_read_first_packet(PotrSocket fd, uint8_t *buf, size_t max_buf, si
     if (ready == 0)
         return POTR_ERR_TIMEOUT;
     if (ready < 0)
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_IO;
 
     /* 固定長ヘッダー読み取り */
     r = potr_tcp_recv_all(fd, buf, PACKET_HEADER_SIZE);
     if (r != POTR_OK)
-        return POTR_ERR_UNKNOWN;
+        return r;
 
     /* payload_len は固定長ヘッダー末尾の offset 34 に格納される */
     {
@@ -121,14 +122,14 @@ static int tcp_read_first_packet(PotrSocket fd, uint8_t *buf, size_t max_buf, si
 
     /* ペイロード長バリデーション */
     if (PACKET_HEADER_SIZE + (size_t)wire_payload_len > max_buf)
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_PROTOCOL;
 
     /* ペイロード読み取り */
     if (wire_payload_len > 0)
     {
         r = potr_tcp_recv_all(fd, buf + PACKET_HEADER_SIZE, (size_t)wire_payload_len);
         if (r != POTR_OK)
-            return POTR_ERR_UNKNOWN;
+            return r;
     }
 
     *out_len = PACKET_HEADER_SIZE + (size_t)wire_payload_len;
@@ -216,7 +217,7 @@ static void reset_send_queue(PotrContext *ctx)
 /* 接続確立後に依存スレッドを起動する (path ごと)。
    SENDER および TCP_BIDIR RECEIVER: path_idx==0 の初回のみ send スレッドを起動する。
    各 path で recv スレッドと health スレッドを起動 (全ロール共通)。
-   失敗時は起動済みスレッドをすべて停止してから POTR_ERR_UNKNOWN を返す。 */
+   失敗時は起動済みスレッドをすべて停止して、失敗した処理の結果コードを返す。 */
 static int start_connected_threads(PotrContext *ctx, int path_idx)
 {
     const PotrConnectedThreadsOps ops = {potr_send_thread_start,       potr_send_thread_stop, tcp_recv_thread_start,
@@ -766,7 +767,7 @@ int potr_connect_thread_start(PotrContext *ctx)
 
     if (ctx == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: starting %d path(s)",
@@ -795,7 +796,7 @@ int potr_connect_thread_start(PotrContext *ctx)
                     ctx->tcp_first_pkt_buf[j] = NULL;
                 }
                 com_util_local_lock_destroy(ctx->session_establish_mutex);
-                return POTR_ERR_UNKNOWN;
+                return POTR_ERR_OUT_OF_MEMORY;
             }
         }
     }
@@ -812,6 +813,7 @@ int potr_connect_thread_start(PotrContext *ctx)
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                        "connect_thread[service_id=%" PRId64 " path=%d]: thread create failed", ctx->service.service_id,
                        i);
+            /* com_util のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
             return POTR_ERR_UNKNOWN;
         }
     }

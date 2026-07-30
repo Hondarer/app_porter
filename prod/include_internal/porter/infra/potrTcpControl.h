@@ -20,6 +20,7 @@
 
 #include <stdint.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_type.h>
 #include <porter/protocol/packet.h>
 
@@ -33,8 +34,11 @@ extern "C"
      *  @param[in]      ctx        セッション コンテキスト。
      *  @param[in,out]  pkt        送信する制御パケット。暗号化有効時は flags と payload_len を書き換えます。
      *  @param[in]      nonce_val  暗号化ノンスの seq_or_ack_num 部に使用する値 (ホスト バイト オーダー)。
-     *  @retval         POTR_OK  1 パス以上への送信に成功。
-     *  @retval         POTR_ERR_UNKNOWN    引数不正、暗号化失敗、または全パスで送信失敗。
+     *  @retval         POTR_OK                    1 パス以上への送信に成功しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  引数が不正です。
+     *  @retval         POTR_ERR_DISCONNECTED      送信可能なパスがありません。
+     *  @retval         POTR_ERR_IO                全パスで送信に失敗しました。
+     *  @retval         POTR_ERR_UNKNOWN           暗号化に失敗しました。
      *
      *  制御パケットをヘッダーのみの wire 形式に直列化し、tcp_conn_fd が有効な全パスへ
      *  path 単位の送信ミューテックスを取得して送信します。\n

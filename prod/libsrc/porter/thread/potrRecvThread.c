@@ -21,6 +21,7 @@
     #include <sys/select.h>
 #endif /* PLATFORM_LINUX */
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <porter/protocol/packet.h>
@@ -184,6 +185,7 @@ static int build_ctrl_pkt_wire(const PotrContext *ctx, PotrPacket *pkt, uint8_t 
         if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
                              wire_buf, PACKET_HEADER_SIZE) != COM_UTIL_OK)
         {
+            /* com_util の暗号化失敗には、porter の分類へ変換できる詳細コードがありません。 */
             return POTR_ERR_UNKNOWN;
         }
         *wire_len = PACKET_HEADER_SIZE + enc_out;
@@ -276,14 +278,16 @@ static int send_tcp_fin_ack(PotrContext *ctx, uint32_t fin_target_seq)
 {
     PotrPacket fin_ack_pkt;
     PotrPacketSessionHdr shdr;
+    int result;
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
     potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    if (packet_build_fin_ack(&fin_ack_pkt, &shdr, fin_target_seq) != POTR_OK)
+    result = packet_build_fin_ack(&fin_ack_pkt, &shdr, fin_target_seq);
+    if (result != POTR_OK)
     {
-        return POTR_ERR_UNKNOWN;
+        return result;
     }
 
     return potr_tcp_send_control_packet(ctx, &fin_ack_pkt, fin_target_seq);
@@ -487,7 +491,7 @@ static void n1_check_health_timeout(PotrContext *ctx)
 
 /* 受信パケットの暗号化要件と GCM 認証を検証する。
    encrypt_enabled 時は ENCRYPTED フラグを必須とし、成功時のみ後続処理へ進める。
-   成功時は POTR_OK、検証失敗時は POTR_ERR_UNKNOWN を返す。 */
+   成功時は POTR_OK、検証失敗時は POTR_ERR_PROTOCOL を返す。 */
 static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *wire_hdr, const char *log_prefix,
                                     int path_idx)
 {
@@ -510,7 +514,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
                        "%s[service_id=%" PRId64 "]: missing ENCRYPTED flag, dropping flags=0x%04x", log_prefix,
                        ctx->service.service_id, (unsigned)pkt->flags);
         }
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_PROTOCOL;
     }
 
     if ((pkt->flags & POTR_FLAG_ENCRYPTED) && (pkt->flags & (POTR_FLAG_DATA | POTR_FLAG_PING)))
@@ -540,7 +544,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 "]: decrypt failed (auth) seq=%u",
                            log_prefix, ctx->service.service_id, (unsigned)pkt->seq_num);
             }
-            return POTR_ERR_UNKNOWN;
+            return POTR_ERR_PROTOCOL;
         }
 
         pkt->payload = ctx->crypto_buf;
@@ -563,7 +567,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
                        "%s[service_id=%" PRId64 "]: encrypted control pkt bad len=%u flags=0x%04x", log_prefix,
                        ctx->service.service_id, (unsigned)pkt->payload_len, (unsigned)pkt->flags);
         }
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_PROTOCOL;
     }
 
     {
@@ -604,7 +608,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 "]: tag verify failed flags=0x%04x",
                            log_prefix, ctx->service.service_id, (unsigned)pkt->flags);
             }
-            return POTR_ERR_UNKNOWN;
+            return POTR_ERR_PROTOCOL;
         }
     }
 
@@ -2125,7 +2129,7 @@ static int tcp_wait_readable(PotrSocket fd, int wait_ms)
 }
 
 /* TCP ソケットから正確に n バイト読み取る。
- * 戻り値: 成功時は POTR_OK、切断時 (recv が 0 を返した) は POTR_ERR_EOF、エラー時は POTR_ERR_UNKNOWN。 */
+ * 戻り値: 成功時は POTR_OK、切断時 (recv が 0 を返した) は POTR_ERR_EOF、エラー時は POTR_ERR_IO。 */
 static int tcp_read_all(PotrSocket fd, uint8_t *buf, size_t n)
 {
     return potr_tcp_recv_all(fd, buf, n);
@@ -2447,7 +2451,7 @@ int comm_recv_thread_start(PotrContext *ctx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     ctx->running[0] = 1;
@@ -2459,6 +2463,7 @@ int comm_recv_thread_start(PotrContext *ctx)
         ctx->running[0] = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "recv_thread[service_id=%" PRId64 "]: thread create failed",
                    ctx->service.service_id);
+        /* com_util のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -2471,7 +2476,7 @@ int comm_recv_thread_stop(PotrContext *ctx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     ctx->running[0] = 0;
@@ -2501,9 +2506,9 @@ int comm_recv_thread_stop(PotrContext *ctx)
 
 int tcp_recv_thread_start(PotrContext *ctx, int path_idx)
 {
-    if (ctx == NULL)
+    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     ctx->running[path_idx] = 1;
@@ -2520,6 +2525,7 @@ int tcp_recv_thread_start(PotrContext *ctx, int path_idx)
         ctx->running[path_idx] = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "tcp_recv_thread[service_id=%" PRId64 " path=%d]: thread create failed",
                    ctx->service.service_id, path_idx);
+        /* com_util のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -2530,9 +2536,9 @@ int tcp_recv_thread_start(PotrContext *ctx, int path_idx)
 
 int tcp_recv_thread_stop(PotrContext *ctx, int path_idx)
 {
-    if (ctx == NULL)
+    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     ctx->running[path_idx] = 0;

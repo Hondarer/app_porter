@@ -7,6 +7,7 @@
 #include <mock_com_util.h>
 #include <mock_porter.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_spec.h>
 #include <porter/potrContext.h>

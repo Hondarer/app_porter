@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_type.h>
 
@@ -61,7 +62,7 @@ int config_load_global(const char *config_path, PotrGlobalConfig *global)
     fp = config_open_file_read(config_path);
     if (fp == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_IO;
     }
 
     section[0] = '\0';

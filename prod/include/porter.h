@@ -30,6 +30,7 @@
 #ifndef PORTER_H
 #define PORTER_H
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_type.h>
 #include <porter/porter_spec.h>

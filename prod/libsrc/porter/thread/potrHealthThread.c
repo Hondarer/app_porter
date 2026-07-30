@@ -19,6 +19,7 @@
 #include <string.h>
 #include <inttypes.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_spec.h>
 
@@ -125,12 +126,19 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
     uint32_t seq;
     size_t wire_len;
     int build_result;
-    int send_ok = 0;
+    int send_result = POTR_ERR_DISCONNECTED;
 
-    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH || ctx->close_requested ||
-        ctx->tcp_active_paths == 0 || ctx->tcp_conn_fd[path_idx] == POTR_INVALID_SOCKET)
+    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    if (ctx->close_requested)
+    {
+        return POTR_ERR_CANCELED;
+    }
+    if (ctx->tcp_active_paths == 0 || ctx->tcp_conn_fd[path_idx] == POTR_INVALID_SOCKET)
+    {
+        return POTR_ERR_DISCONNECTED;
     }
 
     com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
@@ -143,7 +151,7 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
 
     if (build_result != POTR_OK)
     {
-        return POTR_ERR_UNKNOWN;
+        return build_result;
     }
 
     /* path_ping_state スナップショットの採取と TCP 書き込みを同一クリティカル セクション
@@ -180,13 +188,14 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
             else
             {
                 wire_len = PACKET_HEADER_SIZE + enc_out;
-                send_ok = (potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len) == POTR_OK);
+                send_result = potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len);
             }
         }
         com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
 
         if (encrypt_failed)
         {
+            /* com_util の暗号化失敗には、porter の分類へ変換できる詳細コードがありません。 */
             return POTR_ERR_UNKNOWN;
         }
     }
@@ -201,17 +210,12 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
         {
             potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-            send_ok = (potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len) == POTR_OK);
+            send_result = potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len);
         }
         com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
     }
 
-    if (send_ok)
-    {
-        return POTR_OK;
-    }
-
-    return POTR_ERR_UNKNOWN;
+    return send_result;
 }
 
 /* ====================================================================
@@ -479,7 +483,7 @@ int potr_health_thread_start(PotrContext *ctx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     if (ctx->health_interval_ms == 0)
@@ -502,6 +506,7 @@ int potr_health_thread_start(PotrContext *ctx)
         ctx->health_running[0] = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "health_thread[service_id=%" PRId64 "]: thread create failed",
                    ctx->service.service_id);
+        /* com_util のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -514,7 +519,7 @@ int potr_health_thread_stop(PotrContext *ctx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
     if (!ctx->health_running[0])
     {
@@ -546,9 +551,9 @@ void potr_health_thread_wake(PotrContext *ctx)
 
 int potr_tcp_health_thread_start(PotrContext *ctx, int path_idx)
 {
-    if (ctx == NULL)
+    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     if (ctx->health_interval_ms == 0)
@@ -570,6 +575,7 @@ int potr_tcp_health_thread_start(PotrContext *ctx, int path_idx)
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                    "tcp_health_thread[service_id=%" PRId64 " path=%d]: thread create failed", ctx->service.service_id,
                    path_idx);
+        /* com_util のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -580,9 +586,9 @@ int potr_tcp_health_thread_start(PotrContext *ctx, int path_idx)
 
 int potr_tcp_health_thread_stop(PotrContext *ctx, int path_idx)
 {
-    if (ctx == NULL)
+    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
     if (!ctx->health_running[path_idx])
     {

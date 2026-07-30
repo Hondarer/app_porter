@@ -9,11 +9,12 @@
 #include <porter/protocol/config.h>
 #include <config_test_helper.h>
 #include <mock_com_util.h>
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 using namespace testing;
 
-// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_UNKNOWN を返すことの確認
+// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_IO を返すことの確認
 TEST(configLoadGlobalTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened)
 {
     // Arrange
@@ -38,8 +39,8 @@ TEST(configLoadGlobalTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened
         POTR_ERR_INVALID_ARGUMENT,
         rtc_null_out); // [確認_異常系] - 出力先が NULL の場合に config_load_global の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
-        POTR_ERR_UNKNOWN,
-        rtc_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に config_load_global の戻り値が POTR_ERR_UNKNOWN であること。
+        POTR_ERR_IO,
+        rtc_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に config_load_global の戻り値が POTR_ERR_IO であること。
 }
 
 // [global] の設定値が読み込まれ、他 section と未知キーが無視されることの確認

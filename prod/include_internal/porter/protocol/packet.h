@@ -23,6 +23,7 @@
 #include <stdint.h>
 
 #include <com_util/clock/timespec.h>
+#include <porter/porter_result.h>
 #include <porter/porter_type.h>
 
 /** パケット ヘッダーの固定長 (バイト)。payload フィールドの開始オフセット。 */
@@ -165,7 +166,7 @@ extern "C"
      *  @param[out]     elem_out   取り出したペイロード エレメントを格納する構造体へのポインター。
      *  @return         ペイロード エレメントを取り出せた場合は POTR_OK、引数が NULL の場合は
      *                  POTR_ERR_INVALID_ARGUMENT、末尾に達した場合は POTR_ERR_EOF、
-     *                  エレメントが不正な場合は POTR_ERR_UNKNOWN を返します。
+     *                  エレメントが不正な場合は POTR_ERR_PROTOCOL を返します。
      *
      *  ペイロード エレメントの形式は flags(2) + payload_len(4) + payload(N) です。\n
      *  通番は外側パケットで管理するためペイロード エレメントには含まれません。\n
@@ -181,7 +182,7 @@ extern "C"
      *  @param[in]      buf_len     受信バイト列の長さ。
      *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
      *                  受信データが不正 (ヘッダー長未満、バージョン不一致、長さ不整合) な場合は
-     *                  POTR_ERR_UNKNOWN を返します。
+     *                  POTR_ERR_PROTOCOL を返します。
      *
      *  各フィールドをホスト バイト オーダーに変換して構造体に格納します。
      */

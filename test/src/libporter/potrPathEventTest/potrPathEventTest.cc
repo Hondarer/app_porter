@@ -6,6 +6,7 @@
 #include <testfw.h>
 
 #include <mock_com_util.h>
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/potrContext.h>
 #include <porter/potrPathEvent.h>

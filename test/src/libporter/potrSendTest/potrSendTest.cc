@@ -7,6 +7,7 @@
 #include <mock_com_util.h>
 #include <mock_porter.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_spec.h>
 #include <porter/potrContext.h>
@@ -57,6 +58,66 @@ class potrSendTest : public Test
     PotrContext ctx;
     PotrPeerContext peers[2];
 };
+
+// 終了処理中の送信が中止コードで拒否されることの確認
+TEST_F(potrSendTest, close_requested_returns_canceled)
+{
+    // Arrange
+    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
+    const char payload[] = "closing"; // [状態] - 送信ペイロードを "closing" とする。
+    ctx.close_requested = 1;          // [状態] - サービスの終了処理中とする。
+
+    // Pre-Assert
+
+    // Act
+    int rtc = potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - 終了処理中に送信を試みる。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_CANCELED, rtc);   // [確認_異常系] - potrSend の戻り値が POTR_ERR_CANCELED であること。
+    EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
+}
+
+// N:1 モードで POTR_PEER_NA を指定すると引数不正になることの確認
+TEST_F(potrSendTest, n1_peer_na_returns_invalid_argument)
+{
+    // Arrange
+    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
+    const char payload[] = "n1-invalid-peer"; // [状態] - 送信ペイロードを "n1-invalid-peer" とする。
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1; // [状態] - N:1 モードとする。
+
+    // Pre-Assert
+
+    // Act
+    int rtc = potrSend(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - POTR_PEER_NA 宛てに送信を試みる。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT,
+              rtc);                      // [確認_異常系] - potrSend の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
+}
+
+// N:1 モードで存在しないピアを指定すると未検出コードになることの確認
+TEST_F(potrSendTest, n1_unknown_peer_returns_not_found)
+{
+    // Arrange
+    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
+    const char payload[] = "n1-missing-peer"; // [状態] - 送信ペイロードを "n1-missing-peer" とする。
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1; // [状態] - N:1 モードとし、ピア テーブルは空のままとする。
+
+    // Pre-Assert
+
+    // Act
+    int rtc = potrSend(&ctx, 123U, payload, strlen(payload), 0); // [手順] - 未登録のピア ID 宛てに送信を試みる。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_NOT_FOUND, rtc);  // [確認_異常系] - potrSend の戻り値が POTR_ERR_NOT_FOUND であること。
+    EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
+}
 
 // TCP は物理パスが active でも論理接続前の送信が拒否されることの確認
 TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)

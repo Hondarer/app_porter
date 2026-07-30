@@ -13,6 +13,7 @@
 
 #include <com_util/base/platform.h>
 #include <inttypes.h>
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_spec.h>
 

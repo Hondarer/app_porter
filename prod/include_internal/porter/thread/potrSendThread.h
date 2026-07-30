@@ -24,6 +24,7 @@
 #ifndef POTR_SEND_THREAD_H
 #define POTR_SEND_THREAD_H
 
+#include <porter/porter_result.h>
 #include <porter/potrContext.h>
 
 #ifdef __cplusplus
@@ -37,7 +38,9 @@ extern "C"
      *  send_window_mutex を生成し、送信スレッドを起動します。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    起動に成功しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
+     *  @retval         POTR_ERR_UNKNOWN           スレッド生成に失敗しました。
      */
     extern int potr_send_thread_start(PotrContext *ctx);
 

@@ -5,6 +5,7 @@
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_type.h>
 #include <porter/protocol/packet.h>
@@ -125,7 +126,8 @@ TEST_F(packetTest, packet_parse_rejects_different_protocol_version)
     int rtc = packet_parse(&pkt, wire, sizeof(wire)); // [手順] - packet_parse で wire パケットを解析する。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_UNKNOWN, rtc); // [確認_異常系] - packet_parse の戻り値が POTR_ERR_UNKNOWN であること。
+    EXPECT_EQ(POTR_ERR_PROTOCOL,
+              rtc); // [確認_異常系] - packet_parse の戻り値が POTR_ERR_PROTOCOL であること。
 }
 
 // packet_parse がバージョン 0 (旧 reserved 領域) のパケットを拒否することの確認
@@ -143,5 +145,6 @@ TEST_F(packetTest, packet_parse_rejects_legacy_reserved_zero)
     int rtc = packet_parse(&pkt, wire, sizeof(wire)); // [手順] - packet_parse で wire パケットを解析する。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_UNKNOWN, rtc); // [確認_異常系] - packet_parse の戻り値が POTR_ERR_UNKNOWN であること。
+    EXPECT_EQ(POTR_ERR_PROTOCOL,
+              rtc); // [確認_異常系] - packet_parse の戻り値が POTR_ERR_PROTOCOL であること。
 }

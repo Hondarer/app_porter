@@ -8,6 +8,7 @@
 #include <porter/protocol/config.h>
 #include <config_test_helper.h>
 #include <mock_com_util.h>
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <cstdlib>
@@ -16,7 +17,7 @@
 
 using namespace testing;
 
-// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_UNKNOWN を返すことの確認
+// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_IO を返すことの確認
 TEST(configListServiceIdsTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened)
 {
     // Arrange
@@ -48,8 +49,8 @@ TEST(configListServiceIdsTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOp
         POTR_ERR_INVALID_ARGUMENT,
         rtc_null_count); // [確認_異常系] - count_out が NULL の場合に config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
-        POTR_ERR_UNKNOWN,
-        rtc_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に config_list_service_ids の戻り値が POTR_ERR_UNKNOWN であること。
+        POTR_ERR_IO,
+        rtc_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に config_list_service_ids の戻り値が POTR_ERR_IO であること。
 }
 
 // service section だけが列挙され、既定容量 64 件を超えても拡張されることの確認

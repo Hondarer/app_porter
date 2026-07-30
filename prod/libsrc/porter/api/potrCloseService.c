@@ -17,6 +17,7 @@
 #include <com_util/base/platform.h>
 
 #include <porter/porter_spec.h>
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <com_util/crypto/crypto.h>
@@ -128,14 +129,16 @@ static int send_tcp_fin(PotrContext *ctx, uint32_t fin_target_seq)
 {
     PotrPacket fin_pkt;
     PotrPacketSessionHdr shdr;
+    int result;
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
     potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    if (packet_build_fin(&fin_pkt, &shdr) != POTR_OK)
+    result = packet_build_fin(&fin_pkt, &shdr);
+    if (result != POTR_OK)
     {
-        return POTR_ERR_UNKNOWN;
+        return result;
     }
 
     fin_pkt.flags |= htons(POTR_FLAG_FIN_TARGET_VALID);
@@ -167,6 +170,7 @@ static void begin_tcp_close_wait(PotrContext *ctx, uint32_t fin_target_seq)
 static int wait_for_tcp_close_ack(PotrContext *ctx, int timeout_ms)
 {
     int result = POTR_OK;
+    int wait_result;
 
     if (timeout_ms == 0)
     {
@@ -177,15 +181,24 @@ static int wait_for_tcp_close_ack(PotrContext *ctx, int timeout_ms)
     com_util_local_lock_lock(ctx->tcp_close_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     while (ctx->tcp_close_waiting_ack && !ctx->tcp_close_ack_received)
     {
-        if (com_util_condvar_wait(ctx->tcp_close_cv, ctx->tcp_close_mutex, timeout_ms) != COM_UTIL_OK)
+        wait_result = com_util_condvar_wait(ctx->tcp_close_cv, ctx->tcp_close_mutex, timeout_ms);
+        if (wait_result != COM_UTIL_OK)
         {
-            result = POTR_ERR_UNKNOWN;
+            if (wait_result == COM_UTIL_ERR_TIMEOUT)
+            {
+                result = POTR_ERR_TIMEOUT;
+            }
+            else
+            {
+                /* com_util の同期失敗には、porter の分類へ変換できる詳細コードがありません。 */
+                result = POTR_ERR_UNKNOWN;
+            }
             break;
         }
     }
     if (ctx->tcp_close_waiting_ack && !ctx->tcp_close_ack_received)
     {
-        result = POTR_ERR_UNKNOWN;
+        result = POTR_ERR_TIMEOUT;
     }
     ctx->tcp_close_waiting_ack = 0;
     ctx->tcp_close_ack_received = 0;
@@ -242,26 +255,33 @@ int potrCloseService(PotrContext *handle)
 
             if (ctx->tcp_active_paths > 0)
             {
+                int close_result;
+
                 begin_tcp_close_wait(ctx, fin_target_seq);
-                if (send_tcp_fin(ctx, fin_target_seq) != POTR_OK)
+                close_result = send_tcp_fin(ctx, fin_target_seq);
+                if (close_result != POTR_OK)
                 {
                     POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
                                "potrCloseService: service_id=%" PRId64 " TCP FIN send failed", ctx->service.service_id);
                     reset_tcp_close_wait(ctx);
-                    ret = POTR_ERR_UNKNOWN;
-                }
-                else if (wait_for_tcp_close_ack(ctx, ctx->global.tcp_close_timeout_ms) != POTR_OK)
-                {
-                    POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
-                               "potrCloseService: service_id=%" PRId64 " TCP FIN_ACK wait timed out (%ums)",
-                               ctx->service.service_id, (unsigned)ctx->global.tcp_close_timeout_ms);
-                    ret = POTR_ERR_TIMEOUT;
+                    ret = close_result;
                 }
                 else
                 {
-                    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
-                               "potrCloseService: service_id=%" PRId64 " TCP FIN_ACK received",
-                               ctx->service.service_id);
+                    close_result = wait_for_tcp_close_ack(ctx, ctx->global.tcp_close_timeout_ms);
+                    if (close_result != POTR_OK)
+                    {
+                        POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
+                                   "potrCloseService: service_id=%" PRId64 " TCP FIN_ACK wait failed (%ums)",
+                                   ctx->service.service_id, (unsigned)ctx->global.tcp_close_timeout_ms);
+                        ret = close_result;
+                    }
+                    else
+                    {
+                        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+                                   "potrCloseService: service_id=%" PRId64 " TCP FIN_ACK received",
+                                   ctx->service.service_id);
+                    }
                 }
             }
             else if (ctx->send_has_data)
@@ -269,7 +289,7 @@ int potrCloseService(PotrContext *handle)
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
                            "potrCloseService: service_id=%" PRId64 " TCP close without active path",
                            ctx->service.service_id);
-                ret = POTR_ERR_UNKNOWN;
+                ret = POTR_ERR_DISCONNECTED;
             }
             else
             {

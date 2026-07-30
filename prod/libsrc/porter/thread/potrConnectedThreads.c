@@ -16,6 +16,7 @@
 
 #include <inttypes.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <porter/infra/potrTrace.h>
@@ -29,10 +30,11 @@ int potr_start_connected_threads(PotrContext *ctx, int path_idx, const PotrConne
     int is_bidir;
     int is_sender;
     int started_send_thread = 0;
+    int result;
 
     if (ctx == NULL || ops == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     is_bidir = (ctx->service.type == POTR_TYPE_TCP_BIDIR);
@@ -40,16 +42,18 @@ int potr_start_connected_threads(PotrContext *ctx, int path_idx, const PotrConne
 
     if ((is_sender || is_bidir) && path_idx == 0 && !ctx->send_thread_running)
     {
-        if (ops->send_start(ctx) != POTR_OK)
+        result = ops->send_start(ctx);
+        if (result != POTR_OK)
         {
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "connect_thread[service_id=%" PRId64 "]: send_thread_start failed",
                        ctx->service.service_id);
-            return POTR_ERR_UNKNOWN;
+            return result;
         }
         started_send_thread = 1;
     }
 
-    if (ops->recv_start(ctx, path_idx) != POTR_OK)
+    result = ops->recv_start(ctx, path_idx);
+    if (result != POTR_OK)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                    "connect_thread[service_id=%" PRId64 "]: tcp_recv_thread_start failed"
@@ -60,12 +64,13 @@ int potr_start_connected_threads(PotrContext *ctx, int path_idx, const PotrConne
         {
             ops->send_stop(ctx);
         }
-        return POTR_ERR_UNKNOWN;
+        return result;
     }
 
     ops->set_path_ping_state(ctx, path_idx, POTR_PING_STATE_UNDEFINED);
 
-    if (potr_tcp_send_ping_now(ctx, path_idx) != POTR_OK)
+    result = potr_tcp_send_ping_now(ctx, path_idx);
+    if (result != POTR_OK)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                    "connect_thread[service_id=%" PRId64 "]: bootstrap TCP PING failed"
@@ -78,10 +83,11 @@ int potr_start_connected_threads(PotrContext *ctx, int path_idx, const PotrConne
         {
             ops->send_stop(ctx);
         }
-        return POTR_ERR_UNKNOWN;
+        return result;
     }
 
-    if (ops->health_start(ctx, path_idx) != POTR_OK)
+    result = ops->health_start(ctx, path_idx);
+    if (result != POTR_OK)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                    "connect_thread[service_id=%" PRId64 "]: tcp_health_thread_start failed"
@@ -94,7 +100,7 @@ int potr_start_connected_threads(PotrContext *ctx, int path_idx, const PotrConne
         {
             ops->send_stop(ctx);
         }
-        return POTR_ERR_UNKNOWN;
+        return result;
     }
 
     return POTR_OK;

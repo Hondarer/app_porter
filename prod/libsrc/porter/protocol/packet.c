@@ -21,6 +21,7 @@
     #include <com_util/base/windows_sdk.h>
 #endif /* PLATFORM_ */
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_type.h>
 
@@ -236,7 +237,7 @@ int packet_unpack_next(const PotrPacket *container, size_t *offset, PotrPacket *
     if (*offset + POTR_PAYLOAD_ELEM_HDR_SIZE + payload_len > (size_t)container->payload_len ||
         payload_len > POTR_MAX_PAYLOAD)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_PROTOCOL;
     }
 
     memset(elem_out, 0, PACKET_HEADER_SIZE);
@@ -274,7 +275,7 @@ int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
     /* ヘッダー長未満の受信データは不正パケットとして扱う */
     if (buf_len < PACKET_HEADER_SIZE)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_PROTOCOL;
     }
 
     memcpy(&tmp64, b + 0, 8);
@@ -299,7 +300,7 @@ int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
     if (packet->protocol_version != POTR_PROTOCOL_VERSION || packet->payload_len > POTR_MAX_PAYLOAD ||
         (size_t)packet->payload_len + PACKET_HEADER_SIZE > buf_len)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_PROTOCOL;
     }
 
     /* ゼロ コピー: 受信バッファー内のペイロード領域を直接指す

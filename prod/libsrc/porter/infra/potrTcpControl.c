@@ -14,6 +14,7 @@
 #include <string.h>
 #include <com_util/base/platform.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <com_util/crypto/crypto.h>
@@ -40,12 +41,13 @@ int potr_tcp_send_control_packet(const PotrContext *ctx, PotrPacket *pkt, uint32
 {
     uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
     size_t wire_len;
+    int attempted = 0;
     int sent_any = 0;
     int i;
 
     if (ctx == NULL || pkt == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     if (ctx->service.encrypt_enabled)
@@ -66,6 +68,7 @@ int potr_tcp_send_control_packet(const PotrContext *ctx, PotrPacket *pkt, uint32
         if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
                              wire_buf, PACKET_HEADER_SIZE) != COM_UTIL_OK)
         {
+            /* 暗号化失敗は入力データ起因と断定できないため、分類不能として扱う。 */
             return POTR_ERR_UNKNOWN;
         }
         wire_len = PACKET_HEADER_SIZE + enc_out;
@@ -82,6 +85,7 @@ int potr_tcp_send_control_packet(const PotrContext *ctx, PotrPacket *pkt, uint32
         {
             continue;
         }
+        attempted = 1;
         if (tcp_send_all_locked(ctx->tcp_conn_fd[i], ctx->tcp_send_mutex[i], wire_buf, wire_len) == POTR_OK)
         {
             sent_any = 1;
@@ -93,5 +97,10 @@ int potr_tcp_send_control_packet(const PotrContext *ctx, PotrPacket *pkt, uint32
         return POTR_OK;
     }
 
-    return POTR_ERR_UNKNOWN;
+    if (!attempted)
+    {
+        return POTR_ERR_DISCONNECTED;
+    }
+
+    return POTR_ERR_IO;
 }

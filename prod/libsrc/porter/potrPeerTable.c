@@ -20,6 +20,7 @@
     #include <arpa/inet.h>
 #endif /* PLATFORM_LINUX */
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_spec.h>
 
@@ -169,7 +170,7 @@ int peer_table_init(PotrContext *ctx)
     {
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "peer_table_init: service_id=%" PRId64 " calloc failed (max_peers=%d)",
                    ctx->service.service_id, ctx->max_peers);
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_OUT_OF_MEMORY;
     }
 
     for (i = 0; i < ctx->max_peers; i++)

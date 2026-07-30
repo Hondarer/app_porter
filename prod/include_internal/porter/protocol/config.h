@@ -19,6 +19,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <porter/porter_result.h>
 #include <porter/porter_type.h>
 
 #ifdef __cplusplus
@@ -31,7 +32,7 @@ extern "C"
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[out]     global      読み込み結果を格納する構造体へのポインター。
      *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
-     *                  設定ファイルを開けない場合は POTR_ERR_UNKNOWN を返します。
+     *                  設定ファイルを開けない場合は POTR_ERR_IO を返します。
      *
      *  global セクションが存在しない場合はデフォルト値を設定します。
      */
@@ -44,7 +45,7 @@ extern "C"
      *  @param[out]     def         読み込み結果を格納する構造体へのポインター。
      *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
      *                  指定した service_id が存在しない場合は POTR_ERR_NOT_FOUND、
-     *                  設定ファイルを開けない場合は POTR_ERR_UNKNOWN を返します。
+     *                  設定ファイルを開けない場合は POTR_ERR_IO を返します。
      *
      *  [service.id] 形式のセクション名から id 部分を取得し、service_id と照合します。\n
      *  サービスの識別子はセクション名の id であり、ポート番号とは無関係です。
@@ -59,7 +60,7 @@ extern "C"
      *  @param[out]     count_out   列挙したサービス ID 数。
      *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
      *                  メモリを確保できない場合は POTR_ERR_OUT_OF_MEMORY、
-     *                  設定ファイルを開けない場合は POTR_ERR_UNKNOWN を返します。
+     *                  設定ファイルを開けない場合は POTR_ERR_IO を返します。
      *
      *  初期容量 POTR_MAX_SERVICES で配列を確保し、超過時は realloc で 2 倍に拡張します。
      */

@@ -20,6 +20,7 @@
 #define POTR_IP_ADDR_H
 
 #include <com_util/base/platform.h>
+#include <porter/porter_result.h>
 
 #if defined(PLATFORM_LINUX)
     #include <arpa/inet.h>
@@ -37,7 +38,8 @@ extern "C"
      *  @brief      IPv4 アドレス文字列を struct in_addr に変換します。
      *  @param[in]  ip_str   変換する IPv4 アドレス文字列 (例: "192.168.0.1")。
      *  @param[out] out_addr 変換結果の書き戻し先。
-     *  @return     成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval     POTR_OK                    変換に成功しました。
+     *  @retval     POTR_ERR_INVALID_ARGUMENT  引数または IPv4 アドレス文字列が不正です。
      */
     extern int parse_ipv4_addr(const char *ip_str, struct in_addr *out_addr);
 
@@ -49,7 +51,9 @@ extern "C"
      *
      *  @param[in]  host     解決するホスト名または IPv4 アドレス文字列。
      *  @param[out] out_addr 解決結果の書き戻し先。
-     *  @return     成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval     POTR_OK                    名前解決に成功しました。
+     *  @retval     POTR_ERR_INVALID_ARGUMENT  引数が不正です。
+     *  @retval     POTR_ERR_IO                名前解決に失敗しました。
      */
     extern int resolve_ipv4_addr(const char *host, struct in_addr *out_addr);
 

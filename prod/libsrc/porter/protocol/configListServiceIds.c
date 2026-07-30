@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <porter/protocol/config.h>
@@ -37,7 +38,7 @@ int config_list_service_ids(const char *config_path, int64_t **ids_out, int *cou
     fp = config_open_file_read(config_path);
     if (fp == NULL)
     {
-        return POTR_ERR_UNKNOWN;
+        return POTR_ERR_IO;
     }
 
     capacity = (int)POTR_MAX_SERVICES;

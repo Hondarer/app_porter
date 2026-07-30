@@ -13,6 +13,7 @@
 
 #include <string.h>
 
+#include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <com_util/sync/sync.h>

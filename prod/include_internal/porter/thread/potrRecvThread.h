@@ -19,6 +19,7 @@
 #ifndef POTR_RECV_THREAD_H
 #define POTR_RECV_THREAD_H
 
+#include <porter/porter_result.h>
 #include <porter/potrContext.h>
 
 #ifdef __cplusplus
@@ -29,14 +30,17 @@ extern "C"
     /**
      *  @brief          非 TCP 受信スレッドを起動します。
      *  @param[in,out]  ctx セッション コンテキスト。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    起動に成功しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
+     *  @retval         POTR_ERR_UNKNOWN           スレッド生成に失敗しました。
      */
     extern int comm_recv_thread_start(PotrContext *ctx);
 
     /**
      *  @brief          非 TCP 受信スレッドを停止します。
      *  @param[in,out]  ctx セッション コンテキスト。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    停止に成功しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
      */
     extern int comm_recv_thread_stop(PotrContext *ctx);
 
@@ -44,7 +48,9 @@ extern "C"
      *  @brief          TCP 受信スレッドを path ごとに起動します。
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    起動に成功しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx または path_idx が不正です。
+     *  @retval         POTR_ERR_UNKNOWN           スレッド生成に失敗しました。
      */
     extern int tcp_recv_thread_start(PotrContext *ctx, int path_idx);
 
@@ -55,7 +61,8 @@ extern "C"
      *
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    終了待機に成功しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx または path_idx が不正です。
      */
     extern int tcp_recv_thread_stop(PotrContext *ctx, int path_idx);
 

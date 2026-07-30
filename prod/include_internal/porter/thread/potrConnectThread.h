@@ -23,6 +23,7 @@
 #ifndef POTR_CONNECT_THREAD_H
 #define POTR_CONNECT_THREAD_H
 
+#include <porter/porter_result.h>
 #include <porter/potrContext.h>
 
 #ifdef __cplusplus
@@ -39,7 +40,10 @@ extern "C"
      *  - tcp_state_mutex / tcp_state_cv / tcp_send_mutex[] が初期化済みであること。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
-     *  @return         成功時は POTR_OK、失敗時は POTR_ERR_UNKNOWN。
+     *  @retval         POTR_OK                    起動に成功しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
+     *  @retval         POTR_ERR_OUT_OF_MEMORY     先読みバッファーを確保できません。
+     *  @retval         POTR_ERR_UNKNOWN           スレッド生成に失敗しました。
      */
     extern int potr_connect_thread_start(PotrContext *ctx);
 
