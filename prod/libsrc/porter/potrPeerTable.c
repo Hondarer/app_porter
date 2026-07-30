@@ -31,13 +31,22 @@
 #include <porter/infra/potrTrace.h>
 #include <porter/infra/potrPlatform.h>
 #include <com_util/crypto/crypto.h>
+#include <com_util/crypto/random.h>
 
-/* ピアのセッション識別子・開始時刻を生成して peer に格納する */
-static void peer_generate_session(PotrPeerContext *peer)
+/* ピアのセッション識別子・開始時刻を生成して peer に格納する
+ * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は
+ * (key, nonce) の再利用を招く。暗号論的乱数源から取得する。 */
+static int peer_generate_session(PotrPeerContext *peer)
 {
-    srand((unsigned int)com_util_get_monotonic_ms());
-    peer->session_id = (uint32_t)rand();
+    int rtc = com_util_random_bytes(&peer->session_id, sizeof(peer->session_id));
+
+    if (rtc != COM_UTIL_OK)
+    {
+        return rtc;
+    }
     com_util_get_realtime(&peer->session_ts);
+
+    return COM_UTIL_OK;
 }
 
 /* 使用中でない peer_id を単調増加カウンターから生成する (peers_mutex 取得済みの文脈で呼ぶ) */
@@ -309,7 +318,13 @@ PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_
     peer->active = 1;
 
     /* 自セッション生成 */
-    peer_generate_session(peer);
+    if (peer_generate_session(peer) != COM_UTIL_OK)
+    {
+        peer->active = 0;
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "peer_create: service_id=%" PRId64 " session id generation failed",
+                   ctx->service.service_id);
+        return NULL;
+    }
     peer->send_has_data = 0;
 
     /* ウィンドウ初期化 */

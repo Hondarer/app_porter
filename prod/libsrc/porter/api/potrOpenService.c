@@ -12,6 +12,7 @@
  */
 
 #include <com_util/base/platform.h>
+#include <com_util/crypto/random.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
@@ -63,15 +64,23 @@ static PotrSocket open_socket_unicast(struct in_addr bind_addr, uint16_t port)
     return sock;
 }
 
-/* セッション識別子と開始時刻を生成してコンテキストに格納する。 */
-static void generate_session(PotrContext *ctx)
+/* セッション識別子と開始時刻を生成してコンテキストに格納する。
+ * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は
+ * (key, nonce) の再利用を招く。暗号論的乱数源から取得する。 */
+static int generate_session(PotrContext *ctx)
 {
-    srand((unsigned int)com_util_get_monotonic_ms());
-    ctx->session_id = (uint32_t)rand();
+    int rtc = com_util_random_bytes(&ctx->session_id, sizeof(ctx->session_id));
+
+    if (rtc != COM_UTIL_OK)
+    {
+        return rtc;
+    }
     com_util_get_realtime(&ctx->session_ts);
 
     ctx->last_ping_send_ms = 0U;
     ctx->last_valid_data_send_ms = 0U;
+
+    return COM_UTIL_OK;
 }
 
 /* マルチキャスト ソケットを作成して bind・グループ参加する。
@@ -1244,7 +1253,13 @@ int potrOpenService(const PotrGlobalConfig *global, const PotrServiceDef *servic
     }
 
     /* セッション識別子を生成する */
-    generate_session(ctx);
+    if (generate_session(ctx) != COM_UTIL_OK)
+    {
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potrOpenService: session id generation failed (service_id=%" PRId64 ")",
+                   ctx->service.service_id);
+        ctx_cleanup(ctx);
+        return POTR_ERR_UNKNOWN;
+    }
 
     /* 送受信ウィンドウと動的バッファーを確保する */
     result = alloc_context_buffers(ctx);

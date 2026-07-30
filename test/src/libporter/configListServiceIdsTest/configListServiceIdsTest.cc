@@ -8,6 +8,7 @@
 #include <porter/protocol/config.h>
 #include <config_test_helper.h>
 #include <mock_com_util.h>
+#include <mock_stdio.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
@@ -22,6 +23,7 @@ TEST(configListServiceIdsTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOp
 {
     // Arrange
     NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_stdio> mock_stdio;
     int64_t *ids = nullptr;
     int count = 0;
 
@@ -58,6 +60,7 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
 {
     // Arrange
     NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_stdio> mock_stdio;
     std::vector<std::string> config_lines;
     int64_t *ids = nullptr;
     int count = 0;
@@ -78,13 +81,13 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
     EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
-    ON_CALL(mock_com_util, com_util_fgets(_, _, ConfigLineStream::handle()))
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
-            [&](char *buf, int size, FILE *stream) -> char *
+            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
             })); // [Pre-Assert手順] - 70 個の service section を含む行列を順に返す。
-    EXPECT_CALL(mock_com_util, com_util_fclose(ConfigLineStream::handle()))
+    EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が呼び出されること。
 
     // Act

@@ -9,6 +9,7 @@
 #include <porter/protocol/config.h>
 #include <config_test_helper.h>
 #include <mock_com_util.h>
+#include <mock_stdio.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
@@ -19,6 +20,7 @@ TEST(configLoadGlobalTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened
 {
     // Arrange
     NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_stdio> mock_stdio;
     PotrGlobalConfig global = {};
 
     // Pre-Assert
@@ -48,6 +50,7 @@ TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
 {
     // Arrange
     NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
         "  # comment\n",
         "\n",
@@ -72,13 +75,13 @@ TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
     EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
-    ON_CALL(mock_com_util, com_util_fgets(_, _, ConfigLineStream::handle()))
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
-            [&](char *buf, int size, FILE *stream) -> char *
+            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [Pre-Assert手順] - com_util_fgets() がメモリ上の [global] 行列を順に返す。
-    EXPECT_CALL(mock_com_util, com_util_fclose(ConfigLineStream::handle()))
+            })); // [Pre-Assert手順] - fgets() がメモリ上の [global] 行列を順に返す。
+    EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が 1 回呼び出されること。
 
     // Act
@@ -104,6 +107,7 @@ TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
 {
     // Arrange
     NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
         "[service.10]\n",
         "dst_port = 5001\n",
@@ -115,11 +119,11 @@ TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
     EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("service-only.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
-    ON_CALL(mock_com_util, com_util_fgets(_, _, ConfigLineStream::handle()))
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
-            [&](char *buf, int size, FILE *stream) -> char *
+            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             { return lines.read(buf, size, stream); })); // [Pre-Assert手順] - [service] のみを含む行列を順に返す。
-    EXPECT_CALL(mock_com_util, com_util_fclose(ConfigLineStream::handle()))
+    EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が呼び出されること。
 
     // Act

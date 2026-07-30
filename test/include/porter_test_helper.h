@@ -166,7 +166,7 @@ public:
         for (const auto& line : lines_) {
             com_util_fprintf(f, "%s\n", line.c_str());
         }
-        com_util_fclose(f);
+        fclose(f);
 
         return tmp_path_;
     }

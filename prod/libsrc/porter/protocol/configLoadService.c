@@ -21,6 +21,7 @@
 #include <porter/porter_type.h>
 
 #include <com_util/crypto/crypto.h>
+#include <com_util/runtime/memory_lock.h>
 #include <porter/infra/potrTrace.h>
 #include <porter/protocol/config.h>
 #include <porter/protocol/configParseCommon.h>
@@ -238,7 +239,7 @@ static void apply_service_kv(const char *key, const char *val, PotrServiceDef *c
             }
             else
             {
-                memset(current->encrypt_key, 0, sizeof(current->encrypt_key));
+                com_util_secure_zero(current->encrypt_key, sizeof(current->encrypt_key));
                 current->encrypt_enabled = 0;
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
                            "config: encrypt_key passphrase hashing failed (service_id=%" PRId64 ")",
@@ -247,7 +248,7 @@ static void apply_service_kv(const char *key, const char *val, PotrServiceDef *c
         }
         else
         {
-            memset(current->encrypt_key, 0, sizeof(current->encrypt_key));
+            com_util_secure_zero(current->encrypt_key, sizeof(current->encrypt_key));
             current->encrypt_enabled = 0;
             POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING, "config: encrypt_key is empty, ignored (service_id=%" PRId64 ")",
                        current->service_id);
@@ -328,9 +329,18 @@ int config_load_service(const char *config_path, int64_t service_id, PotrService
         }
 
         apply_service_kv(key, val, def);
+
+        /* trimmed は行の生の内容 (パスフレーズを含みうる) を保持する */
+        com_util_secure_zero(trimmed, sizeof(trimmed));
     }
 
     fclose(fp);
+
+    /* line / key / val はパスフレーズ平文を保持しうるため、復帰前に消去する */
+    com_util_secure_zero(line, sizeof(line));
+    com_util_secure_zero(key, sizeof(key));
+    com_util_secure_zero(val, sizeof(val));
+
     if (!found)
     {
         return POTR_ERR_NOT_FOUND;

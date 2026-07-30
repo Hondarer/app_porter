@@ -19,6 +19,8 @@
 #include <porter/protocol/config.h>
 #include <porter/infra/potrTrace.h>
 
+#include <com_util/runtime/memory_lock.h>
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int potrOpenServiceFromConfig(const char *config_path, int64_t service_id, PotrRole role, PotrRecvCallback callback,
@@ -67,5 +69,10 @@ int potrOpenServiceFromConfig(const char *config_path, int64_t service_id, PotrR
         return result;
     }
 
-    return potrOpenService(&global, &service, role, callback, handle);
+    result = potrOpenService(&global, &service, role, callback, handle);
+
+    /* service は AES 鍵を平文で保持するため、復帰前に消去する */
+    com_util_secure_zero(&service, sizeof(service));
+
+    return result;
 }

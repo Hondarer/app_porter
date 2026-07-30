@@ -21,6 +21,7 @@
 #include <porter/porter_const.h>
 
 #include <com_util/crypto/crypto.h>
+#include <com_util/runtime/memory_lock.h>
 #include <porter/infra/potrTrace.h>
 #include <porter/infra/potrSendQueue.h>
 #include <porter/infra/potrTcpControl.h>
@@ -34,6 +35,39 @@
 #include <porter/thread/potrRecvThread.h>
 #include <porter/thread/potrSendThread.h>
 #include <porter/util/potrIpAddr.h>
+
+/* 平文と鍵を保持する動的バッファーを消去して解放する。
+ * crypto_buf は復号済み平文、compress_buf と frag_buf と recv_buf は
+ * 展開後または結合後の平文を保持しうるため、解放前に消去する。 */
+static void dispose_secret_buffers(PotrContext *ctx)
+{
+    if (ctx->frag_buf != NULL)
+    {
+        com_util_secure_zero(ctx->frag_buf, ctx->global.max_message_size);
+        free(ctx->frag_buf);
+        ctx->frag_buf = NULL;
+    }
+    if (ctx->compress_buf != NULL)
+    {
+        com_util_secure_zero(ctx->compress_buf, ctx->compress_buf_size);
+        free(ctx->compress_buf);
+        ctx->compress_buf = NULL;
+    }
+    if (ctx->crypto_buf != NULL)
+    {
+        com_util_secure_zero(ctx->crypto_buf, ctx->crypto_buf_size);
+        free(ctx->crypto_buf);
+        ctx->crypto_buf = NULL;
+    }
+    if (ctx->recv_buf != NULL)
+    {
+        com_util_secure_zero(ctx->recv_buf, PACKET_HEADER_SIZE + ctx->global.max_payload);
+        free(ctx->recv_buf);
+        ctx->recv_buf = NULL;
+    }
+
+    com_util_secure_zero(ctx->service.encrypt_key, sizeof(ctx->service.encrypt_key));
+}
 
 /* FIN パケットを全パスへ送信する */
 static void send_fin(PotrContext *ctx)
@@ -326,10 +360,7 @@ int potrCloseService(PotrContext *handle)
         /* 送受信ウィンドウと動的バッファーを解放 */
         window_dispose(&ctx->send_window);
         window_dispose(&ctx->recv_window);
-        free(ctx->frag_buf);
-        free(ctx->compress_buf);
-        free(ctx->crypto_buf);
-        free(ctx->recv_buf);
+        dispose_secret_buffers(ctx);
         free(ctx->send_wire_buf);
 
         potr_socket_lib_cleanup();
@@ -428,10 +459,7 @@ int potrCloseService(PotrContext *handle)
            (すでに peer_table_dispose 済みの場合は ctx->peers が NULL になっている) */
         peer_table_dispose(ctx);
     }
-    free(ctx->frag_buf);
-    free(ctx->compress_buf);
-    free(ctx->crypto_buf);
-    free(ctx->recv_buf);
+    dispose_secret_buffers(ctx);
     free(ctx->send_wire_buf);
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potrCloseService: service closed");
 
