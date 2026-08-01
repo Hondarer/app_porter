@@ -29,6 +29,6 @@ make test
 ## 注意点
 
 - 公開 API (`prod/include/` 配下のヘッダー) に関数を追加、削除、またはシグネチャを変更した場合は、`test/src/libporter/exportTest/exportTest.cc` の `POTR_EXPORT_FUNCTION_TABLE` を同じコミットで見直すこと。公開変数を追加、削除、または型を変更した場合は、同ファイルの `POTR_EXPORT_VARIABLE_TABLE` も見直すこと。反映を怠ると `exportTest.symbol_names_match` が失敗する。
-- 上位の `docs/c-modernization-kit/coding-guideline.md` は一般則のみを扱う。porter 固有の規則、制限、遵守事項 (結果コード `POTR_OK` / `POTR_ERR_*`、適用対象外の範囲など) はすべて `docs/coding-guideline.md` に集約する。追加・変更時も同ファイルへ追記すること。
+- 上位の `docs/general/coding-guideline.md` は一般則のみを扱う。porter 固有の規則、制限、遵守事項 (結果コード `POTR_OK` / `POTR_ERR_*`、適用対象外の範囲など) はすべて `docs/coding-guideline.md` に集約する。追加・変更時も同ファイルへ追記すること。
 - 公開 API (`prod/include/` 配下のヘッダー) を変更した場合は、`docs/api.md` の該当記載 (戻り値表、スレッド セーフ表) を同じコミットで見直すこと。
 - `docs/doxybook2_public/` と `docs/doxybook2_internal/` は Doxygen からの自動生成物であり、手編集しないこと。ヘッダーの Doxygen コメントを変更した場合は `make doxy` で再生成する。
