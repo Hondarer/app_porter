@@ -3,6 +3,7 @@
 ## 概要
 
 本書は、上位の「コーディング規範」(`docs/general/coding-guideline.md`) の一般則に対して、porter を利用するコードおよび porter 自身に適用する特化事項をまとめます。
+
 章立ては上位文書の章に対応させ、porter 固有の追記・上書き事項のみを記載します。
 
 porter 固有の規則、制限、遵守事項は、今後もすべて本書に集約します。
@@ -77,9 +78,9 @@ if (rc != COM_UTIL_OK)
 | 対象外の関数群 | 現行規約 | 理由 |
 |---|---|---|
 | `potrPlatform.h` の OS ラッパー層 (`potr_setsockopt`、`potr_sendto`、`potr_recvfrom`、`potr_poll_*` など) | 0/-1、送受信バイト数、1/0/-1 など元 API と同系 | OS ソケット API の戻り値規約を保存する層であることが設計意図。ただし合成ヘルパー (`potr_tcp_send`、`potr_tcp_recv_all`) は適用対象とする |
-| 0/1 述語 (`seqnum_is_newer`、`seqnum_in_window`、`window_send_full`、`window_recv_needs_nack`、`potrContext.h` の inline 述語) | 真 1 / 偽 0 | 失敗モードのない純関数であり、成否の概念が適用されない |
+| 0/1 述語 (`seqnum_in_window`、`window_send_full`、`window_recv_needs_nack`、`potrContext.h` の inline 述語) | 真 1 / 偽 0 | 失敗モードのない純関数であり、成否の概念が適用されない |
 | 3 状態以上の判定結果を返す比較・分類関数 | 判定結果そのもの | 成否ではなく状態の分類を返す |
-| 値をそのまま返す関数 (`packet_wire_size`、`seqnum_next`、`potr_raw_base_type` などの getter) | 値そのもの | 結果コードの概念が適用されない |
+| 値をそのまま返す関数 (`packet_wire_size`、`potr_raw_base_type` などの getter) | 値そのもの | 結果コードの概念が適用されない |
 | ハンドル・ポインター返却系 (`potrGetTracer`、`peer_create`、`peer_find_by_*` など) | 成功時ポインター / 失敗・不在時 NULL | ポインター返却 API の慣用 |
 | 戻り値を持たない関数 | `void` | 同上 |
 
