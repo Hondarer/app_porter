@@ -63,7 +63,7 @@ typedef SOCKET PotrSocket;
 static inline void potr_close_socket(PotrSocket fd)
 {
 #if defined(PLATFORM_LINUX)
-    com_util_close(fd);
+    com_util_close(fd, NULL);
 #elif defined(PLATFORM_WINDOWS)
     closesocket(fd);
 #endif /* PLATFORM_ */

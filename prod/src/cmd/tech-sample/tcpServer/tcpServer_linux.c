@@ -202,7 +202,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker) {
                     ev.data.fd = client_fd;
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev) < 0) {
                         perror("epoll_ctl add client_fd");
-                        com_util_close(client_fd);
+                        com_util_close(client_fd, NULL);
                         continue;
                     }
 
@@ -239,7 +239,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker) {
             }
         }
 
-        com_util_close(epoll_fd);
+        com_util_close(epoll_fd, NULL);
     }
 
     printf("[ワーカー %d] 終了\n", worker_id);
@@ -304,17 +304,17 @@ void run_fork_server(int port) {
         pid_t pid = fork();
         if (pid < 0) {
             perror("fork");
-            com_util_close(client_fd);
+            com_util_close(client_fd, NULL);
         } else if (pid == 0) {
             /* 子プロセス。
                com_util_exit() は親が登録したシャットダウン コールバックを
                fork で継承したまま実行してしまうため、生の exit() を使用する。 */
-            com_util_close(server_fd);
+            com_util_close(server_fd, NULL);
             g_session_fn(client_fd);
             exit(0);
         } else {
             /* 親プロセス */
-            com_util_close(client_fd);
+            com_util_close(client_fd, NULL);
         }
     }
 }
@@ -382,7 +382,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker) {
     }
 
     free(worker_pids);
-    com_util_close(server_fd);
+    com_util_close(server_fd, NULL);
     printf("[親プロセス] 終了\n");
 }
 

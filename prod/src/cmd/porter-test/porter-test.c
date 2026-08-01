@@ -143,7 +143,7 @@ static void porter_test_shutdown_request_callback(const com_util_shutdown_event 
     g_running = 0;
 
 #if defined(PLATFORM_LINUX)
-    com_util_close(STDIN_FILENO); /* readline (fgets) のブロックを解除する */
+    com_util_close(STDIN_FILENO, NULL); /* readline (fgets) のブロックを解除する */
 #endif                            /* PLATFORM_LINUX */
 }
 

@@ -41,7 +41,7 @@ typedef pid_t PidType;
     /** クライアントへデータを送信します。 */
     #define client_send(fd, buf, len) write((fd), (buf), (len))
     /** クライアント ソケットを閉じます。 */
-    #define client_close(fd) com_util_close(fd)
+    #define client_close(fd) com_util_close((fd), NULL)
 
 #elif defined(PLATFORM_WINDOWS)
 
