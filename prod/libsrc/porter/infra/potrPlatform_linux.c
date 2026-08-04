@@ -156,6 +156,12 @@ int potr_poll_readable_multi(const PotrSocket *fds, const size_t count, const in
     }
     if (valid_count == 0U)
     {
+        /* 有効なソケットがない場合も timeout_ms だけ待つ。即座に返すと呼び出し側の
+           ポーリング ループが待機なしで回り続けるため。 */
+        if (timeout_ms > 0)
+        {
+            com_util_sleep_ms(timeout_ms);
+        }
         potr_socket_error_clear(detail_out);
         return POTR_OK;
     }

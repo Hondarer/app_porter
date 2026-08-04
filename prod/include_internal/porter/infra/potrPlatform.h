@@ -201,7 +201,8 @@ extern "C"
      *  @param[out]     ready_out 読み取り可能状態の出力配列。NULL 不可。
      *  @param[out]     detail_out 詳細情報。NULL 可。
      *  @return         成功時は POTR_OK、失敗時は POTR_ERR_* を返します。
-     *  @note           全要素が POTR_INVALID_SOCKET の場合は全出力を 0 にして POTR_OK を返します。
+     *  @note           全要素が POTR_INVALID_SOCKET の場合は @p timeout_ms だけ待機し、
+     *                  全出力を 0 にして POTR_OK を返します。
      */
     extern int potr_poll_readable_multi(const PotrSocket *fds, size_t count, int timeout_ms, unsigned char *ready_out,
                                         com_util_error *detail_out);

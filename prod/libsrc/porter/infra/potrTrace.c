@@ -24,6 +24,7 @@
 
 #include <com_util/trace/tracer.h>
 #include <com_util/base/error_message.h>
+#include <com_util/crt/path.h>
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -59,14 +60,14 @@ com_util_tracer *potr_trace_get(void)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void potr_trace_socket_failure(const com_util_trace_level_t level, const com_util_error *detail, const char *format,
-                               ...)
+void potr_trace_socket_failure_at(const char *file, const int line, const com_util_trace_level_t level,
+                                  const com_util_error *detail, const char *format, ...)
 {
     char context[256];
     char message[256];
     va_list args;
 
-    if ((detail == NULL) || (format == NULL))
+    if ((file == NULL) || (detail == NULL) || (format == NULL))
     {
         return;
     }
@@ -74,7 +75,12 @@ void potr_trace_socket_failure(const com_util_trace_level_t level, const com_uti
     (void)vsnprintf(context, sizeof(context), format, args);
     va_end(args);
     (void)com_util_error_message(message, sizeof(message), detail);
-    POTR_TRACE(level, "%s: domain=%d code=%lu: %s", context, (int)detail->domain, detail->code, message);
+
+    /* POTR_TRACE は展開位置の __FILE__ と __LINE__ を埋め込むため、本関数で使うと発生位置が
+       potrTrace.c で固定される。呼び出し元の位置を残すため、下位 API へ直接書式を渡す。 */
+    (void)_com_util_tracer_writef(potr_trace_get(), level, NULL, "[%s:%d] %s: domain=%d code=%lu: %s",
+                                  com_util_path_basename(file), line, context, (int)detail->domain, detail->code,
+                                  message);
 }
 
 /* ── 公開 API ─────────────────────────────────────────────────────────── */

@@ -83,7 +83,7 @@ TEST_F(potrSocketErrorTest, invalid_argument_updates_detail_and_last_error)
     EXPECT_EQ(detail.result, last.result);        // [確認_異常系] - TLS と出力引数の結果が一致すること。
     EXPECT_EQ(1, com_util_error_is_set(&detail)); // [確認_異常系] - 詳細情報が設定済みと判定されること。
     EXPECT_EQ(COM_UTIL_OK,
-              message_result); // [確認_正常系] - com_util_error_message の戻り値が COM_UTIL_OK であること。
+              message_result);         // [確認_正常系] - com_util_error_message の戻り値が COM_UTIL_OK であること。
     EXPECT_STRNE("no error", message); // [確認_異常系] - 不正引数の詳細メッセージが no error ではないこと。
 }
 
@@ -205,7 +205,7 @@ TEST_F(potrSocketErrorTest, poll_multi_with_only_invalid_sockets_returns_no_read
 TEST_F(potrSocketErrorTest, tcp_recv_eof_clears_detail)
 {
     // Arrange
-    int sockets[2];
+    PotrSocket sockets[2];
     uint8_t value = 0U;
     com_util_error detail;
     ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)); // [状態] - 接続済みソケット ペアを用意する。

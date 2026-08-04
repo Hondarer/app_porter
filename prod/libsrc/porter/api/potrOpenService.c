@@ -46,7 +46,7 @@ static PotrSocket open_socket_unicast(struct in_addr bind_addr, uint16_t port)
 
     if (potr_socket_open(SOCK_DGRAM, &sock, &detail) != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
         return POTR_INVALID_SOCKET;
     }
 
@@ -60,7 +60,7 @@ static PotrSocket open_socket_unicast(struct in_addr bind_addr, uint16_t port)
 
     if (potr_bind(sock, &addr, &detail) != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
         potr_close_socket(sock);
         return POTR_INVALID_SOCKET;
     }
@@ -110,7 +110,7 @@ static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_add
 
     if (potr_socket_open(SOCK_DGRAM, &sock, &detail) != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
         return POTR_INVALID_SOCKET;
     }
 
@@ -124,7 +124,7 @@ static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_add
 
     if (potr_bind(sock, &addr, &detail) != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
         potr_close_socket(sock);
         return POTR_INVALID_SOCKET;
     }
@@ -140,7 +140,7 @@ static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_add
 
     if (potr_setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq), &detail) != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "setsockopt(IP_ADD_MEMBERSHIP) failed");
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "setsockopt(IP_ADD_MEMBERSHIP) failed");
         potr_close_socket(sock);
         return POTR_INVALID_SOCKET;
     }
@@ -179,7 +179,7 @@ static PotrSocket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, st
 
     if (potr_socket_open(SOCK_DGRAM, &sock, &detail) != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
         return POTR_INVALID_SOCKET;
     }
 
@@ -187,7 +187,7 @@ static PotrSocket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, st
     potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), NULL);
     if (potr_setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bcast, sizeof(bcast), &detail) != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "setsockopt(SO_BROADCAST) failed");
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "setsockopt(SO_BROADCAST) failed");
         potr_close_socket(sock);
         return POTR_INVALID_SOCKET;
     }
@@ -207,7 +207,7 @@ static PotrSocket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, st
 
     if (potr_bind(sock, &addr, &detail) != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
         potr_close_socket(sock);
         return POTR_INVALID_SOCKET;
     }
@@ -309,7 +309,7 @@ static int open_socket_tcp_receiver(PotrContext *ctx, int path_idx)
     result = potr_socket_open(SOCK_STREAM, &sock, &detail);
     if (result != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
         return result;
     }
 
@@ -324,7 +324,7 @@ static int open_socket_tcp_receiver(PotrContext *ctx, int path_idx)
     result = potr_bind(sock, &addr, &detail);
     if (result != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
         potr_close_socket(sock);
         return result;
     }
@@ -332,7 +332,7 @@ static int open_socket_tcp_receiver(PotrContext *ctx, int path_idx)
     result = potr_listen(sock, SOMAXCONN, &detail);
     if (result != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "listen failed");
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "listen failed");
         potr_close_socket(sock);
         return result;
     }

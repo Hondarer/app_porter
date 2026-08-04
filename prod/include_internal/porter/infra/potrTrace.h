@@ -47,15 +47,19 @@ extern "C"
     com_util_tracer *potr_trace_get(void);
 
     /**
-     *******************************************************************************
      *  @brief          ソケット失敗の文脈と詳細情報を共通形式で出力します。
+     *  @param[in]      file   呼び出し元のソース ファイル名。
+     *  @param[in]      line   呼び出し元の行番号。
      *  @param[in]      level  トレース レベル。
      *  @param[in]      detail ソケット エラーの詳細情報。NULL 不可。
      *  @param[in]      format 操作名やサービス ID を組み立てる printf 形式文字列。NULL 不可。
      *  @param[in]      ...    @p format に対応する引数。
-     *******************************************************************************
+     *
+     *  本関数を直接呼び出さず、POTR_TRACE_SOCKET_FAILURE マクロを使用してください。\n
+     *  発生位置を呼び出し元のものとして記録するため、file と line を引数で受け取ります。
      */
-    void potr_trace_socket_failure(com_util_trace_level_t level, const com_util_error *detail, const char *format, ...);
+    void potr_trace_socket_failure_at(const char *file, int line, com_util_trace_level_t level,
+                                      const com_util_error *detail, const char *format, ...);
 
 /**
  *  @brief          porter 内部ログ出力マクロ。
@@ -72,6 +76,22 @@ extern "C"
     @endcode
  */
 #define POTR_TRACE(level, ...) com_util_tracer_writef(potr_trace_get(), (level), NULL, __VA_ARGS__)
+
+/**
+ *  @brief          ソケット失敗をトレースするマクロ。
+ *
+ *  文脈の書式に続けて、詳細情報のドメイン、OS 固有コード、メッセージを出力します。\n
+ *  発生位置は本マクロを記述したファイルと行になります。
+ *
+ *  @par            例
+    @code{.c}
+    POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
+    POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+                              "connect_thread[service_id=%" PRId64 " path=%d]: connect() failed", service_id, path_idx);
+    @endcode
+ */
+#define POTR_TRACE_SOCKET_FAILURE(level, detail, ...) \
+    potr_trace_socket_failure_at(__FILE__, __LINE__, (level), (detail), __VA_ARGS__)
 
 #ifdef __cplusplus
 }

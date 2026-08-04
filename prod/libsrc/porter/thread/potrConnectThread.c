@@ -249,7 +249,7 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
 
     if (potr_socket_open(SOCK_STREAM, &sock, &detail) != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail,
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail,
                                   "connect_thread[service_id=%" PRId64 " path=%d]: socket() failed",
                                   ctx->service.service_id, path_idx);
         return POTR_INVALID_SOCKET;
@@ -274,7 +274,7 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
 
         if (potr_bind(sock, &bind_addr, &detail) != POTR_OK)
         {
-            potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail,
+            POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail,
                                       "connect_thread[service_id=%" PRId64 " path=%d]: bind() failed",
                                       ctx->service.service_id, path_idx);
             potr_close_socket(sock);
@@ -292,7 +292,7 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
         /* ブロッキング接続 */
         if (potr_connect(sock, &addr, &detail) != POTR_OK)
         {
-            potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+            POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
                                       "connect_thread[service_id=%" PRId64 " path=%d]: connect() failed (blocking)",
                                       ctx->service.service_id, path_idx);
             potr_close_socket(sock);
@@ -315,7 +315,7 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
         /* EINPROGRESS / WSAEWOULDBLOCK 以外はエラー */
         if (!potr_socket_error_is_connect_in_progress(&detail))
         {
-            potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+            POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
                                       "connect_thread[service_id=%" PRId64 " path=%d]: connect() failed",
                                       ctx->service.service_id, path_idx);
             potr_close_socket(sock);
@@ -356,7 +356,7 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
 
     if (potr_socket_get_pending_error(sock, &detail) != POTR_OK)
     {
-        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
                                   "connect_thread[service_id=%" PRId64 " path=%d]: SO_ERROR", ctx->service.service_id,
                                   path_idx);
         potr_close_socket(sock);
@@ -528,7 +528,7 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
                 break;
             }
             /* 一時的なエラー: ループ継続 */
-            potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+            POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
                                       "connect_thread[service_id=%" PRId64 " path=%d]: accept() error, retrying",
                                       ctx->service.service_id, path_idx);
             continue;
