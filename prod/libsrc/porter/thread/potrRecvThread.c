@@ -14,12 +14,6 @@
 #include <com_util/base/platform.h>
 #include <string.h>
 #include <inttypes.h>
-#include <errno.h>
-
-#if defined(PLATFORM_LINUX)
-    #include <arpa/inet.h>
-    #include <sys/select.h>
-#endif /* PLATFORM_LINUX */
 
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
@@ -172,8 +166,8 @@ static int build_ctrl_pkt_wire(const PotrContext *ctx, PotrPacket *pkt, uint8_t 
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
 
-        pkt->flags |= htons(POTR_FLAG_ENCRYPTED);
-        pkt->payload_len = htons((uint16_t)POTR_CRYPTO_TAG_SIZE);
+        pkt->flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
+        pkt->payload_len = potr_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         /* ノンス: session_id(4B) + flags(2B NBO) + ack_num(4B NBO) + padding(2B) */
         memcpy(nonce, &pkt->session_id, 4);
@@ -312,7 +306,7 @@ static void n1_send_ctrl_to_peer_paths(PotrContext *ctx, PotrPeerContext *peer, 
         if (peer->dest_addr[k].sin_family == 0)
             continue;
         potr_sendto(ctx->sock[k], wire_buf, wire_len, 0, (const struct sockaddr *)&peer->dest_addr[k],
-                    (int)sizeof(peer->dest_addr[k]));
+                    (int)sizeof(peer->dest_addr[k]), NULL);
     }
 }
 
@@ -406,7 +400,7 @@ static int slot_update_path_health(RecvSlot *slot, int path_idx)
     return set_path_ping_state(&slot->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
 }
 
-/* N:1: select() タイムアウト時にヘルスチェック タイムアウトを確認する */
+/* N:1: poll タイムアウト時にヘルスチェック タイムアウトを確認する */
 static void n1_check_health_timeout(PotrContext *ctx)
 {
     com_util_timespec now_ts;
@@ -521,9 +515,9 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
     {
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t dec_len = ctx->crypto_buf_size;
-        uint32_t sid_nbo = htonl(pkt->session_id);
-        uint16_t flags_nbo = htons((uint16_t)pkt->flags);
-        uint32_t seq_nbo = htonl(pkt->seq_num);
+        uint32_t sid_nbo = potr_hton32(pkt->session_id);
+        uint16_t flags_nbo = potr_hton16((uint16_t)pkt->flags);
+        uint32_t seq_nbo = potr_hton32(pkt->seq_num);
 
         memcpy(nonce, &sid_nbo, 4);
         memcpy(nonce + 4, &flags_nbo, 2);
@@ -575,8 +569,8 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
         uint8_t dummy[1];
         size_t dummy_len = sizeof(dummy);
         uint32_t val;
-        uint32_t sid_nbo = htonl(pkt->session_id);
-        uint16_t flags_nbo = htons((uint16_t)pkt->flags);
+        uint32_t sid_nbo = potr_hton32(pkt->session_id);
+        uint16_t flags_nbo = potr_hton16((uint16_t)pkt->flags);
         uint32_t val_nbo;
 
         if ((pkt->flags & (POTR_FLAG_NACK | POTR_FLAG_REJECT | POTR_FLAG_FIN_ACK)) != 0)
@@ -587,7 +581,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
         {
             val = pkt->seq_num;
         }
-        val_nbo = htonl(val);
+        val_nbo = potr_hton32(val);
 
         memcpy(nonce, &sid_nbo, 4);
         memcpy(nonce + 4, &flags_nbo, 2);
@@ -632,7 +626,7 @@ static int check_src_addr(const PotrContext *ctx, const struct sockaddr_in *send
     {
         if (ctx->service.src_port != 0)
         {
-            if (ntohs(sender->sin_port) == ctx->service.src_port)
+            if (potr_ntoh16(sender->sin_port) == ctx->service.src_port)
             {
                 return 1;
             }
@@ -1002,7 +996,7 @@ static int reorder_gap_ready(PotrContext *ctx, uint32_t nack_num)
     return 0; /* まだ待機中 */
 }
 
-/* select() タイムアウト時に、リオーダー待機中の欠番がタイムアウトしていれば処理する。
+/* poll タイムアウト時に、リオーダー待機中の欠番がタイムアウトしていれば処理する。
    通常モード: NACK を送出する。
    RAW モード: DISCONNECTED を発行してセッションをリセットし、次のパケットで再同期する。 */
 static void check_reorder_timeout(PotrContext *ctx)
@@ -1057,7 +1051,7 @@ static void send_nack(PotrContext *ctx, uint32_t nack_seq)
         if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
         {
             potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[i],
-                        (int)sizeof(ctx->dest_addr[i]));
+                        (int)sizeof(ctx->dest_addr[i]), NULL);
         }
         else
         {
@@ -1066,7 +1060,7 @@ static void send_nack(PotrContext *ctx, uint32_t nack_seq)
 
             if (ctx->service.src_port != 0)
             {
-                port = htons(ctx->service.src_port);
+                port = potr_hton16(ctx->service.src_port);
             }
             else
             {
@@ -1081,7 +1075,7 @@ static void send_nack(PotrContext *ctx, uint32_t nack_seq)
             dest.sin_addr = ctx->src_addr_resolved[i];
             dest.sin_port = port;
 
-            potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&dest, (int)sizeof(dest));
+            potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&dest, (int)sizeof(dest), NULL);
         }
     }
 }
@@ -1108,7 +1102,7 @@ static void send_reject(PotrContext *ctx, uint32_t seq_num)
     for (i = 0; i < ctx->n_path; i++)
     {
         potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[i],
-                    (int)sizeof(ctx->dest_addr[i]));
+                    (int)sizeof(ctx->dest_addr[i]), NULL);
     }
 }
 
@@ -1514,10 +1508,11 @@ static void n1_handle_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *w
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
                    "recv[service_id=%" PRId64 "]: new peer=%u from %u.%u.%u.%u:%u (CONNECTED pending PING+NORMAL)",
                    ctx->service.service_id, (unsigned)peer->peer_id,
-                   (unsigned)((ntohl(sender_addr->sin_addr.s_addr) >> 24) & 0xFF),
-                   (unsigned)((ntohl(sender_addr->sin_addr.s_addr) >> 16) & 0xFF),
-                   (unsigned)((ntohl(sender_addr->sin_addr.s_addr) >> 8) & 0xFF),
-                   (unsigned)(ntohl(sender_addr->sin_addr.s_addr) & 0xFF), (unsigned)ntohs(sender_addr->sin_port));
+                   (unsigned)((potr_ntoh32(sender_addr->sin_addr.s_addr) >> 24) & 0xFF),
+                   (unsigned)((potr_ntoh32(sender_addr->sin_addr.s_addr) >> 16) & 0xFF),
+                   (unsigned)((potr_ntoh32(sender_addr->sin_addr.s_addr) >> 8) & 0xFF),
+                   (unsigned)(potr_ntoh32(sender_addr->sin_addr.s_addr) & 0xFF),
+                   (unsigned)potr_ntoh16(sender_addr->sin_port));
     }
 
     /* FIN: ピアの正常終了通知 */
@@ -1574,7 +1569,7 @@ static void n1_handle_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *w
                 if (peer->dest_addr[j].sin_family == 0)
                     continue;
                 potr_sendto(ctx->sock[j], ctx->recv_buf, wire_len, 0, (const struct sockaddr *)&peer->dest_addr[j],
-                            (int)sizeof(peer->dest_addr[j]));
+                            (int)sizeof(peer->dest_addr[j]), NULL);
             }
         }
         else
@@ -1745,7 +1740,7 @@ static int sender_handle_packet(PotrContext *ctx, const PotrPacket *pkt)
                 for (j = 0; j < ctx->n_path; j++)
                 {
                     potr_sendto(ctx->sock[j], ctx->recv_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[j],
-                                (int)sizeof(ctx->dest_addr[j]));
+                                (int)sizeof(ctx->dest_addr[j]), NULL);
                 }
             }
             else
@@ -1991,48 +1986,31 @@ static void recv_thread_func(void *arg)
 
     while (ctx->running[0])
     {
-        fd_set readfds;
-        struct timeval tv;
-        int ret;
-        int maxfd = -1;
+        unsigned char ready[POTR_MAX_PATH];
+        com_util_error detail;
+        int poll_result;
         int i;
 
-        FD_ZERO(&readfds);
-        for (i = 0; i < ctx->n_path; i++)
-        {
-            if (ctx->sock[i] == POTR_INVALID_SOCKET)
-                continue;
-#if defined(PLATFORM_LINUX)
-            FD_SET(ctx->sock[i], &readfds);
-            if (ctx->sock[i] > maxfd)
-                maxfd = ctx->sock[i];
-#elif defined(PLATFORM_WINDOWS)
-            FD_SET(ctx->sock[i], &readfds);
-            /* Windows では SOCKET は UINT_PTR。maxfd の代わりに n_path を使う */
-#endif /* PLATFORM_ */
-        }
-
-#if defined(PLATFORM_WINDOWS)
-        /* Windows: select の第 1 引数は無視されるが 0 でなく n_path を渡す */
-        maxfd = ctx->n_path;
-#endif /* PLATFORM_WINDOWS */
-
-        if (maxfd < 0)
-            break;
-
-        tv.tv_sec = (long)(poll_ms / 1000U);
-        tv.tv_usec = (long)((poll_ms % 1000U) * 1000U);
-
-        ret = select(maxfd + 1, &readfds, NULL, NULL, &tv);
-
-        if (ret < 0)
+        poll_result = potr_poll_readable_multi(ctx->sock, (size_t)ctx->n_path, (int)poll_ms, ready, &detail);
+        if (poll_result != POTR_OK)
         {
             if (!ctx->running[0])
                 break;
-            continue;
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "recv[service_id=%" PRId64 "]: socket poll failed: rc=%d",
+                       ctx->service.service_id, poll_result);
+            break;
         }
 
-        if (ret == 0)
+        int has_ready = 0;
+        for (i = 0; i < ctx->n_path; ++i)
+        {
+            if (ready[i] != 0U)
+            {
+                has_ready = 1;
+                break;
+            }
+        }
+        if (!has_ready)
         {
             if (ctx->is_multi_peer)
             {
@@ -2056,14 +2034,14 @@ static void recv_thread_func(void *arg)
 
             if (ctx->sock[i] == POTR_INVALID_SOCKET)
                 continue;
-            if (!FD_ISSET(ctx->sock[i], &readfds))
+            if (ready[i] == 0U)
                 continue;
 
             memset(&sender_addr, 0, sizeof(sender_addr));
             sender_len = (int)sizeof(sender_addr);
 
             recv_len = potr_recvfrom(ctx->sock[i], buf, PACKET_HEADER_SIZE + ctx->global.max_payload, 0,
-                                     (struct sockaddr *)&sender_addr, &sender_len);
+                                     (struct sockaddr *)&sender_addr, &sender_len, NULL);
             if (recv_len <= 0)
             {
                 if (!ctx->running[0])
@@ -2125,14 +2103,14 @@ static void recv_thread_func(void *arg)
  * 戻り値: 1 = データあり、0 = タイムアウト、-1 = エラー。 */
 static int tcp_wait_readable(PotrSocket fd, int wait_ms)
 {
-    return potr_poll_readable(fd, wait_ms);
+    return potr_poll_readable(fd, wait_ms, NULL);
 }
 
 /* TCP ソケットから正確に n バイト読み取る。
  * 戻り値: 成功時は POTR_OK、切断時 (recv が 0 を返した) は POTR_ERR_EOF、エラー時は POTR_ERR_IO。 */
 static int tcp_read_all(PotrSocket fd, uint8_t *buf, size_t n)
 {
-    return potr_tcp_recv_all(fd, buf, n);
+    return potr_tcp_recv_all(fd, buf, n, NULL);
 }
 
 /* TCP ストリーム受信スレッド本体 (path ごと) */
@@ -2208,7 +2186,7 @@ static void tcp_recv_thread_func(void *arg)
             {
                 uint16_t wpl;
                 memcpy(&wpl, buf + 34, sizeof(wpl));
-                wire_payload_len = ntohs(wpl);
+                wire_payload_len = potr_ntoh16(wpl);
             }
         }
         else
@@ -2259,7 +2237,7 @@ static void tcp_recv_thread_func(void *arg)
             {
                 uint16_t wpl;
                 memcpy(&wpl, buf + 34, sizeof(wpl));
-                wire_payload_len = ntohs(wpl);
+                wire_payload_len = potr_ntoh16(wpl);
             }
 
             /* 3. ペイロード長バリデーション */
@@ -2487,12 +2465,7 @@ int comm_recv_thread_stop(PotrContext *ctx)
         {
             if (ctx->sock[i] != POTR_INVALID_SOCKET)
             {
-#if defined(PLATFORM_LINUX)
-                shutdown(ctx->sock[i], SHUT_RD);
-#elif defined(PLATFORM_WINDOWS)
-                potr_close_socket(ctx->sock[i]);
-                ctx->sock[i] = POTR_INVALID_SOCKET;
-#endif /* PLATFORM_ */
+                (void)potr_shutdown_receive(&ctx->sock[i], NULL);
             }
         }
     }

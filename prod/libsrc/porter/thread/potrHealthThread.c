@@ -165,8 +165,8 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
         size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
         int encrypt_failed = 0;
 
-        ping_pkt.flags |= htons(POTR_FLAG_ENCRYPTED);
-        ping_pkt.payload_len = htons((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
+        ping_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
+        ping_pkt.payload_len = potr_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
 
         memcpy(nonce, &ping_pkt.session_id, 4);
         memcpy(nonce + 4, &ping_pkt.flags, 2);
@@ -188,7 +188,7 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
             else
             {
                 wire_len = PACKET_HEADER_SIZE + enc_out;
-                send_result = potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len);
+                send_result = potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, NULL);
             }
         }
         com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
@@ -210,7 +210,7 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
         {
             potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-            send_result = potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len);
+            send_result = potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, NULL);
         }
         com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
     }
@@ -292,8 +292,8 @@ static void health_thread_func(void *arg)
                     uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
                     size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
 
-                    ping_pkt.flags |= htons(POTR_FLAG_ENCRYPTED);
-                    ping_pkt.payload_len = htons((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
+                    ping_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
+                    ping_pkt.payload_len = potr_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
 
                     memcpy(nonce, &ping_pkt.session_id, 4);
                     memcpy(nonce + 4, &ping_pkt.flags, 2);
@@ -316,7 +316,7 @@ static void health_thread_func(void *arg)
                             continue;
                         potr_sendto(ctx->sock[k], wire_buf, wire_len, 0,
                                     (const struct sockaddr *)&ctx->peers[i].dest_addr[k],
-                                    (int)sizeof(ctx->peers[i].dest_addr[k]));
+                                    (int)sizeof(ctx->peers[i].dest_addr[k]), NULL);
                     }
                 }
                 else
@@ -332,7 +332,7 @@ static void health_thread_func(void *arg)
                             continue;
                         potr_sendto(ctx->sock[k], wire_buf, wire_len, 0,
                                     (const struct sockaddr *)&ctx->peers[i].dest_addr[k],
-                                    (int)sizeof(ctx->peers[i].dest_addr[k]));
+                                    (int)sizeof(ctx->peers[i].dest_addr[k]), NULL);
                     }
                 }
 
@@ -383,8 +383,8 @@ static void health_thread_func(void *arg)
                 uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
                 size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
 
-                ping_pkt.flags |= htons(POTR_FLAG_ENCRYPTED);
-                ping_pkt.payload_len = htons((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
+                ping_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
+                ping_pkt.payload_len = potr_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
 
                 memcpy(nonce, &ping_pkt.session_id, 4);
                 memcpy(nonce + 4, &ping_pkt.flags, 2);
@@ -404,8 +404,9 @@ static void health_thread_func(void *arg)
                 for (k = 0; k < ctx->n_path; k++)
                 {
                     int sent_len;
-                    sent_len = potr_sendto(ctx->sock[k], wire_buf, wire_len, 0,
-                                           (const struct sockaddr *)&ctx->dest_addr[k], (int)sizeof(ctx->dest_addr[k]));
+                    sent_len =
+                        potr_sendto(ctx->sock[k], wire_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[k],
+                                    (int)sizeof(ctx->dest_addr[k]), NULL);
                     if (sent_len == (int)wire_len)
                     {
                         sent_any = 1;
@@ -422,8 +423,9 @@ static void health_thread_func(void *arg)
                 for (k = 0; k < ctx->n_path; k++)
                 {
                     int sent_len;
-                    sent_len = potr_sendto(ctx->sock[k], wire_buf, wire_len, 0,
-                                           (const struct sockaddr *)&ctx->dest_addr[k], (int)sizeof(ctx->dest_addr[k]));
+                    sent_len =
+                        potr_sendto(ctx->sock[k], wire_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[k],
+                                    (int)sizeof(ctx->dest_addr[k]), NULL);
                     if (sent_len == (int)wire_len)
                     {
                         sent_any = 1;

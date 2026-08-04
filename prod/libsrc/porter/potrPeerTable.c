@@ -16,10 +16,6 @@
 #include <inttypes.h>
 #include <string.h>
 
-#if defined(PLATFORM_LINUX)
-    #include <arpa/inet.h>
-#endif /* PLATFORM_LINUX */
-
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_spec.h>
@@ -30,6 +26,7 @@
 #include <porter/protocol/window.h>
 #include <porter/infra/potrTrace.h>
 #include <porter/infra/potrPlatform.h>
+#include <porter/util/potrIpAddr.h>
 #include <com_util/crypto/crypto.h>
 #include <com_util/crypto/random.h>
 
@@ -115,8 +112,8 @@ void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
 
     if (has_data)
     {
-        fin_pkt.flags |= htons(POTR_FLAG_FIN_TARGET_VALID);
-        fin_pkt.ack_num = htonl(wire_target_seq);
+        fin_pkt.flags |= potr_hton16(POTR_FLAG_FIN_TARGET_VALID);
+        fin_pkt.ack_num = potr_hton32(wire_target_seq);
     }
 
     if (ctx->service.encrypt_enabled)
@@ -125,8 +122,8 @@ void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
 
-        fin_pkt.flags |= htons(POTR_FLAG_ENCRYPTED);
-        fin_pkt.payload_len = htons((uint16_t)POTR_CRYPTO_TAG_SIZE);
+        fin_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
+        fin_pkt.payload_len = potr_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         /* ノンス: session_id(4B) + flags(2B, FIN|ENCRYPTED NBO) + 0(4B) + padding(2B) */
         memcpy(nonce, &fin_pkt.session_id, 4);
@@ -149,7 +146,7 @@ void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
             if (ctx->sock[i] == POTR_INVALID_SOCKET)
                 continue;
             potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&peer->dest_addr[i],
-                        (int)sizeof(peer->dest_addr[i]));
+                        (int)sizeof(peer->dest_addr[i]), NULL);
         }
     }
     else
@@ -163,7 +160,7 @@ void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
             if (ctx->sock[i] == POTR_INVALID_SOCKET)
                 continue;
             potr_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, 0,
-                        (const struct sockaddr *)&peer->dest_addr[i], (int)sizeof(peer->dest_addr[i]));
+                        (const struct sockaddr *)&peer->dest_addr[i], (int)sizeof(peer->dest_addr[i]), NULL);
         }
     }
 }
@@ -285,11 +282,11 @@ PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_
     if (ctx->n_peers >= ctx->max_peers)
     {
         char ip_str[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &sender_addr->sin_addr, ip_str, sizeof(ip_str));
+        (void)potr_ipv4_to_string(sender_addr->sin_addr, ip_str, sizeof(ip_str), NULL);
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                    "peer_create: service_id=%" PRId64 " max_peers=%d reached, "
                    "rejecting new connection from %s:%u",
-                   ctx->service.service_id, ctx->max_peers, ip_str, (unsigned)ntohs(sender_addr->sin_port));
+                   ctx->service.service_id, ctx->max_peers, ip_str, (unsigned)potr_ntoh16(sender_addr->sin_port));
         return NULL;
     }
 

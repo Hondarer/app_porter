@@ -29,7 +29,7 @@ static int tcp_send_all_locked(PotrSocket fd, com_util_local_lock *mtx, const ui
     int result;
 
     com_util_local_lock_lock(mtx, COM_UTIL_SYNC_WAIT_FOREVER);
-    result = potr_tcp_send(fd, buf, len);
+    result = potr_tcp_send(fd, buf, len, NULL);
     com_util_local_lock_unlock(mtx);
 
     return result;
@@ -54,10 +54,10 @@ int potr_tcp_send_control_packet(const PotrContext *ctx, PotrPacket *pkt, uint32
     {
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
-        uint32_t nonce_nbo = htonl(nonce_val);
+        uint32_t nonce_nbo = potr_hton32(nonce_val);
 
-        pkt->flags |= htons(POTR_FLAG_ENCRYPTED);
-        pkt->payload_len = htons((uint16_t)POTR_CRYPTO_TAG_SIZE);
+        pkt->flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
+        pkt->payload_len = potr_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         memcpy(nonce, &pkt->session_id, 4);
         memcpy(nonce + 4, &pkt->flags, 2);

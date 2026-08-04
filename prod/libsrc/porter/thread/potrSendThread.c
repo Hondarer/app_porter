@@ -58,8 +58,8 @@ static int should_track_valid_data_send_time(const PotrContext *ctx)
 /* ペイロード エレメントを packed_buf に追記する */
 static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const PotrPayloadElem *entry)
 {
-    uint16_t flags_nbo = htons(entry->flags);
-    uint32_t plen_nbo = htonl((uint32_t)entry->payload_len);
+    uint16_t flags_nbo = potr_hton16(entry->flags);
+    uint32_t plen_nbo = potr_hton32((uint32_t)entry->payload_len);
 
     memcpy(packed_buf + *packed_len, &flags_nbo, 2);
     *packed_len += 2;
@@ -112,8 +112,8 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_len = ctx->crypto_buf_size;
 
-        outer_pkt.flags |= htons(POTR_FLAG_ENCRYPTED);
-        outer_pkt.payload_len = htons((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
+        outer_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
+        outer_pkt.payload_len = potr_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
 
         /* ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
          * outer_pkt の各フィールドはすでに NBO */
@@ -194,7 +194,7 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
                     continue;
 
                 /* 送信バッファーの空きを確認 (非ブロッキング) */
-                pr = potr_poll_writable(ctx->tcp_conn_fd[i], 0);
+                pr = potr_poll_writable(ctx->tcp_conn_fd[i], 0, NULL);
                 if (pr > 0)
                 {
                     if (ctx->buf_full_suppress_cnt[i] > 0 && ++ctx->buf_full_suppress_cnt[i] > 10)
@@ -202,7 +202,7 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
                         ctx->buf_full_suppress_cnt[i] = 0;
                     }
                     com_util_local_lock_lock(ctx->tcp_send_mutex[i], COM_UTIL_SYNC_WAIT_FOREVER);
-                    potr_tcp_send(ctx->tcp_conn_fd[i], ctx->send_wire_buf, wire_len);
+                    potr_tcp_send(ctx->tcp_conn_fd[i], ctx->send_wire_buf, wire_len, NULL);
                     com_util_local_lock_unlock(ctx->tcp_send_mutex[i]);
                 }
                 else
@@ -227,7 +227,7 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
         {
             int sent_len;
             sent_len = potr_sendto(ctx->sock[i], ctx->send_wire_buf, wire_len, 0,
-                                   (const struct sockaddr *)&ctx->dest_addr[i], (int)sizeof(ctx->dest_addr[i]));
+                                   (const struct sockaddr *)&ctx->dest_addr[i], (int)sizeof(ctx->dest_addr[i]), NULL);
             if (sent_len == (int)wire_len)
             {
                 sent_any = 1;
@@ -270,8 +270,8 @@ static void flush_packed_peer(PotrContext *ctx, PotrPeerContext *peer, size_t pa
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_len = ctx->crypto_buf_size;
 
-        outer_pkt.flags |= htons(POTR_FLAG_ENCRYPTED);
-        outer_pkt.payload_len = htons((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
+        outer_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
+        outer_pkt.payload_len = potr_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
 
         /* ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
          * outer_pkt の各フィールドはすでに NBO */
@@ -325,7 +325,7 @@ static void flush_packed_peer(PotrContext *ctx, PotrPeerContext *peer, size_t pa
             if (peer->dest_addr[k].sin_family == 0)
                 continue;
             potr_sendto(ctx->sock[k], ctx->send_wire_buf, wire_len, 0, (const struct sockaddr *)&peer->dest_addr[k],
-                        (int)sizeof(peer->dest_addr[k]));
+                        (int)sizeof(peer->dest_addr[k]), NULL);
         }
     }
 }

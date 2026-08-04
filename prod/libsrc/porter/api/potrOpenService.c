@@ -33,6 +33,7 @@
 #include <porter/thread/potrSendThread.h>
 #include <porter/util/potrIpAddr.h>
 #include <porter/infra/potrTrace.h>
+#include <porter/infra/potrPlatform.h>
 
 /* ソケットを作成して bind する。成功時は PotrSocket を返す。失敗時は POTR_INVALID_SOCKET。
    bind_addr: bind する IPv4 アドレス。port: bind するポート番号 (0 = OS 自動選定)。 */
@@ -41,22 +42,25 @@ static PotrSocket open_socket_unicast(struct in_addr bind_addr, uint16_t port)
     PotrSocket sock;
     struct sockaddr_in addr;
     int reuse = 1;
+    com_util_error detail;
 
-    sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock == POTR_INVALID_SOCKET)
+    if (potr_socket_open(SOCK_DGRAM, &sock, &detail) != POTR_OK)
     {
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
         return POTR_INVALID_SOCKET;
     }
 
-    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
+    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), NULL);
 
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr = bind_addr;
-    addr.sin_port = htons(port);
+    addr.sin_port = potr_hton16(port);
 
-    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    if (potr_bind(sock, &addr, &detail) != POTR_OK)
     {
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
         potr_close_socket(sock);
         return POTR_INVALID_SOCKET;
     }
@@ -92,6 +96,7 @@ static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_add
     struct sockaddr_in addr;
     struct ip_mreq mreq;
     int reuse = 1;
+    com_util_error detail;
     /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
     uint16_t bind_port;
     if (is_receiver)
@@ -103,21 +108,23 @@ static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_add
         bind_port = def->src_port;
     }
 
-    sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock == POTR_INVALID_SOCKET)
+    if (potr_socket_open(SOCK_DGRAM, &sock, &detail) != POTR_OK)
     {
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
         return POTR_INVALID_SOCKET;
     }
 
-    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
+    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), NULL);
 
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons(bind_port);
+    addr.sin_addr.s_addr = potr_hton32(INADDR_ANY);
+    addr.sin_port = potr_hton16(bind_port);
 
-    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    if (potr_bind(sock, &addr, &detail) != POTR_OK)
     {
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
         potr_close_socket(sock);
         return POTR_INVALID_SOCKET;
     }
@@ -131,8 +138,9 @@ static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_add
     }
     mreq.imr_interface = src_if;
 
-    if (potr_setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0)
+    if (potr_setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq), &detail) != POTR_OK)
     {
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "setsockopt(IP_ADD_MEMBERSHIP) failed");
         potr_close_socket(sock);
         return POTR_INVALID_SOCKET;
     }
@@ -140,7 +148,7 @@ static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_add
     /* 送信者: マルチキャスト送信インターフェースを設定する */
     if (!is_receiver)
     {
-        potr_setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, &src_if, sizeof(src_if));
+        potr_setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, &src_if, sizeof(src_if), NULL);
     }
 
     return sock;
@@ -157,6 +165,7 @@ static PotrSocket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, st
     struct sockaddr_in addr;
     int reuse = 1;
     int bcast = 1;
+    com_util_error detail;
     /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
     uint16_t bind_port;
     if (is_receiver)
@@ -168,14 +177,20 @@ static PotrSocket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, st
         bind_port = src_port;
     }
 
-    sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock == POTR_INVALID_SOCKET)
+    if (potr_socket_open(SOCK_DGRAM, &sock, &detail) != POTR_OK)
     {
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
         return POTR_INVALID_SOCKET;
     }
 
-    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-    potr_setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bcast, sizeof(bcast));
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
+    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), NULL);
+    if (potr_setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bcast, sizeof(bcast), &detail) != POTR_OK)
+    {
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "setsockopt(SO_BROADCAST) failed");
+        potr_close_socket(sock);
+        return POTR_INVALID_SOCKET;
+    }
 
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -186,12 +201,13 @@ static PotrSocket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, st
     }
     else
     {
-        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        addr.sin_addr.s_addr = potr_hton32(INADDR_ANY);
     }
-    addr.sin_port = htons(bind_port);
+    addr.sin_port = potr_hton16(bind_port);
 
-    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    if (potr_bind(sock, &addr, &detail) != POTR_OK)
     {
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
         potr_close_socket(sock);
         return POTR_INVALID_SOCKET;
     }
@@ -265,6 +281,7 @@ static int open_socket_tcp_receiver(PotrContext *ctx, int path_idx)
     int reuse = 1;
     struct in_addr bind_ip;
     int result;
+    com_util_error detail;
 
     if (ctx->service.dst_addr[path_idx][0] != '\0')
     {
@@ -277,7 +294,7 @@ static int open_socket_tcp_receiver(PotrContext *ctx, int path_idx)
     }
     else
     {
-        bind_ip.s_addr = htonl(INADDR_ANY);
+        bind_ip.s_addr = potr_hton32(INADDR_ANY);
     }
 
     if (ctx->service.src_addr[path_idx][0] != '\0')
@@ -289,29 +306,35 @@ static int open_socket_tcp_receiver(PotrContext *ctx, int path_idx)
         }
     }
 
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == POTR_INVALID_SOCKET)
+    result = potr_socket_open(SOCK_STREAM, &sock, &detail);
+    if (result != POTR_OK)
     {
-        return POTR_ERR_IO;
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        return result;
     }
 
-    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
+    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), NULL);
 
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr = bind_ip;
-    addr.sin_port = htons(ctx->service.dst_port);
+    addr.sin_port = potr_hton16(ctx->service.dst_port);
 
-    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    result = potr_bind(sock, &addr, &detail);
+    if (result != POTR_OK)
     {
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
         potr_close_socket(sock);
-        return POTR_ERR_IO;
+        return result;
     }
 
-    if (listen(sock, SOMAXCONN) < 0)
+    result = potr_listen(sock, SOMAXCONN, &detail);
+    if (result != POTR_OK)
     {
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "listen failed");
         potr_close_socket(sock);
-        return POTR_ERR_IO;
+        return result;
     }
 
     ctx->tcp_listen_sock[path_idx] = sock;
@@ -602,7 +625,7 @@ static int open_paths_unicast_bidir(PotrContext *ctx, PotrRole role)
 
         if (ctx->service.dst_addr[0][0] == '\0')
         {
-            bind_addr.s_addr = htonl(INADDR_ANY);
+            bind_addr.s_addr = potr_hton32(INADDR_ANY);
         }
         else
         {
@@ -667,7 +690,7 @@ static int open_paths_unicast_bidir(PotrContext *ctx, PotrRole role)
                 }
                 else
                 {
-                    bind_addr.s_addr = htonl(INADDR_ANY);
+                    bind_addr.s_addr = potr_hton32(INADDR_ANY);
                 }
                 ctx->sock[i] = open_socket_unicast(bind_addr, ctx->service.src_port);
             }
@@ -717,7 +740,7 @@ static int open_paths_unicast_bidir_n1(PotrContext *ctx)
     {
         /* dst_addr すべて省略: INADDR_ANY で 1 ソケット */
         struct in_addr any_addr;
-        any_addr.s_addr = htonl(INADDR_ANY);
+        any_addr.s_addr = potr_hton32(INADDR_ANY);
         ctx->sock[0] = open_socket_unicast(any_addr, ctx->service.dst_port);
         if (ctx->sock[0] == POTR_INVALID_SOCKET)
         {
@@ -899,13 +922,13 @@ static int setup_dest_addr(PotrContext *ctx, PotrRole role)
             {
                 /* SENDER: dst_addr:dst_port (RECEIVER の bind アドレス) へ送信 */
                 ctx->dest_addr[i].sin_addr = ctx->dst_addr_resolved[i];
-                ctx->dest_addr[i].sin_port = htons(ctx->service.dst_port);
+                ctx->dest_addr[i].sin_port = potr_hton16(ctx->service.dst_port);
             }
             else
             {
                 /* RECEIVER: src_addr:src_port (SENDER の bind アドレス) へ送信 */
                 ctx->dest_addr[i].sin_addr = ctx->src_addr_resolved[i];
-                ctx->dest_addr[i].sin_port = htons(ctx->service.src_port);
+                ctx->dest_addr[i].sin_port = potr_hton16(ctx->service.src_port);
             }
         }
         break;
@@ -916,7 +939,7 @@ static int setup_dest_addr(PotrContext *ctx, PotrRole role)
             memset(&ctx->dest_addr[i], 0, sizeof(ctx->dest_addr[i]));
             ctx->dest_addr[i].sin_family = AF_INET;
             ctx->dest_addr[i].sin_addr = ctx->dst_addr_resolved[i];
-            ctx->dest_addr[i].sin_port = htons(ctx->service.dst_port);
+            ctx->dest_addr[i].sin_port = potr_hton16(ctx->service.dst_port);
         }
         break;
 
@@ -932,7 +955,7 @@ static int setup_dest_addr(PotrContext *ctx, PotrRole role)
             memset(&ctx->dest_addr[i], 0, sizeof(ctx->dest_addr[i]));
             ctx->dest_addr[i].sin_family = AF_INET;
             ctx->dest_addr[i].sin_addr = mcast_ip;
-            ctx->dest_addr[i].sin_port = htons(ctx->service.dst_port);
+            ctx->dest_addr[i].sin_port = potr_hton16(ctx->service.dst_port);
         }
         break;
     }
@@ -949,7 +972,7 @@ static int setup_dest_addr(PotrContext *ctx, PotrRole role)
             memset(&ctx->dest_addr[i], 0, sizeof(ctx->dest_addr[i]));
             ctx->dest_addr[i].sin_family = AF_INET;
             ctx->dest_addr[i].sin_addr = bcast_ip;
-            ctx->dest_addr[i].sin_port = htons(ctx->service.dst_port);
+            ctx->dest_addr[i].sin_port = potr_hton16(ctx->service.dst_port);
         }
         break;
     }
@@ -1184,7 +1207,7 @@ int potrOpenService(const PotrGlobalConfig *global, const PotrServiceDef *servic
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (potr_socket_lib_init() != 0)
+    if (potr_socket_lib_init(NULL) != POTR_OK)
     {
         return POTR_ERR_IO;
     }

@@ -32,6 +32,7 @@
 #include <porter/potrPeerTable.h>
 
 #include <porter/infra/potrPlatform.h>
+#include <porter/infra/potrSocketError.h>
 #include <porter/infra/potrSendQueue.h>
 #include <porter/infra/potrTrace.h>
 

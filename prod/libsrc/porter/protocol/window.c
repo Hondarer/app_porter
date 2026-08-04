@@ -15,17 +15,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(PLATFORM_LINUX)
-    #include <arpa/inet.h>
-#elif defined(PLATFORM_WINDOWS)
-    #include <com_util/base/windows_sdk.h>
-#endif /* PLATFORM_ */
-
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
 #include <porter/protocol/seqnum.h>
 #include <porter/protocol/window.h>
+#include <porter/infra/potrPlatform.h>
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -151,7 +146,7 @@ int window_send_push(PotrWindow *win, const PotrPacket *packet)
         uint8_t *slot = win->payload_pool + idx * (size_t)win->max_payload;
         win->packets[idx] = *packet;      /* 構造体コピー */
         win->packets[idx].payload = slot; /* プール スロットを設定 */
-        memcpy(slot, packet->payload, (size_t)ntohs(packet->payload_len));
+        memcpy(slot, packet->payload, (size_t)potr_ntoh16(packet->payload_len));
     }
 
     win->valid[idx] = 1;

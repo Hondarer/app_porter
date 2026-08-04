@@ -95,8 +95,8 @@ static void send_fin(PotrContext *ctx)
 
     if (has_data)
     {
-        fin_pkt.flags |= htons(POTR_FLAG_FIN_TARGET_VALID);
-        fin_pkt.ack_num = htonl(wire_target_seq);
+        fin_pkt.flags |= potr_hton16(POTR_FLAG_FIN_TARGET_VALID);
+        fin_pkt.ack_num = potr_hton32(wire_target_seq);
     }
 
     if (ctx->service.encrypt_enabled)
@@ -105,8 +105,8 @@ static void send_fin(PotrContext *ctx)
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
 
-        fin_pkt.flags |= htons(POTR_FLAG_ENCRYPTED);
-        fin_pkt.payload_len = htons((uint16_t)POTR_CRYPTO_TAG_SIZE);
+        fin_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
+        fin_pkt.payload_len = potr_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         /* ノンス: session_id(4B) + flags(2B, FIN|ENCRYPTED NBO) + 0(4B) + padding(2B) */
         memcpy(nonce, &fin_pkt.session_id, 4);
@@ -127,7 +127,7 @@ static void send_fin(PotrContext *ctx)
             if (ctx->sock[i] == POTR_INVALID_SOCKET)
                 continue;
             potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[i],
-                        (int)sizeof(ctx->dest_addr[i]));
+                        (int)sizeof(ctx->dest_addr[i]), NULL);
         }
     }
     else
@@ -139,7 +139,7 @@ static void send_fin(PotrContext *ctx)
             if (ctx->sock[i] == POTR_INVALID_SOCKET)
                 continue;
             potr_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, 0,
-                        (const struct sockaddr *)&ctx->dest_addr[i], (int)sizeof(ctx->dest_addr[i]));
+                        (const struct sockaddr *)&ctx->dest_addr[i], (int)sizeof(ctx->dest_addr[i]), NULL);
         }
     }
 }
@@ -175,8 +175,8 @@ static int send_tcp_fin(PotrContext *ctx, uint32_t fin_target_seq)
         return result;
     }
 
-    fin_pkt.flags |= htons(POTR_FLAG_FIN_TARGET_VALID);
-    fin_pkt.ack_num = htonl(fin_target_seq);
+    fin_pkt.flags |= potr_hton16(POTR_FLAG_FIN_TARGET_VALID);
+    fin_pkt.ack_num = potr_hton32(fin_target_seq);
 
     return potr_tcp_send_control_packet(ctx, &fin_pkt, 0U);
 }
@@ -436,7 +436,7 @@ int potrCloseService(PotrContext *handle)
                 if (parse_ipv4_addr(ctx->service.multicast_group, &mreq.imr_multiaddr) == POTR_OK)
                 {
                     mreq.imr_interface = ctx->src_addr_resolved[i];
-                    potr_setsockopt(ctx->sock[i], IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq));
+                    potr_setsockopt(ctx->sock[i], IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq), NULL);
                 }
             }
             potr_close_socket(ctx->sock[i]);

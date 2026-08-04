@@ -23,6 +23,9 @@
  */
 
 #include <com_util/trace/tracer.h>
+#include <com_util/base/error_message.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 #include <porter/porter_spec.h>
 
@@ -52,6 +55,26 @@ com_util_tracer *potr_trace_get(void)
         }
     }
     return s_trace;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_trace_socket_failure(const com_util_trace_level_t level, const com_util_error *detail, const char *format,
+                               ...)
+{
+    char context[256];
+    char message[256];
+    va_list args;
+
+    if ((detail == NULL) || (format == NULL))
+    {
+        return;
+    }
+    va_start(args, format);
+    (void)vsnprintf(context, sizeof(context), format, args);
+    va_end(args);
+    (void)com_util_error_message(message, sizeof(message), detail);
+    POTR_TRACE(level, "%s: domain=%d code=%lu: %s", context, (int)detail->domain, detail->code, message);
 }
 
 /* ── 公開 API ─────────────────────────────────────────────────────────── */

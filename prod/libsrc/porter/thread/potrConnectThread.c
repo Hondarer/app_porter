@@ -21,11 +21,6 @@
 #include <inttypes.h>
 #include <string.h>
 
-#if defined(PLATFORM_LINUX)
-    #include <arpa/inet.h>
-    #include <errno.h>
-#endif /* PLATFORM_LINUX */
-
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
@@ -36,11 +31,13 @@
 #include <porter/protocol/window.h>
 #include <porter/infra/potrTrace.h>
 #include <porter/infra/potrPlatform.h>
+#include <porter/infra/potrSocketError.h>
 #include <porter/thread/potrConnectThread.h>
 #include <porter/thread/potrConnectedThreads.h>
 #include <porter/thread/potrRecvThread.h>
 #include <porter/thread/potrSendThread.h>
 #include <porter/thread/potrHealthThread.h>
+#include <porter/util/potrIpAddr.h>
 
 static void sync_tcp_service_path_state_locked(PotrContext *ctx)
 {
@@ -102,14 +99,14 @@ static int tcp_read_first_packet(PotrSocket fd, uint8_t *buf, size_t max_buf, si
     int r;
 
     /* タイムアウト付き待機 */
-    ready = potr_poll_readable(fd, (int)timeout_ms);
+    ready = potr_poll_readable(fd, (int)timeout_ms, NULL);
     if (ready == 0)
         return POTR_ERR_TIMEOUT;
     if (ready < 0)
         return POTR_ERR_IO;
 
     /* 固定長ヘッダー読み取り */
-    r = potr_tcp_recv_all(fd, buf, PACKET_HEADER_SIZE);
+    r = potr_tcp_recv_all(fd, buf, PACKET_HEADER_SIZE, NULL);
     if (r != POTR_OK)
         return r;
 
@@ -117,7 +114,7 @@ static int tcp_read_first_packet(PotrSocket fd, uint8_t *buf, size_t max_buf, si
     {
         uint16_t wpl;
         memcpy(&wpl, buf + 34, sizeof(wpl));
-        wire_payload_len = ntohs(wpl);
+        wire_payload_len = potr_ntoh16(wpl);
     }
 
     /* ペイロード長バリデーション */
@@ -127,7 +124,7 @@ static int tcp_read_first_packet(PotrSocket fd, uint8_t *buf, size_t max_buf, si
     /* ペイロード読み取り */
     if (wire_payload_len > 0)
     {
-        r = potr_tcp_recv_all(fd, buf + PACKET_HEADER_SIZE, (size_t)wire_payload_len);
+        r = potr_tcp_recv_all(fd, buf + PACKET_HEADER_SIZE, (size_t)wire_payload_len, NULL);
         if (r != POTR_OK)
             return r;
     }
@@ -248,16 +245,17 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
     struct sockaddr_in addr;
     uint32_t timeout_ms = ctx->service.connect_timeout_ms;
     int reuse = 1;
+    com_util_error detail;
 
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == POTR_INVALID_SOCKET)
+    if (potr_socket_open(SOCK_STREAM, &sock, &detail) != POTR_OK)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "connect_thread[service_id=%" PRId64 "]: socket() failed",
-                   ctx->service.service_id);
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail,
+                                  "connect_thread[service_id=%" PRId64 " path=%d]: socket() failed",
+                                  ctx->service.service_id, path_idx);
         return POTR_INVALID_SOCKET;
     }
 
-    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), NULL);
 
     if (ctx->service.src_addr[path_idx][0] != '\0' || ctx->service.src_port != 0)
     {
@@ -270,14 +268,15 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
         }
         else
         {
-            bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+            bind_addr.sin_addr.s_addr = potr_hton32(INADDR_ANY);
         }
-        bind_addr.sin_port = htons(ctx->service.src_port); /* 0 = エフェメラル */
+        bind_addr.sin_port = potr_hton16(ctx->service.src_port); /* 0 = エフェメラル */
 
-        if (bind(sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0)
+        if (potr_bind(sock, &bind_addr, &detail) != POTR_OK)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "connect_thread[service_id=%" PRId64 "]: bind() failed",
-                       ctx->service.service_id);
+            potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_ERROR, &detail,
+                                      "connect_thread[service_id=%" PRId64 " path=%d]: bind() failed",
+                                      ctx->service.service_id, path_idx);
             potr_close_socket(sock);
             return POTR_INVALID_SOCKET;
         }
@@ -286,15 +285,16 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr = ctx->dst_addr_resolved[path_idx];
-    addr.sin_port = htons(ctx->service.dst_port);
+    addr.sin_port = potr_hton16(ctx->service.dst_port);
 
     if (timeout_ms == 0U)
     {
         /* ブロッキング接続 */
-        if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+        if (potr_connect(sock, &addr, &detail) != POTR_OK)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-                       "connect_thread[service_id=%" PRId64 "]: connect() failed (blocking)", ctx->service.service_id);
+            potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+                                      "connect_thread[service_id=%" PRId64 " path=%d]: connect() failed (blocking)",
+                                      ctx->service.service_id, path_idx);
             potr_close_socket(sock);
             return POTR_INVALID_SOCKET;
         }
@@ -303,24 +303,21 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
 
     /* タイムアウト付き接続: 非ブロッキング モードで writable ポーリングを使う。
        停止シグナルに素早く応答するため 100ms 単位でポーリングする。 */
-    potr_set_nonblocking(sock);
+    (void)potr_set_nonblocking(sock, NULL);
     {
-        int ret_conn = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
-        if (ret_conn == 0)
+        const int connect_result = potr_connect(sock, &addr, &detail);
+        if (connect_result == POTR_OK)
         {
             /* 即座に接続成功 */
-            potr_set_blocking(sock);
+            (void)potr_set_blocking(sock, NULL);
             return sock;
         }
         /* EINPROGRESS / WSAEWOULDBLOCK 以外はエラー */
-#if defined(PLATFORM_LINUX)
-        if (errno != EINPROGRESS)
-#elif defined(PLATFORM_WINDOWS)
-        if (WSAGetLastError() != WSAEWOULDBLOCK)
-#endif /* PLATFORM_ */
+        if (!potr_socket_error_is_connect_in_progress(&detail))
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: connect() failed",
-                       ctx->service.service_id);
+            potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+                                      "connect_thread[service_id=%" PRId64 " path=%d]: connect() failed",
+                                      ctx->service.service_id, path_idx);
             potr_close_socket(sock);
             return POTR_INVALID_SOCKET;
         }
@@ -337,7 +334,7 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
             int pr;
             if (poll_ms > 100U)
                 poll_ms = 100U;
-            pr = potr_poll_writable(sock, (int)poll_ms);
+            pr = potr_poll_writable(sock, (int)poll_ms, NULL);
             if (pr < 0)
                 break;
             if (pr > 0)
@@ -357,26 +354,16 @@ static PotrSocket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
         }
     }
 
-    /* SO_ERROR で接続成否を確認 (errlen の型差分のみ #ifdef) */
+    if (potr_socket_get_pending_error(sock, &detail) != POTR_OK)
     {
-        int error = 0;
-#if defined(PLATFORM_LINUX)
-        socklen_t errlen = (socklen_t)sizeof(error);
-        getsockopt(sock, SOL_SOCKET, SO_ERROR, &error, &errlen);
-#elif defined(PLATFORM_WINDOWS)
-        int errlen = (int)sizeof(error);
-        getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&error, &errlen);
-#endif /* PLATFORM_ */
-        if (error != 0)
-        {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: connect() SO_ERROR=%d",
-                       ctx->service.service_id, error);
-            potr_close_socket(sock);
-            return POTR_INVALID_SOCKET;
-        }
+        potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+                                  "connect_thread[service_id=%" PRId64 " path=%d]: SO_ERROR", ctx->service.service_id,
+                                  path_idx);
+        potr_close_socket(sock);
+        return POTR_INVALID_SOCKET;
     }
 
-    potr_set_blocking(sock);
+    (void)potr_set_blocking(sock, NULL);
     return sock;
 }
 
@@ -529,25 +516,25 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
     {
         PotrSocket conn;
         struct sockaddr_in peer_addr;
-        socklen_t peer_len = (socklen_t)sizeof(peer_addr);
         int active_count;
         char peer_addr_str[INET_ADDRSTRLEN];
+        com_util_error detail;
         int session_result;
 
-        conn = accept(ctx->tcp_listen_sock[path_idx], (struct sockaddr *)&peer_addr, &peer_len);
-
-        if (conn == POTR_INVALID_SOCKET)
+        if (potr_accept(ctx->tcp_listen_sock[path_idx], &peer_addr, &conn, &detail) != POTR_OK)
         {
             if (!ctx->connect_thread_running[path_idx])
+            {
                 break;
+            }
             /* 一時的なエラー: ループ継続 */
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
-                       "connect_thread[service_id=%" PRId64 " path=%d]: accept() error, retrying",
-                       ctx->service.service_id, path_idx);
+            potr_trace_socket_failure(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+                                      "connect_thread[service_id=%" PRId64 " path=%d]: accept() error, retrying",
+                                      ctx->service.service_id, path_idx);
             continue;
         }
 
-        inet_ntop(AF_INET, &peer_addr.sin_addr, peer_addr_str, sizeof(peer_addr_str));
+        (void)potr_ipv4_to_string(peer_addr.sin_addr, peer_addr_str, sizeof(peer_addr_str), NULL);
 
         /* 接続元フィルター: src_addr[path_idx] / src_port が指定されていれば一致確認 */
         {
@@ -561,7 +548,7 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
             }
             if (!filtered && ctx->service.src_port != 0)
             {
-                if (ntohs(peer_addr.sin_port) != ctx->service.src_port)
+                if (potr_ntoh16(peer_addr.sin_port) != ctx->service.src_port)
                 {
                     filtered = 1;
                 }
@@ -571,14 +558,14 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
                 POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
                            "connect_thread[service_id=%" PRId64 " path=%d]: rejected connection"
                            " from %s:%u (src filter)",
-                           ctx->service.service_id, path_idx, peer_addr_str, (unsigned)ntohs(peer_addr.sin_port));
+                           ctx->service.service_id, path_idx, peer_addr_str, (unsigned)potr_ntoh16(peer_addr.sin_port));
                 potr_close_socket(conn);
                 continue;
             }
         }
 
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP accepted from %s:%u",
-                   ctx->service.service_id, path_idx, peer_addr_str, (unsigned)ntohs(peer_addr.sin_port));
+                   ctx->service.service_id, path_idx, peer_addr_str, (unsigned)potr_ntoh16(peer_addr.sin_port));
 
         /* ── セッション判定: 最初の 1 パケットを先読みして session_id を取得する ── */
         {

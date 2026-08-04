@@ -31,6 +31,7 @@
 #define POTR_TRACE_H
 
 #include <com_util/trace/tracer.h>
+#include <com_util/base/error.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -44,6 +45,17 @@ extern "C"
      *  本関数を直接呼び出さず、POTR_TRACE マクロを使用してください。
      */
     com_util_tracer *potr_trace_get(void);
+
+    /**
+     *******************************************************************************
+     *  @brief          ソケット失敗の文脈と詳細情報を共通形式で出力します。
+     *  @param[in]      level  トレース レベル。
+     *  @param[in]      detail ソケット エラーの詳細情報。NULL 不可。
+     *  @param[in]      format 操作名やサービス ID を組み立てる printf 形式文字列。NULL 不可。
+     *  @param[in]      ...    @p format に対応する引数。
+     *******************************************************************************
+     */
+    void potr_trace_socket_failure(com_util_trace_level_t level, const com_util_error *detail, const char *format, ...);
 
 /**
  *  @brief          porter 内部ログ出力マクロ。

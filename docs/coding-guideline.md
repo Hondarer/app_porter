@@ -8,6 +8,77 @@
 
 porter 固有の規則、制限、遵守事項は、今後もすべて本書に集約します。
 
+## 命名規則の特化事項
+
+### 基本方針
+
+porter のライブラリ接頭辞は `potr_` です。  
+公開 API、ライブラリ内共有関数、型のいずれにも同じ接頭辞を使用します。
+
+すべての識別子を snake_case とします。  
+PascalCase (`PotrContext` など) と camelCase (`potrOpenService` など) は使用しません。
+
+ソース ファイルとヘッダー ファイルの名前も snake_case とします。
+
+公開 API は `potr_<カテゴリ名詞>_<動詞または属性>` の順序を正とします。
+
+### 記法統一の経緯
+
+porter は当初、公開 API を camelCase、型を PascalCase、内部関数を snake_case という混成の記法で実装していました。  
+記法の違いが事実上の公開・内部の判別手段として機能していましたが、上位規範は判別をヘッダーの配置で行うと定めており、記法に判別の役割を持たせる必要がありません。  
+リポジトリ内のほかのライブラリがすべて snake_case であることとあわせて、snake_case へ統一しました。
+
+porter には利用者が存在しないため、互換のための旧名の別名 (alias) は提供しません。
+
+### 公開関数の改名対応
+
+| 旧名 | 新名 |
+|---|---|
+| `potrOpenService` | `potr_service_open` |
+| `potrOpenServiceFromConfig` | `potr_service_open_from_config` |
+| `potrCloseService` | `potr_service_close` |
+| `potrGetServiceType` | `potr_service_get_type` |
+| `potrGetTracer` | `potr_tracer_get` |
+| `potrSend` | `potr_send` |
+| `potrDisconnectPeer` | `potr_peer_disconnect` |
+
+`potr_send` はカテゴリ名詞を持たない横断的な API のため、動詞先行を許容します。
+
+### 公開型の改名対応
+
+| 旧名 | 新名 | 種別 |
+|---|---|---|
+| `PotrType` | `potr_type` | enum |
+| `PotrRole` | `potr_role` | enum |
+| `PotrEvent` | `potr_event` | enum |
+| `PotrServiceDef` | `potr_service_def` | struct |
+| `PotrGlobalConfig` | `potr_global_config` | struct |
+| `PotrPacket` | `potr_packet` | struct |
+| `PotrContext` | `potr_context` | struct (不透明型) |
+| `PotrPeerId` | `potr_peer_id` | 整数型の alias |
+| `PotrRecvCallback` | `potr_recv_fn` | 関数ポインター |
+
+### 内部型の改名対応
+
+| 旧名 | 新名 | 種別 |
+|---|---|---|
+| `PotrSocket` | `potr_socket` | ソケット型の alias |
+| `PotrPayloadElem` | `potr_payload_elem` | struct |
+| `PotrSendQueue` | `potr_send_queue` | struct |
+| `PotrNackDedupEntry` | `potr_nack_dedup_entry` | struct |
+| `PotrPeerContext` | `potr_peer_context` | struct |
+| `PotrPathThreadArg` | `potr_path_thread_arg` | struct |
+| `PotrPreparedPathEvents` | `potr_prepared_path_events` | struct |
+| `PotrPacketSessionHdr` | `potr_packet_session_hdr` | struct |
+| `PotrWindow` | `potr_window` | struct |
+| `PotrConnectedThreadsOps` | `potr_connected_threads_ops` | struct |
+| `potr_socket_cause_t` | `potr_socket_cause` | enum |
+
+### 内部共有関数のライブラリ接頭辞
+
+`include_internal/` で宣言する関数には `potr_` を必須とします。  
+接頭辞のなかった `config_*`、`packet_*`、`window_*`、`peer_*`、`seqnum_in_window`、`parse_ipv4_addr`、`resolve_ipv4_addr`、`comm_recv_thread_*`、`tcp_recv_thread_*` の各関数に `potr_` を付与しました。
+
 ## エラー処理と戻り値規約
 
 porter の公開 API および内部関数が戻り値として使用する共通結果コードの運用を示します。
@@ -61,6 +132,8 @@ com_util の API を呼び出した結果は `rc != COM_UTIL_OK` の名前比較
 porter の関数から返す場合は、`COM_UTIL_ERR_*` を porter の結果コードへ変換して返します。com_util の結果コードをそのまま porter の戻り値として素通ししません。  
 タイムアウトは `POTR_ERR_TIMEOUT`、ファイルおよびネットワークの失敗は `POTR_ERR_IO` のように、原因が判別できる場合は対応する分類へ変換します。  
 下位 API が詳細コードを提供せず、ほかの分類へ変換できない場合だけ `POTR_ERR_UNKNOWN` を返し、その理由をソース コメントに記載します。
+ソケット API の失敗は `potr_socket_error_report()` で `com_util_error` に捕捉し、対応する `POTR_ERR_*` へ変換します。
+OS 固有コードは直接比較せず、`potr_socket_error_is()` と `POTR_SOCKET_CAUSE_*` を使用します。
 
 ```c
 int rc = com_util_crypto_encrypt(...);
@@ -77,12 +150,15 @@ if (rc != COM_UTIL_OK)
 
 | 対象外の関数群 | 現行規約 | 理由 |
 |---|---|---|
-| `potrPlatform.h` の OS ラッパー層 (`potr_setsockopt`、`potr_sendto`、`potr_recvfrom`、`potr_poll_*` など) | 0/-1、送受信バイト数、1/0/-1 など元 API と同系 | OS ソケット API の戻り値規約を保存する層であることが設計意図。ただし合成ヘルパー (`potr_tcp_send`、`potr_tcp_recv_all`) は適用対象とする |
+| 素通しラッパー (`potr_sendto`、`potr_recvfrom`、`potr_poll_readable`、`potr_poll_writable`) | 送受信バイト数または 1/0/-1 | 呼び出し側がデータ量やタイムアウトを判定する既存規約を保存しつつ、失敗時は `detail_out` と直前エラーを更新するため |
 | 0/1 述語 (`seqnum_in_window`、`window_send_full`、`window_recv_needs_nack`、`potrContext.h` の inline 述語) | 真 1 / 偽 0 | 失敗モードのない純関数であり、成否の概念が適用されない |
 | 3 状態以上の判定結果を返す比較・分類関数 | 判定結果そのもの | 成否ではなく状態の分類を返す |
 | 値をそのまま返す関数 (`packet_wire_size`、`potr_raw_base_type` などの getter) | 値そのもの | 結果コードの概念が適用されない |
 | ハンドル・ポインター返却系 (`potrGetTracer`、`peer_create`、`peer_find_by_*` など) | 成功時ポインター / 失敗・不在時 NULL | ポインター返却 API の慣用 |
 | 戻り値を持たない関数 | `void` | 同上 |
+
+`potr_socket_open`、`potr_bind`、`potr_listen`、`potr_accept`、`potr_connect`、`potr_setsockopt`、`potr_socket_get_pending_error` などの合成ラッパーは、`POTR_OK` または `POTR_ERR_*` と `com_util_error *detail_out` を返します。
+ソケット ハンドルは出力引数で返します。
 
 ### 検証
 

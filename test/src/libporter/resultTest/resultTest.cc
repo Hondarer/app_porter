@@ -1,6 +1,5 @@
 #include <testfw.h>
 #include <porter/porter_result.h>
-
 #include <set>
 #include <vector>
 

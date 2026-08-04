@@ -21,6 +21,8 @@
 
 #include <com_util/base/platform.h>
 #include <porter/porter_result.h>
+#include <com_util/base/error.h>
+#include <stddef.h>
 
 #if defined(PLATFORM_LINUX)
     #include <arpa/inet.h>
@@ -47,6 +49,8 @@ extern "C"
      *  @brief      ホスト名または IPv4 アドレス文字列を struct in_addr に解決します。
      *
      *  getaddrinfo() を使用して AF_INET で名前解決します。\n
+     *  名前解決エラーは errno／Winsock のソケット エラーとは異なる EAI エラー体系であるため、
+     *  詳細出力引数は持たず、ネイティブ コードとメッセージをトレースへ出力します。\n
      *  複数のアドレスが返された場合は先頭のアドレスを採用します。
      *
      *  @param[in]  host     解決するホスト名または IPv4 アドレス文字列。
@@ -56,6 +60,16 @@ extern "C"
      *  @retval     POTR_ERR_IO                名前解決に失敗しました。
      */
     extern int resolve_ipv4_addr(const char *host, struct in_addr *out_addr);
+
+    /**
+     *  @brief          IPv4 アドレスを表示用文字列へ変換します。
+     *  @param[in]      addr       変換するアドレス。
+     *  @param[out]     buffer     文字列の格納先。
+     *  @param[in]      buffer_size 格納先のバイト数。
+     *  @param[out]     detail_out OS エラー詳細。NULL 可。
+     *  @return         POTR_OK または POTR_ERR_* を返します。
+     */
+    extern int potr_ipv4_to_string(struct in_addr addr, char *buffer, size_t buffer_size, com_util_error *detail_out);
 
 #ifdef __cplusplus
 }
