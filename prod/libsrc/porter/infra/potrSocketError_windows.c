@@ -11,21 +11,93 @@
     #include <com_util/base/windows_sdk.h>
     #include <porter/infra/potrSocketErrorPlatform.h>
 
+/**
+ *  @brief          Winsock エラー コードを、ソケット要因に基づく共通結果コードへ変換します。
+ *  @param[in]      error_code Winsock エラー値。
+ *  @return         対応する COM_UTIL_ERR_* を返します。
+ *
+ *  Winsock のエラー値は Win32 の GetLastError() 体系と番号空間が異なるため、
+ *  com_util_result_from_windows_error() では正しく分類できません。\n
+ *  そのため、ソケット要因の分類結果から共通結果コードへ変換します。
+ */
+static int potr_socket_error_result_from_windows_code(const unsigned long error_code)
+{
+    int result;
+
+    switch (potr_socket_cause_from_windows_error(error_code))
+    {
+    case POTR_SOCKET_CAUSE_NONE:
+        result = COM_UTIL_OK;
+        break;
+    case POTR_SOCKET_CAUSE_TIMED_OUT:
+        result = COM_UTIL_ERR_TIMEOUT;
+        break;
+    case POTR_SOCKET_CAUSE_INVALID_ARGUMENT:
+        result = COM_UTIL_ERR_INVALID_ARGUMENT;
+        break;
+    case POTR_SOCKET_CAUSE_ACCESS_DENIED:
+        result = COM_UTIL_ERR_PERMISSION_DENIED;
+        break;
+    case POTR_SOCKET_CAUSE_OUT_OF_MEMORY:
+        result = COM_UTIL_ERR_OUT_OF_MEMORY;
+        break;
+    case POTR_SOCKET_CAUSE_UNSUPPORTED:
+        result = COM_UTIL_ERR_UNSUPPORTED;
+        break;
+    default:
+        result = COM_UTIL_ERR_UNKNOWN;
+        break;
+    }
+    return result;
+}
+
+/**
+ *  @brief          Winsock エラー コードを詳細エラーへ格納します。
+ *  @param[out]     error      格納先。NULL 可。
+ *  @param[in]      error_code Winsock エラー値。0 の場合は空の値を格納します。
+ */
+static void potr_socket_error_store(com_util_error *error, const unsigned long error_code)
+{
+    if (error != NULL)
+    {
+        if (error_code == 0UL)
+        {
+            error->domain = COM_UTIL_ERROR_DOMAIN_NONE;
+            error->result = COM_UTIL_OK;
+            error->code = 0UL;
+        }
+        else
+        {
+            error->domain = COM_UTIL_ERROR_DOMAIN_WINDOWS;
+            error->result = potr_socket_error_result_from_windows_code(error_code);
+            error->code = error_code;
+        }
+    }
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_socket_error_capture(com_util_error *error)
 {
     const int error_code = WSAGetLastError();
-    com_util_error_capture_windows_error(error, (unsigned long)error_code);
+    potr_socket_error_store(error, (unsigned long)error_code);
 }
+
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_socket_error_capture_code(com_util_error *error, const unsigned long code)
 {
-    com_util_error_capture_windows_error(error, code);
+    potr_socket_error_store(error, code);
 }
+
+/* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_socket_error_capture_invalid_argument(com_util_error *error)
 {
-    com_util_error_capture_windows_error(error, WSAEINVAL);
+    potr_socket_error_store(error, WSAEINVAL);
 }
+
+/* Doxygen コメントは、ヘッダーに記載 */
 
 potr_socket_cause_t potr_socket_cause_from_windows_error(const unsigned long error_code)
 {
