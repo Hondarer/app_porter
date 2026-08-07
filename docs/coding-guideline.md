@@ -13,20 +13,25 @@ porter 固有の規則、制限、遵守事項は、今後もすべて本書に�
 ### 基本方針
 
 porter のライブラリ接頭辞は `potr_` です。  
-公開 API、ライブラリ内共有関数、型のいずれにも同じ接頭辞を使用します。
+公開の関数・型は `potr_`、ライブラリ内共有 (`include_internal/`) の関数・型は `potr_internal_` を前置きします。  
+`static` 関数にはどちらも付けません。
 
 すべての識別子を snake_case とします。  
 PascalCase (`PotrContext` など) と camelCase (`potrOpenService` など) は使用しません。
 
-ソース ファイルとヘッダー ファイルの名前も snake_case とします。
+ソース ファイルとヘッダー ファイルの名前も snake_case とします。  
+ヘッダー ファイル名の `_internal` は、同名の公開ヘッダーがあるときだけ付けます (上位規範と同じ)。
 
-公開 API は `potr_<カテゴリ名詞>_<動詞または属性>` の順序を正とします。
+公開 API は `potr_<カテゴリ名詞>_<動詞または属性>` の順序を正とします。  
+ライブラリ内共有 API は `potr_internal_<カテゴリ名詞>_<動詞または属性>` とします。
 
 ### 記法統一の経緯
 
 porter は当初、公開 API を camelCase、型を PascalCase、内部関数を snake_case という混成の記法で実装していました。  
-記法の違いが事実上の公開・内部の判別手段として機能していましたが、上位規範は判別をヘッダーの配置で行うと定めており、記法に判別の役割を持たせる必要がありません。  
-リポジトリ内のほかのライブラリがすべて snake_case であることとあわせて、snake_case へ統一しました。
+記法の違いが事実上の公開・内部の判別手段として機能していましたが、記法を混在させる運用をやめ、リポジトリ内のほかのライブラリと同様に snake_case へ統一しました。
+
+上位規範は、スコープ判定をヘッダー配置で行ったうえで、ライブラリ内共有の関数・型に `<lib>_internal_` を付けると定めています。  
+porter もこの規則に従います。既存の `potr_` 付き内部共有シンボルを `potr_internal_` へ切り替える全面改名は求めず、変更対象ファイルに触れる機会に合わせて進めます。
 
 porter には利用者が存在しないため、互換のための旧名の別名 (alias) は提供しません。
 
@@ -74,10 +79,20 @@ porter には利用者が存在しないため、互換のための旧名の別�
 | `PotrConnectedThreadsOps` | `potr_connected_threads_ops` | struct |
 | `potr_socket_cause_t` | `potr_socket_cause` | enum |
 
-### 内部共有関数のライブラリ接頭辞
+### 内部共有関数・型の接頭辞
 
-`include_internal/` で宣言する関数には `potr_` を必須とします。  
-接頭辞のなかった `config_*`、`packet_*`、`window_*`、`peer_*`、`seqnum_in_window`、`parse_ipv4_addr`、`resolve_ipv4_addr`、`comm_recv_thread_*`、`tcp_recv_thread_*` の各関数に `potr_` を付与しました。
+`include_internal/` で宣言する関数と型には、上位規範に従い `potr_internal_` を必須とします。
+
+```c
+/* 公開 */
+int potr_service_open(...);
+
+/* ライブラリ内共有 */
+int potr_internal_packet_parse(...);
+```
+
+以前は接頭辞のなかった `config_*`、`packet_*`、`window_*`、`peer_*`、`seqnum_in_window`、`parse_ipv4_addr`、`resolve_ipv4_addr`、`comm_recv_thread_*`、`tcp_recv_thread_*` の各関数へ `potr_` を付与しました。  
+以降の新設・改名では `potr_internal_` を使います。既存の `potr_` 付き内部共有シンボルは、変更対象に含めるときに `potr_internal_` へ移行します。
 
 ## エラー処理と戻り値規約
 
