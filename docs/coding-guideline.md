@@ -14,7 +14,8 @@ porter 固有の規則、制限、遵守事項は、今後もすべて本書に�
 
 porter のライブラリ接頭辞は `potr_` です。  
 公開の関数・型は `potr_`、ライブラリ内共有 (`include_internal/`) の関数・型は `potr_internal_` を前置きします。  
-`static` 関数にはどちらも付けません。
+ライブラリ内共有の外部リンケージ変数は `g_potr_internal_`、公開共有変数は `g_potr_` を前置きします (公開共有変数は必要最低限に厳選)。  
+`static` 関数にはライブラリ接頭辞を付けず、ファイル内共有変数は `s_` を前置きします。
 
 すべての識別子を snake_case とします。  
 PascalCase (`PotrContext` など) と camelCase (`potrOpenService` など) は使用しません。
@@ -30,8 +31,8 @@ PascalCase (`PotrContext` など) と camelCase (`potrOpenService` など) は�
 porter は当初、公開 API を camelCase、型を PascalCase、内部関数を snake_case という混成の記法で実装していました。  
 記法の違いが事実上の公開・内部の判別手段として機能していましたが、記法を混在させる運用をやめ、リポジトリ内のほかのライブラリと同様に snake_case へ統一しました。
 
-上位規範は、スコープ判定をヘッダー配置で行ったうえで、ライブラリ内共有の関数・型に `<lib>_internal_` を付けると定めています。  
-porter もこの規則に従います。既存の `potr_` 付き内部共有シンボルを `potr_internal_` へ切り替える全面改名は求めず、変更対象ファイルに触れる機会に合わせて進めます。
+上位規範は、スコープ判定をヘッダー配置で行ったうえで、ライブラリ内共有の関数・型に `<lib>_internal_`、外部リンケージ変数に `g_<lib>_internal_` を付けると定めています。  
+porter もこの規則に従います。既存の `potr_` / `g_potr_` 付き内部共有シンボルを `potr_internal_` / `g_potr_internal_` へ切り替える全面改名は求めず、変更対象ファイルに触れる機会に合わせて進めます。
 
 porter には利用者が存在しないため、互換のための旧名の別名 (alias) は提供しません。
 
@@ -79,20 +80,24 @@ porter には利用者が存在しないため、互換のための旧名の別�
 | `PotrConnectedThreadsOps` | `potr_connected_threads_ops` | struct |
 | `potr_socket_cause_t` | `potr_socket_cause` | enum |
 
-### 内部共有関数・型の接頭辞
+### 内部共有関数・型・変数の接頭辞
 
-`include_internal/` で宣言する関数と型には、上位規範に従い `potr_internal_` を必須とします。
+`include_internal/` で宣言する関数と型には、上位規範に従い `potr_internal_` を必須とします。  
+外部リンケージ変数には `g_potr_internal_` を必須とします。
 
 ```c
 /* 公開 */
 int potr_service_open(...);
 
-/* ライブラリ内共有 */
+/* ライブラリ内共有 (関数) */
 int potr_internal_packet_parse(...);
+
+/* ライブラリ内共有 (変数) */
+extern int g_potr_internal_peer_count;
 ```
 
 以前は接頭辞のなかった `config_*`、`packet_*`、`window_*`、`peer_*`、`seqnum_in_window`、`parse_ipv4_addr`、`resolve_ipv4_addr`、`comm_recv_thread_*`、`tcp_recv_thread_*` の各関数へ `potr_` を付与しました。  
-以降の新設・改名では `potr_internal_` を使います。既存の `potr_` 付き内部共有シンボルは、変更対象に含めるときに `potr_internal_` へ移行します。
+以降の新設・改名では `potr_internal_` / `g_potr_internal_` を使います。既存の `potr_` / `g_potr_` 付き内部共有シンボルは、変更対象に含めるときに移行します。
 
 ## エラー処理と戻り値規約
 
@@ -130,20 +135,21 @@ porter の公開 API および内部関数が戻り値として使用する共�
 呼び出し側の成否判定は、コード名との比較を正とします。
 
 ```c
-int rc = potrSend(ctx, peer_id, data, len, 0);
-if (rc != POTR_OK)
+int ret = potr_send(ctx, peer_id, data, len, 0);
+if (ret != POTR_OK)
 {
-    return rc;
+    return ret;
 }
 ```
 
-全エラーが負値のため `rc < 0` も等価ですが、名前比較を推奨します。  
-特定のエラーを区別する場合は、`rc == POTR_ERR_DISCONNECTED` のようにコード名で比較します。  
+結果コードを受ける変数名は、上位規範に従い新規コードでは `ret` を第一選択とします。  
+全エラーが負値のため `ret < 0` も等価ですが、名前比較を推奨します。  
+特定のエラーを区別する場合は、`ret == POTR_ERR_DISCONNECTED` のようにコード名で比較します。  
 `-1` などの数値リテラルとの比較は行いません。
 
 ### com_util 呼び出し結果の扱い
 
-com_util の API を呼び出した結果は `rc != COM_UTIL_OK` の名前比較で判定します。  
+com_util の API を呼び出した結果は `ret != COM_UTIL_OK` の名前比較で判定します。  
 porter の関数から返す場合は、`COM_UTIL_ERR_*` を porter の結果コードへ変換して返します。com_util の結果コードをそのまま porter の戻り値として素通ししません。  
 タイムアウトは `POTR_ERR_TIMEOUT`、ファイルおよびネットワークの失敗は `POTR_ERR_IO` のように、原因が判別できる場合は対応する分類へ変換します。  
 下位 API が詳細コードを提供せず、ほかの分類へ変換できない場合だけ `POTR_ERR_UNKNOWN` を返し、その理由をソース コメントに記載します。
@@ -151,8 +157,8 @@ porter の関数から返す場合は、`COM_UTIL_ERR_*` を porter の結果コ
 OS 固有コードは直接比較せず、`potr_socket_error_is()` と `POTR_SOCKET_CAUSE_*` を使用します。
 
 ```c
-int rc = com_util_crypto_encrypt(...);
-if (rc != COM_UTIL_OK)
+int ret = com_util_crypto_encrypt(...);
+if (ret != COM_UTIL_OK)
 {
     return POTR_ERR_UNKNOWN;
 }
