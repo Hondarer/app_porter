@@ -76,7 +76,7 @@ static volatile sig_atomic_t g_shutdown_requested = 0;
 /** pinned prompt ハンドル。on_recv や trace hook から参照する。 */
 static com_util_pinned_prompt *g_screen = NULL;
 /** トレース閾値レベル。trace hook が context として参照するため寿命を持続させる。 */
-static com_util_trace_level_t g_trace_level = COM_UTIL_TRACE_LEVEL_NONE;
+static com_util_trace_level g_trace_level = COM_UTIL_TRACE_LEVEL_NONE;
 /** トレーサーへの hook 設定と開始を実施済みかどうか。 */
 static int g_tracer_started = 0;
 
@@ -267,13 +267,13 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
  *  @param[in]      level     trace レベル。
  *  @param[in]      timestamp 解決済みタイムスタンプ。
  *  @param[in]      message   解決済みメッセージ文字列。
- *  @param[in]      context   閾値レベル (com_util_trace_level_t *) を指すポインター。
+ *  @param[in]      context   閾値レベル (com_util_trace_level *) を指すポインター。
  */
-static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer *handle, com_util_trace_level_t level,
+static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer *handle, com_util_trace_level level,
                                const com_util_timespec *timestamp, const char *message, void *context)
 {
     static const char lc_table[] = {'C', 'E', 'W', 'I', 'V', 'D'};
-    com_util_trace_level_t threshold = *(const com_util_trace_level_t *)context;
+    com_util_trace_level threshold = *(const com_util_trace_level *)context;
     char ts[COM_UTIL_CLOCK_ISO8601_LOCAL_MSEC_LEN + 1];
     char lc;
 
@@ -294,17 +294,17 @@ static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer
 }
 
 /**
- *  @brief          ログ レベル文字列を com_util_trace_level_t に変換します。
+ *  @brief          ログ レベル文字列を com_util_trace_level に変換します。
  *  @param[in]      str     レベル文字列 (VERBOSE/INFO/WARNING/ERROR/CRITICAL)。
  *  @param[out]     out     変換結果の格納先。
  *  @return         変換に成功した場合は 1、未知の文字列の場合は 0 を返します。
  */
-static int parse_trace_level(const char *str, com_util_trace_level_t *out)
+static int parse_trace_level(const char *str, com_util_trace_level *out)
 {
     static const struct
     {
         const char *name;
-        com_util_trace_level_t level;
+        com_util_trace_level level;
         uint32_t _pad;
     } tbl[] = {
         {"VERBOSE", COM_UTIL_TRACE_LEVEL_VERBOSE, 0U},   {"INFO", COM_UTIL_TRACE_LEVEL_INFO, 0U},
@@ -866,7 +866,7 @@ static void handle_open_command(PorterTestSession *session, char *cursor)
 static void handle_log_command(char *cursor)
 {
     char *level_token;
-    com_util_trace_level_t level;
+    com_util_trace_level level;
 
     level_token = next_token(&cursor);
     if (level_token == NULL)

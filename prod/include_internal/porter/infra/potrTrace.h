@@ -58,7 +58,7 @@ extern "C"
      *  本関数を直接呼び出さず、POTR_TRACE_SOCKET_FAILURE マクロを使用してください。\n
      *  発生位置を呼び出し元のものとして記録するため、file と line を引数で受け取ります。
      */
-    void potr_trace_socket_failure_at(const char *file, int line, com_util_trace_level_t level,
+    void potr_trace_socket_failure_at(const char *file, int line, com_util_trace_level level,
                                       const com_util_error *detail, const char *format, ...);
 
 /**
@@ -66,7 +66,7 @@ extern "C"
  *
  *  __FILE__ と __LINE__ を自動付加する com_util_tracer_writef() マクロを呼び出します。\n
  *  トレーサーが未 start の場合は無視されます。\n
- *  level には com_util_trace_level_t の値を指定してください。
+ *  level には com_util_trace_level の値を指定してください。
  *
  *  @par            例
     @code{.c}

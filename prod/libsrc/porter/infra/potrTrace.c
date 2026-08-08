@@ -60,7 +60,7 @@ com_util_tracer *potr_trace_get(void)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void potr_trace_socket_failure_at(const char *file, const int line, const com_util_trace_level_t level,
+void potr_trace_socket_failure_at(const char *file, const int line, const com_util_trace_level level,
                                   const com_util_error *detail, const char *format, ...)
 {
     char context[256];
