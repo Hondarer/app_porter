@@ -107,7 +107,8 @@ int potr_ipv4_to_string(const struct in_addr addr, char *buffer, const size_t bu
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
-    if (inet_ntop(AF_INET, &addr, buffer, (int)buffer_size) == NULL)
+    /* buffer_size は呼び出し側バッファー長。IPv4 文字列は 16 バイト未満で socklen_t に収まる */
+    if (inet_ntop(AF_INET, &addr, buffer, (socklen_t)buffer_size) == NULL)
     {
         return potr_socket_error_report(detail_out);
     }

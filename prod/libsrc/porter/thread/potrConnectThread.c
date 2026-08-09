@@ -400,7 +400,8 @@ static void sender_connect_loop(PotrContext *ctx, int path_idx)
                        "connect_thread[service_id=%" PRId64 " path=%d]: connect failed, "
                        "retrying in %ums",
                        ctx->service.service_id, path_idx, (unsigned)ctx->service.reconnect_interval_ms);
-            reconnect_wait(ctx, path_idx, ctx->service.reconnect_interval_ms);
+            /* reconnect_interval_ms は再接続間隔の設定値。実用範囲は INT_MAX 以下 */
+            reconnect_wait(ctx, path_idx, (int)ctx->service.reconnect_interval_ms);
             continue;
         }
 
@@ -440,7 +441,8 @@ static void sender_connect_loop(PotrContext *ctx, int path_idx)
             if (ctx->service.reconnect_interval_ms == 0U)
                 break;
 
-            reconnect_wait(ctx, path_idx, ctx->service.reconnect_interval_ms);
+            /* reconnect_interval_ms は再接続間隔の設定値。実用範囲は INT_MAX 以下 */
+            reconnect_wait(ctx, path_idx, (int)ctx->service.reconnect_interval_ms);
             is_reconnect = 1;
             continue;
         }
@@ -483,7 +485,8 @@ static void sender_connect_loop(PotrContext *ctx, int path_idx)
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
                    "connect_thread[service_id=%" PRId64 " path=%d]: waiting %ums before reconnect",
                    ctx->service.service_id, path_idx, (unsigned)ctx->service.reconnect_interval_ms);
-        reconnect_wait(ctx, path_idx, ctx->service.reconnect_interval_ms);
+        /* reconnect_interval_ms は再接続間隔の設定値。実用範囲は INT_MAX 以下 */
+        reconnect_wait(ctx, path_idx, (int)ctx->service.reconnect_interval_ms);
         is_reconnect = 1;
     }
 }
@@ -573,8 +576,10 @@ static void receiver_accept_loop(PotrContext *ctx, int path_idx)
             size_t pkt_len = 0;
             int r;
 
+            /* first_pkt_timeout_ms は先読み待機の ms。実用範囲は INT_MAX 以下 */
             r = tcp_read_first_packet(conn, ctx->tcp_first_pkt_buf[path_idx],
-                                      PACKET_HEADER_SIZE + ctx->global.max_payload, &pkt_len, first_pkt_timeout_ms);
+                                      PACKET_HEADER_SIZE + ctx->global.max_payload, &pkt_len,
+                                      (int)first_pkt_timeout_ms);
             if (r != POTR_OK)
             {
                 /* タイムアウトまたは EOF/エラー */

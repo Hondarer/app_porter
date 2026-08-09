@@ -2195,7 +2195,8 @@ static void tcp_recv_thread_func(void *arg)
              * データが届くまで poll_ms 待機し、タイムアウト時は PING 受信時刻を確認する。 */
             if (use_recv_timeout)
             {
-                int readable = tcp_wait_readable(fd, poll_ms);
+                /* poll_ms は health_timeout から算出したポーリング間隔。INT_MAX 以下 */
+                int readable = tcp_wait_readable(fd, (int)poll_ms);
                 if (!ctx->running[path_idx])
                     break;
                 if (readable < 0)

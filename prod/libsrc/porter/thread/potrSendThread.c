@@ -460,7 +460,8 @@ static void send_thread_func(void *arg)
 
                         remaining = (uint32_t)(deadline - now);
 
-                        if (potr_send_queue_peek_timed(&ctx->send_queue, &next, remaining) != POTR_OK)
+                        /* remaining は deadline - now (ms) であり pack_wait_ms 以下で INT_MAX に収まる */
+                        if (potr_send_queue_peek_timed(&ctx->send_queue, &next, (int)remaining) != POTR_OK)
                         {
                             break; /* タイムアウト (エントリなし) */
                         }

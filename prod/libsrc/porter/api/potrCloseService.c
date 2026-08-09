@@ -302,7 +302,9 @@ int potrCloseService(PotrContext *handle)
                 }
                 else
                 {
-                    close_result = wait_for_tcp_close_ack(ctx, ctx->global.tcp_close_timeout_ms);
+                    /* タイムアウト ms は設定値。実用範囲は INT_MAX 以下 */
+                    close_result =
+                        wait_for_tcp_close_ack(ctx, (int)ctx->global.tcp_close_timeout_ms);
                     if (close_result != POTR_OK)
                     {
                         POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,

@@ -63,7 +63,8 @@ static void fill_session_hdr(PotrPacket *packet, const PotrPacketSessionHdr *shd
     packet->service_id = (int64_t)hton64((uint64_t)shdr->service_id);
     packet->session_tv_sec = (int64_t)hton64((uint64_t)shdr->session_tv_sec);
     packet->session_id = potr_hton32(shdr->session_id);
-    packet->session_tv_nsec = potr_hton32((uint32_t)shdr->session_tv_nsec);
+    /* session_tv_nsec は正規化済みナノ秒部 (0..999999999)。ワイヤのビット列を int32_t へ格納する */
+    packet->session_tv_nsec = (int32_t)potr_hton32((uint32_t)shdr->session_tv_nsec);
     packet->protocol_version = potr_hton32(POTR_PROTOCOL_VERSION);
 }
 

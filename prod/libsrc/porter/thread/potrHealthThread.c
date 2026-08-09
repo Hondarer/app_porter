@@ -73,7 +73,8 @@ static void health_sleep(PotrContext *ctx, int path_idx, uint32_t interval_ms)
     com_util_local_lock_lock(ctx->health_mutex[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
     if (ctx->health_running[path_idx])
     {
-        com_util_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], interval_ms);
+        /* interval_ms は PING 間隔の設定値。実用範囲は INT_MAX 以下 */
+        com_util_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], (int)interval_ms);
     }
     com_util_local_lock_unlock(ctx->health_mutex[path_idx]);
 }

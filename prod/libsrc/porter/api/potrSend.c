@@ -40,7 +40,8 @@ static int send_to_peer(PotrContext *ctx, PotrPeerId peer_id, const uint8_t *ptr
         max_payload -= POTR_CRYPTO_TAG_SIZE;
     }
 
-    if ((flags & POTR_SEND_BLOCKING) != 0)
+    /* flags はビット フラグ。POTR_SEND_* 定数は 0x0002U 以下で int に収まる */
+    if (((unsigned)flags & POTR_SEND_BLOCKING) != 0U)
     {
         potr_send_queue_wait_drained(&ctx->send_queue);
     }
@@ -74,7 +75,7 @@ static int send_to_peer(PotrContext *ctx, PotrPeerId peer_id, const uint8_t *ptr
         remaining -= chunk;
     }
 
-    if ((flags & POTR_SEND_BLOCKING) != 0)
+    if (((unsigned)flags & POTR_SEND_BLOCKING) != 0U)
     {
         potr_send_queue_wait_drained(&ctx->send_queue);
     }
@@ -138,11 +139,12 @@ int potrSend(PotrContext *handle, PotrPeerId peer_id, const void *data, size_t l
     /* RAW モードは常にブロッキング送信 */
     if (potr_is_raw_type(ctx->service.type))
     {
-        flags |= POTR_SEND_BLOCKING;
+        /* POTR_SEND_BLOCKING は 0x0002U であり int に収まる */
+        flags |= (int)POTR_SEND_BLOCKING;
     }
 
     /* 圧縮が要求された場合はペイロード全体を圧縮する */
-    if ((flags & POTR_SEND_COMPRESS) != 0)
+    if (((unsigned)flags & POTR_SEND_COMPRESS) != 0U)
     {
         size_t cmp_len = ctx->compress_buf_size;
 
