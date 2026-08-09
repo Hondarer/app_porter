@@ -75,7 +75,7 @@ static volatile int g_running = 1;
 static volatile sig_atomic_t g_shutdown_requested = 0;
 /** pinned prompt ハンドル。on_recv や trace hook から参照する。 */
 static com_util_pinned_prompt *g_screen = NULL;
-/** トレース閾値レベル。trace hook が context として参照するため寿命を持続させる。 */
+/** トレースしきい値レベル。trace hook が context として参照するため寿命を持続させる。 */
 static com_util_trace_level g_trace_level = COM_UTIL_TRACE_LEVEL_NONE;
 /** トレーサーへの hook 設定と開始を実施済みかどうか。 */
 static int g_tracer_started = 0;
@@ -267,7 +267,7 @@ static void on_recv(int64_t service_id, PotrPeerId peer_id, PotrEvent event, con
  *  @param[in]      level     trace レベル。
  *  @param[in]      timestamp 解決済みタイムスタンプ。
  *  @param[in]      message   解決済みメッセージ文字列。
- *  @param[in]      context   閾値レベル (com_util_trace_level *) を指すポインター。
+ *  @param[in]      context   しきい値レベル (com_util_trace_level *) を指すポインター。
  */
 static void trace_console_hook(com_util_tracer_hook_entry *prev, com_util_tracer *handle, com_util_trace_level level,
                                const com_util_timespec *timestamp, const char *message, void *context)
@@ -689,7 +689,7 @@ static void apply_send_command(PotrContext *handle, int is_file, char *cursor)
 /**
  *  @brief          トレーサーの hook 設定と開始を一度だけ実施します。
  *
- *  閾値は g_trace_level を参照するため、設定後の log コマンドによる変更も反映されます。
+ *  しきい値は g_trace_level を参照するため、設定後の log コマンドによる変更も反映されます。
  */
 static void ensure_tracer_started(void)
 {

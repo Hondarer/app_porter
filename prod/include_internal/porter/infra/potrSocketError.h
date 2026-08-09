@@ -36,7 +36,7 @@ typedef enum potr_socket_cause_t
     POTR_SOCKET_CAUSE_ADDRESS_NOT_AVAILABLE, /**< アドレスを利用できない。 */
     POTR_SOCKET_CAUSE_MESSAGE_SIZE,          /**< メッセージ サイズ不正。 */
     POTR_SOCKET_CAUSE_ACCESS_DENIED,         /**< アクセス拒否。 */
-    POTR_SOCKET_CAUSE_OUT_OF_MEMORY,         /**< メモリー不足。 */
+    POTR_SOCKET_CAUSE_OUT_OF_MEMORY,         /**< メモリ不足。 */
     POTR_SOCKET_CAUSE_TOO_MANY_OPEN_FILES,   /**< オープン ファイル数超過。 */
     POTR_SOCKET_CAUSE_INVALID_ARGUMENT,      /**< 不正引数。 */
     POTR_SOCKET_CAUSE_UNSUPPORTED,           /**< 未対応機能。 */

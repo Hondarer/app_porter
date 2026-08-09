@@ -62,7 +62,7 @@ typedef struct WorkerMonitorArg
 {
     int id;               /**< ワーカー ID。 */
     WorkerInfo *workers;  /**< ワーカー情報配列へのポインター。 */
-    HANDLE *events;       /**< ワーカーイベント配列へのポインター。 */
+    HANDLE *events;       /**< ワーカー イベント配列へのポインター。 */
     int conns_per_worker; /**< 1 ワーカーあたりの同時接続数上限。 */
 } WorkerMonitorArg;
 
@@ -306,7 +306,7 @@ static void worker_monitor_thread(void *arg)
 /**
  *  @brief          接続を受け付けられるワーカーのインデックスを返します。
  *  @param[in]      workers          ワーカー情報配列。
- *  @param[in]      events           ワーカーイベント配列。
+ *  @param[in]      events           ワーカー イベント配列。
  *  @param[in]      n                ワーカー数。
  *  @param[in]      conns_per_worker 1 ワーカーあたりの同時接続数上限。
  *  @return         空きワーカーのインデックス (0 〜 n - 1)。
@@ -332,7 +332,7 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
 /**
  *  @brief          n 個のワーカー プロセスを起動します。
  *  @param[in]      workers ワーカー情報配列。
- *  @param[in]      events  ワーカーイベント配列。
+ *  @param[in]      events  ワーカー イベント配列。
  *  @param[in]      n       ワーカー数。
  *
  *  各ワーカーに名前付きパイプと監視スレッドを作成し、

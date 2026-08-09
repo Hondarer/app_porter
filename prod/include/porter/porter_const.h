@@ -163,7 +163,7 @@
 #define POTR_SEND_QUEUE_DEPTH \
     1024U /**< 非同期送信キューの最大エントリ数のデフォルト値。設定ファイルの send_queue_depth で変更可能。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。 */
 #define POTR_PAYLOAD_ELEM_HDR_SIZE \
-    6U /**< パック コンテナー内ペイロード エレメントのヘッダーサイズ (バイト)。flags (2): POTR_FLAG_MORE_FRAG / POTR_FLAG_COMPRESSED を格納 + payload_len (4): uint32_t (NBO)。通番は外側パケットで管理するためペイロード エレメントには含まない。 */
+    6U /**< パック コンテナー内ペイロード エレメントのヘッダー サイズ (バイト)。flags (2): POTR_FLAG_MORE_FRAG / POTR_FLAG_COMPRESSED を格納 + payload_len (4): uint32_t (NBO)。通番は外側パケットで管理するためペイロード エレメントには含まない。 */
 #define POTR_MAX_PATH 4U /**< マルチパスの最大パス数。 */
 /** @} */
 

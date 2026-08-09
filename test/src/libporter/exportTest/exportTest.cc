@@ -27,7 +27,7 @@
     EXPORT_ENTRY(potrGetServiceType, int(POTR_API *)(const char *config_path, int64_t service_id, PotrType *type))
 
 // libporter が公開エクスポートすべき変数の一覧。
-// 現時点ではエントリなし (公開ヘッダーに dllexport 付きの変数エクスポートが存在しないため) 。
+// 現時点ではエントリなし (公開ヘッダーに dllexport 付きの変数エクスポートが存在しないため)。
 // 公開ヘッダーへ変数エクスポートを追加する場合は、ここへ X(変数名, 型 *) の形で登録する。
 #define POTR_EXPORT_VARIABLE_TABLE(EXPORT_ENTRY)
 
@@ -68,7 +68,7 @@ TEST_F(exportTest, symbol_names_match)
     // _ident_manifest_libporter_dll は gen_ident_manifest.py が自動生成するビルド識別データであり、
     // 関数ではないためシグネチャ検証の対象外としつつ、名前一致の期待値には含める。
     expected.insert(testing::identManifestSymbolName(
-        "libporter" TESTFW_SHARED_LIBRARY_EXTENSION)); // [状態] - IDENT manifest シンボル名を期待値へ追加する (Windows のみ実際にエクスポートされる) 。
+        "libporter" TESTFW_SHARED_LIBRARY_EXTENSION)); // [状態] - IDENT manifest シンボル名を期待値へ追加する (Windows のみ実際にエクスポートされる)。
 #endif                                                 /* PLATFORM_WINDOWS */
 
     // Pre-Assert
@@ -80,7 +80,7 @@ TEST_F(exportTest, symbol_names_match)
     // Assert
     testing::expectExportNamesMatch(
         expected, actual,
-        kExpectedExportSignatures); // [確認_正常系] - 期待シンボルとの不足や想定外がないこと (Windows / Linux とも完全一致) 。
+        kExpectedExportSignatures); // [確認_正常系] - 期待シンボルとの不足や想定外がないこと (Windows / Linux とも完全一致)。
 }
 
 // 公開ヘッダーの変数宣言が dllexport マクロ (POTR_EXPORT) を

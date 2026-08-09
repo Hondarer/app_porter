@@ -484,7 +484,7 @@ static void send_thread_func(void *arg)
 
                         if (packed_len + elem_size > (size_t)ctx->global.max_payload - crypto_tag_overhead)
                         {
-                            break; /* 容量満杯: 即時送信してタイマーリセット */
+                            break; /* 容量満杯: 即時送信してタイマー リセット */
                         }
 
                         if (potr_send_queue_try_pop(&ctx->send_queue, &next) != POTR_OK)

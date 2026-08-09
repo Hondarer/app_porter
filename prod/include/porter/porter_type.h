@@ -201,7 +201,7 @@ typedef struct PotrGlobalConfig
  *  payload フィールドはポインターであり、wire データとして直接 sendto に渡せません。\n
  *  送信時は PotrContext の send_wire_buf / recv_buf に wire データを組み立ててください。
  *
- *  ワイヤーフォーマット (バイト オフセット):
+ *  ワイヤー フォーマット (バイト オフセット):
     @code
      0: service_id       (int64_t,  8 bytes)
      8: session_tv_sec   (int64_t,  8 bytes)

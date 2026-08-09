@@ -161,7 +161,7 @@ TEST_F(potrConnectedThreadsTest, recv_failure_keeps_preexisting_send_thread_runn
 {
     // Arrange
     PotrConnectedThreadsOps ops = make_ops();
-    ctx.send_thread_running = 1; // [状態] - send スレッドが既に起動済みの状態とする。
+    ctx.send_thread_running = 1; // [状態] - send スレッドがすでに起動済みの状態とする。
 
     // Pre-Assert
     g_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - recv 開始 fake から POTR_ERR_IO を返却する。
@@ -238,7 +238,7 @@ TEST_F(potrConnectedThreadsTest, health_failure_keeps_preexisting_send_thread_ru
 {
     // Arrange
     PotrConnectedThreadsOps ops = make_ops();
-    ctx.send_thread_running = 1; // [状態] - send スレッドが既に起動済みの状態とする。
+    ctx.send_thread_running = 1; // [状態] - send スレッドがすでに起動済みの状態とする。
 
     // Pre-Assert
     g_calls.health_start_result =

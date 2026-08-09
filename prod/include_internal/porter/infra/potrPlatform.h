@@ -89,7 +89,7 @@ static inline void potr_shutdown_socket(PotrSocket fd)
 }
 
 /**
- *  @brief          16 ビット値をホストからネットワーク バイトオーダーへ変換します。
+ *  @brief          16 ビット値をホストからネットワーク バイト オーダーへ変換します。
  *  @param[in]      value 変換する値。
  *  @return         変換後の値を返します。
  */
@@ -98,7 +98,7 @@ static inline uint16_t potr_hton16(const uint16_t value)
     return htons(value);
 }
 /**
- *  @brief          16 ビット値をネットワークからホスト バイトオーダーへ変換します。
+ *  @brief          16 ビット値をネットワークからホスト バイト オーダーへ変換します。
  *  @param[in]      value 変換する値。
  *  @return         変換後の値を返します。
  */
@@ -107,7 +107,7 @@ static inline uint16_t potr_ntoh16(const uint16_t value)
     return ntohs(value);
 }
 /**
- *  @brief          32 ビット値をホストからネットワーク バイトオーダーへ変換します。
+ *  @brief          32 ビット値をホストからネットワーク バイト オーダーへ変換します。
  *  @param[in]      value 変換する値。
  *  @return         変換後の値を返します。
  */
@@ -116,7 +116,7 @@ static inline uint32_t potr_hton32(const uint32_t value)
     return htonl(value);
 }
 /**
- *  @brief          32 ビット値をネットワークからホスト バイトオーダーへ変換します。
+ *  @brief          32 ビット値をネットワークからホスト バイト オーダーへ変換します。
  *  @param[in]      value 変換する値。
  *  @return         変換後の値を返します。
  */

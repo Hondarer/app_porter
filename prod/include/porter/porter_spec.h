@@ -381,7 +381,7 @@ extern "C"
     POTR_EXPORT extern int POTR_API potrCloseService(PotrContext *handle);
 
     /**
-     *  @brief          porter 内部トレーサーハンドルを返します。
+     *  @brief          porter 内部トレーサー ハンドルを返します。
      *  @return         com_util_tracer ハンドル。NULL を返すことはありません。
      *
      *  porter ライブラリが内部で使用する com_util_tracer ハンドルを返します。\n

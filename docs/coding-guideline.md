@@ -152,8 +152,8 @@ if (ret != POTR_OK)
 com_util の API を呼び出した結果は `ret != COM_UTIL_OK` の名前比較で判定します。  
 porter の関数から返す場合は、`COM_UTIL_ERR_*` を porter の結果コードへ変換して返します。com_util の結果コードをそのまま porter の戻り値として素通ししません。  
 タイムアウトは `POTR_ERR_TIMEOUT`、ファイルおよびネットワークの失敗は `POTR_ERR_IO` のように、原因が判別できる場合は対応する分類へ変換します。  
-下位 API が詳細コードを提供せず、ほかの分類へ変換できない場合だけ `POTR_ERR_UNKNOWN` を返し、その理由をソース コメントに記載します。
-ソケット API の失敗は `potr_socket_error_report()` で `com_util_error` に捕捉し、対応する `POTR_ERR_*` へ変換します。
+下位 API が詳細コードを提供せず、ほかの分類へ変換できない場合だけ `POTR_ERR_UNKNOWN` を返し、その理由をソース コメントに記載します。  
+ソケット API の失敗は `potr_socket_error_report()` で `com_util_error` に捕捉し、対応する `POTR_ERR_*` へ変換します。  
 OS 固有コードは直接比較せず、`potr_socket_error_is()` と `POTR_SOCKET_CAUSE_*` を使用します。
 
 ```c
@@ -178,7 +178,7 @@ if (ret != COM_UTIL_OK)
 | ハンドル・ポインター返却系 (`potrGetTracer`、`peer_create`、`peer_find_by_*` など) | 成功時ポインター / 失敗・不在時 NULL | ポインター返却 API の慣用 |
 | 戻り値を持たない関数 | `void` | 同上 |
 
-`potr_socket_open`、`potr_bind`、`potr_listen`、`potr_accept`、`potr_connect`、`potr_setsockopt`、`potr_socket_get_pending_error` などの合成ラッパーは、`POTR_OK` または `POTR_ERR_*` と `com_util_error *detail_out` を返します。
+`potr_socket_open`、`potr_bind`、`potr_listen`、`potr_accept`、`potr_connect`、`potr_setsockopt`、`potr_socket_get_pending_error` などの合成ラッパーは、`POTR_OK` または `POTR_ERR_*` と `com_util_error *detail_out` を返します。  
 ソケット ハンドルは出力引数で返します。
 
 ### 検証

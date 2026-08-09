@@ -121,7 +121,7 @@ static int create_listen_socket(int port)
 
 /**
  *  @brief          ワーカー プロセスのメイン ループ (prefork モード用)。
- *  @param[in]      server_fd        サーバーソケットのファイル記述子。
+ *  @param[in]      server_fd        サーバー ソケットのファイル記述子。
  *  @param[in]      worker_id        ワーカーの識別番号。
  *  @param[in]      conns_per_worker 同時接続数。1 の場合は逐次処理、2 以上は epoll 多重処理。
  *
