@@ -531,7 +531,7 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
     EXPECT_EQ(string::npos,
               getStdout(recv_h_).find("接続確立")); // [確認_正常系] - open 直後の時点で "接続確立" が出力されないこと。
 
-    interruptProcess(send_h_);                // [手順] - SENDER に SIGINT (Ctrl + C) を入力する。
+    interruptProcess(send_h_); // [手順] - SENDER に SIGINT (Ctrl + C) を入力する。
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
@@ -772,7 +772,7 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
     ASSERT_TRUE(writeLineStdin(send_h_, string("send ") + payload)); // [手順] - 単発メッセージを送信する。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
 
-    ASSERT_TRUE(writeLineStdin(send_h_, "exit"));           // [手順] - 送信直後に "exit" で SENDER を close する。
+    ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - 送信直後に "exit" で SENDER を close する。
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。

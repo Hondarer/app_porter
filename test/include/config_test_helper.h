@@ -18,9 +18,7 @@ class ConfigLineStream
         }
     }
 
-    explicit ConfigLineStream(const std::vector<std::string> &lines) : lines_(lines)
-    {
-    }
+    explicit ConfigLineStream(const std::vector<std::string> &lines) : lines_(lines) {}
 
     static FILE *handle()
     {
@@ -55,7 +53,7 @@ class ConfigLineStream
 
   private:
     std::vector<std::string> lines_;
-    size_t                   next_ = 0U;
+    size_t next_ = 0U;
 };
 
 #endif /* PORTER_CONFIG_TEST_HELPER_H */

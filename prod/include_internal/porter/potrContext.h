@@ -155,7 +155,7 @@ typedef struct PotrPeerContext
     volatile uint8_t path_ping_state
         [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。 */
     uint8_t remote_path_ping_state
-        [POTR_MAX_PATH];       /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
+        [POTR_MAX_PATH];            /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     com_util_timespec last_recv_ts; /**< 最終受信時刻 (CLOCK_MONOTONIC)。tv_sec == 0 は未受信。 */
 
     /* NACK 重複抑制 */

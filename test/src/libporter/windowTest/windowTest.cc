@@ -126,7 +126,7 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
     EXPECT_EQ(
         POTR_OK,
         rtc_latest); // [確認_正常系] - window_send_get の戻り値から、最新エントリの取得が成功したと判断できること。
-    EXPECT_EQ(1U, win.base_seq);         // [確認_正常系] - evict により base_seq が前進すること。
+    EXPECT_EQ(1U, win.base_seq); // [確認_正常系] - evict により base_seq が前進すること。
 }
 
 // - send_get がプール スロットへディープ コピーされたペイロードを返すこと。
@@ -153,7 +153,7 @@ TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
     // Assert
     EXPECT_EQ(POTR_OK,
               rtc_get); // [確認_正常系] - window_send_get の戻り値から、保持中の通番の取得が成功したと判断できること。
-    EXPECT_EQ(0x01, out.payload[0]);  // [確認_正常系] - push 時点のペイロードがディープ コピーで保持されること。
+    EXPECT_EQ(0x01, out.payload[0]); // [確認_正常系] - push 時点のペイロードがディープ コピーで保持されること。
     EXPECT_EQ(
         POTR_ERR_NOT_FOUND,
         rtc_out_of_range); // [確認_異常系] - 範囲外の通番 99 の window_send_get の戻り値が POTR_ERR_NOT_FOUND であること。
@@ -193,10 +193,10 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
     // Assert
     EXPECT_EQ(POTR_OK,
               rtc_pop0); // [確認_正常系] - window_recv_pop の戻り値から、1 件目の pop が成功したと判断できること。
-    EXPECT_EQ(0U, seq0);                  // [確認_正常系] - 1 件目が通番 0 で取り出されること。
+    EXPECT_EQ(0U, seq0); // [確認_正常系] - 1 件目が通番 0 で取り出されること。
     EXPECT_EQ(POTR_OK,
               rtc_pop1); // [確認_正常系] - window_recv_pop の戻り値から、2 件目の pop が成功したと判断できること。
-    EXPECT_EQ(1U, seq1);                  // [確認_正常系] - 2 件目が通番 1 で取り出され、通番順が保たれること。
+    EXPECT_EQ(1U, seq1); // [確認_正常系] - 2 件目が通番 1 で取り出され、通番順が保たれること。
     EXPECT_EQ(POTR_ERR_EMPTY,
               rtc_pop_empty); // [確認_異常系] - 空ウィンドウの window_recv_pop の戻り値が POTR_ERR_EMPTY であること。
 }
@@ -244,12 +244,12 @@ TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
     }
 
     // Assert
-    EXPECT_EQ(1, rtc_gap);                  // [確認_正常系] - 先行パケット到着時に欠番が検出されること。
-    EXPECT_EQ(0U, nack_num);                // [確認_正常系] - NACK 対象が next_seq (0) であること。
+    EXPECT_EQ(1, rtc_gap);   // [確認_正常系] - 先行パケット到着時に欠番が検出されること。
+    EXPECT_EQ(0U, nack_num); // [確認_正常系] - NACK 対象が next_seq (0) であること。
     EXPECT_EQ(POTR_ERR_EMPTY,
               rtc_pop_blocked); // [確認_異常系] - 欠番未解消時の window_recv_pop の戻り値が POTR_ERR_EMPTY であること。
-    EXPECT_EQ(0, rtc_no_gap);               // [確認_正常系] - 欠番解消後は NACK 不要になること。
-    EXPECT_EQ(3, pop_count);                // [確認_正常系] - 3 件すべて順に取り出せること。
+    EXPECT_EQ(0, rtc_no_gap);   // [確認_正常系] - 欠番解消後は NACK 不要になること。
+    EXPECT_EQ(3, pop_count);    // [確認_正常系] - 3 件すべて順に取り出せること。
 }
 
 // - ウィンドウ範囲外の通番の push が POTR_ERR_OUT_OF_WINDOW を返すこと。
@@ -317,8 +317,8 @@ TEST_F(windowTest, recvResetClearsSlotsAndSetsNewBase)
     int rtc_pop = window_recv_pop(&win, &out);
 
     // Assert
-    EXPECT_EQ(500U, win.base_seq);  // [確認_正常系] - base_seq が新基点になること。
-    EXPECT_EQ(500U, win.next_seq);  // [確認_正常系] - next_seq が新基点になること。
+    EXPECT_EQ(500U, win.base_seq); // [確認_正常系] - base_seq が新基点になること。
+    EXPECT_EQ(500U, win.next_seq); // [確認_正常系] - next_seq が新基点になること。
     EXPECT_EQ(
         POTR_ERR_EMPTY,
         rtc_pop); // [確認_正常系] - リセット後の window_recv_pop の戻り値が POTR_ERR_EMPTY となり、格納済みスロットが無効化されること。

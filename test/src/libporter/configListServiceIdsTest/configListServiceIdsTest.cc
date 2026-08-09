@@ -96,11 +96,11 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
 
     // Assert
     ASSERT_EQ(POTR_OK,
-              rtc); // [確認_正常系] - config_list_service_ids の戻り値から、列挙に成功したと判断できること。
-    ASSERT_NE(nullptr, ids);      // [確認_正常系] - service ID 配列が確保されること。
-    EXPECT_EQ(70, count);         // [確認_正常系] - 非 service section を除いた 70 件が列挙されること。
-    EXPECT_EQ(1000, ids[0]);      // [確認_正常系] - 先頭 service ID を保持すること。
-    EXPECT_EQ(1069, ids[69]);     // [確認_正常系] - 64 件超でも末尾 service ID を保持すること。
+              rtc);           // [確認_正常系] - config_list_service_ids の戻り値から、列挙に成功したと判断できること。
+    ASSERT_NE(nullptr, ids);  // [確認_正常系] - service ID 配列が確保されること。
+    EXPECT_EQ(70, count);     // [確認_正常系] - 非 service section を除いた 70 件が列挙されること。
+    EXPECT_EQ(1000, ids[0]);  // [確認_正常系] - 先頭 service ID を保持すること。
+    EXPECT_EQ(1069, ids[69]); // [確認_正常系] - 64 件超でも末尾 service ID を保持すること。
 
     // Cleanup
     free(ids);

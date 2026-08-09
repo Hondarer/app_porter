@@ -138,7 +138,7 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
 
     // Assert
     EXPECT_EQ(POTR_ERR_DISCONNECTED, rtc); // [確認_異常系] - potrSend の戻り値が POTR_ERR_DISCONNECTED であること。
-    EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
+    EXPECT_EQ(0U, ctx.send_queue.count);   // [確認_異常系] - 送信キューに積まれないこと。
 }
 
 // N:1 の全 peer 送信で接続済み peer が 1 件もない場合に切断エラーとなることの確認
@@ -162,8 +162,8 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
                        0); // [手順] - POTR_PEER_ALL 宛てに potrSend で送信を試みる。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_DISCONNECTED, rtc);   // [確認_異常系] - potrSend の戻り値が POTR_ERR_DISCONNECTED であること。
-    EXPECT_EQ(0U, ctx.send_queue.count);     // [確認_異常系] - 送信キューに積まれないこと。
+    EXPECT_EQ(POTR_ERR_DISCONNECTED, rtc); // [確認_異常系] - potrSend の戻り値が POTR_ERR_DISCONNECTED であること。
+    EXPECT_EQ(0U, ctx.send_queue.count);   // [確認_異常系] - 送信キューに積まれないこと。
 }
 
 // N:1 の全 peer 送信が接続済み peer だけへ送られることの確認

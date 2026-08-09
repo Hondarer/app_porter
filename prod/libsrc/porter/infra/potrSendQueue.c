@@ -29,14 +29,14 @@ int potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload)
 
     memset(q, 0, sizeof(*q));
 
-    q->entries      = (PotrPayloadElem *)malloc(depth * sizeof(PotrPayloadElem));
+    q->entries = (PotrPayloadElem *)malloc(depth * sizeof(PotrPayloadElem));
     q->payload_pool = (uint8_t *)malloc(depth * (size_t)max_payload);
 
     if (q->entries == NULL || q->payload_pool == NULL)
     {
         free(q->entries);
         free(q->payload_pool);
-        q->entries      = NULL;
+        q->entries = NULL;
         q->payload_pool = NULL;
         return POTR_ERR_OUT_OF_MEMORY;
     }
@@ -45,10 +45,10 @@ int potr_send_queue_init(PotrSendQueue *q, size_t depth, uint16_t max_payload)
 
     for (i = 0; i < depth; i++)
     {
-        q->entries[i].peer_id     = POTR_PEER_NA;
-        q->entries[i].flags       = 0;
+        q->entries[i].peer_id = POTR_PEER_NA;
+        q->entries[i].flags = 0;
         q->entries[i].payload_len = 0;
-        q->entries[i].payload     = q->payload_pool + i * (size_t)max_payload;
+        q->entries[i].payload = q->payload_pool + i * (size_t)max_payload;
     }
 
     com_util_local_lock_create(&q->mutex);
@@ -68,15 +68,14 @@ void potr_send_queue_dispose(PotrSendQueue *q)
     com_util_local_lock_destroy(q->mutex);
     free(q->entries);
     free(q->payload_pool);
-    q->entries      = NULL;
+    q->entries = NULL;
     q->payload_pool = NULL;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id,
-                         uint16_t flags,
-                         const void *payload, uint16_t payload_len)
+int potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id, uint16_t flags, const void *payload,
+                         uint16_t payload_len)
 {
     com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
 
@@ -86,8 +85,8 @@ int potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id,
         return POTR_ERR_FULL;
     }
 
-    q->entries[q->tail].peer_id     = peer_id;
-    q->entries[q->tail].flags       = flags;
+    q->entries[q->tail].peer_id = peer_id;
+    q->entries[q->tail].flags = flags;
     q->entries[q->tail].payload_len = payload_len;
     memcpy(q->entries[q->tail].payload, payload, payload_len);
     q->tail = (q->tail + 1U) % q->depth;
@@ -101,10 +100,8 @@ int potr_send_queue_push(PotrSendQueue *q, PotrPeerId peer_id,
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id,
-                              uint16_t flags,
-                              const void *payload, uint16_t payload_len,
-                              volatile int *running)
+int potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id, uint16_t flags, const void *payload,
+                              uint16_t payload_len, volatile int *running)
 {
     com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
 
@@ -120,8 +117,8 @@ int potr_send_queue_push_wait(PotrSendQueue *q, PotrPeerId peer_id,
         com_util_condvar_wait(q->not_full, q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     }
 
-    q->entries[q->tail].peer_id     = peer_id;
-    q->entries[q->tail].flags       = flags;
+    q->entries[q->tail].peer_id = peer_id;
+    q->entries[q->tail].flags = flags;
     q->entries[q->tail].payload_len = payload_len;
     memcpy(q->entries[q->tail].payload, payload, payload_len);
     q->tail = (q->tail + 1U) % q->depth;
@@ -149,7 +146,7 @@ int potr_send_queue_pop(PotrSendQueue *q, PotrPayloadElem *out, volatile int *ru
         com_util_condvar_wait(q->not_empty, q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
     }
 
-    *out    = q->entries[q->head];
+    *out = q->entries[q->head];
     q->head = (q->head + 1U) % q->depth;
     q->count--;
     q->inflight++;
@@ -180,8 +177,7 @@ int potr_send_queue_peek(PotrSendQueue *q, PotrPayloadElem *out)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_send_queue_peek_timed(PotrSendQueue *q, PotrPayloadElem *out,
-                               int timeout_ms)
+int potr_send_queue_peek_timed(PotrSendQueue *q, PotrPayloadElem *out, int timeout_ms)
 {
     com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
 
@@ -214,7 +210,7 @@ int potr_send_queue_try_pop(PotrSendQueue *q, PotrPayloadElem *out)
         return POTR_ERR_EMPTY;
     }
 
-    *out    = q->entries[q->head];
+    *out = q->entries[q->head];
     q->head = (q->head + 1U) % q->depth;
     q->count--;
     q->inflight++;
