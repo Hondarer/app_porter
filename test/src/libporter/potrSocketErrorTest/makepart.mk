@@ -7,4 +7,5 @@ TEST_SRCS := \
 	$(MYAPP_DIR)/prod/libsrc/porter/infra/potrPlatform_windows.c
 
 # ライブラリの指定
-LIBS += com_util
+# TEST_SRCS の socket() / sendto() は include_override により mock_libc の関数へ置換される。
+LIBS += com_util mock_libc
