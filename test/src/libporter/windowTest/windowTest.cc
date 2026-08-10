@@ -253,7 +253,7 @@ TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
 }
 
 // - ウィンドウ範囲外の通番の push が POTR_ERR_OUT_OF_WINDOW を返すこと。
-// - 同一通番の重複 push が成功扱い (冪等) になること。
+// - 同一通番の重複 push が成功扱い (べき等) になること。
 TEST_F(windowTest, recvPushRejectsOutOfWindowAndAcceptsDuplicate)
 {
     // Arrange
