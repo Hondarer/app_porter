@@ -4,17 +4,67 @@
 
 ## porter 固有の規則
 
-`prod/libsrc/porter/` で `PLATFORM_*` による分岐を記述できるのは、`infra/potrPlatform*.c`、`infra/potrSocketError*.c`、`util/potrIpAddr.c` だけです。  
-ソケット型には `PotrSocket`、無効値には `POTR_INVALID_SOCKET` を使用します。  
-呼び出し側は `socket`、`bind`、`listen`、`accept`、`connect`、`getsockopt`、`setsockopt`、`sendto`、`recvfrom`、`poll`、`select` を直接呼び出さず、`potrPlatform.h` の内部 API を使用します。  
-16 ビットおよび 32 ビット値のバイト オーダー変換には `potr_hton16`、`potr_ntoh16`、`potr_hton32`、`potr_ntoh32` を使用し、`hton*` と `ntoh*` を直接呼び出しません。
+porter の製品コード (`prod/libsrc/porter/`、`prod/include/`、`prod/include_internal/`) に `PLATFORM_*` による分岐を置きません。
 
-ソケット API の失敗は `com_util_error` に捕捉します。  
-呼び出し側は `errno` や `WSAGetLastError()` を直接参照せず、`potr_socket_error_is()` で `POTR_SOCKET_CAUSE_*` を判定します。  
-ワーカー スレッドで記録した直前値はそのスレッドだけに属するため、非同期の失敗はトレースにも詳細を記録します。  
-`getaddrinfo` が返す EAI エラーは errno や Winsock エラーと異なる体系であるため `com_util_error` へ格納せず、コードとメッセージをトレースへ記録します。  
-複数ソケットの poll へ無効ソケットだけを渡した場合は、読み取り可能なソケットがない正常状態として成功を返します。  
-ブロードキャスト送信には `SO_BROADCAST` が必須であるため、このオプションの設定失敗はサービス開始の失敗として扱います。
+> [!IMPORTANT]
+> OS 差異の吸収は com_util の責務であり、porter は com_util が提供する OS 非依存の API だけを呼び出します。
+> 新しい OS 分岐が必要になった場合は、porter 側へ書くのではなく com_util の対応するカテゴリを拡張してください。
 
-片側専用の Linux ソースは、Windows と MSVC の組み合わせで空翻訳単位の警告を抑止します。  
-pragma や属性の分岐には `COMPILER_*`、OS API の分岐には `PLATFORM_*` を使用し、分岐の軸を混在させません。
+porter は通信に `com_util` の `net` カテゴリを使用し、OS のソケット API (`socket`、`bind`、`listen`、`accept`、`connect`、`getsockopt`、`setsockopt`、`sendto`、`recvfrom`、`poll`、`select` など) を直接呼び出しません。
+
+ソケット ハンドルには `com_util_socket`、無効値には `COM_UTIL_INVALID_SOCKET` を使用します。  
+数値リテラルの `-1` や `INVALID_SOCKET` との比較は行いません。
+
+アドレスとポートの受け渡しには `com_util_ipv4_endpoint` を使用し、`struct sockaddr_in` を扱いません。
+
+16 ビットおよび 32 ビット値のバイト オーダー変換には `com_util_hton16`、`com_util_ntoh16`、`com_util_hton32`、`com_util_ntoh32` を使用し、`htons` などの OS API を直接呼び出しません。
+
+ソケット API の失敗は `com_util_error` に格納されます。  
+呼び出し側は `errno` や `WSAGetLastError()` を直接参照せず、`com_util_error_is()` で `com_util_error_cause` の値を判定します。
+
+> [!NOTE]
+> ワーカー スレッドで記録した直前値はそのスレッドだけに属するため、非同期の失敗はトレースにも詳細を記録します。
+
+`com_util/net` の初期化と終了は API 内部で行われるため、porter が `potr_socket_lib_init()` 相当の呼び出しを行うことはありません。
+
+`com_util/net` カテゴリの API 契約 (複数ソケットの待機、受信半クローズの非対称性、`getaddrinfo` 由来エラーの扱いなど) は [ネットワーク API ガイドライン](../../com_util/docs/net-api-guideline.md) を参照してください。porter 側では同じ内容を繰り返しません。
+
+## 移行前との対応
+
+| 移行前 (porter) | 移行後 (com_util) |
+|---|---|
+| `PotrSocket` | `com_util_socket` |
+| `POTR_INVALID_SOCKET` | `COM_UTIL_INVALID_SOCKET` |
+| `struct sockaddr_in` | `com_util_ipv4_endpoint` |
+| `potr_hton16` など | `com_util_hton16` など |
+| `potr_socket_cause_t` / `POTR_SOCKET_CAUSE_*` | `com_util_error_cause` / `COM_UTIL_CAUSE_*` |
+| `potr_socket_error_is()` | `com_util_error_is()` |
+| `potr_socket_lib_init()` / `potr_socket_lib_cleanup()` | 削除 (`com_util/net` が内部で初期化) |
+
+## コンパイラ依存の分岐
+
+pragma や属性の分岐が必要な場合は `COMPILER_*` を使用し、OS 分岐の `PLATFORM_*` と軸を混在させません。
+
+> [!NOTE]
+> 片側専用の Linux ソースが Windows + MSVC でも走査される構成では、空翻訳単位の警告 (C4206) を抑止する目的で `COMPILER_MSVC` の分岐が残る場合があります。
+> これは com_util のプラットフォーム抽象化規範に定めるファイル分割の一般則であり、porter 固有の規則ではありません。
+
+## 検証方法
+
+以下の grep で、porter の製品コードに OS API や `PLATFORM_*` が残っていないことを確認します。
+
+```bash
+# OS のソケット API を直接呼び出していないこと
+grep -rnE "\b(socket|bind|listen|accept|connect|getsockopt|setsockopt|sendto|recvfrom|poll|select)\s*\(" app/porter/prod/libsrc/ app/porter/prod/include/ app/porter/prod/include_internal/
+
+# PLATFORM_* による分岐が残っていないこと
+grep -rn "PLATFORM_LINUX\|PLATFORM_WINDOWS" app/porter/prod/libsrc/ app/porter/prod/include/ app/porter/prod/include_internal/
+
+# errno / WSAGetLastError の直接参照が残っていないこと
+grep -rn "errno\|WSAGetLastError" app/porter/prod/libsrc/ app/porter/prod/include/ app/porter/prod/include_internal/
+
+# htons などの OS バイトオーダー API を直接呼び出していないこと
+grep -rnE "\b(htons|ntohs|htonl|ntohl)\s*\(" app/porter/prod/libsrc/ app/porter/prod/include/ app/porter/prod/include_internal/
+```
+
+いずれも該当なしとなることを確認してください。

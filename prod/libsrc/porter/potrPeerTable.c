@@ -25,10 +25,11 @@
 #include <porter/protocol/packet.h>
 #include <porter/protocol/window.h>
 #include <porter/infra/potrTrace.h>
-#include <porter/infra/potrPlatform.h>
-#include <porter/util/potrIpAddr.h>
 #include <com_util/crypto/crypto.h>
 #include <com_util/crypto/random.h>
+#include <com_util/net/byteorder.h>
+#include <com_util/net/endpoint.h>
+#include <com_util/net/socket.h>
 
 /* ピアのセッション識別子・開始時刻を生成して peer に格納する
  * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は
@@ -112,8 +113,8 @@ void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
 
     if (has_data)
     {
-        fin_pkt.flags |= potr_hton16(POTR_FLAG_FIN_TARGET_VALID);
-        fin_pkt.ack_num = potr_hton32(wire_target_seq);
+        fin_pkt.flags |= com_util_hton16(POTR_FLAG_FIN_TARGET_VALID);
+        fin_pkt.ack_num = com_util_hton32(wire_target_seq);
     }
 
     if (ctx->service.encrypt_enabled)
@@ -122,8 +123,8 @@ void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
 
-        fin_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
-        fin_pkt.payload_len = potr_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
+        fin_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
+        fin_pkt.payload_len = com_util_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         /* ノンス: session_id(4B) + flags(2B, FIN|ENCRYPTED NBO) + 0(4B) + padding(2B) */
         memcpy(nonce, &fin_pkt.session_id, 4);
@@ -141,12 +142,13 @@ void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
 
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            if (peer->dest_addr[i].sin_family == 0)
+            size_t sent = 0;
+
+            if (potr_endpoint_is_unset(&peer->dest_addr[i]))
                 continue;
-            if (ctx->sock[i] == POTR_INVALID_SOCKET)
+            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
                 continue;
-            potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&peer->dest_addr[i],
-                        (int)sizeof(peer->dest_addr[i]), NULL);
+            (void)com_util_socket_sendto(ctx->sock[i], wire_buf, wire_len, &peer->dest_addr[i], &sent, NULL);
         }
     }
     else
@@ -155,12 +157,14 @@ void peer_send_fin(PotrContext *ctx, PotrPeerContext *peer)
 
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            if (peer->dest_addr[i].sin_family == 0)
+            size_t sent = 0;
+
+            if (potr_endpoint_is_unset(&peer->dest_addr[i]))
                 continue;
-            if (ctx->sock[i] == POTR_INVALID_SOCKET)
+            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
                 continue;
-            potr_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, 0,
-                        (const struct sockaddr *)&peer->dest_addr[i], (int)sizeof(peer->dest_addr[i]), NULL);
+            (void)com_util_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &peer->dest_addr[i], &sent,
+                                         NULL);
         }
     }
 }
@@ -273,7 +277,7 @@ PotrPeerContext *peer_find_by_id(const PotrContext *ctx, PotrPeerId peer_id)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_addr, int path_idx)
+PotrPeerContext *peer_create(PotrContext *ctx, const com_util_ipv4_endpoint *sender_addr, int path_idx)
 {
     int i;
     PotrPeerContext *peer = NULL;
@@ -281,12 +285,12 @@ PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_
     /* max_peers 超過チェック */
     if (ctx->n_peers >= ctx->max_peers)
     {
-        char ip_str[INET_ADDRSTRLEN];
-        (void)potr_ipv4_to_string(sender_addr->sin_addr, ip_str, sizeof(ip_str), NULL);
+        char ip_str[COM_UTIL_IPV4_ADDR_STRLEN];
+        (void)com_util_ipv4_to_string(sender_addr->address, ip_str, sizeof(ip_str), NULL);
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
                    "peer_create: service_id=%" PRId64 " max_peers=%d reached, "
                    "rejecting new connection from %s:%u",
-                   ctx->service.service_id, ctx->max_peers, ip_str, (unsigned)potr_ntoh16(sender_addr->sin_port));
+                   ctx->service.service_id, ctx->max_peers, ip_str, (unsigned)com_util_ntoh16(sender_addr->port));
         return NULL;
     }
 
@@ -376,7 +380,7 @@ PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_
 
 void peer_path_clear(const PotrContext *ctx, PotrPeerContext *peer, int path_idx)
 {
-    if (peer->dest_addr[path_idx].sin_family == 0)
+    if (potr_endpoint_is_unset(&peer->dest_addr[path_idx]))
     {
         return; /* すでに未使用スロット */
     }
@@ -384,7 +388,7 @@ void peer_path_clear(const PotrContext *ctx, PotrPeerContext *peer, int path_idx
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING, "peer_path_clear: service_id=%" PRId64 " peer=%u path %d cleared",
                ctx->service.service_id, (unsigned)peer->peer_id, path_idx);
 
-    memset(&peer->dest_addr[path_idx], 0, sizeof(peer->dest_addr[path_idx]));
+    potr_endpoint_clear(&peer->dest_addr[path_idx]);
     peer->path_last_recv_ts[path_idx].tv_sec = 0;
     peer->path_last_recv_ts[path_idx].tv_nsec = 0;
     peer->n_paths--;

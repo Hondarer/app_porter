@@ -42,13 +42,14 @@
 #include <porter/potrContext.h>
 #include <porter/potrPeerTable.h>
 #include <porter/infra/potrSendQueue.h>
-#include <porter/infra/potrPlatform.h>
 #include <porter/thread/potrSendThread.h>
 #include <porter/thread/potrHealthThread.h>
 #include <porter/protocol/packet.h>
 #include <porter/protocol/window.h>
 #include <porter/infra/potrTrace.h>
 #include <com_util/crypto/crypto.h>
+#include <com_util/net/byteorder.h>
+#include <com_util/net/socket.h>
 
 static int should_track_valid_data_send_time(const PotrContext *ctx)
 {
@@ -58,8 +59,8 @@ static int should_track_valid_data_send_time(const PotrContext *ctx)
 /* ペイロード エレメントを packed_buf に追記する */
 static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const PotrPayloadElem *entry)
 {
-    uint16_t flags_nbo = potr_hton16(entry->flags);
-    uint32_t plen_nbo = potr_hton32((uint32_t)entry->payload_len);
+    uint16_t flags_nbo = com_util_hton16(entry->flags);
+    uint32_t plen_nbo = com_util_hton32((uint32_t)entry->payload_len);
 
     memcpy(packed_buf + *packed_len, &flags_nbo, 2);
     *packed_len += 2;
@@ -112,8 +113,8 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_len = ctx->crypto_buf_size;
 
-        outer_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
-        outer_pkt.payload_len = potr_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
+        outer_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
+        outer_pkt.payload_len = com_util_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
 
         /* ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
          * outer_pkt の各フィールドはすでに NBO */
@@ -188,21 +189,21 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
             int i;
             for (i = 0; i < ctx->n_path; i++)
             {
-                int pr;
+                int writable = 0;
 
-                if (ctx->tcp_conn_fd[i] == POTR_INVALID_SOCKET)
+                if (ctx->tcp_conn_fd[i] == COM_UTIL_INVALID_SOCKET)
                     continue;
 
                 /* 送信バッファーの空きを確認 (非ブロッキング) */
-                pr = potr_poll_writable(ctx->tcp_conn_fd[i], 0, NULL);
-                if (pr > 0)
+                (void)com_util_socket_wait_writable(ctx->tcp_conn_fd[i], COM_UTIL_SOCKET_NO_WAIT, &writable, NULL);
+                if (writable)
                 {
                     if (ctx->buf_full_suppress_cnt[i] > 0 && ++ctx->buf_full_suppress_cnt[i] > 10)
                     {
                         ctx->buf_full_suppress_cnt[i] = 0;
                     }
                     com_util_local_lock_lock(ctx->tcp_send_mutex[i], COM_UTIL_SYNC_WAIT_FOREVER);
-                    potr_tcp_send(ctx->tcp_conn_fd[i], ctx->send_wire_buf, wire_len, NULL);
+                    (void)com_util_socket_send_all(ctx->tcp_conn_fd[i], ctx->send_wire_buf, wire_len, NULL);
                     com_util_local_lock_unlock(ctx->tcp_send_mutex[i]);
                 }
                 else
@@ -225,10 +226,12 @@ static void flush_packed(PotrContext *ctx, size_t packed_len)
         int sent_any = 0;
         for (i = 0; i < ctx->n_path; i++)
         {
-            int sent_len;
-            sent_len = potr_sendto(ctx->sock[i], ctx->send_wire_buf, wire_len, 0,
-                                   (const struct sockaddr *)&ctx->dest_addr[i], (int)sizeof(ctx->dest_addr[i]), NULL);
-            if (sent_len == (int)wire_len)
+            size_t sent = 0;
+            int send_ret;
+
+            send_ret =
+                com_util_socket_sendto(ctx->sock[i], ctx->send_wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
+            if (send_ret == COM_UTIL_OK)
             {
                 sent_any = 1;
             }
@@ -270,8 +273,8 @@ static void flush_packed_peer(PotrContext *ctx, PotrPeerContext *peer, size_t pa
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_len = ctx->crypto_buf_size;
 
-        outer_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
-        outer_pkt.payload_len = potr_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
+        outer_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
+        outer_pkt.payload_len = com_util_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
 
         /* ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
          * outer_pkt の各フィールドはすでに NBO */
@@ -322,10 +325,11 @@ static void flush_packed_peer(PotrContext *ctx, PotrPeerContext *peer, size_t pa
         int k;
         for (k = 0; k < (int)POTR_MAX_PATH; k++)
         {
-            if (peer->dest_addr[k].sin_family == 0)
+            size_t sent = 0;
+
+            if (potr_endpoint_is_unset(&peer->dest_addr[k]))
                 continue;
-            potr_sendto(ctx->sock[k], ctx->send_wire_buf, wire_len, 0, (const struct sockaddr *)&peer->dest_addr[k],
-                        (int)sizeof(peer->dest_addr[k]), NULL);
+            (void)com_util_socket_sendto(ctx->sock[k], ctx->send_wire_buf, wire_len, &peer->dest_addr[k], &sent, NULL);
         }
     }
 }

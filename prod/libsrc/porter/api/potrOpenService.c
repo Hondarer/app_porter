@@ -31,38 +31,73 @@
 #include <porter/thread/potrConnectThread.h>
 #include <porter/infra/potrSendQueue.h>
 #include <porter/thread/potrSendThread.h>
-#include <porter/util/potrIpAddr.h>
 #include <porter/infra/potrTrace.h>
-#include <porter/infra/potrPlatform.h>
+#include <porter/infra/potrResult.h>
+#include <com_util/net/byteorder.h>
+#include <com_util/net/endpoint.h>
+#include <com_util/net/socket.h>
 
-/* ソケットを作成して bind する。成功時は PotrSocket を返す。失敗時は POTR_INVALID_SOCKET。
-   bind_addr: bind する IPv4 アドレス。port: bind するポート番号 (0 = OS 自動選定)。 */
-static PotrSocket open_socket_unicast(struct in_addr bind_addr, uint16_t port)
+/* com_util のアドレス解決/変換結果コードを porter の結果コードへ変換する。
+ * com_util_ipv4_resolve() / com_util_ipv4_parse() は COM_UTIL_ERR_INVALID_ARGUMENT または
+ * COM_UTIL_ERR_UNKNOWN のみを返し、失敗時の詳細エラーはソケット由来ではない (GAI ドメイン等) ため
+ * potr_internal_result_from_error() の要因ベース変換は適用しない。 */
+static int potr_result_from_ipv4_result(int com_util_result)
 {
-    PotrSocket sock;
-    struct sockaddr_in addr;
-    int reuse = 1;
+    if (com_util_result == COM_UTIL_OK)
+    {
+        return POTR_OK;
+    }
+    if (com_util_result == COM_UTIL_ERR_INVALID_ARGUMENT)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    return POTR_ERR_IO;
+}
+
+/* ホスト名または IPv4 アドレス文字列を解決する。旧 resolve_ipv4() 相当の薄いラッパー。 */
+static int resolve_ipv4(const char *host, uint32_t *address_out)
+{
+    com_util_error detail;
+    int result = com_util_ipv4_resolve(host, address_out, &detail);
+
+    if (result != COM_UTIL_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "resolve_ipv4(%s) failed", host);
+    }
+    return potr_result_from_ipv4_result(result);
+}
+
+/* ドット区切りの IPv4 アドレス文字列を解析する。旧 parse_ipv4_addr() 相当の薄いラッパー。 */
+static int parse_ipv4(const char *text, uint32_t *address_out)
+{
+    return potr_result_from_ipv4_result(com_util_ipv4_parse(text, address_out));
+}
+
+/* ソケットを作成して bind する。成功時はソケットを返す。失敗時は COM_UTIL_INVALID_SOCKET。
+   bind_addr: bind する IPv4 アドレス (ネットワーク バイト オーダー)。port: bind するポート番号 (0 = OS 自動選定)。 */
+static com_util_socket open_socket_unicast(uint32_t bind_addr, uint16_t port)
+{
+    com_util_socket sock;
+    com_util_ipv4_endpoint addr = {0};
     com_util_error detail;
 
-    if (potr_socket_open(SOCK_DGRAM, &sock, &detail) != POTR_OK)
+    if (com_util_socket_open(COM_UTIL_SOCKET_UDP, &sock, &detail) != COM_UTIL_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return POTR_INVALID_SOCKET;
+        return COM_UTIL_INVALID_SOCKET;
     }
 
     /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
-    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), NULL);
+    (void)com_util_socket_set_reuse_address(sock, 1, NULL);
 
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr = bind_addr;
-    addr.sin_port = potr_hton16(port);
+    addr.address = bind_addr;
+    addr.port = com_util_hton16(port);
 
-    if (potr_bind(sock, &addr, &detail) != POTR_OK)
+    if (com_util_socket_bind(sock, &addr, &detail) != COM_UTIL_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
-        potr_close_socket(sock);
-        return POTR_INVALID_SOCKET;
+        com_util_socket_close(sock);
+        return COM_UTIL_INVALID_SOCKET;
     }
 
     return sock;
@@ -90,12 +125,11 @@ static int generate_session(PotrContext *ctx)
 /* マルチキャスト ソケットを作成して bind・グループ参加する。
    src_if: 使用するローカル インターフェース (INADDR_ANY = OS 自動選択)。
    is_receiver: 1 = 受信者、0 = 送信者。 */
-static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_addr src_if, int is_receiver)
+static com_util_socket open_socket_multicast(const PotrServiceDef *def, uint32_t src_if, int is_receiver)
 {
-    PotrSocket sock;
-    struct sockaddr_in addr;
-    struct ip_mreq mreq;
-    int reuse = 1;
+    com_util_socket sock;
+    com_util_ipv4_endpoint addr = {0};
+    uint32_t group_addr;
     com_util_error detail;
     /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
     uint16_t bind_port;
@@ -108,47 +142,43 @@ static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_add
         bind_port = def->src_port;
     }
 
-    if (potr_socket_open(SOCK_DGRAM, &sock, &detail) != POTR_OK)
+    if (com_util_socket_open(COM_UTIL_SOCKET_UDP, &sock, &detail) != COM_UTIL_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return POTR_INVALID_SOCKET;
+        return COM_UTIL_INVALID_SOCKET;
     }
 
     /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
-    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), NULL);
+    (void)com_util_socket_set_reuse_address(sock, 1, NULL);
 
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = potr_hton32(INADDR_ANY);
-    addr.sin_port = potr_hton16(bind_port);
+    addr.address = COM_UTIL_IPV4_ADDR_ANY;
+    addr.port = com_util_hton16(bind_port);
 
-    if (potr_bind(sock, &addr, &detail) != POTR_OK)
+    if (com_util_socket_bind(sock, &addr, &detail) != COM_UTIL_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
-        potr_close_socket(sock);
-        return POTR_INVALID_SOCKET;
+        com_util_socket_close(sock);
+        return COM_UTIL_INVALID_SOCKET;
     }
 
     /* マルチキャスト グループへ参加 (送受信ともに参加する) */
-    memset(&mreq, 0, sizeof(mreq));
-    if (parse_ipv4_addr(def->multicast_group, &mreq.imr_multiaddr) != POTR_OK)
+    if (parse_ipv4(def->multicast_group, &group_addr) != POTR_OK)
     {
-        potr_close_socket(sock);
-        return POTR_INVALID_SOCKET;
+        com_util_socket_close(sock);
+        return COM_UTIL_INVALID_SOCKET;
     }
-    mreq.imr_interface = src_if;
 
-    if (potr_setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq), &detail) != POTR_OK)
+    if (com_util_socket_join_multicast_group(sock, group_addr, src_if, &detail) != COM_UTIL_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "setsockopt(IP_ADD_MEMBERSHIP) failed");
-        potr_close_socket(sock);
-        return POTR_INVALID_SOCKET;
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "join_multicast_group failed");
+        com_util_socket_close(sock);
+        return COM_UTIL_INVALID_SOCKET;
     }
 
     /* 送信者: マルチキャスト送信インターフェースを設定する */
     if (!is_receiver)
     {
-        potr_setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, &src_if, sizeof(src_if), NULL);
+        (void)com_util_socket_set_multicast_interface(sock, src_if, NULL);
     }
 
     return sock;
@@ -159,12 +189,10 @@ static PotrSocket open_socket_multicast(const PotrServiceDef *def, struct in_add
    dst_port: 受信者の listen ポート / 送信者の送信先ポート (省略不可)。
    src_if: 送信者が使用するローカル インターフェース (INADDR_ANY = OS 自動選択)。
    is_receiver: 1 = 受信者 (INADDR_ANY で bind)、0 = 送信者 (src_if で bind)。 */
-static PotrSocket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, struct in_addr src_if, int is_receiver)
+static com_util_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, uint32_t src_if, int is_receiver)
 {
-    PotrSocket sock;
-    struct sockaddr_in addr;
-    int reuse = 1;
-    int bcast = 1;
+    com_util_socket sock;
+    com_util_ipv4_endpoint addr = {0};
     com_util_error detail;
     /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
     uint16_t bind_port;
@@ -177,39 +205,37 @@ static PotrSocket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, st
         bind_port = src_port;
     }
 
-    if (potr_socket_open(SOCK_DGRAM, &sock, &detail) != POTR_OK)
+    if (com_util_socket_open(COM_UTIL_SOCKET_UDP, &sock, &detail) != COM_UTIL_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return POTR_INVALID_SOCKET;
+        return COM_UTIL_INVALID_SOCKET;
     }
 
     /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
-    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), NULL);
-    if (potr_setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bcast, sizeof(bcast), &detail) != POTR_OK)
+    (void)com_util_socket_set_reuse_address(sock, 1, NULL);
+    if (com_util_socket_set_broadcast(sock, 1, &detail) != COM_UTIL_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "setsockopt(SO_BROADCAST) failed");
-        potr_close_socket(sock);
-        return POTR_INVALID_SOCKET;
+        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "set_broadcast failed");
+        com_util_socket_close(sock);
+        return COM_UTIL_INVALID_SOCKET;
     }
 
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
     /* 送信者: src_addr で bind してインターフェースを選択する。受信者: INADDR_ANY で bind する。 */
     if (!is_receiver)
     {
-        addr.sin_addr.s_addr = src_if.s_addr;
+        addr.address = src_if;
     }
     else
     {
-        addr.sin_addr.s_addr = potr_hton32(INADDR_ANY);
+        addr.address = COM_UTIL_IPV4_ADDR_ANY;
     }
-    addr.sin_port = potr_hton16(bind_port);
+    addr.port = com_util_hton16(bind_port);
 
-    if (potr_bind(sock, &addr, &detail) != POTR_OK)
+    if (com_util_socket_bind(sock, &addr, &detail) != COM_UTIL_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
-        potr_close_socket(sock);
-        return POTR_INVALID_SOCKET;
+        com_util_socket_close(sock);
+        return COM_UTIL_INVALID_SOCKET;
     }
 
     return sock;
@@ -221,10 +247,10 @@ static void cleanup_sockets(PotrContext *ctx)
     int i;
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
-        if (ctx->sock[i] != POTR_INVALID_SOCKET)
+        if (ctx->sock[i] != COM_UTIL_INVALID_SOCKET)
         {
-            potr_close_socket(ctx->sock[i]);
-            ctx->sock[i] = POTR_INVALID_SOCKET;
+            com_util_socket_close(ctx->sock[i]);
+            ctx->sock[i] = COM_UTIL_INVALID_SOCKET;
         }
     }
 }
@@ -250,9 +276,9 @@ static void ctx_cleanup(PotrContext *ctx)
         int i;
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            if (ctx->tcp_listen_sock[i] != POTR_INVALID_SOCKET)
+            if (ctx->tcp_listen_sock[i] != COM_UTIL_INVALID_SOCKET)
             {
-                potr_close_socket(ctx->tcp_listen_sock[i]);
+                com_util_socket_close(ctx->tcp_listen_sock[i]);
             }
         }
     }
@@ -260,9 +286,9 @@ static void ctx_cleanup(PotrContext *ctx)
         int i;
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            if (ctx->tcp_conn_fd[i] != POTR_INVALID_SOCKET)
+            if (ctx->tcp_conn_fd[i] != COM_UTIL_INVALID_SOCKET)
             {
-                potr_close_socket(ctx->tcp_conn_fd[i]);
+                com_util_socket_close(ctx->tcp_conn_fd[i]);
             }
         }
     }
@@ -276,16 +302,15 @@ static void ctx_cleanup(PotrContext *ctx)
    成功時は ctx->tcp_listen_sock[path_idx] に格納して POTR_OK を返す。 */
 static int open_socket_tcp_receiver(PotrContext *ctx, int path_idx)
 {
-    PotrSocket sock;
-    struct sockaddr_in addr;
-    int reuse = 1;
-    struct in_addr bind_ip;
+    com_util_socket sock;
+    com_util_ipv4_endpoint addr = {0};
+    uint32_t bind_ip;
     int result;
     com_util_error detail;
 
     if (ctx->service.dst_addr[path_idx][0] != '\0')
     {
-        result = resolve_ipv4_addr(ctx->service.dst_addr[path_idx], &bind_ip);
+        result = resolve_ipv4(ctx->service.dst_addr[path_idx], &bind_ip);
         if (result != POTR_OK)
         {
             return result;
@@ -294,47 +319,45 @@ static int open_socket_tcp_receiver(PotrContext *ctx, int path_idx)
     }
     else
     {
-        bind_ip.s_addr = potr_hton32(INADDR_ANY);
+        bind_ip = COM_UTIL_IPV4_ADDR_ANY;
     }
 
     if (ctx->service.src_addr[path_idx][0] != '\0')
     {
-        result = resolve_ipv4_addr(ctx->service.src_addr[path_idx], &ctx->src_addr_resolved[path_idx]);
+        result = resolve_ipv4(ctx->service.src_addr[path_idx], &ctx->src_addr_resolved[path_idx]);
         if (result != POTR_OK)
         {
             return result;
         }
     }
 
-    result = potr_socket_open(SOCK_STREAM, &sock, &detail);
-    if (result != POTR_OK)
+    result = com_util_socket_open(COM_UTIL_SOCKET_TCP, &sock, &detail);
+    if (result != COM_UTIL_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return result;
+        return potr_internal_result_from_error(&detail);
     }
 
     /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
-    potr_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse), NULL);
+    (void)com_util_socket_set_reuse_address(sock, 1, NULL);
 
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr = bind_ip;
-    addr.sin_port = potr_hton16(ctx->service.dst_port);
+    addr.address = bind_ip;
+    addr.port = com_util_hton16(ctx->service.dst_port);
 
-    result = potr_bind(sock, &addr, &detail);
-    if (result != POTR_OK)
+    result = com_util_socket_bind(sock, &addr, &detail);
+    if (result != COM_UTIL_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
-        potr_close_socket(sock);
-        return result;
+        com_util_socket_close(sock);
+        return potr_internal_result_from_error(&detail);
     }
 
-    result = potr_listen(sock, SOMAXCONN, &detail);
-    if (result != POTR_OK)
+    result = com_util_socket_listen(sock, COM_UTIL_SOCKET_BACKLOG_DEFAULT, &detail);
+    if (result != COM_UTIL_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "listen failed");
-        potr_close_socket(sock);
-        return result;
+        com_util_socket_close(sock);
+        return potr_internal_result_from_error(&detail);
     }
 
     ctx->tcp_listen_sock[path_idx] = sock;
@@ -354,7 +377,7 @@ static int open_socket_tcp_sender(PotrContext *ctx, int path_idx)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    result = resolve_ipv4_addr(ctx->service.dst_addr[path_idx], &ctx->dst_addr_resolved[path_idx]);
+    result = resolve_ipv4(ctx->service.dst_addr[path_idx], &ctx->dst_addr_resolved[path_idx]);
     if (result != POTR_OK)
     {
         return result;
@@ -362,7 +385,7 @@ static int open_socket_tcp_sender(PotrContext *ctx, int path_idx)
 
     if (ctx->service.src_addr[path_idx][0] != '\0')
     {
-        result = resolve_ipv4_addr(ctx->service.src_addr[path_idx], &ctx->src_addr_resolved[path_idx]);
+        result = resolve_ipv4(ctx->service.src_addr[path_idx], &ctx->src_addr_resolved[path_idx]);
         if (result != POTR_OK)
         {
             return result;
@@ -466,7 +489,7 @@ static int open_paths_unicast(PotrContext *ctx, PotrRole role)
 
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
-        struct in_addr bind_addr;
+        uint32_t bind_addr;
         uint16_t bind_port;
 
         if (ctx->service.src_addr[i][0] == '\0' || ctx->service.dst_addr[i][0] == '\0')
@@ -474,12 +497,12 @@ static int open_paths_unicast(PotrContext *ctx, PotrRole role)
             break;
         }
 
-        result = resolve_ipv4_addr(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
+        result = resolve_ipv4(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
         if (result != POTR_OK)
         {
             return result;
         }
-        result = resolve_ipv4_addr(ctx->service.dst_addr[i], &ctx->dst_addr_resolved[i]);
+        result = resolve_ipv4(ctx->service.dst_addr[i], &ctx->dst_addr_resolved[i]);
         if (result != POTR_OK)
         {
             return result;
@@ -497,7 +520,7 @@ static int open_paths_unicast(PotrContext *ctx, PotrRole role)
         }
 
         ctx->sock[i] = open_socket_unicast(bind_addr, bind_port);
-        if (ctx->sock[i] == POTR_INVALID_SOCKET)
+        if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
         }
@@ -529,14 +552,14 @@ static int open_paths_multicast(PotrContext *ctx, PotrRole role)
         if (ctx->service.src_addr[i][0] == '\0')
             break;
 
-        result = resolve_ipv4_addr(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
+        result = resolve_ipv4(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
         if (result != POTR_OK)
         {
             return result;
         }
 
         ctx->sock[i] = open_socket_multicast(&ctx->service, ctx->src_addr_resolved[i], role == POTR_ROLE_RECEIVER);
-        if (ctx->sock[i] == POTR_INVALID_SOCKET)
+        if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
         }
@@ -576,7 +599,7 @@ static int open_paths_broadcast(PotrContext *ctx, PotrRole role)
         if (ctx->service.src_addr[i][0] == '\0')
             break;
 
-        result = resolve_ipv4_addr(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
+        result = resolve_ipv4(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
         if (result != POTR_OK)
         {
             return result;
@@ -584,7 +607,7 @@ static int open_paths_broadcast(PotrContext *ctx, PotrRole role)
 
         ctx->sock[i] = open_socket_broadcast(ctx->service.src_port, ctx->service.dst_port, ctx->src_addr_resolved[i],
                                              role == POTR_ROLE_RECEIVER);
-        if (ctx->sock[i] == POTR_INVALID_SOCKET)
+        if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
         }
@@ -621,15 +644,15 @@ static int open_paths_unicast_bidir(PotrContext *ctx, PotrRole role)
     {
         /* 動的 1:1 RECEIVER: src_addr 省略 → dst_addr:dst_port に bind し、
            最初の受信パケットから SENDER のアドレスを動的学習する。 */
-        struct in_addr bind_addr;
+        uint32_t bind_addr;
 
         if (ctx->service.dst_addr[0][0] == '\0')
         {
-            bind_addr.s_addr = potr_hton32(INADDR_ANY);
+            bind_addr = COM_UTIL_IPV4_ADDR_ANY;
         }
         else
         {
-            result = resolve_ipv4_addr(ctx->service.dst_addr[0], &bind_addr);
+            result = resolve_ipv4(ctx->service.dst_addr[0], &bind_addr);
             if (result != POTR_OK)
             {
                 return result;
@@ -637,7 +660,7 @@ static int open_paths_unicast_bidir(PotrContext *ctx, PotrRole role)
             ctx->dst_addr_resolved[0] = bind_addr;
         }
         ctx->sock[0] = open_socket_unicast(bind_addr, ctx->service.dst_port);
-        if (ctx->sock[0] == POTR_INVALID_SOCKET)
+        if (ctx->sock[0] == COM_UTIL_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
         }
@@ -657,7 +680,7 @@ static int open_paths_unicast_bidir(PotrContext *ctx, PotrRole role)
 
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            struct in_addr bind_addr;
+            uint32_t bind_addr;
 
             /* dst_addr が空 → パス終端。
                RECEIVER は src_addr も必要 (src_addr なし RECEIVER は上で処理済み)。 */
@@ -668,14 +691,14 @@ static int open_paths_unicast_bidir(PotrContext *ctx, PotrRole role)
 
             if (ctx->service.src_addr[i][0] != '\0')
             {
-                result = resolve_ipv4_addr(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
+                result = resolve_ipv4(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
                 if (result != POTR_OK)
                 {
                     return result;
                 }
             }
 
-            result = resolve_ipv4_addr(ctx->service.dst_addr[i], &ctx->dst_addr_resolved[i]);
+            result = resolve_ipv4(ctx->service.dst_addr[i], &ctx->dst_addr_resolved[i]);
             if (result != POTR_OK)
             {
                 return result;
@@ -690,7 +713,7 @@ static int open_paths_unicast_bidir(PotrContext *ctx, PotrRole role)
                 }
                 else
                 {
-                    bind_addr.s_addr = potr_hton32(INADDR_ANY);
+                    bind_addr = COM_UTIL_IPV4_ADDR_ANY;
                 }
                 ctx->sock[i] = open_socket_unicast(bind_addr, ctx->service.src_port);
             }
@@ -699,7 +722,7 @@ static int open_paths_unicast_bidir(PotrContext *ctx, PotrRole role)
                 /* RECEIVER: dst_addr:dst_port で bind */
                 ctx->sock[i] = open_socket_unicast(ctx->dst_addr_resolved[i], ctx->service.dst_port);
             }
-            if (ctx->sock[i] == POTR_INVALID_SOCKET)
+            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
             {
                 return POTR_ERR_IO;
             }
@@ -739,10 +762,10 @@ static int open_paths_unicast_bidir_n1(PotrContext *ctx)
     if (ctx->service.dst_addr[0][0] == '\0')
     {
         /* dst_addr すべて省略: INADDR_ANY で 1 ソケット */
-        struct in_addr any_addr;
-        any_addr.s_addr = potr_hton32(INADDR_ANY);
+        uint32_t any_addr;
+        any_addr = COM_UTIL_IPV4_ADDR_ANY;
         ctx->sock[0] = open_socket_unicast(any_addr, ctx->service.dst_port);
-        if (ctx->sock[0] == POTR_INVALID_SOCKET)
+        if (ctx->sock[0] == COM_UTIL_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
         }
@@ -753,19 +776,19 @@ static int open_paths_unicast_bidir_n1(PotrContext *ctx)
         /* dst_addr[i] を列挙してパスごとにソケットを作成する */
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            struct in_addr bind_addr;
+            uint32_t bind_addr;
 
             if (ctx->service.dst_addr[i][0] == '\0')
                 break;
 
-            result = resolve_ipv4_addr(ctx->service.dst_addr[i], &bind_addr);
+            result = resolve_ipv4(ctx->service.dst_addr[i], &bind_addr);
             if (result != POTR_OK)
             {
                 return result;
             }
             ctx->dst_addr_resolved[i] = bind_addr;
             ctx->sock[i] = open_socket_unicast(bind_addr, ctx->service.dst_port);
-            if (ctx->sock[i] == POTR_INVALID_SOCKET)
+            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
             {
                 return POTR_ERR_IO;
             }
@@ -916,19 +939,18 @@ static int setup_dest_addr(PotrContext *ctx, PotrRole role)
     case POTR_TYPE_UNICAST_BIDIR_N1:
         for (i = 0; i < ctx->n_path; i++)
         {
-            memset(&ctx->dest_addr[i], 0, sizeof(ctx->dest_addr[i]));
-            ctx->dest_addr[i].sin_family = AF_INET;
+            potr_endpoint_clear(&ctx->dest_addr[i]);
             if (role == POTR_ROLE_SENDER)
             {
                 /* SENDER: dst_addr:dst_port (RECEIVER の bind アドレス) へ送信 */
-                ctx->dest_addr[i].sin_addr = ctx->dst_addr_resolved[i];
-                ctx->dest_addr[i].sin_port = potr_hton16(ctx->service.dst_port);
+                ctx->dest_addr[i].address = ctx->dst_addr_resolved[i];
+                ctx->dest_addr[i].port = com_util_hton16(ctx->service.dst_port);
             }
             else
             {
                 /* RECEIVER: src_addr:src_port (SENDER の bind アドレス) へ送信 */
-                ctx->dest_addr[i].sin_addr = ctx->src_addr_resolved[i];
-                ctx->dest_addr[i].sin_port = potr_hton16(ctx->service.src_port);
+                ctx->dest_addr[i].address = ctx->src_addr_resolved[i];
+                ctx->dest_addr[i].port = com_util_hton16(ctx->service.src_port);
             }
         }
         break;
@@ -936,43 +958,40 @@ static int setup_dest_addr(PotrContext *ctx, PotrRole role)
     case POTR_TYPE_UNICAST:
         for (i = 0; i < ctx->n_path; i++)
         {
-            memset(&ctx->dest_addr[i], 0, sizeof(ctx->dest_addr[i]));
-            ctx->dest_addr[i].sin_family = AF_INET;
-            ctx->dest_addr[i].sin_addr = ctx->dst_addr_resolved[i];
-            ctx->dest_addr[i].sin_port = potr_hton16(ctx->service.dst_port);
+            potr_endpoint_clear(&ctx->dest_addr[i]);
+            ctx->dest_addr[i].address = ctx->dst_addr_resolved[i];
+            ctx->dest_addr[i].port = com_util_hton16(ctx->service.dst_port);
         }
         break;
 
     case POTR_TYPE_MULTICAST:
     {
-        struct in_addr mcast_ip;
-        if (parse_ipv4_addr(ctx->service.multicast_group, &mcast_ip) != POTR_OK)
+        uint32_t mcast_ip;
+        if (parse_ipv4(ctx->service.multicast_group, &mcast_ip) != POTR_OK)
         {
             return POTR_ERR_INVALID_ARGUMENT;
         }
         for (i = 0; i < ctx->n_path; i++)
         {
-            memset(&ctx->dest_addr[i], 0, sizeof(ctx->dest_addr[i]));
-            ctx->dest_addr[i].sin_family = AF_INET;
-            ctx->dest_addr[i].sin_addr = mcast_ip;
-            ctx->dest_addr[i].sin_port = potr_hton16(ctx->service.dst_port);
+            potr_endpoint_clear(&ctx->dest_addr[i]);
+            ctx->dest_addr[i].address = mcast_ip;
+            ctx->dest_addr[i].port = com_util_hton16(ctx->service.dst_port);
         }
         break;
     }
 
     case POTR_TYPE_BROADCAST:
     {
-        struct in_addr bcast_ip;
-        if (parse_ipv4_addr(ctx->service.broadcast_addr, &bcast_ip) != POTR_OK)
+        uint32_t bcast_ip;
+        if (parse_ipv4(ctx->service.broadcast_addr, &bcast_ip) != POTR_OK)
         {
             return POTR_ERR_INVALID_ARGUMENT;
         }
         for (i = 0; i < ctx->n_path; i++)
         {
-            memset(&ctx->dest_addr[i], 0, sizeof(ctx->dest_addr[i]));
-            ctx->dest_addr[i].sin_family = AF_INET;
-            ctx->dest_addr[i].sin_addr = bcast_ip;
-            ctx->dest_addr[i].sin_port = potr_hton16(ctx->service.dst_port);
+            potr_endpoint_clear(&ctx->dest_addr[i]);
+            ctx->dest_addr[i].address = bcast_ip;
+            ctx->dest_addr[i].port = com_util_hton16(ctx->service.dst_port);
         }
         break;
     }
@@ -1207,11 +1226,6 @@ int potrOpenService(const PotrGlobalConfig *global, const PotrServiceDef *servic
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (potr_socket_lib_init(NULL) != POTR_OK)
-    {
-        return POTR_ERR_IO;
-    }
-
     ctx = (PotrContext *)malloc(sizeof(PotrContext));
     if (ctx == NULL)
     {
@@ -1225,9 +1239,9 @@ int potrOpenService(const PotrGlobalConfig *global, const PotrServiceDef *servic
         int i;
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            ctx->sock[i] = POTR_INVALID_SOCKET;
-            ctx->tcp_conn_fd[i] = POTR_INVALID_SOCKET;
-            ctx->tcp_listen_sock[i] = POTR_INVALID_SOCKET;
+            ctx->sock[i] = COM_UTIL_INVALID_SOCKET;
+            ctx->tcp_conn_fd[i] = COM_UTIL_INVALID_SOCKET;
+            ctx->tcp_listen_sock[i] = COM_UTIL_INVALID_SOCKET;
         }
     }
 

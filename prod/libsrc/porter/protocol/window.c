@@ -20,7 +20,7 @@
 
 #include <porter/protocol/seqnum.h>
 #include <porter/protocol/window.h>
-#include <porter/infra/potrPlatform.h>
+#include <com_util/net/byteorder.h>
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -146,7 +146,7 @@ int window_send_push(PotrWindow *win, const PotrPacket *packet)
         uint8_t *slot = win->payload_pool + idx * (size_t)win->max_payload;
         win->packets[idx] = *packet;      /* 構造体コピー */
         win->packets[idx].payload = slot; /* プール スロットを設定 */
-        memcpy(slot, packet->payload, (size_t)potr_ntoh16(packet->payload_len));
+        memcpy(slot, packet->payload, (size_t)com_util_ntoh16(packet->payload_len));
     }
 
     win->valid[idx] = 1;

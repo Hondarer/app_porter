@@ -354,7 +354,7 @@ package "infra" {
 }
 
 package "com_util" {
-  [potrIpAddr\n(名前解決)]
+  [net\n(socket・endpoint・byteorder)]
 }
 
 database "PotrContext\n(セッション全状態)" as CTX
@@ -369,12 +369,14 @@ database "PotrContext\n(セッション全状態)" as CTX
 [potrSendThread] --> [compress]
 [potrSendThread] --> [crypto]
 [potrSendThread] --> [potrSendQueue]
+[potrSendThread] --> [net\n(socket・endpoint・byteorder)] : 送信
 
 [potrRecvThread] --> [packet]
 [potrRecvThread] --> [window]
 [potrRecvThread] --> [seqnum]
 [potrRecvThread] --> [compress]
 [potrRecvThread] --> [crypto]
+[potrRecvThread] --> [net\n(socket・endpoint・byteorder)] : 受信
 
 api -[hidden]--thread
 thread -[hidden]-- infra
@@ -392,7 +394,7 @@ porter の全状態は `PotrContext` 構造体 (`PotrContext *` の実体) に�
 | カテゴリ | 保持する情報 |
 |---|---|
 | 設定 | サービス定義 (通信種別・アドレス・ポート・暗号化鍵)、グローバル設定 (ウィンドウ サイズ・ヘルスチェック間隔) |
-| ソケット | 最大 4 パス分の UDP ソケット |
+| ソケット | 最大 4 パス分の UDP ソケット (`com_util_socket` 型) |
 | スレッド | 受信・送信・ヘルスチェック スレッド ハンドル |
 | ウィンドウ | 送信ウィンドウ・受信ウィンドウ (各パケットのコピーを保持) |
 | 送信キュー | ペイロード エレメントのリング バッファー (1024 要素) |
@@ -425,17 +427,20 @@ porter の全状態は `PotrContext` 構造体 (`PotrContext *` の実体) に�
 
 ## クロスプラットフォーム抽象化
 
-`potrContext.h` でプラットフォーム差異を抽象化し、上位層はプラットフォームを意識しません。
+ソケットに関するプラットフォーム差異は `com_util` の `net` カテゴリが吸収します。  
+porter はソケット型・無効値・初期化・クローズのいずれについても Linux / Windows の違いを意識しません。
+
+> [!NOTE]
+> 移行前は `potrContext.h` が `PotrSocket` 型や `POTR_INVALID_SOCKET`、`WSAStartup()` / `close()` と `closesocket()` の違いを porter 側で吸収していましたが、通信を com_util の `net` カテゴリへ移行したことで、これらは porter の関心事から外れました。
+> 詳細は [com_util のネットワーク API ガイドライン](../../com_util/docs/net-api-guideline.md) を参照してください。
+
+`potrContext.h` は、ソケット以外の残るプラットフォーム差異を引き続き抽象化します。
 
 | 機能 | Linux | Windows |
 |---|---|---|
-| ソケット型 (`PotrSocket`) | `int` | `SOCKET` |
-| 無効ソケット値 | `-1` | `INVALID_SOCKET` |
 | スレッド型 (`PotrThread`) | `pthread_t` | `HANDLE` |
 | ミューテックス型 (`PotrMutex`) | `com_util_local_lock *` | `com_util_local_lock *` |
 | 条件変数型 (`PotrCondVar`) | `com_util_condvar` | `com_util_condvar` |
-| ソケット初期化 | 不要 | `WSAStartup()` |
-| ソケット クローズ | `close()` | `closesocket()` |
 | 単調時間 (ヘルスチェック用) | com_util 経由 `clock_gettime(CLOCK_MONOTONIC, ...)` | com_util 経由 `GetTickCount64()` |
 | カレンダー時刻 (セッション ID 用) | com_util 経由 `clock_gettime(CLOCK_REALTIME, ...)` | com_util 経由 `GetSystemTimeAsFileTime()` |
 | 呼び出し規約 (`POTRAPI`) | (なし) | `__stdcall` |

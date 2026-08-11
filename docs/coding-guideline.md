@@ -68,7 +68,6 @@ porter には利用者が存在しないため、互換のための旧名の別�
 
 | 旧名 | 新名 | 種別 |
 |---|---|---|
-| `PotrSocket` | `potr_socket` | ソケット型の alias |
 | `PotrPayloadElem` | `potr_payload_elem` | struct |
 | `PotrSendQueue` | `potr_send_queue` | struct |
 | `PotrNackDedupEntry` | `potr_nack_dedup_entry` | struct |
@@ -78,7 +77,11 @@ porter には利用者が存在しないため、互換のための旧名の別�
 | `PotrPacketSessionHdr` | `potr_packet_session_hdr` | struct |
 | `PotrWindow` | `potr_window` | struct |
 | `PotrConnectedThreadsOps` | `potr_connected_threads_ops` | struct |
-| `potr_socket_cause_t` | `potr_socket_cause` | enum |
+
+> [!NOTE]
+> `PotrSocket`、`potr_socket_cause_t` はこの表から除外しています。
+> 通信のプラットフォーム抽象化層を com_util の net カテゴリへ移行したことで、ソケット型とソケット エラー要因の型は porter から com_util (`com_util_socket`、`com_util_error_cause`) へ移りました。
+> porter 独自のソケット型 alias は存在しません。
 
 ### 内部共有関数・型・変数の接頭辞
 
@@ -96,8 +99,12 @@ int potr_internal_packet_parse(...);
 extern int g_potr_internal_peer_count;
 ```
 
-以前は接頭辞のなかった `config_*`、`packet_*`、`window_*`、`peer_*`、`seqnum_in_window`、`parse_ipv4_addr`、`resolve_ipv4_addr`、`comm_recv_thread_*`、`tcp_recv_thread_*` の各関数へ `potr_` を付与しました。  
+以前は接頭辞のなかった `config_*`、`packet_*`、`window_*`、`peer_*`、`seqnum_in_window`、`comm_recv_thread_*`、`tcp_recv_thread_*` の各関数へ `potr_` を付与しました。  
 以降の新設・改名では `potr_internal_` / `g_potr_internal_` を使います。既存の `potr_` / `g_potr_` 付き内部共有シンボルは、変更対象に含めるときに移行します。
+
+> [!NOTE]
+> `parse_ipv4_addr`、`resolve_ipv4_addr` は、当時この一覧に含まれていましたが、通信のプラットフォーム抽象化層を com_util の net カテゴリへ移行したことで porter から削除されました。
+> 現行のアドレス解決は `com_util_ipv4_parse()` / `com_util_ipv4_resolve()` を使用します。
 
 ## エラー処理と戻り値規約
 
@@ -153,8 +160,8 @@ com_util の API を呼び出した結果は `ret != COM_UTIL_OK` の名前比�
 porter の関数から返す場合は、`COM_UTIL_ERR_*` を porter の結果コードへ変換して返します。com_util の結果コードをそのまま porter の戻り値として素通ししません。  
 タイムアウトは `POTR_ERR_TIMEOUT`、ファイルおよびネットワークの失敗は `POTR_ERR_IO` のように、原因が判別できる場合は対応する分類へ変換します。  
 下位 API が詳細コードを提供せず、ほかの分類へ変換できない場合だけ `POTR_ERR_UNKNOWN` を返し、その理由をソース コメントに記載します。  
-ソケット API の失敗は `potr_socket_error_report()` で `com_util_error` に捕捉し、対応する `POTR_ERR_*` へ変換します。  
-OS 固有コードは直接比較せず、`potr_socket_error_is()` と `POTR_SOCKET_CAUSE_*` を使用します。
+ソケット API (`com_util/net`) の失敗は `com_util_error *detail_out` で受け取り、対応する `POTR_ERR_*` へ変換します。  
+OS 固有コードは直接比較せず、`com_util_error_is()` と `COM_UTIL_CAUSE_*` を使用します。
 
 ```c
 int ret = com_util_crypto_encrypt(...);
@@ -171,15 +178,16 @@ if (ret != COM_UTIL_OK)
 
 | 対象外の関数群 | 現行規約 | 理由 |
 |---|---|---|
-| 素通しラッパー (`potr_sendto`、`potr_recvfrom`、`potr_poll_readable`、`potr_poll_writable`) | 送受信バイト数または 1/0/-1 | 呼び出し側がデータ量やタイムアウトを判定する既存規約を保存しつつ、失敗時は `detail_out` と直前エラーを更新するため |
 | 0/1 述語 (`seqnum_in_window`、`window_send_full`、`window_recv_needs_nack`、`potrContext.h` の inline 述語) | 真 1 / 偽 0 | 失敗モードのない純関数であり、成否の概念が適用されない |
 | 3 状態以上の判定結果を返す比較・分類関数 | 判定結果そのもの | 成否ではなく状態の分類を返す |
 | 値をそのまま返す関数 (`packet_wire_size`、`potr_raw_base_type` などの getter) | 値そのもの | 結果コードの概念が適用されない |
 | ハンドル・ポインター返却系 (`potrGetTracer`、`peer_create`、`peer_find_by_*` など) | 成功時ポインター / 失敗・不在時 NULL | ポインター返却 API の慣用 |
 | 戻り値を持たない関数 | `void` | 同上 |
 
-`potr_socket_open`、`potr_bind`、`potr_listen`、`potr_accept`、`potr_connect`、`potr_setsockopt`、`potr_socket_get_pending_error` などの合成ラッパーは、`POTR_OK` または `POTR_ERR_*` と `com_util_error *detail_out` を返します。  
-ソケット ハンドルは出力引数で返します。
+> [!NOTE]
+> ソケットに対する素通しラッパー (`potr_sendto`、`potr_recvfrom`、`potr_poll_readable`、`potr_poll_writable`) と合成ラッパー (`potr_socket_open`、`potr_bind`、`potr_listen`、`potr_accept`、`potr_connect`、`potr_setsockopt`、`potr_socket_get_pending_error`) は、この表から除外しています。
+> 通信のプラットフォーム抽象化層を com_util の net カテゴリへ移行したことで、porter はこれらの porter 独自ラッパーを持たず、`com_util_socket_sendto()` などの com_util API を直接呼び出します。
+> com_util API の戻り値の扱いは、上記「com_util 呼び出し結果の扱い」に従います。
 
 ### 検証
 

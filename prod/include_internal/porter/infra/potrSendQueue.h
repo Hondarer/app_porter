@@ -29,11 +29,10 @@
 #include <stddef.h>
 
 #include <com_util/base/platform.h>
+#include <com_util/sync/sync.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_type.h>
-
-#include <porter/infra/potrPlatform.h>
 
 /**
  *  @brief  送信キューの 1 エントリ。ペイロード エレメント 1 個分のデータを保持します。

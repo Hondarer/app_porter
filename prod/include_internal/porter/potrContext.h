@@ -26,13 +26,16 @@
 
 #include <com_util/base/platform.h>
 #include <com_util/clock/timespec.h>
+#include <com_util/sync/sync.h>
 #include <porter/porter_type.h>
 
 #include <porter/protocol/window.h>
 #include <com_util/compress/compress.h>
 #include <com_util/crypto/crypto.h>
+#include <com_util/net/byteorder.h>
+#include <com_util/net/endpoint.h>
+#include <com_util/net/socket.h>
 #include <porter/infra/potrSendQueue.h>
-#include <porter/infra/potrPlatform.h>
 
 /** TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
 static inline int potr_is_tcp_type(PotrType t)
@@ -105,6 +108,27 @@ static inline void potr_fill_path_ping_state(volatile uint8_t *dst, uint8_t valu
     }
 }
 
+/**
+ *  未使用の送信先端点 (dest_addr[] スロット) かどうかを判定します。失敗モードのない述語のため
+ *  共通結果コードの適用対象外。
+ *
+ *  dest_addr[] スロットは potrOpenService または peer_create でゼロ初期化された後、
+ *  実アドレスが設定されて初めて使用状態になる。実際の通信端点がアドレス・ポートともに
+ *  0 (0.0.0.0:0) になることはないため、両方 0 であることを「未使用」の判定に用いる。
+ */
+static inline int potr_endpoint_is_unset(const com_util_ipv4_endpoint *endpoint)
+{
+    return endpoint->address == 0U && endpoint->port == 0U;
+}
+
+/** 送信先端点 (dest_addr[] スロット) を未使用状態へ戻します。 */
+static inline void potr_endpoint_clear(com_util_ipv4_endpoint *endpoint)
+{
+    endpoint->address = 0U;
+    endpoint->port = 0U;
+    endpoint->pad = 0U;
+}
+
 /** NACK 重複抑制リング バッファーのスロット数 (POTR_MAX_PATH × 2)。 */
 #define POTR_NACK_DEDUP_SLOTS 8U
 
@@ -175,10 +199,10 @@ typedef struct PotrPeerContext
 
     /* マルチパス: ピアごとの送信先 (recvfrom で学習)
      * インデックスは ctx->sock[] / src_addr[] と直接対応します。
-     * 未使用スロットは dest_addr[k].sin_family == 0 (AF_UNSPEC) で判定します。 */
-    struct sockaddr_in dest_addr
-        [POTR_MAX_PATH]; /**< 送信先ソケット アドレス (インデックス = ctx->sock[] の添字)。未使用スロットは sin_family == 0。 */
-    int n_paths;         /**< アクティブ パス数。ループ境界には使わず管理カウンターとして使用します。 */
+     * 未使用スロットは potr_endpoint_is_unset() で判定します。 */
+    com_util_ipv4_endpoint dest_addr
+        [POTR_MAX_PATH]; /**< 送信先端点 (インデックス = ctx->sock[] の添字)。未使用スロットは potr_endpoint_is_unset() が真。 */
+    int n_paths;             /**< アクティブ パス数。ループ境界には使わず管理カウンターとして使用します。 */
     uint32_t _pad_path_recv; /**< パディング (path_last_recv_ts を 8 バイト境界に揃える)。 */
     com_util_timespec
         path_last_recv_ts[POTR_MAX_PATH]; /**< パスごとの最終受信時刻 (CLOCK_MONOTONIC)。tv_sec == 0 は未受信。 */
@@ -220,8 +244,8 @@ struct PotrContext
     uint32_t health_timeout_ms; /**< 通信種別とサービス上書きを解決した実効受信タイムアウト。 */
 
     /* マルチパス: ソケット配列 */
-    PotrSocket sock[POTR_MAX_PATH]; /**< 各パスの UDP ソケット。 */
-    int n_path;                     /**< 有効パス数。 */
+    int n_path;                          /**< 有効パス数。 */
+    com_util_socket sock[POTR_MAX_PATH]; /**< 各パスの UDP ソケット。 */
 
     volatile int running[POTR_MAX_PATH]; /**< 受信スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。 */
     volatile int
@@ -240,10 +264,11 @@ struct PotrContext
         [POTR_MAX_PATH]; /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     PotrRole role;       /**< 役割 (POTR_ROLE_SENDER / POTR_ROLE_RECEIVER)。 */
 
-    /* 解決済みアドレス (各パス分) */
-    struct in_addr src_addr_resolved[POTR_MAX_PATH]; /**< 解決済み送信元 IPv4 アドレス。 */
-    struct in_addr dst_addr_resolved[POTR_MAX_PATH]; /**< 解決済み宛先 IPv4 アドレス (unicast のみ)。 */
-    struct sockaddr_in dest_addr[POTR_MAX_PATH];     /**< 送信先ソケット アドレス (送信者が sendto に使用)。 */
+    /* 解決済みアドレス (各パス分)。ネットワーク バイト オーダー。 */
+    uint32_t src_addr_resolved[POTR_MAX_PATH]; /**< 解決済み送信元 IPv4 アドレス。 */
+    uint32_t dst_addr_resolved[POTR_MAX_PATH]; /**< 解決済み宛先 IPv4 アドレス (unicast のみ)。 */
+    com_util_ipv4_endpoint dest_addr
+        [POTR_MAX_PATH]; /**< 送信先端点 (送信者が sendto に使用)。未使用スロットは potr_endpoint_is_unset() が真。 */
 
     /* 自セッション識別子 (potrOpenService 時に決定) */
     com_util_timespec session_ts; /**< 自セッション開始時刻。 */
@@ -313,11 +338,12 @@ struct PotrContext
     com_util_local_lock *peers_mutex; /**< ピア テーブル保護用ミューテックス。 */
     uint32_t next_peer_id;            /**< 次に発行するピア ID (単調増加、初期値 1)。 */
 
-    /* --- TCP 接続管理 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR のみ有効) --- */
-    PotrSocket tcp_listen_sock[POTR_MAX_PATH]; /**< RECEIVER: listen ソケット (path ごと)。 */
-    PotrSocket tcp_conn_fd[POTR_MAX_PATH];     /**< アクティブ TCP 接続 fd (path ごと)。 */
-    volatile int tcp_active_paths;             /**< アクティブ TCP path 数 (0 = 全切断)。 */
-    uint32_t _pad_tcp_connected[2]; /**< パディング (tcp_send_mutex を 8 バイト境界に揃える。8 バイト確保)。 */
+    /* --- TCP 接続管理 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR のみ有効) ---
+     * tcp_active_paths は tcp_listen_sock (8 バイト境界) の前に置き、next_peer_id 直後の
+     * 暗黙パディングを埋める。この並びにより tcp_send_mutex 側の明示パディングは不要になった。 */
+    volatile int tcp_active_paths;                  /**< アクティブ TCP path 数 (0 = 全切断)。 */
+    com_util_socket tcp_listen_sock[POTR_MAX_PATH]; /**< RECEIVER: listen ソケット (path ごと)。 */
+    com_util_socket tcp_conn_fd[POTR_MAX_PATH];     /**< アクティブ TCP 接続 fd (path ごと)。 */
     com_util_local_lock *tcp_send_mutex
         [POTR_MAX_PATH]; /**< TCP send() 排他制御 (path ごと)。送信スレッド・ヘルスチェック スレッド・recv スレッド競合防止。 */
 

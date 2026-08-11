@@ -19,13 +19,6 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_trace_get()).WillByDefault(Return(nullptr));
     ON_CALL(*this, potrGetTracer()).WillByDefault(Return(nullptr));
 
-    // platform socket
-    ON_CALL(*this, potr_setsockopt(_, _, _, _, _, _)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(*this, potr_sendto(_, _, _, _, _, _, _)).WillByDefault(Return(-1));
-    ON_CALL(*this, potr_recvfrom(_, _, _, _, _, _, _)).WillByDefault(Return(-1));
-    ON_CALL(*this, potr_tcp_send(_, _, _, _)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(*this, potr_tcp_recv_all(_, _, _, _)).WillByDefault(Return(POTR_ERR_IO));
-
     _mock_porter = this;
 }
 

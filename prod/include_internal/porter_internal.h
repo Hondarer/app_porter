@@ -31,8 +31,7 @@
 #include <porter/potrPathEvent.h>
 #include <porter/potrPeerTable.h>
 
-#include <porter/infra/potrPlatform.h>
-#include <porter/infra/potrSocketError.h>
+#include <porter/infra/potrResult.h>
 #include <porter/infra/potrSendQueue.h>
 #include <porter/infra/potrTrace.h>
 
@@ -48,7 +47,5 @@
 #include <porter/thread/potrHealthThread.h>
 #include <porter/thread/potrRecvThread.h>
 #include <porter/thread/potrSendThread.h>
-
-#include <porter/util/potrIpAddr.h>
 
 #endif /* PORTER_INTERNAL_H */

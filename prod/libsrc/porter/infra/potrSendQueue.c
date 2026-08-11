@@ -19,7 +19,6 @@
 #include <porter/porter_const.h>
 
 #include <porter/infra/potrSendQueue.h>
-#include <porter/infra/potrPlatform.h>
 
 /* Doxygen コメントは、ヘッダーに記載 */
 

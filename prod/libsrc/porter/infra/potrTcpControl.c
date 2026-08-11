@@ -18,21 +18,28 @@
 #include <porter/porter_const.h>
 
 #include <com_util/crypto/crypto.h>
-#include <porter/infra/potrPlatform.h>
+#include <com_util/net/byteorder.h>
+#include <com_util/net/socket.h>
+#include <porter/infra/potrResult.h>
 #include <porter/infra/potrTcpControl.h>
 #include <porter/potrContext.h>
 #include <porter/protocol/packet.h>
 
 /* path 単位の送信ミューテックスを取得して全バイト送信する */
-static int tcp_send_all_locked(PotrSocket fd, com_util_local_lock *mtx, const uint8_t *buf, size_t len)
+static int tcp_send_all_locked(com_util_socket fd, com_util_local_lock *mtx, const uint8_t *buf, size_t len)
 {
     int result;
+    com_util_error detail;
 
     com_util_local_lock_lock(mtx, COM_UTIL_SYNC_WAIT_FOREVER);
-    result = potr_tcp_send(fd, buf, len, NULL);
+    result = com_util_socket_send_all(fd, buf, len, &detail);
     com_util_local_lock_unlock(mtx);
 
-    return result;
+    if (result != COM_UTIL_OK)
+    {
+        return potr_internal_result_from_error(&detail);
+    }
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -54,10 +61,10 @@ int potr_tcp_send_control_packet(const PotrContext *ctx, PotrPacket *pkt, uint32
     {
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
-        uint32_t nonce_nbo = potr_hton32(nonce_val);
+        uint32_t nonce_nbo = com_util_hton32(nonce_val);
 
-        pkt->flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
-        pkt->payload_len = potr_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
+        pkt->flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
+        pkt->payload_len = com_util_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         memcpy(nonce, &pkt->session_id, 4);
         memcpy(nonce + 4, &pkt->flags, 2);
@@ -81,7 +88,7 @@ int potr_tcp_send_control_packet(const PotrContext *ctx, PotrPacket *pkt, uint32
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        if (ctx->tcp_conn_fd[i] == POTR_INVALID_SOCKET)
+        if (ctx->tcp_conn_fd[i] == COM_UTIL_INVALID_SOCKET)
         {
             continue;
         }

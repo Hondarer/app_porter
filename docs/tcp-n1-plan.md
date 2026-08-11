@@ -1,25 +1,30 @@
 ﻿# TCP N:1 サポート追加 設計ドキュメント
 
+> [!NOTE]
+> 本書は当該機能の設計時点の記録です。
+> 通信のプラットフォーム抽象化層はその後 com_util の net カテゴリへ移行しており、本文のコード断片に登場する `PotrSocket` や `POTR_INVALID_SOCKET` は現行のコードには存在しません。
+> 現行の型と API は [com_util のネットワーク API ガイドライン](../../com_util/docs/net-api-guideline.md) を参照してください。
+
 ## 背景と目的
 
 ### 現状
 
-porter ライブラリの TCP サポートは以下の 2 種別のみ。
+porter ライブラリの TCP サポートは以下の 2 種別のみです。
 
 | 種別 | 方向 | 接続数 |
 |---|---|---|
 | `POTR_TYPE_TCP` | 単方向 (SENDER → RECEIVER) | 1:1 |
 | `POTR_TYPE_TCP_BIDIR` | 双方向 (SENDER ↔ RECEIVER) | 1:1 |
 
-RECEIVER は 1 台の SENDER との接続しか同時に維持できない。これは `receiver_accept_loop()` が `accept()` → `join_recv_thread()` (切断まで待機) → 次の `accept()` という逐次処理になっているためである。
+RECEIVER は 1 台の SENDER との接続しか同時に維持できません。これは `receiver_accept_loop()` が `accept()` → `join_recv_thread()` (切断まで待機) → 次の `accept()` という逐次処理になっているためです。
 
 ### 解決したい課題
 
-複数の SENDER が 1 台の RECEIVER へ同時接続するシナリオ (例: 複数センサー/エージェントがデータ収集サーバーへ送信) に対応できない。
+複数の SENDER が 1 台の RECEIVER へ同時接続するシナリオ (例: 複数センサー/エージェントがデータ収集サーバーへ送信) に対応できません。
 
 ### 目的
 
-N:1 TCP 通信を可能にする新通信種別を追加する。
+N:1 TCP 通信を可能にする新通信種別を追加します。
 
 ---
 
@@ -33,7 +38,7 @@ POTR_TYPE_TCP_BIDIR_N1 = 11,  /* TCP 双方向 N:1 (N SENDER ↔ 1 RECEIVER) */
 
 ### SENDER 側の動作
 
-SENDER 側の変更は不要。既存の `POTR_TYPE_TCP` または `POTR_TYPE_TCP_BIDIR` をそのまま使用して接続する。
+SENDER 側の変更は不要です。既存の `POTR_TYPE_TCP` または `POTR_TYPE_TCP_BIDIR` をそのまま使用して接続します。
 
 ### RECEIVER 側の動作変更
 
@@ -108,7 +113,7 @@ send スレッド         × 1               ← 全ピア共有 (BIDIR_N1 の�
 
 最大スレッド数: `n_path(4) × max_peers × 2 + n_path(4) + 1` (BIDIR_N1 の場合)
 
-> **注意**: `max_peers` が大きいとスレッド数が増加する。TCP N:1 向けのデフォルト `max_peers` は 32 程度を推奨する。大量接続が必要な場合は将来的に epoll/IOCP ベースへの移行を検討すること。
+> **注意**: `max_peers` が大きいとスレッド数が増加します。TCP N:1 向けのデフォルト `max_peers` は 32 程度を推奨します。大量接続が必要な場合は将来的に epoll/IOCP ベースへの移行を検討してください。
 
 ---
 
@@ -138,7 +143,7 @@ typedef enum {
 
 **ファイル**: `app/porter/prod/libsrc/porter/potrContext.h`
 
-既存の UDP 専用フィールド (`dest_addr[]`, `n_paths`, `path_last_recv_sec[]` 等) はそのまま保持し、末尾に TCP N:1 専用フィールドを追加する。
+既存の UDP 専用フィールド (`dest_addr[]`, `n_paths`, `path_last_recv_sec[]` 等) はそのまま保持し、末尾に TCP N:1 専用フィールドを追加します。
 
 ```c
 typedef struct PotrPeerContext
@@ -299,9 +304,9 @@ PotrPeerContext *peer_create_tcp(PotrContext *ctx,
 
 #### peer_free() の拡張
 
-TCP N:1 型の場合、既存の UDP N:1 用 cleanup に加えて以下を実行する。
+TCP N:1 型の場合、既存の UDP N:1 用 cleanup に加えて以下を実行します。
 
-**前提**: 呼び出し前に全 path の recv/health スレッドが停止済みであること。
+**前提**: 呼び出し前に全 path の recv/health スレッドを停止しておきます。
 
 ```
 ・全 path の tcp_conn_fd が POTR_INVALID_SOCKET であることを確認 (assert)
@@ -315,7 +320,7 @@ TCP N:1 型の場合、既存の UDP N:1 用 cleanup に加えて以下を実行
 
 **ファイル**: `app/porter/prod/libsrc/porter/thread/potrTcpPeerThread.h` / `.c`
 
-per-peer の recv スレッドと health スレッドを実装する。既存の `potrRecvThread.c` / `potrHealthThread.c` のパケット処理ロジックを内部関数として再利用する。
+per-peer の recv スレッドと health スレッドを実装します。既存の `potrRecvThread.c` / `potrHealthThread.c` のパケット処理ロジックを内部関数として再利用します。
 
 #### API
 
@@ -406,9 +411,9 @@ static void *tcp_peer_recv_thread_func(void *arg)
 
 #### health スレッド関数の処理フロー
 
-既存の `potr_tcp_health_thread_func()` を per-peer 版に移植する。  
+既存の `potr_tcp_health_thread_func()` を per-peer 版に移植します。  
 `ctx->tcp_conn_fd[path_idx]` / `ctx->tcp_last_ping_recv_ms` を  
-`peer->tcp_conn_fd[path_idx]` / `peer->tcp_last_ping_recv_ms` に置き換える。
+`peer->tcp_conn_fd[path_idx]` / `peer->tcp_last_ping_recv_ms` に置き換えます。
 
 ```c
 static void *tcp_peer_health_thread_func(void *arg)
@@ -559,7 +564,7 @@ static void *connect_thread_func(void *arg)
 **ファイル**: `app/porter/prod/libsrc/porter/thread/potrSendThread.c`
 
 `PotrPayloadElem` にはすでに `peer_id` フィールドが存在するため、  
-送信先ルーティングの変更のみで対応できる。
+送信先ルーティングの変更のみで対応できます。
 
 ```c
 static void flush_packed_peer(PotrContext *ctx,
@@ -800,7 +805,7 @@ if (potr_is_tcp_n1_type(ctx->service.type))
 
 ### PotrPeerContext のサイズ増加
 
-追加する TCP N:1 フィールドのサイズ概算 (POTR_MAX_PATH=4 の場合):
+追加する TCP N:1 フィールドのサイズ概算 (POTR_MAX_PATH=4 の場合) は次のとおりです。
 
 | フィールド | サイズ (approx) |
 |---|---|
@@ -816,13 +821,13 @@ if (potr_is_tcp_n1_type(ctx->service.type))
 | その他整数フィールド | 〜32 B |
 | **合計** | **約 730〜760 B 増加** |
 
-`max_peers = 1024` の場合、ピア テーブル全体で約 750 KB の増加。
+`max_peers = 1024` の場合、ピア テーブル全体で約 750 KB 増加します。
 
-**推奨**: TCP N:1 向けのデフォルト `max_peers` を 32 程度に設定すること。
+**推奨**: TCP N:1 向けのデフォルト `max_peers` を 32 程度に設定してください。
 
 ### デッドロック リスクと回避策
 
-以下の順序を厳守することでデッドロックを回避する。
+以下の順序を厳守することでデッドロックを回避します。
 
 ```
 recv スレッド (切断時):
@@ -844,12 +849,12 @@ potrCloseService():
 
 ### ctx->tcp_active_paths カウンターの扱い
 
-1:1 TCP の `ctx->tcp_active_paths` は N:1 では使用しない。  
-N:1 での送信可否判定は `peer->tcp_conn_fd[k] != POTR_INVALID_SOCKET` で行う。
+1:1 TCP の `ctx->tcp_active_paths` は N:1 では使用しません。  
+N:1 での送信可否判定は `peer->tcp_conn_fd[k] != POTR_INVALID_SOCKET` で行います。
 
 ### スレッド スケーラビリティ
 
-Thread-per-connection モデルでの最大スレッド数 (BIDIR_N1, n_path=4, max_peers=32):
+Thread-per-connection モデルでの最大スレッド数 (BIDIR_N1, n_path=4, max_peers=32) は次のとおりです。
 
 ```
 accept スレッド:   4
@@ -859,22 +864,22 @@ send スレッド:      1
 合計:            261 スレッド
 ```
 
-大量接続 (max_peers > 100) が必要な場合は、将来的に epoll (Linux) / IOCP (Windows) ベースのスレッド プール モデルへの移行を検討すること。
+大量接続 (max_peers > 100) が必要な場合は、将来的に epoll (Linux) / IOCP (Windows) ベースのスレッド プール モデルへの移行を検討してください。
 
 ### マルチパスにおけるセッション管理
 
 #### 問題の背景 (TCP 1:1 マルチパスの不具合)
 
-本問題は N:1 固有ではなく、**既存の TCP 1:1 マルチパス実装にも存在した構造上の不具合** である。
+本問題は N:1 固有ではなく、**既存の TCP 1:1 マルチパス実装にも存在した構造上の不具合** です。
 
-UDP では `recvfrom()` がデータ受信・送信元アドレス取得・セッション ID 識別を原子的に行うため、同一 SENDER の再接続や追加パス接続を自然にセッション層で識別できる。  
-一方 TCP の `accept()` はソケット fd のみを返し、アプリケーション層のセッション識別子 (`session_id`, `session_tv_sec`, `session_tv_nsec`) は最初のパケットを受信するまで不明である。
+UDP では `recvfrom()` がデータ受信・送信元アドレス取得・セッション ID 識別を原子的に行うため、同一 SENDER の再接続や追加パス接続を自然にセッション層で識別できます。  
+一方 TCP の `accept()` はソケット fd のみを返し、アプリケーション層のセッション識別子 (`session_id`, `session_tv_sec`, `session_tv_nsec`) は最初のパケットを受信するまで不明です。
 
-このため、従来実装では `accept()` 直後に無条件で `reset_connection_state()` を呼んでいた。この関数は `peer_session_known = 0` をリセットするが、他の path の recv スレッドがすでにセッション データを処理中である可能性があり、データ競合が発生していた。さらに、新セッションの接続なのか同一セッションの再接続・追加パスなのかを区別できなかった。
+このため、従来実装では `accept()` 直後に無条件で `reset_connection_state()` を呼んでいました。この関数は `peer_session_known = 0` をリセットしますが、他の path の recv スレッドがすでにセッション データを処理中である可能性があり、データ競合が発生していました。さらに、新セッションの接続なのか同一セッションの再接続・追加パスなのかを区別できませんでした。
 
 #### 実装済みの修正: セッション層での対称化
 
-TCP と UDP のセッション識別をセッション層レベルで対称にする修正を実装した (`potrConnectThread.c`, `potrRecvThread.c`, `potrContext.h`)。
+TCP と UDP のセッション識別をセッション層レベルで対称にする修正を実装しました (`potrConnectThread.c`, `potrRecvThread.c`, `potrContext.h`)。
 
 **設計の概要:**
 
@@ -908,7 +913,7 @@ size_t             tcp_first_pkt_len[POTR_MAX_PATH];
 
 #### N:1 実装における注意事項
 
-TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 識別を基盤として、以下の設計を採用すること。
+TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 識別を基盤として、以下の設計を採用してください。
 
 - `accept()` 後の先読みで得た session triplet を `peer_create_tcp()` / `peer_lookup_by_session()` の検索キーとして使用する
 - 同一 session triplet の新たな path 接続は既存ピアへの追加パスとして扱う
@@ -940,7 +945,7 @@ TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 
 
 ## 実装順序
 
-以下の順序で実装することで、各ステップでビルドを通しながら進められる。
+以下の順序で実装することで、各ステップでビルドを通しながら進められます。
 
 1. **型定義** (`porter_type.h`, `potrContext.h`)
     - `POTR_TYPE_TCP_N1`, `POTR_TYPE_TCP_BIDIR_N1` を追加
@@ -984,7 +989,7 @@ make -C app/porter/prod
 
 ### 既存 1:1 TCP の回帰確認
 
-既存の `POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR` を使用した接続が引き続き正常動作することを確認する。
+既存の `POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR` を使用した接続が引き続き正常動作することを確認します。
 
 ### N:1 動作確認
 
@@ -1014,4 +1019,4 @@ potrSend(handle, peer_id_A, "response to A", len, 0);
 
 ### クリーン シャットダウン確認
 
-`potrCloseService()` 実行後にスレッド リーク・メモリ リークがないことを `valgrind` または `ThreadSanitizer` で確認する。
+`potrCloseService()` 実行後にスレッド リーク・メモリ リークがないことを `valgrind` または `ThreadSanitizer` で確認します。

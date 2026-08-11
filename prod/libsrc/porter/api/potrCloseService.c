@@ -21,6 +21,9 @@
 #include <porter/porter_const.h>
 
 #include <com_util/crypto/crypto.h>
+#include <com_util/net/byteorder.h>
+#include <com_util/net/endpoint.h>
+#include <com_util/net/socket.h>
 #include <com_util/runtime/memory_lock.h>
 #include <porter/infra/potrTrace.h>
 #include <porter/infra/potrSendQueue.h>
@@ -34,7 +37,6 @@
 #include <porter/thread/potrHealthThread.h>
 #include <porter/thread/potrRecvThread.h>
 #include <porter/thread/potrSendThread.h>
-#include <porter/util/potrIpAddr.h>
 
 /* 平文と鍵を保持する動的バッファーを消去して解放する。
  * crypto_buf は復号済み平文、compress_buf と frag_buf と recv_buf は
@@ -95,8 +97,8 @@ static void send_fin(PotrContext *ctx)
 
     if (has_data)
     {
-        fin_pkt.flags |= potr_hton16(POTR_FLAG_FIN_TARGET_VALID);
-        fin_pkt.ack_num = potr_hton32(wire_target_seq);
+        fin_pkt.flags |= com_util_hton16(POTR_FLAG_FIN_TARGET_VALID);
+        fin_pkt.ack_num = com_util_hton32(wire_target_seq);
     }
 
     if (ctx->service.encrypt_enabled)
@@ -105,8 +107,8 @@ static void send_fin(PotrContext *ctx)
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
 
-        fin_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
-        fin_pkt.payload_len = potr_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
+        fin_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
+        fin_pkt.payload_len = com_util_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         /* ノンス: session_id(4B) + flags(2B, FIN|ENCRYPTED NBO) + 0(4B) + padding(2B) */
         memcpy(nonce, &fin_pkt.session_id, 4);
@@ -124,10 +126,11 @@ static void send_fin(PotrContext *ctx)
 
         for (i = 0; i < ctx->n_path; i++)
         {
-            if (ctx->sock[i] == POTR_INVALID_SOCKET)
+            size_t sent = 0;
+
+            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
                 continue;
-            potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[i],
-                        (int)sizeof(ctx->dest_addr[i]), NULL);
+            (void)com_util_socket_sendto(ctx->sock[i], wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
         }
     }
     else
@@ -136,10 +139,12 @@ static void send_fin(PotrContext *ctx)
 
         for (i = 0; i < ctx->n_path; i++)
         {
-            if (ctx->sock[i] == POTR_INVALID_SOCKET)
+            size_t sent = 0;
+
+            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
                 continue;
-            potr_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, 0,
-                        (const struct sockaddr *)&ctx->dest_addr[i], (int)sizeof(ctx->dest_addr[i]), NULL);
+            (void)com_util_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &ctx->dest_addr[i], &sent,
+                                         NULL);
         }
     }
 }
@@ -175,8 +180,8 @@ static int send_tcp_fin(PotrContext *ctx, uint32_t fin_target_seq)
         return result;
     }
 
-    fin_pkt.flags |= potr_hton16(POTR_FLAG_FIN_TARGET_VALID);
-    fin_pkt.ack_num = potr_hton32(fin_target_seq);
+    fin_pkt.flags |= com_util_hton16(POTR_FLAG_FIN_TARGET_VALID);
+    fin_pkt.ack_num = com_util_hton32(fin_target_seq);
 
     return potr_tcp_send_control_packet(ctx, &fin_pkt, 0U);
 }
@@ -364,8 +369,6 @@ int potrCloseService(PotrContext *handle)
         dispose_secret_buffers(ctx);
         free(ctx->send_wire_buf);
 
-        potr_socket_lib_cleanup();
-
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potrCloseService: service closed (TCP)");
         potr_callback_mutex_dispose(ctx);
         free(ctx);
@@ -428,24 +431,22 @@ int potrCloseService(PotrContext *handle)
         int i;
         for (i = 0; i < ctx->n_path; i++)
         {
-            if (ctx->sock[i] == POTR_INVALID_SOCKET)
+            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
                 continue;
             if (potr_raw_base_type(ctx->service.type) == POTR_TYPE_MULTICAST)
             {
-                struct ip_mreq mreq;
-                memset(&mreq, 0, sizeof(mreq));
-                if (parse_ipv4_addr(ctx->service.multicast_group, &mreq.imr_multiaddr) == POTR_OK)
+                uint32_t group_addr;
+
+                if (com_util_ipv4_parse(ctx->service.multicast_group, &group_addr) == COM_UTIL_OK)
                 {
-                    mreq.imr_interface = ctx->src_addr_resolved[i];
-                    potr_setsockopt(ctx->sock[i], IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq), NULL);
+                    (void)com_util_socket_leave_multicast_group(ctx->sock[i], group_addr, ctx->src_addr_resolved[i],
+                                                                NULL);
                 }
             }
-            potr_close_socket(ctx->sock[i]);
-            ctx->sock[i] = POTR_INVALID_SOCKET;
+            com_util_socket_close(ctx->sock[i]);
+            ctx->sock[i] = COM_UTIL_INVALID_SOCKET;
         }
     }
-
-    potr_socket_lib_cleanup();
 
     /* 送受信ウィンドウと動的バッファーを解放 */
     if (!ctx->is_multi_peer)

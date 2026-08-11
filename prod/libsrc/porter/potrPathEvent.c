@@ -18,7 +18,6 @@
 
 #include <com_util/sync/sync.h>
 #include <porter/potrPathEvent.h>
-#include <porter/infra/potrPlatform.h>
 
 /**
  *  @brief          PING 受信状態が NORMAL かどうかを判定します。
@@ -145,7 +144,7 @@ void potr_copy_tcp_path_states(const PotrContext *ctx, int *states)
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
-        states[k] = (ctx->tcp_conn_fd[k] != POTR_INVALID_SOCKET) && path_state_is_normal(ctx->path_ping_state[k]) &&
+        states[k] = (ctx->tcp_conn_fd[k] != COM_UTIL_INVALID_SOCKET) && path_state_is_normal(ctx->path_ping_state[k]) &&
                     path_state_is_normal(ctx->remote_path_ping_state[k]);
     }
 }

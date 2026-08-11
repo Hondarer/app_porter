@@ -29,8 +29,10 @@
 #include <porter/potrPeerTable.h>
 #include <porter/thread/potrHealthThread.h>
 #include <porter/infra/potrTrace.h>
-#include <porter/infra/potrPlatform.h>
+#include <porter/infra/potrResult.h>
 #include <com_util/crypto/crypto.h>
+#include <com_util/net/byteorder.h>
+#include <com_util/net/socket.h>
 
 static uint64_t get_last_health_signal_send_ms(const PotrContext *ctx)
 {
@@ -137,7 +139,7 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
     {
         return POTR_ERR_CANCELED;
     }
-    if (ctx->tcp_active_paths == 0 || ctx->tcp_conn_fd[path_idx] == POTR_INVALID_SOCKET)
+    if (ctx->tcp_active_paths == 0 || ctx->tcp_conn_fd[path_idx] == COM_UTIL_INVALID_SOCKET)
     {
         return POTR_ERR_DISCONNECTED;
     }
@@ -166,8 +168,8 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
         size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
         int encrypt_failed = 0;
 
-        ping_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
-        ping_pkt.payload_len = potr_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
+        ping_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
+        ping_pkt.payload_len = com_util_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
 
         memcpy(nonce, &ping_pkt.session_id, 4);
         memcpy(nonce + 4, &ping_pkt.flags, 2);
@@ -177,7 +179,7 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
         memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
 
         com_util_local_lock_lock(ctx->tcp_send_mutex[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
-        if (ctx->tcp_conn_fd[path_idx] != POTR_INVALID_SOCKET)
+        if (ctx->tcp_conn_fd[path_idx] != COM_UTIL_INVALID_SOCKET)
         {
             potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
@@ -188,8 +190,17 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
             }
             else
             {
+                com_util_error detail;
+
                 wire_len = PACKET_HEADER_SIZE + enc_out;
-                send_result = potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, NULL);
+                if (com_util_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) == COM_UTIL_OK)
+                {
+                    send_result = POTR_OK;
+                }
+                else
+                {
+                    send_result = potr_internal_result_from_error(&detail);
+                }
             }
         }
         com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
@@ -207,11 +218,20 @@ static int tcp_send_ping_packet(PotrContext *ctx, int path_idx)
         wire_len = PACKET_HEADER_SIZE + POTR_MAX_PATH;
 
         com_util_local_lock_lock(ctx->tcp_send_mutex[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
-        if (ctx->tcp_conn_fd[path_idx] != POTR_INVALID_SOCKET)
+        if (ctx->tcp_conn_fd[path_idx] != COM_UTIL_INVALID_SOCKET)
         {
+            com_util_error detail;
+
             potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-            send_result = potr_tcp_send(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, NULL);
+            if (com_util_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) == COM_UTIL_OK)
+            {
+                send_result = POTR_OK;
+            }
+            else
+            {
+                send_result = potr_internal_result_from_error(&detail);
+            }
         }
         com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
     }
@@ -293,8 +313,8 @@ static void health_thread_func(void *arg)
                     uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
                     size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
 
-                    ping_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
-                    ping_pkt.payload_len = potr_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
+                    ping_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
+                    ping_pkt.payload_len = com_util_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
 
                     memcpy(nonce, &ping_pkt.session_id, 4);
                     memcpy(nonce + 4, &ping_pkt.flags, 2);
@@ -313,11 +333,12 @@ static void health_thread_func(void *arg)
 
                     for (k = 0; k < (int)POTR_MAX_PATH; k++)
                     {
-                        if (ctx->peers[i].dest_addr[k].sin_family == 0)
+                        size_t sent = 0;
+
+                        if (potr_endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                             continue;
-                        potr_sendto(ctx->sock[k], wire_buf, wire_len, 0,
-                                    (const struct sockaddr *)&ctx->peers[i].dest_addr[k],
-                                    (int)sizeof(ctx->peers[i].dest_addr[k]), NULL);
+                        (void)com_util_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k],
+                                                     &sent, NULL);
                     }
                 }
                 else
@@ -329,11 +350,12 @@ static void health_thread_func(void *arg)
 
                     for (k = 0; k < (int)POTR_MAX_PATH; k++)
                     {
-                        if (ctx->peers[i].dest_addr[k].sin_family == 0)
+                        size_t sent = 0;
+
+                        if (potr_endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                             continue;
-                        potr_sendto(ctx->sock[k], wire_buf, wire_len, 0,
-                                    (const struct sockaddr *)&ctx->peers[i].dest_addr[k],
-                                    (int)sizeof(ctx->peers[i].dest_addr[k]), NULL);
+                        (void)com_util_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k],
+                                                     &sent, NULL);
                     }
                 }
 
@@ -384,8 +406,8 @@ static void health_thread_func(void *arg)
                 uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
                 size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
 
-                ping_pkt.flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
-                ping_pkt.payload_len = potr_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
+                ping_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
+                ping_pkt.payload_len = com_util_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
 
                 memcpy(nonce, &ping_pkt.session_id, 4);
                 memcpy(nonce + 4, &ping_pkt.flags, 2);
@@ -404,11 +426,12 @@ static void health_thread_func(void *arg)
 
                 for (k = 0; k < ctx->n_path; k++)
                 {
-                    int sent_len;
-                    sent_len =
-                        potr_sendto(ctx->sock[k], wire_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[k],
-                                    (int)sizeof(ctx->dest_addr[k]), NULL);
-                    if (sent_len == (int)wire_len)
+                    size_t sent = 0;
+                    int send_ret;
+
+                    send_ret =
+                        com_util_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
+                    if (send_ret == COM_UTIL_OK)
                     {
                         sent_any = 1;
                     }
@@ -423,11 +446,12 @@ static void health_thread_func(void *arg)
 
                 for (k = 0; k < ctx->n_path; k++)
                 {
-                    int sent_len;
-                    sent_len =
-                        potr_sendto(ctx->sock[k], wire_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[k],
-                                    (int)sizeof(ctx->dest_addr[k]), NULL);
-                    if (sent_len == (int)wire_len)
+                    size_t sent = 0;
+                    int send_ret;
+
+                    send_ret =
+                        com_util_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
+                    if (send_ret == COM_UTIL_OK)
                     {
                         sent_any = 1;
                     }

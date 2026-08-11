@@ -107,7 +107,7 @@ extern "C"
      *  @param[in]      path_idx    パケットを受信したサーバー ソケットのインデックス (ctx->sock[] の添字)。
      *  @return         成功時はピア コンテキストへのポインター、失敗時は NULL。
      */
-    extern PotrPeerContext *peer_create(PotrContext *ctx, const struct sockaddr_in *sender_addr, int path_idx);
+    extern PotrPeerContext *peer_create(PotrContext *ctx, const com_util_ipv4_endpoint *sender_addr, int path_idx);
 
     /**
      *  @brief  ピアの特定パスをクリアしてスロットを未使用に戻す。

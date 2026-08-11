@@ -29,8 +29,10 @@
 #include <com_util/compress/compress.h>
 #include <com_util/crypto/crypto.h>
 #include <porter/infra/potrTrace.h>
-#include <porter/infra/potrPlatform.h>
 #include <porter/infra/potrTcpControl.h>
+#include <com_util/net/byteorder.h>
+#include <com_util/net/endpoint.h>
+#include <com_util/net/socket.h>
 
 /* 前方宣言: 後で定義される関数 */
 static void send_nack(PotrContext *ctx, uint32_t nack_seq);
@@ -166,8 +168,8 @@ static int build_ctrl_pkt_wire(const PotrContext *ctx, PotrPacket *pkt, uint8_t 
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
 
-        pkt->flags |= potr_hton16(POTR_FLAG_ENCRYPTED);
-        pkt->payload_len = potr_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
+        pkt->flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
+        pkt->payload_len = com_util_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         /* ノンス: session_id(4B) + flags(2B NBO) + ack_num(4B NBO) + padding(2B) */
         memcpy(nonce, &pkt->session_id, 4);
@@ -303,10 +305,11 @@ static void n1_send_ctrl_to_peer_paths(PotrContext *ctx, PotrPeerContext *peer, 
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
-        if (peer->dest_addr[k].sin_family == 0)
+        size_t sent = 0;
+
+        if (potr_endpoint_is_unset(&peer->dest_addr[k]))
             continue;
-        potr_sendto(ctx->sock[k], wire_buf, wire_len, 0, (const struct sockaddr *)&peer->dest_addr[k],
-                    (int)sizeof(peer->dest_addr[k]), NULL);
+        (void)com_util_socket_sendto(ctx->sock[k], wire_buf, wire_len, &peer->dest_addr[k], &sent, NULL);
     }
 }
 
@@ -371,12 +374,12 @@ static void n1_fire_disconnected_by_fin(PotrContext *ctx, PotrPeerContext *peer)
 }
 
 /* N:1: 送信元アドレスを記録し、未知のパスを学習する */
-static void n1_update_path_recv(PotrPeerContext *peer, const struct sockaddr_in *sender_addr, int path_idx)
+static void n1_update_path_recv(PotrPeerContext *peer, const com_util_ipv4_endpoint *sender_addr, int path_idx)
 {
-    if (peer->dest_addr[path_idx].sin_family == AF_INET)
+    if (!potr_endpoint_is_unset(&peer->dest_addr[path_idx]))
     {
         /* 既知パス: ポートを更新 */
-        peer->dest_addr[path_idx].sin_port = sender_addr->sin_port;
+        peer->dest_addr[path_idx].port = sender_addr->port;
     }
     else
     {
@@ -430,7 +433,7 @@ static void n1_check_health_timeout(PotrContext *ctx)
         {
             int64_t path_elapsed;
 
-            if (ctx->peers[i].dest_addr[k].sin_family == 0)
+            if (potr_endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                 continue; /* 未使用 */
             if (ctx->peers[i].path_last_recv_ts[k].tv_sec == 0)
                 continue; /* 初回受信前 */
@@ -515,9 +518,9 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
     {
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t dec_len = ctx->crypto_buf_size;
-        uint32_t sid_nbo = potr_hton32(pkt->session_id);
-        uint16_t flags_nbo = potr_hton16((uint16_t)pkt->flags);
-        uint32_t seq_nbo = potr_hton32(pkt->seq_num);
+        uint32_t sid_nbo = com_util_hton32(pkt->session_id);
+        uint16_t flags_nbo = com_util_hton16((uint16_t)pkt->flags);
+        uint32_t seq_nbo = com_util_hton32(pkt->seq_num);
 
         memcpy(nonce, &sid_nbo, 4);
         memcpy(nonce + 4, &flags_nbo, 2);
@@ -569,8 +572,8 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
         uint8_t dummy[1];
         size_t dummy_len = sizeof(dummy);
         uint32_t val;
-        uint32_t sid_nbo = potr_hton32(pkt->session_id);
-        uint16_t flags_nbo = potr_hton16((uint16_t)pkt->flags);
+        uint32_t sid_nbo = com_util_hton32(pkt->session_id);
+        uint16_t flags_nbo = com_util_hton16((uint16_t)pkt->flags);
         uint32_t val_nbo;
 
         if ((pkt->flags & (POTR_FLAG_NACK | POTR_FLAG_REJECT | POTR_FLAG_FIN_ACK)) != 0)
@@ -581,7 +584,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
         {
             val = pkt->seq_num;
         }
-        val_nbo = potr_hton32(val);
+        val_nbo = com_util_hton32(val);
 
         memcpy(nonce, &sid_nbo, 4);
         memcpy(nonce + 4, &flags_nbo, 2);
@@ -617,7 +620,7 @@ static int recv_authenticate_packet(PotrContext *ctx, PotrPacket *pkt, const uin
    UNICAST_BIDIR SENDER:   受信パケットの送信元は RECEIVER (dst_addr_resolved) と照合する。
    UNICAST_BIDIR RECEIVER: 受信パケットの送信元は SENDER   (src_addr_resolved) と照合する。
    その他: src_addr_resolved と照合する。src_addr が未設定の場合は常に 1 (合格) を返す。 */
-static int check_src_addr(const PotrContext *ctx, const struct sockaddr_in *sender)
+static int check_src_addr(const PotrContext *ctx, const com_util_ipv4_endpoint *sender)
 {
     int i;
 
@@ -626,7 +629,7 @@ static int check_src_addr(const PotrContext *ctx, const struct sockaddr_in *send
     {
         if (ctx->service.src_port != 0)
         {
-            if (potr_ntoh16(sender->sin_port) == ctx->service.src_port)
+            if (com_util_ntoh16(sender->port) == ctx->service.src_port)
             {
                 return 1;
             }
@@ -644,7 +647,7 @@ static int check_src_addr(const PotrContext *ctx, const struct sockaddr_in *send
                 return 1;
             for (i = 0; i < ctx->n_path; i++)
             {
-                if (sender->sin_addr.s_addr == ctx->dst_addr_resolved[i].s_addr)
+                if (sender->address == ctx->dst_addr_resolved[i])
                     return 1;
             }
         }
@@ -655,7 +658,7 @@ static int check_src_addr(const PotrContext *ctx, const struct sockaddr_in *send
                 return 1;
             for (i = 0; i < ctx->n_path; i++)
             {
-                if (sender->sin_addr.s_addr == ctx->src_addr_resolved[i].s_addr)
+                if (sender->address == ctx->src_addr_resolved[i])
                     return 1;
             }
         }
@@ -668,7 +671,7 @@ static int check_src_addr(const PotrContext *ctx, const struct sockaddr_in *send
     }
     for (i = 0; i < ctx->n_path; i++)
     {
-        if (sender->sin_addr.s_addr == ctx->src_addr_resolved[i].s_addr)
+        if (sender->address == ctx->src_addr_resolved[i])
         {
             return 1;
         }
@@ -841,22 +844,22 @@ static void wake_tcp_interrupt_ping_if_needed(PotrContext *ctx, int path_idx, in
 }
 
 /* パスごとの peer_port と送信元アドレスを更新する */
-static void update_path_recv(PotrContext *ctx, int path_idx, const struct sockaddr_in *sender)
+static void update_path_recv(PotrContext *ctx, int path_idx, const com_util_ipv4_endpoint *sender)
 {
-    ctx->peer_port[path_idx] = sender->sin_port; /* NBO のまま格納 */
+    ctx->peer_port[path_idx] = sender->port; /* NBO のまま格納 */
 
     /* unicast_bidir で送信先アドレスが未確定の場合は受信パケットの送信元から動的学習する。
        - src_addr 省略 (動的 1:1 RECEIVER): IP アドレスが 0 → 送信元 IP で更新
        - src_port=0 (エフェメラル ポート動的学習): ポートが 0 → 送信元ポートで更新 */
     if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
     {
-        if (ctx->service.src_addr[0][0] == '\0' && ctx->dest_addr[path_idx].sin_addr.s_addr == 0)
+        if (ctx->service.src_addr[0][0] == '\0' && ctx->dest_addr[path_idx].address == 0)
         {
-            ctx->dest_addr[path_idx].sin_addr = sender->sin_addr; /* NBO */
+            ctx->dest_addr[path_idx].address = sender->address; /* NBO */
         }
-        if (ctx->dest_addr[path_idx].sin_port == 0)
+        if (ctx->dest_addr[path_idx].port == 0)
         {
-            ctx->dest_addr[path_idx].sin_port = sender->sin_port; /* NBO */
+            ctx->dest_addr[path_idx].port = sender->port; /* NBO */
         }
     }
 }
@@ -897,12 +900,12 @@ static void check_health_timeout(PotrContext *ctx)
                 if (ctx->service.src_addr[0][0] == '\0')
                 {
                     /* 動的 1:1 RECEIVER: 学習した送信元 IP をリセット */
-                    ctx->dest_addr[i].sin_addr.s_addr = 0;
+                    ctx->dest_addr[i].address = 0;
                 }
                 if (ctx->service.src_port == 0)
                 {
                     /* エフェメラル ポート動的学習: ポートをリセット */
-                    ctx->dest_addr[i].sin_port = 0;
+                    ctx->dest_addr[i].port = 0;
                 }
             }
         }
@@ -1046,21 +1049,22 @@ static void send_nack(PotrContext *ctx, uint32_t nack_seq)
 
     for (i = 0; i < ctx->n_path; i++)
     {
+        size_t sent = 0;
+
         /* UNICAST_BIDIR: dest_addr[i] (dst_addr:dst_port) へ直接送信する。
            通常 unicast: src_addr_resolved[i]:src_port または peer_port へ送信する。 */
         if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
         {
-            potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[i],
-                        (int)sizeof(ctx->dest_addr[i]), NULL);
+            (void)com_util_socket_sendto(ctx->sock[i], wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
         }
         else
         {
-            struct sockaddr_in dest;
+            com_util_ipv4_endpoint dest = {0};
             uint16_t port;
 
             if (ctx->service.src_port != 0)
             {
-                port = potr_hton16(ctx->service.src_port);
+                port = com_util_hton16(ctx->service.src_port);
             }
             else
             {
@@ -1070,12 +1074,10 @@ static void send_nack(PotrContext *ctx, uint32_t nack_seq)
             if (port == 0)
                 continue; /* ポート未観測のパスは送れない */
 
-            memset(&dest, 0, sizeof(dest));
-            dest.sin_family = AF_INET;
-            dest.sin_addr = ctx->src_addr_resolved[i];
-            dest.sin_port = port;
+            dest.address = ctx->src_addr_resolved[i];
+            dest.port = port;
 
-            potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&dest, (int)sizeof(dest), NULL);
+            (void)com_util_socket_sendto(ctx->sock[i], wire_buf, wire_len, &dest, &sent, NULL);
         }
     }
 }
@@ -1101,8 +1103,9 @@ static void send_reject(PotrContext *ctx, uint32_t seq_num)
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        potr_sendto(ctx->sock[i], wire_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[i],
-                    (int)sizeof(ctx->dest_addr[i]), NULL);
+        size_t sent = 0;
+
+        (void)com_util_socket_sendto(ctx->sock[i], wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
     }
 }
 
@@ -1454,7 +1457,7 @@ static void slot_process_outer_pkt(RecvSlot *slot, const PotrPacket *pkt, int pa
 /* N:1 モード: 受信パケットをピアごとにディスパッチして処理する。
    wire_hdr は認証検証用の受信 wire 先頭 (ヘッダー部)。 */
 static void n1_handle_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *wire_hdr,
-                             const struct sockaddr_in *sender_addr, int path_idx)
+                             const com_util_ipv4_endpoint *sender_addr, int path_idx)
 {
     PotrPeerContext *peer = NULL;
     int is_new_peer = 0;
@@ -1508,11 +1511,11 @@ static void n1_handle_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *w
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
                    "recv[service_id=%" PRId64 "]: new peer=%u from %u.%u.%u.%u:%u (CONNECTED pending PING+NORMAL)",
                    ctx->service.service_id, (unsigned)peer->peer_id,
-                   (unsigned)((potr_ntoh32(sender_addr->sin_addr.s_addr) >> 24) & 0xFF),
-                   (unsigned)((potr_ntoh32(sender_addr->sin_addr.s_addr) >> 16) & 0xFF),
-                   (unsigned)((potr_ntoh32(sender_addr->sin_addr.s_addr) >> 8) & 0xFF),
-                   (unsigned)(potr_ntoh32(sender_addr->sin_addr.s_addr) & 0xFF),
-                   (unsigned)potr_ntoh16(sender_addr->sin_port));
+                   (unsigned)((com_util_ntoh32(sender_addr->address) >> 24) & 0xFF),
+                   (unsigned)((com_util_ntoh32(sender_addr->address) >> 16) & 0xFF),
+                   (unsigned)((com_util_ntoh32(sender_addr->address) >> 8) & 0xFF),
+                   (unsigned)(com_util_ntoh32(sender_addr->address) & 0xFF),
+                   (unsigned)com_util_ntoh16(sender_addr->port));
     }
 
     /* FIN: ピアの正常終了通知 */
@@ -1566,10 +1569,11 @@ static void n1_handle_packet(PotrContext *ctx, PotrPacket *pkt, const uint8_t *w
                        ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)pkt->ack_num);
             for (j = 0; j < (int)POTR_MAX_PATH; j++)
             {
-                if (peer->dest_addr[j].sin_family == 0)
+                size_t sent = 0;
+
+                if (potr_endpoint_is_unset(&peer->dest_addr[j]))
                     continue;
-                potr_sendto(ctx->sock[j], ctx->recv_buf, wire_len, 0, (const struct sockaddr *)&peer->dest_addr[j],
-                            (int)sizeof(peer->dest_addr[j]), NULL);
+                (void)com_util_socket_sendto(ctx->sock[j], ctx->recv_buf, wire_len, &peer->dest_addr[j], &sent, NULL);
             }
         }
         else
@@ -1739,8 +1743,10 @@ static int sender_handle_packet(PotrContext *ctx, const PotrPacket *pkt)
                            ctx->service.service_id, (unsigned)pkt->ack_num);
                 for (j = 0; j < ctx->n_path; j++)
                 {
-                    potr_sendto(ctx->sock[j], ctx->recv_buf, wire_len, 0, (const struct sockaddr *)&ctx->dest_addr[j],
-                                (int)sizeof(ctx->dest_addr[j]), NULL);
+                    size_t sent = 0;
+
+                    (void)com_util_socket_sendto(ctx->sock[j], ctx->recv_buf, wire_len, &ctx->dest_addr[j], &sent,
+                                                 NULL);
                 }
             }
             else
@@ -1765,7 +1771,7 @@ static int sender_handle_packet(PotrContext *ctx, const PotrPacket *pkt)
 }
 
 /* 受信者ロール: FIN / REJECT / DATA / PING を処理する (1:1 モード) */
-static void receiver_handle_packet(RecvSlot *svc_slot, PotrPacket *pkt, const struct sockaddr_in *sender_addr,
+static void receiver_handle_packet(RecvSlot *svc_slot, PotrPacket *pkt, const com_util_ipv4_endpoint *sender_addr,
                                    int path_idx)
 {
     PotrContext *ctx = svc_slot->ctx;
@@ -1957,7 +1963,7 @@ static void recv_thread_func(void *arg)
     PotrContext *ctx = (PotrContext *)arg;
     uint8_t *buf = ctx->recv_buf; /* PACKET_HEADER_SIZE + max_payload バイト */
     PotrPacket pkt;
-    struct sockaddr_in sender_addr;
+    com_util_ipv4_endpoint sender_addr;
     uint32_t poll_ms;
     RecvSlot svc_slot; /* 1:1 モード用スロット (フィールド位置は不変のため 1 回だけ構成) */
 
@@ -1991,8 +1997,8 @@ static void recv_thread_func(void *arg)
         int poll_result;
         int i;
 
-        poll_result = potr_poll_readable_multi(ctx->sock, (size_t)ctx->n_path, (int)poll_ms, ready, &detail);
-        if (poll_result != POTR_OK)
+        poll_result = com_util_socket_wait_readable_multi(ctx->sock, (size_t)ctx->n_path, (int)poll_ms, ready, &detail);
+        if (poll_result != COM_UTIL_OK)
         {
             if (!ctx->running[0])
                 break;
@@ -2029,31 +2035,30 @@ static void recv_thread_func(void *arg)
 
         for (i = 0; i < ctx->n_path; i++)
         {
-            int recv_len;
-            int sender_len;
+            size_t recv_len = 0;
+            int recv_result;
 
-            if (ctx->sock[i] == POTR_INVALID_SOCKET)
+            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
                 continue;
             if (ready[i] == 0U)
                 continue;
 
             memset(&sender_addr, 0, sizeof(sender_addr));
-            sender_len = (int)sizeof(sender_addr);
 
-            recv_len = potr_recvfrom(ctx->sock[i], buf, PACKET_HEADER_SIZE + ctx->global.max_payload, 0,
-                                     (struct sockaddr *)&sender_addr, &sender_len, NULL);
-            if (recv_len <= 0)
+            recv_result = com_util_socket_recvfrom(ctx->sock[i], buf, PACKET_HEADER_SIZE + ctx->global.max_payload,
+                                                   &sender_addr, &recv_len, NULL);
+            if (recv_result != COM_UTIL_OK || recv_len == 0U)
             {
                 if (!ctx->running[0])
                     break; /* 正常終了: ソケット クローズによる割り込み */
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: recvfrom returned %d",
-                           ctx->service.service_id, recv_len);
+                POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: recvfrom failed (rc=%d)",
+                           ctx->service.service_id, recv_result);
                 continue;
             }
 
-            if (packet_parse(&pkt, buf, (size_t)recv_len) != POTR_OK)
+            if (packet_parse(&pkt, buf, recv_len) != POTR_OK)
             {
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: packet parse failed (len=%d)",
+                POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: packet parse failed (len=%zu)",
                            ctx->service.service_id, recv_len);
                 continue;
             }
@@ -2101,16 +2106,33 @@ static void recv_thread_func(void *arg)
 
 /* TCP ソケットが読み取り可能になるまで最大 wait_ms ミリ秒待機する。
  * 戻り値: 1 = データあり、0 = タイムアウト、-1 = エラー。 */
-static int tcp_wait_readable(PotrSocket fd, int wait_ms)
+static int tcp_wait_readable(com_util_socket fd, int wait_ms)
 {
-    return potr_poll_readable(fd, wait_ms, NULL);
+    int ready = 0;
+
+    if (com_util_socket_wait_readable(fd, wait_ms, &ready, NULL) != COM_UTIL_OK)
+    {
+        return -1;
+    }
+    return ready;
 }
 
 /* TCP ソケットから正確に n バイト読み取る。
  * 戻り値: 成功時は POTR_OK、切断時 (recv が 0 を返した) は POTR_ERR_EOF、エラー時は POTR_ERR_IO。 */
-static int tcp_read_all(PotrSocket fd, uint8_t *buf, size_t n)
+static int tcp_read_all(com_util_socket fd, uint8_t *buf, size_t n)
 {
-    return potr_tcp_recv_all(fd, buf, n, NULL);
+    com_util_error detail;
+    int result = com_util_socket_recv_all(fd, buf, n, &detail);
+
+    if (result == COM_UTIL_OK)
+    {
+        return POTR_OK;
+    }
+    if (result == COM_UTIL_ERR_EOF)
+    {
+        return POTR_ERR_EOF;
+    }
+    return POTR_ERR_IO;
 }
 
 /* TCP ストリーム受信スレッド本体 (path ごと) */
@@ -2120,7 +2142,7 @@ static void tcp_recv_thread_func(void *arg)
     PotrContext *ctx = rarg->ctx;
     int path_idx = rarg->path_idx;
     uint8_t *buf = ctx->recv_buf; /* PACKET_HEADER_SIZE + max_payload バイト */
-    PotrSocket fd;
+    com_util_socket fd;
     RecvSlot svc_slot; /* TCP は 1:1 モードのみ */
 
     recv_slot_init_ctx(&svc_slot, ctx);
@@ -2168,7 +2190,7 @@ static void tcp_recv_thread_func(void *arg)
         int r;
 
         fd = ctx->tcp_conn_fd[path_idx];
-        if (fd == POTR_INVALID_SOCKET)
+        if (fd == COM_UTIL_INVALID_SOCKET)
         {
             break;
         }
@@ -2186,7 +2208,7 @@ static void tcp_recv_thread_func(void *arg)
             {
                 uint16_t wpl;
                 memcpy(&wpl, buf + 34, sizeof(wpl));
-                wire_payload_len = potr_ntoh16(wpl);
+                wire_payload_len = com_util_ntoh16(wpl);
             }
         }
         else
@@ -2238,7 +2260,7 @@ static void tcp_recv_thread_func(void *arg)
             {
                 uint16_t wpl;
                 memcpy(&wpl, buf + 34, sizeof(wpl));
-                wire_payload_len = potr_ntoh16(wpl);
+                wire_payload_len = com_util_ntoh16(wpl);
             }
 
             /* 3. ペイロード長バリデーション */
@@ -2464,9 +2486,9 @@ int comm_recv_thread_stop(PotrContext *ctx)
         int i;
         for (i = 0; i < ctx->n_path; i++)
         {
-            if (ctx->sock[i] != POTR_INVALID_SOCKET)
+            if (ctx->sock[i] != COM_UTIL_INVALID_SOCKET)
             {
-                (void)potr_shutdown_receive(&ctx->sock[i], NULL);
+                (void)com_util_socket_shutdown_receive(&ctx->sock[i], NULL);
             }
         }
     }
