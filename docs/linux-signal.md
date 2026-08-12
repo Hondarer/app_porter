@@ -108,10 +108,8 @@ porter は `potrOpenService()` / `potrOpenServiceFromConfig()` の呼び出し�
 
 Linux では、プロセスに届くシグナルはシグナルをマスクしていないスレッドのいずれかに配信されます。porter の内部スレッドはシグナルをマスクしないため、アプリケーションが意図したシグナル (SIGINT など) が内部スレッドに配信される可能性があります。
 
-内部スレッドがシグナルを受け取った場合の影響は次のとおりです。
-
-- スレッドがブロッキング待機 (`com_util_socket_recvfrom()` など) 中の場合、システム コールが `EINTR` で中断される
-- 待機系 API は中断をタイムアウトと同じ扱いにするため、通常は動作上の問題は生じない
+内部スレッドがシグナルを受け取っても、porter の動作には影響しません。  
+内部スレッドは `com_util` の `net` カテゴリを経由してブロッキング システム コールを発行しており、シグナルによる中断は `com_util` が吸収するためです。詳細は [シグナルによるシステム コールの中断 (EINTR)](#シグナルによるシステム-コールの中断-eintr) を参照してください。
 
 ただし、シグナルをメイン スレッドで確実に受け取りたい場合は、`potrOpenServiceFromConfig()` / `potrOpenService()` の前に `pthread_sigmask()` で内部スレッドに継承させたくないシグナルをマスクしておいてください。子スレッドは親スレッドのシグナル マスクを引き継ぎます。
 
@@ -153,20 +151,18 @@ pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
 プロセス終了を引き起こさないシグナル (カスタム ハンドラーが登録済みのもの、または `SIG_IGN` に設定済みのもの) でも同様に中断が発生します。
 
 porter の内部スレッドは `com_util` の `net` カテゴリを経由してブロッキング システム コールを発行します。  
-EINTR の扱いは API の種別によって異なります。
+`com_util` の公開 API は中断を吸収するため、porter の API を呼び出す利用者が EINTR を意識する必要はありません。
 
-| API の種別 | 該当する API | EINTR の扱い |
-|---|---|---|
-| 待機系 | `com_util_socket_wait_readable()`、`com_util_socket_wait_writable()`、`com_util_socket_wait_readable_multi()` | タイムアウトと同じ扱いとし、`COM_UTIL_OK` を返して条件不成立を通知する |
-| 送受信系と接続系 | `com_util_socket_recv()`、`com_util_socket_send()`、`com_util_socket_recvfrom()`、`com_util_socket_sendto()`、`com_util_socket_connect()` | 再試行せず、要因 `COM_UTIL_CAUSE_INTERRUPTED` として呼び出し側へ通知する |
+`com_util_error_is()` で `COM_UTIL_CAUSE_INTERRUPTED` を判定して再試行する処理は不要です。  
+また、porter の戻り値がシグナルの配信を理由に失敗となることもありません。
 
-待機系が中断を隠蔽するのは、呼び出し側のポーリング ループが再試行の判断をしなくても済むようにするためです。
+分類ごとの規範と、その根拠は [com_util のコーディング規範](../../com_util/docs/coding-guideline.md) の「シグナル割り込み (EINTR) の扱い」に定めています。本書では繰り返しません。
 
 > [!IMPORTANT]
-> 送受信系と接続系は EINTR を隠蔽しません。
-> これらの戻り値を扱う箇所では、`com_util_error_is()` で `COM_UTIL_CAUSE_INTERRUPTED` を判定し、必要に応じて再試行してください。
+> 上記の規範に未適合の API が `com_util` に残っています。  
+> 未適合の一覧と是正の状況は、上記のコーディング規範を参照してください。
 
-利用者のコード (コールバック関数、メイン ループなど) でブロッキング システム コールを使用している場合も、シグナルによる EINTR 中断が発生することに注意します。EINTR の処理は利用者の責任です。
+利用者のコード (コールバック関数、メイン ループなど) で OS のブロッキング システム コールを直接使用している場合は、シグナルによる EINTR 中断が発生します。この範囲の EINTR の処理は利用者の責任です。
 
 ```c
 /* ブロッキング read を使う場合の EINTR 対応例 */
@@ -188,6 +184,10 @@ sa.sa_flags = SA_RESTART;   /* 中断されたシステム コールを自動再
 sigaction(SIGINT, &sa, NULL);
 ```
 
-ただし、`SA_RESTART` がシステム コールの自動再試行を保証するのは一部の呼び出しに限られます。`pause()` や `select()` / `poll()` / `epoll_wait()` など待機系の呼び出しは `SA_RESTART` を指定しても EINTR を返すことがあります (POSIX 規定の適用外)。これらを使用する場合は EINTR を明示的にハンドルしてください。
+ただし、`SA_RESTART` がシステム コールの自動再試行を保証するのは一部の呼び出しに限られます。`pause()` や `select()` / `poll()` / `epoll_wait()` など待機系の呼び出しは `SA_RESTART` を指定しても EINTR を返します。これらを直接使用する場合は EINTR を明示的にハンドルしてください。
 
-porter 内部スレッドは `SA_RESTART` の有無にかかわらず EINTR を処理する実装になっているため、利用者が `SA_RESTART` を設定するかどうかは porter の動作に影響しません。
+porter と `com_util` は `SA_RESTART` の有無にかかわらず EINTR を処理する実装であるため、利用者が `SA_RESTART` を設定するかどうかは porter の動作に影響しません。  
+`SA_RESTART` の設定は、利用者コードが直接発行するシステム コールにのみ影響します。
+
+> [!NOTE]
+> `com_util` が `SA_RESTART` に依存しない理由は、上記のとおり待機系の呼び出しが `SA_RESTART` では再開されないことと、ライブラリが利用者のハンドラー設定を制御できないことによります。
