@@ -310,8 +310,7 @@ static com_util_socket tcp_connect_with_timeout(PotrContext *ctx, int path_idx)
             (void)com_util_socket_set_nonblocking(sock, 0, NULL);
             return sock;
         }
-        /* IN_PROGRESS (Linux: EINPROGRESS, Windows: WSAEWOULDBLOCK) 以外はエラー */
-        if (!com_util_error_is(&detail, COM_UTIL_CAUSE_IN_PROGRESS))
+        if (connect_result != COM_UTIL_ERR_IN_PROGRESS)
         {
             POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
                                       "connect_thread[service_id=%" PRId64 " path=%d]: connect() failed",
