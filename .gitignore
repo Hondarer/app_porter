@@ -47,6 +47,9 @@ make_build.stamp
 make_test.stamp
 make_doxy.stamp
 
+## leaf テスト ディレクトリ単位の再テスト スキップ用スタンプ
+test.stamp
+
 ## 中間ファイル (Doxygen)
 /xml/
 /xml_org/
