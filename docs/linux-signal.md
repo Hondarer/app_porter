@@ -153,14 +153,10 @@ pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
 porter の内部スレッドは `com_util` の `net` カテゴリを経由してブロッキング システム コールを発行します。  
 `com_util` の公開 API は中断を吸収するため、porter の API を呼び出す利用者が EINTR を意識する必要はありません。
 
-`com_util_error_is()` で `COM_UTIL_CAUSE_INTERRUPTED` を判定して再試行する処理は不要です。  
+シグナル中断への対処として `com_util_error_is()` で `COM_UTIL_CAUSE_INTERRUPTED` を判定し、再試行する処理は不要です。  
 また、porter の戻り値がシグナルの配信を理由に失敗となることもありません。
 
 分類ごとの規範と、その根拠は [com_util のコーディング規範](../../com_util/docs/coding-guideline.md) の「シグナル割り込み (EINTR) の扱い」に定めています。本書では繰り返しません。
-
-> [!IMPORTANT]
-> 上記の規範に未適合の API が `com_util` に残っています。  
-> 未適合の一覧と是正の状況は、上記のコーディング規範を参照してください。
 
 利用者のコード (コールバック関数、メイン ループなど) で OS のブロッキング システム コールを直接使用している場合は、シグナルによる EINTR 中断が発生します。この範囲の EINTR の処理は利用者の責任です。
 

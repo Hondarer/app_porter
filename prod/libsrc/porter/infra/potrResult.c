@@ -56,8 +56,8 @@ int potr_internal_result_from_error(const com_util_error *detail)
     case COM_UTIL_CAUSE_NAME_TOO_LONG:
     case COM_UTIL_CAUSE_DISK_FULL:
     case COM_UTIL_CAUSE_BUSY:
-    /* com_util がシグナルによる中断を吸収するため、本要因は com_util の公開 API からは
-       返らない。列挙の網羅 (-Wswitch-enum) を維持するために case を残す。 */
+    /* com_util がシグナルによる中断を吸収するため、ソケット経路で本要因が返ることはない。
+       Windows の I/O キャンセル由来では返りうるため case を残す。 */
     case COM_UTIL_CAUSE_INTERRUPTED:
     case COM_UTIL_CAUSE_BROKEN_PIPE:
     case COM_UTIL_CAUSE_TOO_MANY_OPEN_FILES:
