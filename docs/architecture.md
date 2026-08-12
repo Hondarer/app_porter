@@ -420,7 +420,6 @@ porter の全状態は `PotrContext` 構造体 (`PotrContext *` の実体) に�
 > | `health_mutex[POTR_MAX_PATH]` / `health_wakeup[POTR_MAX_PATH]` | health スレッドのスリープ制御 (path ごと) |
 > | `tcp_state_mutex` / `tcp_state_cv` | `tcp_active_paths` カウンター保護・connect スレッドへの切断通知用 |
 > | `tcp_last_ping_recv_ms[POTR_MAX_PATH]` | PING 応答最終受信時刻 (ms, monotonic。path ごと。SENDER health スレッドが監視) |
-> | `tcp_last_ping_req_recv_ms[POTR_MAX_PATH]` | RECEIVER が最後に PING 要求を受信した時刻 (ms, monotonic。path ごと。recv スレッドが PING 到着タイムアウト監視に使用) |
 > | `buf_full_suppress_cnt[POTR_MAX_PATH]` | 送信バッファー満杯 ERROR ログの抑制カウンター (path ごと) |
 
 > **unicast_bidir について**: 1:1 モードの `POTR_ROLE_RECEIVER` は送信ウィンドウ・送信キュー・送信スレッド・ヘルスチェック スレッドも保持します。N:1 モードではさらに `is_multi_peer`、`peers`、`max_peers`、`peers_mutex` などの共有管理情報を持ち、各ピアの詳細状態は `PotrPeerContext` に分離されます。
@@ -438,9 +437,9 @@ porter はソケット型・無効値・初期化・クローズのいずれに�
 
 | 機能 | Linux | Windows |
 |---|---|---|
-| スレッド型 (`PotrThread`) | `pthread_t` | `HANDLE` |
-| ミューテックス型 (`PotrMutex`) | `com_util_local_lock *` | `com_util_local_lock *` |
-| 条件変数型 (`PotrCondVar`) | `com_util_condvar` | `com_util_condvar` |
+| スレッド型 | `com_util_thread *` | `com_util_thread *` |
+| ミューテックス型 | `com_util_local_lock *` | `com_util_local_lock *` |
+| 条件変数型 | `com_util_condvar *` | `com_util_condvar *` |
 | 単調時間 (ヘルスチェック用) | com_util 経由 `clock_gettime(CLOCK_MONOTONIC, ...)` | com_util 経由 `GetTickCount64()` |
 | カレンダー時刻 (セッション ID 用) | com_util 経由 `clock_gettime(CLOCK_REALTIME, ...)` | com_util 経由 `GetSystemTimeAsFileTime()` |
 | 呼び出し規約 (`POTRAPI`) | (なし) | `__stdcall` |
@@ -533,12 +532,12 @@ typedef enum {
 `POTR_TYPE_UNICAST_BIDIR` の `POTR_ROLE_RECEIVER` は、通常の RECEIVER が持たない以下のフィールドを追加で保持します。
 
 ```c
-PotrSendQueue     send_queue;       /* 送信キュー */
-PotrSendWindow    send_window;      /* 送信ウィンドウ */
-PotrThread        send_thread;      /* 送信スレッド */
-PotrThread        health_thread;    /* ヘルスチェック スレッド */
-PotrMutex         health_mutex;
-PotrCondVar       health_wakeup;
+PotrSendQueue        send_queue;    /* 送信キュー */
+PotrSendWindow       send_window;   /* 送信ウィンドウ */
+com_util_thread     *send_thread;   /* 送信スレッド */
+com_util_thread     *health_thread; /* ヘルスチェック スレッド */
+com_util_local_lock *health_mutex;
+com_util_condvar    *health_wakeup;
 ```
 
 ### コールバック要件

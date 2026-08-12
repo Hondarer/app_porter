@@ -67,4 +67,9 @@ grep -rn "errno\|WSAGetLastError" app/porter/prod/libsrc/ app/porter/prod/includ
 grep -rnE "\b(htons|ntohs|htonl|ntohl)\s*\(" app/porter/prod/libsrc/ app/porter/prod/include/ app/porter/prod/include_internal/
 ```
 
+> [!NOTE]
+> 1 番目の grep は、トレース文字列 (`"connect() failed"` など) や Doxygen コメント中の API 名にもヒットします。  
+> これらは呼び出しではなく記述的な文言であるため、該当ヒットは対象外として扱ってください。  
+> コードとしての直接呼び出しかどうかは、ヒットした行が文字列リテラルまたはコメントの内側にないかで判断します。
+
 いずれも該当なしとなることを確認してください。
