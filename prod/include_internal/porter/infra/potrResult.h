@@ -43,8 +43,8 @@ extern "C"
      *  @param[in]      detail          対応する詳細エラー。NULL 可。
      *  @return         対応する POTR_OK または POTR_ERR_* を返します。
      *
-     *  @c com_util_socket_recv_all のように、OS エラーを伴わない結果コード
-     *  (@c COM_UTIL_ERR_EOF など) を返す API では、@p detail に要因が
+     *  `com_util_socket_recv_all` のように、OS エラーを伴わない結果コード
+     *  (`COM_UTIL_ERR_EOF` など) を返す API では、@p detail に要因が
      *  格納されないため @ref potr_internal_result_from_error だけでは判定できません。\n
      *  本関数は、そのような結果コードを先に判定してから要因ベースの変換へ委譲します。
      */
