@@ -45,7 +45,7 @@ com_util_tracer *potr_trace_get(void)
 {
     if (s_trace == NULL)
     {
-        s_trace = com_util_tracer_create();
+        s_trace = com_util_tracer_create(COM_UTIL_TRACER_CONCURRENCY_TRACER_MANAGED);
         if (s_trace != NULL)
         {
             com_util_tracer_set_name(s_trace, "porter", 0);
