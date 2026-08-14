@@ -1,34 +1,36 @@
 # AGENTS.md
 
-## 重要事項
+## 対象範囲
 
-- 自動ステージング、コミット禁止。指示があるまでステージング、コミットは行わないこと。
-- 思考の断片は英語でもよいが、ユーザーに気づきを与えたり報告する際は日本語を用いること。
-
-## リポジトリ概要
-
-UDP/IP および TCP/IP をサポートするクロスプラットフォーム (Linux / Windows) 通信ライブラリです。ユニキャスト・マルチキャスト・ブロードキャストの UDP 通信、TCP による接続型通信、スライディング ウィンドウによる NACK ベース再送制御、ヘルスチェック、データ圧縮、マルチパスを提供します。
+この文書は、`app/porter/` 配下の作業に適用します。  
+作業前に、[README.md](README.md)と対象ディレクトリから参照できる詳細文書を確認してください。
 
 ## 作業時の入口
 
-- `makefile` - ルートの入口
-- `prod/include/` - 公開 API (ライブラリ利用者向けヘッダー)。関数宣言は `porter_spec.h` に集約
-- `prod/include_internal/` - ライブラリ内部共有ヘッダー
-- `prod/libsrc/` - ソース ファイル (`.c`)
-- `prod/src/cmd/porter-test/` - 動作確認用コマンド
-- `test/` - テスト本体、モック、`makepart.mk`
-- `docs/` - 発行ドキュメントの目次、個別トピックの解説
+- `prod/include/` は、利用者向けの公開 API ヘッダーです。
+- `prod/include_internal/` は、ライブラリ内部の共有ヘッダーです。
+- `prod/libsrc/` は、C の実装です。
+- `prod/src/cmd/porter-test/` は、動作確認用コマンドです。
+- `test/` は、単体テスト、モック、エクスポート確認です。
+- [docs/README.md](docs/README.md)は、発行文書の入口です。
+- [docs/api.md](docs/api.md)は、公開 API の戻り値とスレッド セーフ性を説明します。
+- [docs/coding-guideline.md](docs/coding-guideline.md)は、porter 固有の規範です。
 
-## 主要コマンド
+## 公開 API の同期
+
+`prod/include/` の関数を追加、削除、名称変更、またはシグネチャ変更する場合は、同じ変更で `test/src/libporter/exportTest/exportTest.cc` の `POTR_EXPORT_FUNCTION_TABLE` を確認してください。  
+公開変数を変更する場合は、同ファイルの `POTR_EXPORT_VARIABLE_TABLE` も確認してください。  
+公開 API を変更する場合は、`docs/api.md` の戻り値表とスレッド セーフ表も同じ変更で確認してください。
+
+## app 固有の規則
+
+- 一般的な C/C++ 規範は、[共通コーディング規範](../general/docs/coding-guideline.md) に従ってください。
+- porter 固有の結果コード、制約、適用対象外は、[porter コーディング規範](docs/coding-guideline.md) に集約してください。
+- `docs/doxybook2_public/` と `docs/doxybook2_internal/` は自動生成物です。手作業で変更せず、ヘッダーの Doxygen コメントを変更してから `make doxy` で再生成してください。
+
+## 確認コマンド
 
 ```bash
 make
 make test
 ```
-
-## 注意点
-
-- 公開 API (`prod/include/` 配下のヘッダー) に関数を追加、削除、またはシグネチャを変更した場合は、`test/src/libporter/exportTest/exportTest.cc` の `POTR_EXPORT_FUNCTION_TABLE` を同じコミットで見直すこと。公開変数を追加、削除、または型を変更した場合は、同ファイルの `POTR_EXPORT_VARIABLE_TABLE` も見直すこと。反映を怠ると `exportTest.symbol_names_match` が失敗する。
-- 上位の `docs/general/coding-guideline.md` は一般則のみを扱う。porter 固有の規則、制限、遵守事項 (結果コード `POTR_OK` / `POTR_ERR_*`、適用対象外の範囲など) はすべて `docs/coding-guideline.md` に集約する。追加・変更時も同ファイルへ追記すること。
-- 公開 API (`prod/include/` 配下のヘッダー) を変更した場合は、`docs/api.md` の該当記載 (戻り値表、スレッド セーフ表) を同じコミットで見直すこと。
-- `docs/doxybook2_public/` と `docs/doxybook2_internal/` は Doxygen からの自動生成物であり、手編集しないこと。ヘッダーの Doxygen コメントを変更した場合は `make doxy` で再生成する。

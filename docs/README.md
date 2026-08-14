@@ -9,6 +9,13 @@ TCP による信頼性の高い接続型通信 (1:1 および双方向) もサ�
 > [c-modernization-kit](https://github.com/Hondarer/c-modernization-kit) に統合された利用例があります。
 > `c-modernization-kit` リポジトリ内の `app/porter` サブモジュールの統合例を参照してください。
 
+## 重要な文書
+
+- [API ガイド](api.md)
+- [構成ファイル仕様](config.md)
+- [porter コーディング規範](coding-guideline.md)
+- [TCP N:1 の設計記録](history/tcp-n1-design.md)
+
 ## 特徴
 
 | 機能 | 詳細 |
@@ -19,7 +26,7 @@ TCP による信頼性の高い接続型通信 (1:1 および双方向) もサ�
 | リオーダー吸収 | `reorder_timeout_ms` でギャップ検出後の待機時間を設定。待機中に追い越しパケットが届けば NACK / DISCONNECT を発行しない (通常・RAW モード共通)。マルチキャスト/ブロードキャスト通常モードでは NACK 送出タイミングを 100%〜200% の範囲で自動ジッタ分散し NACK implosion を抑制 |
 | データ圧縮 | raw DEFLATE (Linux: zlib、Windows: Compression API) |
 | フラグメント化 | 最大 65,535 バイトのメッセージを自動分割・結合 |
-| ヘルスチェック | 片方向 type 1-6 は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送り、有効な PING / DATA 受信で疎通を維持する。双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は定周期 PING の送受信で接続を確立するため、実効 `health_interval_ms` が 0 のままでは `CONNECTED` しない。各パスの PING 受信状態変化時には割り込み PING も送信する |
+| ヘルスチェック | 片方向 type 1-6 は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送り、有効な PING / DATA 受信で疎通を維持します。双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は定周期 PING の送受信で接続を確立するため、実効 `health_interval_ms` が 0 のままでは `CONNECTED` しません。各パスの PING 受信状態変化時には割り込み PING も送信します。 |
 | マルチパス | 最大 4 経路の並列送信 |
 | プラットフォーム | Linux、Windows 両プラットフォーム対応 |
 
@@ -105,6 +112,8 @@ send -l TRACE ../sample-config/porter-services.conf 1001
 
 <!-- docsfw の仕上がりパスに対する相対リンク。この Markdown からの相対パスではないことに注意 -->
 
+生成前またはリンク先を参照できない場合は、[Doxygen の生成入口](../prod/README.md) と [doxyfw の生成手順](../../../framework/doxyfw/docs/makefile-usage.md) を参照してください。
+
 - [porter (public)](../../../doxygen/porter_public/index.html)
     - [公開 API (porter)](../../../doxygen/porter_public/group__PORTER__PUBLIC__API.html)
 
@@ -129,5 +138,7 @@ send -l TRACE ../sample-config/porter-services.conf 1001
     - [カテゴリの一覧](doxybook2_internal/Modules/README.md)
 
 ## 関連ドキュメント
+
+## 文書一覧
 
 \toc depth=-1 exclude-basedir=true exclude="doxybook2_public/*" exclude="doxybook2_internal/*"

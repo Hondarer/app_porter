@@ -46,7 +46,7 @@ UDP データグラム 1 個が外側パケット 1 個に対応します。
 
 | フィールド | 型 (NBO) | 説明 |
 |---|---|---|
-| `service_id` | int64 | サービス識別子。受信時に設定ファイルの値と照合する |
+| `service_id` | int64 | サービス識別子。受信時に設定ファイルの値と照合します。 |
 | `session_tv_sec` | int64 | セッション開始時刻 (POSIX 秒) |
 | `session_id` | uint32 | セッション乱数識別子 |
 | `session_tv_nsec` | int32 | セッション開始時刻 (ナノ秒部、0〜999,999,999) |
@@ -64,12 +64,12 @@ UDP データグラム 1 個が外側パケット 1 個に対応します。
 
 | 定数 | 値 | 説明 |
 |---|---|---|
-| `POTR_FLAG_DATA` | 0x0001 | データ パケット。ペイロードにエレメントを含む |
+| `POTR_FLAG_DATA` | 0x0001 | データ パケット。ペイロードにエレメントを含みます。 |
 | `POTR_FLAG_NACK` | 0x0002 | 再送要求。`ack_num` に要求する通番を格納 |
-| `POTR_FLAG_PING` | 0x0004 | ヘルスチェック要求。ペイロードにパス受信状態 (`POTR_MAX_PATH` バイト) を格納する |
+| `POTR_FLAG_PING` | 0x0004 | ヘルスチェック要求。ペイロードにパス受信状態 (`POTR_MAX_PATH` バイト) を格納します。 |
 | `POTR_FLAG_REJECT` | 0x0008 | 再送不能通知。`ack_num` に再送不能な通番を格納 |
 | `POTR_FLAG_FIN` | 0x0010 | 正常終了通知。ペイロードなし (payload_len=0) |
-| `POTR_FLAG_FIN_TARGET_VALID` | 0x0040 | FIN の `ack_num` が有効な受信完了目標 `next_seq` を表すことを示す |
+| `POTR_FLAG_FIN_TARGET_VALID` | 0x0040 | FIN の `ack_num` が有効な受信完了目標 `next_seq` を表すことを示します。 |
 | `POTR_FLAG_FIN_ACK` | 0x0080 | TCP close 完了通知。`ack_num` に確認対象の FIN target を格納 |
 
 ### flags 種別ごとの ack_num の意味
@@ -115,7 +115,7 @@ DATA パケットでは `ack_num` は 0 固定とし、受信時は無視しま�
 | `POTR_FLAG_DATA` | ○ | データ送信に使用 |
 | `POTR_FLAG_NACK` | × | TCP が配送を保証するため不要 |
 | `POTR_FLAG_PING` | ○ | ヘルスチェック。`ack_num=0` で要求、`ack_num=N` で応答 |
-| `POTR_FLAG_REJECT` | × | 再送不能は発生しない |
+| `POTR_FLAG_REJECT` | × | 再送不能は発生しません。 |
 | `POTR_FLAG_FIN` | ○ | `potrCloseService()` 時に protocol-level FIN を送る |
 | `POTR_FLAG_FIN_ACK` | ○ | receiver が最後の DATA callback 完了後に返す close 完了通知 |
 | `POTR_FLAG_ENCRYPTED` | ○ | UDP と同様に使用可能 |
@@ -309,8 +309,8 @@ RAW モード (`unicast_raw` / `multicast_raw` / `broadcast_raw`) でも通番�
 
 ### 目的
 
-- **送信ウィンドウ**: NACK 受信時に再送するために、過去パケットのコピーを保持する
-- **受信ウィンドウ**: 到着順序が入れ替わったパケット (追い越し) をバッファリングし、通番順に整列する
+- **送信ウィンドウ**: NACK 受信時に再送するために、過去パケットのコピーを保持します。
+- **受信ウィンドウ**: 到着順序が入れ替わったパケット (追い越し) をバッファリングし、通番順に整列します。
 
 ### ウィンドウ サイズ
 
@@ -339,9 +339,9 @@ evict された通番に対して後から NACK が届いた場合、そのパ�
 RAW モードでは NACK を送出しません。欠番を検出した場合 (DATA の追い越し到着・PING の `seq_num` が  
 `recv_window.next_seq` より前方にある場合) の動作:
 
-1. `POTR_EVENT_DISCONNECTED` をコールバックで通知する
-2. 受信ウィンドウを到着パケットの通番でリセットする
-3. 到着パケットを配信し、`POTR_EVENT_CONNECTED` をコールバックで通知する
+1. `POTR_EVENT_DISCONNECTED` をコールバックで通知します。
+2. 受信ウィンドウを到着パケットの通番でリセットします。
+3. 到着パケットを配信し、`POTR_EVENT_CONNECTED` をコールバックで通知します。
 
 追い越しパケット自体は破棄されません。ギャップをまたいで届いた最初のパケットが即座に配信されます。
 
@@ -430,9 +430,9 @@ RAW モードでは再送制御を行いません。送信ウィンドウへの�
 
 受信者は REJECT を受信すると:
 
-1. 直ちに `POTR_EVENT_DISCONNECTED` を発火する
-2. 欠落した通番をスキップし、次の通番から処理を再開できる状態になる
-3. 次のパケットが届いた時点で `POTR_EVENT_CONNECTED` を発火する
+1. 直ちに `POTR_EVENT_DISCONNECTED` を発火します。
+2. 欠落した通番をスキップし、次の通番から処理を再開できる状態になります。
+3. 次のパケットが届いた時点で `POTR_EVENT_CONNECTED` を発火します。
 
 ## FIN と DATA の順序保証
 
@@ -543,16 +543,16 @@ Linux 送信者と Windows 受信者 (またはその逆) の組み合わせで�
 
 切断判定時:
 
-1. `health_alive` を 0 に設定する
-2. `POTR_EVENT_DISCONNECTED` をコールバックで通知する
-3. `peer_session_known` をリセットして次の接続を受け入れ可能にする
+1. `health_alive` を 0 に設定します。
+2. `POTR_EVENT_DISCONNECTED` をコールバックで通知します。
+3. `peer_session_known` をリセットして次の接続を受け入れ可能にします。
 4. 受信ウィンドウをリセットする (次に受信するパケットの `seq_num` で再初期化される)
 
 次のパケットを受信したとき:
 
-1. セッションを採用し、受信ウィンドウをそのパケットの `seq_num` で初期化する
-2. `health_alive` を 1 に設定する
-3. `POTR_EVENT_CONNECTED` をコールバックで通知する
+1. セッションを採用し、受信ウィンドウをそのパケットの `seq_num` で初期化します。
+2. `health_alive` を 1 に設定します。
+3. `POTR_EVENT_CONNECTED` をコールバックで通知します。
 
 ### PING ペイロード仕様
 
@@ -621,7 +621,7 @@ UDP には接続概念がありません。相手のアプリケーションが�
 |---|---|---|
 | UDP unicast | RECEIVER: `last_recv_tv_sec` 監視 | 片方向 type 1-6 は有効な `PING` / `DATA` 受信で更新 |
 | UDP unicast_bidir | 1:1 は両端、N:1 は各ピア単位で `last_recv_tv_sec` を監視 | 相手停止で当該相手からの全パケットが途絶える → timeout 発火 |
-| TCP / TCP_bidir | SENDER: PING 応答タイムアウト監視 | OS 接続が生存したままアプリがハングし得る |
+| TCP / TCP_bidir | SENDER: PING 応答タイムアウト監視 | OS 接続が生存したままアプリがハングし得ます。 |
 
 ### TCP 通信種別のヘルスチェック動作
 

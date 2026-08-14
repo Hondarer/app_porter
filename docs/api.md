@@ -32,8 +32,8 @@
 | `POTR_OK` | 送信キューへの積み込み成功 |
 | `POTR_ERR_INVALID_ARGUMENT` | ハンドル、データ、サイズ、または N:1 モードの `peer_id` が不正 |
 | `POTR_ERR_DISCONNECTED` | 論理 CONNECTED 前または切断中。`unicast_bidir`、`unicast_bidir_n1` の未接続 peer、`POTR_PEER_ALL` で接続済み peer 0 件、`tcp` / `tcp_bidir` の CONNECTED 前または全 path 切断中が該当 |
-| `POTR_ERR_NOT_FOUND` | N:1 モードで指定した peer が存在しない |
-| `POTR_ERR_OUT_OF_MEMORY` | `POTR_PEER_ALL` の送信先一覧を確保できない |
+| `POTR_ERR_NOT_FOUND` | N:1 モードで指定した peer が存在しません。 |
+| `POTR_ERR_OUT_OF_MEMORY` | `POTR_PEER_ALL` の送信先一覧を確保できません。 |
 | `POTR_ERR_CANCELED` | サービスの終了処理によって送信を中止した |
 | `POTR_ERR_UNKNOWN` | 圧縮などの分類不能な内部処理に失敗した |
 

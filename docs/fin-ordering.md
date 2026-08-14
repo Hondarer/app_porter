@@ -28,8 +28,8 @@ potrSend() 完了
 本仕様が保証するのは次の時点までです。
 
 - receiver 側で最後の DATA が `recv_window` から pop される
-- 復号・展開が完了する
-- 同期 `PotrRecvCallback(POTR_EVENT_DATA)` が return する
+- 復号・展開が完了します。
+- 同期 `PotrRecvCallback(POTR_EVENT_DATA)` が return します。
 
 以下は保証対象外です。
 
@@ -112,8 +112,8 @@ receiver:
 [session_id:4B][flags:2B][seq_or_ack_num:4B][padding:2B]
 ```
 
-- DATA / PING / FIN は `seq_num` を使う
-- NACK / REJECT / FIN_ACK は `ack_num` を使う
+- DATA / PING / FIN は `seq_num` を使用します。
+- NACK / REJECT / FIN_ACK は `ack_num` を使用します。
 
 したがって `FIN_ACK` を追加したことで、暗号化 control packet の検証側も `ack_num` ベースで nonce を計算する必要があります。
 
@@ -168,9 +168,9 @@ FIN_TARGET_VALID なし
 
 | 通信種別 | FIN 送受信 | FIN_ACK | 備考 |
 |---|---|---|---|
-| unicast / multicast / broadcast / raw | ○ | × | 従来どおり FIN pending だけで順序保証する |
+| unicast / multicast / broadcast / raw | ○ | × | 従来どおり FIN pending だけで順序保証します。 |
 | unicast_bidir 1:1 | ○ | × | UDP 系として動作 |
-| unicast_bidir_n1 | ○ | × | `PotrPeerContext` ごとに pending FIN を管理する |
+| unicast_bidir_n1 | ○ | × | `PotrPeerContext` ごとに pending FIN を管理します。 |
 | tcp (type 9) | ○ | ○ | `potrCloseService()` が FIN_ACK を待つ |
 | tcp_bidir (type 10) | ○ | ○ | 同上 |
 

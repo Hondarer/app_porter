@@ -31,11 +31,11 @@ porter は INI 形式のテキスト ファイルでサービスを定義しま�
 |---|---|---|---|
 | `window_size` | uint16 | 16 | スライディング ウィンドウ サイズ (2〜256) |
 | `max_payload` | uint16 | 1,400 | DATA パケットのペイロード上限バイト数 (64〜65507) |
-| `max_message_size` | uint32 | 65,535 | 1 回の potrSend で送信できる最大メッセージ長 (バイト)。フラグメント化により max_payload を超えるメッセージを送受信できる |
-| `send_queue_depth` | uint32 | 1,024 | 非同期送信キューの最大エントリ数。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有する |
-| `udp_health_interval_ms` | uint32 | 3,000 | UDP 通信種別の PING 送信判定間隔 (ms)。片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時に PING を送信し、双方向 UDP は設定周期ごとに PING を送信する。0 でヘルスチェック送信を無効化。双方向 UDP は定周期 PING の送受信で `CONNECTED` を成立させるため、実効 `health_interval_ms` が 0 のままでは接続確立しない |
+| `max_message_size` | uint32 | 65,535 | 1 回の potrSend で送信できる最大メッセージ長 (バイト)。フラグメント化により max_payload を超えるメッセージを送受信できます。 |
+| `send_queue_depth` | uint32 | 1,024 | 非同期送信キューの最大エントリ数。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。 |
+| `udp_health_interval_ms` | uint32 | 3,000 | UDP 通信種別の PING 送信判定間隔 (ms)。片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時に PING を送信し、双方向 UDP は設定周期ごとに PING を送信します。0 でヘルスチェック送信を無効化。双方向 UDP は定周期 PING の送受信で `CONNECTED` を成立させるため、実効 `health_interval_ms` が 0 のままでは接続確立しません。 |
 | `udp_health_timeout_ms`  | uint32 | 10,000 | UDP 通信種別の受信タイムアウト (ms)。片方向 type 1-6 では有効な `PING` / `DATA`、双方向 UDP では `PING` の最終受信から本値を超えたら DISCONNECTED。0 でタイムアウト検知を無効化 |
-| `tcp_health_interval_ms` | uint32 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。接続直後の bootstrap PING とは別に、設定周期ごとに PING を送信する。0 の場合は定周期 PING を無効化するが、初回接続確立用の bootstrap PING は送信する |
+| `tcp_health_interval_ms` | uint32 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。接続直後の bootstrap PING とは別に、設定周期ごとに PING を送信します。0 の場合は定周期 PING を無効化するが、初回接続確立用の bootstrap PING は送信します。 |
 | `tcp_health_timeout_ms`  | uint32 | 31,000 | TCP 通信種別の PING 応答待機タイムアウト (ms)。`tcp_health_interval_ms > 0` のときだけ有効で、SENDER 側が PING 応答を本値以内に受信できなければ DISCONNECTED。0 でタイムアウト検知を無効化 |
 | `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potrCloseService()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送り、本値以内に `FIN_ACK` が返らなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む |
 | `reorder_timeout_ms` | uint32 | 0 | 受信ウィンドウで欠番を検出してから NACK 送出 (通常モード) または DISCONNECTED 発行 (RAW モード) を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 で即時 (デフォルト)。推奨値: LAN/マルチパス = 10〜30 ms、遠距離 WAN = 30〜100 ms |
@@ -57,12 +57,12 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 
 | 構成 | 推奨値 | 理由 |
 |---|---|---|
-| 単一パス・同一 LAN | 0 (無効) | 遅延変動が小さく追い越しはほぼ発生しない |
+| 単一パス・同一 LAN | 0 (無効) | 遅延変動が小さく追い越しはほぼ発生しません。 |
 | マルチパス (2 経路以上) | 10〜30 ms | 経路差異で数 ms〜数十 ms の追い越しが起こりうる |
 | 遠距離 WAN / 無線 LAN | 30〜100 ms | 遅延変動が大きく再順序付けが頻繁に発生する環境 |
 
-- 設定値を大きくするほど、追い越しを吸収できるが NACK の遅延 (= 再送遅延) も増加する。
-- RAW モードでは DISCONNECTED の遅延にも直結するため、リアルタイム性の要件と合わせて調整すること。
+- 設定値を大きくするほど、追い越しを吸収できるが NACK の遅延 (= 再送遅延) も増加します。
+- RAW モードでは DISCONNECTED の遅延にも直結するため、リアルタイム性の要件と合わせて調整してください。
 - タイムアウト経過後も欠落パケットが届いた場合は NACK なしで正常にウィンドウへ取り込まれる (次の `process_outer_pkt` 呼び出しで自動検出)。
 
 ### マルチキャスト/ブロードキャスト通常モードでの NACK 分散
@@ -87,10 +87,10 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 
 | 通信モデル / 種別 | PING 送信 | タイムアウト監視 |
 |---|---|---|
-| 一方向 UDP (`unicast` / `multicast` / `broadcast` / `*_raw`) | SENDER は open 直後の即時 PING を送らず、最後の `PING` または有効 `DATA` 送信から `health_interval_ms` 経過時にだけ PING を送る。RECEIVER は返信しない | RECEIVER が有効な `PING` / `DATA` の最終受信時刻を監視 |
-| 双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) | 各端点 / 各ピアが周期送信し、要求には即応答する | 各端点 / 各ピアが最終受信時刻を監視 |
-| TCP (`tcp`) | 接続直後に bootstrap PING を送る。`health_interval_ms > 0` のときだけ SENDER が周期送信し、RECEIVER が応答する | `health_interval_ms > 0` のときだけ SENDER は PING 応答待機、RECEIVER は PING 要求到着を監視 |
-| 双方向 TCP (`tcp_bidir`) | 接続直後に両端が bootstrap PING を送る。`health_interval_ms > 0` のときだけ両端が周期送信し、要求には即応答する | `health_interval_ms > 0` のときだけ両端が PING 応答待機と PING 要求到着を監視 |
+| 一方向 UDP (`unicast` / `multicast` / `broadcast` / `*_raw`) | SENDER は open 直後の即時 PING を送らず、最後の `PING` または有効 `DATA` 送信から `health_interval_ms` 経過時にだけ PING を送る。RECEIVER は返信しません。 | RECEIVER が有効な `PING` / `DATA` の最終受信時刻を監視 |
+| 双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) | 各端点 / 各ピアが周期送信し、要求には即応答します。 | 各端点 / 各ピアが最終受信時刻を監視 |
+| TCP (`tcp`) | 接続直後に bootstrap PING を送る。`health_interval_ms > 0` のときだけ SENDER が周期送信し、RECEIVER が応答します。 | `health_interval_ms > 0` のときだけ SENDER は PING 応答待機、RECEIVER は PING 要求到着を監視 |
+| 双方向 TCP (`tcp_bidir`) | 接続直後に両端が bootstrap PING を送る。`health_interval_ms > 0` のときだけ両端が周期送信し、要求には即応答します。 | `health_interval_ms > 0` のときだけ両端が PING 応答待機と PING 要求到着を監視 |
 
 一方向 UDP (type 1-6) の RECEIVER は、有効な `PING` または `DATA` を受信すると `health_alive` を立てて `POTR_EVENT_CONNECTED` を発火します。`health_interval_ms = 0` で PING 送信が無効でも、有効な `DATA` が届けば CONNECTED します。双方向 UDP は従来どおり PING ベースで CONNECTED します。TCP は `health_interval_ms = 0` でも bootstrap PING の往復により CONNECTED できますが、定周期 PING と timeout 監視は無効になります。
 
@@ -98,10 +98,10 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 
 | 設定 | 効果 |
 |---|---|
-| `udp_health_interval_ms = 0` | UDP 通信種別に適用する既定の PING 周期を 0 にする。サービス側で `health_interval_ms` を指定しない限り、UDP サービスの実効 PING 周期は無効になる。双方向 UDP ではこの状態のまま `CONNECTED` しない |
-| `udp_health_timeout_ms = 0` | UDP 通信種別に適用する既定のタイムアウトを 0 にする。サービス側で `health_timeout_ms` を指定しない限り、UDP サービスの実効タイムアウト監視は無効になる |
-| `tcp_health_interval_ms = 0` | TCP 通信種別に適用する既定の定周期 PING 周期を 0 にする。サービス側で `health_interval_ms` を指定しない限り、TCP サービスは bootstrap PING の往復だけで CONNECTED し、その後の定周期 PING は送らない |
-| `tcp_health_timeout_ms = 0` | TCP 通信種別に適用する既定のタイムアウトを 0 にする。サービス側で `health_timeout_ms` を指定しない限り、TCP サービスの PING 要求 / 応答監視は無効になる |
+| `udp_health_interval_ms = 0` | UDP 通信種別に適用する既定の PING 周期を 0 にします。サービス側で `health_interval_ms` を指定しない限り、UDP サービスの実効 PING 周期は無効になります。双方向 UDP ではこの状態のまま `CONNECTED` しません。 |
+| `udp_health_timeout_ms = 0` | UDP 通信種別に適用する既定のタイムアウトを 0 にします。サービス側で `health_timeout_ms` を指定しない限り、UDP サービスの実効タイムアウト監視は無効になります。 |
+| `tcp_health_interval_ms = 0` | TCP 通信種別に適用する既定の定周期 PING 周期を 0 にします。サービス側で `health_interval_ms` を指定しない限り、TCP サービスは bootstrap PING の往復だけで CONNECTED し、その後の定周期 PING は送らない |
+| `tcp_health_timeout_ms = 0` | TCP 通信種別に適用する既定のタイムアウトを 0 にします。サービス側で `health_timeout_ms` を指定しない限り、TCP サービスの PING 要求 / 応答監視は無効になります。 |
 
 ## service.N セクション
 
@@ -115,10 +115,10 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 | `dst_port` | uint16 | 必須 | 宛先ポート番号 (サービスの識別子) |
 | `src_addr` | 文字列 | 条件付き | 通常は送信元 bind アドレスまたは受信側の送信元 IP フィルター。`unicast_bidir` では SENDER・RECEIVER ともに省略可能 (各役割の省略時動作は後述) |
 | `src_port` | uint16 | 省略可 | 送信者の送信元 bind ポート (0 = OS が自動選定) |
-| `health_interval_ms` | uint32 | 省略可 | グローバルの `udp_health_interval_ms` または `tcp_health_interval_ms` をサービス単位でオーバーライドする |
-| `health_timeout_ms`  | uint32 | 省略可 | グローバルの `udp_health_timeout_ms` または `tcp_health_timeout_ms` をサービス単位でオーバーライドする |
+| `health_interval_ms` | uint32 | 省略可 | グローバルの `udp_health_interval_ms` または `tcp_health_interval_ms` をサービス単位でオーバーライドします。 |
+| `health_timeout_ms`  | uint32 | 省略可 | グローバルの `udp_health_timeout_ms` または `tcp_health_timeout_ms` をサービス単位でオーバーライドします。 |
 | `pack_wait_ms` | uint32 | 省略可 | パッキング待機時間 (ミリ秒)。0 で即時送信 |
-| `encrypt_key` | 文字列 | 省略可 | AES-256-GCM 事前共有鍵。以下の 2 形式を受け付ける:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列で指定<br>**② パスフレーズ**: 上記以外の任意の文字列を指定すると SHA-256 で 32 バイト鍵に変換する。省略時は暗号化なし |
+| `encrypt_key` | 文字列 | 省略可 | AES-256-GCM 事前共有鍵。以下の 2 形式を受け付ける:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列で指定<br>**② パスフレーズ**: 上記以外の任意の文字列を指定すると SHA-256 で 32 バイト鍵に変換します。省略時は暗号化なし |
 
 ### unicast 専用フィールド
 
@@ -159,13 +159,13 @@ RAW モードでもスライディング ウィンドウによる **順序整列
 | `src_addr` + `src_port` 指定 | `src_addr:src_port` で bind | `dst_addr:dst_port` で bind | アドレス + ポート |
 | `src_addr` のみ指定 | `src_addr:エフェメラル` で bind | `dst_addr:dst_port` で bind | アドレスのみ |
 | `src_addr` 省略 (SENDER) | `INADDR_ANY:src_port` で bind (OS がアダプターを自動選択) | — | なし |
-| `src_addr` 省略 (RECEIVER) | — | `dst_addr:dst_port` で bind し、最初の受信パケットから SENDER のアドレスを動的学習する | なし (学習後は学習アドレスから受信) |
+| `src_addr` 省略 (RECEIVER) | — | `dst_addr:dst_port` で bind し、最初の受信パケットから SENDER のアドレスを動的学習します。 | なし (学習後は学習アドレスから受信) |
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
-| `src_addr` | 文字列 | 省略可 | SENDER: 省略時は `INADDR_ANY` で bind し OS がアダプターを自動選択。RECEIVER: 省略時は SENDER アドレスを動的学習する |
-| `src_port` | uint16 | 省略可 | SENDER の bind ポート。`0` または省略でエフェメラル ポートを使用し、RECEIVER がパケット受信後に動的学習する |
-| `dst_addr` | 文字列 | 条件付き | SENDER: 送信先アドレス。RECEIVER: bind アドレス。省略時は `INADDR_ANY` で bind する |
+| `src_addr` | 文字列 | 省略可 | SENDER: 省略時は `INADDR_ANY` で bind し OS がアダプターを自動選択。RECEIVER: 省略時は SENDER アドレスを動的学習します。 |
+| `src_port` | uint16 | 省略可 | SENDER の bind ポート。`0` または省略でエフェメラル ポートを使用し、RECEIVER がパケット受信後に動的学習します。 |
+| `dst_addr` | 文字列 | 条件付き | SENDER: 送信先アドレス。RECEIVER: bind アドレス。省略時は `INADDR_ANY` で bind します。 |
 | `dst_port` | uint16 | 必須 | SENDER: 送信先ポート (RECEIVER の bind ポート) |
 
 ### unicast_bidir_n1 専用フィールド
@@ -174,7 +174,7 @@ RAW モードでもスライディング ウィンドウによる **順序整列
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
-| `dst_addr` | 文字列 | 省略可 | サーバーの bind アドレス。省略時は `INADDR_ANY` で bind する |
+| `dst_addr` | 文字列 | 省略可 | サーバーの bind アドレス。省略時は `INADDR_ANY` で bind します。 |
 | `dst_port` | uint16 | 必須 | サーバーの受信ポート |
 | `src_port` | uint16 | 省略可 | 送信元ポート フィルター。`0` または省略でフィルターなし (全クライアント受け入れ) |
 | `max_peers` | uint32 | 省略可 | 最大同時接続クライアント数。既定値は `1024` |
@@ -220,7 +220,7 @@ src_addr.1   = 192.168.2.20   # path 1 の bind アドレス
 
 | `src_addr` | `src_port` | `connect()` 前の `bind()` 動作 |
 |---|---|---|
-| 未指定 | `0` または省略 | `bind()` しない |
+| 未指定 | `0` または省略 | `bind()` しません。 |
 | 未指定 | 指定 | `INADDR_ANY:src_port` で bind |
 | 指定 | `0` または省略 | `src_addr:0` (エフェメラル ポート) で bind |
 | 指定 | 指定 | `src_addr:src_port` で bind |
@@ -248,15 +248,15 @@ src_addr.1   = 192.168.2.20   # path 1 の bind アドレス
 
 | 項目 | 説明 |
 |---|---|
-| **形式① hex 鍵** | 256 ビット鍵を 16 進数文字列 (64 文字、英数字) で記述する |
-| **形式② パスフレーズ** | 64 文字 hex 以外の任意の文字列。SHA-256 ハッシュで 32 バイト鍵を自動導出する |
-| 暗号化範囲 | DATA パケットのペイロード部分を AES-256-GCM で暗号化する。ヘッダー 40 バイトは平文 |
-| AAD | ヘッダー 40 バイトを追加認証データ (AAD) として使用するため、ヘッダー改ざんも検知する |
-| 認証タグ (DATA) | 16 バイトの GCM 認証タグを暗号文末尾に付与する。実効ペイロードが `max_payload - 16` バイトに減少する |
-| 認証タグ (その他) | PING / NACK / REJECT / FIN / FIN_ACK は平文ペイロードが 0 バイトだが、AAD (ヘッダー 40B) に対して 16 バイトの GCM 認証タグのみを付与する。ヘッダー改ざんを検知できる |
+| **形式① hex 鍵** | 256 ビット鍵を 16 進数文字列 (64 文字、英数字) で記述します。 |
+| **形式② パスフレーズ** | 64 文字 hex 以外の任意の文字列。SHA-256 ハッシュで 32 バイト鍵を自動導出します。 |
+| 暗号化範囲 | DATA パケットのペイロード部分を AES-256-GCM で暗号化します。ヘッダー 40 バイトは平文 |
+| AAD | ヘッダー 40 バイトを追加認証データ (AAD) として使用するため、ヘッダー改ざんも検知します。 |
+| 認証タグ (DATA) | 16 バイトの GCM 認証タグを暗号文末尾に付与します。実効ペイロードが `max_payload - 16` バイトに減少します。 |
+| 認証タグ (その他) | PING / NACK / REJECT / FIN / FIN_ACK は平文ペイロードが 0 バイトだが、AAD (ヘッダー 40B) に対して 16 バイトの GCM 認証タグのみを付与します。ヘッダー改ざんを検知できます。 |
 | 双方一致 | 送信者・受信者ともに同一の `encrypt_key` を設定すること |
-| 受信要件 | `encrypt_key` を設定した受信側は `POTR_FLAG_ENCRYPTED` 付きパケットのみ受理する。平文パケット、およびタグ検証失敗パケットは破棄する |
-| マルチキャスト | 受信者全員が同一の `encrypt_key` を持っていれば動作する |
+| 受信要件 | `encrypt_key` を設定した受信側は `POTR_FLAG_ENCRYPTED` 付きパケットのみ受理します。平文パケット、およびタグ検証失敗パケットは破棄します。 |
+| マルチキャスト | 受信者全員が同一の `encrypt_key` を持っていれば動作します。 |
 
 #### ノンス構成
 
@@ -293,9 +293,9 @@ GCM ノンス (12 バイト) は以下の構成です。
 
 | 項目 | 仕様 |
 |---|---|
-| 解決タイミング | `potrOpenServiceFromConfig()` / `potrOpenService()` 呼び出し時に 1 回のみ解決する |
-| 再解決 | プロセス生存中は再解決しない。DNS 更新後に接続できなくなった場合はプロセスを再起動する |
-| 複数アドレス返却時 | 仕様上未定義。実装上は先頭アドレスを採用する |
+| 解決タイミング | `potrOpenServiceFromConfig()` / `potrOpenService()` 呼び出し時に 1 回のみ解決します。 |
+| 再解決 | プロセス生存中は再解決しません。DNS 更新後に接続できなくなった場合はプロセスを再起動します。 |
+| 複数アドレス返却時 | 仕様上未定義。実装上は先頭アドレスを採用します。 |
 | IPv6 | 非対応 |
 
 ## 通信種別ごとのソケット動作

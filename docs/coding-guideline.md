@@ -2,7 +2,7 @@
 
 ## 概要
 
-本書は、上位の「コーディング規範」(`docs/general/coding-guideline.md`) の一般則に対して、porter を利用するコードおよび porter 自身に適用する特化事項をまとめます。
+本書は、上位の [共通コーディング規範](../../general/docs/coding-guideline.md) の一般則に対して、porter を利用するコードおよび porter 自身に適用する特化事項をまとめます。
 
 章立ては上位文書の章に対応させ、porter 固有の追記・上書き事項のみを記載します。
 
@@ -122,8 +122,8 @@ porter の公開 API および内部関数が戻り値として使用する共�
 | 成功・その他 | `POTR_ERR_UNKNOWN` | -1 | 分類済みコードに該当しない内部障害 |
 | 契約・探索 | `POTR_ERR_INVALID_ARGUMENT` | -2 | 引数または設定値が不正 |
 | 契約・探索 | `POTR_ERR_UNSUPPORTED` | -3 | 現在の通信種別または状態では操作が未対応 |
-| 契約・探索 | `POTR_ERR_NOT_FOUND` | -4 | 対象エントリが存在しない |
-| 資源・状態 | `POTR_ERR_OUT_OF_MEMORY` | -10 | メモリを確保できない |
+| 契約・探索 | `POTR_ERR_NOT_FOUND` | -4 | 対象エントリが存在しません。 |
+| 資源・状態 | `POTR_ERR_OUT_OF_MEMORY` | -10 | メモリを確保できません。 |
 | 資源・状態 | `POTR_ERR_FULL` | -11 | キューまたはウィンドウが満杯 |
 | 資源・状態 | `POTR_ERR_EMPTY` | -12 | キューが空、または順序整列済みパケットが未着 |
 | 資源・状態 | `POTR_ERR_OUT_OF_WINDOW` | -13 | 受信ウィンドウの範囲外 |

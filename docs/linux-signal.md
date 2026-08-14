@@ -48,9 +48,9 @@ UDP のみ使用する場合 (`POTR_TYPE_UNICAST` / `POTR_TYPE_MULTICAST` / `POT
 
 正しい終了シーケンスは以下のとおりです。
 
-1. シグナル ハンドラーで `volatile sig_atomic_t` フラグを 0 にセットする
+1. シグナル ハンドラーで `volatile sig_atomic_t` フラグを 0 にセットします。
 2. メイン ループがフラグを検出してループを抜ける
-3. ループ脱出後に `potrCloseService()` を呼んでリソースを解放する
+3. ループ脱出後に `potrCloseService()` を呼んでリソースを解放します。
 
 ```c
 static volatile sig_atomic_t g_running = 1;
@@ -140,8 +140,8 @@ pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
 | シグナル | デフォルト動作 | 留意事項 |
 |---------|--------------|---------|
 | SIGPIPE | プロセス終了 | TCP 使用時は要対策 (上述) |
-| SIGUSR1 / SIGUSR2 | プロセス終了 | 外部から `kill` コマンドで誤送信された場合に即終了する |
-| SIGALRM | プロセス終了 | `alarm()` を使うサード パーティー ライブラリとの組み合わせで発生し得る |
+| SIGUSR1 / SIGUSR2 | プロセス終了 | 外部から `kill` コマンドで誤送信された場合に即終了します。 |
+| SIGALRM | プロセス終了 | `alarm()` を使うサード パーティー ライブラリとの組み合わせで発生し得ます。 |
 | SIGHUP | プロセス終了 | 端末切断時に発生。デーモン化する場合は `SIG_IGN` か設定リロードに使用するのが一般的 |
 
 ### シグナルによるシステム コールの中断 (EINTR)

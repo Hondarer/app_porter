@@ -1,9 +1,9 @@
-﻿# TCP N:1 サポート追加 設計ドキュメント
+﻿# TCP N:1 サポート追加の設計記録
 
 > [!NOTE]
-> 本書は当該機能の設計時点の記録です。
+> 本書は当該機能の設計時点を保存する履歴文書です。
 > 通信のプラットフォーム抽象化層はその後 com_util の net カテゴリへ移行しており、本文のコード断片に登場する `PotrSocket` や `POTR_INVALID_SOCKET` は現行のコードには存在しません。
-> 現行の型と API は [com_util のネットワーク API ガイドライン](../../com_util/docs/net-api-guideline.md) を参照してください。
+> 現行の型と API は [com_util のネットワーク API ガイドライン](../../../com_util/docs/net-api-guideline.md) を参照してください。
 
 ## 背景と目的
 
@@ -884,21 +884,21 @@ TCP と UDP のセッション識別をセッション層レベルで対称に�
 **設計の概要:**
 
 1. **accept スレッドが最初のパケットを先読みする**  
-   `accept()` 直後、`tcp_read_first_packet()` でアプリケーション層の最初のパケットを受信する (タイムアウト付き)。パケット内の session triplet (`session_id`, `session_tv_sec`, `session_tv_nsec`) を取得する。
+   `accept()` 直後、`tcp_read_first_packet()` でアプリケーション層の最初のパケットを受信する (タイムアウト付き)。パケット内の session triplet (`session_id`, `session_tv_sec`, `session_tv_nsec`) を取得します。
 
 2. **`session_establish_mutex` によるシリアライズ**  
-   複数パスの accept スレッドが `ctx->peer_session_*` フィールドを同時に参照・更新しないよう、`session_establish_mutex` で排他制御する。
+   複数パスの accept スレッドが `ctx->peer_session_*` フィールドを同時に参照・更新しないよう、`session_establish_mutex` で排他制御します。
 
 3. **セッション比較 (`tcp_session_compare()`) による 3 分類**
 
    | 結果 | 意味 | 処置 |
    |---|---|---|
-   | `TCP_SESSION_NEW` | 新しいセッション (または初回接続) | 他の全アクティブ パスを切断し `reset_connection_state()` を呼ぶ。その後 `tcp_conn_fd[path_idx]` を設定してスレッドを起動する。 |
-   | `TCP_SESSION_SAME` | 既存セッションの同一セッション ID | 追加パスとして接続する。`reset_connection_state()` は呼ばない。 |
-   | `TCP_SESSION_OLD` | 過去のセッション (期限切れ) | 接続を閉じてループを継続する。 |
+   | `TCP_SESSION_NEW` | 新しいセッション (または初回接続) | 他の全アクティブ パスを切断し `reset_connection_state()` を呼ぶ。その後 `tcp_conn_fd[path_idx]` を設定してスレッドを起動します。 |
+   | `TCP_SESSION_SAME` | 既存セッションの同一セッション ID | 追加パスとして接続します。`reset_connection_state()` は呼ばない。 |
+   | `TCP_SESSION_OLD` | 過去のセッション (期限切れ) | 接続を閉じてループを継続します。 |
 
 4. **先読みバッファーの引き渡し**  
-   accept スレッドが読み取った最初のパケットを `tcp_first_pkt_buf[path_idx]` / `tcp_first_pkt_len[path_idx]` に格納する。recv スレッドはループ開始時にこのバッファーを先に処理し、通常の recv ループに入る。
+   accept スレッドが読み取った最初のパケットを `tcp_first_pkt_buf[path_idx]` / `tcp_first_pkt_len[path_idx]` に格納します。recv スレッドはループ開始時にこのバッファーを先に処理し、通常の recv ループに入る。
 
 **追加されたフィールド (`potrContext.h`):**
 
@@ -915,8 +915,8 @@ size_t             tcp_first_pkt_len[POTR_MAX_PATH];
 
 TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 識別を基盤として、以下の設計を採用してください。
 
-- `accept()` 後の先読みで得た session triplet を `peer_create_tcp()` / `peer_lookup_by_session()` の検索キーとして使用する
-- 同一 session triplet の新たな path 接続は既存ピアへの追加パスとして扱う
+- `accept()` 後の先読みで得た session triplet を `peer_create_tcp()` / `peer_lookup_by_session()` の検索キーとして使用します。
+- 同一 session triplet の新たな path 接続は既存ピアへの追加パスとして扱います。
 - 異なる session triplet は新規ピアとして扱う (`peer_create_tcp()` を呼ぶ)
 - per-peer の `session_establish_mutex` は各 `PotrPeerContext` に持たせ、ピア間の競合を防ぐ
 
