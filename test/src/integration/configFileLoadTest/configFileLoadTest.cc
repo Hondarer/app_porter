@@ -33,6 +33,7 @@ TEST(configFileLoadTest, loadsGlobalServiceAndServiceIdsFromRealFile)
                                   .build();
 
     ASSERT_FALSE(config_path.empty()); // [状態] - 実ファイルへ [global] と 2 つの service section を書き出す。
+                                       // [状態確認] - config_path が空でないこと。
 
     // Pre-Assert
 

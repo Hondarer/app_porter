@@ -339,16 +339,18 @@ TEST_F(porterSendRecvTest, send_single_message)
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER が "受信待機中" を出力すること。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // SENDER を起動して最初のプロンプトを待つ
-    send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
-    ASSERT_NE(nullptr, send_h_); // [確認_正常系] - SENDER が起動すること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
+    send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [状態] - SENDER を起動する。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - SENDER が起動すること。
+    ASSERT_NO_THROW(
+        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+                                                              // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -391,15 +393,15 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER が "受信待機中" を出力すること。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // SENDER を起動して最初のプロンプトを待つ
-    send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
-    ASSERT_NE(nullptr, send_h_); // [確認_正常系] - SENDER が起動すること。
+    send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [状態] - SENDER を起動する。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - SENDER が起動すること。
 
     // Pre-Assert
 
@@ -443,11 +445,11 @@ TEST_F(porterSendRecvTest, recv_exits_cleanly_on_sigint)
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER が "受信待機中" を出力すること。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -473,10 +475,11 @@ TEST_F(porterSendRecvTest, unicast_initial_data_establishes_connected_without_pi
                              .build(); // [状態] - PING 無効 (interval 0) の unicast サービスをポート 19016 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "11"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "11"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -513,10 +516,11 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
                              .build(); // [状態] - PING 周期 1000 ms の unicast サービスをポート 19018 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "13"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "13"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -556,10 +560,11 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
             .build(); // [状態] - PING 無効・health timeout 900 ms の unicast サービスをポート 19017 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "12"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "12"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -611,15 +616,17 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
         cfg.addUnicastService(53, 19053).build(); // [状態] - unicast サービスをポート 19053 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "53"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "53"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
-    send_h_ = startProcessAsync(send_path, {"sender", config_path, "53"}, makeOpts()); // [手順] - SENDER を起動する。
-    ASSERT_NE(nullptr, send_h_); // [確認_正常系] - SENDER が起動すること。
+    send_h_ = startProcessAsync(send_path, {"sender", config_path, "53"}, makeOpts()); // [状態] - SENDER を起動する。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - SENDER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [手順] - SENDER がプロンプトを出力するまで待機する。
+        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+                                                              // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -659,10 +666,11 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
         cfg.addUnicastService(56, 19056).build(); // [状態] - unicast サービスをポート 19056 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "56"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "56"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -701,10 +709,11 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
         cfg.addUnicastService(57, 19057).build(); // [状態] - unicast サービスをポート 19057 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "57"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "57"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -753,18 +762,25 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
                                     .build(); // [状態] - クライアント側の unicast_bidir サービスを定義する。
 
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "54"},
-                                makeOpts()); // [手順] - RECIEVER (N:1 サーバー) を起動する。
-    ASSERT_NE(nullptr, recv_h_);             // [確認_正常系] - RECIEVER が起動すること。
+                                makeOpts()); // [状態] - RECIEVER (N:1 サーバー) を起動する。
+    ASSERT_NE(nullptr, recv_h_);             // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     send_h_ = startProcessAsync(send_path, {"sender", client_config_path, "54"},
-                                makeOpts()); // [手順] - SENDER (クライアント) を起動する。
-    ASSERT_NE(nullptr, send_h_);             // [確認_正常系] - SENDER が起動すること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - 双方が "接続確立" を出力するまで待機する。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000));
+                                makeOpts()); // [状態] - SENDER (クライアント) を起動する。
+    ASSERT_NE(nullptr, send_h_);             // [状態確認] - SENDER が起動すること。
+    ASSERT_NO_THROW(
+        waitForOutput(send_h_, "双方向モード", 5000)); // [状態] - SENDER が "双方向モード" を出力するまで待機する。
+                                                       // [状態確認] - 例外を投げないこと。
+    ASSERT_NO_THROW(
+        waitForOutput(send_h_, "porter-test[sender:", 3000));  // [状態] - SENDER がプロンプトを出力するまで待機する。
+                                                               // [状態確認] - 例外を投げないこと。
+    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)); // [状態] - 双方が "接続確立" を出力するまで待機する。
+                                                               // [状態確認] - 例外を投げないこと。
+    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000)); // [状態] - SENDER が "接続確立" を出力するまで待機する。
+                                                               // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -805,10 +821,11 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
                              .build(); // [状態] - health timeout 300 ms の unicast サービスをポート 19055 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "55"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "55"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -860,16 +877,18 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
                              .build(); // [状態] - PING 周期 500 ms の unicast サービスをポート 19019 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "14"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "14"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     send_h_ = startProcessAsync(send_path, {"sender", "-l", "VERBOSE", config_path, "14"},
-                                makeOpts()); // [手順] - SENDER を VERBOSE トレース付きで起動する。
-    ASSERT_NE(nullptr, send_h_);             // [確認_正常系] - SENDER が起動すること。
+                                makeOpts()); // [状態] - SENDER を VERBOSE トレース付きで起動する。
+    ASSERT_NE(nullptr, send_h_);             // [状態確認] - SENDER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [手順] - SENDER がプロンプトを出力するまで待機する。
+        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+                                                              // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -930,28 +949,28 @@ TEST_F(porterSendRecvTest, bidir_echo)
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "20"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "20"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER が "受信待機中" を出力すること。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // SENDER を起動して最初のプロンプトを待つ
-    send_h_ = startProcessAsync(send_path, {"sender", config_path, "20"}, makeOpts()); // [手順] - SENDER を起動する。
-    ASSERT_NE(nullptr, send_h_); // [確認_正常系] - SENDER が起動すること。
+    send_h_ = startProcessAsync(send_path, {"sender", config_path, "20"}, makeOpts()); // [状態] - SENDER を起動する。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - SENDER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(send_h_, "双方向モード", 5000)); // [手順] - SENDER が "双方向モード" を出力するまで待機する。
-    // [確認_正常系] - SENDER が "双方向モード" を出力すること。
+        waitForOutput(send_h_, "双方向モード", 5000)); // [状態] - SENDER が "双方向モード" を出力するまで待機する。
+                                                       // [状態確認] - 例外を投げないこと。
     ASSERT_NO_THROW(waitForOutput(
-        send_h_, "porter-test[sender:", 3000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-    // [確認_正常系] - SENDER が "porter-test[sender:" を出力すること。
+        send_h_, "porter-test[sender:", 3000)); // [状態] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+                                                // [状態確認] - 例外を投げないこと。
     /* UDP 双方向通信は各プロセスが PING を受信した時点で個別に接続確立となるため、
        RECIEVER と SENDER の両方の接続確立を待つ。 */
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER が "接続確立" を出力すること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000)); // [手順] - SENDER が "接続確立" を出力するまで待機する。
-    // [確認_正常系] - SENDER が "接続確立" を出力すること。
+        waitForOutput(recv_h_, "接続確立", 3000)); // [状態] - RECIEVER が "接続確立" を出力するまで待機する。
+                                                   // [状態確認] - 例外を投げないこと。
+    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000)); // [状態] - SENDER が "接続確立" を出力するまで待機する。
+                                                               // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -990,10 +1009,11 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
             .build(); // [状態] - パスフレーズ "mysecretphrase" で暗号化した unicast サービスをポート 19030 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "30"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "30"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -1048,10 +1068,11 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
                                     .build(); // [状態] - 同じパスフレーズのクライアント側サービスを定義する。
 
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "50"},
-                                makeOpts()); // [手順] - RECIEVER (N:1 サーバー) を起動する。
-    ASSERT_NE(nullptr, recv_h_);             // [確認_正常系] - RECIEVER が起動すること。
+                                makeOpts()); // [状態] - RECIEVER (N:1 サーバー) を起動する。
+    ASSERT_NE(nullptr, recv_h_);             // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -1110,10 +1131,11 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
                                     .build(); // [状態] - クライアント側の unicast_bidir サービスを定義する。
 
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "52"},
-                                makeOpts()); // [手順] - RECIEVER (N:1 サーバー) を起動する。
-    ASSERT_NE(nullptr, recv_h_);             // [確認_正常系] - RECIEVER が起動すること。
+                                makeOpts()); // [状態] - RECIEVER (N:1 サーバー) を起動する。
+    ASSERT_NE(nullptr, recv_h_);             // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -1172,16 +1194,21 @@ TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
                                     .build(); // [状態] - 同じパスフレーズのクライアント側サービスを定義する。
 
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "51"},
-                                makeOpts()); // [手順] - RECIEVER (N:1 サーバー) を起動する。
-    ASSERT_NE(nullptr, recv_h_);             // [確認_正常系] - RECIEVER が起動すること。
+                                makeOpts()); // [状態] - RECIEVER (N:1 サーバー) を起動する。
+    ASSERT_NE(nullptr, recv_h_);             // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     send_h_ = startProcessAsync(send_path, {"sender", client_config_path, "51"},
-                                makeOpts()); // [手順] - SENDER (クライアント) を起動する。
-    ASSERT_NE(nullptr, send_h_);             // [確認_正常系] - SENDER が起動すること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+                                makeOpts()); // [状態] - SENDER (クライアント) を起動する。
+    ASSERT_NE(nullptr, send_h_);             // [状態確認] - SENDER が起動すること。
+    ASSERT_NO_THROW(
+        waitForOutput(send_h_, "双方向モード", 5000)); // [状態] - SENDER が "双方向モード" を出力するまで待機する。
+                                                       // [状態確認] - 例外を投げないこと。
+    ASSERT_NO_THROW(
+        waitForOutput(send_h_, "porter-test[sender:", 3000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+                                                              // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -1222,15 +1249,18 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
             .build(); // [状態] - パスフレーズ "mysecretphrase" で暗号化した tcp_bidir サービスをポート 19060 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "60"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "60"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     send_h_ = startProcessAsync(send_path, {"sender", "-l", "VERBOSE", config_path, "60"},
-                                makeOpts()); // [手順] - SENDER を VERBOSE トレース付きで起動する。
-    ASSERT_NE(nullptr, send_h_);             // [確認_正常系] - SENDER が起動すること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
+                                makeOpts()); // [状態] - SENDER を VERBOSE トレース付きで起動する。
+    ASSERT_NE(nullptr, send_h_);             // [状態確認] - SENDER が起動すること。
+    ASSERT_NO_THROW(
+        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+                                                              // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -1277,10 +1307,11 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
             .build(); // [状態] - 定周期 health PING 無効 (interval 0) の tcp_bidir サービスをポート 19061 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "61"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "61"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -1327,17 +1358,22 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
             .build(); // [状態] - PING 無効かつ timeout 500 ms の tcp_bidir サービスをポート 19062 で定義する。
 
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "62"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "62"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     send_h_ = startProcessAsync(send_path, {"sender", "-l", "VERBOSE", config_path, "62"},
-                                makeOpts()); // [手順] - SENDER を VERBOSE トレース付きで起動する。
-    ASSERT_NE(nullptr, send_h_);             // [確認_正常系] - SENDER が起動すること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - 双方が "接続確立" を出力するまで待機する。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000));
+                                makeOpts()); // [状態] - SENDER を VERBOSE トレース付きで起動する。
+    ASSERT_NE(nullptr, send_h_);             // [状態確認] - SENDER が起動すること。
+    ASSERT_NO_THROW(
+        waitForOutput(send_h_, "porter-test[sender:", 5000));  // [状態] - SENDER がプロンプトを出力するまで待機する。
+                                                               // [状態確認] - 例外を投げないこと。
+    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)); // [状態] - 双方が "接続確立" を出力するまで待機する。
+                                                               // [状態確認] - 例外を投げないこと。
+    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000)); // [状態] - SENDER が "接続確立" を出力するまで待機する。
+                                                               // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -1383,22 +1419,22 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
                                    0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70};
     string bin_path =
         bin_file.create(bin_content); // [状態] - NUL バイトを含む 16 バイトのバイナリ ファイルを作成する。
-    ASSERT_FALSE(bin_path.empty());   // [確認_正常系] - バイナリ ファイルが作成されること。
+    ASSERT_FALSE(bin_path.empty());   // [状態確認] - バイナリ ファイルが作成されること。
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER が "受信待機中" を出力すること。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // SENDER を起動してプロンプトを待つ
-    send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
-    ASSERT_NE(nullptr, send_h_); // [確認_正常系] - SENDER が起動すること。
+    send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [状態] - SENDER を起動する。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - SENDER が起動すること。
     ASSERT_NO_THROW(waitForOutput(
-        send_h_, "porter-test[sender:", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-    // [確認_正常系] - SENDER が "porter-test[sender:" を出力すること。
+        send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+                                                // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -1443,18 +1479,18 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ =
-        startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [手順] - RECIEVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [確認_正常系] - RECIEVER が起動すること。
+        startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [状態] - RECIEVER を起動する。
+    ASSERT_NE(nullptr, recv_h_); // [状態確認] - RECIEVER が起動すること。
     ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [手順] - RECIEVER が "受信待機中" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER が "受信待機中" を出力すること。
+        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+                                                     // [状態確認] - 例外を投げないこと。
 
     // SENDER を起動してプロンプトを待つ
-    send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
-    ASSERT_NE(nullptr, send_h_); // [確認_正常系] - SENDER が起動すること。
+    send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [状態] - SENDER を起動する。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - SENDER が起動すること。
     ASSERT_NO_THROW(waitForOutput(
-        send_h_, "porter-test[sender:", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-    // [確認_正常系] - SENDER が "porter-test[sender:" を出力すること。
+        send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+                                                // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 
@@ -1496,15 +1532,16 @@ TEST_F(porterSendRecvTest, send_file_too_large_fails)
 
     // 65536 バイトのファイルを作成する (POTR_MAX_MESSAGE_SIZE = 65535 を超過)
     TempBinaryFile large_file;
-    vector<uint8_t> large_content(65536, 0xAA); // [状態] - 65536 バイトのファイルを作成する。
-    string large_path = large_file.create(large_content);
-    ASSERT_FALSE(large_path.empty()); // [確認_正常系] - ファイルが作成されること。
+    vector<uint8_t> large_content(65536, 0xAA);
+    string large_path = large_file.create(large_content); // [状態] - 65536 バイトのファイルを作成する。
+    ASSERT_FALSE(large_path.empty());                     // [状態確認] - ファイルが作成されること。
 
     // SENDER を起動してプロンプトを待つ (RECIEVER は不要: 送信されないため)
-    send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [手順] - SENDER を起動する。
-    ASSERT_NE(nullptr, send_h_); // [確認_正常系] - SENDER が起動すること。
+    send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [状態] - SENDER を起動する。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - SENDER が起動すること。
     ASSERT_NO_THROW(waitForOutput(
-        send_h_, "porter-test[sender:", 5000)); // [手順] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+        send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER が送信方法選択プロンプトを出力するまで待機する。
+                                                // [状態確認] - 例外を投げないこと。
 
     // Pre-Assert
 

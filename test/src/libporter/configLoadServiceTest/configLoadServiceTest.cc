@@ -78,17 +78,17 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
         "dst_port = 9000\n",
     });
     PotrServiceDef def = {};
-
-    // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
-        .WillOnce(Return(
-            ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [Pre-Assert手順] - 複数 service section を含む行列を順に返す。
+            })); // [状態] - fgets が呼び出された際に複数 service section を含む行列を返すようにモックを設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
+        .WillOnce(Return(
+            ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が 1 回呼び出されること。
     EXPECT_CALL(mock_com_util, com_util_passphrase_to_key(_, _, _))
@@ -137,17 +137,17 @@ TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
         "encrypt_key = secret passphrase\n",
     });
     PotrServiceDef def = {};
-
-    // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
-        .WillOnce(Return(
-            ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [Pre-Assert手順] - passphrase 形式の encrypt_key を含む行列を順に返す。
+            })); // [状態] - fgets が呼び出された際に passphrase 形式の encrypt_key を含む行列を返すようにモックを設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
+        .WillOnce(Return(
+            ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     EXPECT_CALL(mock_com_util, com_util_passphrase_to_key(_, _, strlen("secret passphrase")))
         .WillOnce(
             [](uint8_t *key, const uint8_t *passphrase, size_t len)
@@ -186,17 +186,17 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
     });
     PotrServiceDef def = {};
     memset(&def, 0xA5, sizeof(def));
-
-    // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
-        .WillOnce(Return(
-            ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [Pre-Assert手順] - hash 失敗を確認する service 行列を順に返す。
+            })); // [状態] - fgets が呼び出された際に hash 失敗を確認する service 行列を返すようにモックを設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
+        .WillOnce(Return(
+            ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     EXPECT_CALL(mock_com_util, com_util_passphrase_to_key(_, _, strlen("not-a-hex-secret")))
         .WillOnce(Return(-1)); // [Pre-Assert確認_異常系] - passphrase 変換失敗を 1 回返すこと。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
@@ -224,15 +224,17 @@ TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
         "dst_port = 4000\n",
     });
     PotrServiceDef def = {};
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+            {
+                return lines.read(buf, size, stream);
+            })); // [状態] - fgets が呼び出された際に対象外 service のみを含む行列を返すようにモックを設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
-    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
-        .WillByDefault(Invoke(
-            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
-            { return lines.read(buf, size, stream); })); // [Pre-Assert手順] - 対象外 service のみを含む行列を順に返す。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が呼び出されること。
 

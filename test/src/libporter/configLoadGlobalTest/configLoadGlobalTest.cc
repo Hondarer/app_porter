@@ -70,17 +70,17 @@ TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
         "unknown_key = 999\n",
     });
     PotrGlobalConfig global = {};
-
-    // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
-        .WillOnce(Return(
-            ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [Pre-Assert手順] - fgets() がメモリ上の [global] 行列を順に返す。
+            })); // [状態] - fgets が呼び出された際に [global] 行列を返すようにモックを設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
+        .WillOnce(Return(
+            ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が 1 回呼び出されること。
 
@@ -114,15 +114,17 @@ TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
         "type = unicast\n",
     });
     PotrGlobalConfig global = {};
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+            {
+                return lines.read(buf, size, stream);
+            })); // [状態] - fgets が呼び出された際に [service] のみを含む行列を返すようにモックを設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("service-only.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
-    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
-        .WillByDefault(Invoke(
-            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
-            { return lines.read(buf, size, stream); })); // [Pre-Assert手順] - [service] のみを含む行列を順に返す。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が呼び出されること。
 

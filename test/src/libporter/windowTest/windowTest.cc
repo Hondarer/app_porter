@@ -97,7 +97,8 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
     PotrPacket out;
     uint32_t seq;
 
-    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 4U, 16U)); // [状態] - window_size=4 で初期化する。
+    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 4U, 16U)); // [状態] - window_size を 4 とする。
+                                                        // [状態確認] - window_init の戻り値が POTR_OK であること。
 
     // Pre-Assert
 
@@ -137,7 +138,8 @@ TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
     uint8_t payload[3] = {0x01, 0x02, 0x03}; // [状態] - ディープ コピー検証用のペイロード 3 バイトを用意する。
     PotrPacket out;
 
-    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 4U, 16U)); // [状態] - window_size=4 で初期化する。
+    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 4U, 16U)); // [状態] - window_size を 4 とする。
+                                                        // [状態確認] - window_init の戻り値が POTR_OK であること。
 
     // Pre-Assert
 
@@ -167,7 +169,8 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
     uint8_t payload[2] = {0x10, 0x20}; // [状態] - 受信パケットのペイロード 2 バイトを用意する。
     PotrPacket out;
 
-    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 4U, 16U)); // [状態] - base_seq=0 で初期化する。
+    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 4U, 16U)); // [状態] - base_seq を 0 とする。
+                                                        // [状態確認] - window_init の戻り値が POTR_OK であること。
 
     // Pre-Assert
 
@@ -210,7 +213,8 @@ TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
     PotrPacket out;
     uint32_t nack_num = 999U;
 
-    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 8U, 16U)); // [状態] - base_seq=0 で初期化する。
+    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 8U, 16U)); // [状態] - base_seq を 0 とする。
+                                                        // [状態確認] - window_init の戻り値が POTR_OK であること。
 
     // Pre-Assert
 
@@ -259,7 +263,8 @@ TEST_F(windowTest, recvPushRejectsOutOfWindowAndAcceptsDuplicate)
     // Arrange
     uint8_t payload[1] = {0x55}; // [状態] - 受信パケットのペイロード 1 バイトを用意する。
 
-    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 4U, 16U)); // [状態] - window_size=4 で初期化する。
+    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 4U, 16U)); // [状態] - window_size を 4 とする。
+                                                        // [状態確認] - window_init の戻り値が POTR_OK であること。
 
     // Pre-Assert
 
@@ -282,7 +287,8 @@ TEST_F(windowTest, recvPushRejectsOutOfWindowAndAcceptsDuplicate)
 TEST_F(windowTest, recvSkipAdvancesOnlyOnNextSeq)
 {
     // Arrange
-    ASSERT_EQ(POTR_OK, window_init(&win, 10U, 4U, 16U)); // [状態] - base_seq=10 で初期化する。
+    ASSERT_EQ(POTR_OK, window_init(&win, 10U, 4U, 16U)); // [状態] - base_seq を 10 とする。
+                                                         // [状態確認] - window_init の戻り値が POTR_OK であること。
 
     // Pre-Assert
 
@@ -304,10 +310,12 @@ TEST_F(windowTest, recvResetClearsSlotsAndSetsNewBase)
     uint8_t payload[1] = {0x99}; // [状態] - 受信パケットのペイロード 1 バイトを用意する。
     PotrPacket out;
 
-    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 4U, 16U)); // [状態] - base_seq=0 で初期化する。
+    ASSERT_EQ(POTR_OK, window_init(&win, 0U, 4U, 16U)); // [状態] - base_seq を 0 とする。
+                                                        // [状態確認] - window_init の戻り値が POTR_OK であること。
     {
         PotrPacket pkt = make_recv_packet(0U, payload, sizeof(payload));
         ASSERT_EQ(POTR_OK, window_recv_push(&win, &pkt)); // [状態] - スロットにパケットを格納しておく。
+                                                          // [状態確認] - window_recv_push の戻り値が POTR_OK であること。
     }
 
     // Pre-Assert

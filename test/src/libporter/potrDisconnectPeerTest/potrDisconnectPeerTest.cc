@@ -180,6 +180,7 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
     NiceMock<Mock_porter> mock_peer_table;
     ctx.is_multi_peer = 1; // [状態] - N:1 モードに設定する。
 
+    // Pre-Assert
     EXPECT_CALL(mock_peer_table, peer_find_by_id(&ctx, (PotrPeerId)99))
         .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - peer_find_by_id が nullptr を返すこと。
 
@@ -187,8 +188,6 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
                                                   AllOf(HasSubstr("potrDisconnectPeer.c"),
                                                         HasSubstr("not found"))))
         .Times(1); // [Pre-Assert確認_異常系] - ERROR ログに "not found" が含まれること。
-
-    // Pre-Assert
 
     // Act
     int rtc = potrDisconnectPeer(&ctx, 99); // [手順] - 存在しない peer_id=99 で potrDisconnectPeer を呼び出す。
@@ -213,6 +212,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     peer_ctx.path_logical_alive[0] = 1;
     peer_ctx.path_logical_alive[2] = 1;
 
+    // Pre-Assert
     EXPECT_CALL(mock_peer_table, peer_find_by_id(&ctx, (PotrPeerId)1))
         .WillOnce(Return(&peer_ctx)); // [Pre-Assert確認_正常系] - peer_find_by_id がピア コンテキストを返すこと。
 
@@ -226,8 +226,6 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
 
     EXPECT_CALL(mock_peer_table, peer_free(&ctx, &peer_ctx))
         .Times(1); // [Pre-Assert確認_正常系] - peer_free が 1 回呼ばれること。
-
-    // Pre-Assert
 
     // Act
     int rtc = potrDisconnectPeer(&ctx, 1); // [手順] - 正常な状態で potrDisconnectPeer を呼び出す。
@@ -268,6 +266,7 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
     ctx.callback = mock_callback; // [状態] - 受信コールバックを設定する。
     peer_ctx.health_alive = 0;    // [状態] - ピアを切断済み状態 (health_alive=0) に設定する。
 
+    // Pre-Assert
     EXPECT_CALL(mock_peer_table, peer_find_by_id(&ctx, (PotrPeerId)1))
         .WillOnce(Return(&peer_ctx)); // [Pre-Assert確認_正常系] - peer_find_by_id がピア コンテキストを返すこと。
 
@@ -276,8 +275,6 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
 
     EXPECT_CALL(mock_peer_table, peer_free(&ctx, &peer_ctx))
         .Times(1); // [Pre-Assert確認_正常系] - peer_free が 1 回呼ばれること。
-
-    // Pre-Assert
 
     // Act
     int rtc = potrDisconnectPeer(&ctx, 1); // [手順] - health_alive=0 の状態で potrDisconnectPeer を呼び出す。

@@ -67,6 +67,7 @@ TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
         ASSERT_EQ(POTR_OK,
                   potr_send_queue_push(&q, 0, 0, payload,
                                        sizeof(payload))); // [状態] - depth=4 のキューを 4 件の push で満杯にする。
+                                                          // [状態確認] - potr_send_queue_push の戻り値が POTR_OK であること。
     }
 
     // Pre-Assert
@@ -93,6 +94,7 @@ TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
     {
         ASSERT_EQ(POTR_OK,
                   potr_send_queue_push(&q, 0, 0, payload, sizeof(payload))); // [状態] - キューを満杯にしておく。
+                                                                            // [状態確認] - potr_send_queue_push の戻り値が POTR_OK であること。
     }
 
     // Pre-Assert
