@@ -91,12 +91,12 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が呼び出されること。
 
     // Act
-    int rtc = potr_internal_config_list_service_ids("config.conf", &ids,
+    int actual_ret = potr_internal_config_list_service_ids("config.conf", &ids,
                                       &count); // [手順] - 複数 service section を含む設定から ID を列挙する。
 
     // Assert
     ASSERT_EQ(POTR_OK,
-              rtc);           // [確認_正常系] - potr_internal_config_list_service_ids の戻り値から、列挙に成功したと判断できること。
+              actual_ret);           // [確認_正常系] - potr_internal_config_list_service_ids の戻り値から、列挙に成功したと判断できること。
     ASSERT_NE(nullptr, ids);  // [確認_正常系] - service ID 配列が確保されること。
     EXPECT_EQ(70, count);     // [確認_正常系] - 非 service section を除いた 70 件が列挙されること。
     EXPECT_EQ(1000, ids[0]);  // [確認_正常系] - 先頭 service ID を保持すること。

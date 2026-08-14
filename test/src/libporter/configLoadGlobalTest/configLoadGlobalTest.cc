@@ -85,11 +85,11 @@ TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が 1 回呼び出されること。
 
     // Act
-    int rtc = potr_internal_config_load_global("config.conf", &global); // [手順] - [global] を含む設定を読み込む。
+    int actual_ret = potr_internal_config_load_global("config.conf", &global); // [手順] - [global] を含む設定を読み込む。
 
     // Assert
     EXPECT_EQ(POTR_OK,
-              rtc); // [確認_正常系] - potr_internal_config_load_global の戻り値から、読み込みに成功したと判断できること。
+              actual_ret); // [確認_正常系] - potr_internal_config_load_global の戻り値から、読み込みに成功したと判断できること。
     EXPECT_EQ(32U, global.window_size);             // [確認_正常系] - window_size を設定値で上書きすること。
     EXPECT_EQ(1200U, global.max_payload);           // [確認_正常系] - max_payload を設定値で上書きすること。
     EXPECT_EQ(111U, global.udp_health_interval_ms); // [確認_正常系] - [global] の UDP interval を読み込むこと。
@@ -129,11 +129,11 @@ TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が呼び出されること。
 
     // Act
-    int rtc = potr_internal_config_load_global("service-only.conf", &global); // [手順] - [global] を含まない設定を読み込む。
+    int actual_ret = potr_internal_config_load_global("service-only.conf", &global); // [手順] - [global] を含まない設定を読み込む。
 
     // Assert
     EXPECT_EQ(POTR_OK,
-              rtc); // [確認_正常系] - potr_internal_config_load_global の戻り値から、[global] が無くても成功したと判断できること。
+              actual_ret); // [確認_正常系] - potr_internal_config_load_global の戻り値から、[global] が無くても成功したと判断できること。
     EXPECT_EQ(POTR_DEFAULT_WINDOW_SIZE, global.window_size); // [確認_正常系] - window_size が既定値のままであること。
     EXPECT_EQ(POTR_DEFAULT_MAX_PAYLOAD, global.max_payload); // [確認_正常系] - max_payload が既定値のままであること。
     EXPECT_EQ(0U, global.reorder_timeout_ms); // [確認_正常系] - reorder_timeout_ms が既定値のままであること。

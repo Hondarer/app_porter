@@ -71,10 +71,10 @@ TEST_F(potrSendTest, close_requested_returns_canceled)
     // Pre-Assert
 
     // Act
-    int rtc = potr_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - 終了処理中に送信を試みる。
+    int actual_ret = potr_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - 終了処理中に送信を試みる。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_CANCELED, rtc);   // [確認_異常系] - potr_send の戻り値が POTR_ERR_CANCELED であること。
+    EXPECT_EQ(POTR_ERR_CANCELED, actual_ret);   // [確認_異常系] - potr_send の戻り値が POTR_ERR_CANCELED であること。
     EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
 
@@ -91,11 +91,11 @@ TEST_F(potrSendTest, n1_peer_na_returns_invalid_argument)
     // Pre-Assert
 
     // Act
-    int rtc = potr_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - POTR_PEER_NA 宛てに送信を試みる。
+    int actual_ret = potr_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - POTR_PEER_NA 宛てに送信を試みる。
 
     // Assert
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT,
-              rtc);                      // [確認_異常系] - potr_send の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+              actual_ret);                      // [確認_異常系] - potr_send の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
 
@@ -112,10 +112,10 @@ TEST_F(potrSendTest, n1_unknown_peer_returns_not_found)
     // Pre-Assert
 
     // Act
-    int rtc = potr_send(&ctx, 123U, payload, strlen(payload), 0); // [手順] - 未登録のピア ID 宛てに送信を試みる。
+    int actual_ret = potr_send(&ctx, 123U, payload, strlen(payload), 0); // [手順] - 未登録のピア ID 宛てに送信を試みる。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_NOT_FOUND, rtc);  // [確認_異常系] - potr_send の戻り値が POTR_ERR_NOT_FOUND であること。
+    EXPECT_EQ(POTR_ERR_NOT_FOUND, actual_ret);  // [確認_異常系] - potr_send の戻り値が POTR_ERR_NOT_FOUND であること。
     EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
 
@@ -134,10 +134,10 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
     // Pre-Assert
 
     // Act
-    int rtc = potr_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potr_send で送信を試みる。
+    int actual_ret = potr_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potr_send で送信を試みる。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_DISCONNECTED, rtc); // [確認_異常系] - potr_send の戻り値が POTR_ERR_DISCONNECTED であること。
+    EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret); // [確認_異常系] - potr_send の戻り値が POTR_ERR_DISCONNECTED であること。
     EXPECT_EQ(0U, ctx.send_queue.count);   // [確認_異常系] - 送信キューに積まれないこと。
 }
 
@@ -158,11 +158,11 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
     // Pre-Assert
 
     // Act
-    int rtc = potr_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
+    int actual_ret = potr_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
                        0); // [手順] - POTR_PEER_ALL 宛てに potr_send で送信を試みる。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_DISCONNECTED, rtc); // [確認_異常系] - potr_send の戻り値が POTR_ERR_DISCONNECTED であること。
+    EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret); // [確認_異常系] - potr_send の戻り値が POTR_ERR_DISCONNECTED であること。
     EXPECT_EQ(0U, ctx.send_queue.count);   // [確認_異常系] - 送信キューに積まれないこと。
 }
 
@@ -186,11 +186,11 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
     // Pre-Assert
 
     // Act
-    int rtc = potr_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
+    int actual_ret = potr_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
                        0); // [手順] - POTR_PEER_ALL 宛てに potr_send で送信する。
 
     // Assert
-    EXPECT_EQ(POTR_OK, rtc);             // [確認_正常系] - potr_send の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, actual_ret);             // [確認_正常系] - potr_send の戻り値が POTR_OK であること。
     EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - 送信キューに 1 件だけ積まれること。
 
     {
@@ -215,10 +215,10 @@ TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
     // Pre-Assert
 
     // Act
-    int rtc = potr_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potr_send で送信する。
+    int actual_ret = potr_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potr_send で送信する。
 
     // Assert
-    EXPECT_EQ(POTR_OK, rtc);             // [確認_正常系] - potr_send の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, actual_ret);             // [確認_正常系] - potr_send の戻り値が POTR_OK であること。
     EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - 送信キューに 1 件積まれること。
 
     {

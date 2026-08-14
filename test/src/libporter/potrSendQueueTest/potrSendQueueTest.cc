@@ -100,12 +100,12 @@ TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
     // Pre-Assert
 
     // Act
-    int rtc = potr_internal_send_queue_push_wait(&q, 0, 0, payload, sizeof(payload),
+    int actual_ret = potr_internal_send_queue_push_wait(&q, 0, 0, payload, sizeof(payload),
                                         &running); // [手順] - 満杯のキューへ push_wait で追加を試みる。
 
     // Assert
     EXPECT_EQ(POTR_ERR_CANCELED,
-              rtc); // [確認_異常系] - potr_internal_send_queue_push_wait の戻り値が POTR_ERR_CANCELED であること。
+              actual_ret); // [確認_異常系] - potr_internal_send_queue_push_wait の戻り値が POTR_ERR_CANCELED であること。
 }
 
 // 停止済み (running=0) の空キューからの pop が POTR_ERR_CANCELED を返すことの確認
@@ -119,9 +119,9 @@ TEST_F(potrSendQueueTest, pop_returns_canceled_when_stopped)
     // Pre-Assert
 
     // Act
-    int rtc = potr_internal_send_queue_pop(&q, &elem, &running); // [手順] - 空のキューから pop で取り出しを試みる。
+    int actual_ret = potr_internal_send_queue_pop(&q, &elem, &running); // [手順] - 空のキューから pop で取り出しを試みる。
 
     // Assert
     EXPECT_EQ(POTR_ERR_CANCELED,
-              rtc); // [確認_異常系] - potr_internal_send_queue_pop の戻り値が POTR_ERR_CANCELED であること。
+              actual_ret); // [確認_異常系] - potr_internal_send_queue_pop の戻り値が POTR_ERR_CANCELED であること。
 }

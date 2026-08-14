@@ -141,11 +141,11 @@ TEST_F(potrConnectedThreadsTest, recv_failure_stops_send_started_by_this_call)
     s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - recv 開始 fake から POTR_ERR_IO を返却する。
 
     // Act
-    int rtc = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
 
     // Assert
     EXPECT_EQ(POTR_ERR_IO,
-              rtc); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_IO であること。
+              actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_IO であること。
     EXPECT_EQ(1, s_calls.send_start_calls);    // [確認_異常系] - send 開始が 1 回呼ばれること。
     EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - recv 開始が 1 回呼ばれること。
     EXPECT_EQ(1, s_calls.send_stop_calls);     // [確認_異常系] - この呼び出しで開始した send が停止されること。
@@ -167,11 +167,11 @@ TEST_F(potrConnectedThreadsTest, recv_failure_keeps_preexisting_send_thread_runn
     s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - recv 開始 fake から POTR_ERR_IO を返却する。
 
     // Act
-    int rtc = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
 
     // Assert
     EXPECT_EQ(POTR_ERR_IO,
-              rtc); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_IO であること。
+              actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_IO であること。
     EXPECT_EQ(0, s_calls.send_start_calls);    // [確認_異常系] - 既存 send があるため send 開始が呼ばれないこと。
     EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - recv 開始が 1 回呼ばれること。
     EXPECT_EQ(0, s_calls.send_stop_calls);     // [確認_異常系] - 既存の send スレッドが停止されないこと。
@@ -190,11 +190,11 @@ TEST_F(potrConnectedThreadsTest, bootstrap_ping_failure_rolls_back_recv_and_new_
         POTR_ERR_DISCONNECTED; // [Pre-Assert手順] - bootstrap ping から POTR_ERR_DISCONNECTED を返却する。
 
     // Act
-    int rtc = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
 
     // Assert
     EXPECT_EQ(POTR_ERR_DISCONNECTED,
-              rtc); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_DISCONNECTED であること。
+              actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_DISCONNECTED であること。
     EXPECT_EQ(1, s_calls.send_start_calls);                 // [確認_異常系] - send 開始が 1 回呼ばれること。
     EXPECT_EQ(1, s_calls.recv_start_calls);                 // [確認_異常系] - recv 開始が 1 回呼ばれること。
     EXPECT_EQ(1, s_calls.tcp_send_ping_calls);              // [確認_異常系] - bootstrap ping が 1 回呼ばれること。
@@ -217,11 +217,11 @@ TEST_F(potrConnectedThreadsTest, health_failure_rolls_back_recv_and_new_send_thr
         POTR_ERR_OUT_OF_MEMORY; // [Pre-Assert手順] - health 開始 fake から POTR_ERR_OUT_OF_MEMORY を返却する。
 
     // Act
-    int rtc = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
 
     // Assert
     EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY,
-              rtc); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_OUT_OF_MEMORY であること。
+              actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_OUT_OF_MEMORY であること。
     EXPECT_EQ(1, s_calls.send_start_calls);                 // [確認_異常系] - send 開始が 1 回呼ばれること。
     EXPECT_EQ(1, s_calls.recv_start_calls);                 // [確認_異常系] - recv 開始が 1 回呼ばれること。
     EXPECT_EQ(1, s_calls.tcp_send_ping_calls);              // [確認_異常系] - bootstrap ping が 1 回呼ばれること。
@@ -245,11 +245,11 @@ TEST_F(potrConnectedThreadsTest, health_failure_keeps_preexisting_send_thread_ru
         POTR_ERR_OUT_OF_MEMORY; // [Pre-Assert手順] - health 開始 fake から POTR_ERR_OUT_OF_MEMORY を返却する。
 
     // Act
-    int rtc = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
 
     // Assert
     EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY,
-              rtc); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_OUT_OF_MEMORY であること。
+              actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_OUT_OF_MEMORY であること。
     EXPECT_EQ(0, s_calls.send_start_calls);    // [確認_異常系] - 既存 send があるため send 開始が呼ばれないこと。
     EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - recv 開始が 1 回呼ばれること。
     EXPECT_EQ(1, s_calls.tcp_send_ping_calls); // [確認_異常系] - bootstrap ping が 1 回呼ばれること。
@@ -269,12 +269,12 @@ TEST_F(potrConnectedThreadsTest, non_primary_path_does_not_touch_send_thread)
     s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - recv 開始 fake から POTR_ERR_IO を返却する。
 
     // Act
-    int rtc =
+    int actual_ret =
         potr_internal_start_connected_threads(&ctx, 1, &ops); // [手順] - 非 primary path (1) で接続時スレッド群を開始する。
 
     // Assert
     EXPECT_EQ(POTR_ERR_IO,
-              rtc); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_IO であること。
+              actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_IO であること。
     EXPECT_EQ(0, s_calls.send_start_calls);                 // [確認_異常系] - send 開始が呼ばれないこと。
     EXPECT_EQ(1, s_calls.recv_start_calls);                 // [確認_異常系] - recv 開始が 1 回呼ばれること。
     EXPECT_EQ(0, s_calls.send_stop_calls);                  // [確認_異常系] - send 停止が呼ばれないこと。
@@ -292,10 +292,10 @@ TEST_F(potrConnectedThreadsTest, success_sets_ping_state_without_rollback)
     // Pre-Assert
 
     // Act
-    int rtc = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
 
     // Assert
-    EXPECT_EQ(POTR_OK, rtc); // [確認_正常系] - potr_internal_start_connected_threads の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_start_connected_threads の戻り値が POTR_OK であること。
     EXPECT_EQ(1, s_calls.send_start_calls);        // [確認_正常系] - send 開始が 1 回呼ばれること。
     EXPECT_EQ(1, s_calls.recv_start_calls);        // [確認_正常系] - recv 開始が 1 回呼ばれること。
     EXPECT_EQ(1, s_calls.tcp_send_ping_calls);     // [確認_正常系] - bootstrap ping が 1 回呼ばれること。
