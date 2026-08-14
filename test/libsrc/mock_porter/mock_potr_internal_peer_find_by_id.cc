@@ -10,11 +10,11 @@
 
 MOCK_WEAK_IMPL(potr_internal_peer_context *, potr_internal_peer_find_by_id, const potr_context *ctx, potr_peer_id peer_id)
 {
-    potr_internal_peer_context *rtc = nullptr;
+    potr_internal_peer_context *mock_ret = nullptr;
 
     if (_mock_porter != nullptr)
     {
-        rtc = _mock_porter->potr_internal_peer_find_by_id(ctx, peer_id);
+        mock_ret = _mock_porter->potr_internal_peer_find_by_id(ctx, peer_id);
     }
 
     if (getTraceLevel() > TRACE_NONE)
@@ -22,7 +22,7 @@ MOCK_WEAK_IMPL(potr_internal_peer_context *, potr_internal_peer_find_by_id, cons
         printf("  > %s 0x%p, %d", __func__, (const void *)ctx, (int)peer_id);
         if (getTraceLevel() >= TRACE_DETAIL)
         {
-            printf(" -> 0x%p\n", (void *)rtc);
+            printf(" -> 0x%p\n", (void *)mock_ret);
         }
         else
         {
@@ -30,5 +30,5 @@ MOCK_WEAK_IMPL(potr_internal_peer_context *, potr_internal_peer_find_by_id, cons
         }
     }
 
-    return rtc;
+    return mock_ret;
 }

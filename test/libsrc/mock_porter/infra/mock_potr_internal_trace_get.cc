@@ -9,11 +9,11 @@
 
 MOCK_WEAK_IMPL(com_util_tracer *, potr_internal_trace_get, void)
 {
-    com_util_tracer *rtc = nullptr;
+    com_util_tracer *mock_ret = nullptr;
 
     if (_mock_porter != nullptr)
     {
-        rtc = _mock_porter->potr_internal_trace_get();
+        mock_ret = _mock_porter->potr_internal_trace_get();
     }
 
     if (getTraceLevel() > TRACE_NONE)
@@ -21,7 +21,7 @@ MOCK_WEAK_IMPL(com_util_tracer *, potr_internal_trace_get, void)
         printf("  > %s", __func__);
         if (getTraceLevel() >= TRACE_DETAIL)
         {
-            printf(" -> 0x%p\n", (void *)rtc);
+            printf(" -> 0x%p\n", (void *)mock_ret);
         }
         else
         {
@@ -29,5 +29,5 @@ MOCK_WEAK_IMPL(com_util_tracer *, potr_internal_trace_get, void)
         }
     }
 
-    return rtc;
+    return mock_ret;
 }
