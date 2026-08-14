@@ -15,30 +15,23 @@ porter ライブラリはシグナルに干渉しません。
 
 ライブラリ内部のスレッド同期は POSIX シグナルではなく条件変数 (`com_util_condvar_wait()` の timeout 指定) で実装されており、シグナルの配信に依存しません。これは Windows との共通実装を保つための設計によります。
 
-シグナル ハンドラーの登録・管理はすべて利用者の責務となります。
+利用者自身が扱うシグナルのハンドラー登録と管理は、利用者の責務となります。  
+ただし、porter 内部の TCP 送信によって発生し得る SIGPIPE は、プロセス全体のシグナル設定を変更せずに送信単位で抑制します。
 
 ---
 
-## SIGPIPE への対処
+## SIGPIPE の抑制
 
-TCP 接続 (`POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR`) を使用している場合、相手が接続を切断した直後に porter 経由でデータを送信すると、OS が **SIGPIPE** を配信することがあります。SIGPIPE のデフォルト動作はプロセス終了であり、porter はこれを抑制しません。
+TCP 接続 (`POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR`) で相手が接続を切断した直後にデータを送信しても、porter は SIGPIPE を利用者へ配信しません。  
+内部の TCP 送信は Linux の `MSG_NOSIGNAL` を使用し、SIGPIPE を送信単位で抑制します。
 
-利用者は `potr_service_open_from_config()` / `potr_service_open()` の前に以下のいずれかの対策を実施してください。
+SIGPIPE を抑制しても送信エラーは破棄しません。  
+porter は送信エラーを既存の接続状態と結果コードの処理へ渡します。`potr_send()` のキュー登録型の戻り値契約は変わりません。
 
-```c
-/* 方法 A: プロセス全体で SIGPIPE を無視する */
-signal(SIGPIPE, SIG_IGN);
-```
+porter は利用者が登録した SIGPIPE ハンドラーやシグナル マスクを変更しません。  
+porter の外で利用者が直接 `send()` や `write()` を呼び出す場合の SIGPIPE 対策は、利用者の責務です。
 
-```c
-/* 方法 B: SIGPIPE を独自ハンドラーで受け取る */
-void sigpipe_handler(int sig) { (void)sig; /* 何もしない or ログ */ }
-signal(SIGPIPE, sigpipe_handler);
-```
-
-方法 A が最も簡便です。porter 内部の TCP 送信失敗は `POTR_ERR_IO` として処理され、接続状態が切断へ遷移した後の `potr_send()` は `POTR_ERR_DISCONNECTED` を返します。SIGPIPE によるプロセス終了を避けることで、エラー処理を結果コードと接続イベントに統一できます。
-
-UDP のみ使用する場合 (`POTR_TYPE_UNICAST` / `POTR_TYPE_MULTICAST` / `POTR_TYPE_BROADCAST`) は SIGPIPE は発生しません。
+UDP (`POTR_TYPE_UNICAST` / `POTR_TYPE_MULTICAST` / `POTR_TYPE_BROADCAST`) の送信は、この抑制の対象外です。
 
 ---
 
@@ -139,26 +132,24 @@ pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
 
 | シグナル | デフォルト動作 | 留意事項 |
 |---------|--------------|---------|
-| SIGPIPE | プロセス終了 | TCP 使用時は要対策 (上述) |
+| SIGPIPE | プロセス終了 | porter 内部の TCP 送信では抑制します。porter 外の送信は利用者が対処します。 |
 | SIGUSR1 / SIGUSR2 | プロセス終了 | 外部から `kill` コマンドで誤送信された場合に即終了します。 |
 | SIGALRM | プロセス終了 | `alarm()` を使うサード パーティー ライブラリとの組み合わせで発生し得ます。 |
 | SIGHUP | プロセス終了 | 端末切断時に発生。デーモン化する場合は `SIG_IGN` か設定リロードに使用するのが一般的 |
 
 ### シグナルによるシステム コールの中断 (EINTR)
 
-**シグナルが配信されると、そのスレッドでブロッキング状態にあるシステム コールは中断して -1 / `errno=EINTR` を返します。**
-
-プロセス終了を引き起こさないシグナル (カスタム ハンドラーが登録済みのもの、または `SIG_IGN` に設定済みのもの) でも同様に中断が発生します。
-
 porter の内部スレッドは `com_util` の `net` カテゴリを経由してブロッキング システム コールを発行します。  
-`com_util` の公開 API は中断を吸収するため、porter の API を呼び出す利用者が EINTR を意識する必要はありません。
-
-シグナル中断への対処として `com_util_error_is()` で `COM_UTIL_CAUSE_INTERRUPTED` を判定し、再試行する処理は不要です。  
-また、porter の戻り値がシグナルの配信を理由に失敗となることもありません。
+`com_util` の公開 API がシグナルによる中断を吸収するため、porter の利用者は EINTR を意識する必要がありません。  
+`COM_UTIL_CAUSE_INTERRUPTED` を判定して再試行する処理は不要であり、porter の戻り値がシグナルの配信を理由に失敗となることもありません。
 
 分類ごとの規範と、その根拠は [com_util のコーディング規範](../../com_util/docs/coding-guideline.md) の「シグナル割り込み (EINTR) の扱い」に定めています。本書では繰り返しません。
 
-利用者のコード (コールバック関数、メイン ループなど) で OS のブロッキング システム コールを直接使用している場合は、シグナルによる EINTR 中断が発生します。この範囲の EINTR の処理は利用者の責任です。
+Linux では一般に、シグナルが配信されると、そのスレッドでブロッキング状態にあるシステム コールが中断して -1 / `errno=EINTR` を返す場合があります。  
+プロセス終了を引き起こさないシグナルでも同様です。
+
+この一般則は、利用者のコード (コールバック関数、メイン ループなど) が OS のブロッキング システム コールを直接使用する場合に適用されます。  
+この範囲の EINTR の処理は利用者の責任です。
 
 ```c
 /* ブロッキング read を使う場合の EINTR 対応例 */
