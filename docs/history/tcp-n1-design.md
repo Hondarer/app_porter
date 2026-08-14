@@ -119,7 +119,7 @@ send スレッド         × 1               ← 全ピア共有 (BIDIR_N1 の�
 
 ## データ構造の変更
 
-### PotrType 追加
+### potr_type 追加
 
 **ファイル**: `app/porter/prod/include/porter_type.h`
 
@@ -136,20 +136,20 @@ typedef enum {
     POTR_TYPE_TCP               = 9,  /* TCP */
     POTR_TYPE_TCP_BIDIR         = 10, /* TCP 双方向 */
     /* POTR_TYPE_TCP_BIDIR_N1   = 11, */ /* TCP 双方向 N:1 (将来) */
-} PotrType;
+} potr_type;
 ```
 
-### PotrPeerContext への TCP N:1 フィールド追加
+### potr_internal_peer_context への TCP N:1 フィールド追加
 
-**ファイル**: `app/porter/prod/libsrc/porter/potrContext.h`
+**ファイル**: `app/porter/prod/libsrc/porter/potr_context.h`
 
 既存の UDP 専用フィールド (`dest_addr[]`, `n_paths`, `path_last_recv_sec[]` 等) はそのまま保持し、末尾に TCP N:1 専用フィールドを追加します。
 
 ```c
-typedef struct PotrPeerContext
+typedef struct potr_internal_peer_context
 {
     /* ===== 既存フィールド (変更なし) ===== */
-    PotrPeerId  peer_id;
+    potr_peer_id  peer_id;
     int         active;
 
     /* セッション管理 */
@@ -161,9 +161,9 @@ typedef struct PotrPeerContext
     /* ... */
 
     /* ウィンドウ */
-    PotrWindow send_window;
+    potr_internal_window send_window;
     PotrMutex  send_window_mutex;
-    PotrWindow recv_window;
+    potr_internal_window recv_window;
 
     /* フラグメント バッファー */
     uint8_t *frag_buf;
@@ -176,7 +176,7 @@ typedef struct PotrPeerContext
     int32_t last_recv_tv_nsec;
 
     /* NACK 重複抑制 */
-    PotrNackDedupEntry nack_dedup_buf[POTR_NACK_DEDUP_SLOTS];
+    potr_internal_nack_dedup_entry nack_dedup_buf[POTR_NACK_DEDUP_SLOTS];
     uint8_t            nack_dedup_next;
 
     /* リオーダー */
@@ -225,24 +225,24 @@ typedef struct PotrPeerContext
     volatile int       tcp_peer_running;
 
     /* per-peer スレッドから ctx へアクセスするバック ポインター */
-    PotrContext *ctx_back;
+    potr_context *ctx_back;
 
-} PotrPeerContext;
+} potr_internal_peer_context;
 ```
 
 ### inline 判定関数の追加・変更
 
-**ファイル**: `app/porter/prod/libsrc/porter/potrContext.h`
+**ファイル**: `app/porter/prod/libsrc/porter/potr_context.h`
 
 ```c
 /* 新規追加: TCP N:1 型か判定 */
-static inline int potr_is_tcp_n1_type(PotrType t)
+static inline int potr_is_tcp_n1_type(potr_type t)
 {
     return t == POTR_TYPE_TCP_N1 || t == POTR_TYPE_TCP_BIDIR_N1;
 }
 
 /* 変更: 既存 potr_is_tcp_type() に新型を追加 */
-static inline int potr_is_tcp_type(PotrType t)
+static inline int potr_is_tcp_type(potr_type t)
 {
     return t == POTR_TYPE_TCP
         || t == POTR_TYPE_TCP_BIDIR
@@ -255,9 +255,9 @@ static inline int potr_is_tcp_type(PotrType t)
 
 ## 新規・変更ファイル詳細
 
-### potrPeerTable.c - peer_create_tcp() 追加
+### potr_peer_table.c - peer_create_tcp() 追加
 
-**ファイル**: `app/porter/prod/libsrc/porter/potrPeerTable.h` / `.c`
+**ファイル**: `app/porter/prod/libsrc/porter/potr_peer_table.h` / `.c`
 
 #### 関数シグネチャ
 
@@ -273,7 +273,7 @@ static inline int potr_is_tcp_type(PotrType t)
  * @return          成功時は新しいピア コンテキストへのポインター。
  *                  失敗時 (max_peers 超過など) は NULL。
  */
-PotrPeerContext *peer_create_tcp(PotrContext *ctx,
+potr_internal_peer_context *peer_create_tcp(potr_context *ctx,
                                  PotrSocket conn,
                                  const struct sockaddr_in *peer_addr,
                                  int path_idx);
@@ -285,8 +285,8 @@ PotrPeerContext *peer_create_tcp(PotrContext *ctx,
 1. 空きスロット確認 (n_peers >= max_peers なら NULL を返す)
 2. 空きスロットに対して以下を初期化:
    a. セッション生成 (peer_generate_session())
-   b. window_init(&peer->send_window, window_size, max_payload)
-   c. window_init(&peer->recv_window, window_size, max_payload)
+   b. potr_internal_window_init(&peer->send_window, window_size, max_payload)
+   c. potr_internal_window_init(&peer->recv_window, window_size, max_payload)
    d. POTR_MUTEX_INIT(peer->send_window_mutex)
    e. POTR_MUTEX_INIT(peer->tcp_recv_window_mutex)
    f. frag_buf = malloc(max_message_size) ; frag_buf_len = 0
@@ -302,7 +302,7 @@ PotrPeerContext *peer_create_tcp(PotrContext *ctx,
 3. ポインタを返す
 ```
 
-#### peer_free() の拡張
+#### potr_internal_peer_free() の拡張
 
 TCP N:1 型の場合、既存の UDP N:1 用 cleanup に加えて以下を実行します。
 
@@ -320,19 +320,19 @@ TCP N:1 型の場合、既存の UDP N:1 用 cleanup に加えて以下を実行
 
 **ファイル**: `app/porter/prod/libsrc/porter/thread/potrTcpPeerThread.h` / `.c`
 
-per-peer の recv スレッドと health スレッドを実装します。既存の `potrRecvThread.c` / `potrHealthThread.c` のパケット処理ロジックを内部関数として再利用します。
+per-peer の recv スレッドと health スレッドを実装します。既存の `potr_recv_thread.c` / `potr_health_thread.c` のパケット処理ロジックを内部関数として再利用します。
 
 #### API
 
 ```c
 /* per-peer recv スレッド起動 */
-int  tcp_peer_recv_thread_start(PotrContext *ctx,
-                                PotrPeerContext *peer,
+int  tcp_peer_recv_thread_start(potr_context *ctx,
+                                potr_internal_peer_context *peer,
                                 int path_idx);
 
 /* per-peer health スレッド起動 (BIDIR_N1 のみ) */
-int  tcp_peer_health_thread_start(PotrContext *ctx,
-                                  PotrPeerContext *peer,
+int  tcp_peer_health_thread_start(potr_context *ctx,
+                                  potr_internal_peer_context *peer,
                                   int path_idx);
 ```
 
@@ -342,8 +342,8 @@ int  tcp_peer_health_thread_start(PotrContext *ctx,
 static void *tcp_peer_recv_thread_func(void *arg)
 {
     /* TcpPeerThreadArg: { ctx, peer, path_idx } */
-    PotrContext *ctx      = arg->ctx;
-    PotrPeerContext     *peer     = arg->peer;
+    potr_context *ctx      = arg->ctx;
+    potr_internal_peer_context     *peer     = arg->peer;
     int                  path_idx = arg->path_idx;
 
     /* === recv ループ === */
@@ -445,15 +445,15 @@ static void *tcp_peer_health_thread_func(void *arg)
 }
 ```
 
-### potrConnectThread.c - N:1 accept ループ追加
+### potr_connect_thread.c - N:1 accept ループ追加
 
-**ファイル**: `app/porter/prod/libsrc/porter/thread/potrConnectThread.c`
+**ファイル**: `app/porter/prod/libsrc/porter/thread/potr_connect_thread.c`
 
 #### receiver_accept_n1_loop() 新規追加
 
 ```c
 /* RECEIVER 用 accept ループ (N:1, TCP_N1 / TCP_BIDIR_N1 専用) */
-static void receiver_accept_n1_loop(PotrContext *ctx, int path_idx)
+static void receiver_accept_n1_loop(potr_context *ctx, int path_idx)
 {
     int is_bidir = (ctx->service.type == POTR_TYPE_TCP_BIDIR_N1);
 
@@ -462,7 +462,7 @@ static void receiver_accept_n1_loop(PotrContext *ctx, int path_idx)
         PotrSocket         conn;
         struct sockaddr_in peer_addr;
         socklen_t          peer_len = (socklen_t)sizeof(peer_addr);
-        PotrPeerContext   *peer;
+        potr_internal_peer_context   *peer;
         char               peer_addr_str[INET_ADDRSTRLEN];
 
         conn = accept(ctx->tcp_listen_sock[path_idx],
@@ -559,16 +559,16 @@ static void *connect_thread_func(void *arg)
 }
 ```
 
-### potrSendThread.c - flush_packed_peer() 拡張
+### potr_send_thread.c - flush_packed_peer() 拡張
 
-**ファイル**: `app/porter/prod/libsrc/porter/thread/potrSendThread.c`
+**ファイル**: `app/porter/prod/libsrc/porter/thread/potr_send_thread.c`
 
-`PotrPayloadElem` にはすでに `peer_id` フィールドが存在するため、  
+`potr_internal_payload_elem` にはすでに `peer_id` フィールドが存在するため、  
 送信先ルーティングの変更のみで対応できます。
 
 ```c
-static void flush_packed_peer(PotrContext *ctx,
-                               PotrPeerContext *peer,
+static void flush_packed_peer(potr_context *ctx,
+                               potr_internal_peer_context *peer,
                                const uint8_t *wire_buf, size_t wire_len)
 {
     int k;
@@ -616,9 +616,9 @@ static void flush_packed_peer(PotrContext *ctx,
 }
 ```
 
-### potrOpenService.c - TCP N:1 初期化
+### potr_service_open.c - TCP N:1 初期化
 
-**ファイル**: `app/porter/prod/libsrc/porter/api/potrOpenService.c`
+**ファイル**: `app/porter/prod/libsrc/porter/api/potr_service_open.c`
 
 ```c
 case POTR_TYPE_TCP_N1:
@@ -639,33 +639,33 @@ case POTR_TYPE_TCP_BIDIR_N1:
 
         /* 2. ピア テーブル初期化 */
         ctx->is_multi_peer = 1;
-        if (peer_table_init(ctx) != POTR_OK) {
+        if (potr_internal_peer_table_init(ctx) != POTR_OK) {
             ctx_cleanup(ctx);
             return POTR_ERR_UNKNOWN;
         }
 
-        /* 3. TCP mutex/condvar 初期化 (ctx レベル: peers_mutex は peer_table_init で初期化済み) */
+        /* 3. TCP mutex/condvar 初期化 (ctx レベル: peers_mutex は potr_internal_peer_table_init で初期化済み) */
         /* tcp_state_mutex, tcp_state_cv は 1:1 TCP と共通のため初期化しておく */
         POTR_MUTEX_INIT(&ctx->tcp_state_mutex);
         POTR_CONDVAR_INIT(&ctx->tcp_state_cv);
 
         /* 4. TCP_BIDIR_N1: 送信スレッドを事前起動 */
-        /*    (最初の peer 接続前から起動しておく。n_peers=0 時の potrSend はエラーを返す) */
+        /*    (最初の peer 接続前から起動しておく。n_peers=0 時の potr_send はエラーを返す) */
         if (is_bidir_n1) {
-            if (potr_send_queue_init(&ctx->send_queue,
+            if (potr_internal_send_queue_init(&ctx->send_queue,
                                      POTR_SEND_QUEUE_DEPTH,
                                      (uint16_t)ctx->global.max_payload) != POTR_OK) {
                 ctx_cleanup(ctx);
                 return POTR_ERR_UNKNOWN;
             }
-            if (potr_send_thread_start(ctx) != POTR_OK) {
+            if (potr_internal_send_thread_start(ctx) != POTR_OK) {
                 ctx_cleanup(ctx);
                 return POTR_ERR_UNKNOWN;
             }
         }
 
         /* 5. accept スレッド起動 → receiver_accept_n1_loop が呼ばれる */
-        if (potr_connect_thread_start(ctx) != POTR_OK) {
+        if (potr_internal_connect_thread_start(ctx) != POTR_OK) {
             ctx_cleanup(ctx);
             return POTR_ERR_UNKNOWN;
         }
@@ -684,7 +684,7 @@ case POTR_TYPE_TCP_BIDIR_N1:
             ctx_cleanup(ctx);
             return POTR_ERR_UNKNOWN;
         }
-        if (potr_connect_thread_start(ctx) != POTR_OK) {
+        if (potr_internal_connect_thread_start(ctx) != POTR_OK) {
             ctx_cleanup(ctx);
             return POTR_ERR_UNKNOWN;
         }
@@ -693,9 +693,9 @@ case POTR_TYPE_TCP_BIDIR_N1:
 }
 ```
 
-### potrCloseService.c - TCP N:1 終了処理
+### potr_service_close.c - TCP N:1 終了処理
 
-**ファイル**: `app/porter/prod/libsrc/porter/api/potrCloseService.c`
+**ファイル**: `app/porter/prod/libsrc/porter/api/potr_service_close.c`
 
 ```c
 case POTR_TYPE_TCP_N1:
@@ -736,9 +736,9 @@ case POTR_TYPE_TCP_BIDIR_N1:
 
         /* 4. TCP_BIDIR_N1: 送信スレッドと送信キューを解放 */
         if (ctx->service.type == POTR_TYPE_TCP_BIDIR_N1) {
-            potr_send_queue_shutdown(&ctx->send_queue);
-            potr_send_thread_stop(ctx);
-            potr_send_queue_dispose(&ctx->send_queue);
+            potr_internal_send_queue_shutdown(&ctx->send_queue);
+            potr_internal_send_thread_stop(ctx);
+            potr_internal_send_queue_dispose(&ctx->send_queue);
         }
 
         /* 5. ctx レベルの mutex/condvar 解放 */
@@ -748,16 +748,16 @@ case POTR_TYPE_TCP_BIDIR_N1:
     else /* SENDER */
     {
         /* 既存 TCP SENDER クローズと同一 */
-        potr_connect_thread_stop(ctx);
+        potr_internal_connect_thread_stop(ctx);
         /* ... */
     }
     break;
 }
 ```
 
-### potrSend.c - BIDIR_N1 RECEIVER からの送信許可
+### potr_send.c - BIDIR_N1 RECEIVER からの送信許可
 
-**ファイル**: `app/porter/prod/libsrc/porter/api/potrSend.c`
+**ファイル**: `app/porter/prod/libsrc/porter/api/potr_send.c`
 
 ```c
 /* 送信可否チェック部分 */
@@ -772,16 +772,16 @@ if (ctx->role == POTR_ROLE_RECEIVER && !is_bidir) {
    peer_id が指定されていれば対象ピアへのみ送信 */
 ```
 
-### potrDisconnectPeer.c - TCP N:1 ピア切断
+### potr_peer_disconnect.c - TCP N:1 ピア切断
 
-**ファイル**: `app/porter/prod/libsrc/porter/api/potrDisconnectPeer.c`
+**ファイル**: `app/porter/prod/libsrc/porter/api/potr_peer_disconnect.c`
 
 ```c
 if (potr_is_tcp_n1_type(ctx->service.type))
 {
     /* 対象ピアを検索 */
     POTR_MUTEX_LOCK(&ctx->peers_mutex);
-    PotrPeerContext *peer = peer_find_by_id(ctx, peer_id);
+    potr_internal_peer_context *peer = potr_internal_peer_find_by_id(ctx, peer_id);
     if (peer != NULL && peer->active)
     {
         /* FIN パケット送信後にソケットをクローズ */
@@ -803,7 +803,7 @@ if (potr_is_tcp_n1_type(ctx->service.type))
 
 ## 設計上の懸念点とトレードオフ
 
-### PotrPeerContext のサイズ増加
+### potr_internal_peer_context のサイズ増加
 
 追加する TCP N:1 フィールドのサイズ概算 (POTR_MAX_PATH=4 の場合) は次のとおりです。
 
@@ -841,7 +841,7 @@ health スレッド:
   - peers_mutex を取得しない (取得不可の設計とする)
   - ソケットクローズで recv スレッドへ切断を伝える
 
-potrCloseService():
+potr_service_close():
   1. connect_thread_running = 0 (新規 accept を止める)
   2. LOCK(peers_mutex) → tcp_peer_running = 0 + conn_fd クローズ → UNLOCK
   3. peer_table_dispose_tcp() → 全スレッドを JOIN
@@ -879,7 +879,7 @@ UDP では `recvfrom()` がデータ受信・送信元アドレス取得・セ�
 
 #### 実装済みの修正: セッション層での対称化
 
-TCP と UDP のセッション識別をセッション層レベルで対称にする修正を実装しました (`potrConnectThread.c`, `potrRecvThread.c`, `potrContext.h`)。
+TCP と UDP のセッション識別をセッション層レベルで対称にする修正を実装しました (`potr_connect_thread.c`, `potr_recv_thread.c`, `potr_context.h`)。
 
 **設計の概要:**
 
@@ -900,7 +900,7 @@ TCP と UDP のセッション識別をセッション層レベルで対称に�
 4. **先読みバッファーの引き渡し**  
    accept スレッドが読み取った最初のパケットを `tcp_first_pkt_buf[path_idx]` / `tcp_first_pkt_len[path_idx]` に格納します。recv スレッドはループ開始時にこのバッファーを先に処理し、通常の recv ループに入る。
 
-**追加されたフィールド (`potrContext.h`):**
+**追加されたフィールド (`potr_context.h`):**
 
 ```c
 /* TCP セッション確立排他制御 (RECEIVER TCP のみ使用) */
@@ -918,7 +918,7 @@ TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 
 - `accept()` 後の先読みで得た session triplet を `peer_create_tcp()` / `peer_lookup_by_session()` の検索キーとして使用します。
 - 同一 session triplet の新たな path 接続は既存ピアへの追加パスとして扱います。
 - 異なる session triplet は新規ピアとして扱う (`peer_create_tcp()` を呼ぶ)
-- per-peer の `session_establish_mutex` は各 `PotrPeerContext` に持たせ、ピア間の競合を防ぐ
+- per-peer の `session_establish_mutex` は各 `potr_internal_peer_context` に持たせ、ピア間の競合を防ぐ
 
 ---
 
@@ -927,19 +927,19 @@ TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 
 | ファイル | 変更種別 | 内容 |
 |---|---|---|
 | `app/porter/prod/include/porter_type.h` | 変更 | `POTR_TYPE_TCP_N1 = 10`, `POTR_TYPE_TCP_BIDIR_N1 = 11` を追加 |
-| `app/porter/prod/libsrc/porter/potrContext.h` | 変更 | `PotrPeerContext` に TCP N:1 フィールド追加; `potr_is_tcp_n1_type()` 追加; `potr_is_tcp_type()` 拡張 |
-| `app/porter/prod/libsrc/porter/potrPeerTable.h` | 変更 | `peer_create_tcp()` シグネチャ追加 |
-| `app/porter/prod/libsrc/porter/potrPeerTable.c` | 変更 | `peer_create_tcp()` 実装追加; `peer_free()` 拡張 |
-| `app/porter/prod/libsrc/porter/thread/potrConnectThread.c` | 変更 | `receiver_accept_n1_loop()` 追加; `connect_thread_func()` に型判定分岐; `tcp_read_first_packet()`, `tcp_session_compare()` 追加; `receiver_accept_loop()` をセッション先読み方式に改修; `session_establish_mutex` の初期化・破棄; `tcp_first_pkt_buf` の malloc/free |
-| `app/porter/prod/libsrc/porter/thread/potrRecvThread.c` | 変更 | `tcp_recv_thread_func()` に先読みバッファー (`tcp_first_pkt_buf`) の先行処理を追加 |
+| `app/porter/prod/libsrc/porter/potr_context.h` | 変更 | `potr_internal_peer_context` に TCP N:1 フィールド追加; `potr_is_tcp_n1_type()` 追加; `potr_is_tcp_type()` 拡張 |
+| `app/porter/prod/libsrc/porter/potr_peer_table.h` | 変更 | `peer_create_tcp()` シグネチャ追加 |
+| `app/porter/prod/libsrc/porter/potr_peer_table.c` | 変更 | `peer_create_tcp()` 実装追加; `potr_internal_peer_free()` 拡張 |
+| `app/porter/prod/libsrc/porter/thread/potr_connect_thread.c` | 変更 | `receiver_accept_n1_loop()` 追加; `connect_thread_func()` に型判定分岐; `tcp_read_first_packet()`, `tcp_session_compare()` 追加; `receiver_accept_loop()` をセッション先読み方式に改修; `session_establish_mutex` の初期化・破棄; `tcp_first_pkt_buf` の malloc/free |
+| `app/porter/prod/libsrc/porter/thread/potr_recv_thread.c` | 変更 | `tcp_recv_thread_func()` に先読みバッファー (`tcp_first_pkt_buf`) の先行処理を追加 |
 | `app/porter/prod/libsrc/porter/thread/potrTcpPeerThread.h` | **新規** | per-peer TCP スレッド API 宣言 |
 | `app/porter/prod/libsrc/porter/thread/potrTcpPeerThread.c` | **新規** | per-peer recv + health スレッド実装 |
-| `app/porter/prod/libsrc/porter/thread/potrSendThread.c` | 変更 | `flush_packed_peer()` に TCP N:1 送信分岐を追加 |
-| `app/porter/prod/libsrc/porter/thread/potrHealthThread.c` | 変更 | per-peer PING タイムアウト処理 (N:1 向け) |
-| `app/porter/prod/api/potrOpenService.c` | 変更 | TCP N:1 初期化 `case` 追加 |
-| `app/porter/prod/api/potrCloseService.c` | 変更 | TCP N:1 終了処理追加 |
-| `app/porter/prod/api/potrSend.c` | 変更 | BIDIR_N1 RECEIVER からの送信許可; peer_id ルーティング |
-| `app/porter/prod/api/potrDisconnectPeer.c` | 変更 | TCP N:1 ピア切断対応 |
+| `app/porter/prod/libsrc/porter/thread/potr_send_thread.c` | 変更 | `flush_packed_peer()` に TCP N:1 送信分岐を追加 |
+| `app/porter/prod/libsrc/porter/thread/potr_health_thread.c` | 変更 | per-peer PING タイムアウト処理 (N:1 向け) |
+| `app/porter/prod/api/potr_service_open.c` | 変更 | TCP N:1 初期化 `case` 追加 |
+| `app/porter/prod/api/potr_service_close.c` | 変更 | TCP N:1 終了処理追加 |
+| `app/porter/prod/api/potr_send.c` | 変更 | BIDIR_N1 RECEIVER からの送信許可; peer_id ルーティング |
+| `app/porter/prod/api/potr_peer_disconnect.c` | 変更 | TCP N:1 ピア切断対応 |
 
 ---
 
@@ -947,16 +947,16 @@ TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 
 
 以下の順序で実装することで、各ステップでビルドを通しながら進められます。
 
-1. **型定義** (`porter_type.h`, `potrContext.h`)
+1. **型定義** (`porter_type.h`, `potr_context.h`)
     - `POTR_TYPE_TCP_N1`, `POTR_TYPE_TCP_BIDIR_N1` を追加
-    - `PotrPeerContext` に TCP N:1 フィールドを追加
+    - `potr_internal_peer_context` に TCP N:1 フィールドを追加
     - `potr_is_tcp_n1_type()` を追加
     - `potr_is_tcp_type()` を拡張
     - → ビルド確認 (既存コードへの影響なし)
 
-2. **ピア テーブル拡張** (`potrPeerTable.c`)
+2. **ピア テーブル拡張** (`potr_peer_table.c`)
     - `peer_create_tcp()` を実装
-    - `peer_free()` を拡張
+    - `potr_internal_peer_free()` を拡張
     - → ビルド確認
 
 3. **per-peer スレッド実装** (`potrTcpPeerThread.c`)
@@ -964,16 +964,16 @@ TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 
     - health スレッド関数を実装
     - → ビルド確認
 
-4. **N:1 accept ループ** (`potrConnectThread.c`)
+4. **N:1 accept ループ** (`potr_connect_thread.c`)
     - `receiver_accept_n1_loop()` を実装
     - `connect_thread_func()` に分岐を追加
     - → ビルド確認
 
-5. **送信スレッド拡張** (`potrSendThread.c`)
+5. **送信スレッド拡張** (`potr_send_thread.c`)
     - `flush_packed_peer()` に TCP N:1 分岐を追加
     - → ビルド確認
 
-6. **API 対応** (`potrOpenService.c`, `potrCloseService.c`, `potrSend.c`, `potrDisconnectPeer.c`)
+6. **API 対応** (`potr_service_open.c`, `potr_service_close.c`, `potr_send.c`, `potr_peer_disconnect.c`)
     - 各 API に TCP N:1 の `case` / 分岐を追加
     - → ビルド確認
 
@@ -1014,9 +1014,9 @@ make -C app/porter/prod
 
 ```
 # RECEIVER から peer_id=A への返信
-potrSend(handle, peer_id_A, "response to A", len, 0);
+potr_send(handle, peer_id_A, "response to A", len, 0);
 ```
 
 ### クリーン シャットダウン確認
 
-`potrCloseService()` 実行後にスレッド リーク・メモリ リークがないことを `valgrind` または `ThreadSanitizer` で確認します。
+`potr_service_close()` 実行後にスレッド リーク・メモリ リークがないことを `valgrind` または `ThreadSanitizer` で確認します。

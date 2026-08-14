@@ -32,7 +32,7 @@ porter は当初、公開 API を camelCase、型を PascalCase、内部関数�
 記法の違いが事実上の公開・内部の判別手段として機能していましたが、記法を混在させる運用をやめ、リポジトリ内のほかのライブラリと同様に snake_case へ統一しました。
 
 上位規範は、スコープ判定をヘッダー配置で行ったうえで、ライブラリ内共有の関数・型に `<lib>_internal_`、外部リンケージ変数に `g_<lib>_internal_` を付けると定めています。  
-porter もこの規則に従います。既存の `potr_` / `g_potr_` 付き内部共有シンボルを `potr_internal_` / `g_potr_internal_` へ切り替える全面改名は求めず、変更対象ファイルに触れる機会に合わせて進めます。
+porter もこの規則に従い、`include_internal/` で宣言する関数・型は `potr_internal_`、外部リンケージ変数は `g_potr_internal_` とします。
 
 porter には利用者が存在しないため、互換のための旧名の別名 (alias) は提供しません。
 
@@ -68,15 +68,15 @@ porter には利用者が存在しないため、互換のための旧名の別�
 
 | 旧名 | 新名 | 種別 |
 |---|---|---|
-| `PotrPayloadElem` | `potr_payload_elem` | struct |
-| `PotrSendQueue` | `potr_send_queue` | struct |
-| `PotrNackDedupEntry` | `potr_nack_dedup_entry` | struct |
-| `PotrPeerContext` | `potr_peer_context` | struct |
-| `PotrPathThreadArg` | `potr_path_thread_arg` | struct |
-| `PotrPreparedPathEvents` | `potr_prepared_path_events` | struct |
-| `PotrPacketSessionHdr` | `potr_packet_session_hdr` | struct |
-| `PotrWindow` | `potr_window` | struct |
-| `PotrConnectedThreadsOps` | `potr_connected_threads_ops` | struct |
+| `PotrPayloadElem` | `potr_internal_payload_elem` | struct |
+| `PotrSendQueue` | `potr_internal_send_queue` | struct |
+| `PotrNackDedupEntry` | `potr_internal_nack_dedup_entry` | struct |
+| `PotrPeerContext` | `potr_internal_peer_context` | struct |
+| `PotrPathThreadArg` | `potr_internal_path_thread_arg` | struct |
+| `PotrPreparedPathEvents` | `potr_internal_prepared_path_events` | struct |
+| `PotrPacketSessionHdr` | `potr_internal_packet_session_hdr` | struct |
+| `PotrWindow` | `potr_internal_window` | struct |
+| `PotrConnectedThreadsOps` | `potr_internal_connected_threads_ops` | struct |
 
 > [!NOTE]
 > `PotrSocket`、`potr_socket_cause_t` はこの表から除外しています。
@@ -99,8 +99,8 @@ int potr_internal_packet_parse(...);
 extern int g_potr_internal_peer_count;
 ```
 
-以前は接頭辞のなかった `config_*`、`packet_*`、`window_*`、`peer_*`、`seqnum_in_window`、`comm_recv_thread_*`、`tcp_recv_thread_*` の各関数へ `potr_` を付与しました。  
-以降の新設・改名では `potr_internal_` / `g_potr_internal_` を使います。既存の `potr_` / `g_potr_` 付き内部共有シンボルは、変更対象に含めるときに移行します。
+以前は接頭辞のなかった `config_*`、`packet_*`、`window_*`、`peer_*`、`seqnum_in_window`、`comm_recv_thread_*`、`tcp_recv_thread_*` の各関数へ `potr_` を付与していました。  
+現行のライブラリ内共有関数は `potr_internal_` を前置きします。
 
 > [!NOTE]
 > `parse_ipv4_addr`、`resolve_ipv4_addr` は、当時この一覧に含まれていましたが、通信のプラットフォーム抽象化層を com_util の net カテゴリへ移行したことで porter から削除されました。
@@ -178,10 +178,10 @@ if (ret != COM_UTIL_OK)
 
 | 対象外の関数群 | 現行規約 | 理由 |
 |---|---|---|
-| 0/1 述語 (`seqnum_in_window`、`window_send_full`、`window_recv_needs_nack`、`potrContext.h` の inline 述語) | 真 1 / 偽 0 | 失敗モードのない純関数であり、成否の概念が適用されない |
+| 0/1 述語 (`potr_internal_seqnum_in_window`、`potr_internal_window_send_full`、`potr_internal_window_recv_needs_nack`、`potr_context.h` の inline 述語) | 真 1 / 偽 0 | 失敗モードのない純関数であり、成否の概念が適用されない |
 | 3 状態以上の判定結果を返す比較・分類関数 | 判定結果そのもの | 成否ではなく状態の分類を返す |
-| 値をそのまま返す関数 (`packet_wire_size`、`potr_raw_base_type` などの getter) | 値そのもの | 結果コードの概念が適用されない |
-| ハンドル・ポインター返却系 (`potrGetTracer`、`peer_create`、`peer_find_by_*` など) | 成功時ポインター / 失敗・不在時 NULL | ポインター返却 API の慣用 |
+| 値をそのまま返す関数 (`potr_internal_packet_wire_size`、`potr_raw_base_type` などの getter) | 値そのもの | 結果コードの概念が適用されない |
+| ハンドル・ポインター返却系 (`potr_tracer_get`、`potr_internal_peer_create`、`potr_internal_peer_find_by_*` など) | 成功時ポインター / 失敗・不在時 NULL | ポインター返却 API の慣用 |
 | 戻り値を持たない関数 | `void` | 同上 |
 
 > [!NOTE]

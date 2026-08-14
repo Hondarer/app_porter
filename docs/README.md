@@ -54,7 +54,7 @@ dst_port = 5001
 ```c
 #include "porter.h"
 
-void on_event(int64_t service_id, PotrEvent event, const void *data, size_t len) {
+void on_event(int64_t service_id, potr_event event, const void *data, size_t len) {
     switch (event) {
     case POTR_EVENT_CONNECTED:
         /* 片方向は最初の有効 PING / DATA、双方向は PING ハンドシェイク成立 */
@@ -69,11 +69,11 @@ void on_event(int64_t service_id, PotrEvent event, const void *data, size_t len)
 }
 
 int main(void) {
-    PotrContext *handle;
+    potr_context *handle;
     potrLogConfig(POTR_TRACE_INFO, NULL, 1);
-    potrOpenService("porter-services.conf", 1001, POTR_ROLE_RECEIVER, on_event, &handle);
+    potr_service_open("porter-services.conf", 1001, POTR_ROLE_RECEIVER, on_event, &handle);
     /* ... 待機 ... */
-    potrCloseService(handle);
+    potr_service_close(handle);
     return 0;
 }
 ```
@@ -84,14 +84,14 @@ int main(void) {
 #include "porter.h"
 
 int main(void) {
-    PotrContext *handle;
+    potr_context *handle;
     potrLogConfig(POTR_TRACE_INFO, NULL, 1);
-    potrOpenService("porter-services.conf", 1001, POTR_ROLE_SENDER, NULL, &handle);
+    potr_service_open("porter-services.conf", 1001, POTR_ROLE_SENDER, NULL, &handle);
 
     const char *msg = "Hello, porter!";
-    potrSend(handle, POTR_PEER_NA, msg, strlen(msg), POTR_SEND_BLOCKING);  /* 圧縮なし・ブロッキング送信。1:1 通信では peer_id に POTR_PEER_NA を指定 */
+    potr_send(handle, POTR_PEER_NA, msg, strlen(msg), POTR_SEND_BLOCKING);  /* 圧縮なし・ブロッキング送信。1:1 通信では peer_id に POTR_PEER_NA を指定 */
 
-    potrCloseService(handle);
+    potr_service_close(handle);
     return 0;
 }
 ```

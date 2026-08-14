@@ -42,7 +42,7 @@ extern "C"
      *  @param[in]      global      グローバル設定構造体へのポインター。
      *  @param[in]      service     サービス定義構造体へのポインター。
      *  @param[in]      role        役割種別。POTR_ROLE_SENDER または POTR_ROLE_RECEIVER。
-     *  @param[in]      callback    イベント発生時に呼び出されるコールバック関数 (PotrRecvCallback)。
+     *  @param[in]      callback    イベント発生時に呼び出されるコールバック関数 (potr_recv_fn)。
      *                              POTR_ROLE_RECEIVER の場合は必須。データ受信・接続検知・切断検知を受け取る。
      *                              POTR_ROLE_SENDER の場合は通常 NULL を指定すること。\n
      *                              ただし POTR_TYPE_TCP_BIDIR および POTR_TYPE_UNICAST_BIDIR では
@@ -74,8 +74,8 @@ extern "C"
      *
      *  @par            使用例 (受信者)
         @code{.c}
-        void on_recv(int64_t service_id, PotrPeerId peer_id,
-                     PotrEvent event, const void *data, size_t len) {
+        void on_recv(int64_t service_id, potr_peer_id peer_id,
+                     potr_event event, const void *data, size_t len) {
             (void)peer_id;  // 1:1 モードでは常に POTR_PEER_NA
             if (event == POTR_EVENT_CONNECTED)
                 printf("service %" PRId64 ": connected\n", service_id);
@@ -85,7 +85,7 @@ extern "C"
                 printf("service %" PRId64 ": received %zu bytes\n", service_id, len);
         }
 
-        PotrGlobalConfig global = {0};
+        potr_global_config global = {0};
         global.window_size        = 16;
         global.max_payload        = 1400;
         global.udp_health_interval_ms = 3000;
@@ -95,24 +95,24 @@ extern "C"
         global.max_message_size   = 65535;
         global.send_queue_depth   = 64;
 
-        PotrServiceDef service = {0};
+        potr_service_def service = {0};
         service.service_id = 1001;
         service.type       = POTR_TYPE_UNICAST;
         service.dst_port   = 49001;
         com_util_strcpy(service.src_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
         com_util_strcpy(service.dst_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
 
-        PotrContext * handle;
-        if (potrOpenService(&global, &service,
+        potr_context * handle;
+        if (potr_service_open(&global, &service,
                             POTR_ROLE_RECEIVER, on_recv, &handle) == POTR_OK) {
             // 受信待機中 (受信スレッドが動作)
-            potrCloseService(handle);
+            potr_service_close(handle);
         }
         @endcode
      *
      *  @par            使用例 (送信者)
         @code{.c}
-        PotrGlobalConfig global = {0};
+        potr_global_config global = {0};
         global.window_size        = 16;
         global.max_payload        = 1400;
         global.udp_health_interval_ms = 3000;
@@ -122,18 +122,18 @@ extern "C"
         global.max_message_size   = 65535;
         global.send_queue_depth   = 64;
 
-        PotrServiceDef service = {0};
+        potr_service_def service = {0};
         service.service_id = 1001;
         service.type       = POTR_TYPE_UNICAST;
         service.dst_port   = 49001;
         com_util_strcpy(service.src_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
         com_util_strcpy(service.dst_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
 
-        PotrContext * handle;
-        if (potrOpenService(&global, &service,
+        potr_context * handle;
+        if (potr_service_open(&global, &service,
                             POTR_ROLE_SENDER, NULL, &handle) == POTR_OK) {
-            potrSend(handle, POTR_PEER_NA, "hello", 5, 0);
-            potrCloseService(handle);
+            potr_send(handle, POTR_PEER_NA, "hello", 5, 0);
+            potr_service_close(handle);
         }
         @endcode
      *
@@ -151,15 +151,15 @@ extern "C"
      *                  ただし POTR_TYPE_TCP_BIDIR および POTR_TYPE_UNICAST_BIDIR では SENDER にも\n
      *                  コールバックが必須であり、この場合 callback が NULL の場合は失敗を返します。
      */
-    POTR_EXPORT extern int POTR_API potrOpenService(const PotrGlobalConfig *global, const PotrServiceDef *service,
-                                                    PotrRole role, PotrRecvCallback callback, PotrContext **handle);
+    POTR_EXPORT extern int POTR_API potr_service_open(const potr_global_config *global, const potr_service_def *service,
+                                                    potr_role role, potr_recv_fn callback, potr_context **handle);
 
     /**
      *  @brief          設定ファイルから指定サービスを開きます。
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[in]      service_id  開くサービスの ID。
      *  @param[in]      role        役割種別。POTR_ROLE_SENDER または POTR_ROLE_RECEIVER。
-     *  @param[in]      callback    イベント発生時に呼び出されるコールバック関数 (PotrRecvCallback)。
+     *  @param[in]      callback    イベント発生時に呼び出されるコールバック関数 (potr_recv_fn)。
      *                              POTR_ROLE_RECEIVER の場合は必須。データ受信・接続検知・切断検知を受け取る。
      *                              POTR_ROLE_SENDER の場合は通常 NULL を指定すること。\n
      *                              ただし POTR_TYPE_TCP_BIDIR および POTR_TYPE_UNICAST_BIDIR では
@@ -174,7 +174,7 @@ extern "C"
      *  @retval         POTR_ERR_IO                設定ファイル、アドレス解決、またはソケット操作に失敗しました。
      *  @retval         POTR_ERR_UNKNOWN           スレッド生成などの分類不能な内部処理に失敗しました。
      *
-     *  設定ファイルを解析してサービス定義を取得し、potrOpenService() を呼び出します。\n
+     *  設定ファイルを解析してサービス定義を取得し、potr_service_open() を呼び出します。\n
      *  role と callback の組み合わせが不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。\n
      *  role と設定ファイルの IP アドレスが不整合で bind に失敗した場合は POTR_ERR_IO を返します。\n
      *  通信種別・役割に応じて以下のソケット設定を行います。
@@ -192,8 +192,8 @@ extern "C"
      *
      *  @par            使用例 (受信者)
         @code{.c}
-        void on_recv(int64_t service_id, PotrPeerId peer_id,
-                     PotrEvent event, const void *data, size_t len) {
+        void on_recv(int64_t service_id, potr_peer_id peer_id,
+                     potr_event event, const void *data, size_t len) {
             (void)peer_id;  // 1:1 モードでは常に POTR_PEER_NA
             if (event == POTR_EVENT_CONNECTED)
                 printf("service %" PRId64 ": connected\n", service_id);
@@ -203,21 +203,21 @@ extern "C"
                 printf("service %" PRId64 ": received %zu bytes\n", service_id, len);
         }
 
-        PotrContext * handle;
-        if (potrOpenServiceFromConfig("porter-services.conf", 1001,
+        potr_context * handle;
+        if (potr_service_open_from_config("porter-services.conf", 1001,
                                       POTR_ROLE_RECEIVER, on_recv, &handle) == POTR_OK) {
             // 受信待機中 (受信スレッドが動作)
-            potrCloseService(handle);
+            potr_service_close(handle);
         }
         @endcode
      *
      *  @par            使用例 (送信者)
         @code{.c}
-        PotrContext * handle;
-        if (potrOpenServiceFromConfig("porter-services.conf", 1001,
+        potr_context * handle;
+        if (potr_service_open_from_config("porter-services.conf", 1001,
                                       POTR_ROLE_SENDER, NULL, &handle) == POTR_OK) {
-            potrSend(handle, POTR_PEER_NA, "hello", 5, 0);
-            potrCloseService(handle);
+            potr_send(handle, POTR_PEER_NA, "hello", 5, 0);
+            potr_service_close(handle);
         }
         @endcode
      *
@@ -235,13 +235,13 @@ extern "C"
      *                  ただし POTR_TYPE_TCP_BIDIR および POTR_TYPE_UNICAST_BIDIR では SENDER にも\n
      *                  コールバックが必須であり、この場合 callback が NULL の場合は失敗を返します。
      */
-    POTR_EXPORT extern int POTR_API potrOpenServiceFromConfig(const char *config_path, int64_t service_id,
-                                                              PotrRole role, PotrRecvCallback callback,
-                                                              PotrContext **handle);
+    POTR_EXPORT extern int POTR_API potr_service_open_from_config(const char *config_path, int64_t service_id,
+                                                              potr_role role, potr_recv_fn callback,
+                                                              potr_context **handle);
 
     /**
      *  @brief          メッセージを送信します。
-     *  @param[in]      handle      potrOpenService() で取得したセッション ハンドル。
+     *  @param[in]      handle      potr_service_open() で取得したセッション ハンドル。
      *  @param[in]      peer_id     送信先ピア識別子。\n
      *                              N:1 モード: 有効なピア ID (`POTR_PEER_NA` / `POTR_PEER_ALL` 以外) を指定します。\n
      *                              N:1 モード: POTR_PEER_ALL を指定すると全接続ピアへ一斉送信します。\n
@@ -275,7 +275,7 @@ extern "C"
      *
      *  flags に `POTR_SEND_COMPRESS` を指定した場合、内部で圧縮処理を行ってから送信します。\n
      *  圧縮後のサイズが元のサイズ以上になった場合は、自動的に非圧縮で送信します。\n
-     *  受信側の PotrRecvCallback には、展開済みの元メッセージが渡されます。\n
+     *  受信側の potr_recv_fn には、展開済みの元メッセージが渡されます。\n
      *  送受信ともにフラグメント化と組み合わせて使用できます。
      *
      *  @par            非ブロッキング送信 (flags に POTR_SEND_BLOCKING を指定しない場合)
@@ -306,7 +306,7 @@ extern "C"
      *                  data が NULL の場合は失敗を返します。\n
      *                  len が 0 の場合は失敗を返します。\n
      *                  len が POTR_MAX_MESSAGE_SIZE を超える場合は失敗を返します。\n
-     *                  送信スレッドが停止している場合 (potrCloseService 呼び出し後など) は失敗を返します。\n
+     *                  送信スレッドが停止している場合 (potr_service_close 呼び出し後など) は失敗を返します。\n
      *                  N:1 モードで peer_id = POTR_PEER_NA (0) を指定した場合は失敗を返します。\n
      *                  `unicast_bidir` で CONNECTED 前に呼び出した場合は\n
      *                  POTR_ERR_DISCONNECTED を返します。\n
@@ -316,12 +316,12 @@ extern "C"
      *                  物理 TCP 接続済みでも CONNECTED 前または全 path 切断中は\n
      *                  POTR_ERR_DISCONNECTED を返します。
      */
-    POTR_EXPORT extern int POTR_API potrSend(PotrContext *handle, PotrPeerId peer_id, const void *data, size_t len,
+    POTR_EXPORT extern int POTR_API potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len,
                                              int flags);
 
     /**
      *  @brief          指定ピアを切断します (N:1 モード専用)。
-     *  @param[in]      handle      potrOpenService() で取得したセッション ハンドル。
+     *  @param[in]      handle      potr_service_open() で取得したセッション ハンドル。
      *  @param[in]      peer_id     切断するピアの識別子 (POTR_PEER_NA および POTR_PEER_ALL 以外)。
      *  @retval         POTR_OK                    指定ピアを切断しました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  handle が NULL、または peer_id に POTR_PEER_NA / POTR_PEER_ALL を指定しました。
@@ -336,7 +336,7 @@ extern "C"
      *  @par            スレッド セーフ
      *  本関数はスレッド セーフです。\n
      *  内部で peers_mutex により排他制御されるため、複数スレッドから並行して呼び出せます。\n
-     *  ただし PotrRecvCallback の内部から本関数を呼び出すとデッドロックが発生します。\n
+     *  ただし potr_recv_fn の内部から本関数を呼び出すとデッドロックが発生します。\n
      *  コールバック内からの呼び出しは避けてください。
      *
      *  @warning        handle が NULL の場合は失敗を返します。\n
@@ -344,11 +344,11 @@ extern "C"
      *                  指定した peer_id が存在しない場合は失敗を返します。\n
      *                  1:1 モードまたは N:1 モード以外で呼び出した場合は失敗を返します。
      */
-    POTR_EXPORT extern int POTR_API potrDisconnectPeer(PotrContext *handle, PotrPeerId peer_id);
+    POTR_EXPORT extern int POTR_API potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id);
 
     /**
      *  @brief          サービスを閉じます。
-     *  @param[in]      handle  potrOpenService() で取得したセッション ハンドル。
+     *  @param[in]      handle  potr_service_open() で取得したセッション ハンドル。
      *  @retval         POTR_OK                    サービスを閉じました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  handle が NULL です。
      *  @retval         POTR_ERR_DISCONNECTED      データ送信後に全 TCP パスが切断されています。
@@ -374,24 +374,24 @@ extern "C"
      *  @par            スレッド セーフ
      *  本関数はスレッド セーフではありません。\n
      *  同一ハンドルに対して他の porter API と並行して呼び出さないでください。\n
-     *  本関数を呼び出す前に、同一ハンドルへのすべての potrSend() が完了していることを確認してください。
+     *  本関数を呼び出す前に、同一ハンドルへのすべての potr_send() が完了していることを確認してください。
      *
      *  @warning        handle が NULL の場合は失敗を返します。
      */
-    POTR_EXPORT extern int POTR_API potrCloseService(PotrContext *handle);
+    POTR_EXPORT extern int POTR_API potr_service_close(potr_context *handle);
 
     /**
      *  @brief          porter 内部トレーサー ハンドルを返します。
      *  @return         com_util_tracer ハンドル。NULL を返すことはありません。
      *
      *  porter ライブラリが内部で使用する com_util_tracer ハンドルを返します。\n
-     *  本関数は potrOpenService() の前に呼び出すことができます。\n
+     *  本関数は potr_service_open() の前に呼び出すことができます。\n
      *  取得したハンドルに対して com_util_tracer_set_stderr_level() と
      *  com_util_tracer_start() を呼び出すことで、stderr へのトレース出力を有効化できます。
      *
      *  @par            stderr 出力を有効にする例
         @code{.c}
-        com_util_tracer *tracer = potrGetTracer();
+        com_util_tracer *tracer = potr_tracer_get();
         com_util_tracer_set_stderr_level(tracer, COM_UTIL_TRACE_LEVEL_INFO);
         com_util_tracer_start(tracer);
         @endcode
@@ -405,30 +405,30 @@ extern "C"
      *  @par            スレッド セーフ
      *  本関数はスレッド セーフです。
      */
-    POTR_EXPORT com_util_tracer *POTR_API potrGetTracer(void);
+    POTR_EXPORT com_util_tracer *POTR_API potr_tracer_get(void);
 
     /**
      *  @brief          設定ファイルから指定サービスの通信種別を取得します。
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[in]      service_id  照会するサービスの ID。
-     *  @param[out]     type        成功時に通信種別 (PotrType) を格納するポインター。
+     *  @param[out]     type        成功時に通信種別 (potr_type) を格納するポインター。
      *  @retval         POTR_OK                    通信種別を取得しました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  config_path または type が NULL です。
      *  @retval         POTR_ERR_NOT_FOUND         指定したサービス ID がありません。
      *  @retval         POTR_ERR_IO                設定ファイルを開けません。
      *
      *  設定ファイルを解析して指定サービスの通信種別を返します。\n
-     *  potrOpenService() の前に呼び出すことで、ロール・コールバックの要否を
+     *  potr_service_open() の前に呼び出すことで、ロール・コールバックの要否を
      *  アプリケーション側で判断できます。\n
      *  本関数はソケットの作成や通信スレッドの起動を行いません。
      *
      *  @par            使用例
         @code{.c}
-        PotrType type;
-        if (potrGetServiceType("porter-services.conf", 1031, &type) == POTR_OK) {
+        potr_type type;
+        if (potr_service_get_type("porter-services.conf", 1031, &type) == POTR_OK) {
             if (type == POTR_TYPE_UNICAST_BIDIR) {
                 // unicast_bidir: コールバックが必須
-                potrOpenService("porter-services.conf", 1031,
+                potr_service_open("porter-services.conf", 1031,
                                 POTR_ROLE_SENDER, on_recv, &handle);
             }
         }
@@ -441,7 +441,7 @@ extern "C"
      *  @warning        config_path または type が NULL の場合は失敗を返します。\n
      *                  指定した service_id が設定ファイルに存在しない場合は失敗を返します。
      */
-    POTR_EXPORT extern int POTR_API potrGetServiceType(const char *config_path, int64_t service_id, PotrType *type);
+    POTR_EXPORT extern int POTR_API potr_service_get_type(const char *config_path, int64_t service_id, potr_type *type);
 
 #ifdef __cplusplus
 }

@@ -90,34 +90,34 @@ int main(int argc, char *argv[])
     int need_help = 0;
     const char *mode_str = NULL;
 
-    com_util_argparser_init("複数のプロセス モードを確認する TCP サーバーを起動します。");
-    com_util_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
-    com_util_argparser_register_option_string(NULL, "--mode", "mode", "fork または prefork。", 0, &mode_str);
-    com_util_argparser_register_option_int(NULL, "--port", "port", "待ち受けポート番号。", 0, &port);
-    com_util_argparser_register_option_int(NULL, "--workers", "count", "ワーカー数。", 0, &workers);
-    com_util_argparser_register_option_int(NULL, "--conns-per-worker", "count", "ワーカーごとの接続数。", 0,
+    com_util_argparser_default_init("複数のプロセス モードを確認する TCP サーバーを起動します。");
+    com_util_argparser_default_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
+    com_util_argparser_default_register_option_string(NULL, "--mode", "mode", "fork または prefork。", 0, &mode_str);
+    com_util_argparser_default_register_option_int(NULL, "--port", "port", "待ち受けポート番号。", 0, &port);
+    com_util_argparser_default_register_option_int(NULL, "--workers", "count", "ワーカー数。", 0, &workers);
+    com_util_argparser_default_register_option_int(NULL, "--conns-per-worker", "count", "ワーカーごとの接続数。", 0,
                                            &conns_per_worker);
 
-    if (com_util_argparser_get_register_error_count() > 0)
+    if (com_util_argparser_default_get_register_error_count() > 0)
     {
-        com_util_argparser_print_register_error_messages(stderr);
+        com_util_argparser_default_print_register_error_messages(stderr);
         platform_cleanup();
         return EXIT_FAILURE;
     }
 
-    int parse_result = com_util_argparser_parse(argc, argv);
+    int parse_result = com_util_argparser_default_parse(argc, argv);
 
     if (need_help != 0)
     {
-        com_util_argparser_print_usage(stdout);
+        com_util_argparser_default_print_usage(stdout);
         platform_cleanup();
         return EXIT_SUCCESS;
     }
 
     if (parse_result != COM_UTIL_OK)
     {
-        com_util_argparser_print_error_messages(stderr);
-        com_util_argparser_print_usage(stderr);
+        com_util_argparser_default_print_error_messages(stderr);
+        com_util_argparser_default_print_usage(stderr);
         platform_cleanup();
         return EXIT_FAILURE;
     }
@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
         else
         {
             fprintf(stderr, "エラー: --mode には fork または prefork を指定してください。\n\n");
-            com_util_argparser_print_usage(stderr);
+            com_util_argparser_default_print_usage(stderr);
             platform_cleanup();
             return EXIT_FAILURE;
         }

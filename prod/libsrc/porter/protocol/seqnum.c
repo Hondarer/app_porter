@@ -17,7 +17,7 @@
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int seqnum_in_window(uint32_t seq, uint32_t base, uint16_t window_size)
+int potr_internal_seqnum_in_window(uint32_t seq, uint32_t base, uint16_t window_size)
 {
     return (uint32_t)(seq - base) < (uint32_t)window_size;
 }

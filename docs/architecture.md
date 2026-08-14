@@ -3,7 +3,7 @@
 ## 概要
 
 porter は、アプリケーションと UDP ソケット層の間に抽象レイヤーを置き、非同期送受信・再送制御・ヘルスチェックを透過的に提供します。  
-アプリケーションは `potrOpenService()` または `potrOpenServiceFromConfig()` でサービスを開き、送信側は `potrSend(handle, peer_id, ...)` を呼び出すだけで、内部スレッドが送受信・再送・ヘルスチェックをすべて担います。1:1 モードおよび他通信種別では `peer_id` に `POTR_PEER_NA` を指定し、`unicast_bidir` の N:1 モードでは接続中ピアの `peer_id` を指定します。
+アプリケーションは `potr_service_open()` または `potr_service_open_from_config()` でサービスを開き、送信側は `potr_send(handle, peer_id, ...)` を呼び出すだけで、内部スレッドが送受信・再送・ヘルスチェックをすべて担います。1:1 モードおよび他通信種別では `peer_id` に `POTR_PEER_NA` を指定し、`unicast_bidir` の N:1 モードでは接続中ピアの `peer_id` を指定します。
 
 ## 役割モデル
 
@@ -11,7 +11,7 @@ porter は通信の参加者を **送信者 (SENDER)** と **受信者 (RECEIVER
 
 | 役割 | 説明 |
 |---|---|
-| SENDER | `potrSend()` でデータを送出します。ヘルスチェック PING を送信します。 |
+| SENDER | `potr_send()` でデータを送出します。ヘルスチェック PING を送信します。 |
 | RECEIVER | 到着したパケットをコールバックで上位層へ渡す。NACK で再送を要求します。 |
 
 1:1 (ユニキャスト) 通信では送信者 1 : 受信者 1 の構成となります。  
@@ -29,7 +29,7 @@ porter は通信の参加者を **送信者 (SENDER)** と **受信者 (RECEIVER
 | 1:1 | `POTR_ROLE_SENDER` は `src_addr:src_port` で bind し、`dst_addr:dst_port` へ送信する側。`POTR_ROLE_RECEIVER` は `dst_addr:dst_port` で bind し、必要に応じて送信元を学習して返信する側 |
 | N:1 | サーバーは `POTR_ROLE_RECEIVER` として `dst_addr:dst_port` で待ち受ける。各クライアントは従来どおり `src_addr` を持つ `unicast_bidir` エンドポイントとして接続します。 |
 
-> UDP は無接続であるため、1:1 モードではどちらの端が先に `potrOpenServiceFromConfig()` / `potrOpenService()` を呼んでも動作に違いはありません。N:1 モードではサーバーが受信ソケットを先に開いて待ち受ける運用が自然です。
+> UDP は無接続であるため、1:1 モードではどちらの端が先に `potr_service_open_from_config()` / `potr_service_open()` を呼んでも動作に違いはありません。N:1 モードではサーバーが受信ソケットを先に開いて待ち受ける運用が自然です。
 
 ### TCP 通信種別における役割の解釈
 
@@ -40,7 +40,7 @@ porter は通信の参加者を **送信者 (SENDER)** と **受信者 (RECEIVER
 | `POTR_ROLE_SENDER` | TCP クライアント (`connect()`) | tcp: 送信のみ / tcp_bidir: 送受信 |
 | `POTR_ROLE_RECEIVER` | TCP サーバー (`listen()` → `accept()`) | tcp: 受信のみ / tcp_bidir: 送受信 |
 
-UDP は無接続のため先に開いた方が待機するだけですが、TCP では RECEIVER が先に `potrOpenServiceFromConfig()` / `potrOpenService()` を呼んで `listen()` に入っている必要があります。
+UDP は無接続のため先に開いた方が待機するだけですが、TCP では RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を呼んで `listen()` に入っている必要があります。
 
 ## スレッド構成
 
@@ -51,7 +51,7 @@ UDP は無接続のため先に開いた方が待機するだけですが、TCP 
 title 送信者のスレッド構成
 
 rectangle "アプリケーション" {
-  [potrSend()]
+  [potr_send()]
 }
 
 rectangle "porter ライブラリ (送信者) " {
@@ -62,7 +62,7 @@ rectangle "porter ライブラリ (送信者) " {
   [UDP ソケット] as SOCK
 }
 
-[potrSend()] --> Q : エレメントを push
+[potr_send()] --> Q : エレメントを push
 Q --> ST : pop → パケット構築
 ST --> SOCK : sendto\n(DATA / PING / 再送)
 RT <-- SOCK : recvfrom\n(NACK / REJECT / FIN)
@@ -102,7 +102,7 @@ HT --> SOCK : sendto (PING)\n片方向は最後の PING / DATA 基準\n双方向
 title unicast_bidir 1:1 のスレッド構成
 
 rectangle "アプリケーション" {
-  [potrSend(peer_id=POTR_PEER_NA)]
+  [potr_send(peer_id=POTR_PEER_NA)]
   [コールバック]
 }
 
@@ -114,7 +114,7 @@ rectangle "porter ライブラリ (unicast_bidir 1:1)" {
   [UDP ソケット\n(bind 済み)] as SOCK
 }
 
-[potrSend(peer_id=POTR_PEER_NA)] --> Q : エレメントを push
+[potr_send(peer_id=POTR_PEER_NA)] --> Q : エレメントを push
 Q --> ST : pop → パケット構築
 ST --> SOCK : sendto\n(DATA / 再送)
 HT --> SOCK : sendto (PING 要求)\n一定間隔で送信
@@ -134,7 +134,7 @@ N:1 モードではサーバー側に 1 つの共有スレッド群があり、�
 title unicast_bidir N:1 サーバのスレッド構成
 
 rectangle "アプリケーション" {
-  [potrSend(peer_id)]
+  [potr_send(peer_id)]
   [コールバック]
 }
 
@@ -147,7 +147,7 @@ rectangle "porter ライブラリ (unicast_bidir N:1 サーバ)" {
   [UDP ソケット\n(dst_addr:dst_port で bind)] as SOCK
 }
 
-[potrSend(peer_id)] --> Q : peer_id 付きで push
+[potr_send(peer_id)] --> Q : peer_id 付きで push
 Q --> ST : pop → peer_id で送信先解決
 ST --> PT : peer_id ごとの send_window / 送信先参照
 ST --> SOCK : sendto(peer ごとの dest_addr)
@@ -161,7 +161,7 @@ HT --> SOCK : PING 要求送信 / タイムアウト監視
 
 | スレッド | 役割 |
 |---|---|
-| 送信スレッド | 共有送信キューから `peer_id` 付きエレメントを取り出し、対応するピアの送信先へ `sendto` します。`POTR_PEER_ALL` は `potrSend()` 呼び出し時点で全ピア分に展開される |
+| 送信スレッド | 共有送信キューから `peer_id` 付きエレメントを取り出し、対応するピアの送信先へ `sendto` します。`POTR_PEER_ALL` は `potr_send()` 呼び出し時点で全ピア分に展開される |
 | 受信スレッド | `recvfrom` 後に暗号化必須判定と GCM 認証を行い、成功したパケットだけを session triplet (`session_id` + `session_tv_sec` + `session_tv_nsec`) でピア特定します。未知セッションは DATA / PING のみ新規ピア作成対象とします。 |
 | ヘルスチェック スレッド | 非 TCP の共有 1 本が接続中の各ピアを巡回し、`health_interval_ms` に従って PING を送信し、`health_timeout_ms` 超過で個別に切断を検知します。双方向 UDP ではこの定周期 PING が接続確立の前提であり、実効 `health_interval_ms = 0` のままでは `CONNECTED` しません。 |
 
@@ -180,7 +180,7 @@ path 数 N (最大 `POTR_MAX_PATH = 4`) の例。各 path に独立した connec
 title TCP SENDER のスレッド構成（path 数 = N の例）
 
 rectangle "アプリケーション" {
-  [potrSend()]
+  [potr_send()]
 }
 
 rectangle "porter ライブラリ (TCP SENDER)" {
@@ -196,7 +196,7 @@ rectangle "porter ライブラリ (TCP SENDER)" {
   [TCP ソケット #N-1] as SN
 }
 
-[potrSend()] --> Q
+[potr_send()] --> Q
 CT0 --> S0 : connect()
 CTN --> SN : connect()
 Q --> ST : pop → パケット構築
@@ -269,7 +269,7 @@ RTN --> [コールバック] : DATA / DISCONNECTED
 | スレッド | 数 | 役割 |
 |---|---|---|
 | accept スレッド | N | path ごとに起動。`listen()` ソケットで `accept()` を待機し、接続確立後に recv スレッドを起動します。 |
-| recv スレッド | N | path ごとに起動。ヘッダー読み取り → ペイロード読み取りの 2 ステップで受信します。`recv_window_mutex` で保護しながら `window_recv_push()` で重複排除します。`ack_num=0` の PING 要求に即応答し、`tcp_health_timeout_ms` 以内に PING 要求が届かない場合は接続断と判定します。 |
+| recv スレッド | N | path ごとに起動。ヘッダー読み取り → ペイロード読み取りの 2 ステップで受信します。`recv_window_mutex` で保護しながら `potr_internal_window_recv_push()` で重複排除します。`ack_num=0` の PING 要求に即応答し、`tcp_health_timeout_ms` 以内に PING 要求が届かない場合は接続断と判定します。 |
 
 #### TCP_BIDIR のスレッド構成
 
@@ -322,17 +322,17 @@ RECEIVER 側は、接続時の session triplet(`session_id + session_tv_sec + se
 title porter コンポーネント構成
 
 package "api" {
-  [potrOpenService]
-  [potrOpenServiceFromConfig]
-  [potrSend]
-  [potrCloseService]
+  [potr_service_open]
+  [potr_service_open_from_config]
+  [potr_send]
+  [potr_service_close]
 }
 
 package "thread" {
-  [potrRecvThread]
-  [potrSendThread]
-  [potrHealthThread]
-  [potrConnectThread]
+  [potr_recv_thread]
+  [potr_send_thread]
+  [potr_health_thread]
+  [potr_connect_thread]
 }
 
 package "protocol" {
@@ -343,7 +343,7 @@ package "protocol" {
 }
 
 package "infra" {
-  [potrSendQueue\n(リングバッファ)]
+  [potr_send_queue\n(リングバッファ)]
   [potrLog\n(ロギング・設定)]
   package "compress" {
     [compress\n(raw DEFLATE)]
@@ -357,26 +357,26 @@ package "com_util" {
   [net\n(socket・endpoint・byteorder)]
 }
 
-database "PotrContext\n(セッション全状態)" as CTX
+database "potr_context\n(セッション全状態)" as CTX
 
-[potrOpenService] --> CTX : 生成・初期化
-[potrOpenServiceFromConfig] --> [potrOpenService] : 委譲
-[potrSend] --> [potrSendQueue] : エレメント push
-[potrCloseService] --> CTX : スレッド停止・解放
+[potr_service_open] --> CTX : 生成・初期化
+[potr_service_open_from_config] --> [potr_service_open] : 委譲
+[potr_send] --> [potr_send_queue] : エレメント push
+[potr_service_close] --> CTX : スレッド停止・解放
 
-[potrSendThread] --> [packet]
-[potrSendThread] --> [window]
-[potrSendThread] --> [compress]
-[potrSendThread] --> [crypto]
-[potrSendThread] --> [potrSendQueue]
-[potrSendThread] --> [net\n(socket・endpoint・byteorder)] : 送信
+[potr_send_thread] --> [packet]
+[potr_send_thread] --> [window]
+[potr_send_thread] --> [compress]
+[potr_send_thread] --> [crypto]
+[potr_send_thread] --> [potr_send_queue]
+[potr_send_thread] --> [net\n(socket・endpoint・byteorder)] : 送信
 
-[potrRecvThread] --> [packet]
-[potrRecvThread] --> [window]
-[potrRecvThread] --> [seqnum]
-[potrRecvThread] --> [compress]
-[potrRecvThread] --> [crypto]
-[potrRecvThread] --> [net\n(socket・endpoint・byteorder)] : 受信
+[potr_recv_thread] --> [packet]
+[potr_recv_thread] --> [window]
+[potr_recv_thread] --> [seqnum]
+[potr_recv_thread] --> [compress]
+[potr_recv_thread] --> [crypto]
+[potr_recv_thread] --> [net\n(socket・endpoint・byteorder)] : 受信
 
 api -[hidden]--thread
 thread -[hidden]-- infra
@@ -386,9 +386,9 @@ protocol -[hidden]--com_util
 @enduml
 ```
 
-## セッション コンテキスト (PotrContext)
+## セッション コンテキスト (potr_context)
 
-porter の全状態は `PotrContext` 構造体 (`PotrContext *` の実体) に集約されます。  
+porter の全状態は `potr_context` 構造体 (`potr_context *` の実体) に集約されます。  
 この構造体はアプリケーションには不透明 (opaque) であり、内部実装のみがアクセスします。
 
 | カテゴリ | 保持する情報 |
@@ -422,7 +422,7 @@ porter の全状態は `PotrContext` 構造体 (`PotrContext *` の実体) に�
 > | `tcp_last_ping_recv_ms[POTR_MAX_PATH]` | PING 応答最終受信時刻 (ms, monotonic。path ごと。SENDER health スレッドが監視) |
 > | `buf_full_suppress_cnt[POTR_MAX_PATH]` | 送信バッファー満杯 ERROR ログの抑制カウンター (path ごと) |
 
-> **unicast_bidir について**: 1:1 モードの `POTR_ROLE_RECEIVER` は送信ウィンドウ・送信キュー・送信スレッド・ヘルスチェック スレッドも保持します。N:1 モードではさらに `is_multi_peer`、`peers`、`max_peers`、`peers_mutex` などの共有管理情報を持ち、各ピアの詳細状態は `PotrPeerContext` に分離されます。
+> **unicast_bidir について**: 1:1 モードの `POTR_ROLE_RECEIVER` は送信ウィンドウ・送信キュー・送信スレッド・ヘルスチェック スレッドも保持します。N:1 モードではさらに `is_multi_peer`、`peers`、`max_peers`、`peers_mutex` などの共有管理情報を持ち、各ピアの詳細状態は `potr_internal_peer_context` に分離されます。
 
 ## クロスプラットフォーム抽象化
 
@@ -430,10 +430,10 @@ porter の全状態は `PotrContext` 構造体 (`PotrContext *` の実体) に�
 porter はソケット型・無効値・初期化・クローズのいずれについても Linux / Windows の違いを意識しません。
 
 > [!NOTE]
-> 移行前は `potrContext.h` が `PotrSocket` 型や `POTR_INVALID_SOCKET`、`WSAStartup()` / `close()` と `closesocket()` の違いを porter 側で吸収していましたが、通信を com_util の `net` カテゴリへ移行したことで、これらは porter の関心事から外れました。
+> 移行前は `potr_context.h` が `PotrSocket` 型や `POTR_INVALID_SOCKET`、`WSAStartup()` / `close()` と `closesocket()` の違いを porter 側で吸収していましたが、通信を com_util の `net` カテゴリへ移行したことで、これらは porter の関心事から外れました。
 > 詳細は [com_util のネットワーク API ガイドライン](../../com_util/docs/net-api-guideline.md) を参照してください。
 
-`potrContext.h` は、ソケット以外の残るプラットフォーム差異を引き続き抽象化します。
+`potr_context.h` は、ソケット以外の残るプラットフォーム差異を引き続き抽象化します。
 
 | 機能 | Linux | Windows |
 |---|---|---|
@@ -451,7 +451,7 @@ porter はソケット型・無効値・初期化・クローズのいずれに�
 
 ```
 アプリ
- | potrSend(peer_id, data, len, flags)
+ | potr_send(peer_id, data, len, flags)
  ▼
 [圧縮] --- flags に POTR_SEND_COMPRESS が指定された場合、メッセージ全体を raw DEFLATE 圧縮
  |
@@ -509,7 +509,7 @@ porter はソケット型・無効値・初期化・クローズのいずれに�
 
 ## 型定数
 
-### PotrType
+### potr_type
 
 ```c
 typedef enum {
@@ -524,7 +524,7 @@ typedef enum {
     POTR_TYPE_TCP             = 9,  /* TCP */
     POTR_TYPE_TCP_BIDIR       = 10, /* TCP 双方向 */
     /* POTR_TYPE_TCP_BIDIR_N1 = 11, */ /* TCP 双方向 N:1 (将来) */
-} PotrType;
+} potr_type;
 ```
 
 ### unicast_bidir における RECEIVER の追加フィールド
@@ -532,8 +532,8 @@ typedef enum {
 `POTR_TYPE_UNICAST_BIDIR` の `POTR_ROLE_RECEIVER` は、通常の RECEIVER が持たない以下のフィールドを追加で保持します。
 
 ```c
-PotrSendQueue        send_queue;    /* 送信キュー */
-PotrSendWindow       send_window;   /* 送信ウィンドウ */
+potr_internal_send_queue        send_queue;    /* 送信キュー */
+potr_internal_window send_window;   /* 送信ウィンドウ */
 com_util_thread     *send_thread;   /* 送信スレッド */
 com_util_thread     *health_thread; /* ヘルスチェック スレッド */
 com_util_local_lock *health_mutex;
@@ -546,10 +546,10 @@ com_util_condvar    *health_wakeup;
 
 ```c
 /* SENDER 側 (設定ファイル使用) */
-potrOpenServiceFromConfig("config.conf", 4020, POTR_ROLE_SENDER, on_recv, &handle);
+potr_service_open_from_config("config.conf", 4020, POTR_ROLE_SENDER, on_recv, &handle);
 
 /* RECEIVER 側 (設定ファイル使用) */
-potrOpenServiceFromConfig("config.conf", 4020, POTR_ROLE_RECEIVER, on_recv, &handle);
+potr_service_open_from_config("config.conf", 4020, POTR_ROLE_RECEIVER, on_recv, &handle);
 ```
 
 ## 通信種別の比較
@@ -580,9 +580,9 @@ potrOpenServiceFromConfig("config.conf", 4020, POTR_ROLE_RECEIVER, on_recv, &han
 | `flush_packed()` | ✅ | ✅ | `is_tcp` フラグで送信部分を分岐。TCP は全アクティブ path にループ送信 |
 | `health_thread_func()` | ✅ | ✅ | `potr_is_tcp_type()` で分岐済み |
 | `deliver_payload_elem()` | ✅ | ✅ | 完全共有 |
-| `packet_parse()` | ✅ | ✅ | 完全共有 |
-| `window_recv_push/pop()` | ✅ | ✅ | TCP では複数 path からの重複排除に使用。`recv_window_mutex` で保護 |
-| `window_send_push()` | ✅ | ❌ | NACK 再送バッファー用。TCP は不要 (TCP がトランスポート保証) |
+| `potr_internal_packet_parse()` | ✅ | ✅ | 完全共有 |
+| `potr_internal_window_recv_push/pop()` | ✅ | ✅ | TCP では複数 path からの重複排除に使用。`recv_window_mutex` で保護 |
+| `potr_internal_window_send_push()` | ✅ | ❌ | NACK 再送バッファー用。TCP は不要 (TCP がトランスポート保証) |
 | `recv_thread_func()` | ✅ | ❌ | UDP 専用 (`select` + `recvfrom`) |
 | `tcp_recv_thread_func()` | ❌ | ✅ | TCP 専用。path 数分起動 |
 | `sender_connect_loop()` | ❌ | ✅ | TCP SENDER 専用 |
@@ -595,10 +595,10 @@ potrOpenServiceFromConfig("config.conf", 4020, POTR_ROLE_RECEIVER, on_recv, &han
 | 重複排除 | ✅ | ✅ (複数 path からの重複排除) |
 | 順序整列 | ✅ | ✅ |
 | NACK 再送 | ✅ | ❌ |
-| `window_send_push()` | ✅ | ❌ |
+| `potr_internal_window_send_push()` | ✅ | ❌ |
 
-TCP は各接続でトランスポート層が再送を保証するため `window_send_push()` は不要。  
-`window_recv_push/pop()` は複数 path からの重複排除・順序整列のみを目的として使用します。
+TCP は各接続でトランスポート層が再送を保証するため `potr_internal_window_send_push()` は不要。  
+`potr_internal_window_recv_push/pop()` は複数 path からの重複排除・順序整列のみを目的として使用します。
 
 ---
 
@@ -607,7 +607,7 @@ TCP は各接続でトランスポート層が再送を保証するため `windo
 ### TCP 送信フロー
 
 ```
-potrSend()
+potr_send()
   -> フラグメント化 -> send_queue.push()
     -> send_thread_func() -> flush_packed()
         +- UDP: sock[i].sendto()                          (全 path)
@@ -620,12 +620,12 @@ potrSend()
 tcp_recv_thread_func(path_idx)  ← path ごとに 1 スレッド起動
   → tcp_wait_readable(tcp_conn_fd[path_idx])
   → tcp_read_all()
-  → packet_parse()
+  → potr_internal_packet_parse()
   → encrypt_key 設定時は POTR_FLAG_ENCRYPTED を確認
   → AES-256-GCM 復号 / tag-only 検証
   → [recv_window_mutex lock]
-  → window_recv_push()          ← 重複排除 + 順序整列（複数 path 対応、NACK なし）
-  → window_recv_pop()
+  → potr_internal_window_recv_push()          ← 重複排除 + 順序整列（複数 path 対応、NACK なし）
+  → potr_internal_window_recv_pop()
   → deliver_payload_elem()      ← コールバック呼び出し前に unlock
   → callback(POTR_EVENT_DATA)
   → [recv_window_mutex unlock]
@@ -637,20 +637,20 @@ tcp_recv_thread_func(path_idx)  ← path ごとに 1 スレッド起動
 
 | スレッド | UDP | TCP |
 |---|---|---|
-| connect / accept | なし | `potrOpenService()` 時に path 数分 |
-| recv | `potrOpenService()` 時に 1 本 | path 接続ごとに 1 本 (`start_connected_threads()` 内) |
-| send | `potrOpenService()` 時に 1 本 | 最初の path 接続後 (全 path 共有 1 本) |
-| health | `potrOpenService()` 時に 1 本 | path 接続ごとに 1 本 (`start_connected_threads()` 内) |
+| connect / accept | なし | `potr_service_open()` 時に path 数分 |
+| recv | `potr_service_open()` 時に 1 本 | path 接続ごとに 1 本 (`start_connected_threads()` 内) |
+| send | `potr_service_open()` 時に 1 本 | 最初の path 接続後 (全 path 共有 1 本) |
+| health | `potr_service_open()` 時に 1 本 | path 接続ごとに 1 本 (`start_connected_threads()` 内) |
 
-UDP は `potrOpenService.c` が直接全スレッドを起動します。  
-TCP は ConnectThread が接続確立後に `start_connected_threads()` (`potrConnectThread.c`) を呼んで  
+UDP は `potr_service_open.c` が直接全スレッドを起動します。  
+TCP は ConnectThread が接続確立後に `start_connected_threads()` (`potr_connect_thread.c`) を呼んで  
 recv/send/health の各スレッドを起動します。
 
 ---
 
 ## n_path 決定ロジック
 
-`potrOpenService.c` にて `dst_addr[i]` の非空エントリを先頭から順に確認し、  
+`potr_service_open.c` にて `dst_addr[i]` の非空エントリを先頭から順に確認し、  
 最初の空エントリで打ち切る (最大 `POTR_MAX_PATH`)。  
 N:1 モード (`max_peers > 1`) では `n_path = 1` に固定。
 

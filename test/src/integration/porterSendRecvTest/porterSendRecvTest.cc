@@ -80,7 +80,7 @@ class TempBinaryFile
     string path_;
 };
 
-static constexpr size_t kPacketHeaderSize = offsetof(PotrPacket, payload);
+static constexpr size_t kPacketHeaderSize = offsetof(potr_packet, payload);
 
 static uint64_t hton64_test(uint64_t v)
 {

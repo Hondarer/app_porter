@@ -20,6 +20,7 @@
 #define CONFIG_H
 
 #include <porter/porter_result.h>
+#include <com_util/crt/stdlib.h>
 #include <porter/porter_type.h>
 
 #ifdef __cplusplus
@@ -36,7 +37,7 @@ extern "C"
      *
      *  global セクションが存在しない場合はデフォルト値を設定します。
      */
-    extern int config_load_global(const char *config_path, PotrGlobalConfig *global);
+    extern int potr_internal_config_load_global(const char *config_path, potr_global_config *global);
 
     /**
      *  @brief          設定ファイルから指定サービスの定義を読み込みます。
@@ -50,13 +51,13 @@ extern "C"
      *  [service.id] 形式のセクション名から id 部分を取得し、service_id と照合します。\n
      *  サービスの識別子はセクション名の id であり、ポート番号とは無関係です。
      */
-    extern int config_load_service(const char *config_path, int64_t service_id, PotrServiceDef *def);
+    extern int potr_internal_config_load_service(const char *config_path, int64_t service_id, potr_service_def *def);
 
     /**
      *  @brief          設定ファイルに登録されているすべてのサービス ID を列挙します。
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[out]     ids_out     サービス ID 配列へのポインターを格納する変数。
-     *                              呼び出し元が free(*ids_out) の責務を持ちます。
+     *                              呼び出し元が com_util_free(*ids_out) の責務を持ちます。
      *  @param[out]     count_out   列挙したサービス ID 数。
      *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
      *                  メモリを確保できない場合は POTR_ERR_OUT_OF_MEMORY、
@@ -64,7 +65,7 @@ extern "C"
      *
      *  初期容量 POTR_MAX_SERVICES で配列を確保し、超過時は realloc で 2 倍に拡張します。
      */
-    extern int config_list_service_ids(const char *config_path, int64_t **ids_out, int *count_out);
+    extern int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids_out, int *count_out);
 
 #ifdef __cplusplus
 }

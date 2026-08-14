@@ -1,6 +1,6 @@
 # テスト対象のソース ファイル
 TEST_SRCS := \
-	$(MYAPP_DIR)/prod/libsrc/porter/protocol/configLoadService.c
+	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_load_service.c
 
 INCDIR += $(MYAPP_DIR)/test/include
 

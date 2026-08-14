@@ -1,0 +1,268 @@
+/**
+ *******************************************************************************
+ *  @file           potr_send.c
+ *  @brief          データを送信する potr_send 関数を提供します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
+ */
+
+#include <com_util/base/platform.h>
+#include <com_util/crt/stdlib.h>
+#include <stdlib.h>
+#include <inttypes.h>
+
+#include <porter/porter_result.h>
+#include <porter/porter_const.h>
+#include <porter/porter_spec.h>
+
+#include <porter/potr_context.h>
+#include <porter/potr_peer_table.h>
+#include <porter/infra/potr_send_queue.h>
+#include <com_util/compress/compress.h>
+#include <porter/infra/potr_trace.h>
+
+/* N:1 モードで 1 ピアへ send を行う内部実装 (peers_mutex 取得不要・呼び出し元で検索済み) */
+static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, int flags,
+                        uint16_t base_flags)
+{
+    size_t remaining = len;
+    size_t max_payload;
+    size_t chunk;
+    int result;
+
+    max_payload = ctx->global.max_payload - POTR_PAYLOAD_ELEM_HDR_SIZE;
+    if (ctx->service.encrypt_enabled)
+    {
+        max_payload -= POTR_CRYPTO_TAG_SIZE;
+    }
+
+    /* flags はビット フラグ。POTR_SEND_* 定数は 0x0002U 以下で int に収まる */
+    if (((unsigned)flags & POTR_SEND_BLOCKING) != 0U)
+    {
+        potr_internal_send_queue_wait_drained(&ctx->send_queue);
+    }
+
+    while (remaining > 0)
+    {
+        if (remaining > max_payload)
+        {
+            chunk = max_payload;
+        }
+        else
+        {
+            chunk = remaining;
+        }
+        int more_frag = (remaining > chunk);
+        uint16_t elem_flags = base_flags;
+
+        if (more_frag)
+        {
+            elem_flags |= POTR_FLAG_MORE_FRAG;
+        }
+
+        result = potr_internal_send_queue_push_wait(&ctx->send_queue, peer_id, elem_flags, ptr, (uint16_t)chunk,
+                                           &ctx->send_thread_running);
+        if (result != POTR_OK)
+        {
+            return result;
+        }
+
+        ptr += chunk;
+        remaining -= chunk;
+    }
+
+    if (((unsigned)flags & POTR_SEND_BLOCKING) != 0U)
+    {
+        potr_internal_send_queue_wait_drained(&ctx->send_queue);
+    }
+
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len, int flags)
+{
+    potr_context *ctx = (potr_context *)handle;
+    const uint8_t *ptr = (const uint8_t *)data;
+    uint16_t base_flags = 0;
+    unsigned max_message_size;
+
+    if (ctx == NULL || data == NULL || len == 0 || len > (size_t)ctx->global.max_message_size)
+    {
+        if (ctx != NULL)
+        {
+            max_message_size = (unsigned)ctx->global.max_message_size;
+        }
+        else
+        {
+            max_message_size = 0U;
+        }
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_send: invalid argument (handle=%p data=%p len=%zu max=%u)",
+                   (const void *)handle, data, len, max_message_size);
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " peer_id=%u len=%zu flags=0x%x",
+               ctx->service.service_id, (unsigned)peer_id, len, (unsigned)flags);
+
+    if (ctx->close_requested)
+    {
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+                   "potr_send: service_id=%" PRId64 " rejected because close is in progress", ctx->service.service_id);
+        return POTR_ERR_CANCELED;
+    }
+
+    /* TCP: 物理 path 未接続、または PING 交換による論理 CONNECTED 前は
+       POTR_ERR_DISCONNECTED を返す */
+    if (potr_is_tcp_type(ctx->service.type) && (ctx->tcp_active_paths == 0 || !ctx->health_alive))
+    {
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+                   "potr_send: service_id=%" PRId64 " TCP not connected"
+                   " (active_paths=%d health_alive=%d)",
+                   ctx->service.service_id, (int)ctx->tcp_active_paths, (int)ctx->health_alive);
+        return POTR_ERR_DISCONNECTED;
+    }
+
+    /* UDP 1:1 双方向: PING 交換による接続確立前は POTR_ERR_DISCONNECTED を返す */
+    if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR && !ctx->health_alive)
+    {
+        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " UDP bidir not connected",
+                   ctx->service.service_id);
+        return POTR_ERR_DISCONNECTED;
+    }
+
+    /* RAW モードは常にブロッキング送信 */
+    if (potr_is_raw_type(ctx->service.type))
+    {
+        /* POTR_SEND_BLOCKING は 0x0002U であり int に収まる */
+        flags |= (int)POTR_SEND_BLOCKING;
+    }
+
+    /* 圧縮が要求された場合はペイロード全体を圧縮する */
+    if (((unsigned)flags & POTR_SEND_COMPRESS) != 0U)
+    {
+        size_t cmp_len = ctx->compress_buf_size;
+
+        if (com_util_compress(ctx->compress_buf, &cmp_len, (const uint8_t *)data, len) != COM_UTIL_OK)
+        {
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " compression failed (len=%zu)",
+                       ctx->service.service_id, len);
+            /* 圧縮失敗は入力データ起因と断定できないため、分類不能として扱う。 */
+            return POTR_ERR_UNKNOWN;
+        }
+
+        if (cmp_len < len)
+        {
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " compress %zu -> %zu bytes",
+                       ctx->service.service_id, len, cmp_len);
+            ptr = ctx->compress_buf;
+            len = cmp_len;
+            base_flags = POTR_FLAG_COMPRESSED;
+        }
+        else
+        {
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+                       "potr_send: service_id=%" PRId64 " compression skipped"
+                       " (compressed %zu >= original %zu bytes), sending uncompressed",
+                       ctx->service.service_id, cmp_len, len);
+            /* 圧縮効果なし: 非圧縮のまま送信 (ptr, len, base_flags は初期値を維持) */
+        }
+    }
+
+    /* N:1 モード: peer_id に基づくルーティング */
+    if (ctx->is_multi_peer)
+    {
+        if (peer_id == POTR_PEER_NA)
+        {
+            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+                       "potr_send: service_id=%" PRId64 " N:1 mode requires valid peer_id (got POTR_PEER_NA)",
+                       ctx->service.service_id);
+            return POTR_ERR_INVALID_ARGUMENT;
+        }
+
+        if (peer_id == POTR_PEER_ALL)
+        {
+            /* 全アクティブ ピアへ送信: peers_mutex を保持しない状態で送信するため
+             * まず peer_id リストを収集してからキューに積む */
+            potr_peer_id *ids;
+            int n_ids = 0;
+            int i;
+            int result = POTR_OK;
+
+            ids = (potr_peer_id *)com_util_malloc((size_t)ctx->max_peers * sizeof(potr_peer_id));
+            if (ids == NULL)
+            {
+                POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " PEER_ALL malloc failed",
+                           ctx->service.service_id);
+                return POTR_ERR_OUT_OF_MEMORY;
+            }
+
+            com_util_local_lock_lock(ctx->peers_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+            for (i = 0; i < ctx->max_peers; i++)
+            {
+                if (ctx->peers[i].active && ctx->peers[i].health_alive)
+                {
+                    ids[n_ids++] = ctx->peers[i].peer_id;
+                }
+            }
+            com_util_local_lock_unlock(ctx->peers_mutex);
+
+            if (n_ids == 0)
+            {
+                com_util_free(ids);
+                POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " PEER_ALL not connected",
+                           ctx->service.service_id);
+                return POTR_ERR_DISCONNECTED;
+            }
+
+            for (i = 0; i < n_ids; i++)
+            {
+                int send_result = send_to_peer(ctx, ids[i], ptr, len, flags, base_flags);
+
+                if (result == POTR_OK && send_result != POTR_OK)
+                {
+                    result = send_result;
+                }
+            }
+            com_util_free(ids);
+            return result;
+        }
+        else
+        {
+            /* 指定ピアへ送信: 存在確認・接続確認だけ mutex で保護し、送信は mutex 外で行う */
+            int peer_alive;
+            com_util_local_lock_lock(ctx->peers_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+            {
+                potr_internal_peer_context *peer = potr_internal_peer_find_by_id(ctx, peer_id);
+                if (peer == NULL)
+                {
+                    com_util_local_lock_unlock(ctx->peers_mutex);
+                    POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " peer_id=%u not found",
+                               ctx->service.service_id, (unsigned)peer_id);
+                    return POTR_ERR_NOT_FOUND;
+                }
+                peer_alive = peer->health_alive;
+            }
+            com_util_local_lock_unlock(ctx->peers_mutex);
+
+            if (!peer_alive)
+            {
+                POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+                           "potr_send: service_id=%" PRId64 " peer_id=%u N:1 not connected", ctx->service.service_id,
+                           (unsigned)peer_id);
+                return POTR_ERR_DISCONNECTED;
+            }
+
+            return send_to_peer(ctx, peer_id, ptr, len, flags, base_flags);
+        }
+    }
+
+    /* 1:1 モード: peer_id は無視 */
+    return send_to_peer(ctx, POTR_PEER_NA, ptr, len, flags, base_flags);
+}

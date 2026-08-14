@@ -63,12 +63,12 @@ class packetTest : public Test
     }
 };
 
-// packet_build_packed が現行プロトコル バージョンをヘッダーへ設定することの確認
-TEST_F(packetTest, packet_build_packed_sets_protocol_version)
+// potr_internal_packet_build_packed が現行プロトコル バージョンをヘッダーへ設定することの確認
+TEST_F(packetTest, potr_internal_packet_build_packed_sets_protocol_version)
 {
     // Arrange
-    PotrPacket pkt;
-    PotrPacketSessionHdr shdr;
+    potr_packet pkt;
+    potr_internal_packet_session_hdr shdr;
     uint8_t payload[1] = {0xAB}; // [状態] - 1 バイトのペイロード 0xAB を用意する。
 
     memset(&pkt, 0, sizeof(pkt));
@@ -81,70 +81,70 @@ TEST_F(packetTest, packet_build_packed_sets_protocol_version)
     // Pre-Assert
 
     // Act
-    int rtc = packet_build_packed(&pkt, &shdr, 9U, payload,
-                                  sizeof(payload)); // [手順] - packet_build_packed でパケットを構築する。
+    int rtc = potr_internal_packet_build_packed(&pkt, &shdr, 9U, payload,
+                                  sizeof(payload)); // [手順] - potr_internal_packet_build_packed でパケットを構築する。
 
     // Assert
-    ASSERT_EQ(POTR_OK, rtc); // [確認_正常系] - packet_build_packed の戻り値が POTR_OK であること。
+    ASSERT_EQ(POTR_OK, rtc); // [確認_正常系] - potr_internal_packet_build_packed の戻り値が POTR_OK であること。
     EXPECT_EQ(POTR_PROTOCOL_VERSION,
               ntohl(pkt.protocol_version)); // [確認_正常系] - protocol_version に現行バージョンが設定されること。
 }
 
-// packet_parse が現行プロトコル バージョンのパケットを受理することの確認
-TEST_F(packetTest, packet_parse_accepts_current_protocol_version)
+// potr_internal_packet_parse が現行プロトコル バージョンのパケットを受理することの確認
+TEST_F(packetTest, potr_internal_packet_parse_accepts_current_protocol_version)
 {
     // Arrange
     uint8_t wire[PACKET_HEADER_SIZE];
-    PotrPacket pkt;
+    potr_packet pkt;
 
     build_wire_packet(wire, POTR_PROTOCOL_VERSION); // [状態] - 現行バージョンの wire パケットを組み立てる。
 
     // Pre-Assert
 
     // Act
-    int rtc = packet_parse(&pkt, wire, sizeof(wire)); // [手順] - packet_parse で wire パケットを解析する。
+    int rtc = potr_internal_packet_parse(&pkt, wire, sizeof(wire)); // [手順] - potr_internal_packet_parse で wire パケットを解析する。
 
     // Assert
-    ASSERT_EQ(POTR_OK, rtc);       // [確認_正常系] - packet_parse の戻り値が POTR_OK であること。
+    ASSERT_EQ(POTR_OK, rtc);       // [確認_正常系] - potr_internal_packet_parse の戻り値が POTR_OK であること。
     EXPECT_EQ(42, pkt.service_id); // [確認_正常系] - service_id 42 が復元されること。
     EXPECT_EQ(POTR_PROTOCOL_VERSION,
               pkt.protocol_version); // [確認_正常系] - protocol_version が現行バージョンであること。
 }
 
-// packet_parse が異なるプロトコル バージョンのパケットを拒否することの確認
-TEST_F(packetTest, packet_parse_rejects_different_protocol_version)
+// potr_internal_packet_parse が異なるプロトコル バージョンのパケットを拒否することの確認
+TEST_F(packetTest, potr_internal_packet_parse_rejects_different_protocol_version)
 {
     // Arrange
     uint8_t wire[PACKET_HEADER_SIZE];
-    PotrPacket pkt;
+    potr_packet pkt;
 
     build_wire_packet(wire, POTR_PROTOCOL_VERSION + 1U); // [状態] - 現行バージョン + 1 の wire パケットを組み立てる。
 
     // Pre-Assert
 
     // Act
-    int rtc = packet_parse(&pkt, wire, sizeof(wire)); // [手順] - packet_parse で wire パケットを解析する。
+    int rtc = potr_internal_packet_parse(&pkt, wire, sizeof(wire)); // [手順] - potr_internal_packet_parse で wire パケットを解析する。
 
     // Assert
     EXPECT_EQ(POTR_ERR_PROTOCOL,
-              rtc); // [確認_異常系] - packet_parse の戻り値が POTR_ERR_PROTOCOL であること。
+              rtc); // [確認_異常系] - potr_internal_packet_parse の戻り値が POTR_ERR_PROTOCOL であること。
 }
 
-// packet_parse がバージョン 0 (旧 reserved 領域) のパケットを拒否することの確認
-TEST_F(packetTest, packet_parse_rejects_legacy_reserved_zero)
+// potr_internal_packet_parse がバージョン 0 (旧 reserved 領域) のパケットを拒否することの確認
+TEST_F(packetTest, potr_internal_packet_parse_rejects_legacy_reserved_zero)
 {
     // Arrange
     uint8_t wire[PACKET_HEADER_SIZE];
-    PotrPacket pkt;
+    potr_packet pkt;
 
     build_wire_packet(wire, 0U); // [状態] - protocol_version が 0 の wire パケットを組み立てる。
 
     // Pre-Assert
 
     // Act
-    int rtc = packet_parse(&pkt, wire, sizeof(wire)); // [手順] - packet_parse で wire パケットを解析する。
+    int rtc = potr_internal_packet_parse(&pkt, wire, sizeof(wire)); // [手順] - potr_internal_packet_parse で wire パケットを解析する。
 
     // Assert
     EXPECT_EQ(POTR_ERR_PROTOCOL,
-              rtc); // [確認_異常系] - packet_parse の戻り値が POTR_ERR_PROTOCOL であること。
+              rtc); // [確認_異常系] - potr_internal_packet_parse の戻り値が POTR_ERR_PROTOCOL であること。
 }

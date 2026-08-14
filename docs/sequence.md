@@ -4,19 +4,19 @@
 
 ## サービス開始 (送信者)
 
-`potrOpenService()` を SENDER として呼び出したときの内部処理です。
+`potr_service_open()` を SENDER として呼び出したときの内部処理です。
 
 ```plantuml
 @startuml サービス開始 (送信者)
 caption サービス開始 (送信者)
 
 participant "アプリ" as APP
-participant "potrOpenService" as OPEN
+participant "potr_service_open" as OPEN
 participant "受信スレッド" as RT
 participant "送信スレッド" as ST
 participant "ヘルスチェックスレッド" as HT
 
-APP -> OPEN: potrOpenService(config, service_id,\nPOTR_ROLE_SENDER, NULL, &handle)
+APP -> OPEN: potr_service_open(config, service_id,\nPOTR_ROLE_SENDER, NULL, &handle)
 
 activate OPEN
 OPEN -> OPEN: 設定ファイル解析
@@ -45,17 +45,17 @@ note over HT: 次回 PING 送信時刻を\n計算してスリープ
 
 ## サービス開始 (受信者)
 
-`potrOpenService()` を RECEIVER として呼び出したときの内部処理です。
+`potr_service_open()` を RECEIVER として呼び出したときの内部処理です。
 
 ```plantuml
 @startuml サービス開始 (受信者)
 caption サービス開始 (受信者)
 
 participant "アプリ" as APP
-participant "potrOpenService" as OPEN
+participant "potr_service_open" as OPEN
 participant "受信スレッド" as RT
 
-APP -> OPEN: potrOpenService(config, service_id,\nPOTR_ROLE_RECEIVER, callback, &handle)
+APP -> OPEN: potr_service_open(config, service_id,\nPOTR_ROLE_RECEIVER, callback, &handle)
 
 activate OPEN
 OPEN -> OPEN: 設定ファイル解析
@@ -76,7 +76,7 @@ note over RT: DATA/PING/FIN を\n待機するポーリングループ\nヘルス
 
 ## 正常送受信 (非ブロッキング)
 
-`POTR_SEND_BLOCKING` を指定せずに `potrSend()` を呼び出したときのデータフローです。片方向 type 1-6 では初回の有効 `DATA` 受信でも CONNECTED が成立します。
+`POTR_SEND_BLOCKING` を指定せずに `potr_send()` を呼び出したときのデータフローです。片方向 type 1-6 では初回の有効 `DATA` 受信でも CONNECTED が成立します。
 
 ```plantuml
 @startuml 正常送受信 (非ブロッキング)
@@ -89,7 +89,7 @@ participant "UDP" as UDP
 participant "受信スレッド\n(受信者)" as RRT
 participant "アプリ\n(受信側)" as RAPP
 
-SAPP -> Q: potrSend(handle, POTR_PEER_NA, data, len, 0)\n→ エレメントを push して即座に返る
+SAPP -> Q: potr_send(handle, POTR_PEER_NA, data, len, 0)\n→ エレメントを push して即座に返る
 SAPP <-- Q: POTR_OK
 
 note over Q, ST: 非同期に処理
@@ -112,8 +112,8 @@ RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data, len)
 
 ## 正常送受信 (ブロッキング)
 
-`POTR_SEND_BLOCKING` を指定して `potrSend()` を呼び出したときのデータフローです。  
-送信完了まで `potrSend()` が返りません。
+`POTR_SEND_BLOCKING` を指定して `potr_send()` を呼び出したときのデータフローです。  
+送信完了まで `potr_send()` が返りません。
 
 ```plantuml
 @startuml 正常送受信 (ブロッキング)
@@ -124,7 +124,7 @@ participant "送信キュー" as Q
 participant "送信スレッド" as ST
 participant "UDP" as UDP
 
-SAPP -> Q: potrSend(handle, POTR_PEER_NA, data, len, POTR_SEND_BLOCKING)
+SAPP -> Q: potr_send(handle, POTR_PEER_NA, data, len, POTR_SEND_BLOCKING)
 activate SAPP
 
 Q -> Q: (1) 既存キューが drained になるまで待機\n count == 0 && inflight == 0
@@ -161,7 +161,7 @@ participant "UDP" as UDP
 participant "受信スレッド\n(受信者)" as RRT
 participant "アプリ\n(受信側)" as RAPP
 
-SAPP -> Q: potrSend(handle, POTR_PEER_NA, data, len=max_payload×3, 0)\nlen が max_payload を超えるためフラグメント化
+SAPP -> Q: potr_send(handle, POTR_PEER_NA, data, len=max_payload×3, 0)\nlen が max_payload を超えるためフラグメント化
 
 Q -> Q: フラグ MORE_FRAG のエレメント push (1/3)
 Q -> Q: フラグ MORE_FRAG のエレメント push (2/3)
@@ -427,9 +427,9 @@ RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
 @enduml
 ```
 
-## サービス終了 (potrCloseService)
+## サービス終了 (potr_service_close)
 
-`potrCloseService()` による正常終了シーケンスです。
+`potr_service_close()` による正常終了シーケンスです。
 
 ### 送信者側の終了 (DATA/FIN が順序通りに届く場合)
 
@@ -438,7 +438,7 @@ RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
 caption 正常終了 (送信者側)
 
 participant "アプリ\n(送信側)" as SAPP
-participant "potrCloseService" as CLOSE
+participant "potr_service_close" as CLOSE
 participant "送信スレッド" as ST
 participant "ヘルスチェック\nスレッド" as HT
 participant "受信スレッド" as RT
@@ -446,7 +446,7 @@ participant "UDP" as UDP
 participant "受信スレッド\n(受信者)" as RRT
 participant "アプリ\n(受信側)" as RAPP
 
-SAPP -> CLOSE: potrCloseService(handle)
+SAPP -> CLOSE: potr_service_close(handle)
 activate CLOSE
 
 CLOSE -> HT: 停止シグナル
@@ -498,7 +498,7 @@ SUDP -> RUDP: FIN[target_valid, ack_num=N+1] 先着
 RRT -> RRT: recv_window.next_seq != N+1\n→ pending_fin = true\n  fin_target_seq = N+1
 
 SUDP -> RUDP: DATA[seq=N] 後着
-RRT -> RRT: window_recv_push(seq=N)\n→ window_recv_pop()\n→ 配信
+RRT -> RRT: potr_internal_window_recv_push(seq=N)\n→ potr_internal_window_recv_pop()\n→ 配信
 RRT -> RAPP: callback(POTR_EVENT_DATA, ...)
 RRT -> RRT: recv_window.next_seq == N+1\n→ pending_fin 解消
 RRT -> RAPP: callback(POTR_EVENT_DISCONNECTED)
@@ -516,16 +516,16 @@ note over ST,RRT: wrap 後は FIN[target_valid, ack_num=0] も通常の有効 ta
 caption 正常終了 (受信者側)
 
 participant "アプリ\n(受信側)" as RAPP
-participant "potrCloseService" as CLOSE
+participant "potr_service_close" as CLOSE
 participant "受信スレッド" as RT
 
-RAPP -> CLOSE: potrCloseService(handle)
+RAPP -> CLOSE: potr_service_close(handle)
 activate CLOSE
 
 CLOSE -> RT: 停止シグナル
 CLOSE -> CLOSE: 受信スレッドの終了を待機
 
-note over RAPP: 受信者側の potrCloseService() は\n送信者への通知なし\nDISCONNECTED も発火しない
+note over RAPP: 受信者側の potr_service_close() は\n送信者への通知なし\nDISCONNECTED も発火しない
 
 CLOSE -> CLOSE: ソケット・ウィンドウ等の\nリソース解放
 
@@ -633,8 +633,8 @@ caption 接続状態遷移 (受信者側 health_alive フラグ)
 
 疎通中 --> 未接続 : ギャップ検出 (RAW モード)\n→ POTR_EVENT_DISCONNECTED 発火
 
-未接続 --> [*] : potrCloseService()\n (DISCONNECTED 発火なし)
-疎通中 --> [*] : potrCloseService()\n (DISCONNECTED 発火なし)
+未接続 --> [*] : potr_service_close()\n (DISCONNECTED 発火なし)
+疎通中 --> [*] : potr_service_close()\n (DISCONNECTED 発火なし)
 
 note right of 疎通中
   health_timeout_ms = 0 の場合
@@ -665,8 +665,8 @@ participant "Side B\n(POTR_ROLE_RECEIVER)" as B
 
 == サービス開始 ==
 
-note over A: potrOpenService()\nbind(src_addr=A, src_port=PA)
-note over B: potrOpenService()\nbind(src_addr=B, src_port=PB)
+note over A: potr_service_open()\nbind(src_addr=A, src_port=PA)
+note over B: potr_service_open()\nbind(src_addr=B, src_port=PB)
 
 == A → B データ送信 ==
 
@@ -724,24 +724,24 @@ participant "Client A" as CA
 participant "Server\n(RECEIVER / N:1)" as S
 participant "アプリ" as APP
 
-note over S: potrOpenService()\nsrc_addr 省略 → N:1 モード\nbind(dst_addr, dst_port)
+note over S: potr_service_open()\nsrc_addr 省略 → N:1 モード\nbind(dst_addr, dst_port)
 
 CA -> S: DATA (client session=C_A, seq=0)
 S -> S: session triplet で未知ピア判定\npeer table に新規登録\npeer_id=1 を払い出し
 S -> APP: callback(service_id, 1, POTR_EVENT_CONNECTED, NULL, 0)
 S -> APP: callback(service_id, 1, POTR_EVENT_DATA, data, len)
 
-APP -> S: potrSend(handle, 1, reply, len, 0)
+APP -> S: potr_send(handle, 1, reply, len, 0)
 S -> CA: DATA (server session=S_1, seq=0)
 
-APP -> S: potrSend(handle, POTR_PEER_ALL, notice, len, 0)
+APP -> S: potr_send(handle, POTR_PEER_ALL, notice, len, 0)
 S -> CA: DATA (peer_id=1 向け送信)
 @enduml
 ```
 
 ## unicast_bidir N:1 サーバーでの切断
 
-サーバーは FIN 受信、`potrDisconnectPeer()`、またはヘルスチェック タイムアウトによりピア単位で切断を処理します。
+サーバーは FIN 受信、`potr_peer_disconnect()`、またはヘルスチェック タイムアウトによりピア単位で切断を処理します。
 
 ```plantuml
 @startuml unicast_bidir N1 切断
@@ -755,7 +755,7 @@ CA -> S: FIN
 S -> APP: callback(service_id, 1, POTR_EVENT_DISCONNECTED, NULL, 0)
 S -> S: peer table から peer_id=1 を削除
 
-APP -> S: potrDisconnectPeer(handle, 2)
+APP -> S: potr_peer_disconnect(handle, 2)
 S -> CA: FIN
 S -> APP: callback(service_id, 2, POTR_EVENT_DISCONNECTED, NULL, 0)
 S -> S: peer table から peer_id=2 を削除
@@ -785,21 +785,21 @@ note over A: POTR_EVENT_DISCONNECTED 発火
 
 ## TCP サービス開始 (SENDER)
 
-`potrOpenService()` を TCP SENDER として呼び出したときの内部処理です。  
-`potrOpenService()` はすぐに返り、接続確立は connect スレッドが非同期に行います。
+`potr_service_open()` を TCP SENDER として呼び出したときの内部処理です。  
+`potr_service_open()` はすぐに返り、接続確立は connect スレッドが非同期に行います。
 
 ```plantuml
 @startuml TCP サービス開始 (SENDER)
 caption TCP サービス開始 (SENDER)
 
 participant "アプリ" as APP
-participant "potrOpenService" as OPEN
+participant "potr_service_open" as OPEN
 participant "connect スレッド" as CT
 participant "送信スレッド" as ST
 participant "受信スレッド" as RT
 participant "ヘルスチェックスレッド" as HT
 
-APP -> OPEN: potrOpenService(config, service_id, POTR_ROLE_SENDER, cb, &handle)
+APP -> OPEN: potr_service_open(config, service_id, POTR_ROLE_SENDER, cb, &handle)
 activate OPEN
 OPEN -> OPEN: 設定ファイル解析・セッション識別子生成
 OPEN -> OPEN: 送信キュー / ウィンドウ初期化
@@ -822,18 +822,18 @@ note over CT: recv スレッドが切断を検知するまで待機
 
 ## TCP サービス開始 (RECEIVER)
 
-`potrOpenService()` を TCP RECEIVER として呼び出したときの内部処理です。
+`potr_service_open()` を TCP RECEIVER として呼び出したときの内部処理です。
 
 ```plantuml
 @startuml TCP サービス開始 (RECEIVER)
 caption TCP サービス開始 (RECEIVER)
 
 participant "アプリ" as APP
-participant "potrOpenService" as OPEN
+participant "potr_service_open" as OPEN
 participant "accept スレッド" as AT
 participant "recv スレッド" as RT
 
-APP -> OPEN: potrOpenService(config, service_id, POTR_ROLE_RECEIVER, callback, &handle)
+APP -> OPEN: potr_service_open(config, service_id, POTR_ROLE_RECEIVER, callback, &handle)
 activate OPEN
 OPEN -> OPEN: 設定ファイル解析
 OPEN -> OPEN: TCP listen ソケット作成\nbind(dst_addr, dst_port) → listen()
@@ -865,8 +865,8 @@ participant "RECEIVER\n(サーバー)" as R
 
 == サービス開始 ==
 
-note over R: potrOpenService()\nbind() → listen()
-note over S: potrOpenService()\nconnect() 開始
+note over R: potr_service_open()\nbind() → listen()
+note over S: potr_service_open()\nconnect() 開始
 S -> R: TCP 3way handshake
 note over S: 接続確立
 
@@ -888,7 +888,7 @@ note over S: 初回の認証済み PING を受信\n→ CONNECTED / alive 確認
 
 == 正常終了 ==
 
-note over S: potrCloseService()\nclose_requested=1\nsend_queue drain 待機
+note over S: potr_service_close()\nclose_requested=1\nsend_queue drain 待機
 S -> R: FIN[target_valid, ack_num=3]
 note over R: recv_window.next_seq が 3 に追い付くまで\n必要なら pending_fin
 note over R: 最後の DATA callback 完了
@@ -917,7 +917,7 @@ note over S,R: 通信中（セッション A）
 S -[#red]-> R: TCP 接続断
 note over R: TCP 切断検知\nPOTR_EVENT_DISCONNECTED 発火\npeer_session_known = false
 
-note over S: potrOpenService()\n新セッション識別子を生成
+note over S: potr_service_open()\n新セッション識別子を生成
 S -> R: TCP 3way handshake（再接続）
 S -> R: DATA (セッション B の最初のパケット)
 

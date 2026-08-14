@@ -4,28 +4,28 @@
 #include <com_util/base/platform.h>
 #include <testfw.h>
 #include <porter.h>
-#include <porter/potrContext.h>
+#include <porter/potr_context.h>
 #include <com_util/trace/tracer.h>
 
 #if defined(COMPILER_MSVC)
-    #pragma comment(linker, "/INCLUDE:_mock_impl_peer_find_by_id")
-    #pragma comment(linker, "/INCLUDE:_mock_impl_peer_send_fin")
-    #pragma comment(linker, "/INCLUDE:_mock_impl_peer_free")
-    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_trace_get")
-    #pragma comment(linker, "/INCLUDE:_mock_impl_potrGetTracer")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_peer_find_by_id")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_peer_send_fin")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_peer_free")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_trace_get")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_tracer_get")
 #endif /* COMPILER_MSVC */
 
 class Mock_porter
 {
   public:
     // Peer table mock methods
-    MOCK_METHOD(PotrPeerContext *, peer_find_by_id, (const PotrContext *, PotrPeerId));
-    MOCK_METHOD(void, peer_send_fin, (PotrContext *, PotrPeerContext *));
-    MOCK_METHOD(void, peer_free, (PotrContext *, PotrPeerContext *));
+    MOCK_METHOD(potr_internal_peer_context *, potr_internal_peer_find_by_id, (const potr_context *, potr_peer_id));
+    MOCK_METHOD(void, potr_internal_peer_send_fin, (potr_context *, potr_internal_peer_context *));
+    MOCK_METHOD(void, potr_internal_peer_free, (potr_context *, potr_internal_peer_context *));
 
     // Trace mock methods
-    MOCK_METHOD(com_util_tracer *, potr_trace_get, ());
-    MOCK_METHOD(com_util_tracer *, potrGetTracer, ());
+    MOCK_METHOD(com_util_tracer *, potr_internal_trace_get, ());
+    MOCK_METHOD(com_util_tracer *, potr_tracer_get, ());
 
     Mock_porter();
     ~Mock_porter();

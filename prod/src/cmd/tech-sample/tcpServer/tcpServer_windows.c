@@ -25,6 +25,7 @@
  */
 
 #include <com_util/base/platform.h>
+#include <com_util/crt/stdlib.h>
 
 #if defined(PLATFORM_WINDOWS)
 
@@ -35,6 +36,7 @@
 
     #include <stdio.h>
     #include <com_util/runtime/shutdown.h>
+    #include <limits.h>
     #include <stdlib.h>
     #include <string.h>
 
@@ -188,7 +190,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
     else
     {
         /* --- PeekNamedPipe + select による多重接続処理 --- */
-        SOCKET *active = (SOCKET *)malloc((size_t)conns_per_worker * sizeof(SOCKET));
+        SOCKET *active = (SOCKET *)com_util_malloc((size_t)conns_per_worker * sizeof(SOCKET));
         if (!active)
         {
             CloseHandle(pipe);
@@ -259,7 +261,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
             }
         }
 
-        free(active);
+        com_util_free(active);
     }
 
     CloseHandle(pipe);
@@ -349,7 +351,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
     GetModuleFileNameU(NULL, exepath, PLATFORM_PATH_MAX);
 
     /* 監視スレッド引数はプロセス終了まで有効である必要があるため heap 確保 */
-    WorkerMonitorArg *args = (WorkerMonitorArg *)malloc((size_t)n * sizeof(WorkerMonitorArg));
+    WorkerMonitorArg *args = (WorkerMonitorArg *)com_util_malloc((size_t)n * sizeof(WorkerMonitorArg));
     if (!args)
     {
         fprintf(stderr, "malloc 失敗\n");
@@ -366,7 +368,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         if (workers[i].pipe == INVALID_HANDLE_VALUE)
         {
             fprintf(stderr, "パイプ作成失敗: %d\n", i);
-            free(args);
+            com_util_free(args);
             com_util_exit(1);
         }
 
@@ -383,7 +385,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         if (!CreateProcessU(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
         {
             fprintf(stderr, "ワーカー起動失敗: %d\n", i);
-            free(args);
+            com_util_free(args);
             com_util_exit(1);
         }
 
@@ -404,7 +406,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         if (com_util_thread_create(&monitor_thread, worker_monitor_thread, (void *)&args[i]) != COM_UTIL_OK)
         {
             fprintf(stderr, "監視スレッド起動失敗: %d\n", i);
-            free(args);
+            com_util_free(args);
             com_util_exit(1);
         }
         com_util_thread_detach(monitor_thread);
@@ -458,7 +460,15 @@ int dispatch_internal_args(int argc, char *argv[])
             {
                 if (strcmp(argv[j], "--conns-per-worker") == 0)
                 {
-                    conns_per_worker = atoi(argv[j + 1]);
+                    {
+                        int64_t parsed;
+
+                        if (com_util_parse_int64(&parsed, argv[j + 1], 10) == COM_UTIL_OK && parsed > 0 &&
+                            parsed <= (int64_t)INT_MAX)
+                        {
+                            conns_per_worker = (int)parsed;
+                        }
+                    }
                     break;
                 }
             }
@@ -518,8 +528,8 @@ void run_fork_server(int port)
 
 void run_prefork_server(int port, int num_workers, int conns_per_worker)
 {
-    WorkerInfo *workers = (WorkerInfo *)malloc((size_t)num_workers * sizeof(WorkerInfo));
-    HANDLE *events = (HANDLE *)malloc((size_t)num_workers * sizeof(HANDLE));
+    WorkerInfo *workers = (WorkerInfo *)com_util_malloc((size_t)num_workers * sizeof(WorkerInfo));
+    HANDLE *events = (HANDLE *)com_util_malloc((size_t)num_workers * sizeof(HANDLE));
 
     if (!workers || !events)
     {
@@ -563,8 +573,8 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
     }
 
     /* 到達しないが形式上記述 */
-    free(workers);
-    free(events);
+    com_util_free(workers);
+    com_util_free(events);
 }
 
 #endif /* PLATFORM_WINDOWS */

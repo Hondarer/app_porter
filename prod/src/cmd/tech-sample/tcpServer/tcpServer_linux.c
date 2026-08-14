@@ -21,6 +21,7 @@
  */
 
 #include <com_util/base/platform.h>
+#include <com_util/crt/stdlib.h>
 
 #if defined(PLATFORM_LINUX)
 
@@ -385,7 +386,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
     printf("[親プロセス] %d 個のワーカープロセスを起動 (1 ワーカーあたり最大 %d 接続)\n", num_workers,
            conns_per_worker);
 
-    pid_t *worker_pids = malloc((size_t)num_workers * sizeof(pid_t));
+    pid_t *worker_pids = com_util_malloc((size_t)num_workers * sizeof(pid_t));
     if (!worker_pids)
     {
         perror("malloc");
@@ -398,12 +399,12 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         if (pid < 0)
         {
             perror("fork");
-            free(worker_pids);
+            com_util_free(worker_pids);
             com_util_exit(1);
         }
         else if (pid == 0)
         {
-            free(worker_pids);
+            com_util_free(worker_pids);
             worker_loop(server_fd, i, conns_per_worker);
             /* ここには到達しない */
         }
@@ -434,7 +435,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         }
     }
 
-    free(worker_pids);
+    com_util_free(worker_pids);
     com_util_close(server_fd, NULL);
     printf("[親プロセス] 終了\n");
 }

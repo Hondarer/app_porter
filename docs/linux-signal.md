@@ -23,7 +23,7 @@ porter ライブラリはシグナルに干渉しません。
 
 TCP 接続 (`POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR`) を使用している場合、相手が接続を切断した直後に porter 経由でデータを送信すると、OS が **SIGPIPE** を配信することがあります。SIGPIPE のデフォルト動作はプロセス終了であり、porter はこれを抑制しません。
 
-利用者は `potrOpenServiceFromConfig()` / `potrOpenService()` の前に以下のいずれかの対策を実施してください。
+利用者は `potr_service_open_from_config()` / `potr_service_open()` の前に以下のいずれかの対策を実施してください。
 
 ```c
 /* 方法 A: プロセス全体で SIGPIPE を無視する */
@@ -36,7 +36,7 @@ void sigpipe_handler(int sig) { (void)sig; /* 何もしない or ログ */ }
 signal(SIGPIPE, sigpipe_handler);
 ```
 
-方法 A が最も簡便です。porter 内部の TCP 送信失敗は `POTR_ERR_IO` として処理され、接続状態が切断へ遷移した後の `potrSend()` は `POTR_ERR_DISCONNECTED` を返します。SIGPIPE によるプロセス終了を避けることで、エラー処理を結果コードと接続イベントに統一できます。
+方法 A が最も簡便です。porter 内部の TCP 送信失敗は `POTR_ERR_IO` として処理され、接続状態が切断へ遷移した後の `potr_send()` は `POTR_ERR_DISCONNECTED` を返します。SIGPIPE によるプロセス終了を避けることで、エラー処理を結果コードと接続イベントに統一できます。
 
 UDP のみ使用する場合 (`POTR_TYPE_UNICAST` / `POTR_TYPE_MULTICAST` / `POTR_TYPE_BROADCAST`) は SIGPIPE は発生しません。
 
@@ -44,22 +44,22 @@ UDP のみ使用する場合 (`POTR_TYPE_UNICAST` / `POTR_TYPE_MULTICAST` / `POT
 
 ## graceful shutdown の実装パターン
 
-`potrCloseService()` は非同期シグナル安全ではありません (内部でミューテックスを使用します)。**シグナル ハンドラー内から `potrCloseService()` を呼んではなりません**。
+`potr_service_close()` は非同期シグナル安全ではありません (内部でミューテックスを使用します)。**シグナル ハンドラー内から `potr_service_close()` を呼んではなりません**。
 
 正しい終了シーケンスは以下のとおりです。
 
 1. シグナル ハンドラーで `volatile sig_atomic_t` フラグを 0 にセットします。
 2. メイン ループがフラグを検出してループを抜ける
-3. ループ脱出後に `potrCloseService()` を呼んでリソースを解放します。
+3. ループ脱出後に `potr_service_close()` を呼んでリソースを解放します。
 
 ```c
-static volatile sig_atomic_t g_running = 1;
+static volatile sig_atomic_t s_running = 1;
 
 static void sig_handler(int sig)
 {
     (void)sig;
-    g_running = 0;
-    /* ここで potrCloseService() を呼んではならない */
+    s_running = 0;
+    /* ここで potr_service_close() を呼んではならない */
 }
 
 int main(void)
@@ -67,15 +67,15 @@ int main(void)
     signal(SIGINT,  sig_handler);
     signal(SIGTERM, sig_handler);
 
-    PotrContext *handle;
-    potrOpenService(..., &handle);
+    potr_context *handle;
+    potr_service_open(..., &handle);
 
-    while (g_running)
+    while (s_running)
     {
         /* メイン ループ処理 */
     }
 
-    potrCloseService(handle);  /* シグナル ハンドラーの外で呼ぶ */
+    potr_service_close(handle);  /* シグナル ハンドラーの外で呼ぶ */
     return 0;
 }
 ```
@@ -95,7 +95,7 @@ int main(void)
 | `write()` | 安全 |
 | `close()` | 安全 |
 | `waitpid()` | 安全 |
-| `potrCloseService()` などのライブラリ関数 | **非安全** (ミューテックスを含む) |
+| `potr_service_close()` などのライブラリ関数 | **非安全** (ミューテックスを含む) |
 | `printf()` / `malloc()` / `free()` | **非安全** (内部でロックを取得) |
 
 ハンドラー内では最小限の操作 (フラグのセット、安全なファイル記述子操作) のみを行い、後処理はメイン ループに委ねてください。
@@ -104,14 +104,14 @@ int main(void)
 
 ## 内部スレッドへのシグナル配信
 
-porter は `potrOpenService()` / `potrOpenServiceFromConfig()` の呼び出し時に内部スレッド (送信・受信・接続管理・ヘルスチェック) を生成します。
+porter は `potr_service_open()` / `potr_service_open_from_config()` の呼び出し時に内部スレッド (送信・受信・接続管理・ヘルスチェック) を生成します。
 
 Linux では、プロセスに届くシグナルはシグナルをマスクしていないスレッドのいずれかに配信されます。porter の内部スレッドはシグナルをマスクしないため、アプリケーションが意図したシグナル (SIGINT など) が内部スレッドに配信される可能性があります。
 
 内部スレッドがシグナルを受け取っても、porter の動作には影響しません。  
 内部スレッドは `com_util` の `net` カテゴリを経由してブロッキング システム コールを発行しており、シグナルによる中断は `com_util` が吸収するためです。詳細は [シグナルによるシステム コールの中断 (EINTR)](#シグナルによるシステム-コールの中断-eintr) を参照してください。
 
-ただし、シグナルをメイン スレッドで確実に受け取りたい場合は、`potrOpenServiceFromConfig()` / `potrOpenService()` の前に `pthread_sigmask()` で内部スレッドに継承させたくないシグナルをマスクしておいてください。子スレッドは親スレッドのシグナル マスクを引き継ぎます。
+ただし、シグナルをメイン スレッドで確実に受け取りたい場合は、`potr_service_open_from_config()` / `potr_service_open()` の前に `pthread_sigmask()` で内部スレッドに継承させたくないシグナルをマスクしておいてください。子スレッドは親スレッドのシグナル マスクを引き継ぎます。
 
 ```c
 sigset_t mask;
@@ -122,8 +122,8 @@ sigaddset(&mask, SIGTERM);
 /* ここでマスクすると、以降に生成される内部スレッドは SIGINT/SIGTERM をマスクして生成される */
 pthread_sigmask(SIG_BLOCK, &mask, NULL);
 
-PotrContext *handle;
-potrOpenService(..., &handle);
+potr_context *handle;
+potr_service_open(..., &handle);
 
 /* メイン スレッドだけマスクを解除して受け取る */
 pthread_sigmask(SIG_UNBLOCK, &mask, NULL);

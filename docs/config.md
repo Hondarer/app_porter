@@ -5,9 +5,9 @@
 porter は INI 形式のテキスト ファイルでサービスを定義します。  
 1 つの設定ファイルに定義できるサービス数に上限はありません (初期バッファー容量は 64 で、超過時は自動拡張されます)。
 
-`potrOpenServiceFromConfig()` 呼び出し時にファイルを読み込み、指定した `service_id` のエントリを使用します。  
+`potr_service_open_from_config()` 呼び出し時にファイルを読み込み、指定した `service_id` のエントリを使用します。  
 以後はファイルを参照しないため、起動後にファイルを変更しても動作に影響はありません。  
-`potrOpenService()` を直接呼ぶ場合は設定ファイルを使用せず、`PotrGlobalConfig` / `PotrServiceDef` 構造体を直接渡します。
+`potr_service_open()` を直接呼ぶ場合は設定ファイルを使用せず、`potr_global_config` / `potr_service_def` 構造体を直接渡します。
 
 ## ファイル形式
 
@@ -31,13 +31,13 @@ porter は INI 形式のテキスト ファイルでサービスを定義しま�
 |---|---|---|---|
 | `window_size` | uint16 | 16 | スライディング ウィンドウ サイズ (2〜256) |
 | `max_payload` | uint16 | 1,400 | DATA パケットのペイロード上限バイト数 (64〜65507) |
-| `max_message_size` | uint32 | 65,535 | 1 回の potrSend で送信できる最大メッセージ長 (バイト)。フラグメント化により max_payload を超えるメッセージを送受信できます。 |
+| `max_message_size` | uint32 | 65,535 | 1 回の potr_send で送信できる最大メッセージ長 (バイト)。フラグメント化により max_payload を超えるメッセージを送受信できます。 |
 | `send_queue_depth` | uint32 | 1,024 | 非同期送信キューの最大エントリ数。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。 |
 | `udp_health_interval_ms` | uint32 | 3,000 | UDP 通信種別の PING 送信判定間隔 (ms)。片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時に PING を送信し、双方向 UDP は設定周期ごとに PING を送信します。0 でヘルスチェック送信を無効化。双方向 UDP は定周期 PING の送受信で `CONNECTED` を成立させるため、実効 `health_interval_ms` が 0 のままでは接続確立しません。 |
 | `udp_health_timeout_ms`  | uint32 | 10,000 | UDP 通信種別の受信タイムアウト (ms)。片方向 type 1-6 では有効な `PING` / `DATA`、双方向 UDP では `PING` の最終受信から本値を超えたら DISCONNECTED。0 でタイムアウト検知を無効化 |
 | `tcp_health_interval_ms` | uint32 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。接続直後の bootstrap PING とは別に、設定周期ごとに PING を送信します。0 の場合は定周期 PING を無効化するが、初回接続確立用の bootstrap PING は送信します。 |
 | `tcp_health_timeout_ms`  | uint32 | 31,000 | TCP 通信種別の PING 応答待機タイムアウト (ms)。`tcp_health_interval_ms > 0` のときだけ有効で、SENDER 側が PING 応答を本値以内に受信できなければ DISCONNECTED。0 でタイムアウト検知を無効化 |
-| `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potrCloseService()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送り、本値以内に `FIN_ACK` が返らなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む |
+| `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potr_service_close()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送り、本値以内に `FIN_ACK` が返らなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む |
 | `reorder_timeout_ms` | uint32 | 0 | 受信ウィンドウで欠番を検出してから NACK 送出 (通常モード) または DISCONNECTED 発行 (RAW モード) を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 で即時 (デフォルト)。推奨値: LAN/マルチパス = 10〜30 ms、遠距離 WAN = 30〜100 ms |
 
 ### window_size の影響
@@ -51,7 +51,7 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 ### max_payload の影響
 
 ペイロード エレメント 1 個分のデータ サイズ上限です。  
-`potrSend()` で送信するデータがこのサイズを超える場合、複数のフラグメントに分割されます。
+`potr_send()` で送信するデータがこのサイズを超える場合、複数のフラグメントに分割されます。
 
 ### reorder_timeout_ms の使い所
 
@@ -144,7 +144,7 @@ RAW モードは通常モード (`unicast` / `multicast` / `broadcast`) と同�
 |---|---|---|
 | 再送制御 | NACK ベース再送あり | 再送なし |
 | ギャップ検出時 | NACK を返送して欠落パケットを待機 | 即 `POTR_EVENT_DISCONNECTED` を発行し、次の正規パケットで `POTR_EVENT_CONNECTED` |
-| `potrSend` の動作 | `flags` 引数に従う (非ブロッキング / ブロッキング) | 常にブロッキング送信 (`POTR_SEND_BLOCKING` 相当) |
+| `potr_send` の動作 | `flags` 引数に従う (非ブロッキング / ブロッキング) | 常にブロッキング送信 (`POTR_SEND_BLOCKING` 相当) |
 | 通番 (`seq_num`) | 再送制御・ウィンドウ管理に使用 | AES ノンス生成用のみ (再送制御には使用しない) |
 | ヘルスチェック | `health_interval_ms` / `health_timeout_ms` に従う | 同左 (制限なし) |
 
@@ -293,7 +293,7 @@ GCM ノンス (12 バイト) は以下の構成です。
 
 | 項目 | 仕様 |
 |---|---|
-| 解決タイミング | `potrOpenServiceFromConfig()` / `potrOpenService()` 呼び出し時に 1 回のみ解決します。 |
+| 解決タイミング | `potr_service_open_from_config()` / `potr_service_open()` 呼び出し時に 1 回のみ解決します。 |
 | 再解決 | プロセス生存中は再解決しません。DNS 更新後に接続できなくなった場合はプロセスを再起動します。 |
 | 複数アドレス返却時 | 仕様上未定義。実装上は先頭アドレスを採用します。 |
 | IPv6 | 非対応 |
@@ -445,7 +445,7 @@ note over R: accept() → 接続ソケット取得
 | listen ソケット | なし | あり (接続待機専用) |
 | 接続ソケット | `connect()` の fd | `accept()` の fd |
 
-RECEIVER が先に `potrOpenServiceFromConfig()` / `potrOpenService()` を呼んで `listen()` に入っている必要があります。
+RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を呼んで `listen()` に入っている必要があります。
 
 ## 送信元フィルタリング
 

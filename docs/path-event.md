@@ -23,7 +23,7 @@ porter はセッション全体の接続状態だけでなく、各 path の論�
 ## コールバック契約
 
 `POTR_EVENT_PATH_CONNECTED` / `POTR_EVENT_PATH_DISCONNECTED` のとき、  
-`PotrRecvCallback` の引数は次の意味を持ちます。
+`potr_recv_fn` の引数は次の意味を持ちます。
 
 | 引数 | 意味 |
 |---|---|
@@ -37,8 +37,8 @@ porter はセッション全体の接続状態だけでなく、各 path の論�
 `data` はコールバック復帰後に無効になります。保存したい場合は利用側でコピーしてください。
 
 ```c
-static void on_recv(int64_t service_id, PotrPeerId peer_id,
-                    PotrEvent event, const void *data, size_t len)
+static void on_recv(int64_t service_id, potr_peer_id peer_id,
+                    potr_event event, const void *data, size_t len)
 {
     if (event == POTR_EVENT_PATH_CONNECTED
         || event == POTR_EVENT_PATH_DISCONNECTED)
@@ -130,7 +130,7 @@ bootstrap PING を含む往復確認が成立して初めて logical connected �
 - `FIN` 受信
 - `REJECT` 受信
 - RAW gap
-- `potrDisconnectPeer()`
+- `potr_peer_disconnect()`
 - TCP 全断
 
 この場合は、現在 1 の path をすべて 0 に落としてから、
@@ -160,7 +160,7 @@ bootstrap PING を含む往復確認が成立して初めて logical connected �
 
 - `PATH_*` は peer 単位で評価されます。
 - ある peer の path 変化は、他 peer の `CONNECTED` / `DISCONNECTED` に影響しません。
-- `potrDisconnectPeer()` は、その peer の alive path をすべて 0 にしてから  
+- `potr_peer_disconnect()` は、その peer の alive path をすべて 0 にしてから  
   `PATH_DISCONNECTED` 群と `DISCONNECTED` を発火します。
 
 ### type 9-10
@@ -178,13 +178,13 @@ bootstrap PING を含む往復確認が成立して初めて logical connected �
 
 - `prod/include/porter_type.h`  
   公開 enum と callback 契約の定義
-- `prod/libsrc/porter/potrPathEvent.c`  
+- `prod/libsrc/porter/potr_path_event.c`  
   path logical 状態の差分計算、発火順序制御、callback 直列化
-- `prod/libsrc/porter/thread/potrRecvThread.c`  
+- `prod/libsrc/porter/thread/potr_recv_thread.c`  
   UDP / TCP の受信事象を path logical 状態へ反映
-- `prod/libsrc/porter/thread/potrConnectThread.c`  
+- `prod/libsrc/porter/thread/potr_connect_thread.c`  
   TCP path close と全断を path logical 状態へ反映
-- `prod/libsrc/porter/api/potrDisconnectPeer.c`  
+- `prod/libsrc/porter/api/potr_peer_disconnect.c`  
   N:1 peer 切断時の `PATH_DISCONNECTED` 群と `DISCONNECTED` を発火
 
 callback は内部 mutex で直列化されます。  

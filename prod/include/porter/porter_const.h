@@ -19,9 +19,9 @@
 #ifndef PORTER_CONST_H
 #define PORTER_CONST_H
 
-/** @defgroup POTR_SEND_FLAG 送信オプション フラグ (potrSend の flags 引数)
+/** @defgroup POTR_SEND_FLAG 送信オプション フラグ (potr_send の flags 引数)
  *  @ingroup        PORTER_PUBLIC_API
- *  `potrSend()` の `flags` 引数に論理和で組み合わせて指定するビット フラグです。\n
+ *  `potr_send()` の `flags` 引数に論理和で組み合わせて指定するビット フラグです。\n
  *  0 を指定すると非圧縮・非ブロッキング送信になります。
  */
 
@@ -34,9 +34,9 @@
 #define POTR_SEND_BLOCKING 0x0002U /**< ブロッキング送信を行います。0 を指定すると非ブロッキング送信を行います。 */
 /** @} */
 
-/** @defgroup POTR_OUTER_FLAG 外側パケット フラグ (PotrPacket.flags)
+/** @defgroup POTR_OUTER_FLAG 外側パケット フラグ (potr_packet.flags)
  *  @ingroup        PORTER_PUBLIC_API
- *  UDP で送受信される外側パケット (PotrPacket) の flags フィールドに設定するフラグです。\n
+ *  UDP で送受信される外側パケット (potr_packet) の flags フィールドに設定するフラグです。\n
  *  ペイロード エレメントのフラグ (@ref POTR_ELEM_FLAG) とは独立したビット空間で管理します。
  */
 
@@ -51,7 +51,7 @@
 #define POTR_FLAG_REJECT \
     0x0008U /**< 再送不能通知パケットであることを示すフラグ。ack_num に再送不能な通番を格納します。 */
 #define POTR_FLAG_FIN \
-    0x0010U /**< 正常終了通知パケットであることを示すフラグ。送信者が potrCloseService 時に送出し、受信者は即座に DISCONNECTED へ遷移します。ペイロードなし。 */
+    0x0010U /**< 正常終了通知パケットであることを示すフラグ。送信者が potr_service_close 時に送出し、受信者は即座に DISCONNECTED へ遷移します。ペイロードなし。 */
 #define POTR_FLAG_ENCRYPTED \
     0x0020U /**< AES-256-GCM 認証タグが付与されていることを示す外側パケット フラグ。\n
                                        *   POTR_FLAG_DATA と組み合わせる場合: [ヘッダー][暗号文: packed_len B][GCM 認証タグ: 16B]。\n
@@ -157,9 +157,9 @@
 #define POTR_MAX_WINDOW_SIZE \
     256U /**< ウィンドウ サイズの最大値 (パケット数)。window_size 設定値のバリデーション上限として使用します。 */
 #define POTR_MAX_SERVICES \
-    64U /**< config_list_service_ids() の初期バッファー容量。サービス数がこれを超えた場合は realloc で自動拡張します。 */
+    64U /**< potr_internal_config_list_service_ids() の初期バッファー容量。サービス数がこれを超えた場合は realloc で自動拡張します。 */
 #define POTR_MAX_MESSAGE_SIZE \
-    65535U /**< 1 回の potrSend で送信できる最大メッセージ長 (バイト) のデフォルト値。設定ファイルの max_message_size で変更可能。フラグメント化により max_payload を超えるメッセージも送受信できます。 */
+    65535U /**< 1 回の potr_send で送信できる最大メッセージ長 (バイト) のデフォルト値。設定ファイルの max_message_size で変更可能。フラグメント化により max_payload を超えるメッセージも送受信できます。 */
 #define POTR_SEND_QUEUE_DEPTH \
     1024U /**< 非同期送信キューの最大エントリ数のデフォルト値。設定ファイルの send_queue_depth で変更可能。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。 */
 #define POTR_PAYLOAD_ELEM_HDR_SIZE \

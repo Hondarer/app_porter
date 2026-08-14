@@ -27,25 +27,25 @@
 
 #include <porter.h> /* 内部 API で公開定数、公開型、公開関数などに依存している可能性を考慮 */
 
-#include <porter/potrContext.h>
-#include <porter/potrPathEvent.h>
-#include <porter/potrPeerTable.h>
+#include <porter/potr_context.h>
+#include <porter/potr_path_event.h>
+#include <porter/potr_peer_table.h>
 
-#include <porter/infra/potrResult.h>
-#include <porter/infra/potrSendQueue.h>
-#include <porter/infra/potrTrace.h>
+#include <porter/infra/potr_result.h>
+#include <porter/infra/potr_send_queue.h>
+#include <porter/infra/potr_trace.h>
 
 #include <porter/protocol/config.h>
-#include <porter/protocol/configParseCommon.h>
-#include <porter/protocol/configParseKvCommon.h>
+#include <porter/protocol/config_parse_common.h>
+#include <porter/protocol/config_parse_kv_common.h>
 #include <porter/protocol/packet.h>
 #include <porter/protocol/seqnum.h>
 #include <porter/protocol/window.h>
 
-#include <porter/thread/potrConnectThread.h>
-#include <porter/thread/potrConnectedThreads.h>
-#include <porter/thread/potrHealthThread.h>
-#include <porter/thread/potrRecvThread.h>
-#include <porter/thread/potrSendThread.h>
+#include <porter/thread/potr_connect_thread.h>
+#include <porter/thread/potr_connected_threads.h>
+#include <porter/thread/potr_health_thread.h>
+#include <porter/thread/potr_recv_thread.h>
+#include <porter/thread/potr_send_thread.h>
 
 #endif /* PORTER_INTERNAL_H */

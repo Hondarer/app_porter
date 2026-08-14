@@ -12,6 +12,7 @@
  */
 
 #include <com_util/base/platform.h>
+#include <com_util/crt/stdlib.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -24,7 +25,7 @@
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int window_init(PotrWindow *win, uint32_t initial_seq, uint16_t window_size, uint16_t max_payload)
+int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, uint16_t window_size, uint16_t max_payload)
 {
     uint16_t i;
 
@@ -43,23 +44,23 @@ int window_init(PotrWindow *win, uint32_t initial_seq, uint16_t window_size, uin
     }
 
     /* 既存バッファーを解放 */
-    free(win->packets);
-    free(win->valid);
-    free(win->payload_pool);
+    com_util_free(win->packets);
+    com_util_free(win->valid);
+    com_util_free(win->payload_pool);
     win->packets = NULL;
     win->valid = NULL;
     win->payload_pool = NULL;
 
     /* 新規確保 */
-    win->packets = (PotrPacket *)malloc((size_t)window_size * sizeof(PotrPacket));
-    win->valid = (uint8_t *)malloc((size_t)window_size);
-    win->payload_pool = (uint8_t *)malloc((size_t)window_size * (size_t)max_payload);
+    win->packets = (potr_packet *)com_util_calloc((size_t)window_size, sizeof(potr_packet));
+    win->valid = (uint8_t *)com_util_calloc((size_t)window_size, sizeof(uint8_t));
+    win->payload_pool = (uint8_t *)com_util_calloc((size_t)window_size, (size_t)max_payload);
 
     if (win->packets == NULL || win->valid == NULL || win->payload_pool == NULL)
     {
-        free(win->packets);
-        free(win->valid);
-        free(win->payload_pool);
+        com_util_free(win->packets);
+        com_util_free(win->valid);
+        com_util_free(win->payload_pool);
         win->packets = NULL;
         win->valid = NULL;
         win->payload_pool = NULL;
@@ -71,7 +72,7 @@ int window_init(PotrWindow *win, uint32_t initial_seq, uint16_t window_size, uin
     /* 各エントリの payload ポインターをプール スロットへ設定 */
     for (i = 0; i < window_size; i++)
     {
-        memset(&win->packets[i], 0, sizeof(PotrPacket));
+        memset(&win->packets[i], 0, sizeof(potr_packet));
         win->packets[i].payload = win->payload_pool + (size_t)i * (size_t)max_payload;
     }
 
@@ -85,16 +86,16 @@ int window_init(PotrWindow *win, uint32_t initial_seq, uint16_t window_size, uin
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void window_dispose(PotrWindow *win)
+void potr_internal_window_dispose(potr_internal_window *win)
 {
     if (win == NULL)
     {
         return;
     }
 
-    free(win->packets);
-    free(win->valid);
-    free(win->payload_pool);
+    com_util_free(win->packets);
+    com_util_free(win->valid);
+    com_util_free(win->payload_pool);
     win->packets = NULL;
     win->valid = NULL;
     win->payload_pool = NULL;
@@ -111,7 +112,7 @@ void window_dispose(PotrWindow *win)
  *  安定したマッピングを使用します。連続する window_size 個の通番は
  *  互いに異なるインデックスへ写像されるため衝突しません。
  */
-static uint16_t win_index(const PotrWindow *win, uint32_t seq)
+static uint16_t win_index(const potr_internal_window *win, uint32_t seq)
 {
     return (uint16_t)(seq % win->window_size);
 }
@@ -120,7 +121,7 @@ static uint16_t win_index(const PotrWindow *win, uint32_t seq)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int window_send_push(PotrWindow *win, const PotrPacket *packet)
+int potr_internal_window_send_push(potr_internal_window *win, const potr_packet *packet)
 {
     uint16_t idx;
 
@@ -131,7 +132,7 @@ int window_send_push(PotrWindow *win, const PotrPacket *packet)
 
     /* ACK なし設計のため、満杯の場合は最古エントリを evict して循環利用する。
        evict されたエントリへの NACK は REJECT で応答する。 */
-    if (window_send_full(win))
+    if (potr_internal_window_send_full(win))
     {
         idx = win_index(win, win->base_seq);
         win->valid[idx] = 0;
@@ -140,7 +141,7 @@ int window_send_push(PotrWindow *win, const PotrPacket *packet)
 
     idx = win_index(win, win->next_seq);
 
-    /* プール スロットへディープ コピー (packet->payload_len は NBO: packet_build_packed が設定) */
+    /* プール スロットへディープ コピー (packet->payload_len は NBO: potr_internal_packet_build_packed が設定) */
     {
         /* プール スロット アドレスをインデックスから直接計算することで const 除去キャストを回避する */
         uint8_t *slot = win->payload_pool + idx * (size_t)win->max_payload;
@@ -157,7 +158,7 @@ int window_send_push(PotrWindow *win, const PotrPacket *packet)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int window_send_full(const PotrWindow *win)
+int potr_internal_window_send_full(const potr_internal_window *win)
 {
     if (win == NULL)
     {
@@ -168,7 +169,7 @@ int window_send_full(const PotrWindow *win)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_out)
+int potr_internal_window_send_get(const potr_internal_window *win, uint32_t seq_num, potr_packet *packet_out)
 {
     uint16_t idx;
 
@@ -178,7 +179,7 @@ int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_
     }
 
     /* 通番がウィンドウ範囲外 */
-    if (!seqnum_in_window(seq_num, win->base_seq, (uint16_t)(win->next_seq - win->base_seq)))
+    if (!potr_internal_seqnum_in_window(seq_num, win->base_seq, (uint16_t)(win->next_seq - win->base_seq)))
     {
         return POTR_ERR_NOT_FOUND;
     }
@@ -197,7 +198,7 @@ int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int window_recv_push(PotrWindow *win, const PotrPacket *packet)
+int potr_internal_window_recv_push(potr_internal_window *win, const potr_packet *packet)
 {
     uint16_t idx;
 
@@ -206,7 +207,7 @@ int window_recv_push(PotrWindow *win, const PotrPacket *packet)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (!seqnum_in_window(packet->seq_num, win->base_seq, win->window_size))
+    if (!potr_internal_seqnum_in_window(packet->seq_num, win->base_seq, win->window_size))
     {
         return POTR_ERR_OUT_OF_WINDOW;
     }
@@ -214,7 +215,7 @@ int window_recv_push(PotrWindow *win, const PotrPacket *packet)
     idx = win_index(win, packet->seq_num);
     if (!win->valid[idx])
     {
-        /* プール スロットへディープ コピー (packet->payload_len はホスト バイト オーダー: packet_parse が変換済み) */
+        /* プール スロットへディープ コピー (packet->payload_len はホスト バイト オーダー: potr_internal_packet_parse が変換済み) */
         /* プール スロット アドレスをインデックスから直接計算することで const 除去キャストを回避する */
         uint8_t *slot = win->payload_pool + idx * (size_t)win->max_payload;
         win->packets[idx] = *packet;
@@ -228,7 +229,7 @@ int window_recv_push(PotrWindow *win, const PotrPacket *packet)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int window_recv_pop(PotrWindow *win, PotrPacket *packet)
+int potr_internal_window_recv_pop(potr_internal_window *win, potr_packet *packet)
 {
     uint16_t idx;
 
@@ -253,7 +254,7 @@ int window_recv_pop(PotrWindow *win, PotrPacket *packet)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void window_recv_skip(PotrWindow *win, uint32_t seq_num)
+void potr_internal_window_recv_skip(potr_internal_window *win, uint32_t seq_num)
 {
     uint16_t idx;
 
@@ -270,7 +271,7 @@ void window_recv_skip(PotrWindow *win, uint32_t seq_num)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int window_recv_needs_nack(const PotrWindow *win, uint32_t *nack_num)
+int potr_internal_window_recv_needs_nack(const potr_internal_window *win, uint32_t *nack_num)
 {
     uint16_t i;
     uint16_t idx;
@@ -302,7 +303,7 @@ int window_recv_needs_nack(const PotrWindow *win, uint32_t *nack_num)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void window_recv_reset(PotrWindow *win, uint32_t new_base_seq)
+void potr_internal_window_recv_reset(potr_internal_window *win, uint32_t new_base_seq)
 {
     if (win == NULL || win->valid == NULL)
     {

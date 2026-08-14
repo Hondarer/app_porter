@@ -4,15 +4,15 @@
 
 ## 現行実装で押さえるべき要点
 
-- `PotrRecvCallback` は全通信種別共通で `peer_id` 引数を持ちます
-- `PotrRecvCallback` には `POTR_EVENT_PATH_CONNECTED` / `POTR_EVENT_PATH_DISCONNECTED` が追加されています
-- `potrSend()` は `potrSend(handle, peer_id, data, len, flags)` の形です
+- `potr_recv_fn` は全通信種別共通で `peer_id` 引数を持ちます
+- `potr_recv_fn` には `POTR_EVENT_PATH_CONNECTED` / `POTR_EVENT_PATH_DISCONNECTED` が追加されています
+- `potr_send()` は `potr_send(handle, peer_id, data, len, flags)` の形です
 - 1:1 モードおよび `unicast` / `multicast` / `broadcast` では `peer_id` に `POTR_PEER_NA` を使用します
-- `unicast_bidir` の N:1 モードでは、受信コールバックで渡された `peer_id` を `potrSend()` に指定して返信できます
+- `unicast_bidir` の N:1 モードでは、受信コールバックで渡された `peer_id` を `potr_send()` に指定して返信できます
 - `POTR_PEER_ALL` を指定すると、N:1 モードでは全接続ピア宛の一斉送信になります
-- `potrDisconnectPeer()` は `unicast_bidir` の N:1 モード専用 API です
+- `potr_peer_disconnect()` は `unicast_bidir` の N:1 モード専用 API です
 
-### PotrRecvCallback の PATH イベント
+### potr_recv_fn の PATH イベント
 
 `POTR_EVENT_PATH_CONNECTED` / `POTR_EVENT_PATH_DISCONNECTED` のときは、引数の意味が次のように変わります。
 
@@ -25,7 +25,7 @@
 `path_states` は常にイベント発火後の状態です。`PATH_DISCONNECTED` のときも対象 path は 0 です。  
 `CONNECTED` / `DISCONNECTED` は path 論理接続状態の OR が 0->1 / 1->0 に変化したときのみ発火します。
 
-### potrSend() の戻り値
+### potr_send() の戻り値
 
 | 戻り値 | 意味 |
 |---|---|
@@ -48,24 +48,24 @@
 
 | API | スレッド セーフ | 備考 |
 |---|---|---|
-| `potrOpenService()` | はい | 複数スレッドから並行してハンドルを取得可 (低レベル API) |
-| `potrOpenServiceFromConfig()` | はい | 複数スレッドから並行してハンドルを取得可 (高レベル API) |
-| `potrSend()` | **いいえ** | 同一ハンドルへの並行呼び出し不可 |
-| `potrCloseService()` | **いいえ** | 他の API と同一ハンドルへ並行して呼ばないこと |
-| `potrDisconnectPeer()` | はい (条件付き) | コールバック内からは呼ばないこと (デッドロック) |
-| `potrGetServiceType()` | はい | グローバル状態なし |
+| `potr_service_open()` | はい | 複数スレッドから並行してハンドルを取得可 (低レベル API) |
+| `potr_service_open_from_config()` | はい | 複数スレッドから並行してハンドルを取得可 (高レベル API) |
+| `potr_send()` | **いいえ** | 同一ハンドルへの並行呼び出し不可 |
+| `potr_service_close()` | **いいえ** | 他の API と同一ハンドルへ並行して呼ばないこと |
+| `potr_peer_disconnect()` | はい (条件付き) | コールバック内からは呼ばないこと (デッドロック) |
+| `potr_service_get_type()` | はい | グローバル状態なし |
 
 ### サービスを開く API の使い分け
 
 | API | 入力 | 用途 |
 |---|---|---|
-| `potrOpenService()` | `PotrGlobalConfig` + `PotrServiceDef` 構造体 | テストやプログラム的な設定構築。設定ファイル不要 |
-| `potrOpenServiceFromConfig()` | 設定ファイル パス + service_id | 設定ファイル ベースの既存フロー。後方互換 |
+| `potr_service_open()` | `potr_global_config` + `potr_service_def` 構造体 | テストやプログラム的な設定構築。設定ファイル不要 |
+| `potr_service_open_from_config()` | 設定ファイル パス + service_id | 設定ファイル ベースの既存フロー。後方互換 |
 
-`potrOpenServiceFromConfig()` の実装は設定ファイルを解析して構造体を構築し、`potrOpenService()` に委譲します。
+`potr_service_open_from_config()` の実装は設定ファイルを解析して構造体を構築し、`potr_service_open()` に委譲します。
 
 ### ハンドルとスレッドの対応
 
-- **ハンドルはスレッド セーフではありません。** 同一ハンドルへの操作 (`potrSend` / `potrCloseService` など) は 1 スレッドから行ってください。
+- **ハンドルはスレッド セーフではありません。** 同一ハンドルへの操作 (`potr_send` / `potr_service_close` など) は 1 スレッドから行ってください。
 - **ハンドルが異なれば、別スレッドから独立して使用できます。** スレッド A でサービス 1001 を、スレッド B でサービス 1002 を同時に運用することは問題ありません。
-- `potrOpenService()` / `potrOpenServiceFromConfig()` でのハンドル作成スレッドと、その後 `potrSend()` を呼ぶスレッドが異なっていても構いません。ハンドル生成後はそのハンドルを操作するスレッドを 1 つに固定してください。
+- `potr_service_open()` / `potr_service_open_from_config()` でのハンドル作成スレッドと、その後 `potr_send()` を呼ぶスレッドが異なっていても構いません。ハンドル生成後はそのハンドルを操作するスレッドを 1 つに固定してください。

@@ -37,21 +37,21 @@ porter の暗号化ありバージョンは、`AES-256-GCM` により **ペイ�
 - docs は、GCM ノンスを `[session_id][flags][seq_or_ack_num][padding]` としている。  
   参照: `app/porter/prod/docs/config.md:194-207`
 - 実装でも、送信時に `session_id`, `flags`, `seq_num` または `ack_num` からノンスを組み立てている。  
-  参照: `app/porter/prod/libsrc/porter/thread/potrSendThread.c:121-149`, `app/porter/prod/libsrc/porter/thread/potrHealthThread.c:207-245`, `app/porter/prod/libsrc/porter/thread/potrRecvThread.c:62-99`
+  参照: `app/porter/prod/libsrc/porter/thread/potr_send_thread.c:121-149`, `app/porter/prod/libsrc/porter/thread/potr_health_thread.c:207-245`, `app/porter/prod/libsrc/porter/thread/potr_recv_thread.c:62-99`
 
 ### セッション識別
 
 - docs は、`session_id` を「現在時刻 × PID をシードにした乱数」、`session_tv_sec` / `session_tv_nsec` を `CLOCK_REALTIME` 由来の時刻として説明している。  
   参照: `app/porter/prod/docs/protocol.md:123-170`
 - 実装でも、Linux は `srand(time(NULL) ^ getpid())` → `rand()`、Windows は `GetTickCount() ^ GetCurrentProcessId()` → `rand()` で `session_id` を生成している。  
-  参照: `app/porter/prod/libsrc/porter/api/potrOpenService.c:83-108`, `app/porter/prod/libsrc/porter/potrPeerTable.c:50-75`
+  参照: `app/porter/prod/libsrc/porter/api/potr_service_open.c:83-108`, `app/porter/prod/libsrc/porter/potr_peer_table.c:50-75`
 
 ### N:1 モードのピア識別
 
 - docs は、N:1 モードで受信スレッドが `session triplet` (`session_id`, `session_tv_sec`, `session_tv_nsec`) を使ってピアを検索 / 新規作成すると説明している。  
   参照: `app/porter/prod/docs/architecture.md:143-155`
-- 実装でも、`peer_find_by_session()` は送信元 IP:Port ではなく session triplet でピア検索を行います。  
-  参照: `app/porter/prod/libsrc/porter/potrPeerTable.c:268-289`
+- 実装でも、`potr_internal_peer_find_by_session()` は送信元 IP:Port ではなく session triplet でピア検索を行います。  
+  参照: `app/porter/prod/libsrc/porter/potr_peer_table.c:268-289`
 
 ## 改善ポイント
 
@@ -68,7 +68,7 @@ GCM の安全性は **同一鍵でノンスを再利用しないこと** を強�
 - docs のノンス定義に timestamp は含まれていません。  
   参照: `app/porter/prod/docs/config.md:194-207`
 - `session_id` は docs 上も「現在時刻 × PID をシードにした乱数」であり、実装は `srand(...); rand();` で生成している。  
-  参照: `app/porter/prod/docs/protocol.md:127-131`, `app/porter/prod/libsrc/porter/api/potrOpenService.c:83-108`
+  参照: `app/porter/prod/docs/protocol.md:127-131`, `app/porter/prod/libsrc/porter/api/potr_service_open.c:83-108`
 - 新セッションでも `seq_num` は 0 から始まる。  
   参照: `app/porter/prod/docs/protocol.md:197-209`
 
@@ -90,7 +90,7 @@ porter の暗号化は、「同じ `encrypt_key` を持っていること」を�
 - docs は `encrypt_key` を事前共有鍵として説明しており、マルチキャストでは「受信者全員が同一の `encrypt_key` を持っていれば動作する」としている。  
   参照: `app/porter/prod/docs/config.md:181-192`
 - N:1 モードではピア識別の主軸が session triplet であり、証明書や公開鍵による識別はありません。  
-  参照: `app/porter/prod/docs/architecture.md:143-155`, `app/porter/prod/libsrc/porter/potrPeerTable.c:268-289`
+  参照: `app/porter/prod/docs/architecture.md:143-155`, `app/porter/prod/libsrc/porter/potr_peer_table.c:268-289`
 
 #### 影響
 
@@ -130,7 +130,7 @@ docs 自身が認めている通り、`health_timeout_ms = 0` の構成では、
 - 同じ docs で、`health_timeout_ms = 0` の場合は `peer_session_known` がクリアされず、時刻逆行した新セッションを永続的に破棄すると述べている。  
   参照: `app/porter/prod/docs/protocol.md:151-170`
 - 実装も `CLOCK_REALTIME` をセッション時刻として使用している。  
-  参照: `app/porter/prod/libsrc/porter/api/potrOpenService.c:99-107`
+  参照: `app/porter/prod/libsrc/porter/api/potr_service_open.c:99-107`
 
 #### 影響
 
@@ -176,4 +176,4 @@ porter の暗号化ありバージョンは、**ヘッダー改ざん検知** �
 ## 対応済みメモ
 
 - 2026-04: `encrypt_enabled` 時は受信直後に `POTR_FLAG_ENCRYPTED` を必須化し、GCM タグ検証成功後のみ後続処理へ進めるよう修正しました。
-- これにより、N:1 モードで未認証パケットが `peer_create()` に到達して `peer slot` を消費する経路は解消しました。
+- これにより、N:1 モードで未認証パケットが `potr_internal_peer_create()` に到達して `peer slot` を消費する経路は解消しました。

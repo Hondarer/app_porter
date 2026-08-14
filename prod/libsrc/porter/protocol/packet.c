@@ -58,7 +58,7 @@ static uint64_t ntoh64(uint64_t v)
  *  service_id・session_tv_sec・session_id・session_tv_nsec を NBO に変換して格納し、
  *  protocol_version に POTR_PROTOCOL_VERSION を NBO で設定します。
  */
-static void fill_session_hdr(PotrPacket *packet, const PotrPacketSessionHdr *shdr)
+static void fill_session_hdr(potr_packet *packet, const potr_internal_packet_session_hdr *shdr)
 {
     packet->service_id = (int64_t)hton64((uint64_t)shdr->service_id);
     packet->session_tv_sec = (int64_t)hton64((uint64_t)shdr->session_tv_sec);
@@ -70,7 +70,7 @@ static void fill_session_hdr(PotrPacket *packet, const PotrPacketSessionHdr *shd
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int packet_build_nack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint32_t nack_num)
+int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t nack_num)
 {
     if (packet == NULL || shdr == NULL)
     {
@@ -93,7 +93,7 @@ int packet_build_nack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint
  *  @details
  *  暗号化時はヘルスチェック スレッドが wire_buf にコピー後に com_util_encrypt を適用します。
  */
-int packet_build_ping(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint32_t seq_num,
+int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
                       const uint8_t *health_payload, uint16_t health_payload_len)
 {
     if (packet == NULL || shdr == NULL)
@@ -123,7 +123,7 @@ int packet_build_ping(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int packet_build_reject(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint32_t seq_num)
+int potr_internal_packet_build_reject(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num)
 {
     if (packet == NULL || shdr == NULL)
     {
@@ -143,7 +143,7 @@ int packet_build_reject(PotrPacket *packet, const PotrPacketSessionHdr *shdr, ui
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int packet_build_fin(PotrPacket *packet, const PotrPacketSessionHdr *shdr)
+int potr_internal_packet_build_fin(potr_packet *packet, const potr_internal_packet_session_hdr *shdr)
 {
     if (packet == NULL || shdr == NULL)
     {
@@ -163,7 +163,7 @@ int packet_build_fin(PotrPacket *packet, const PotrPacketSessionHdr *shdr)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int packet_build_fin_ack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint32_t fin_target_seq)
+int potr_internal_packet_build_fin_ack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t fin_target_seq)
 {
     if (packet == NULL || shdr == NULL)
     {
@@ -183,7 +183,7 @@ int packet_build_fin_ack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, u
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int packet_build_packed(PotrPacket *out, const PotrPacketSessionHdr *shdr, uint32_t seq_num, const void *packed_payload,
+int potr_internal_packet_build_packed(potr_packet *out, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num, const void *packed_payload,
                         size_t payload_len)
 {
     if (out == NULL || shdr == NULL || packed_payload == NULL || payload_len == 0 || payload_len > POTR_MAX_PAYLOAD)
@@ -205,7 +205,7 @@ int packet_build_packed(PotrPacket *out, const PotrPacketSessionHdr *shdr, uint3
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int packet_unpack_next(const PotrPacket *container, size_t *offset, PotrPacket *elem_out)
+int potr_internal_packet_unpack_next(const potr_packet *container, size_t *offset, potr_packet *elem_out)
 {
     const uint8_t *p;
     uint16_t flags_nbo;
@@ -256,7 +256,7 @@ int packet_unpack_next(const PotrPacket *container, size_t *offset, PotrPacket *
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
+int potr_internal_packet_parse(potr_packet *packet, const void *buf, size_t buf_len)
 {
     const uint8_t *b = (const uint8_t *)buf;
     uint32_t tmp32;
@@ -308,7 +308,7 @@ int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-size_t packet_wire_size(const PotrPacket *packet)
+size_t potr_internal_packet_wire_size(const potr_packet *packet)
 {
     if (packet == NULL)
     {

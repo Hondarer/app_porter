@@ -39,7 +39,7 @@
  *    受信ウィンドウによる順序整列とセッション管理は有効。\n
  *    ギャップ検出時は NACK の代わりに POTR_EVENT_DISCONNECTED を発行します。\n
  *    通番は AES ノンス用にインクリメントするが、再送制御には使用しない。\n
- *    potrSend は常にブロッキング送信。マルチパス対応。\n
+ *    potr_send は常にブロッキング送信。マルチパス対応。\n
  *    PING ヘルスチェックは health_interval_ms / health_timeout_ms の設定に従う。
  * 
  *  - POTR_TYPE_UNICAST, POTR_TYPE_MULTICAST, POTR_TYPE_BROADCAST\n
@@ -47,7 +47,7 @@
  *    NACK / 再送・スライディング ウィンドウによる信頼性・順序保証。\n
  *    ギャップ検出時は RECEIVER が SENDER に NACK を送信し再送を要求します。\n
  *    再送不可能な場合は REJECT を送出し POTR_EVENT_DISCONNECTED を発行します。\n
- *    potrSend は送信ウィンドウに空きがある場合は非同期、満杯の場合はブロッキング。\n
+ *    potr_send は送信ウィンドウに空きがある場合は非同期、満杯の場合はブロッキング。\n
  * 
  *  - POTR_TYPE_UNICAST_BIDIR\n
  *    双方向 1:1 通信 (UDP ユニキャスト)。\n
@@ -90,23 +90,23 @@ typedef enum
 
     POTR_TYPE_UNICAST_BIDIR_N1 = 8, /**< N:1 双方向通信 (UDP ユニキャスト)。 */
 
-    POTR_TYPE_TCP = 9, /**< TCP ユニキャスト通信 (単方向: SENDER のみ potrSend 可)。 */
+    POTR_TYPE_TCP = 9, /**< TCP ユニキャスト通信 (単方向: SENDER のみ potr_send 可)。 */
 
-    POTR_TYPE_TCP_BIDIR = 10, /**< TCP 双方向通信 (両端が potrSend 可)。 */
+    POTR_TYPE_TCP_BIDIR = 10, /**< TCP 双方向通信 (両端が potr_send 可)。 */
 
     /* POTR_TYPE_TCP_BIDIR_N1 = 11, */ /**< TCP 双方向 N:1 通信 (将来)。 */
-} PotrType;
+} potr_type;
 
 /**
  *  @brief          役割種別。
  *
- *  potrOpenService() の呼び出し元がデータを送信する役割か受信する役割かを明示します。
+ *  potr_service_open() の呼び出し元がデータを送信する役割か受信する役割かを明示します。
  */
 typedef enum
 {
     POTR_ROLE_SENDER = 1,   /**< 送信者。 */
     POTR_ROLE_RECEIVER = 2, /**< 受信者。 */
-} PotrRole;
+} potr_role;
 
 /**
  *  @brief          サービス定義。
@@ -115,10 +115,10 @@ typedef enum
  *
  *  通信種別によって有効なフィールドが異なります。
  */
-typedef struct PotrServiceDef
+typedef struct potr_service_def
 {
     int64_t service_id; /**< サービス ID。 */
-    PotrType type;      /**< 通信種別。 */
+    potr_type type;      /**< 通信種別。 */
 
     /* POTR_TYPE_UNICAST */
     uint16_t
@@ -164,21 +164,21 @@ typedef struct PotrServiceDef
         reconnect_interval_ms; /**< SENDER 自動再接続間隔 (ms)。0 = 再接続なし。デフォルト: POTR_DEFAULT_RECONNECT_INTERVAL_MS。 */
     uint32_t
         connect_timeout_ms; /**< SENDER TCP 接続タイムアウト (ms)。0 = OS デフォルト。デフォルト: POTR_DEFAULT_CONNECT_TIMEOUT_MS。 */
-} PotrServiceDef;
+} potr_service_def;
 
 /**
  *  @brief          グローバル設定。
  *
  *  設定ファイルの [global] セクションから読み込まれる共通プロトコル設定です。
  */
-typedef struct PotrGlobalConfig
+typedef struct potr_global_config
 {
     uint16_t window_size; /**< スライディング ウィンドウ サイズ (パケット数)。 */
     uint16_t max_payload; /**< 最大ペイロード長 (バイト)。 */
     uint32_t
         reorder_timeout_ms; /**< 受信ウィンドウ欠番検出後、NACK または切断を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 = 即時 (デフォルト)。推奨値: LAN/マルチパス=10〜30 ms、遠距離 WAN=30〜100 ms。 */
     uint32_t
-        max_message_size; /**< 1 回の potrSend で送信できる最大メッセージ長 (バイト)。デフォルト: POTR_MAX_MESSAGE_SIZE。 */
+        max_message_size; /**< 1 回の potr_send で送信できる最大メッセージ長 (バイト)。デフォルト: POTR_MAX_MESSAGE_SIZE。 */
     uint32_t send_queue_depth; /**< 非同期送信キューの最大エントリ数。デフォルト: POTR_SEND_QUEUE_DEPTH。 */
     uint32_t
         udp_health_interval_ms; /**< UDP 通信種別の既定 PING 送信間隔 (ミリ秒)。設定周期ごとに PING を送信します。0 = 無効。設定ファイル キー: udp_health_interval_ms。 */
@@ -190,16 +190,16 @@ typedef struct PotrGlobalConfig
         tcp_health_timeout_ms; /**< TCP 通信種別の既定 PING 応答待機タイムアウト (ミリ秒)。0 = 無効。設定ファイル キー: tcp_health_timeout_ms。 */
     uint32_t
         tcp_close_timeout_ms; /**< TCP 通信種別の close 完了待機タイムアウト (ミリ秒)。設定ファイル キー: tcp_close_timeout_ms。0 = 待機なし。 */
-} PotrGlobalConfig;
+} potr_global_config;
 
 /**
  *  @brief          ネットワーク送受信用パケット構造体。
  *
  *  UDP で送受信される物理パケットのレイアウトです。\n
  *  各フィールドはネットワーク バイト オーダー (ビッグ エンディアン) で格納します。\n
- *  ヘッダー固定長: offsetof(PotrPacket, payload) = 40 バイト (64 ビット環境)。\n
+ *  ヘッダー固定長: offsetof(potr_packet, payload) = 40 バイト (64 ビット環境)。\n
  *  payload フィールドはポインターであり、wire データとして直接 sendto に渡せません。\n
- *  送信時は PotrContext の send_wire_buf / recv_buf に wire データを組み立ててください。
+ *  送信時は potr_context の send_wire_buf / recv_buf に wire データを組み立ててください。
  *
  *  ワイヤー フォーマット (バイト オフセット):
     @code
@@ -215,11 +215,11 @@ typedef struct PotrGlobalConfig
     40: payload          (pointer)
     @endcode
  */
-typedef struct PotrPacket
+typedef struct potr_packet
 {
     int64_t service_id;      /**< サービス識別子 (NBO)。受信時に照合します。 */
     int64_t session_tv_sec;  /**< セッション開始時刻 秒部 (NBO)。struct timespec の tv_sec 相当。 */
-    uint32_t session_id;     /**< セッション識別子 (NBO)。potrOpenService 時に決定する乱数。 */
+    uint32_t session_id;     /**< セッション識別子 (NBO)。potr_service_open 時に決定する乱数。 */
     int32_t session_tv_nsec; /**< セッション開始時刻 ナノ秒部 (NBO)。struct timespec の tv_nsec 相当。 */
     uint32_t seq_num;        /**< 通番。送信側が付与する連番 (NBO)。 */
     uint32_t
@@ -229,15 +229,15 @@ typedef struct PotrPacket
     uint32_t protocol_version; /**< プロトコル バージョン (NBO)。POTR_PROTOCOL_VERSION と照合します。 */
     const uint8_t *
         payload; /**< ペイロード データへのポインター (読み取り専用)。ウィンドウ プールまたは受信バッファー内を指す。 */
-} PotrPacket;
+} potr_packet;
 
 /**
  *  @brief          セッション ハンドル。
  *
- *  potrOpenService() が返す不透明構造体です。\n
+ *  potr_service_open() が返す不透明構造体です。\n
  *  内部実装の詳細はライブラリ利用者からは隠蔽されます。
  */
-typedef struct PotrContext PotrContext;
+typedef struct potr_context potr_context;
 
 /**
  *  @brief          ピア識別子。
@@ -247,13 +247,13 @@ typedef struct PotrContext PotrContext;
  *  有効な N:1 ピア ID は常に `POTR_PEER_NA` および `POTR_PEER_ALL` 以外の値となります (ピア ID 生成ロジックにより保証)。\n
  *  予約値については @ref POTR_PEER を参照してください。
  */
-typedef uint32_t PotrPeerId;
+typedef uint32_t potr_peer_id;
 
 /** @} */
 
 /** @defgroup POTR_PEER ピア ID 予約値
  *  @ingroup        PORTER_PUBLIC_API
- *  `potrSend()` の `peer_id` 引数および `PotrRecvCallback` の `peer_id` 引数で使用する予約値です。
+ *  `potr_send()` の `peer_id` 引数および `potr_recv_fn` の `peer_id` 引数で使用する予約値です。
  */
 
 /**
@@ -261,11 +261,11 @@ typedef uint32_t PotrPeerId;
  *  @{
  */
 #define POTR_PEER_NA \
-    ((PotrPeerId)0U) /**< ピア ID 未割当を示す予約値。
+    ((potr_peer_id)0U) /**< ピア ID 未割当を示す予約値。
                                                 *   1:1 モードのコールバックで渡される (ピアの概念がない)。
-                                                *   `potrSend()` に N:1 モードで指定した場合はエラーを返します。 */
+                                                *   `potr_send()` に N:1 モードで指定した場合はエラーを返します。 */
 #define POTR_PEER_ALL \
-    ((PotrPeerId)UINT32_MAX) /**< 全接続ピアへの一斉送信を指示する予約ピア ID。
+    ((potr_peer_id)UINT32_MAX) /**< 全接続ピアへの一斉送信を指示する予約ピア ID。
                                                 *   N:1 モードでは全アクティブ ピアへユニキャスト送信します。
                                                 *   1:1 モードでは唯一のピアへの送信として動作します。 */
 /** @} */
@@ -278,7 +278,7 @@ typedef uint32_t PotrPeerId;
 /**
  *  @brief          受信イベント種別。
  *
- *  PotrRecvCallback の第 2 引数に渡されるイベント種別です。
+ *  potr_recv_fn の第 2 引数に渡されるイベント種別です。
  *
  *  @note
  *
@@ -307,7 +307,7 @@ typedef enum
     POTR_EVENT_DISCONNECTED = 2,      /**< 論理接続中の path が 0 本になった。data=NULL, len=0。 */
     POTR_EVENT_PATH_CONNECTED = 3,    /**< path 論理接続が 0->1。data=path_states, len=path_idx。 */
     POTR_EVENT_PATH_DISCONNECTED = 4, /**< path 論理接続が 1->0。data=path_states, len=path_idx。 */
-} PotrEvent;
+} potr_event;
 
 /**
  *  @brief          受信コールバック関数型 (全通信種別共通)。
@@ -319,14 +319,14 @@ typedef enum
  *  @param[in]      service_id  サービスの ID。
  *  @param[in]      peer_id     ピア識別子。N:1 モード時は接続ピアの ID (`POTR_PEER_NA` / `POTR_PEER_ALL` 以外)。\n
  *                              1:1 モードおよびその他の通信種別では常に POTR_PEER_NA。
- *  @param[in]      event       イベント種別 (PotrEvent)。
+ *  @param[in]      event       イベント種別 (potr_event)。
  *  @param[in]      data        `POTR_EVENT_DATA` 時は受信データ、`POTR_EVENT_PATH_*` 時は
  *                              path 論理接続状態配列 (`const int[POTR_MAX_PATH]`) を指します。
  *                              それ以外のイベントでは NULL です。コールバック復帰後は無効になります。
  *  @param[in]      len         `POTR_EVENT_DATA` 時は受信データ長、`POTR_EVENT_PATH_*` 時は
  *                              対象 path index です。それ以外のイベントでは 0 です。
  */
-typedef void (*PotrRecvCallback)(int64_t service_id, PotrPeerId peer_id, PotrEvent event, const void *data, size_t len);
+typedef void (*potr_recv_fn)(int64_t service_id, potr_peer_id peer_id, potr_event event, const void *data, size_t len);
 
 /** @} */
 

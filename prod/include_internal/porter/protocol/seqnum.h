@@ -34,7 +34,7 @@ extern "C"
      *  @return         ウィンドウ内の場合は 1、ウィンドウ外の場合は 0 を返します。
      *                  失敗モードのない述語のため、共通結果コード (POTR_RESULT) の適用対象外です。
      */
-    extern int seqnum_in_window(uint32_t seq, uint32_t base, uint16_t window_size);
+    extern int potr_internal_seqnum_in_window(uint32_t seq, uint32_t base, uint16_t window_size);
 
 #ifdef __cplusplus
 }

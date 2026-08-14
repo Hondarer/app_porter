@@ -29,11 +29,11 @@
  *  @brief  スライディング ウィンドウ管理構造体。
  *
  *  パケット バッファ・有効フラグ・ペイロード プールは動的確保します。\n
- *  window_init() で確保し、window_dispose() で解放すること。
+ *  potr_internal_window_init() で確保し、potr_internal_window_dispose() で解放すること。
  */
-typedef struct PotrWindow
+typedef struct potr_internal_window
 {
-    PotrPacket *packets;   /**< パケット バッファー (動的確保。window_size 要素)。 */
+    potr_packet *packets;   /**< パケット バッファー (動的確保。window_size 要素)。 */
     uint8_t *valid;        /**< バッファー有効フラグ配列 (動的確保。window_size バイト)。 */
     uint8_t *payload_pool; /**< ペイロード プール (動的確保。window_size × max_payload バイト)。 */
     uint32_t base_seq;     /**< ウィンドウ先頭の通番。 */
@@ -41,7 +41,7 @@ typedef struct PotrWindow
     uint16_t window_size;  /**< ウィンドウ サイズ (パケット数)。 */
     uint16_t max_payload;  /**< エントリごとのペイロード最大長 (バイト)。 */
     uint32_t _pad;         /**< パディング (構造体サイズを 8 バイト境界に揃える)。 */
-} PotrWindow;
+} potr_internal_window;
 
 #ifdef __cplusplus
 extern "C"
@@ -60,13 +60,13 @@ extern "C"
      *  サイズが既存と同一の場合は状態をリセットするのみで再確保は行いません。\n
      *  異なるサイズの場合は既存バッファーを解放して再確保します。
      */
-    extern int window_init(PotrWindow *win, uint32_t initial_seq, uint16_t window_size, uint16_t max_payload);
+    extern int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, uint16_t window_size, uint16_t max_payload);
 
     /**
      *  @brief          ウィンドウが保持する動的確保バッファーを解放します。
      *  @param[in,out]  win  解放するウィンドウ構造体へのポインター。
      */
-    extern void window_dispose(PotrWindow *win);
+    extern void potr_internal_window_dispose(potr_internal_window *win);
 
     /**
      *  @brief          送信ウィンドウにパケットを積みます。
@@ -77,7 +77,7 @@ extern "C"
      *  ACK なし設計のため、満杯の場合も失敗とせず、最古エントリを evict して循環利用します。\n
      *  evict されたエントリへの NACK は REJECT で応答します。
      */
-    extern int window_send_push(PotrWindow *win, const PotrPacket *packet);
+    extern int potr_internal_window_send_push(potr_internal_window *win, const potr_packet *packet);
 
     /**
      *  @brief          送信ウィンドウが満杯かどうかを返します。
@@ -85,7 +85,7 @@ extern "C"
      *  @return         満杯の場合は 1、空きがある場合は 0 を返します。
      *                  失敗モードのない述語のため、共通結果コード (POTR_RESULT) の適用対象外です。
      */
-    extern int window_send_full(const PotrWindow *win);
+    extern int potr_internal_window_send_full(const potr_internal_window *win);
 
     /**
      *  @brief          送信ウィンドウから指定通番のパケットを取得します (再送用)。
@@ -95,7 +95,7 @@ extern "C"
      *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
      *                  通番が範囲外またはエントリが存在しない場合は POTR_ERR_NOT_FOUND を返します。
      */
-    extern int window_send_get(const PotrWindow *win, uint32_t seq_num, PotrPacket *packet_out);
+    extern int potr_internal_window_send_get(const potr_internal_window *win, uint32_t seq_num, potr_packet *packet_out);
 
     /**
      *  @brief          受信ウィンドウにパケットを格納します。
@@ -107,7 +107,7 @@ extern "C"
      *  通番が受信ウィンドウ内であればバッファリングします。\n
      *  追い越し (順序外到着) にも対応します。
      */
-    extern int window_recv_push(PotrWindow *win, const PotrPacket *packet);
+    extern int potr_internal_window_recv_push(potr_internal_window *win, const potr_packet *packet);
 
     /**
      *  @brief          受信ウィンドウから順序整列済みパケットを取り出します。
@@ -116,7 +116,7 @@ extern "C"
      *  @return         取り出せた場合は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
      *                  次のパケットが未着の場合は POTR_ERR_EMPTY を返します。
      */
-    extern int window_recv_pop(PotrWindow *win, PotrPacket *packet);
+    extern int potr_internal_window_recv_pop(potr_internal_window *win, potr_packet *packet);
 
     /**
      *  @brief          受信ウィンドウで欠番が発生しているか確認し、NACK 番号を返します。
@@ -125,7 +125,7 @@ extern "C"
      *  @return         欠番がある場合は 1、ない場合は 0 を返します。
      *                  失敗モードのない述語のため、共通結果コード (POTR_RESULT) の適用対象外です。
      */
-    extern int window_recv_needs_nack(const PotrWindow *win, uint32_t *nack_num);
+    extern int potr_internal_window_recv_needs_nack(const potr_internal_window *win, uint32_t *nack_num);
 
     /**
      *  @brief          受信ウィンドウで指定通番をスキップして次の通番へ前進させます。
@@ -135,7 +135,7 @@ extern "C"
      *  REJECT 受信時に欠落パケットを「配信済み」として扱い、後続パケットの配信を
      *  継続するために使用します。seq_num が next_seq と一致しない場合は何もしません。
      */
-    extern void window_recv_skip(PotrWindow *win, uint32_t seq_num);
+    extern void potr_internal_window_recv_skip(potr_internal_window *win, uint32_t seq_num);
 
     /**
      *  @brief          受信ウィンドウを新しい基点通番でリセットします。
@@ -146,7 +146,7 @@ extern "C"
      *  バッファーの再確保は行いません。\n
      *  RAW モードでギャップを検出してセッションをリセットする際に使用します。
      */
-    extern void window_recv_reset(PotrWindow *win, uint32_t new_base_seq);
+    extern void potr_internal_window_recv_reset(potr_internal_window *win, uint32_t new_base_seq);
 
 #ifdef __cplusplus
 }

@@ -11,7 +11,7 @@
 すべてのパケットは共通のヘッダー (40 バイト) とペイロード (0〜1,400 バイト) で構成されます。  
 UDP データグラム 1 個が外側パケット 1 個に対応します。
 
-### 外側パケット (PotrPacket)
+### 外側パケット (potr_packet)
 
 ```text
  0                   1                   2                   3
@@ -116,7 +116,7 @@ DATA パケットでは `ack_num` は 0 固定とし、受信時は無視しま�
 | `POTR_FLAG_NACK` | × | TCP が配送を保証するため不要 |
 | `POTR_FLAG_PING` | ○ | ヘルスチェック。`ack_num=0` で要求、`ack_num=N` で応答 |
 | `POTR_FLAG_REJECT` | × | 再送不能は発生しません。 |
-| `POTR_FLAG_FIN` | ○ | `potrCloseService()` 時に protocol-level FIN を送る |
+| `POTR_FLAG_FIN` | ○ | `potr_service_close()` 時に protocol-level FIN を送る |
 | `POTR_FLAG_FIN_ACK` | ○ | receiver が最後の DATA callback 完了後に返す close 完了通知 |
 | `POTR_FLAG_ENCRYPTED` | ○ | UDP と同様に使用可能 |
 
@@ -125,19 +125,19 @@ DATA パケットでは `ack_num` は 0 固定とし、受信時は無視しま�
 複数の TCP 接続 (path) が確立されると、送信スレッドは全アクティブ path に同一 `seq_num` のパケットを送信します。  
 受信側は複数の path から同一パケットを受け取るため、重複排除が必要です。
 
-UDP マルチパスで実装済みの `window_recv_push()` / `window_recv_pop()` をそのまま流用します。  
+UDP マルチパスで実装済みの `potr_internal_window_recv_push()` / `potr_internal_window_recv_pop()` をそのまま流用します。  
 複数の recv スレッドが同一の `recv_window` に並行してアクセスするため、  
 呼び出し前後を `recv_window_mutex` で保護します。
 
 ```text
 recv スレッド #i:
   recv_window_mutex を lock
-  window_recv_push(recv_window, pkt)  → 重複なら FAIL を返す
+  potr_internal_window_recv_push(recv_window, pkt)  → 重複なら FAIL を返す
   recv_window_mutex を unlock
   FAIL の場合: continue（コールバック呼び出しなし）
 
   recv_window_mutex を lock
-  while window_recv_pop(recv_window, out) == SUCCESS:
+  while potr_internal_window_recv_pop(recv_window, out) == SUCCESS:
     recv_window_mutex を unlock
     deliver_payload_elem(out)   ← コールバック呼び出し前に unlock
     recv_window_mutex を lock
@@ -150,7 +150,7 @@ recv スレッド #i:
 パケット単位の重複排除ロジックとは干渉しません。UDP マルチパスと同一の動作をします。
 
 **PING との機能競合**:  
-PING パケットは `window_recv_push()` を通さず、recv スレッド内で直接処理します。  
+PING パケットは `potr_internal_window_recv_push()` を通さず、recv スレッド内で直接処理します。  
 したがって PING と重複排除ウィンドウは機能競合しません。
 
 ## ペイロード エレメント (パッキング コンテナー)
@@ -173,7 +173,7 @@ DATA パケットのペイロードには、1 つ以上のペイロード エレ
 **エレメント ヘッダー**: 6 バイト固定
 
 ヘッダー フィールド (`elem_flags`・`payload_len`) はネットワーク バイト オーダー (NBO) で格納します。  
-`payload` 部はアプリケーションが `potrSend()` に渡したデータをそのままコピーしたバイト列であり、  
+`payload` 部はアプリケーションが `potr_send()` に渡したデータをそのままコピーしたバイト列であり、  
 porter はバイト オーダーの変換を行いません。エンディアン管理はアプリケーションの責務です。
 
 ### エレメント フラグ (elem_flags)
@@ -200,7 +200,7 @@ porter はバイト オーダーの変換を行いません。エンディアン
 
 ### セッション識別子の構成
 
-送信者は `potrOpenService()` 呼び出し時に以下を決定し、以後のすべてのパケットに付与します。
+送信者は `potr_service_open()` 呼び出し時に以下を決定し、以後のすべてのパケットに付与します。
 
 | フィールド | 決定方法 |
 |---|---|
@@ -354,7 +354,7 @@ RAW モードでは NACK を送出しません。欠番を検出した場合 (DA
 
 ### フラグメント化 (送信側)
 
-1 回の `potrSend()` で送信するデータが `max_payload` を超える場合、複数のフラグメントに分割します。  
+1 回の `potr_send()` で送信するデータが `max_payload` を超える場合、複数のフラグメントに分割します。  
 圧縮を指定した場合は圧縮後のデータをフラグメント化します。
 
 各フラグメントは個別のペイロード エレメントとして送信キューに積まれ、  
@@ -439,7 +439,7 @@ RAW モードでは再送制御を行いません。送信ウィンドウへの�
 ### 問題の背景
 
 UDP では `sendto()` の完了は「OS のネットワーク バッファーへの書き込み完了」を意味し、  
-受信側への到達を保証しません。送信者が最後の DATA を送出した直後に `potrCloseService()` を呼ぶと、  
+受信側への到達を保証しません。送信者が最後の DATA を送出した直後に `potr_service_close()` を呼ぶと、  
 FIN パケットが最後の DATA より先に受信側へ届く場合があります。
 
 受信側が FIN を先に受け取ると、即 `POTR_EVENT_DISCONNECTED` を発火して受信ウィンドウをリセットするため、  
@@ -476,8 +476,8 @@ FIN をペンディング中に期待する DATA が届かない場合、以下�
 | シナリオ | 解消パス |
 |---|---|
 | 欠番 DATA が後着した | 正常に `drain_recv_window()` → `pending_fin` 解消 |
-| 送信者が NACK に REJECT で応答 | `window_recv_skip()` → `drain_recv_window()` → `pending_fin` 解消 |
-| `reorder_timeout_ms` タイムアウト後 | `window_recv_skip()` → 同上 |
+| 送信者が NACK に REJECT で応答 | `potr_internal_window_recv_skip()` → `drain_recv_window()` → `pending_fin` 解消 |
+| `reorder_timeout_ms` タイムアウト後 | `potr_internal_window_recv_skip()` → 同上 |
 | `health_timeout_ms` タイムアウト | ヘルスチェックが `DISCONNECTED` を発火 (既存フォールバック) |
 
 ペンディング中はセッション状態をリセットしないため、欠番 DATA は引き続き受け入れられます。  
@@ -511,7 +511,7 @@ Linux 送信者と Windows 受信者 (またはその逆) の組み合わせで�
 
 ### 圧縮の適用単位
 
-圧縮は `potrSend()` の `flags` 引数に `POTR_SEND_COMPRESS` を指定することで制御します。  
+圧縮は `potr_send()` の `flags` 引数に `POTR_SEND_COMPRESS` を指定することで制御します。  
 圧縮はメッセージ全体に適用した後にフラグメント化されます。  
 圧縮済みエレメントには `POTR_FLAG_COMPRESSED` フラグが立ちます。
 
@@ -664,7 +664,7 @@ NACK パケットは送信者へのユニキャストで返されます。
 |---|---|---|
 | `POTR_MAX_PAYLOAD` | 1,400 バイト | DATA パケットのペイロード上限 |
 | `POTR_MAX_WINDOW_SIZE` | 256 | スライディング ウィンドウの最大スロット数 |
-| `POTR_MAX_MESSAGE_SIZE` | 65,535 バイト | 1 回の `potrSend()` で送信できるデータの上限 |
+| `POTR_MAX_MESSAGE_SIZE` | 65,535 バイト | 1 回の `potr_send()` で送信できるデータの上限 |
 | `POTR_MAX_PATH` | 4 | マルチパスの最大経路数 |
 | `POTR_SEND_QUEUE_DEPTH` | 1,024 | 送信キューの最大エレメント数 |
 | `POTR_PAYLOAD_ELEM_HDR_SIZE` | 6 バイト | ペイロード エレメント ヘッダーの固定長 |

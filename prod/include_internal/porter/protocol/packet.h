@@ -27,23 +27,23 @@
 #include <porter/porter_type.h>
 
 /** パケット ヘッダーの固定長 (バイト)。payload フィールドの開始オフセット。 */
-#define PACKET_HEADER_SIZE ((size_t)offsetof(PotrPacket, payload))
+#define PACKET_HEADER_SIZE ((size_t)offsetof(potr_packet, payload))
 
 /**
  *  @brief  パケットに付与するセッション識別情報。
  *
- *  potrOpenService 時に決定し、全パケットのヘッダーに格納します。\n
- *  session_tv_sec / session_tv_nsec はワイヤ フォーマット (PotrSessionHeader) の鏡像であり、
+ *  potr_service_open 時に決定し、全パケットのヘッダーに格納します。\n
+ *  session_tv_sec / session_tv_nsec はワイヤ フォーマット (session header) の鏡像であり、
  *  幅が仕様で決まっているため固定幅型を維持します。\n
  *  com_util_timespec との変換には potr_session_ts_to_hdr() / potr_session_ts_from_hdr() を使用します。
  */
-typedef struct PotrPacketSessionHdr
+typedef struct potr_internal_packet_session_hdr
 {
     int64_t service_id;      /**< サービス識別子。 */
     int64_t session_tv_sec;  /**< セッション開始時刻 秒部。 */
     uint32_t session_id;     /**< セッション識別子 (乱数)。 */
     int32_t session_tv_nsec; /**< セッション開始時刻 ナノ秒部。 */
-} PotrPacketSessionHdr;
+} potr_internal_packet_session_hdr;
 
 /**
  *  @brief          com_util_timespec をワイヤ用の固定幅セッション時刻フィールドへ変換します。
@@ -84,7 +84,7 @@ extern "C"
      *  @param[in]      nack_num    再送要求する通番。
      *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      */
-    extern int packet_build_nack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint32_t nack_num);
+    extern int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t nack_num);
 
     /**
      *  @brief          PING パケットを構築します。
@@ -102,7 +102,7 @@ extern "C"
      *  ack_num は常に 0。受信者は seq_num を上限として欠番を一括 NACK します。\n
      *  ペイロードには POTR_MAX_PATH バイトのパス受信状態 (POTR_PING_STATE_*) を格納します。
      */
-    extern int packet_build_ping(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint32_t seq_num,
+    extern int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
                                  const uint8_t *health_payload, uint16_t health_payload_len);
 
     /**
@@ -116,7 +116,7 @@ extern "C"
      *  送信者が返すパケットです。受信者はこのパケットを受け取ると即時 DISCONNECTED を
      *  発火し、欠落通番をスキップして後続パケットの配信を継続します。
      */
-    extern int packet_build_reject(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint32_t seq_num);
+    extern int potr_internal_packet_build_reject(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num);
 
     /**
      *  @brief          正常終了通知 (FIN) パケットを構築します。
@@ -124,12 +124,12 @@ extern "C"
      *  @param[in]      shdr        セッション識別ヘッダーへのポインター。
      *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      *
-     *  送信者が potrCloseService 時に送出する終了通知パケットです。ペイロードなし。\n
+     *  送信者が potr_service_close 時に送出する終了通知パケットです。ペイロードなし。\n
      *  `POTR_FLAG_FIN_TARGET_VALID` と `ack_num` の設定は呼び出し側が行います。\n
      *  受信者は target 付き FIN の場合のみ `ack_num` を参照して
      *  受信ウィンドウ追い付き後まで DISCONNECTED を遅延できます。
      */
-    extern int packet_build_fin(PotrPacket *packet, const PotrPacketSessionHdr *shdr);
+    extern int potr_internal_packet_build_fin(potr_packet *packet, const potr_internal_packet_session_hdr *shdr);
 
     /**
      *  @brief          FIN 完了応答 (FIN_ACK) パケットを構築します。
@@ -138,7 +138,7 @@ extern "C"
      *  @param[in]      fin_target_seq  完了した FIN target 通番。
      *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      */
-    extern int packet_build_fin_ack(PotrPacket *packet, const PotrPacketSessionHdr *shdr, uint32_t fin_target_seq);
+    extern int potr_internal_packet_build_fin_ack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t fin_target_seq);
 
     /**
      *  @brief          データ パケット (パック コンテナー) を構築します。
@@ -154,14 +154,14 @@ extern "C"
      *  再送・順序整列の単位は外側パケット (本関数が構築する UDP ペイロード) であり、
      *  通番は外側パケットの seq_num フィールドで管理します。\n
      *  ペイロード エレメントの形式は flags(2) + payload_len(4) + payload(N) です。\n
-     *  受信者は POTR_FLAG_DATA を検出後 packet_unpack_next() でペイロード エレメントを展開します。
+     *  受信者は POTR_FLAG_DATA を検出後 potr_internal_packet_unpack_next() でペイロード エレメントを展開します。
      */
-    extern int packet_build_packed(PotrPacket *out, const PotrPacketSessionHdr *shdr, uint32_t seq_num,
+    extern int potr_internal_packet_build_packed(potr_packet *out, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
                                    const void *packed_payload, size_t payload_len);
 
     /**
      *  @brief          データ パケットから次のペイロード エレメントを取り出します。
-     *  @param[in]      container  packet_parse() 済みのデータ パケット (POTR_FLAG_DATA)。
+     *  @param[in]      container  potr_internal_packet_parse() 済みのデータ パケット (POTR_FLAG_DATA)。
      *  @param[in,out]  offset     コンテナー payload 内の読み取り位置。呼び出し毎に更新。
      *  @param[out]     elem_out   取り出したペイロード エレメントを格納する構造体へのポインター。
      *  @return         ペイロード エレメントを取り出せた場合は POTR_OK、引数が NULL の場合は
@@ -170,10 +170,10 @@ extern "C"
      *
      *  ペイロード エレメントの形式は flags(2) + payload_len(4) + payload(N) です。\n
      *  通番は外側パケットで管理するためペイロード エレメントには含まれません。\n
-     *  container->payload_len はホスト バイト オーダー (packet_parse() 変換済み) で参照します。\n
+     *  container->payload_len はホスト バイト オーダー (potr_internal_packet_parse() 変換済み) で参照します。\n
      *  elem_out の session 情報は container から引き継ぎます。
      */
-    extern int packet_unpack_next(const PotrPacket *container, size_t *offset, PotrPacket *elem_out);
+    extern int potr_internal_packet_unpack_next(const potr_packet *container, size_t *offset, potr_packet *elem_out);
 
     /**
      *  @brief          受信バイト列をパケット構造体に解析します。
@@ -186,20 +186,20 @@ extern "C"
      *
      *  各フィールドをホスト バイト オーダーに変換して構造体に格納します。
      */
-    extern int packet_parse(PotrPacket *packet, const void *buf, size_t buf_len);
+    extern int potr_internal_packet_parse(potr_packet *packet, const void *buf, size_t buf_len);
 
     /**
      *  @brief          パケットのヘッダー + ペイロードの合計バイト数を返します。
      *  @param[in]      packet  対象のパケット構造体へのポインター。
-     *                          packet_build_*() で構築した NBO パケットを渡すこと。
-     *                          packet_parse() 済み (ホスト バイト オーダー) のパケットを
+     *                          potr_internal_packet_build_*() で構築した NBO パケットを渡すこと。
+     *                          potr_internal_packet_parse() 済み (ホスト バイト オーダー) のパケットを
      *                          渡すと payload_len の ntohs 変換が二重になり誤値を返します。
      *  @return         パケットの送信サイズ (バイト)。packet が NULL の場合は 0。
      *
      *  UDP 送信時に sendto() へ渡すバイト数を求めるために使用します。\n
      *  内部で ntohs(packet->payload_len) を呼ぶため、引数は必ず NBO 状態で渡してください。
      */
-    extern size_t packet_wire_size(const PotrPacket *packet);
+    extern size_t potr_internal_packet_wire_size(const potr_packet *packet);
 
 #ifdef __cplusplus
 }
