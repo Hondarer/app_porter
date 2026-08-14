@@ -38,22 +38,22 @@ TEST(configFileLoadTest, loadsGlobalServiceAndServiceIdsFromRealFile)
     // Pre-Assert
 
     // Act
-    int rtc_global = potr_internal_config_load_global(config_path.c_str(), &global); // [手順] - 実ファイルから [global] を読み込む。
-    int rtc_service = potr_internal_config_load_service(config_path.c_str(), 2002,
+    int actual_ret_global = potr_internal_config_load_global(config_path.c_str(), &global); // [手順] - 実ファイルから [global] を読み込む。
+    int actual_ret_service = potr_internal_config_load_service(config_path.c_str(), 2002,
                                           &service); // [手順] - 実ファイルから service_id 2002 を読み込む。
-    int rtc_ids = potr_internal_config_list_service_ids(config_path.c_str(), &ids,
+    int actual_ret_ids = potr_internal_config_list_service_ids(config_path.c_str(), &ids,
                                           &count); // [手順] - 実ファイルから service ID 一覧を列挙する。
 
     // Assert
     ASSERT_EQ(
         POTR_OK,
-        rtc_global); // [確認_正常系] - potr_internal_config_load_global の戻り値から、[global] の読込に成功したと判断できること。
+        actual_ret_global); // [確認_正常系] - potr_internal_config_load_global の戻り値から、[global] の読込に成功したと判断できること。
     ASSERT_EQ(
         POTR_OK,
-        rtc_service); // [確認_正常系] - potr_internal_config_load_service の戻り値から、service の読込に成功したと判断できること。
+        actual_ret_service); // [確認_正常系] - potr_internal_config_load_service の戻り値から、service の読込に成功したと判断できること。
     ASSERT_EQ(
         POTR_OK,
-        rtc_ids); // [確認_正常系] - potr_internal_config_list_service_ids の戻り値から、service ID 列挙に成功したと判断できること。
+        actual_ret_ids); // [確認_正常系] - potr_internal_config_list_service_ids の戻り値から、service ID 列挙に成功したと判断できること。
     EXPECT_EQ(16U, global.window_size);   // [確認_正常系] - Builder が出力した window_size を読み込むこと。
     EXPECT_EQ(1400U, global.max_payload); // [確認_正常系] - Builder が出力した max_payload を読み込むこと。
     EXPECT_EQ(111U,

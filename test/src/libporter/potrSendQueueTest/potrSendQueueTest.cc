@@ -41,17 +41,17 @@ TEST_F(potrSendQueueTest, empty_queue_returns_empty_and_timeout)
     // Pre-Assert
 
     // Act
-    int rtc_peek = potr_internal_send_queue_peek(&q, &elem);            // [手順] - 空キューを peek で参照する。
-    int rtc_try_pop = potr_internal_send_queue_try_pop(&q, &elem);      // [手順] - 空キューから try_pop で取り出す。
-    int rtc_timed = potr_internal_send_queue_peek_timed(&q, &elem, 10); // [手順] - timeout_ms=10 の peek_timed で待機する。
+    int actual_ret_peek = potr_internal_send_queue_peek(&q, &elem);            // [手順] - 空キューを peek で参照する。
+    int actual_ret_try_pop = potr_internal_send_queue_try_pop(&q, &elem);      // [手順] - 空キューから try_pop で取り出す。
+    int actual_ret_timed = potr_internal_send_queue_peek_timed(&q, &elem, 10); // [手順] - timeout_ms=10 の peek_timed で待機する。
 
     // Assert
     EXPECT_EQ(POTR_ERR_EMPTY,
-              rtc_peek); // [確認_異常系] - potr_internal_send_queue_peek の戻り値が POTR_ERR_EMPTY であること。
+              actual_ret_peek); // [確認_異常系] - potr_internal_send_queue_peek の戻り値が POTR_ERR_EMPTY であること。
     EXPECT_EQ(POTR_ERR_EMPTY,
-              rtc_try_pop); // [確認_異常系] - potr_internal_send_queue_try_pop の戻り値が POTR_ERR_EMPTY であること。
+              actual_ret_try_pop); // [確認_異常系] - potr_internal_send_queue_try_pop の戻り値が POTR_ERR_EMPTY であること。
     EXPECT_EQ(POTR_ERR_TIMEOUT,
-              rtc_timed); // [確認_異常系] - potr_internal_send_queue_peek_timed の戻り値が POTR_ERR_TIMEOUT であること。
+              actual_ret_timed); // [確認_異常系] - potr_internal_send_queue_peek_timed の戻り値が POTR_ERR_TIMEOUT であること。
 }
 
 // 満杯キューへの push が POTR_ERR_FULL を返すことの確認
@@ -73,12 +73,12 @@ TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
     // Pre-Assert
 
     // Act
-    int rtc_full =
+    int actual_ret_full =
         potr_internal_send_queue_push(&q, 0, 0, payload, sizeof(payload)); // [手順] - 満杯のキューへ 5 件目を push する。
 
     // Assert
     EXPECT_EQ(POTR_ERR_FULL,
-              rtc_full); // [確認_異常系] - 満杯時の potr_internal_send_queue_push の戻り値が POTR_ERR_FULL であること。
+              actual_ret_full); // [確認_異常系] - 満杯時の potr_internal_send_queue_push の戻り値が POTR_ERR_FULL であること。
 }
 
 // 停止済み (running=0) の満杯キューへの push_wait が POTR_ERR_CANCELED を返すことの確認

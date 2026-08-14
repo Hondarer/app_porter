@@ -28,21 +28,21 @@ TEST(configLoadGlobalTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened
         .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
 
     // Act
-    int rtc_null_path = potr_internal_config_load_global(nullptr, &global);      // [手順] - config_path を NULL にして呼び出す。
-    int rtc_null_out = potr_internal_config_load_global("config.conf", nullptr); // [手順] - 出力先を NULL にして呼び出す。
-    int rtc_open_fail =
+    int actual_ret_null_path = potr_internal_config_load_global(nullptr, &global);      // [手順] - config_path を NULL にして呼び出す。
+    int actual_ret_null_out = potr_internal_config_load_global("config.conf", nullptr); // [手順] - 出力先を NULL にして呼び出す。
+    int actual_ret_open_fail =
         potr_internal_config_load_global("missing.conf", &global); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
 
     // Assert
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        rtc_null_path); // [確認_異常系] - config_path が NULL の場合に potr_internal_config_load_global の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_path); // [確認_異常系] - config_path が NULL の場合に potr_internal_config_load_global の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        rtc_null_out); // [確認_異常系] - 出力先が NULL の場合に potr_internal_config_load_global の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_out); // [確認_異常系] - 出力先が NULL の場合に potr_internal_config_load_global の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
         POTR_ERR_IO,
-        rtc_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に potr_internal_config_load_global の戻り値が POTR_ERR_IO であること。
+        actual_ret_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に potr_internal_config_load_global の戻り値が POTR_ERR_IO であること。
 }
 
 // [global] の設定値が読み込まれ、他 section と未知キーが無視されることの確認

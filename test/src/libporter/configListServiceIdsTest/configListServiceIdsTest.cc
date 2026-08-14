@@ -32,27 +32,27 @@ TEST(configListServiceIdsTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOp
         .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
 
     // Act
-    int rtc_null_path = potr_internal_config_list_service_ids(nullptr, &ids, &count); // [手順] - config_path を NULL にして呼び出す。
-    int rtc_null_ids =
+    int actual_ret_null_path = potr_internal_config_list_service_ids(nullptr, &ids, &count); // [手順] - config_path を NULL にして呼び出す。
+    int actual_ret_null_ids =
         potr_internal_config_list_service_ids("config.conf", nullptr, &count); // [手順] - ids_out を NULL にして呼び出す。
-    int rtc_null_count =
+    int actual_ret_null_count =
         potr_internal_config_list_service_ids("config.conf", &ids, nullptr); // [手順] - count_out を NULL にして呼び出す。
-    int rtc_open_fail = potr_internal_config_list_service_ids("missing.conf", &ids,
+    int actual_ret_open_fail = potr_internal_config_list_service_ids("missing.conf", &ids,
                                                 &count); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
 
     // Assert
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        rtc_null_path); // [確認_異常系] - config_path が NULL の場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_path); // [確認_異常系] - config_path が NULL の場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        rtc_null_ids); // [確認_異常系] - ids_out が NULL の場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_ids); // [確認_異常系] - ids_out が NULL の場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        rtc_null_count); // [確認_異常系] - count_out が NULL の場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_count); // [確認_異常系] - count_out が NULL の場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
         POTR_ERR_IO,
-        rtc_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_IO であること。
+        actual_ret_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_IO であること。
 }
 
 // service section だけが列挙され、既定容量 64 件を超えても拡張されることの確認

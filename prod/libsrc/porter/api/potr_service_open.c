@@ -109,11 +109,11 @@ static com_util_socket open_socket_unicast(uint32_t bind_addr, uint16_t port)
  * (key, nonce) の再利用を招く。暗号論的乱数源から取得する。 */
 static int generate_session(potr_context *ctx)
 {
-    int rtc = com_util_random_bytes(&ctx->session_id, sizeof(ctx->session_id));
+    int ret = com_util_random_bytes(&ctx->session_id, sizeof(ctx->session_id));
 
-    if (rtc != COM_UTIL_OK)
+    if (ret != COM_UTIL_OK)
     {
-        return rtc;
+        return ret;
     }
     com_util_get_realtime(&ctx->session_ts);
 

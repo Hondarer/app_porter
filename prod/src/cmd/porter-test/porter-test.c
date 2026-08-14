@@ -583,7 +583,7 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
     int compress = 0;
     const char *compress_label;
     unsigned int send_flags;
-    int send_rtc;
+    int send_ret;
 
     payload = skip_spaces(cursor);
     if (strncmp(payload, "-c", 2) == 0 && (payload[2] == '\0' || payload[2] == ' ' || payload[2] == '\t'))
@@ -657,10 +657,10 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
         send_flags = 0;
     }
     /* send_flags と POTR_SEND_* は 0x0003U 以下であり int に収まる */
-    send_rtc = potr_send(handle, POTR_PEER_NA, send_data, send_len, (int)(send_flags | POTR_SEND_BLOCKING));
-    if (send_rtc != POTR_OK)
+    send_ret = potr_send(handle, POTR_PEER_NA, send_data, send_len, (int)(send_flags | POTR_SEND_BLOCKING));
+    if (send_ret != POTR_OK)
     {
-        if (send_rtc == POTR_ERR_DISCONNECTED)
+        if (send_ret == POTR_ERR_DISCONNECTED)
         {
             com_util_pinned_prompt_printf(s_screen, COM_UTIL_PINNED_PROMPT_CHANNEL_STDERR,
                                           "エラー: 未接続のため送信できません。\n");
