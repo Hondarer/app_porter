@@ -190,7 +190,7 @@ static int send_udp_packet(const vector<uint8_t> &packet, int port)
 {
 #if defined(PLATFORM_LINUX)
     int sockfd;
-    struct sockaddr_in addr;
+    struct sockaddr_in addr = {0};
     ssize_t sent;
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -199,7 +199,6 @@ static int send_udp_packet(const vector<uint8_t> &packet, int port)
         return -1;
     }
 
-    memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons((uint16_t)port);
     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
@@ -214,7 +213,7 @@ static int send_udp_packet(const vector<uint8_t> &packet, int port)
 #elif defined(PLATFORM_WINDOWS)
     WSADATA wsa;
     SOCKET sockfd;
-    struct sockaddr_in addr;
+    struct sockaddr_in addr = {0};
     int sent;
 
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
@@ -229,7 +228,6 @@ static int send_udp_packet(const vector<uint8_t> &packet, int port)
         return -1;
     }
 
-    memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons((uint16_t)port);
     InetPtonA(AF_INET, "127.0.0.1", &addr.sin_addr);

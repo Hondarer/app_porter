@@ -4,6 +4,7 @@
     #define _HAS_STD_BYTE 0
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
+#include <mock_com_util.h>
 
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
@@ -67,12 +68,10 @@ class packetTest : public Test
 TEST_F(packetTest, potr_internal_packet_build_packed_sets_protocol_version)
 {
     // Arrange
-    potr_packet pkt;
-    potr_internal_packet_session_hdr shdr;
+    potr_packet pkt = {0};
+    potr_internal_packet_session_hdr shdr = {0};
     uint8_t payload[1] = {0xAB}; // [状態] - 1 バイトのペイロード 0xAB を用意する。
 
-    memset(&pkt, 0, sizeof(pkt));
-    memset(&shdr, 0, sizeof(shdr));
     shdr.service_id = 42;
     shdr.session_tv_sec = 1000;
     shdr.session_id = 1234U;
