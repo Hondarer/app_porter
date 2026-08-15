@@ -19,10 +19,10 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_trace_get()).WillByDefault(Return(nullptr));
     ON_CALL(*this, potr_tracer_get()).WillByDefault(Return(nullptr));
 
-    _mock_porter = this;
+    TESTFW_REGISTER_MOCK_INSTANCE(_mock_porter);
 }
 
 Mock_porter::~Mock_porter()
 {
-    _mock_porter = nullptr;
+    TESTFW_UNREGISTER_MOCK_INSTANCE(_mock_porter);
 }
