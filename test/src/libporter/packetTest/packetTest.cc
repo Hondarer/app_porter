@@ -68,8 +68,8 @@ class packetTest : public Test
 TEST_F(packetTest, potr_internal_packet_build_packed_sets_protocol_version)
 {
     // Arrange
-    potr_packet pkt = {0};
-    potr_internal_packet_session_hdr shdr = {0};
+    potr_packet pkt = {};
+    potr_internal_packet_session_hdr shdr = {};
     uint8_t payload[1] = {0xAB}; // [状態] - 1 バイトのペイロード 0xAB を用意する。
 
     shdr.service_id = 42;

@@ -190,7 +190,7 @@ static int send_udp_packet(const vector<uint8_t> &packet, int port)
 {
 #if defined(PLATFORM_LINUX)
     int sockfd;
-    struct sockaddr_in addr = {0};
+    struct sockaddr_in addr = {};
     ssize_t sent;
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -213,7 +213,7 @@ static int send_udp_packet(const vector<uint8_t> &packet, int port)
 #elif defined(PLATFORM_WINDOWS)
     WSADATA wsa;
     SOCKET sockfd;
-    struct sockaddr_in addr = {0};
+    struct sockaddr_in addr = {};
     int sent;
 
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)

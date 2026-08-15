@@ -39,7 +39,7 @@ class windowTest : public Test
     /* 受信ウィンドウ用パケットを組み立てる (payload_len はホスト バイト オーダー) */
     static potr_packet make_recv_packet(uint32_t seq_num, const uint8_t *payload, uint16_t payload_len)
     {
-        potr_packet pkt = {0};
+        potr_packet pkt = {};
 
         pkt.seq_num = seq_num;
         pkt.payload = payload;
@@ -50,7 +50,7 @@ class windowTest : public Test
     /* 送信ウィンドウ用パケットを組み立てる (payload_len は NBO: potr_internal_packet_build_packed 相当) */
     static potr_packet make_send_packet(uint32_t seq_num, const uint8_t *payload, uint16_t payload_len)
     {
-        potr_packet pkt = {0};
+        potr_packet pkt = {};
 
         pkt.seq_num = seq_num;
         pkt.payload = payload;

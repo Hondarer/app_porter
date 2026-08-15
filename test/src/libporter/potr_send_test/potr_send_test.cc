@@ -49,7 +49,7 @@ class potrSendTest : public Test
 
     potr_internal_payload_elem popQueuedElem()
     {
-        potr_internal_payload_elem elem = {0};
+        potr_internal_payload_elem elem = {};
         EXPECT_EQ(POTR_OK, potr_internal_send_queue_try_pop(&ctx.send_queue, &elem));
         return elem;
     }
