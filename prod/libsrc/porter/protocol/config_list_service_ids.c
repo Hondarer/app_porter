@@ -1,6 +1,6 @@
 /**
  *******************************************************************************
- *  @file           potr_internal_config_list_service_ids.c
+ *  @file           config_list_service_ids.c
  *  @brief          設定内の service ID を列挙する機能を実装します。
  *  @author         Tetsuo Honda
  *  @date           2026/04/26

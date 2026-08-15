@@ -1,6 +1,6 @@
 /**
  *******************************************************************************
- *  @file           potr_internal_config_load_service.c
+ *  @file           config_load_service.c
  *  @brief          設定の service.id セクションを読み込む機能を実装します。
  *  @author         Tetsuo Honda
  *  @date           2026/04/26
