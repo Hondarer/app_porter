@@ -92,9 +92,9 @@ static void reconnect_wait(potr_context *ctx, int path_idx, int wait_ms)
 
 /* accept 直後の TCP ソケットから 1 パケット分を buf に読み取る。
  * buf は PACKET_HEADER_SIZE + max_payload バイト以上確保されていること。
- * 戻り値: 成功時 (*out_len にバイト数を格納) は POTR_OK、タイムアウト時は POTR_ERR_TIMEOUT、
+ * 戻り値: 成功時 (*len_out にバイト数を格納) は POTR_OK、タイムアウト時は POTR_ERR_TIMEOUT、
  * EOF 時は POTR_ERR_EOF、I/O エラー時は POTR_ERR_IO、不正時は POTR_ERR_PROTOCOL。 */
-static int tcp_read_first_packet(com_util_socket fd, uint8_t *buf, size_t max_buf, size_t *out_len, int timeout_ms)
+static int tcp_read_first_packet(com_util_socket fd, uint8_t *buf, size_t max_buf, size_t *len_out, int timeout_ms)
 {
     int ready = 0;
     uint16_t wire_payload_len;
@@ -132,7 +132,7 @@ static int tcp_read_first_packet(com_util_socket fd, uint8_t *buf, size_t max_bu
             return potr_internal_result_from_socket_result(recv_result, &detail);
     }
 
-    *out_len = PACKET_HEADER_SIZE + (size_t)wire_payload_len;
+    *len_out = PACKET_HEADER_SIZE + (size_t)wire_payload_len;
     return POTR_OK;
 }
 

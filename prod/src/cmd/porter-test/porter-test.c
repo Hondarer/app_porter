@@ -484,12 +484,12 @@ static void print_interactive_help(void)
 /**
  *  @brief          ファイルをバイナリ モードで読み込む。
  *  @param[in]      path        ファイル パス。
- *  @param[out]     out_data    読み込んだデータの格納先 (malloc 確保、呼び出し元が free する)。
- *  @param[out]     out_len     読み込んだデータのバイト数の格納先。
+ *  @param[out]     data_out    読み込んだデータの格納先 (malloc 確保、呼び出し元が free する)。
+ *  @param[out]     len_out     読み込んだデータのバイト数の格納先。
  *  @return         成功時は 0、失敗時は -1 を返します。
  *                  失敗時はエラー メッセージを stderr に出力します。
  */
-static int read_file_data(const char *path, unsigned char **out_data, size_t *out_len)
+static int read_file_data(const char *path, unsigned char **data_out, size_t *len_out)
 {
     FILE *fp = NULL;
     int64_t file_size;
@@ -560,8 +560,8 @@ static int read_file_data(const char *path, unsigned char **out_data, size_t *ou
         return -1;
     }
 
-    *out_data = buf;
-    *out_len = (size_t)file_size;
+    *data_out = buf;
+    *len_out = (size_t)file_size;
     return 0;
 }
 
