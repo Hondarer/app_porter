@@ -574,7 +574,7 @@ int potr_internal_send_thread_start(potr_context *ctx)
     if (com_util_thread_create(&ctx->send_thread, send_thread_func, ctx) != COM_UTIL_OK)
     {
         ctx->send_thread_running = 0;
-        com_util_local_lock_destroy(ctx->send_window_mutex);
+        com_util_local_lock_dispose(ctx->send_window_mutex);
         /* com_util のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
         return POTR_ERR_UNKNOWN;
     }
@@ -590,5 +590,5 @@ void potr_internal_send_thread_stop(potr_context *ctx)
     potr_internal_send_queue_shutdown(&ctx->send_queue);
 
     com_util_thread_join(ctx->send_thread, COM_UTIL_SYNC_WAIT_FOREVER);
-    com_util_local_lock_destroy(ctx->send_window_mutex);
+    com_util_local_lock_dispose(ctx->send_window_mutex);
 }

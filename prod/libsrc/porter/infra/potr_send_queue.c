@@ -62,10 +62,10 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
 
 void potr_internal_send_queue_dispose(potr_internal_send_queue *q)
 {
-    com_util_condvar_destroy(q->drained);
-    com_util_condvar_destroy(q->not_full);
-    com_util_condvar_destroy(q->not_empty);
-    com_util_local_lock_destroy(q->mutex);
+    com_util_condvar_dispose(q->drained);
+    com_util_condvar_dispose(q->not_full);
+    com_util_condvar_dispose(q->not_empty);
+    com_util_local_lock_dispose(q->mutex);
     com_util_free(q->entries);
     com_util_free(q->payload_pool);
     q->entries = NULL;

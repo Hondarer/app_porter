@@ -561,8 +561,8 @@ int potr_internal_health_thread_stop(potr_context *ctx)
 
     com_util_thread_join(ctx->health_thread[0], COM_UTIL_SYNC_WAIT_FOREVER);
 
-    com_util_condvar_destroy(ctx->health_wakeup[0]);
-    com_util_local_lock_destroy(ctx->health_mutex[0]);
+    com_util_condvar_dispose(ctx->health_wakeup[0]);
+    com_util_local_lock_dispose(ctx->health_mutex[0]);
 
     return POTR_OK;
 }

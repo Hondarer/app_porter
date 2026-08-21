@@ -43,7 +43,7 @@ class potrSendTest : public Test
 
     void TearDown() override
     {
-        com_util_local_lock_destroy(ctx.peers_mutex);
+        com_util_local_lock_dispose(ctx.peers_mutex);
         potr_internal_send_queue_dispose(&ctx.send_queue);
     }
 

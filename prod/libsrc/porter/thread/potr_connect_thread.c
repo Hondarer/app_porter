@@ -786,7 +786,7 @@ int potr_internal_connect_thread_start(potr_context *ctx)
                     com_util_free(ctx->tcp_first_pkt_buf[j]);
                     ctx->tcp_first_pkt_buf[j] = NULL;
                 }
-                com_util_local_lock_destroy(ctx->session_establish_mutex);
+                com_util_local_lock_dispose(ctx->session_establish_mutex);
                 return POTR_ERR_OUT_OF_MEMORY;
             }
         }
@@ -892,7 +892,7 @@ void potr_internal_connect_thread_stop(potr_context *ctx)
                 ctx->tcp_first_pkt_buf[i] = NULL;
             }
         }
-        com_util_local_lock_destroy(ctx->session_establish_mutex);
+        com_util_local_lock_dispose(ctx->session_establish_mutex);
     }
 
     POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: all paths stopped",

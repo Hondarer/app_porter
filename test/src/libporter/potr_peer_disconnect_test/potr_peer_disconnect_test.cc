@@ -71,8 +71,8 @@ class potrDisconnectPeerTest : public Test
 
     void TearDown() override
     {
-        com_util_local_lock_destroy(ctx.peers_mutex);
-        com_util_local_lock_destroy(ctx.callback_mutex);
+        com_util_local_lock_dispose(ctx.peers_mutex);
+        com_util_local_lock_dispose(ctx.callback_mutex);
     }
 
     potr_context ctx;

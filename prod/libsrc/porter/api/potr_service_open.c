@@ -1070,15 +1070,15 @@ static void destroy_tcp_sync_primitives(potr_context *ctx)
 {
     int i;
 
-    com_util_local_lock_destroy(ctx->tcp_state_mutex);
-    com_util_condvar_destroy(ctx->tcp_state_cv);
-    com_util_local_lock_destroy(ctx->tcp_close_mutex);
-    com_util_condvar_destroy(ctx->tcp_close_cv);
+    com_util_local_lock_dispose(ctx->tcp_state_mutex);
+    com_util_condvar_dispose(ctx->tcp_state_cv);
+    com_util_local_lock_dispose(ctx->tcp_close_mutex);
+    com_util_condvar_dispose(ctx->tcp_close_cv);
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
-        com_util_local_lock_destroy(ctx->tcp_send_mutex[i]);
+        com_util_local_lock_dispose(ctx->tcp_send_mutex[i]);
     }
-    com_util_local_lock_destroy(ctx->recv_window_mutex);
+    com_util_local_lock_dispose(ctx->recv_window_mutex);
 }
 
 /* TCP: 同期プリミティブと送信キューを初期化し、接続管理スレッドを起動する。

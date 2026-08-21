@@ -64,7 +64,7 @@ void potr_internal_callback_mutex_init(potr_context *ctx)
 
 void potr_internal_callback_mutex_dispose(potr_context *ctx)
 {
-    com_util_local_lock_destroy(ctx->callback_mutex);
+    com_util_local_lock_dispose(ctx->callback_mutex);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

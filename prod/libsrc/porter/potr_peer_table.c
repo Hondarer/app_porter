@@ -228,13 +228,13 @@ void potr_internal_peer_table_dispose(potr_context *ctx)
         /* リソース解放 */
         potr_internal_window_dispose(&ctx->peers[i].send_window);
         potr_internal_window_dispose(&ctx->peers[i].recv_window);
-        com_util_local_lock_destroy(ctx->peers[i].send_window_mutex);
+        com_util_local_lock_dispose(ctx->peers[i].send_window_mutex);
         com_util_free(ctx->peers[i].frag_buf);
         ctx->peers[i].frag_buf = NULL;
         ctx->peers[i].active = 0;
     }
 
-    com_util_local_lock_destroy(ctx->peers_mutex);
+    com_util_local_lock_dispose(ctx->peers_mutex);
 
     com_util_free(ctx->peers);
     ctx->peers = NULL;
@@ -357,7 +357,7 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     {
         potr_internal_window_dispose(&peer->recv_window);
         potr_internal_window_dispose(&peer->send_window);
-        com_util_local_lock_destroy(peer->send_window_mutex);
+        com_util_local_lock_dispose(peer->send_window_mutex);
         peer->active = 0;
         POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " frag_buf alloc failed",
                    ctx->service.service_id);
@@ -411,7 +411,7 @@ void potr_internal_peer_free(potr_context *ctx, potr_internal_peer_context *peer
 
     potr_internal_window_dispose(&peer->send_window);
     potr_internal_window_dispose(&peer->recv_window);
-    com_util_local_lock_destroy(peer->send_window_mutex);
+    com_util_local_lock_dispose(peer->send_window_mutex);
 
     com_util_free(peer->frag_buf);
     peer->frag_buf = NULL;

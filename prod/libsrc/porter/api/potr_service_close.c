@@ -351,17 +351,17 @@ int potr_service_close(potr_context *handle)
         /* TCP mutex / condvar を解放 */
         {
             int i;
-            com_util_local_lock_destroy(ctx->tcp_state_mutex);
-            com_util_condvar_destroy(ctx->tcp_state_cv);
-            com_util_local_lock_destroy(ctx->tcp_close_mutex);
-            com_util_condvar_destroy(ctx->tcp_close_cv);
+            com_util_local_lock_dispose(ctx->tcp_state_mutex);
+            com_util_condvar_dispose(ctx->tcp_state_cv);
+            com_util_local_lock_dispose(ctx->tcp_close_mutex);
+            com_util_condvar_dispose(ctx->tcp_close_cv);
             for (i = 0; i < (int)POTR_MAX_PATH; i++)
             {
-                com_util_local_lock_destroy(ctx->tcp_send_mutex[i]);
-                com_util_local_lock_destroy(ctx->health_mutex[i]);
-                com_util_condvar_destroy(ctx->health_wakeup[i]);
+                com_util_local_lock_dispose(ctx->tcp_send_mutex[i]);
+                com_util_local_lock_dispose(ctx->health_mutex[i]);
+                com_util_condvar_dispose(ctx->health_wakeup[i]);
             }
-            com_util_local_lock_destroy(ctx->recv_window_mutex);
+            com_util_local_lock_dispose(ctx->recv_window_mutex);
         }
 
         /* 送受信ウィンドウと動的バッファーを解放 */
