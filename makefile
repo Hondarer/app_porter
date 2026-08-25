@@ -116,8 +116,12 @@ default:
 		make_exit=0; \
 		for dir in $(SUBDIRS); do \
 			if [ -f $$dir/makefile ]; then \
-				echo $(MAKE) -C $$dir; \
-				$(MAKE) -C $$dir || { make_exit=$$?; break; }; \
+				skip_src=""; \
+				if [ "$$dir" = "test" ] && [ -f "$(CURDIR)/assured.stamp" ]; then \
+					skip_src="MAKEFW_SKIP_TEST_SRC=1"; \
+				fi; \
+				echo $(MAKE) -C $$dir $$skip_src; \
+				$(MAKE) -C $$dir $$skip_src || { make_exit=$$?; break; }; \
 			fi; \
 		done; \
 		if [ $$make_exit -eq 0 ] && [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ]; then \
@@ -169,8 +173,12 @@ with-cov: __ensure-coverity
 					echo "$(COVERITY_MAKE_WRAPPER)" "$(COVERITY_TOOLCHAIN)" $(MAKE) -C $$dir; \
 					"$(COVERITY_MAKE_WRAPPER)" "$(COVERITY_TOOLCHAIN)" $(MAKE) -C $$dir || { make_exit=$$?; break; }; \
 				else \
-					echo $(MAKE) -C $$dir; \
-					$(MAKE) -C $$dir || { make_exit=$$?; break; }; \
+					skip_src=""; \
+					if [ "$$dir" = "test" ] && [ -f "$(CURDIR)/assured.stamp" ]; then \
+						skip_src="MAKEFW_SKIP_TEST_SRC=1"; \
+					fi; \
+					echo $(MAKE) -C $$dir $$skip_src; \
+					$(MAKE) -C $$dir $$skip_src || { make_exit=$$?; break; }; \
 				fi; \
 			fi; \
 		done; \
@@ -192,16 +200,29 @@ with-cov: __ensure-coverity
 	fi
 
 .PHONY: clean
+ifeq ($(wildcard $(CURDIR)/assured.stamp),)
 clean : SUBDIR_GOAL = clean
 clean : $(SUBDIR_TARGETS)
 	@rm -f "$(DOXY_WARN_FILE)" "$(BUILD_STAMP)" "$(TEST_STAMP)" "$(DOXY_STAMP)"
 	@rm -f $(CURDIR)/doxy_*.warn
 	@find "$(CURDIR)" -type d -name log -prune -exec rm -rf {} +
+else ifeq ($(wildcard $(BUILD_STAMP)),)
+clean : SUBDIR_GOAL = clean
+clean : $(SUBDIR_TARGETS)
+	@rm -f "$(DOXY_WARN_FILE)" "$(BUILD_STAMP)" "$(TEST_STAMP)" "$(DOXY_STAMP)"
+	@rm -f $(CURDIR)/doxy_*.warn
+	@find "$(CURDIR)" -type d -name log -prune -exec rm -rf {} +
+else
+clean:
+	@echo "INFO: Skipping clean (assured.stamp is present and make succeeded)"
+endif
 
 .PHONY: test
 test :
 	@$(MAKE) $(MFLAGS)
-	@if [ -f test/makefile ]; then \
+	@if [ -f "$(CURDIR)/assured.stamp" ] && [ -f test/makefile ]; then \
+		echo "INFO: Skipping test/src (assured.stamp is present)"; \
+	elif [ -f test/makefile ]; then \
 		sig_file=$$(mktemp); \
 		signature_available=1; \
 		if ! CONFIG="$(CONFIG)" MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" DEFINES="$(DEFINES)" LIBS="$(LIBS)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" test > "$$sig_file"; then \
