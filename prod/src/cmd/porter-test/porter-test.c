@@ -1018,31 +1018,31 @@ int main(int argc, char *argv[])
     int need_help = 0;
     const char *log_level = NULL;
 
-    com_util_argparser_default_init("porter の送受信動作を対話的に検証します。");
-    com_util_argparser_default_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
-    com_util_argparser_default_register_option_string("-l", NULL, "level", "ログレベル。", 0, &log_level);
-    com_util_argparser_default_register_positional_string("role", "sender または receiver。", 0, &role_arg);
-    com_util_argparser_default_register_positional_string("config_path", "設定ファイル。", 0, &config_path_arg);
-    com_util_argparser_default_register_positional_string("service_id", "サービス ID。", 0, &service_id_arg);
+    com_util_argparser_init("porter の送受信動作を対話的に検証します。");
+    com_util_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
+    com_util_argparser_register_option_string("-l", NULL, "level", "ログレベル。", 0, &log_level);
+    com_util_argparser_register_positional_string("role", "sender または receiver。", 0, &role_arg);
+    com_util_argparser_register_positional_string("config_path", "設定ファイル。", 0, &config_path_arg);
+    com_util_argparser_register_positional_string("service_id", "サービス ID。", 0, &service_id_arg);
 
-    if (com_util_argparser_default_get_register_error_count() > 0)
+    if (com_util_argparser_get_register_error_count() > 0)
     {
-        com_util_argparser_default_print_register_error_messages(stderr);
+        com_util_argparser_print_register_error_messages(stderr);
         return EXIT_FAILURE;
     }
 
-    int parse_result = com_util_argparser_default_parse(argc, argv);
+    int parse_result = com_util_argparser_parse(argc, argv);
 
     if (need_help != 0)
     {
-        com_util_argparser_default_print_usage(stdout);
+        com_util_argparser_print_usage(stdout);
         return EXIT_SUCCESS;
     }
 
     if (parse_result != COM_UTIL_OK)
     {
-        com_util_argparser_default_print_error_messages(stderr);
-        com_util_argparser_default_print_usage(stderr);
+        com_util_argparser_print_error_messages(stderr);
+        com_util_argparser_print_usage(stderr);
         return EXIT_FAILURE;
     }
 
@@ -1067,7 +1067,7 @@ int main(int argc, char *argv[])
                     "エラー: 不明なログレベル \"%s\"。"
                     "VERBOSE/INFO/WARNING/ERROR/CRITICAL のいずれかを指定してください。\n\n",
                     log_level);
-            com_util_argparser_default_print_usage(stderr);
+            com_util_argparser_print_usage(stderr);
             return EXIT_FAILURE;
         }
         s_tracer_started = 0; /* 後段の ensure_tracer_started で開始する。 */
@@ -1077,7 +1077,7 @@ int main(int argc, char *argv[])
     if (positional_count != 0 && positional_count != 3)
     {
         fprintf(stderr, "エラー: role、config_path、service_id は 3 個すべてを指定してください。\n\n");
-        com_util_argparser_default_print_usage(stderr);
+        com_util_argparser_print_usage(stderr);
         return EXIT_FAILURE;
     }
 
