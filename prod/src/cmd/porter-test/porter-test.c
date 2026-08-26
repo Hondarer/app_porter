@@ -1018,7 +1018,7 @@ int main(int argc, char *argv[])
     int need_help = 0;
     const char *log_level = NULL;
 
-    com_util_argparser_init("porter の送受信動作を対話的に検証します。");
+    com_util_argparser_init(argc, argv, "porter の送受信動作を対話的に検証します。");
     com_util_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
     com_util_argparser_register_option_string("-l", NULL, "level", "ログレベル。", 0, &log_level);
     com_util_argparser_register_positional_string("role", "sender または receiver。", 0, &role_arg);
@@ -1031,7 +1031,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    int parse_result = com_util_argparser_parse(argc, argv);
+    int parse_result = com_util_argparser_parse();
 
     if (need_help != 0)
     {

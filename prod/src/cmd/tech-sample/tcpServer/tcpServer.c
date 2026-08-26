@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
     int need_help = 0;
     const char *mode_str = NULL;
 
-    com_util_argparser_init("複数のプロセス モードを確認する TCP サーバーを起動します。");
+    com_util_argparser_init(argc, argv, "複数のプロセス モードを確認する TCP サーバーを起動します。");
     com_util_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
     com_util_argparser_register_option_string(NULL, "--mode", "mode", "fork または prefork。", 0, &mode_str);
     com_util_argparser_register_option_int(NULL, "--port", "port", "待ち受けポート番号。", 0, &port);
@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    int parse_result = com_util_argparser_parse(argc, argv);
+    int parse_result = com_util_argparser_parse();
 
     if (need_help != 0)
     {
