@@ -11,8 +11,8 @@
  *******************************************************************************
  */
 
-#ifndef TCPSERVER_H
-#define TCPSERVER_H
+#ifndef TCP_SERVER_PRIVATE_H
+#define TCP_SERVER_PRIVATE_H
 
 #include <cplat/base/platform.h>
 
@@ -168,4 +168,4 @@ extern "C"
 }
 #endif /* __cplusplus */
 
-#endif /* TCPSERVER_H */
+#endif /* TCP_SERVER_PRIVATE_H */
