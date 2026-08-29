@@ -1,10 +1,10 @@
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 #if defined(PLATFORM_WINDOWS)
     #define _HAS_STD_BYTE 0
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
-#include <mock_com_util.h>
+#include <mock_cplat.h>
 #include <mock_porter.h>
 
 #include <porter/porter_result.h>
@@ -56,8 +56,8 @@ class potrDisconnectPeerTest : public Test
     void SetUp() override
     {
         memset(&ctx, 0, sizeof(ctx));
-        com_util_local_lock_create(&ctx.peers_mutex);
-        com_util_local_lock_create(&ctx.callback_mutex);
+        cplat_local_lock_create(&ctx.peers_mutex);
+        cplat_local_lock_create(&ctx.callback_mutex);
         ctx.service.service_id = 42;
 
         memset(&peer_ctx, 0, sizeof(peer_ctx));
@@ -66,13 +66,13 @@ class potrDisconnectPeerTest : public Test
         memset(&s_cb, 0, sizeof(s_cb));
 
         resetTraceLevel();
-        setTraceLevel("com_util_tracer_writef_at", TRACE_INFO);
+        setTraceLevel("cplat_tracer_writef_at", TRACE_INFO);
     }
 
     void TearDown() override
     {
-        com_util_local_lock_dispose(ctx.peers_mutex);
-        com_util_local_lock_dispose(ctx.callback_mutex);
+        cplat_local_lock_dispose(ctx.peers_mutex);
+        cplat_local_lock_dispose(ctx.callback_mutex);
     }
 
     potr_context ctx;
@@ -85,11 +85,11 @@ class potrDisconnectPeerTest : public Test
 TEST_F(potrDisconnectPeerTest, handle_null)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
 
     // Pre-Assert
-    EXPECT_CALL(mock_log, com_util_tracer_writef_at(_, COM_UTIL_TRACE_LEVEL_ERROR, nullptr,
+    EXPECT_CALL(mock_log, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_ERROR, nullptr,
                                                   AllOf(HasSubstr("potr_peer_disconnect.c"),
                                                         HasSubstr("handle is NULL"))))
         .Times(1); // [Pre-Assert確認_異常系] - ERROR ログに "handle is NULL" が含まれること。
@@ -107,11 +107,11 @@ TEST_F(potrDisconnectPeerTest, handle_null)
 TEST_F(potrDisconnectPeerTest, peer_id_na)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
 
     // Pre-Assert
-    EXPECT_CALL(mock_log, com_util_tracer_writef_at(_, COM_UTIL_TRACE_LEVEL_ERROR, nullptr,
+    EXPECT_CALL(mock_log, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_ERROR, nullptr,
                                                   AllOf(HasSubstr("potr_peer_disconnect.c"),
                                                         HasSubstr("invalid peer_id"))))
         .Times(1); // [Pre-Assert確認_異常系] - ERROR ログに "invalid peer_id" が含まれること。
@@ -130,11 +130,11 @@ TEST_F(potrDisconnectPeerTest, peer_id_na)
 TEST_F(potrDisconnectPeerTest, peer_id_all)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
 
     // Pre-Assert
-    EXPECT_CALL(mock_log, com_util_tracer_writef_at(_, COM_UTIL_TRACE_LEVEL_ERROR, nullptr,
+    EXPECT_CALL(mock_log, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_ERROR, nullptr,
                                                   AllOf(HasSubstr("potr_peer_disconnect.c"),
                                                         HasSubstr("invalid peer_id"))))
         .Times(1); // [Pre-Assert確認_異常系] - ERROR ログに "invalid peer_id" が含まれること。
@@ -153,12 +153,12 @@ TEST_F(potrDisconnectPeerTest, peer_id_all)
 TEST_F(potrDisconnectPeerTest, not_multi_peer)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     ctx.is_multi_peer = 0; // [状態] - N:1 モードでない (is_multi_peer=0) に設定する。
 
     // Pre-Assert
-    EXPECT_CALL(mock_log, com_util_tracer_writef_at(_, COM_UTIL_TRACE_LEVEL_ERROR, nullptr,
+    EXPECT_CALL(mock_log, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_ERROR, nullptr,
                                                   AllOf(HasSubstr("potr_peer_disconnect.c"),
                                                         HasSubstr("not in N:1 mode"))))
         .Times(1); // [Pre-Assert確認_異常系] - ERROR ログに "not in N:1 mode" が含まれること。
@@ -176,7 +176,7 @@ TEST_F(potrDisconnectPeerTest, not_multi_peer)
 TEST_F(potrDisconnectPeerTest, peer_not_found)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     ctx.is_multi_peer = 1; // [状態] - N:1 モードに設定する。
 
@@ -184,7 +184,7 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
     EXPECT_CALL(mock_peer_table, potr_internal_peer_find_by_id(&ctx, (potr_peer_id)99))
         .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - potr_internal_peer_find_by_id が nullptr を返すこと。
 
-    EXPECT_CALL(mock_log, com_util_tracer_writef_at(_, COM_UTIL_TRACE_LEVEL_ERROR, nullptr,
+    EXPECT_CALL(mock_log, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_ERROR, nullptr,
                                                   AllOf(HasSubstr("potr_peer_disconnect.c"),
                                                         HasSubstr("not found"))))
         .Times(1); // [Pre-Assert確認_異常系] - ERROR ログに "not found" が含まれること。
@@ -204,7 +204,7 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
 TEST_F(potrDisconnectPeerTest, normal_with_callback)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     ctx.is_multi_peer = 1;        // [状態] - N:1 モードに設定する。
     ctx.callback = mock_callback; // [状態] - 受信コールバックを設定する。
@@ -216,7 +216,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     EXPECT_CALL(mock_peer_table, potr_internal_peer_find_by_id(&ctx, (potr_peer_id)1))
         .WillOnce(Return(&peer_ctx)); // [Pre-Assert確認_正常系] - potr_internal_peer_find_by_id がピア コンテキストを返すこと。
 
-    EXPECT_CALL(mock_log, com_util_tracer_writef_at(_, COM_UTIL_TRACE_LEVEL_INFO, nullptr,
+    EXPECT_CALL(mock_log, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_INFO, nullptr,
                                                   AllOf(HasSubstr("potr_peer_disconnect.c"),
                                                         HasSubstr("disconnecting"))))
         .Times(1); // [Pre-Assert確認_正常系] - INFO ログに "disconnecting" が含まれること。
@@ -260,7 +260,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
 TEST_F(potrDisconnectPeerTest, normal_health_dead)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     ctx.is_multi_peer = 1;        // [状態] - N:1 モードに設定する。
     ctx.callback = mock_callback; // [状態] - 受信コールバックを設定する。

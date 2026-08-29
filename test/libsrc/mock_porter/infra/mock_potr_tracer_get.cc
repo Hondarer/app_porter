@@ -1,4 +1,4 @@
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 #if defined(PLATFORM_WINDOWS)
     #define _HAS_STD_BYTE 0
@@ -7,9 +7,9 @@
 #include <mock_porter.h>
 #include <porter.h>
 
-MOCK_WEAK_IMPL(com_util_tracer *, potr_tracer_get, void)
+MOCK_WEAK_IMPL(cplat_tracer *, potr_tracer_get, void)
 {
-    com_util_tracer *mock_ret = nullptr;
+    cplat_tracer *mock_ret = nullptr;
 
     if (_mock_porter != nullptr)
     {

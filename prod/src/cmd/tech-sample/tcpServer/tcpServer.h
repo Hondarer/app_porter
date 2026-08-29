@@ -14,7 +14,7 @@
 #ifndef TCPSERVER_H
 #define TCPSERVER_H
 
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 /* ============================================================
  *  プラットフォーム抽象化
@@ -27,7 +27,7 @@
     #include <sys/types.h>
     #include <unistd.h>
 
-    #include <com_util/crt/unistd.h>
+    #include <cplat/crt/unistd.h>
 
 /** クライアント ソケットの型。Linux では int、Windows では SOCKET。 */
 typedef int ClientFd;
@@ -41,11 +41,11 @@ typedef pid_t PidType;
     /** クライアントへデータを送信します。 */
     #define client_send(fd, buf, len) write((fd), (buf), (len))
     /** クライアント ソケットを閉じます。 */
-    #define client_close(fd) com_util_close((fd), NULL)
+    #define client_close(fd) cplat_close((fd), NULL)
 
 #elif defined(PLATFORM_WINDOWS)
 
-    #include <com_util/base/windows_sdk.h>
+    #include <cplat/base/windows_sdk.h>
 
 /** クライアント ソケットの型。Linux では int、Windows では SOCKET。 */
 typedef SOCKET ClientFd;

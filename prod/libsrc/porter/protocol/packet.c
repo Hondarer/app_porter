@@ -11,7 +11,7 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -20,7 +20,7 @@
 #include <porter/porter_type.h>
 
 #include <porter/protocol/packet.h>
-#include <com_util/net/byteorder.h>
+#include <cplat/net/byteorder.h>
 
 /* packet.h で公開した PACKET_HEADER_SIZE をそのまま使用する */
 
@@ -29,12 +29,12 @@
  *  @param[in]      v   変換するホスト バイト オーダーの値。
  *  @return         ネットワーク バイト オーダーに変換した値。
  *
- *  com_util_hton32() を上位 32 ビットと下位 32 ビットに適用し、ワードを入れ替えて連結します。
+ *  cplat_hton32() を上位 32 ビットと下位 32 ビットに適用し、ワードを入れ替えて連結します。
  */
 static uint64_t hton64(uint64_t v)
 {
-    uint32_t hi = com_util_hton32((uint32_t)(v >> 32));
-    uint32_t lo = com_util_hton32((uint32_t)(v & 0xFFFFFFFFUL));
+    uint32_t hi = cplat_hton32((uint32_t)(v >> 32));
+    uint32_t lo = cplat_hton32((uint32_t)(v & 0xFFFFFFFFUL));
     return ((uint64_t)lo << 32) | (uint64_t)hi;
 }
 
@@ -62,10 +62,10 @@ static void fill_session_hdr(potr_packet *packet, const potr_internal_packet_ses
 {
     packet->service_id = (int64_t)hton64((uint64_t)shdr->service_id);
     packet->session_tv_sec = (int64_t)hton64((uint64_t)shdr->session_tv_sec);
-    packet->session_id = com_util_hton32(shdr->session_id);
+    packet->session_id = cplat_hton32(shdr->session_id);
     /* session_tv_nsec は正規化済みナノ秒部 (0..999999999)。ワイヤのビット列を int32_t へ格納する */
-    packet->session_tv_nsec = (int32_t)com_util_hton32((uint32_t)shdr->session_tv_nsec);
-    packet->protocol_version = com_util_hton32(POTR_PROTOCOL_VERSION);
+    packet->session_tv_nsec = (int32_t)cplat_hton32((uint32_t)shdr->session_tv_nsec);
+    packet->protocol_version = cplat_hton32(POTR_PROTOCOL_VERSION);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -81,8 +81,8 @@ int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_pac
     packet->payload = NULL;
     fill_session_hdr(packet, shdr);
     packet->seq_num = 0;
-    packet->ack_num = com_util_hton32(nack_num);
-    packet->flags = com_util_hton16(POTR_FLAG_NACK);
+    packet->ack_num = cplat_hton32(nack_num);
+    packet->flags = cplat_hton16(POTR_FLAG_NACK);
     packet->payload_len = 0;
 
     return POTR_OK;
@@ -91,7 +91,7 @@ int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_pac
 /* Doxygen コメントは、ヘッダーに記載 */
 /**
  *  @details
- *  暗号化時はヘルスチェック スレッドが wire_buf にコピー後に com_util_encrypt を適用します。
+ *  暗号化時はヘルスチェック スレッドが wire_buf にコピー後に cplat_encrypt を適用します。
  */
 int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
                       const uint8_t *health_payload, uint16_t health_payload_len)
@@ -103,14 +103,14 @@ int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_pac
 
     memset(packet, 0, PACKET_HEADER_SIZE);
     fill_session_hdr(packet, shdr);
-    packet->seq_num = com_util_hton32(seq_num);
+    packet->seq_num = cplat_hton32(seq_num);
     packet->ack_num = 0;
-    packet->flags = com_util_hton16(POTR_FLAG_PING);
+    packet->flags = cplat_hton16(POTR_FLAG_PING);
 
     if (health_payload != NULL)
     {
         packet->payload = health_payload;
-        packet->payload_len = com_util_hton16(health_payload_len);
+        packet->payload_len = cplat_hton16(health_payload_len);
     }
     else
     {
@@ -134,8 +134,8 @@ int potr_internal_packet_build_reject(potr_packet *packet, const potr_internal_p
     packet->payload = NULL;
     fill_session_hdr(packet, shdr);
     packet->seq_num = 0;
-    packet->ack_num = com_util_hton32(seq_num);
-    packet->flags = com_util_hton16(POTR_FLAG_REJECT);
+    packet->ack_num = cplat_hton32(seq_num);
+    packet->flags = cplat_hton16(POTR_FLAG_REJECT);
     packet->payload_len = 0;
 
     return POTR_OK;
@@ -155,7 +155,7 @@ int potr_internal_packet_build_fin(potr_packet *packet, const potr_internal_pack
     fill_session_hdr(packet, shdr);
     packet->seq_num = 0;
     packet->ack_num = 0;
-    packet->flags = com_util_hton16(POTR_FLAG_FIN);
+    packet->flags = cplat_hton16(POTR_FLAG_FIN);
     packet->payload_len = 0;
 
     return POTR_OK;
@@ -174,8 +174,8 @@ int potr_internal_packet_build_fin_ack(potr_packet *packet, const potr_internal_
     packet->payload = NULL;
     fill_session_hdr(packet, shdr);
     packet->seq_num = 0;
-    packet->ack_num = com_util_hton32(fin_target_seq);
-    packet->flags = com_util_hton16(POTR_FLAG_FIN_ACK);
+    packet->ack_num = cplat_hton32(fin_target_seq);
+    packet->flags = cplat_hton16(POTR_FLAG_FIN_ACK);
     packet->payload_len = 0;
 
     return POTR_OK;
@@ -193,10 +193,10 @@ int potr_internal_packet_build_packed(potr_packet *out, const potr_internal_pack
 
     memset(out, 0, PACKET_HEADER_SIZE);
     fill_session_hdr(out, shdr);
-    out->seq_num = com_util_hton32(seq_num);
+    out->seq_num = cplat_hton32(seq_num);
     out->ack_num = 0;
-    out->flags = com_util_hton16(POTR_FLAG_DATA);
-    out->payload_len = com_util_hton16((uint16_t)payload_len);
+    out->flags = cplat_hton16(POTR_FLAG_DATA);
+    out->payload_len = cplat_hton16((uint16_t)payload_len);
     /* ゼロ コピー: 呼び出し元バッファーを直接指す */
     out->payload = (const uint8_t *)packed_payload;
 
@@ -228,7 +228,7 @@ int potr_internal_packet_unpack_next(const potr_packet *container, size_t *offse
     memcpy(&flags_nbo, p, 2);
     memcpy(&plen_nbo, p + 2, 4);
 
-    payload_len = com_util_ntoh32(plen_nbo);
+    payload_len = cplat_ntoh32(plen_nbo);
 
     if (*offset + POTR_PAYLOAD_ELEM_HDR_SIZE + payload_len > (size_t)container->payload_len ||
         payload_len > POTR_MAX_PAYLOAD)
@@ -244,7 +244,7 @@ int potr_internal_packet_unpack_next(const potr_packet *container, size_t *offse
     elem_out->session_tv_nsec = container->session_tv_nsec;
     elem_out->protocol_version = container->protocol_version;
     elem_out->ack_num = 0;
-    elem_out->flags = com_util_ntoh16(flags_nbo);
+    elem_out->flags = cplat_ntoh16(flags_nbo);
     elem_out->payload_len = (uint16_t)payload_len;
     /* ゼロ コピー: コンテナーのペイロード領域を直接指す
        コンテナーの生存期間中 (呼び出し元の処理完了まで) のみ有効 */
@@ -279,19 +279,19 @@ int potr_internal_packet_parse(potr_packet *packet, const void *buf, size_t buf_
     memcpy(&tmp64, b + 8, 8);
     packet->session_tv_sec = (int64_t)ntoh64(tmp64);
     memcpy(&tmp32, b + 16, 4);
-    packet->session_id = com_util_ntoh32(tmp32);
+    packet->session_id = cplat_ntoh32(tmp32);
     memcpy(&tmp32, b + 20, 4);
-    packet->session_tv_nsec = (int32_t)com_util_ntoh32(tmp32);
+    packet->session_tv_nsec = (int32_t)cplat_ntoh32(tmp32);
     memcpy(&tmp32, b + 24, 4);
-    packet->seq_num = com_util_ntoh32(tmp32);
+    packet->seq_num = cplat_ntoh32(tmp32);
     memcpy(&tmp32, b + 28, 4);
-    packet->ack_num = com_util_ntoh32(tmp32);
+    packet->ack_num = cplat_ntoh32(tmp32);
     memcpy(&tmp16, b + 32, 2);
-    packet->flags = com_util_ntoh16(tmp16);
+    packet->flags = cplat_ntoh16(tmp16);
     memcpy(&tmp16, b + 34, 2);
-    packet->payload_len = com_util_ntoh16(tmp16);
+    packet->payload_len = cplat_ntoh16(tmp16);
     memcpy(&tmp32, b + 36, 4);
-    packet->protocol_version = com_util_ntoh32(tmp32);
+    packet->protocol_version = cplat_ntoh32(tmp32);
 
     if (packet->protocol_version != POTR_PROTOCOL_VERSION || packet->payload_len > POTR_MAX_PAYLOAD ||
         (size_t)packet->payload_len + PACKET_HEADER_SIZE > buf_len)
@@ -315,5 +315,5 @@ size_t potr_internal_packet_wire_size(const potr_packet *packet)
         return 0;
     }
 
-    return PACKET_HEADER_SIZE + com_util_ntoh16(packet->payload_len);
+    return PACKET_HEADER_SIZE + cplat_ntoh16(packet->payload_len);
 }

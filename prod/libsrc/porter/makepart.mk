@@ -1,5 +1,5 @@
 # ライブラリの指定
-LIBS += com_util
+LIBS += cplat
 
 ifdef PLATFORM_WINDOWS
     # DLL エクスポート定義

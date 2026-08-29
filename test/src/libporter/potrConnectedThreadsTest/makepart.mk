@@ -3,4 +3,4 @@ TEST_SRCS := \
 	$(MYAPP_DIR)/prod/libsrc/porter/thread/potr_connected_threads.c
 
 # ライブラリの指定
-LIBS += mock_porter mock_com_util
+LIBS += mock_porter mock_cplat

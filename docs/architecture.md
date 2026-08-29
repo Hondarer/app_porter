@@ -353,7 +353,7 @@ package "infra" {
   }
 }
 
-package "com_util" {
+package "cplat" {
   [net\n(socket・endpoint・byteorder)]
 }
 
@@ -381,7 +381,7 @@ database "potr_context\n(セッション全状態)" as CTX
 api -[hidden]--thread
 thread -[hidden]-- infra
 api -[hidden]----- protocol
-protocol -[hidden]--com_util
+protocol -[hidden]--cplat
 
 @enduml
 ```
@@ -394,7 +394,7 @@ porter の全状態は `potr_context` 構造体 (`potr_context *` の実体) に
 | カテゴリ | 保持する情報 |
 |---|---|
 | 設定 | サービス定義 (通信種別・アドレス・ポート・暗号化鍵)、グローバル設定 (ウィンドウ サイズ・ヘルスチェック間隔) |
-| ソケット | 最大 4 パス分の UDP ソケット (`com_util_socket` 型) |
+| ソケット | 最大 4 パス分の UDP ソケット (`cplat_socket` 型) |
 | スレッド | 受信・送信・ヘルスチェック スレッド ハンドル |
 | ウィンドウ | 送信ウィンドウ・受信ウィンドウ (各パケットのコピーを保持) |
 | 送信キュー | ペイロード エレメントのリング バッファー (1024 要素) |
@@ -426,22 +426,22 @@ porter の全状態は `potr_context` 構造体 (`potr_context *` の実体) に
 
 ## クロスプラットフォーム抽象化
 
-ソケットに関するプラットフォーム差異は `com_util` の `net` カテゴリが吸収します。  
+ソケットに関するプラットフォーム差異は `cplat` の `net` カテゴリが吸収します。  
 porter はソケット型・無効値・初期化・クローズのいずれについても Linux / Windows の違いを意識しません。
 
 > [!NOTE]
-> 移行前は `potr_context.h` が `PotrSocket` 型や `POTR_INVALID_SOCKET`、`WSAStartup()` / `close()` と `closesocket()` の違いを porter 側で吸収していましたが、通信を com_util の `net` カテゴリへ移行したことで、これらは porter の関心事から外れました。
-> 詳細は [com_util のネットワーク API ガイドライン](../../com_util/docs/net-api-guideline.md) を参照してください。
+> 移行前は `potr_context.h` が `PotrSocket` 型や `POTR_INVALID_SOCKET`、`WSAStartup()` / `close()` と `closesocket()` の違いを porter 側で吸収していましたが、通信を cplat の `net` カテゴリへ移行したことで、これらは porter の関心事から外れました。
+> 詳細は [cplat のネットワーク API ガイドライン](../../cplat/docs/net-api-guideline.md) を参照してください。
 
 `potr_context.h` は、ソケット以外の残るプラットフォーム差異を引き続き抽象化します。
 
 | 機能 | Linux | Windows |
 |---|---|---|
-| スレッド型 | `com_util_thread *` | `com_util_thread *` |
-| ミューテックス型 | `com_util_local_lock *` | `com_util_local_lock *` |
-| 条件変数型 | `com_util_condvar *` | `com_util_condvar *` |
-| 単調時間 (ヘルスチェック用) | com_util 経由 `clock_gettime(CLOCK_MONOTONIC, ...)` | com_util 経由 `GetTickCount64()` |
-| カレンダー時刻 (セッション ID 用) | com_util 経由 `clock_gettime(CLOCK_REALTIME, ...)` | com_util 経由 `GetSystemTimeAsFileTime()` |
+| スレッド型 | `cplat_thread *` | `cplat_thread *` |
+| ミューテックス型 | `cplat_local_lock *` | `cplat_local_lock *` |
+| 条件変数型 | `cplat_condvar *` | `cplat_condvar *` |
+| 単調時間 (ヘルスチェック用) | cplat 経由 `clock_gettime(CLOCK_MONOTONIC, ...)` | cplat 経由 `GetTickCount64()` |
+| カレンダー時刻 (セッション ID 用) | cplat 経由 `clock_gettime(CLOCK_REALTIME, ...)` | cplat 経由 `GetSystemTimeAsFileTime()` |
 | 呼び出し規約 (`POTRAPI`) | (なし) | `__stdcall` |
 | 暗号化 (`crypto` モジュール) | OpenSSL EVP AES-256-GCM | Windows CNG (BCrypt) AES-256-GCM |
 
@@ -534,10 +534,10 @@ typedef enum {
 ```c
 potr_internal_send_queue        send_queue;    /* 送信キュー */
 potr_internal_window send_window;   /* 送信ウィンドウ */
-com_util_thread     *send_thread;   /* 送信スレッド */
-com_util_thread     *health_thread; /* ヘルスチェック スレッド */
-com_util_local_lock *health_mutex;
-com_util_condvar    *health_wakeup;
+cplat_thread     *send_thread;   /* 送信スレッド */
+cplat_thread     *health_thread; /* ヘルスチェック スレッド */
+cplat_local_lock *health_mutex;
+cplat_condvar    *health_wakeup;
 ```
 
 ### コールバック要件

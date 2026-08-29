@@ -11,9 +11,9 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
-#include <com_util/crt/stdlib.h>
-#include <com_util/crypto/random.h>
+#include <cplat/base/platform.h>
+#include <cplat/crt/stdlib.h>
+#include <cplat/crypto/random.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
@@ -34,21 +34,21 @@
 #include <porter/thread/potr_send_thread.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_result.h>
-#include <com_util/net/byteorder.h>
-#include <com_util/net/endpoint.h>
-#include <com_util/net/socket.h>
+#include <cplat/net/byteorder.h>
+#include <cplat/net/endpoint.h>
+#include <cplat/net/socket.h>
 
-/* com_util のアドレス解決/変換結果コードを porter の結果コードへ変換する。
- * com_util_ipv4_resolve() / com_util_ipv4_parse() は COM_UTIL_ERR_INVALID_ARGUMENT または
- * COM_UTIL_ERR_UNKNOWN のみを返し、失敗時の詳細エラーはソケット由来ではない (GAI ドメイン等) ため
+/* cplat のアドレス解決/変換結果コードを porter の結果コードへ変換する。
+ * cplat_ipv4_resolve() / cplat_ipv4_parse() は CPLAT_ERR_INVALID_ARGUMENT または
+ * CPLAT_ERR_UNKNOWN のみを返し、失敗時の詳細エラーはソケット由来ではない (GAI ドメイン等) ため
  * potr_internal_result_from_error() の要因ベース変換は適用しない。 */
-static int result_from_ipv4_result(int com_util_result)
+static int result_from_ipv4_result(int cplat_result)
 {
-    if (com_util_result == COM_UTIL_OK)
+    if (cplat_result == CPLAT_OK)
     {
         return POTR_OK;
     }
-    if (com_util_result == COM_UTIL_ERR_INVALID_ARGUMENT)
+    if (cplat_result == CPLAT_ERR_INVALID_ARGUMENT)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
@@ -58,12 +58,12 @@ static int result_from_ipv4_result(int com_util_result)
 /* ホスト名または IPv4 アドレス文字列を解決する。旧 resolve_ipv4() 相当の薄いラッパー。 */
 static int resolve_ipv4(const char *host, uint32_t *address_out)
 {
-    com_util_error detail;
-    int result = com_util_ipv4_resolve(host, address_out, &detail);
+    cplat_error detail;
+    int result = cplat_ipv4_resolve(host, address_out, &detail);
 
-    if (result != COM_UTIL_OK)
+    if (result != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "resolve_ipv4(%s) failed", host);
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "resolve_ipv4(%s) failed", host);
     }
     return result_from_ipv4_result(result);
 }
@@ -71,34 +71,34 @@ static int resolve_ipv4(const char *host, uint32_t *address_out)
 /* ドット区切りの IPv4 アドレス文字列を解析する。旧 parse_ipv4_addr() 相当の薄いラッパー。 */
 static int parse_ipv4(const char *text, uint32_t *address_out)
 {
-    return result_from_ipv4_result(com_util_ipv4_parse(text, address_out));
+    return result_from_ipv4_result(cplat_ipv4_parse(text, address_out));
 }
 
-/* ソケットを作成して bind する。成功時はソケットを返す。失敗時は COM_UTIL_INVALID_SOCKET。
+/* ソケットを作成して bind する。成功時はソケットを返す。失敗時は CPLAT_INVALID_SOCKET。
    bind_addr: bind する IPv4 アドレス (ネットワーク バイト オーダー)。port: bind するポート番号 (0 = OS 自動選定)。 */
-static com_util_socket open_socket_unicast(uint32_t bind_addr, uint16_t port)
+static cplat_socket open_socket_unicast(uint32_t bind_addr, uint16_t port)
 {
-    com_util_socket sock;
-    com_util_ipv4_endpoint addr = {0};
-    com_util_error detail;
+    cplat_socket sock;
+    cplat_ipv4_endpoint addr = {0};
+    cplat_error detail;
 
-    if (com_util_socket_open(COM_UTIL_SOCKET_UDP, &sock, &detail) != COM_UTIL_OK)
+    if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return COM_UTIL_INVALID_SOCKET;
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        return CPLAT_INVALID_SOCKET;
     }
 
     /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
-    (void)com_util_socket_set_reuse_address(sock, 1, NULL);
+    (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
     addr.address = bind_addr;
-    addr.port = com_util_hton16(port);
+    addr.port = cplat_hton16(port);
 
-    if (com_util_socket_bind(sock, &addr, &detail) != COM_UTIL_OK)
+    if (cplat_socket_bind(sock, &addr, &detail) != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
-        com_util_socket_close(sock);
-        return COM_UTIL_INVALID_SOCKET;
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
+        cplat_socket_close(sock);
+        return CPLAT_INVALID_SOCKET;
     }
 
     return sock;
@@ -109,29 +109,29 @@ static com_util_socket open_socket_unicast(uint32_t bind_addr, uint16_t port)
  * (key, nonce) の再利用を招く。暗号論的乱数源から取得する。 */
 static int generate_session(potr_context *ctx)
 {
-    int ret = com_util_random_bytes(&ctx->session_id, sizeof(ctx->session_id));
+    int ret = cplat_random_bytes(&ctx->session_id, sizeof(ctx->session_id));
 
-    if (ret != COM_UTIL_OK)
+    if (ret != CPLAT_OK)
     {
         return ret;
     }
-    com_util_get_realtime(&ctx->session_ts);
+    cplat_get_realtime(&ctx->session_ts);
 
     ctx->last_ping_send_ms = 0U;
     ctx->last_valid_data_send_ms = 0U;
 
-    return COM_UTIL_OK;
+    return CPLAT_OK;
 }
 
 /* マルチキャスト ソケットを作成して bind・グループ参加する。
    src_if: 使用するローカル インターフェース (INADDR_ANY = OS 自動選択)。
    is_receiver: 1 = 受信者、0 = 送信者。 */
-static com_util_socket open_socket_multicast(const potr_service_def *def, uint32_t src_if, int is_receiver)
+static cplat_socket open_socket_multicast(const potr_service_def *def, uint32_t src_if, int is_receiver)
 {
-    com_util_socket sock;
-    com_util_ipv4_endpoint addr = {0};
+    cplat_socket sock;
+    cplat_ipv4_endpoint addr = {0};
     uint32_t group_addr;
-    com_util_error detail;
+    cplat_error detail;
     /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
     uint16_t bind_port;
     if (is_receiver)
@@ -143,43 +143,43 @@ static com_util_socket open_socket_multicast(const potr_service_def *def, uint32
         bind_port = def->src_port;
     }
 
-    if (com_util_socket_open(COM_UTIL_SOCKET_UDP, &sock, &detail) != COM_UTIL_OK)
+    if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return COM_UTIL_INVALID_SOCKET;
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        return CPLAT_INVALID_SOCKET;
     }
 
     /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
-    (void)com_util_socket_set_reuse_address(sock, 1, NULL);
+    (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
-    addr.address = COM_UTIL_IPV4_ADDR_ANY;
-    addr.port = com_util_hton16(bind_port);
+    addr.address = CPLAT_IPV4_ADDR_ANY;
+    addr.port = cplat_hton16(bind_port);
 
-    if (com_util_socket_bind(sock, &addr, &detail) != COM_UTIL_OK)
+    if (cplat_socket_bind(sock, &addr, &detail) != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
-        com_util_socket_close(sock);
-        return COM_UTIL_INVALID_SOCKET;
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
+        cplat_socket_close(sock);
+        return CPLAT_INVALID_SOCKET;
     }
 
     /* マルチキャスト グループへ参加 (送受信ともに参加する) */
     if (parse_ipv4(def->multicast_group, &group_addr) != POTR_OK)
     {
-        com_util_socket_close(sock);
-        return COM_UTIL_INVALID_SOCKET;
+        cplat_socket_close(sock);
+        return CPLAT_INVALID_SOCKET;
     }
 
-    if (com_util_socket_join_multicast_group(sock, group_addr, src_if, &detail) != COM_UTIL_OK)
+    if (cplat_socket_join_multicast_group(sock, group_addr, src_if, &detail) != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "join_multicast_group failed");
-        com_util_socket_close(sock);
-        return COM_UTIL_INVALID_SOCKET;
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "join_multicast_group failed");
+        cplat_socket_close(sock);
+        return CPLAT_INVALID_SOCKET;
     }
 
     /* 送信者: マルチキャスト送信インターフェースを設定する */
     if (!is_receiver)
     {
-        (void)com_util_socket_set_multicast_interface(sock, src_if, NULL);
+        (void)cplat_socket_set_multicast_interface(sock, src_if, NULL);
     }
 
     return sock;
@@ -190,11 +190,11 @@ static com_util_socket open_socket_multicast(const potr_service_def *def, uint32
    dst_port: 受信者の listen ポート / 送信者の送信先ポート (省略不可)。
    src_if: 送信者が使用するローカル インターフェース (INADDR_ANY = OS 自動選択)。
    is_receiver: 1 = 受信者 (INADDR_ANY で bind)、0 = 送信者 (src_if で bind)。 */
-static com_util_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, uint32_t src_if, int is_receiver)
+static cplat_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, uint32_t src_if, int is_receiver)
 {
-    com_util_socket sock;
-    com_util_ipv4_endpoint addr = {0};
-    com_util_error detail;
+    cplat_socket sock;
+    cplat_ipv4_endpoint addr = {0};
+    cplat_error detail;
     /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
     uint16_t bind_port;
     if (is_receiver)
@@ -206,19 +206,19 @@ static com_util_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_por
         bind_port = src_port;
     }
 
-    if (com_util_socket_open(COM_UTIL_SOCKET_UDP, &sock, &detail) != COM_UTIL_OK)
+    if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return COM_UTIL_INVALID_SOCKET;
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        return CPLAT_INVALID_SOCKET;
     }
 
     /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
-    (void)com_util_socket_set_reuse_address(sock, 1, NULL);
-    if (com_util_socket_set_broadcast(sock, 1, &detail) != COM_UTIL_OK)
+    (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    if (cplat_socket_set_broadcast(sock, 1, &detail) != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "set_broadcast failed");
-        com_util_socket_close(sock);
-        return COM_UTIL_INVALID_SOCKET;
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "set_broadcast failed");
+        cplat_socket_close(sock);
+        return CPLAT_INVALID_SOCKET;
     }
 
     /* 送信者: src_addr で bind してインターフェースを選択する。受信者: INADDR_ANY で bind する。 */
@@ -228,15 +228,15 @@ static com_util_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_por
     }
     else
     {
-        addr.address = COM_UTIL_IPV4_ADDR_ANY;
+        addr.address = CPLAT_IPV4_ADDR_ANY;
     }
-    addr.port = com_util_hton16(bind_port);
+    addr.port = cplat_hton16(bind_port);
 
-    if (com_util_socket_bind(sock, &addr, &detail) != COM_UTIL_OK)
+    if (cplat_socket_bind(sock, &addr, &detail) != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
-        com_util_socket_close(sock);
-        return COM_UTIL_INVALID_SOCKET;
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
+        cplat_socket_close(sock);
+        return CPLAT_INVALID_SOCKET;
     }
 
     return sock;
@@ -248,10 +248,10 @@ static void cleanup_sockets(potr_context *ctx)
     int i;
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
-        if (ctx->sock[i] != COM_UTIL_INVALID_SOCKET)
+        if (ctx->sock[i] != CPLAT_INVALID_SOCKET)
         {
-            com_util_socket_close(ctx->sock[i]);
-            ctx->sock[i] = COM_UTIL_INVALID_SOCKET;
+            cplat_socket_close(ctx->sock[i]);
+            ctx->sock[i] = CPLAT_INVALID_SOCKET;
         }
     }
 }
@@ -263,11 +263,11 @@ static void ctx_cleanup(potr_context *ctx)
     potr_internal_callback_mutex_dispose(ctx);
     potr_internal_window_dispose(&ctx->send_window);
     potr_internal_window_dispose(&ctx->recv_window);
-    com_util_free(ctx->frag_buf);
-    com_util_free(ctx->compress_buf);
-    com_util_free(ctx->crypto_buf);
-    com_util_free(ctx->recv_buf);
-    com_util_free(ctx->send_wire_buf);
+    cplat_free(ctx->frag_buf);
+    cplat_free(ctx->compress_buf);
+    cplat_free(ctx->crypto_buf);
+    cplat_free(ctx->recv_buf);
+    cplat_free(ctx->send_wire_buf);
     if (ctx->is_multi_peer && ctx->peers != NULL)
     {
         potr_internal_peer_table_dispose(ctx);
@@ -277,9 +277,9 @@ static void ctx_cleanup(potr_context *ctx)
         int i;
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            if (ctx->tcp_listen_sock[i] != COM_UTIL_INVALID_SOCKET)
+            if (ctx->tcp_listen_sock[i] != CPLAT_INVALID_SOCKET)
             {
-                com_util_socket_close(ctx->tcp_listen_sock[i]);
+                cplat_socket_close(ctx->tcp_listen_sock[i]);
             }
         }
     }
@@ -287,14 +287,14 @@ static void ctx_cleanup(potr_context *ctx)
         int i;
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            if (ctx->tcp_conn_fd[i] != COM_UTIL_INVALID_SOCKET)
+            if (ctx->tcp_conn_fd[i] != CPLAT_INVALID_SOCKET)
             {
-                com_util_socket_close(ctx->tcp_conn_fd[i]);
+                cplat_socket_close(ctx->tcp_conn_fd[i]);
             }
         }
     }
     cleanup_sockets(ctx);
-    com_util_free(ctx);
+    cplat_free(ctx);
 }
 
 /* TCP RECEIVER: path_idx 番目の listen ソケットを作成して bind・listen する。
@@ -303,11 +303,11 @@ static void ctx_cleanup(potr_context *ctx)
    成功時は ctx->tcp_listen_sock[path_idx] に格納して POTR_OK を返す。 */
 static int open_socket_tcp_receiver(potr_context *ctx, int path_idx)
 {
-    com_util_socket sock;
-    com_util_ipv4_endpoint addr = {0};
+    cplat_socket sock;
+    cplat_ipv4_endpoint addr = {0};
     uint32_t bind_ip;
     int result;
-    com_util_error detail;
+    cplat_error detail;
 
     if (ctx->service.dst_addr[path_idx][0] != '\0')
     {
@@ -320,7 +320,7 @@ static int open_socket_tcp_receiver(potr_context *ctx, int path_idx)
     }
     else
     {
-        bind_ip = COM_UTIL_IPV4_ADDR_ANY;
+        bind_ip = CPLAT_IPV4_ADDR_ANY;
     }
 
     if (ctx->service.src_addr[path_idx][0] != '\0')
@@ -332,32 +332,32 @@ static int open_socket_tcp_receiver(potr_context *ctx, int path_idx)
         }
     }
 
-    result = com_util_socket_open(COM_UTIL_SOCKET_TCP, &sock, &detail);
-    if (result != COM_UTIL_OK)
+    result = cplat_socket_open(CPLAT_SOCKET_TCP, &sock, &detail);
+    if (result != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
         return potr_internal_result_from_error(&detail);
     }
 
     /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
-    (void)com_util_socket_set_reuse_address(sock, 1, NULL);
+    (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
     addr.address = bind_ip;
-    addr.port = com_util_hton16(ctx->service.dst_port);
+    addr.port = cplat_hton16(ctx->service.dst_port);
 
-    result = com_util_socket_bind(sock, &addr, &detail);
-    if (result != COM_UTIL_OK)
+    result = cplat_socket_bind(sock, &addr, &detail);
+    if (result != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "bind failed");
-        com_util_socket_close(sock);
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
+        cplat_socket_close(sock);
         return potr_internal_result_from_error(&detail);
     }
 
-    result = com_util_socket_listen(sock, COM_UTIL_SOCKET_BACKLOG_DEFAULT, &detail);
-    if (result != COM_UTIL_OK)
+    result = cplat_socket_listen(sock, CPLAT_SOCKET_BACKLOG_DEFAULT, &detail);
+    if (result != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail, "listen failed");
-        com_util_socket_close(sock);
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "listen failed");
+        cplat_socket_close(sock);
         return potr_internal_result_from_error(&detail);
     }
 
@@ -374,7 +374,7 @@ static int open_socket_tcp_sender(potr_context *ctx, int path_idx)
 
     if (ctx->service.dst_addr[path_idx][0] == '\0')
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "open_socket_tcp_sender: dst_addr[%d] is empty", path_idx);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "open_socket_tcp_sender: dst_addr[%d] is empty", path_idx);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
@@ -402,7 +402,7 @@ static int open_validate_callback(const potr_context *ctx, potr_role role, potr_
     if (role == POTR_ROLE_SENDER && callback != NULL && ctx->service.type != POTR_TYPE_UNICAST_BIDIR &&
         ctx->service.type != POTR_TYPE_TCP_BIDIR)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_service_open: service_id=%" PRId64 " SENDER role must not have callback"
                    " (type=%d)",
                    ctx->service.service_id, (int)ctx->service.type);
@@ -411,7 +411,7 @@ static int open_validate_callback(const potr_context *ctx, potr_role role, potr_
     if (role == POTR_ROLE_SENDER && callback == NULL &&
         (ctx->service.type == POTR_TYPE_UNICAST_BIDIR || ctx->service.type == POTR_TYPE_TCP_BIDIR))
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_service_open: service_id=%" PRId64 " bidirectional SENDER role requires callback"
                    " (type=%d)",
                    ctx->service.service_id, (int)ctx->service.type);
@@ -426,28 +426,28 @@ static int open_validate_config(potr_context *ctx)
 {
     if (ctx->global.max_payload < 64U || ctx->global.max_payload > POTR_MAX_PAYLOAD)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_service_open: service_id=%" PRId64 " invalid max_payload=%u (range: 64..%u)",
                    ctx->service.service_id, (unsigned)ctx->global.max_payload, (unsigned)POTR_MAX_PAYLOAD);
         return POTR_ERR_INVALID_ARGUMENT;
     }
     if (ctx->global.window_size < 2U || ctx->global.window_size > POTR_MAX_WINDOW_SIZE)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_service_open: service_id=%" PRId64 " invalid window_size=%u (range: 2..%u)",
                    ctx->service.service_id, (unsigned)ctx->global.window_size, (unsigned)POTR_MAX_WINDOW_SIZE);
         return POTR_ERR_INVALID_ARGUMENT;
     }
     if (ctx->global.max_message_size < (uint32_t)ctx->global.max_payload)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_service_open: service_id=%" PRId64 " max_message_size=%u must be >= max_payload=%u",
                    ctx->service.service_id, (unsigned)ctx->global.max_message_size, (unsigned)ctx->global.max_payload);
         return POTR_ERR_INVALID_ARGUMENT;
     }
     if (ctx->global.send_queue_depth < 2U)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_service_open: service_id=%" PRId64 " invalid send_queue_depth=%u (min: 2)",
                    ctx->service.service_id, (unsigned)ctx->global.send_queue_depth);
         return POTR_ERR_INVALID_ARGUMENT;
@@ -521,7 +521,7 @@ static int open_paths_unicast(potr_context *ctx, potr_role role)
         }
 
         ctx->sock[i] = open_socket_unicast(bind_addr, bind_port);
-        if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
+        if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
         }
@@ -560,7 +560,7 @@ static int open_paths_multicast(potr_context *ctx, potr_role role)
         }
 
         ctx->sock[i] = open_socket_multicast(&ctx->service, ctx->src_addr_resolved[i], role == POTR_ROLE_RECEIVER);
-        if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
+        if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
         }
@@ -608,7 +608,7 @@ static int open_paths_broadcast(potr_context *ctx, potr_role role)
 
         ctx->sock[i] = open_socket_broadcast(ctx->service.src_port, ctx->service.dst_port, ctx->src_addr_resolved[i],
                                              role == POTR_ROLE_RECEIVER);
-        if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
+        if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
         }
@@ -634,7 +634,7 @@ static int open_paths_unicast_bidir(potr_context *ctx, potr_role role)
     /* dst_port は必須。 */
     if (ctx->service.dst_port == 0)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_service_open: service_id=%" PRId64 " UNICAST_BIDIR requires"
                    " dst_port (non-zero)",
                    ctx->service.service_id);
@@ -649,7 +649,7 @@ static int open_paths_unicast_bidir(potr_context *ctx, potr_role role)
 
         if (ctx->service.dst_addr[0][0] == '\0')
         {
-            bind_addr = COM_UTIL_IPV4_ADDR_ANY;
+            bind_addr = CPLAT_IPV4_ADDR_ANY;
         }
         else
         {
@@ -661,12 +661,12 @@ static int open_paths_unicast_bidir(potr_context *ctx, potr_role role)
             ctx->dst_addr_resolved[0] = bind_addr;
         }
         ctx->sock[0] = open_socket_unicast(bind_addr, ctx->service.dst_port);
-        if (ctx->sock[0] == COM_UTIL_INVALID_SOCKET)
+        if (ctx->sock[0] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
         }
         ctx->n_path = 1;
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                    "potr_service_open: service_id=%" PRId64 " UNICAST_BIDIR 1:1 dynamic RECEIVER"
                    " bind dst_port=%u",
                    ctx->service.service_id, (unsigned)ctx->service.dst_port);
@@ -714,7 +714,7 @@ static int open_paths_unicast_bidir(potr_context *ctx, potr_role role)
                 }
                 else
                 {
-                    bind_addr = COM_UTIL_IPV4_ADDR_ANY;
+                    bind_addr = CPLAT_IPV4_ADDR_ANY;
                 }
                 ctx->sock[i] = open_socket_unicast(bind_addr, ctx->service.src_port);
             }
@@ -723,7 +723,7 @@ static int open_paths_unicast_bidir(potr_context *ctx, potr_role role)
                 /* RECEIVER: dst_addr:dst_port で bind */
                 ctx->sock[i] = open_socket_unicast(ctx->dst_addr_resolved[i], ctx->service.dst_port);
             }
-            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
+            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
             {
                 return POTR_ERR_IO;
             }
@@ -753,7 +753,7 @@ static int open_paths_unicast_bidir_n1(potr_context *ctx)
     /* dst_port は必須。 */
     if (ctx->service.dst_port == 0)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_service_open: service_id=%" PRId64 " UNICAST_BIDIR_N1 requires"
                    " dst_port (non-zero)",
                    ctx->service.service_id);
@@ -764,9 +764,9 @@ static int open_paths_unicast_bidir_n1(potr_context *ctx)
     {
         /* dst_addr すべて省略: INADDR_ANY で 1 ソケット */
         uint32_t any_addr;
-        any_addr = COM_UTIL_IPV4_ADDR_ANY;
+        any_addr = CPLAT_IPV4_ADDR_ANY;
         ctx->sock[0] = open_socket_unicast(any_addr, ctx->service.dst_port);
-        if (ctx->sock[0] == COM_UTIL_INVALID_SOCKET)
+        if (ctx->sock[0] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
         }
@@ -789,7 +789,7 @@ static int open_paths_unicast_bidir_n1(potr_context *ctx)
             }
             ctx->dst_addr_resolved[i] = bind_addr;
             ctx->sock[i] = open_socket_unicast(bind_addr, ctx->service.dst_port);
-            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
+            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
             {
                 return POTR_ERR_IO;
             }
@@ -809,7 +809,7 @@ static int open_paths_unicast_bidir_n1(potr_context *ctx)
         return result;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                "potr_service_open: service_id=%" PRId64 " UNICAST_BIDIR_N1"
                " (max_peers=%d src_port_filter=%u) bind dst_port=%u n_path=%d",
                ctx->service.service_id, ctx->max_peers, (unsigned)ctx->service.src_port,
@@ -826,7 +826,7 @@ static int open_paths_tcp(potr_context *ctx, potr_role role)
 
     if (ctx->service.dst_port == 0)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " TCP requires dst_port",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " TCP requires dst_port",
                    ctx->service.service_id);
         return POTR_ERR_INVALID_ARGUMENT;
     }
@@ -842,13 +842,13 @@ static int open_paths_tcp(potr_context *ctx, potr_role role)
             result = open_socket_tcp_receiver(ctx, i);
             if (result != POTR_OK)
             {
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                            "potr_service_open: service_id=%" PRId64 " TCP listen failed"
                            " (path=%d dst_addr=%s dst_port=%u)",
                            ctx->service.service_id, i, ctx->service.dst_addr[i], (unsigned)ctx->service.dst_port);
                 return result;
             }
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                        "potr_service_open: service_id=%" PRId64 " TCP path[%d] listening"
                        " on %s:%u",
                        ctx->service.service_id, i, ctx->service.dst_addr[i], (unsigned)ctx->service.dst_port);
@@ -856,7 +856,7 @@ static int open_paths_tcp(potr_context *ctx, potr_role role)
         }
         if (ctx->n_path == 0)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                        "potr_service_open: service_id=%" PRId64 " TCP RECEIVER requires"
                        " at least one dst_addr",
                        ctx->service.service_id);
@@ -874,7 +874,7 @@ static int open_paths_tcp(potr_context *ctx, potr_role role)
             result = open_socket_tcp_sender(ctx, i);
             if (result != POTR_OK)
             {
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                            "potr_service_open: service_id=%" PRId64 " TCP sender"
                            " dst_addr resolve failed (path=%d %s)",
                            ctx->service.service_id, i, ctx->service.dst_addr[i]);
@@ -884,7 +884,7 @@ static int open_paths_tcp(potr_context *ctx, potr_role role)
         }
         if (ctx->n_path == 0)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                        "potr_service_open: service_id=%" PRId64 " TCP SENDER requires"
                        " at least one dst_addr",
                        ctx->service.service_id);
@@ -945,13 +945,13 @@ static int setup_dest_addr(potr_context *ctx, potr_role role)
             {
                 /* SENDER: dst_addr:dst_port (RECEIVER の bind アドレス) へ送信 */
                 ctx->dest_addr[i].address = ctx->dst_addr_resolved[i];
-                ctx->dest_addr[i].port = com_util_hton16(ctx->service.dst_port);
+                ctx->dest_addr[i].port = cplat_hton16(ctx->service.dst_port);
             }
             else
             {
                 /* RECEIVER: src_addr:src_port (SENDER の bind アドレス) へ送信 */
                 ctx->dest_addr[i].address = ctx->src_addr_resolved[i];
-                ctx->dest_addr[i].port = com_util_hton16(ctx->service.src_port);
+                ctx->dest_addr[i].port = cplat_hton16(ctx->service.src_port);
             }
         }
         break;
@@ -961,7 +961,7 @@ static int setup_dest_addr(potr_context *ctx, potr_role role)
         {
             potr_endpoint_clear(&ctx->dest_addr[i]);
             ctx->dest_addr[i].address = ctx->dst_addr_resolved[i];
-            ctx->dest_addr[i].port = com_util_hton16(ctx->service.dst_port);
+            ctx->dest_addr[i].port = cplat_hton16(ctx->service.dst_port);
         }
         break;
 
@@ -976,7 +976,7 @@ static int setup_dest_addr(potr_context *ctx, potr_role role)
         {
             potr_endpoint_clear(&ctx->dest_addr[i]);
             ctx->dest_addr[i].address = mcast_ip;
-            ctx->dest_addr[i].port = com_util_hton16(ctx->service.dst_port);
+            ctx->dest_addr[i].port = cplat_hton16(ctx->service.dst_port);
         }
         break;
     }
@@ -992,7 +992,7 @@ static int setup_dest_addr(potr_context *ctx, potr_role role)
         {
             potr_endpoint_clear(&ctx->dest_addr[i]);
             ctx->dest_addr[i].address = bcast_ip;
-            ctx->dest_addr[i].port = com_util_hton16(ctx->service.dst_port);
+            ctx->dest_addr[i].port = cplat_hton16(ctx->service.dst_port);
         }
         break;
     }
@@ -1030,33 +1030,33 @@ static int alloc_context_buffers(potr_context *ctx)
         return result;
     }
 
-    ctx->frag_buf = (uint8_t *)com_util_malloc(ctx->global.max_message_size);
+    ctx->frag_buf = (uint8_t *)cplat_malloc(ctx->global.max_message_size);
     if (ctx->frag_buf == NULL)
     {
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
-    ctx->compress_buf_size = COM_UTIL_COMPRESS_HEADER_SIZE + (size_t)ctx->global.max_message_size + 64U;
-    ctx->compress_buf = (uint8_t *)com_util_malloc(ctx->compress_buf_size);
+    ctx->compress_buf_size = CPLAT_COMPRESS_HEADER_SIZE + (size_t)ctx->global.max_message_size + 64U;
+    ctx->compress_buf = (uint8_t *)cplat_malloc(ctx->compress_buf_size);
     if (ctx->compress_buf == NULL)
     {
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
-    ctx->recv_buf = (uint8_t *)com_util_malloc(PACKET_HEADER_SIZE + ctx->global.max_payload);
+    ctx->recv_buf = (uint8_t *)cplat_malloc(PACKET_HEADER_SIZE + ctx->global.max_payload);
     if (ctx->recv_buf == NULL)
     {
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
-    ctx->send_wire_buf = (uint8_t *)com_util_malloc(PACKET_HEADER_SIZE + ctx->global.max_payload);
+    ctx->send_wire_buf = (uint8_t *)cplat_malloc(PACKET_HEADER_SIZE + ctx->global.max_payload);
     if (ctx->send_wire_buf == NULL)
     {
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
     ctx->crypto_buf_size = ctx->global.max_payload + POTR_CRYPTO_TAG_SIZE;
-    ctx->crypto_buf = (uint8_t *)com_util_malloc(ctx->crypto_buf_size);
+    ctx->crypto_buf = (uint8_t *)cplat_malloc(ctx->crypto_buf_size);
     if (ctx->crypto_buf == NULL)
     {
         return POTR_ERR_OUT_OF_MEMORY;
@@ -1070,15 +1070,15 @@ static void destroy_tcp_sync_primitives(potr_context *ctx)
 {
     int i;
 
-    com_util_local_lock_dispose(ctx->tcp_state_mutex);
-    com_util_condvar_dispose(ctx->tcp_state_cv);
-    com_util_local_lock_dispose(ctx->tcp_close_mutex);
-    com_util_condvar_dispose(ctx->tcp_close_cv);
+    cplat_local_lock_dispose(ctx->tcp_state_mutex);
+    cplat_condvar_dispose(ctx->tcp_state_cv);
+    cplat_local_lock_dispose(ctx->tcp_close_mutex);
+    cplat_condvar_dispose(ctx->tcp_close_cv);
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
-        com_util_local_lock_dispose(ctx->tcp_send_mutex[i]);
+        cplat_local_lock_dispose(ctx->tcp_send_mutex[i]);
     }
-    com_util_local_lock_dispose(ctx->recv_window_mutex);
+    cplat_local_lock_dispose(ctx->recv_window_mutex);
 }
 
 /* TCP: 同期プリミティブと送信キューを初期化し、接続管理スレッドを起動する。
@@ -1092,17 +1092,17 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
        health_mutex[] / health_wakeup[] を初期化 */
     {
         int i;
-        com_util_local_lock_create(&ctx->tcp_state_mutex);
-        com_util_condvar_create(&ctx->tcp_state_cv);
-        com_util_local_lock_create(&ctx->tcp_close_mutex);
-        com_util_condvar_create(&ctx->tcp_close_cv);
+        cplat_local_lock_create(&ctx->tcp_state_mutex);
+        cplat_condvar_create(&ctx->tcp_state_cv);
+        cplat_local_lock_create(&ctx->tcp_close_mutex);
+        cplat_condvar_create(&ctx->tcp_close_cv);
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            com_util_local_lock_create(&ctx->tcp_send_mutex[i]);
-            com_util_local_lock_create(&ctx->health_mutex[i]);
-            com_util_condvar_create(&ctx->health_wakeup[i]);
+            cplat_local_lock_create(&ctx->tcp_send_mutex[i]);
+            cplat_local_lock_create(&ctx->health_mutex[i]);
+            cplat_condvar_create(&ctx->health_wakeup[i]);
         }
-        com_util_local_lock_create(&ctx->recv_window_mutex);
+        cplat_local_lock_create(&ctx->recv_window_mutex);
     }
 
     /* SENDER または TCP_BIDIR: 送信キューを初期化 (connect スレッドが reconnect 時に dispose+init する) */
@@ -1203,18 +1203,18 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
 
     if (global == NULL || service == NULL || handle == NULL)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_service_open: invalid argument (global=%p service=%p handle=%p)",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: invalid argument (global=%p service=%p handle=%p)",
                    (const void *)global, (const void *)service, (const void *)handle);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_service_open: service_id=%" PRId64 " role=%d", service->service_id,
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_open: service_id=%" PRId64 " role=%d", service->service_id,
                (int)role);
 
     /* role と callback の整合性チェック (設定読み込み前に確定できる部分のみ) */
     if (role == POTR_ROLE_RECEIVER && callback == NULL)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_service_open: service_id=%" PRId64 " RECEIVER role requires callback", service->service_id);
         return POTR_ERR_INVALID_ARGUMENT;
     }
@@ -1222,12 +1222,12 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
        (POTR_TYPE_UNICAST_BIDIR の SENDER は callback が必須のため) */
     if (role != POTR_ROLE_SENDER && role != POTR_ROLE_RECEIVER)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " unknown role=%d",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " unknown role=%d",
                    service->service_id, (int)role);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    ctx = (potr_context *)com_util_malloc(sizeof(potr_context));
+    ctx = (potr_context *)cplat_malloc(sizeof(potr_context));
     if (ctx == NULL)
     {
         return POTR_ERR_OUT_OF_MEMORY;
@@ -1240,9 +1240,9 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         int i;
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            ctx->sock[i] = COM_UTIL_INVALID_SOCKET;
-            ctx->tcp_conn_fd[i] = COM_UTIL_INVALID_SOCKET;
-            ctx->tcp_listen_sock[i] = COM_UTIL_INVALID_SOCKET;
+            ctx->sock[i] = CPLAT_INVALID_SOCKET;
+            ctx->tcp_conn_fd[i] = CPLAT_INVALID_SOCKET;
+            ctx->tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
         }
     }
 
@@ -1262,7 +1262,7 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         return result;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                "potr_service_open: service_id=%" PRId64 " type=%d window=%u max_payload=%u"
                " max_message_size=%u send_queue_depth=%u"
                " health_interval=%ums health_timeout=%ums tcp_close_timeout=%ums",
@@ -1291,9 +1291,9 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
     }
 
     /* セッション識別子を生成する */
-    if (generate_session(ctx) != COM_UTIL_OK)
+    if (generate_session(ctx) != CPLAT_OK)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_service_open: session id generation failed (service_id=%" PRId64 ")",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: session id generation failed (service_id=%" PRId64 ")",
                    ctx->service.service_id);
         ctx_cleanup(ctx);
         return POTR_ERR_UNKNOWN;
@@ -1343,7 +1343,7 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         {
             encrypt_str = "OFF";
         }
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                    "potr_service_open: service_id=%" PRId64 " role=%s encrypt=%s opened successfully",
                    ctx->service.service_id, role_str, encrypt_str);
     }

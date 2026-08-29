@@ -7,4 +7,4 @@ ADD_SRCS += \
 	$(MYAPP_DIR)/prod/libsrc/porter/protocol/seqnum.c
 
 # ライブラリの指定
-LIBS += mock_com_util mock_libc
+LIBS += mock_cplat mock_libc

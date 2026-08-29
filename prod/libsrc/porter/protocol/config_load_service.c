@@ -16,14 +16,14 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <com_util/base/result.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/base/result.h>
+#include <cplat/crt/stdlib.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_type.h>
 
-#include <com_util/crypto/crypto.h>
-#include <com_util/runtime/memory_lock.h>
+#include <cplat/crypto/crypto.h>
+#include <cplat/runtime/memory_lock.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/protocol/config.h>
 #include <porter/protocol/config_parse_common.h>
@@ -34,17 +34,17 @@ static int parse_u32_field(const char *text, uint32_t *value_out)
     int64_t parsed;
     int ret;
 
-    ret = com_util_parse_int64(&parsed, text, 10);
-    if (ret != COM_UTIL_OK)
+    ret = cplat_parse_int64(&parsed, text, 10);
+    if (ret != CPLAT_OK)
     {
         return ret;
     }
     if ((parsed < 0) || (parsed > (int64_t)UINT32_MAX))
     {
-        return COM_UTIL_ERR_OUT_OF_RANGE;
+        return CPLAT_ERR_OUT_OF_RANGE;
     }
     *value_out = (uint32_t)parsed;
-    return COM_UTIL_OK;
+    return CPLAT_OK;
 }
 
 static int parse_u16_field(const char *text, uint16_t *value_out)
@@ -53,16 +53,16 @@ static int parse_u16_field(const char *text, uint16_t *value_out)
     int ret;
 
     ret = parse_u32_field(text, &parsed);
-    if (ret != COM_UTIL_OK)
+    if (ret != CPLAT_OK)
     {
         return ret;
     }
     if (parsed > (uint32_t)UINT16_MAX)
     {
-        return COM_UTIL_ERR_OUT_OF_RANGE;
+        return CPLAT_ERR_OUT_OF_RANGE;
     }
     *value_out = (uint16_t)parsed;
-    return COM_UTIL_OK;
+    return CPLAT_OK;
 }
 
 static int parse_u8_field(const char *text, uint8_t *value_out)
@@ -71,16 +71,16 @@ static int parse_u8_field(const char *text, uint8_t *value_out)
     int ret;
 
     ret = parse_u32_field(text, &parsed);
-    if (ret != COM_UTIL_OK)
+    if (ret != CPLAT_OK)
     {
         return ret;
     }
     if (parsed > (uint32_t)UINT8_MAX)
     {
-        return COM_UTIL_ERR_OUT_OF_RANGE;
+        return CPLAT_ERR_OUT_OF_RANGE;
     }
     *value_out = (uint8_t)parsed;
-    return COM_UTIL_OK;
+    return CPLAT_OK;
 }
 
 /**
@@ -217,7 +217,7 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     {
         uint32_t parsed;
 
-        if ((parse_u32_field(val, &parsed) == COM_UTIL_OK) && (parsed > 0U))
+        if ((parse_u32_field(val, &parsed) == CPLAT_OK) && (parsed > 0U))
         {
             current->max_peers = parsed;
         }
@@ -238,7 +238,7 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     {
         uint32_t parsed;
 
-        if (parse_u32_field(val, &parsed) == COM_UTIL_OK)
+        if (parse_u32_field(val, &parsed) == CPLAT_OK)
         {
             current->connect_timeout_ms = parsed;
         }
@@ -276,38 +276,38 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
                 byte_str[1] = val[i * 2 + 1];
                 byte_str[2] = '\0';
 
-                if (com_util_parse_int64(&byte_val, byte_str, 16) == COM_UTIL_OK)
+                if (cplat_parse_int64(&byte_val, byte_str, 16) == CPLAT_OK)
                 {
                     current->encrypt_key[i] = (uint8_t)byte_val;
                 }
             }
             current->encrypt_enabled = 1;
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "config: encrypt_key loaded as hex key (service_id=%" PRId64 ")",
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "config: encrypt_key loaded as hex key (service_id=%" PRId64 ")",
                        current->service_id);
         }
         else if (hex_len > 0U)
         {
-            if (com_util_passphrase_to_key(current->encrypt_key, (const uint8_t *)val, hex_len) == COM_UTIL_OK)
+            if (cplat_passphrase_to_key(current->encrypt_key, (const uint8_t *)val, hex_len) == CPLAT_OK)
             {
                 current->encrypt_enabled = 1;
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+                POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                            "config: encrypt_key treated as passphrase (SHA-256, service_id=%" PRId64 ")",
                            current->service_id);
             }
             else
             {
-                com_util_secure_zero(current->encrypt_key, sizeof(current->encrypt_key));
+                cplat_secure_zero(current->encrypt_key, sizeof(current->encrypt_key));
                 current->encrypt_enabled = 0;
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
+                POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
                            "config: encrypt_key passphrase hashing failed (service_id=%" PRId64 ")",
                            current->service_id);
             }
         }
         else
         {
-            com_util_secure_zero(current->encrypt_key, sizeof(current->encrypt_key));
+            cplat_secure_zero(current->encrypt_key, sizeof(current->encrypt_key));
             current->encrypt_enabled = 0;
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING, "config: encrypt_key is empty, ignored (service_id=%" PRId64 ")",
+            POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING, "config: encrypt_key is empty, ignored (service_id=%" PRId64 ")",
                        current->service_id);
         }
     }
@@ -359,7 +359,7 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
             }
 
             if (config_parse_section_name(trimmed, section, sizeof(section)) && strncmp(section, "service.", 8) == 0 &&
-                com_util_parse_int64(&parsed_id, section + 8, 10) == COM_UTIL_OK && parsed_id == service_id)
+                cplat_parse_int64(&parsed_id, section + 8, 10) == CPLAT_OK && parsed_id == service_id)
             {
                 memset(def, 0, sizeof(*def));
                 def->ttl = (uint8_t)POTR_DEFAULT_TTL;
@@ -389,22 +389,22 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
         apply_service_kv(key, val, def);
 
         /* trimmed は行の生の内容 (パスフレーズを含みうる) を保持する */
-        com_util_secure_zero(trimmed, sizeof(trimmed));
+        cplat_secure_zero(trimmed, sizeof(trimmed));
     }
 
     fclose(fp);
 
     /* line / key / val はパスフレーズ平文を保持しうるため、復帰前に消去する */
-    com_util_secure_zero(line, sizeof(line));
-    com_util_secure_zero(key, sizeof(key));
-    com_util_secure_zero(val, sizeof(val));
+    cplat_secure_zero(line, sizeof(line));
+    cplat_secure_zero(key, sizeof(key));
+    cplat_secure_zero(val, sizeof(val));
 
     if (!found)
     {
         return POTR_ERR_NOT_FOUND;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                "service loaded: service_id=%" PRId64 " type=%d "
                "src_addr1=%s dst_addr1=%s dst_port=%u src_port=%u",
                def->service_id, (int)def->type, def->src_addr[0], def->dst_addr[0], (unsigned)def->dst_port,

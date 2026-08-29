@@ -11,8 +11,8 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/base/platform.h>
+#include <cplat/crt/stdlib.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -29,13 +29,13 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
 
     memset(q, 0, sizeof(*q));
 
-    q->entries = (potr_internal_payload_elem *)com_util_calloc(depth, sizeof(potr_internal_payload_elem));
-    q->payload_pool = (uint8_t *)com_util_calloc(depth, (size_t)max_payload);
+    q->entries = (potr_internal_payload_elem *)cplat_calloc(depth, sizeof(potr_internal_payload_elem));
+    q->payload_pool = (uint8_t *)cplat_calloc(depth, (size_t)max_payload);
 
     if (q->entries == NULL || q->payload_pool == NULL)
     {
-        com_util_free(q->entries);
-        com_util_free(q->payload_pool);
+        cplat_free(q->entries);
+        cplat_free(q->payload_pool);
         q->entries = NULL;
         q->payload_pool = NULL;
         return POTR_ERR_OUT_OF_MEMORY;
@@ -51,10 +51,10 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
         q->entries[i].payload = q->payload_pool + i * (size_t)max_payload;
     }
 
-    com_util_local_lock_create(&q->mutex);
-    com_util_condvar_create(&q->not_empty);
-    com_util_condvar_create(&q->not_full);
-    com_util_condvar_create(&q->drained);
+    cplat_local_lock_create(&q->mutex);
+    cplat_condvar_create(&q->not_empty);
+    cplat_condvar_create(&q->not_full);
+    cplat_condvar_create(&q->drained);
     return POTR_OK;
 }
 
@@ -62,12 +62,12 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
 
 void potr_internal_send_queue_dispose(potr_internal_send_queue *q)
 {
-    com_util_condvar_dispose(q->drained);
-    com_util_condvar_dispose(q->not_full);
-    com_util_condvar_dispose(q->not_empty);
-    com_util_local_lock_dispose(q->mutex);
-    com_util_free(q->entries);
-    com_util_free(q->payload_pool);
+    cplat_condvar_dispose(q->drained);
+    cplat_condvar_dispose(q->not_full);
+    cplat_condvar_dispose(q->not_empty);
+    cplat_local_lock_dispose(q->mutex);
+    cplat_free(q->entries);
+    cplat_free(q->payload_pool);
     q->entries = NULL;
     q->payload_pool = NULL;
 }
@@ -77,11 +77,11 @@ void potr_internal_send_queue_dispose(potr_internal_send_queue *q)
 int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
                          uint16_t payload_len)
 {
-    com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     if (q->count + q->inflight >= q->depth)
     {
-        com_util_local_lock_unlock(q->mutex);
+        cplat_local_lock_unlock(q->mutex);
         return POTR_ERR_FULL;
     }
 
@@ -92,8 +92,8 @@ int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer
     q->tail = (q->tail + 1U) % q->depth;
     q->count++;
 
-    com_util_condvar_signal(q->not_empty);
-    com_util_local_lock_unlock(q->mutex);
+    cplat_condvar_signal(q->not_empty);
+    cplat_local_lock_unlock(q->mutex);
 
     return POTR_OK;
 }
@@ -103,7 +103,7 @@ int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer
 int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
                               uint16_t payload_len, volatile int *running)
 {
-    com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     /* count + inflight < depth が保証されるまで待機する。
        inflight エントリもプール スロットを占有するため、count だけでは不足。 */
@@ -111,10 +111,10 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
     {
         if (!*running)
         {
-            com_util_local_lock_unlock(q->mutex);
+            cplat_local_lock_unlock(q->mutex);
             return POTR_ERR_CANCELED;
         }
-        com_util_condvar_wait(q->not_full, q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+        cplat_condvar_wait(q->not_full, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
     }
 
     q->entries[q->tail].peer_id = peer_id;
@@ -124,8 +124,8 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
     q->tail = (q->tail + 1U) % q->depth;
     q->count++;
 
-    com_util_condvar_signal(q->not_empty);
-    com_util_local_lock_unlock(q->mutex);
+    cplat_condvar_signal(q->not_empty);
+    cplat_local_lock_unlock(q->mutex);
 
     return POTR_OK;
 }
@@ -134,16 +134,16 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
 
 int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out, volatile int *running)
 {
-    com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     while (q->count == 0)
     {
         if (!*running)
         {
-            com_util_local_lock_unlock(q->mutex);
+            cplat_local_lock_unlock(q->mutex);
             return POTR_ERR_CANCELED;
         }
-        com_util_condvar_wait(q->not_empty, q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+        cplat_condvar_wait(q->not_empty, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
     }
 
     *out = q->entries[q->head];
@@ -153,7 +153,7 @@ int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payl
 
     /* count + inflight は変化しない (count-- と inflight++ が相殺) ため
        not_full シグナルは complete() が担う */
-    com_util_local_lock_unlock(q->mutex);
+    cplat_local_lock_unlock(q->mutex);
     return POTR_OK;
 }
 
@@ -161,17 +161,17 @@ int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payl
 
 int potr_internal_send_queue_peek(potr_internal_send_queue *q, potr_internal_payload_elem *out)
 {
-    com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     if (q->count == 0)
     {
-        com_util_local_lock_unlock(q->mutex);
+        cplat_local_lock_unlock(q->mutex);
         return POTR_ERR_EMPTY;
     }
 
     *out = q->entries[q->head]; /* head は送信スレッドのみが変更するので安全 */
 
-    com_util_local_lock_unlock(q->mutex);
+    cplat_local_lock_unlock(q->mutex);
     return POTR_OK;
 }
 
@@ -179,22 +179,22 @@ int potr_internal_send_queue_peek(potr_internal_send_queue *q, potr_internal_pay
 
 int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_internal_payload_elem *out, int timeout_ms)
 {
-    com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     if (q->count == 0)
     {
-        com_util_condvar_wait(q->not_empty, q->mutex, timeout_ms);
+        cplat_condvar_wait(q->not_empty, q->mutex, timeout_ms);
     }
 
     if (q->count == 0)
     {
-        com_util_local_lock_unlock(q->mutex);
+        cplat_local_lock_unlock(q->mutex);
         return POTR_ERR_TIMEOUT;
     }
 
     *out = q->entries[q->head];
 
-    com_util_local_lock_unlock(q->mutex);
+    cplat_local_lock_unlock(q->mutex);
     return POTR_OK;
 }
 
@@ -202,11 +202,11 @@ int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_intern
 
 int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out)
 {
-    com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     if (q->count == 0)
     {
-        com_util_local_lock_unlock(q->mutex);
+        cplat_local_lock_unlock(q->mutex);
         return POTR_ERR_EMPTY;
     }
 
@@ -215,7 +215,7 @@ int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_
     q->count--;
     q->inflight++;
 
-    com_util_local_lock_unlock(q->mutex);
+    cplat_local_lock_unlock(q->mutex);
     return POTR_OK;
 }
 
@@ -223,7 +223,7 @@ int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_
 
 void potr_internal_send_queue_complete(potr_internal_send_queue *q)
 {
-    com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     if (q->inflight > 0U)
     {
@@ -232,36 +232,36 @@ void potr_internal_send_queue_complete(potr_internal_send_queue *q)
 
     if (q->count == 0U && q->inflight == 0U)
     {
-        com_util_condvar_broadcast(q->drained);
+        cplat_condvar_broadcast(q->drained);
     }
 
     /* inflight 減少により count + inflight < depth となる可能性があるため
        push_wait で待機中のスレッドを起床させる */
-    com_util_condvar_signal(q->not_full);
+    cplat_condvar_signal(q->not_full);
 
-    com_util_local_lock_unlock(q->mutex);
+    cplat_local_lock_unlock(q->mutex);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_internal_send_queue_wait_drained(potr_internal_send_queue *q)
 {
-    com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     while (q->count > 0U || q->inflight > 0U)
     {
-        com_util_condvar_wait(q->drained, q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+        cplat_condvar_wait(q->drained, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
     }
 
-    com_util_local_lock_unlock(q->mutex);
+    cplat_local_lock_unlock(q->mutex);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_internal_send_queue_shutdown(potr_internal_send_queue *q)
 {
-    com_util_local_lock_lock(q->mutex, COM_UTIL_SYNC_WAIT_FOREVER);
-    com_util_condvar_broadcast(q->not_empty);
-    com_util_condvar_broadcast(q->not_full);
-    com_util_local_lock_unlock(q->mutex);
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_condvar_broadcast(q->not_empty);
+    cplat_condvar_broadcast(q->not_full);
+    cplat_local_lock_unlock(q->mutex);
 }

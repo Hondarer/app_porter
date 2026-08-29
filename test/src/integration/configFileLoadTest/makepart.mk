@@ -7,5 +7,5 @@ TEST_SRCS := \
 INCDIR += \
 	$(MYAPP_DIR)/test/include
 
-# mock_com_util はリンクしない
-LIBS += mock_porter com_util mock_libc
+# mock_cplat はリンクしない
+LIBS += mock_porter cplat mock_libc

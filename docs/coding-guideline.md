@@ -80,7 +80,7 @@ porter には利用者が存在しないため、互換のための旧名の別�
 
 > [!NOTE]
 > `PotrSocket`、`potr_socket_cause_t` はこの表から除外しています。
-> 通信のプラットフォーム抽象化層を com_util の net カテゴリへ移行したことで、ソケット型とソケット エラー要因の型は porter から com_util (`com_util_socket`、`com_util_error_cause`) へ移りました。
+> 通信のプラットフォーム抽象化層を cplat の net カテゴリへ移行したことで、ソケット型とソケット エラー要因の型は porter から cplat (`cplat_socket`、`cplat_error_cause`) へ移りました。
 > porter 独自のソケット型 alias は存在しません。
 
 ### 内部共有関数・型・変数の接頭辞
@@ -103,8 +103,8 @@ extern int g_potr_internal_peer_count;
 現行のライブラリ内共有関数は `potr_internal_` を前置きします。
 
 > [!NOTE]
-> `parse_ipv4_addr`、`resolve_ipv4_addr` は、当時この一覧に含まれていましたが、通信のプラットフォーム抽象化層を com_util の net カテゴリへ移行したことで porter から削除されました。
-> 現行のアドレス解決は `com_util_ipv4_parse()` / `com_util_ipv4_resolve()` を使用します。
+> `parse_ipv4_addr`、`resolve_ipv4_addr` は、当時この一覧に含まれていましたが、通信のプラットフォーム抽象化層を cplat の net カテゴリへ移行したことで porter から削除されました。
+> 現行のアドレス解決は `cplat_ipv4_parse()` / `cplat_ipv4_resolve()` を使用します。
 
 ## エラー処理と戻り値規約
 
@@ -154,18 +154,18 @@ if (ret != POTR_OK)
 特定のエラーを区別する場合は、`ret == POTR_ERR_DISCONNECTED` のようにコード名で比較します。  
 `-1` などの数値リテラルとの比較は行いません。
 
-### com_util 呼び出し結果の扱い
+### cplat 呼び出し結果の扱い
 
-com_util の API を呼び出した結果は `ret != COM_UTIL_OK` の名前比較で判定します。  
-porter の関数から返す場合は、`COM_UTIL_ERR_*` を porter の結果コードへ変換して返します。com_util の結果コードをそのまま porter の戻り値として素通ししません。  
+cplat の API を呼び出した結果は `ret != CPLAT_OK` の名前比較で判定します。  
+porter の関数から返す場合は、`CPLAT_ERR_*` を porter の結果コードへ変換して返します。cplat の結果コードをそのまま porter の戻り値として素通ししません。  
 タイムアウトは `POTR_ERR_TIMEOUT`、ファイルおよびネットワークの失敗は `POTR_ERR_IO` のように、原因が判別できる場合は対応する分類へ変換します。  
 下位 API が詳細コードを提供せず、ほかの分類へ変換できない場合だけ `POTR_ERR_UNKNOWN` を返し、その理由をソース コメントに記載します。  
-ソケット API (`com_util/net`) の失敗は `com_util_error *detail_out` で受け取り、対応する `POTR_ERR_*` へ変換します。  
-OS 固有コードは直接比較せず、`com_util_error_is()` と `COM_UTIL_CAUSE_*` を使用します。
+ソケット API (`cplat/net`) の失敗は `cplat_error *detail_out` で受け取り、対応する `POTR_ERR_*` へ変換します。  
+OS 固有コードは直接比較せず、`cplat_error_is()` と `CPLAT_CAUSE_*` を使用します。
 
 ```c
-int ret = com_util_crypto_encrypt(...);
-if (ret != COM_UTIL_OK)
+int ret = cplat_crypto_encrypt(...);
+if (ret != CPLAT_OK)
 {
     return POTR_ERR_UNKNOWN;
 }
@@ -186,8 +186,8 @@ if (ret != COM_UTIL_OK)
 
 > [!NOTE]
 > ソケットに対する素通しラッパー (`potr_sendto`、`potr_recvfrom`、`potr_poll_readable`、`potr_poll_writable`) と合成ラッパー (`potr_socket_open`、`potr_bind`、`potr_listen`、`potr_accept`、`potr_connect`、`potr_setsockopt`、`potr_socket_get_pending_error`) は、この表から除外しています。
-> 通信のプラットフォーム抽象化層を com_util の net カテゴリへ移行したことで、porter はこれらの porter 独自ラッパーを持たず、`com_util_socket_sendto()` などの com_util API を直接呼び出します。
-> com_util API の戻り値の扱いは、上記「com_util 呼び出し結果の扱い」に従います。
+> 通信のプラットフォーム抽象化層を cplat の net カテゴリへ移行したことで、porter はこれらの porter 独自ラッパーを持たず、`cplat_socket_sendto()` などの cplat API を直接呼び出します。
+> cplat API の戻り値の扱いは、上記「cplat 呼び出し結果の扱い」に従います。
 
 ### 検証
 

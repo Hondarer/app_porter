@@ -12,7 +12,7 @@
  */
 
 #include <stdlib.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/crt/stdlib.h>
 #include <string.h>
 
 #include <porter/porter_result.h>
@@ -44,7 +44,7 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
 
     capacity = (int)POTR_MAX_SERVICES;
     count = 0;
-    ids = (int64_t *)com_util_calloc((size_t)capacity, sizeof(int64_t));
+    ids = (int64_t *)cplat_calloc((size_t)capacity, sizeof(int64_t));
     if (ids == NULL)
     {
         fclose(fp);
@@ -73,10 +73,10 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
             int new_capacity = capacity * 2;
             int64_t *new_ids;
 
-            new_ids = (int64_t *)com_util_realloc(ids, (size_t)new_capacity , sizeof(int64_t));
+            new_ids = (int64_t *)cplat_realloc(ids, (size_t)new_capacity , sizeof(int64_t));
             if (new_ids == NULL)
             {
-                com_util_free(ids);
+                cplat_free(ids);
                 fclose(fp);
                 return POTR_ERR_OUT_OF_MEMORY;
             }
@@ -84,7 +84,7 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
             capacity = new_capacity;
         }
 
-        if (com_util_parse_int64(&parsed_id, section + 8, 10) != COM_UTIL_OK)
+        if (cplat_parse_int64(&parsed_id, section + 8, 10) != CPLAT_OK)
         {
             continue;
         }

@@ -14,8 +14,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <com_util/base/result.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/base/result.h>
+#include <cplat/crt/stdlib.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_type.h>
@@ -30,17 +30,17 @@ static int parse_u32_field(const char *text, uint32_t *value_out)
     int64_t parsed;
     int ret;
 
-    ret = com_util_parse_int64(&parsed, text, 10);
-    if (ret != COM_UTIL_OK)
+    ret = cplat_parse_int64(&parsed, text, 10);
+    if (ret != CPLAT_OK)
     {
         return ret;
     }
     if ((parsed < 0) || (parsed > (int64_t)UINT32_MAX))
     {
-        return COM_UTIL_ERR_OUT_OF_RANGE;
+        return CPLAT_ERR_OUT_OF_RANGE;
     }
     *value_out = (uint32_t)parsed;
-    return COM_UTIL_OK;
+    return CPLAT_OK;
 }
 
 static int parse_u16_field(const char *text, uint16_t *value_out)
@@ -49,16 +49,16 @@ static int parse_u16_field(const char *text, uint16_t *value_out)
     int ret;
 
     ret = parse_u32_field(text, &parsed);
-    if (ret != COM_UTIL_OK)
+    if (ret != CPLAT_OK)
     {
         return ret;
     }
     if (parsed > (uint32_t)UINT16_MAX)
     {
-        return COM_UTIL_ERR_OUT_OF_RANGE;
+        return CPLAT_ERR_OUT_OF_RANGE;
     }
     *value_out = (uint16_t)parsed;
-    return COM_UTIL_OK;
+    return CPLAT_OK;
 }
 
 /**
@@ -181,7 +181,7 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
         }
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                "config loaded: window_size=%u max_payload=%u "
                "max_message_size=%u send_queue_depth=%u "
                "udp_health=%u/%u tcp_health=%u/%u tcp_close_timeout_ms=%u reorder_timeout_ms=%u",

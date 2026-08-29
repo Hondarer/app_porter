@@ -11,8 +11,8 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/base/platform.h>
+#include <cplat/crt/stdlib.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,7 +21,7 @@
 
 #include <porter/protocol/seqnum.h>
 #include <porter/protocol/window.h>
-#include <com_util/net/byteorder.h>
+#include <cplat/net/byteorder.h>
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -44,23 +44,23 @@ int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, u
     }
 
     /* 既存バッファーを解放 */
-    com_util_free(win->packets);
-    com_util_free(win->valid);
-    com_util_free(win->payload_pool);
+    cplat_free(win->packets);
+    cplat_free(win->valid);
+    cplat_free(win->payload_pool);
     win->packets = NULL;
     win->valid = NULL;
     win->payload_pool = NULL;
 
     /* 新規確保 */
-    win->packets = (potr_packet *)com_util_calloc((size_t)window_size, sizeof(potr_packet));
-    win->valid = (uint8_t *)com_util_calloc((size_t)window_size, sizeof(uint8_t));
-    win->payload_pool = (uint8_t *)com_util_calloc((size_t)window_size, (size_t)max_payload);
+    win->packets = (potr_packet *)cplat_calloc((size_t)window_size, sizeof(potr_packet));
+    win->valid = (uint8_t *)cplat_calloc((size_t)window_size, sizeof(uint8_t));
+    win->payload_pool = (uint8_t *)cplat_calloc((size_t)window_size, (size_t)max_payload);
 
     if (win->packets == NULL || win->valid == NULL || win->payload_pool == NULL)
     {
-        com_util_free(win->packets);
-        com_util_free(win->valid);
-        com_util_free(win->payload_pool);
+        cplat_free(win->packets);
+        cplat_free(win->valid);
+        cplat_free(win->payload_pool);
         win->packets = NULL;
         win->valid = NULL;
         win->payload_pool = NULL;
@@ -93,9 +93,9 @@ void potr_internal_window_dispose(potr_internal_window *win)
         return;
     }
 
-    com_util_free(win->packets);
-    com_util_free(win->valid);
-    com_util_free(win->payload_pool);
+    cplat_free(win->packets);
+    cplat_free(win->valid);
+    cplat_free(win->payload_pool);
     win->packets = NULL;
     win->valid = NULL;
     win->payload_pool = NULL;
@@ -147,7 +147,7 @@ int potr_internal_window_send_push(potr_internal_window *win, const potr_packet 
         uint8_t *slot = win->payload_pool + idx * (size_t)win->max_payload;
         win->packets[idx] = *packet;      /* 構造体コピー */
         win->packets[idx].payload = slot; /* プール スロットを設定 */
-        memcpy(slot, packet->payload, (size_t)com_util_ntoh16(packet->payload_len));
+        memcpy(slot, packet->payload, (size_t)cplat_ntoh16(packet->payload_len));
     }
 
     win->valid[idx] = 1;

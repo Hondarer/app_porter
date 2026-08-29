@@ -15,7 +15,7 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 #include <string.h>
 #include <inttypes.h>
 
@@ -30,9 +30,9 @@
 #include <porter/thread/potr_health_thread.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_result.h>
-#include <com_util/crypto/crypto.h>
-#include <com_util/net/byteorder.h>
-#include <com_util/net/socket.h>
+#include <cplat/crypto/crypto.h>
+#include <cplat/net/byteorder.h>
+#include <cplat/net/socket.h>
 
 static uint64_t get_last_health_signal_send_ms(const potr_context *ctx)
 {
@@ -54,12 +54,12 @@ static void signal_health_thread(potr_context *ctx, int path_idx)
         return;
     }
 
-    com_util_local_lock_lock(ctx->health_mutex[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
     if (ctx->health_running[path_idx])
     {
-        com_util_condvar_signal(ctx->health_wakeup[path_idx]);
+        cplat_condvar_signal(ctx->health_wakeup[path_idx]);
     }
-    com_util_local_lock_unlock(ctx->health_mutex[path_idx]);
+    cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
 }
 
 /* health_interval_ms ミリ秒、または停止シグナルが来るまでスリープする (path_idx 版) */
@@ -72,13 +72,13 @@ static void health_sleep(potr_context *ctx, int path_idx, uint32_t interval_ms)
         return;
     }
 
-    com_util_local_lock_lock(ctx->health_mutex[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
     if (ctx->health_running[path_idx])
     {
         /* interval_ms は PING 間隔の設定値。実用範囲は INT_MAX 以下 */
-        com_util_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], (int)interval_ms);
+        cplat_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], (int)interval_ms);
     }
-    com_util_local_lock_unlock(ctx->health_mutex[path_idx]);
+    cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
 }
 
 /* 次回 PING 送信時刻まで待機する。PING を送るべきなら 1、health_running 停止なら 0 を返す。
@@ -87,7 +87,7 @@ static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due
 {
     while (ctx->health_running[0])
     {
-        uint64_t now = com_util_get_monotonic_ms();
+        uint64_t now = cplat_get_monotonic_ms();
         uint64_t last_ping = ctx->last_ping_send_ms;
         uint64_t last_data = ctx->last_valid_data_send_ms;
         uint64_t due_ms;
@@ -108,7 +108,7 @@ static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due
 
         if (last_data != 0U && last_data >= last_ping && last_data != *last_logged_data_ms)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                        "health[service_id=%" PRId64 "]: suppress PING due to recent DATA"
                        " (remaining=%" PRIu64 "ms)",
                        ctx->service.service_id, due_ms - now);
@@ -139,18 +139,18 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
     {
         return POTR_ERR_CANCELED;
     }
-    if (ctx->tcp_active_paths == 0 || ctx->tcp_conn_fd[path_idx] == COM_UTIL_INVALID_SOCKET)
+    if (ctx->tcp_active_paths == 0 || ctx->tcp_conn_fd[path_idx] == CPLAT_INVALID_SOCKET)
     {
         return POTR_ERR_DISCONNECTED;
     }
 
-    com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
     potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
     seq = ctx->send_window.next_seq;
     build_result = potr_internal_packet_build_ping(&ping_pkt, &shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
-    com_util_local_lock_unlock(ctx->send_window_mutex);
+    cplat_local_lock_unlock(ctx->send_window_mutex);
 
     if (build_result != POTR_OK)
     {
@@ -168,8 +168,8 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
         size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
         int encrypt_failed = 0;
 
-        ping_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
-        ping_pkt.payload_len = com_util_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
+        ping_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
+        ping_pkt.payload_len = cplat_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
 
         memcpy(nonce, &ping_pkt.session_id, 4);
         memcpy(nonce + 4, &ping_pkt.flags, 2);
@@ -178,22 +178,22 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
 
         memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
 
-        com_util_local_lock_lock(ctx->tcp_send_mutex[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
-        if (ctx->tcp_conn_fd[path_idx] != COM_UTIL_INVALID_SOCKET)
+        cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+        if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
         {
             potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-            if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE, POTR_MAX_PATH,
-                                 ctx->service.encrypt_key, nonce, wire_buf, PACKET_HEADER_SIZE) != COM_UTIL_OK)
+            if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE, POTR_MAX_PATH,
+                                 ctx->service.encrypt_key, nonce, wire_buf, PACKET_HEADER_SIZE) != CPLAT_OK)
             {
                 encrypt_failed = 1;
             }
             else
             {
-                com_util_error detail;
+                cplat_error detail;
 
                 wire_len = PACKET_HEADER_SIZE + enc_out;
-                if (com_util_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) == COM_UTIL_OK)
+                if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) == CPLAT_OK)
                 {
                     send_result = POTR_OK;
                 }
@@ -203,11 +203,11 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
                 }
             }
         }
-        com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
+        cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
 
         if (encrypt_failed)
         {
-            /* com_util の暗号化失敗には、porter の分類へ変換できる詳細コードがありません。 */
+            /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがありません。 */
             return POTR_ERR_UNKNOWN;
         }
     }
@@ -217,14 +217,14 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
         memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
         wire_len = PACKET_HEADER_SIZE + POTR_MAX_PATH;
 
-        com_util_local_lock_lock(ctx->tcp_send_mutex[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
-        if (ctx->tcp_conn_fd[path_idx] != COM_UTIL_INVALID_SOCKET)
+        cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+        if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
         {
-            com_util_error detail;
+            cplat_error detail;
 
             potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-            if (com_util_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) == COM_UTIL_OK)
+            if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) == CPLAT_OK)
             {
                 send_result = POTR_OK;
             }
@@ -233,7 +233,7 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
                 send_result = potr_internal_result_from_error(&detail);
             }
         }
-        com_util_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
+        cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
     }
 
     return send_result;
@@ -247,7 +247,7 @@ static void health_thread_func(void *arg)
     potr_context *ctx = (potr_context *)arg;
     potr_internal_packet_session_hdr shdr;
     int is_oneway_udp = potr_is_oneway_udp_type(ctx->service.type);
-    uint64_t initial_ping_due_ms = com_util_get_monotonic_ms() + (uint64_t)ctx->health_interval_ms;
+    uint64_t initial_ping_due_ms = cplat_get_monotonic_ms() + (uint64_t)ctx->health_interval_ms;
     uint64_t last_logged_data_ms = 0U;
 
     shdr.service_id = ctx->service.service_id;
@@ -281,7 +281,7 @@ static void health_thread_func(void *arg)
             /* N:1 モード: アクティブ全ピアへ PING を送信する */
             int i;
 
-            com_util_local_lock_lock(ctx->peers_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
             for (i = 0; i < ctx->max_peers && ctx->health_running[0]; i++)
             {
@@ -300,12 +300,12 @@ static void health_thread_func(void *arg)
                 potr_session_ts_to_hdr(&ctx->peers[i].session_ts, &peer_shdr.session_tv_sec,
                                        &peer_shdr.session_tv_nsec);
 
-                com_util_local_lock_lock(ctx->peers[i].send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+                cplat_local_lock_lock(ctx->peers[i].send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
                 seq = ctx->peers[i].send_window.next_seq;
                 /* N:1 (UNICAST_BIDIR_N1) は双方向 PING。ピアごとの自端パス受信状態をペイロードに設定する。 */
                 potr_copy_path_ping_state(health_states, ctx->peers[i].path_ping_state, POTR_MAX_PATH);
                 potr_internal_packet_build_ping(&ping_pkt, &peer_shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
-                com_util_local_lock_unlock(ctx->peers[i].send_window_mutex);
+                cplat_local_lock_unlock(ctx->peers[i].send_window_mutex);
 
                 if (ctx->service.encrypt_enabled)
                 {
@@ -313,8 +313,8 @@ static void health_thread_func(void *arg)
                     uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
                     size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
 
-                    ping_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
-                    ping_pkt.payload_len = com_util_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
+                    ping_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
+                    ping_pkt.payload_len = cplat_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
 
                     memcpy(nonce, &ping_pkt.session_id, 4);
                     memcpy(nonce + 4, &ping_pkt.flags, 2);
@@ -323,9 +323,9 @@ static void health_thread_func(void *arg)
 
                     memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
                     memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                    if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
+                    if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
                                          POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
-                                         PACKET_HEADER_SIZE) != COM_UTIL_OK)
+                                         PACKET_HEADER_SIZE) != CPLAT_OK)
                     {
                         continue;
                     }
@@ -337,7 +337,7 @@ static void health_thread_func(void *arg)
 
                         if (potr_endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                             continue;
-                        (void)com_util_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k],
+                        (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k],
                                                      &sent, NULL);
                     }
                 }
@@ -354,16 +354,16 @@ static void health_thread_func(void *arg)
 
                         if (potr_endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                             continue;
-                        (void)com_util_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k],
+                        (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k],
                                                      &sent, NULL);
                     }
                 }
 
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "health[service_id=%" PRId64 "]: PING peer=%u seq=%u",
+                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "health[service_id=%" PRId64 "]: PING peer=%u seq=%u",
                            ctx->service.service_id, (unsigned)ctx->peers[i].peer_id, (unsigned)seq);
             }
 
-            com_util_local_lock_unlock(ctx->peers_mutex);
+            cplat_local_lock_unlock(ctx->peers_mutex);
         }
         else
         {
@@ -387,17 +387,17 @@ static void health_thread_func(void *arg)
                 memset(health_states, POTR_PING_STATE_UNDEFINED, POTR_MAX_PATH);
             }
 
-            com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
             seq = ctx->send_window.next_seq;
             build_result = potr_internal_packet_build_ping(&ping_pkt, &shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
-            com_util_local_lock_unlock(ctx->send_window_mutex);
+            cplat_local_lock_unlock(ctx->send_window_mutex);
 
             if (build_result != POTR_OK)
             {
                 continue;
             }
 
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "health[service_id=%" PRId64 "]: PING seq=%u",
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "health[service_id=%" PRId64 "]: PING seq=%u",
                        ctx->service.service_id, (unsigned)seq);
 
             if (ctx->service.encrypt_enabled)
@@ -406,8 +406,8 @@ static void health_thread_func(void *arg)
                 uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
                 size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
 
-                ping_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
-                ping_pkt.payload_len = com_util_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
+                ping_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
+                ping_pkt.payload_len = cplat_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
 
                 memcpy(nonce, &ping_pkt.session_id, 4);
                 memcpy(nonce + 4, &ping_pkt.flags, 2);
@@ -416,9 +416,9 @@ static void health_thread_func(void *arg)
 
                 memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
                 memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
+                if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
                                      POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
-                                     PACKET_HEADER_SIZE) != COM_UTIL_OK)
+                                     PACKET_HEADER_SIZE) != CPLAT_OK)
                 {
                     continue;
                 }
@@ -430,8 +430,8 @@ static void health_thread_func(void *arg)
                     int send_ret;
 
                     send_ret =
-                        com_util_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
-                    if (send_ret == COM_UTIL_OK)
+                        cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
+                    if (send_ret == CPLAT_OK)
                     {
                         sent_any = 1;
                     }
@@ -450,8 +450,8 @@ static void health_thread_func(void *arg)
                     int send_ret;
 
                     send_ret =
-                        com_util_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
-                    if (send_ret == COM_UTIL_OK)
+                        cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
+                    if (send_ret == CPLAT_OK)
                     {
                         sent_any = 1;
                     }
@@ -460,7 +460,7 @@ static void health_thread_func(void *arg)
 
             if (is_oneway_udp && sent_any)
             {
-                ctx->last_ping_send_ms = com_util_get_monotonic_ms();
+                ctx->last_ping_send_ms = cplat_get_monotonic_ms();
                 last_logged_data_ms = 0U;
             }
         }
@@ -478,7 +478,7 @@ static void tcp_health_thread_func(void *arg)
     potr_context *ctx = harg->ctx;
     int path_idx = harg->path_idx;
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "tcp_health[service_id=%" PRId64 " path=%d]: starting",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_health[service_id=%" PRId64 " path=%d]: starting",
                ctx->service.service_id, path_idx);
 
     while (ctx->health_running[path_idx])
@@ -491,7 +491,7 @@ static void tcp_health_thread_func(void *arg)
         (void)tcp_send_ping_packet(ctx, path_idx);
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "tcp_health[service_id=%" PRId64 " path=%d]: exited",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_health[service_id=%" PRId64 " path=%d]: exited",
                ctx->service.service_id, path_idx);
 
     return;
@@ -515,25 +515,25 @@ int potr_internal_health_thread_start(potr_context *ctx)
 
     if (ctx->health_interval_ms == 0)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "health_thread[service_id=%" PRId64 "]: disabled (health_interval_ms=0)", ctx->service.service_id);
         return POTR_OK;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "health_thread[service_id=%" PRId64 "]: starting (interval=%ums)",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "health_thread[service_id=%" PRId64 "]: starting (interval=%ums)",
                ctx->service.service_id, (unsigned)ctx->health_interval_ms);
 
-    com_util_local_lock_create(&ctx->health_mutex[0]);
-    com_util_condvar_create(&ctx->health_wakeup[0]);
+    cplat_local_lock_create(&ctx->health_mutex[0]);
+    cplat_condvar_create(&ctx->health_wakeup[0]);
 
     ctx->health_running[0] = 1;
 
-    if (com_util_thread_create(&ctx->health_thread[0], health_thread_func, ctx) != COM_UTIL_OK)
+    if (cplat_thread_create(&ctx->health_thread[0], health_thread_func, ctx) != CPLAT_OK)
     {
         ctx->health_running[0] = 0;
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "health_thread[service_id=%" PRId64 "]: thread create failed",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "health_thread[service_id=%" PRId64 "]: thread create failed",
                    ctx->service.service_id);
-        /* com_util のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
+        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -555,14 +555,14 @@ int potr_internal_health_thread_stop(potr_context *ctx)
 
     ctx->health_running[0] = 0;
 
-    com_util_local_lock_lock(ctx->health_mutex[0], COM_UTIL_SYNC_WAIT_FOREVER);
-    com_util_condvar_signal(ctx->health_wakeup[0]);
-    com_util_local_lock_unlock(ctx->health_mutex[0]);
+    cplat_local_lock_lock(ctx->health_mutex[0], CPLAT_SYNC_WAIT_FOREVER);
+    cplat_condvar_signal(ctx->health_wakeup[0]);
+    cplat_local_lock_unlock(ctx->health_mutex[0]);
 
-    com_util_thread_join(ctx->health_thread[0], COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_thread_join(ctx->health_thread[0], CPLAT_SYNC_WAIT_FOREVER);
 
-    com_util_condvar_dispose(ctx->health_wakeup[0]);
-    com_util_local_lock_dispose(ctx->health_mutex[0]);
+    cplat_condvar_dispose(ctx->health_wakeup[0]);
+    cplat_local_lock_dispose(ctx->health_mutex[0]);
 
     return POTR_OK;
 }
@@ -585,7 +585,7 @@ int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx)
 
     if (ctx->health_interval_ms == 0)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "tcp_health_thread[service_id=%" PRId64 " path=%d]: disabled",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_health_thread[service_id=%" PRId64 " path=%d]: disabled",
                    ctx->service.service_id, path_idx);
         return POTR_OK;
     }
@@ -595,14 +595,14 @@ int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx)
 
     ctx->health_running[path_idx] = 1;
 
-    if (com_util_thread_create(&ctx->health_thread[path_idx], tcp_health_thread_func, &ctx->health_args[path_idx]) !=
-        COM_UTIL_OK)
+    if (cplat_thread_create(&ctx->health_thread[path_idx], tcp_health_thread_func, &ctx->health_args[path_idx]) !=
+        CPLAT_OK)
     {
         ctx->health_running[path_idx] = 0;
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "tcp_health_thread[service_id=%" PRId64 " path=%d]: thread create failed", ctx->service.service_id,
                    path_idx);
-        /* com_util のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
+        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -624,11 +624,11 @@ int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
 
     ctx->health_running[path_idx] = 0;
 
-    com_util_local_lock_lock(ctx->health_mutex[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
-    com_util_condvar_signal(ctx->health_wakeup[path_idx]);
-    com_util_local_lock_unlock(ctx->health_mutex[path_idx]);
+    cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    cplat_condvar_signal(ctx->health_wakeup[path_idx]);
+    cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
 
-    com_util_thread_join(ctx->health_thread[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_thread_join(ctx->health_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER);
 
     return POTR_OK;
 }

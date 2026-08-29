@@ -159,7 +159,7 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 1. 片方向 type 1-6 は `max(last_ping_send_ms, last_valid_data_send_ms) + health_interval_ms`、双方向 type 7 は定周期 `health_interval_ms` を送信期限として評価します。
 2. 送信ウィンドウから `next_seq` を取得します。
 3. `potr_internal_packet_build_ping()` で PING パケットを構築します。
-4. `ctx->n_path` 分のパスそれぞれで `com_util_socket_sendto()` を実行します。
+4. `ctx->n_path` 分のパスそれぞれで `cplat_socket_sendto()` を実行します。
 5. 暗号化有効時は `POTR_FLAG_ENCRYPTED` を付与して GCM 認証タグを追加します。
 
 片方向 type 1-6 では send スレッドが外側 DATA パケットを実送出した時点で `last_valid_data_send_ms` を更新します。`potr_send()` の API 成功時ではありません。1 つの外側 DATA パケットを全 path に fan-out したあと 1 回だけ更新し、その時点から次の PING 期限を再計算します。
@@ -168,7 +168,7 @@ N:1 モード (UNICAST_BIDIR_N1 のサーバー側) の処理は次のとおり�
 
 1. ピア テーブルからアクティブなピアをループします。
 2. ピアごとに `potr_internal_packet_build_ping()` でパケットを構築します。
-3. ピアごとに全パスへ `com_util_socket_sendto()` を実行します。
+3. ピアごとに全パスへ `cplat_socket_sendto()` を実行します。
 
 ### PING 受信時の処理 (受信スレッド)
 
@@ -180,7 +180,7 @@ RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送らず `POTR_EVENT
 
 ### タイムアウト検出 (受信スレッド)
 
-受信スレッドは `com_util_socket_wait_readable_multi()` の待ち時間を `health_timeout_ms / 3` に設定し、定期的に `check_health_timeout()` (1:1) または `n1_check_health_timeout()` (N:1) を呼び出します。
+受信スレッドは `cplat_socket_wait_readable_multi()` の待ち時間を `health_timeout_ms / 3` に設定し、定期的に `check_health_timeout()` (1:1) または `n1_check_health_timeout()` (N:1) を呼び出します。
 
 タイムアウト判定は CLOCK_MONOTONIC を使用します。
 
@@ -213,7 +213,7 @@ UDP 系と同様に受信スレッドが判定します。TCP の両端がそれ
 1. 受信ループは `health_interval_ms > 0 && health_timeout_ms > 0` の場合のみ `tcp_wait_readable()` で最大 `min(health_timeout_ms, 1000)` ms 待機します。
 2. PING を受信するたびに `tcp_last_ping_recv_ms[path_idx]` を現在時刻で更新します。
 3. `get_ms() - tcp_last_ping_recv_ms[path_idx] > ctx->health_timeout_ms` を超過するとタイムアウトと判定します。
-4. タイムアウト時はそのパスのソケットを `com_util_socket_shutdown()` / `com_util_socket_close()` で閉じ、`tcp_conn_fd[path_idx]` を `COM_UTIL_INVALID_SOCKET` にします。
+4. タイムアウト時はそのパスのソケットを `cplat_socket_shutdown()` / `cplat_socket_close()` で閉じ、`tcp_conn_fd[path_idx]` を `CPLAT_INVALID_SOCKET` にします。
 5. connect スレッド (`potr_connect_thread.c`) が `tcp_active_paths` をデクリメントして再接続ループに入る。
 
 DATA パケットの受信は `tcp_last_ping_recv_ms` をリセットしません。`health_interval_ms > 0` の場合は PING は DATA 送信とは独立して定周期送出されるため、PING の到達有無のみで接続状態を判定できます。`health_interval_ms = 0` の場合は bootstrap PING のみで CONNECTED を確立し、その後の timeout 監視は行いません。

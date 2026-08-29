@@ -2,8 +2,8 @@
 
 > [!NOTE]
 > 本書は当該機能の設計時点を保存する履歴文書です。
-> 通信のプラットフォーム抽象化層はその後 com_util の net カテゴリへ移行しており、本文のコード断片に登場する `PotrSocket` や `POTR_INVALID_SOCKET` は現行のコードには存在しません。
-> 現行の型と API は [com_util のネットワーク API ガイドライン](../../../com_util/docs/net-api-guideline.md) を参照してください。
+> 通信のプラットフォーム抽象化層はその後 cplat の net カテゴリへ移行しており、本文のコード断片に登場する `PotrSocket` や `POTR_INVALID_SOCKET` は現行のコードには存在しません。
+> 現行の型と API は [cplat のネットワーク API ガイドライン](../../../cplat/docs/net-api-guideline.md) を参照してください。
 
 ## 背景と目的
 
@@ -814,9 +814,9 @@ if (potr_is_tcp_n1_type(ctx->service.type))
 | `tcp_last_ping_req_recv_ms[4]` | 32 B |
 | `tcp_recv_thread[4]` (pthread_t) | 32 B |
 | `tcp_health_thread[4]` | 32 B |
-| `tcp_send_mutex[4]` (`com_util_local_lock *`) | 32 B |
+| `tcp_send_mutex[4]` (`cplat_local_lock *`) | 32 B |
 | `tcp_health_mutex[4]` | 160 B |
-| `tcp_health_wakeup[4]` (com_util_condvar) | 192 B |
+| `tcp_health_wakeup[4]` (cplat_condvar) | 192 B |
 | `tcp_recv_window_mutex` | 40 B |
 | その他整数フィールド | 〜32 B |
 | **合計** | **約 730〜760 B 増加** |

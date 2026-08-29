@@ -25,7 +25,7 @@
 #include <porter/porter_result.h>
 #include <porter/porter_type.h>
 #include <porter/porter_export.h>
-#include <com_util/trace/tracer.h>
+#include <cplat/trace/tracer.h>
 
 /**
  *  @ingroup        PORTER_PUBLIC_API
@@ -99,8 +99,8 @@ extern "C"
         service.service_id = 1001;
         service.type       = POTR_TYPE_UNICAST;
         service.dst_port   = 49001;
-        com_util_strcpy(service.src_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
-        com_util_strcpy(service.dst_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
+        cplat_strcpy(service.src_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
+        cplat_strcpy(service.dst_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
 
         potr_context * handle;
         if (potr_service_open(&global, &service,
@@ -126,8 +126,8 @@ extern "C"
         service.service_id = 1001;
         service.type       = POTR_TYPE_UNICAST;
         service.dst_port   = 49001;
-        com_util_strcpy(service.src_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
-        com_util_strcpy(service.dst_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
+        cplat_strcpy(service.src_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
+        cplat_strcpy(service.dst_addr[0], POTR_MAX_ADDR_LEN, "127.0.0.1");
 
         potr_context * handle;
         if (potr_service_open(&global, &service,
@@ -382,18 +382,18 @@ extern "C"
 
     /**
      *  @brief          porter 内部トレーサー ハンドルを返します。
-     *  @return         com_util_tracer ハンドル。NULL を返すことはありません。
+     *  @return         cplat_tracer ハンドル。NULL を返すことはありません。
      *
-     *  porter ライブラリが内部で使用する com_util_tracer ハンドルを返します。\n
+     *  porter ライブラリが内部で使用する cplat_tracer ハンドルを返します。\n
      *  本関数は potr_service_open() の前に呼び出すことができます。\n
-     *  取得したハンドルに対して com_util_tracer_set_stderr_level() と
-     *  com_util_tracer_start() を呼び出すことで、stderr へのトレース出力を有効化できます。
+     *  取得したハンドルに対して cplat_tracer_set_stderr_level() と
+     *  cplat_tracer_start() を呼び出すことで、stderr へのトレース出力を有効化できます。
      *
      *  @par            stderr 出力を有効にする例
         @code{.c}
-        com_util_tracer *tracer = potr_tracer_get();
-        com_util_tracer_set_stderr_level(tracer, COM_UTIL_TRACE_LEVEL_INFO);
-        com_util_tracer_start(tracer);
+        cplat_tracer *tracer = potr_tracer_get();
+        cplat_tracer_set_stderr_level(tracer, CPLAT_TRACE_LEVEL_INFO);
+        cplat_tracer_start(tracer);
         @endcode
      *
      *  @par            ログ フォーマット (stderr)
@@ -405,7 +405,7 @@ extern "C"
      *  @par            スレッド セーフ
      *  本関数はスレッド セーフです。
      */
-    POTR_EXPORT com_util_tracer *POTR_API potr_tracer_get(void);
+    POTR_EXPORT cplat_tracer *POTR_API potr_tracer_get(void);
 
     /**
      *  @brief          設定ファイルから指定サービスの通信種別を取得します。

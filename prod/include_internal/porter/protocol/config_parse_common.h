@@ -14,7 +14,7 @@
 #ifndef PORTER_PROTOCOL_CONFIG_PARSE_COMMON_H
 #define PORTER_PROTOCOL_CONFIG_PARSE_COMMON_H
 
-#include <com_util/crt/stdio.h>
+#include <cplat/crt/stdio.h>
 #include <ctype.h>
 #include <stddef.h>
 #include <string.h>
@@ -39,7 +39,7 @@ static FILE *config_open_file_read(const char *path)
         return NULL;
     }
 
-    return com_util_fopen(path, "r", NULL);
+    return cplat_fopen(path, "r", NULL);
 }
 
 /* 文字列の先頭・末尾の空白を除去して buf に格納します。 */

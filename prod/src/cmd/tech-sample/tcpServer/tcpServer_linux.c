@@ -20,13 +20,13 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/base/platform.h>
+#include <cplat/crt/stdlib.h>
 
 #if defined(PLATFORM_LINUX)
 
-    #include <com_util/crt/unistd.h>
-    #include <com_util/runtime/shutdown.h>
+    #include <cplat/crt/unistd.h>
+    #include <cplat/runtime/shutdown.h>
 
     #include <stdio.h>
     #include <stdlib.h>
@@ -83,7 +83,7 @@ static void shutdown_handler(int sig)
  *  @param[in]      port 待ち受けポート番号。
  *  @return         listen ソケットのファイル記述子。
  *
- *  @attention      失敗した場合は com_util_exit() で終了します。
+ *  @attention      失敗した場合は cplat_exit() で終了します。
  */
 static int create_listen_socket(int port)
 {
@@ -95,7 +95,7 @@ static int create_listen_socket(int port)
     if (server_fd < 0)
     {
         perror("socket");
-        com_util_exit(1);
+        cplat_exit(1);
     }
 
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -107,13 +107,13 @@ static int create_listen_socket(int port)
     if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
     {
         perror("bind");
-        com_util_exit(1);
+        cplat_exit(1);
     }
 
     if (listen(server_fd, 128) < 0)
     {
         perror("listen");
-        com_util_exit(1);
+        cplat_exit(1);
     }
 
     return server_fd;
@@ -134,7 +134,7 @@ static int create_listen_socket(int port)
  *    除去して新規 accept を止め、空きが生じると再登録して受け付けを再開します。
  */
 /* 本関数は fork() した子プロセスからのみ呼び出される。
-   子で com_util_exit() を使うと、親が登録したシャットダウン コールバックを
+   子で cplat_exit() を使うと、親が登録したシャットダウン コールバックを
    fork で継承したまま子側で実行してしまうため、生の exit() を使用する。 */
 static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
 {
@@ -226,7 +226,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev) < 0)
                     {
                         perror("epoll_ctl add client_fd");
-                        com_util_close(client_fd, NULL);
+                        cplat_close(client_fd, NULL);
                         continue;
                     }
 
@@ -270,7 +270,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
             }
         }
 
-        com_util_close(epoll_fd, NULL);
+        cplat_close(epoll_fd, NULL);
     }
 
     printf("[ワーカー %d] 終了\n", worker_id);
@@ -342,21 +342,21 @@ void run_fork_server(int port)
         if (pid < 0)
         {
             perror("fork");
-            com_util_close(client_fd, NULL);
+            cplat_close(client_fd, NULL);
         }
         else if (pid == 0)
         {
             /* 子プロセス。
-               com_util_exit() は親が登録したシャットダウン コールバックを
+               cplat_exit() は親が登録したシャットダウン コールバックを
                fork で継承したまま実行してしまうため、生の exit() を使用する。 */
-            com_util_close(server_fd, NULL);
+            cplat_close(server_fd, NULL);
             g_session_fn(client_fd);
             exit(0);
         }
         else
         {
             /* 親プロセス */
-            com_util_close(client_fd, NULL);
+            cplat_close(client_fd, NULL);
         }
     }
 }
@@ -385,11 +385,11 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
     printf("[親プロセス] %d 個のワーカープロセスを起動 (1 ワーカーあたり最大 %d 接続)\n", num_workers,
            conns_per_worker);
 
-    pid_t *worker_pids = com_util_malloc((size_t)num_workers * sizeof(pid_t));
+    pid_t *worker_pids = cplat_malloc((size_t)num_workers * sizeof(pid_t));
     if (!worker_pids)
     {
         perror("malloc");
-        com_util_exit(1);
+        cplat_exit(1);
     }
 
     for (int i = 0; i < num_workers; i++)
@@ -398,12 +398,12 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         if (pid < 0)
         {
             perror("fork");
-            com_util_free(worker_pids);
-            com_util_exit(1);
+            cplat_free(worker_pids);
+            cplat_exit(1);
         }
         else if (pid == 0)
         {
-            com_util_free(worker_pids);
+            cplat_free(worker_pids);
             worker_loop(server_fd, i, conns_per_worker);
             /* ここには到達しない */
         }
@@ -434,8 +434,8 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         }
     }
 
-    com_util_free(worker_pids);
-    com_util_close(server_fd, NULL);
+    cplat_free(worker_pids);
+    cplat_close(server_fd, NULL);
     printf("[親プロセス] 終了\n");
 }
 

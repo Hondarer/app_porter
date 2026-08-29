@@ -59,9 +59,9 @@
     #ifndef POTR_EXPORTS
         #define POTR_EXPORTS 0
     #endif /* POTR_EXPORTS */
-    #include <com_util/base/dll_exports.h>
-    #define POTR_EXPORT COM_UTIL_DLL_EXPORT(POTR)
-    #define POTR_API    COM_UTIL_DLL_API(POTR)
+    #include <cplat/base/dll_exports.h>
+    #define POTR_EXPORT CPLAT_DLL_EXPORT(POTR)
+    #define POTR_API    CPLAT_DLL_API(POTR)
 
 #endif /* DOXYGEN */
 

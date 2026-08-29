@@ -24,18 +24,18 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/base/platform.h>
+#include <cplat/crt/stdlib.h>
 
 #if defined(PLATFORM_WINDOWS)
 
     #include "tcpServer.h" /* WIN32_LEAN_AND_MEAN / windows.h / winsock2.h / ws2tcpip.h を内包 */
-    #include <com_util/crt/path.h>
-    #include <com_util/sync/sync.h>
-    #include <com_util/win32/win32.h>
+    #include <cplat/crt/path.h>
+    #include <cplat/sync/sync.h>
+    #include <cplat/win32/win32.h>
 
     #include <stdio.h>
-    #include <com_util/runtime/shutdown.h>
+    #include <cplat/runtime/shutdown.h>
     #include <limits.h>
     #include <stdlib.h>
     #include <string.h>
@@ -77,7 +77,7 @@ typedef struct WorkerMonitorArg
  *  @param[in]      port 待ち受けポート番号。
  *  @return         listen ソケット。
  *
- *  @attention      失敗した場合は com_util_exit() で終了します。
+ *  @attention      失敗した場合は cplat_exit() で終了します。
  */
 static SOCKET create_listen_socket(int port)
 {
@@ -94,7 +94,7 @@ static SOCKET create_listen_socket(int port)
     if (getaddrinfo(NULL, port_str, &hints, &result) != 0)
     {
         fprintf(stderr, "getaddrinfo 失敗\n");
-        com_util_exit(1);
+        cplat_exit(1);
     }
 
     SOCKET listen_socket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
@@ -102,14 +102,14 @@ static SOCKET create_listen_socket(int port)
     {
         fprintf(stderr, "socket 失敗\n");
         freeaddrinfo(result);
-        com_util_exit(1);
+        cplat_exit(1);
     }
 
     if (bind(listen_socket, result->ai_addr, (int)result->ai_addrlen) == SOCKET_ERROR)
     {
         fprintf(stderr, "bind 失敗\n");
         freeaddrinfo(result);
-        com_util_exit(1);
+        cplat_exit(1);
     }
 
     freeaddrinfo(result);
@@ -117,7 +117,7 @@ static SOCKET create_listen_socket(int port)
     if (listen(listen_socket, 128) == SOCKET_ERROR)
     {
         fprintf(stderr, "listen 失敗\n");
-        com_util_exit(1);
+        cplat_exit(1);
     }
 
     return listen_socket;
@@ -190,7 +190,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
     else
     {
         /* --- PeekNamedPipe + select による多重接続処理 --- */
-        SOCKET *active = (SOCKET *)com_util_malloc((size_t)conns_per_worker * sizeof(SOCKET));
+        SOCKET *active = (SOCKET *)cplat_malloc((size_t)conns_per_worker * sizeof(SOCKET));
         if (!active)
         {
             CloseHandle(pipe);
@@ -221,7 +221,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
             if (active_count == 0)
             {
                 /* アクティブな接続がない場合は少し待ってパイプを再チェック */
-                com_util_sleep_ms(10);
+                cplat_sleep_ms(10);
                 continue;
             }
 
@@ -261,7 +261,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
             }
         }
 
-        com_util_free(active);
+        cplat_free(active);
     }
 
     CloseHandle(pipe);
@@ -340,7 +340,7 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
  *  各ワーカーに名前付きパイプと監視スレッドを作成し、
  *  自分自身を `--worker <pipe_name>` 引数付きで再起動します。
  *
- *  @attention      パイプ作成またはプロセス起動に失敗した場合は com_util_exit() で終了します。
+ *  @attention      パイプ作成またはプロセス起動に失敗した場合は cplat_exit() で終了します。
  */
 static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, int conns_per_worker)
 {
@@ -351,11 +351,11 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
     GetModuleFileNameU(NULL, exepath, PLATFORM_PATH_MAX);
 
     /* 監視スレッド引数はプロセス終了まで有効である必要があるため heap 確保 */
-    WorkerMonitorArg *args = (WorkerMonitorArg *)com_util_malloc((size_t)n * sizeof(WorkerMonitorArg));
+    WorkerMonitorArg *args = (WorkerMonitorArg *)cplat_malloc((size_t)n * sizeof(WorkerMonitorArg));
     if (!args)
     {
         fprintf(stderr, "malloc 失敗\n");
-        com_util_exit(1);
+        cplat_exit(1);
     }
 
     for (int i = 0; i < n; i++)
@@ -368,8 +368,8 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         if (workers[i].pipe == INVALID_HANDLE_VALUE)
         {
             fprintf(stderr, "パイプ作成失敗: %d\n", i);
-            com_util_free(args);
-            com_util_exit(1);
+            cplat_free(args);
+            cplat_exit(1);
         }
 
         /* イベント作成 (初期状態: 空き) */
@@ -385,8 +385,8 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         if (!CreateProcessU(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
         {
             fprintf(stderr, "ワーカー起動失敗: %d\n", i);
-            com_util_free(args);
-            com_util_exit(1);
+            cplat_free(args);
+            cplat_exit(1);
         }
 
         workers[i].process = pi.hProcess;
@@ -397,19 +397,19 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         ConnectNamedPipe(workers[i].pipe, NULL);
 
         /* 監視スレッド起動 */
-        com_util_thread *monitor_thread;
+        cplat_thread *monitor_thread;
 
         args[i].id = i;
         args[i].workers = workers;
         args[i].events = events;
         args[i].conns_per_worker = conns_per_worker;
-        if (com_util_thread_create(&monitor_thread, worker_monitor_thread, (void *)&args[i]) != COM_UTIL_OK)
+        if (cplat_thread_create(&monitor_thread, worker_monitor_thread, (void *)&args[i]) != CPLAT_OK)
         {
             fprintf(stderr, "監視スレッド起動失敗: %d\n", i);
-            com_util_free(args);
-            com_util_exit(1);
+            cplat_free(args);
+            cplat_exit(1);
         }
-        com_util_thread_detach(monitor_thread);
+        cplat_thread_detach(monitor_thread);
 
         printf("[親プロセス] ワーカー %d (PID %lu) 起動完了\n", i, pi.dwProcessId);
     }
@@ -429,7 +429,7 @@ void platform_init(ClientSessionFn session_fn)
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
     {
         fprintf(stderr, "WSAStartup 失敗\n");
-        com_util_exit(1);
+        cplat_exit(1);
     }
     g_session_fn = session_fn;
 }
@@ -463,7 +463,7 @@ int dispatch_internal_args(int argc, char *argv[])
                     {
                         int64_t parsed;
 
-                        if (com_util_parse_int64(&parsed, argv[j + 1], 10) == COM_UTIL_OK && parsed > 0 &&
+                        if (cplat_parse_int64(&parsed, argv[j + 1], 10) == CPLAT_OK && parsed > 0 &&
                             parsed <= (int64_t)INT_MAX)
                         {
                             conns_per_worker = (int)parsed;
@@ -528,13 +528,13 @@ void run_fork_server(int port)
 
 void run_prefork_server(int port, int num_workers, int conns_per_worker)
 {
-    WorkerInfo *workers = (WorkerInfo *)com_util_malloc((size_t)num_workers * sizeof(WorkerInfo));
-    HANDLE *events = (HANDLE *)com_util_malloc((size_t)num_workers * sizeof(HANDLE));
+    WorkerInfo *workers = (WorkerInfo *)cplat_malloc((size_t)num_workers * sizeof(WorkerInfo));
+    HANDLE *events = (HANDLE *)cplat_malloc((size_t)num_workers * sizeof(HANDLE));
 
     if (!workers || !events)
     {
         fprintf(stderr, "malloc 失敗\n");
-        com_util_exit(1);
+        cplat_exit(1);
     }
 
     SOCKET listen_socket = create_listen_socket(port);
@@ -573,8 +573,8 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
     }
 
     /* 到達しないが形式上記述 */
-    com_util_free(workers);
-    com_util_free(events);
+    cplat_free(workers);
+    cplat_free(events);
 }
 
 #endif /* PLATFORM_WINDOWS */

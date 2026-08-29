@@ -1,10 +1,10 @@
 #ifndef PORTER_TEST_HELPER_H
 #define PORTER_TEST_HELPER_H
 
-#include <com_util/base/platform.h>
-#include <com_util/crt/path.h>
-#include <com_util/crt/stdio.h>
-#include <com_util/crt/unistd.h>
+#include <cplat/base/platform.h>
+#include <cplat/crt/path.h>
+#include <cplat/crt/stdio.h>
+#include <cplat/crt/unistd.h>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -140,7 +140,7 @@ class PorterConfigBuilder
             {
                 return "";
             }
-            com_util_close(fd, nullptr);
+            cplat_close(fd, nullptr);
             tmp_path_ = tmpl;
 #elif defined(PLATFORM_WINDOWS)
             char tmp_dir[PLATFORM_PATH_MAX] = {};
@@ -154,26 +154,26 @@ class PorterConfigBuilder
 #endif /* PLATFORM_ */
         }
 
-        FILE *f = com_util_fopen(tmp_path_.c_str(), "w", nullptr);
+        FILE *f = cplat_fopen(tmp_path_.c_str(), "w", nullptr);
         if (f == nullptr)
         {
             return "";
         }
 
         /* global セクション (テスト向けに短いタイムアウト) */
-        com_util_fprintf(f, "[global]\n");
-        com_util_fprintf(f, "window_size             = 16\n");
-        com_util_fprintf(f, "max_payload             = 1400\n");
-        com_util_fprintf(f, "udp_health_interval_ms  = %u\n", udp_health_interval_ms_);
-        com_util_fprintf(f, "udp_health_timeout_ms   = %u\n", udp_health_timeout_ms_);
-        com_util_fprintf(f, "tcp_health_interval_ms  = %u\n", tcp_health_interval_ms_);
-        com_util_fprintf(f, "tcp_health_timeout_ms   = %u\n", tcp_health_timeout_ms_);
-        com_util_fprintf(f, "tcp_close_timeout_ms    = %u\n", tcp_close_timeout_ms_);
-        com_util_fprintf(f, "\n");
+        cplat_fprintf(f, "[global]\n");
+        cplat_fprintf(f, "window_size             = 16\n");
+        cplat_fprintf(f, "max_payload             = 1400\n");
+        cplat_fprintf(f, "udp_health_interval_ms  = %u\n", udp_health_interval_ms_);
+        cplat_fprintf(f, "udp_health_timeout_ms   = %u\n", udp_health_timeout_ms_);
+        cplat_fprintf(f, "tcp_health_interval_ms  = %u\n", tcp_health_interval_ms_);
+        cplat_fprintf(f, "tcp_health_timeout_ms   = %u\n", tcp_health_timeout_ms_);
+        cplat_fprintf(f, "tcp_close_timeout_ms    = %u\n", tcp_close_timeout_ms_);
+        cplat_fprintf(f, "\n");
 
         for (const auto &line : lines_)
         {
-            com_util_fprintf(f, "%s\n", line.c_str());
+            cplat_fprintf(f, "%s\n", line.c_str());
         }
         fclose(f);
 

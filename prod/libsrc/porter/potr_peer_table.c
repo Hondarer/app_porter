@@ -11,8 +11,8 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/base/platform.h>
+#include <cplat/crt/stdlib.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
@@ -27,11 +27,11 @@
 #include <porter/protocol/window.h>
 #include <porter/infra/potr_result.h>
 #include <porter/infra/potr_trace.h>
-#include <com_util/crypto/crypto.h>
-#include <com_util/crypto/random.h>
-#include <com_util/net/byteorder.h>
-#include <com_util/net/endpoint.h>
-#include <com_util/net/socket.h>
+#include <cplat/crypto/crypto.h>
+#include <cplat/crypto/random.h>
+#include <cplat/net/byteorder.h>
+#include <cplat/net/endpoint.h>
+#include <cplat/net/socket.h>
 
 /* ピアのセッション識別子・開始時刻を生成して peer に格納する
  * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は
@@ -40,12 +40,12 @@ static int peer_generate_session(potr_internal_peer_context *peer)
 {
     int ret;
 
-    ret = com_util_random_bytes(&peer->session_id, sizeof(peer->session_id));
-    if (ret != COM_UTIL_OK)
+    ret = cplat_random_bytes(&peer->session_id, sizeof(peer->session_id));
+    if (ret != CPLAT_OK)
     {
         return potr_internal_result_from_socket_result(ret, NULL);
     }
-    com_util_get_realtime(&peer->session_ts);
+    cplat_get_realtime(&peer->session_ts);
 
     return POTR_OK;
 }
@@ -109,15 +109,15 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
     }
 
     /* 現セッションで DATA を送っている場合のみ FIN target を有効化する。 */
-    com_util_local_lock_lock(peer->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(peer->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
     wire_target_seq = peer->send_window.next_seq;
     has_data = peer->send_has_data;
-    com_util_local_lock_unlock(peer->send_window_mutex);
+    cplat_local_lock_unlock(peer->send_window_mutex);
 
     if (has_data)
     {
-        fin_pkt.flags |= com_util_hton16(POTR_FLAG_FIN_TARGET_VALID);
-        fin_pkt.ack_num = com_util_hton32(wire_target_seq);
+        fin_pkt.flags |= cplat_hton16(POTR_FLAG_FIN_TARGET_VALID);
+        fin_pkt.ack_num = cplat_hton32(wire_target_seq);
     }
 
     if (ctx->service.encrypt_enabled)
@@ -126,8 +126,8 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
 
-        fin_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
-        fin_pkt.payload_len = com_util_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
+        fin_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
+        fin_pkt.payload_len = cplat_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         /* ノンス: session_id(4B) + flags(2B, FIN|ENCRYPTED NBO) + 0(4B) + padding(2B) */
         memcpy(nonce, &fin_pkt.session_id, 4);
@@ -136,8 +136,8 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
         memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, &fin_pkt, PACKET_HEADER_SIZE);
-        if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, PACKET_HEADER_SIZE) != COM_UTIL_OK)
+        if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
+                             wire_buf, PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             return;
         }
@@ -149,9 +149,9 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
 
             if (potr_endpoint_is_unset(&peer->dest_addr[i]))
                 continue;
-            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
+            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
-            (void)com_util_socket_sendto(ctx->sock[i], wire_buf, wire_len, &peer->dest_addr[i], &sent, NULL);
+            (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &peer->dest_addr[i], &sent, NULL);
         }
     }
     else
@@ -164,9 +164,9 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
 
             if (potr_endpoint_is_unset(&peer->dest_addr[i]))
                 continue;
-            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
+            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
-            (void)com_util_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &peer->dest_addr[i], &sent,
+            (void)cplat_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &peer->dest_addr[i], &sent,
                                          NULL);
         }
     }
@@ -178,10 +178,10 @@ int potr_internal_peer_table_init(potr_context *ctx)
 {
     int i;
 
-    ctx->peers = (potr_internal_peer_context *)com_util_calloc((size_t)ctx->max_peers, sizeof(potr_internal_peer_context));
+    ctx->peers = (potr_internal_peer_context *)cplat_calloc((size_t)ctx->max_peers, sizeof(potr_internal_peer_context));
     if (ctx->peers == NULL)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_internal_peer_table_init: service_id=%" PRId64 " calloc failed (max_peers=%d)",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_internal_peer_table_init: service_id=%" PRId64 " calloc failed (max_peers=%d)",
                    ctx->service.service_id, ctx->max_peers);
         return POTR_ERR_OUT_OF_MEMORY;
     }
@@ -191,11 +191,11 @@ int potr_internal_peer_table_init(potr_context *ctx)
         ctx->peers[i].active = 0;
     }
 
-    com_util_local_lock_create(&ctx->peers_mutex);
+    cplat_local_lock_create(&ctx->peers_mutex);
     ctx->n_peers = 0;
     ctx->next_peer_id = 1U;
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_internal_peer_table_init: service_id=%" PRId64 " max_peers=%d",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_internal_peer_table_init: service_id=%" PRId64 " max_peers=%d",
                ctx->service.service_id, ctx->max_peers);
 
     return POTR_OK;
@@ -212,7 +212,7 @@ void potr_internal_peer_table_dispose(potr_context *ctx)
         return;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_internal_peer_table_dispose: service_id=%" PRId64 " n_peers=%d",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_internal_peer_table_dispose: service_id=%" PRId64 " n_peers=%d",
                ctx->service.service_id, ctx->n_peers);
 
     for (i = 0; i < ctx->max_peers; i++)
@@ -228,22 +228,22 @@ void potr_internal_peer_table_dispose(potr_context *ctx)
         /* リソース解放 */
         potr_internal_window_dispose(&ctx->peers[i].send_window);
         potr_internal_window_dispose(&ctx->peers[i].recv_window);
-        com_util_local_lock_dispose(ctx->peers[i].send_window_mutex);
-        com_util_free(ctx->peers[i].frag_buf);
+        cplat_local_lock_dispose(ctx->peers[i].send_window_mutex);
+        cplat_free(ctx->peers[i].frag_buf);
         ctx->peers[i].frag_buf = NULL;
         ctx->peers[i].active = 0;
     }
 
-    com_util_local_lock_dispose(ctx->peers_mutex);
+    cplat_local_lock_dispose(ctx->peers_mutex);
 
-    com_util_free(ctx->peers);
+    cplat_free(ctx->peers);
     ctx->peers = NULL;
     ctx->n_peers = 0;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-potr_internal_peer_context *potr_internal_peer_find_by_session(const potr_context *ctx, uint32_t session_id, const com_util_timespec *session_ts)
+potr_internal_peer_context *potr_internal_peer_find_by_session(const potr_context *ctx, uint32_t session_id, const cplat_timespec *session_ts)
 {
     int i;
 
@@ -254,7 +254,7 @@ potr_internal_peer_context *potr_internal_peer_find_by_session(const potr_contex
             continue;
         }
         if (ctx->peers[i].peer_session_id == session_id &&
-            com_util_timespec_cmp(&ctx->peers[i].peer_session_ts, session_ts) == 0)
+            cplat_timespec_cmp(&ctx->peers[i].peer_session_ts, session_ts) == 0)
         {
             return (potr_internal_peer_context *)&ctx->peers[i];
         }
@@ -280,7 +280,7 @@ potr_internal_peer_context *potr_internal_peer_find_by_id(const potr_context *ct
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const com_util_ipv4_endpoint *sender_addr, int path_idx)
+potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const cplat_ipv4_endpoint *sender_addr, int path_idx)
 {
     int i;
     potr_internal_peer_context *peer = NULL;
@@ -288,12 +288,12 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     /* max_peers 超過チェック */
     if (ctx->n_peers >= ctx->max_peers)
     {
-        char ip_str[COM_UTIL_IPV4_ADDR_STRLEN];
-        (void)com_util_ipv4_to_string(sender_addr->address, ip_str, sizeof(ip_str), NULL);
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        char ip_str[CPLAT_IPV4_ADDR_STRLEN];
+        (void)cplat_ipv4_to_string(sender_addr->address, ip_str, sizeof(ip_str), NULL);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_internal_peer_create: service_id=%" PRId64 " max_peers=%d reached, "
                    "rejecting new connection from %s:%u",
-                   ctx->service.service_id, ctx->max_peers, ip_str, (unsigned)com_util_ntoh16(sender_addr->port));
+                   ctx->service.service_id, ctx->max_peers, ip_str, (unsigned)cplat_ntoh16(sender_addr->port));
         return NULL;
     }
 
@@ -310,7 +310,7 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     if (peer == NULL)
     {
         /* n_peers < max_peers のはずなのにスロットが見つからない (内部整合性エラー) */
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " no free slot (internal error)",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " no free slot (internal error)",
                    ctx->service.service_id);
         return NULL;
     }
@@ -325,7 +325,7 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     if (peer_generate_session(peer) != POTR_OK)
     {
         peer->active = 0;
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " session id generation failed",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " session id generation failed",
                    ctx->service.service_id);
         return NULL;
     }
@@ -335,7 +335,7 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     if (potr_internal_window_init(&peer->send_window, 0, ctx->global.window_size, ctx->global.max_payload) != POTR_OK)
     {
         peer->active = 0;
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " send_window init failed",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " send_window init failed",
                    ctx->service.service_id);
         return NULL;
     }
@@ -344,22 +344,22 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     {
         potr_internal_window_dispose(&peer->send_window);
         peer->active = 0;
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " recv_window init failed",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " recv_window init failed",
                    ctx->service.service_id);
         return NULL;
     }
 
-    com_util_local_lock_create(&peer->send_window_mutex);
+    cplat_local_lock_create(&peer->send_window_mutex);
 
     /* フラグメント結合バッファー確保 */
-    peer->frag_buf = (uint8_t *)com_util_malloc(ctx->global.max_message_size);
+    peer->frag_buf = (uint8_t *)cplat_malloc(ctx->global.max_message_size);
     if (peer->frag_buf == NULL)
     {
         potr_internal_window_dispose(&peer->recv_window);
         potr_internal_window_dispose(&peer->send_window);
-        com_util_local_lock_dispose(peer->send_window_mutex);
+        cplat_local_lock_dispose(peer->send_window_mutex);
         peer->active = 0;
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " frag_buf alloc failed",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " frag_buf alloc failed",
                    ctx->service.service_id);
         return NULL;
     }
@@ -373,7 +373,7 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
 
     ctx->n_peers++;
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potr_internal_peer_create: service_id=%" PRId64 " peer_id=%u created (n_peers=%d)",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_internal_peer_create: service_id=%" PRId64 " peer_id=%u created (n_peers=%d)",
                ctx->service.service_id, (unsigned)peer->peer_id, ctx->n_peers);
 
     return peer;
@@ -388,7 +388,7 @@ void potr_internal_peer_path_clear(const potr_context *ctx, potr_internal_peer_c
         return; /* すでに未使用スロット */
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING, "potr_internal_peer_path_clear: service_id=%" PRId64 " peer=%u path %d cleared",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING, "potr_internal_peer_path_clear: service_id=%" PRId64 " peer=%u path %d cleared",
                ctx->service.service_id, (unsigned)peer->peer_id, path_idx);
 
     potr_endpoint_clear(&peer->dest_addr[path_idx]);
@@ -406,14 +406,14 @@ void potr_internal_peer_free(potr_context *ctx, potr_internal_peer_context *peer
         return;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potr_internal_peer_free: service_id=%" PRId64 " peer_id=%u freed", ctx->service.service_id,
+    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_internal_peer_free: service_id=%" PRId64 " peer_id=%u freed", ctx->service.service_id,
                (unsigned)peer->peer_id);
 
     potr_internal_window_dispose(&peer->send_window);
     potr_internal_window_dispose(&peer->recv_window);
-    com_util_local_lock_dispose(peer->send_window_mutex);
+    cplat_local_lock_dispose(peer->send_window_mutex);
 
-    com_util_free(peer->frag_buf);
+    cplat_free(peer->frag_buf);
     peer->frag_buf = NULL;
 
     peer->active = 0;

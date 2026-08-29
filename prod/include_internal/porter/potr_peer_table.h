@@ -79,7 +79,7 @@ extern "C"
      *  @return     見つかった場合はピア コンテキストへのポインター、見つからない場合は NULL。
      */
     extern potr_internal_peer_context *potr_internal_peer_find_by_session(const potr_context *ctx, uint32_t session_id,
-                                                 const com_util_timespec *session_ts);
+                                                 const cplat_timespec *session_ts);
 
     /**
      *  @brief  peer_id でピアを検索します。
@@ -107,7 +107,7 @@ extern "C"
      *  @param[in]      path_idx    パケットを受信したサーバー ソケットのインデックス (ctx->sock[] の添字)。
      *  @return         成功時はピア コンテキストへのポインター、失敗時は NULL。
      */
-    extern potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const com_util_ipv4_endpoint *sender_addr, int path_idx);
+    extern potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const cplat_ipv4_endpoint *sender_addr, int path_idx);
 
     /**
      *  @brief  ピアの特定パスをクリアしてスロットを未使用に戻す。

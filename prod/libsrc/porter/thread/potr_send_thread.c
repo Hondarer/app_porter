@@ -31,7 +31,7 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 #include <string.h>
 #include <inttypes.h>
@@ -47,9 +47,9 @@
 #include <porter/protocol/packet.h>
 #include <porter/protocol/window.h>
 #include <porter/infra/potr_trace.h>
-#include <com_util/crypto/crypto.h>
-#include <com_util/net/byteorder.h>
-#include <com_util/net/socket.h>
+#include <cplat/crypto/crypto.h>
+#include <cplat/net/byteorder.h>
+#include <cplat/net/socket.h>
 
 static int should_track_valid_data_send_time(const potr_context *ctx)
 {
@@ -59,8 +59,8 @@ static int should_track_valid_data_send_time(const potr_context *ctx)
 /* ペイロード エレメントを packed_buf に追記する */
 static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const potr_internal_payload_elem *entry)
 {
-    uint16_t flags_nbo = com_util_hton16(entry->flags);
-    uint32_t plen_nbo = com_util_hton32((uint32_t)entry->payload_len);
+    uint16_t flags_nbo = cplat_hton16(entry->flags);
+    uint32_t plen_nbo = cplat_hton32((uint32_t)entry->payload_len);
 
     memcpy(packed_buf + *packed_len, &flags_nbo, 2);
     *packed_len += 2;
@@ -88,13 +88,13 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
     potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     /* send_window へのアクセスを排他制御する (送信スレッド・ヘルスチェック スレッド・受信スレッドが競合) */
-    com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     seq = ctx->send_window.next_seq;
 
     if (potr_internal_packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len) != POTR_OK)
     {
-        com_util_local_lock_unlock(ctx->send_window_mutex);
+        cplat_local_lock_unlock(ctx->send_window_mutex);
         return;
     }
 
@@ -113,8 +113,8 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_len = ctx->crypto_buf_size;
 
-        outer_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
-        outer_pkt.payload_len = com_util_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
+        outer_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
+        outer_pkt.payload_len = cplat_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
 
         /* ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
          * outer_pkt の各フィールドはすでに NBO */
@@ -123,11 +123,11 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
         memcpy(nonce + 6, &outer_pkt.seq_num, 4);
         memset(nonce + 10, 0, 2);
 
-        if (com_util_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
-                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != COM_UTIL_OK)
+        if (cplat_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
+                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != CPLAT_OK)
         {
-            com_util_local_lock_unlock(ctx->send_window_mutex);
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: encrypt failed seq=%u",
+            cplat_local_lock_unlock(ctx->send_window_mutex);
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: encrypt failed seq=%u",
                        ctx->service.service_id, (unsigned)seq);
             return;
         }
@@ -137,7 +137,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
             /* TCP: ウィンドウ登録不要。next_seq をインクリメントして mutex を解放 */
             ctx->send_window.next_seq++;
             ctx->send_has_data = 1;
-            com_util_local_lock_unlock(ctx->send_window_mutex);
+            cplat_local_lock_unlock(ctx->send_window_mutex);
         }
         else
         {
@@ -145,7 +145,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
             outer_pkt.payload = ctx->crypto_buf;
             potr_internal_window_send_push(&ctx->send_window, &outer_pkt);
             ctx->send_has_data = 1;
-            com_util_local_lock_unlock(ctx->send_window_mutex);
+            cplat_local_lock_unlock(ctx->send_window_mutex);
         }
 
         /* wire 組立: NBO ヘッダー + 暗号文 + タグ */
@@ -153,7 +153,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
         memcpy(ctx->send_wire_buf + PACKET_HEADER_SIZE, ctx->crypto_buf, enc_len);
         wire_len = PACKET_HEADER_SIZE + enc_len;
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "sender[service_id=%" PRId64 "]: DATA(enc) seq=%u packed_len=%zu enc_len=%zu",
                    ctx->service.service_id, (unsigned)seq, packed_len, enc_len);
     }
@@ -164,20 +164,20 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
             /* TCP: ウィンドウ登録不要。next_seq をインクリメントして mutex を解放 */
             ctx->send_window.next_seq++;
             ctx->send_has_data = 1;
-            com_util_local_lock_unlock(ctx->send_window_mutex);
+            cplat_local_lock_unlock(ctx->send_window_mutex);
         }
         else
         {
             potr_internal_window_send_push(&ctx->send_window, &outer_pkt);
             ctx->send_has_data = 1;
-            com_util_local_lock_unlock(ctx->send_window_mutex);
+            cplat_local_lock_unlock(ctx->send_window_mutex);
         }
 
         /* NBO ヘッダー (32B) を send_wire_buf 先頭に書き込む (ペイロードはすでに直後に配置済み) */
         memcpy(ctx->send_wire_buf, &outer_pkt, PACKET_HEADER_SIZE);
         wire_len = PACKET_HEADER_SIZE + packed_len;
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: DATA seq=%u packed_len=%zu",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: DATA seq=%u packed_len=%zu",
                    ctx->service.service_id, (unsigned)seq, packed_len);
     }
 
@@ -191,26 +191,26 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
             {
                 int writable = 0;
 
-                if (ctx->tcp_conn_fd[i] == COM_UTIL_INVALID_SOCKET)
+                if (ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
                     continue;
 
                 /* 送信バッファーの空きを確認 (非ブロッキング) */
-                (void)com_util_socket_wait_writable(ctx->tcp_conn_fd[i], COM_UTIL_SOCKET_NO_WAIT, &writable, NULL);
+                (void)cplat_socket_wait_writable(ctx->tcp_conn_fd[i], CPLAT_SOCKET_NO_WAIT, &writable, NULL);
                 if (writable)
                 {
                     if (ctx->buf_full_suppress_cnt[i] > 0 && ++ctx->buf_full_suppress_cnt[i] > 10)
                     {
                         ctx->buf_full_suppress_cnt[i] = 0;
                     }
-                    com_util_local_lock_lock(ctx->tcp_send_mutex[i], COM_UTIL_SYNC_WAIT_FOREVER);
-                    (void)com_util_socket_send_all(ctx->tcp_conn_fd[i], ctx->send_wire_buf, wire_len, NULL);
-                    com_util_local_lock_unlock(ctx->tcp_send_mutex[i]);
+                    cplat_local_lock_lock(ctx->tcp_send_mutex[i], CPLAT_SYNC_WAIT_FOREVER);
+                    (void)cplat_socket_send_all(ctx->tcp_conn_fd[i], ctx->send_wire_buf, wire_len, NULL);
+                    cplat_local_lock_unlock(ctx->tcp_send_mutex[i]);
                 }
                 else
                 {
                     if (ctx->buf_full_suppress_cnt[i] == 0)
                     {
-                        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+                        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                                    "send_thread[service_id=%" PRId64 "]: path[%d]"
                                    " send buffer full, packet skipped",
                                    ctx->service.service_id, i);
@@ -230,8 +230,8 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
             int send_ret;
 
             send_ret =
-                com_util_socket_sendto(ctx->sock[i], ctx->send_wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
-            if (send_ret == COM_UTIL_OK)
+                cplat_socket_sendto(ctx->sock[i], ctx->send_wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
+            if (send_ret == CPLAT_OK)
             {
                 sent_any = 1;
             }
@@ -239,7 +239,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
 
         if (sent_any && should_track_valid_data_send_time(ctx))
         {
-            ctx->last_valid_data_send_ms = com_util_get_monotonic_ms();
+            ctx->last_valid_data_send_ms = cplat_get_monotonic_ms();
             potr_internal_health_thread_wake(ctx);
         }
     }
@@ -258,13 +258,13 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
     shdr.session_id = peer->session_id;
     potr_session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    com_util_local_lock_lock(peer->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(peer->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     seq = peer->send_window.next_seq;
 
     if (potr_internal_packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len) != POTR_OK)
     {
-        com_util_local_lock_unlock(peer->send_window_mutex);
+        cplat_local_lock_unlock(peer->send_window_mutex);
         return;
     }
 
@@ -273,8 +273,8 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_len = ctx->crypto_buf_size;
 
-        outer_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
-        outer_pkt.payload_len = com_util_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
+        outer_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
+        outer_pkt.payload_len = cplat_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
 
         /* ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
          * outer_pkt の各フィールドはすでに NBO */
@@ -283,11 +283,11 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         memcpy(nonce + 6, &outer_pkt.seq_num, 4);
         memset(nonce + 10, 0, 2);
 
-        if (com_util_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
-                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != COM_UTIL_OK)
+        if (cplat_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
+                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != CPLAT_OK)
         {
-            com_util_local_lock_unlock(peer->send_window_mutex);
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: peer=%u encrypt failed seq=%u",
+            cplat_local_lock_unlock(peer->send_window_mutex);
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: peer=%u encrypt failed seq=%u",
                        ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq);
             return;
         }
@@ -296,13 +296,13 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         potr_internal_window_send_push(&peer->send_window, &outer_pkt);
         peer->send_has_data = 1;
 
-        com_util_local_lock_unlock(peer->send_window_mutex);
+        cplat_local_lock_unlock(peer->send_window_mutex);
 
         memcpy(ctx->send_wire_buf, &outer_pkt, PACKET_HEADER_SIZE);
         memcpy(ctx->send_wire_buf + PACKET_HEADER_SIZE, ctx->crypto_buf, enc_len);
         wire_len = PACKET_HEADER_SIZE + enc_len;
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "sender[service_id=%" PRId64 "]: peer=%u DATA(enc) seq=%u packed_len=%zu", ctx->service.service_id,
                    (unsigned)peer->peer_id, (unsigned)seq, packed_len);
     }
@@ -311,12 +311,12 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         potr_internal_window_send_push(&peer->send_window, &outer_pkt);
         peer->send_has_data = 1;
 
-        com_util_local_lock_unlock(peer->send_window_mutex);
+        cplat_local_lock_unlock(peer->send_window_mutex);
 
         memcpy(ctx->send_wire_buf, &outer_pkt, PACKET_HEADER_SIZE);
         wire_len = PACKET_HEADER_SIZE + packed_len;
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: peer=%u DATA seq=%u packed_len=%zu",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: peer=%u DATA seq=%u packed_len=%zu",
                    ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq, packed_len);
     }
 
@@ -329,7 +329,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
 
             if (potr_endpoint_is_unset(&peer->dest_addr[k]))
                 continue;
-            (void)com_util_socket_sendto(ctx->sock[k], ctx->send_wire_buf, wire_len, &peer->dest_addr[k], &sent, NULL);
+            (void)cplat_socket_sendto(ctx->sock[k], ctx->send_wire_buf, wire_len, &peer->dest_addr[k], &sent, NULL);
         }
     }
 }
@@ -344,9 +344,9 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
     int n_dequeued = 1;
 
     /* ピアを検索 (peers_mutex は lookup だけ保護、送信中は解放する) */
-    com_util_local_lock_lock(ctx->peers_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
     peer = potr_internal_peer_find_by_id(ctx, target_peer_id);
-    com_util_local_lock_unlock(ctx->peers_mutex);
+    cplat_local_lock_unlock(ctx->peers_mutex);
 
     if (peer == NULL)
     {
@@ -447,12 +447,12 @@ static void send_thread_func(void *arg)
                 if (pack_wait_ms > 0)
                 {
                     /* パッキング待ちあり: タイムアウトまで追加エントリを待ち合わせる */
-                    uint64_t deadline = com_util_get_monotonic_ms() + pack_wait_ms;
+                    uint64_t deadline = cplat_get_monotonic_ms() + pack_wait_ms;
                     potr_internal_payload_elem next;
 
                     for (;;)
                     {
-                        uint64_t now = com_util_get_monotonic_ms();
+                        uint64_t now = cplat_get_monotonic_ms();
                         uint32_t remaining;
                         size_t elem_size;
                         size_t crypto_tag_overhead;
@@ -570,12 +570,12 @@ int potr_internal_send_thread_start(potr_context *ctx)
 
     ctx->send_thread_running = 1;
 
-    com_util_local_lock_create(&ctx->send_window_mutex);
-    if (com_util_thread_create(&ctx->send_thread, send_thread_func, ctx) != COM_UTIL_OK)
+    cplat_local_lock_create(&ctx->send_window_mutex);
+    if (cplat_thread_create(&ctx->send_thread, send_thread_func, ctx) != CPLAT_OK)
     {
         ctx->send_thread_running = 0;
-        com_util_local_lock_dispose(ctx->send_window_mutex);
-        /* com_util のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
+        cplat_local_lock_dispose(ctx->send_window_mutex);
+        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -589,6 +589,6 @@ void potr_internal_send_thread_stop(potr_context *ctx)
     ctx->send_thread_running = 0;
     potr_internal_send_queue_shutdown(&ctx->send_queue);
 
-    com_util_thread_join(ctx->send_thread, COM_UTIL_SYNC_WAIT_FOREVER);
-    com_util_local_lock_dispose(ctx->send_window_mutex);
+    cplat_thread_join(ctx->send_thread, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_dispose(ctx->send_window_mutex);
 }

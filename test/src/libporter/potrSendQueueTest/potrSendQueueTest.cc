@@ -1,10 +1,10 @@
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 #if defined(PLATFORM_WINDOWS)
     #define _HAS_STD_BYTE 0
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
-#include <mock_com_util.h>
+#include <mock_cplat.h>
 
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
@@ -35,7 +35,7 @@ class potrSendQueueTest : public Test
 TEST_F(potrSendQueueTest, empty_queue_returns_empty_and_timeout)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     potr_internal_payload_elem elem; // [状態] - エントリを 1 件も積んでいない送信キューを用意する。
 
     // Pre-Assert
@@ -58,7 +58,7 @@ TEST_F(potrSendQueueTest, empty_queue_returns_empty_and_timeout)
 TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     const uint8_t payload[4] = {0x01, 0x02, 0x03, 0x04};
     size_t i;
 
@@ -85,7 +85,7 @@ TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
 TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     const uint8_t payload[4] = {0x11, 0x22, 0x33, 0x44};
     volatile int running = 0; // [状態] - 実行フラグ running を 0 (停止済み) とする。
     size_t i;
@@ -112,7 +112,7 @@ TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
 TEST_F(potrSendQueueTest, pop_returns_canceled_when_stopped)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     potr_internal_payload_elem elem;
     volatile int running = 0; // [状態] - エントリのない空キューと、値 0 (停止済み) の実行フラグ running を用意する。
 

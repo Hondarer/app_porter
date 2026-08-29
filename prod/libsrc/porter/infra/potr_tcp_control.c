@@ -12,30 +12,30 @@
  */
 
 #include <string.h>
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
-#include <com_util/crypto/crypto.h>
-#include <com_util/net/byteorder.h>
-#include <com_util/net/socket.h>
+#include <cplat/crypto/crypto.h>
+#include <cplat/net/byteorder.h>
+#include <cplat/net/socket.h>
 #include <porter/infra/potr_result.h>
 #include <porter/infra/potr_tcp_control.h>
 #include <porter/potr_context.h>
 #include <porter/protocol/packet.h>
 
 /* path 単位の送信ミューテックスを取得して全バイト送信する */
-static int tcp_send_all_locked(com_util_socket fd, com_util_local_lock *mtx, const uint8_t *buf, size_t len)
+static int tcp_send_all_locked(cplat_socket fd, cplat_local_lock *mtx, const uint8_t *buf, size_t len)
 {
     int result;
-    com_util_error detail;
+    cplat_error detail;
 
-    com_util_local_lock_lock(mtx, COM_UTIL_SYNC_WAIT_FOREVER);
-    result = com_util_socket_send_all(fd, buf, len, &detail);
-    com_util_local_lock_unlock(mtx);
+    cplat_local_lock_lock(mtx, CPLAT_SYNC_WAIT_FOREVER);
+    result = cplat_socket_send_all(fd, buf, len, &detail);
+    cplat_local_lock_unlock(mtx);
 
-    if (result != COM_UTIL_OK)
+    if (result != CPLAT_OK)
     {
         return potr_internal_result_from_error(&detail);
     }
@@ -61,10 +61,10 @@ int potr_internal_tcp_send_control_packet(const potr_context *ctx, potr_packet *
     {
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
-        uint32_t nonce_nbo = com_util_hton32(nonce_val);
+        uint32_t nonce_nbo = cplat_hton32(nonce_val);
 
-        pkt->flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
-        pkt->payload_len = com_util_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
+        pkt->flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
+        pkt->payload_len = cplat_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         memcpy(nonce, &pkt->session_id, 4);
         memcpy(nonce + 4, &pkt->flags, 2);
@@ -72,8 +72,8 @@ int potr_internal_tcp_send_control_packet(const potr_context *ctx, potr_packet *
         memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, pkt, PACKET_HEADER_SIZE);
-        if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, PACKET_HEADER_SIZE) != COM_UTIL_OK)
+        if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
+                             wire_buf, PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             /* 暗号化失敗は入力データ起因と断定できないため、分類不能として扱う。 */
             return POTR_ERR_UNKNOWN;
@@ -88,7 +88,7 @@ int potr_internal_tcp_send_control_packet(const potr_context *ctx, potr_packet *
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        if (ctx->tcp_conn_fd[i] == COM_UTIL_INVALID_SOCKET)
+        if (ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
         {
             continue;
         }

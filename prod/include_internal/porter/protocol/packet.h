@@ -22,7 +22,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <com_util/clock/timespec.h>
+#include <cplat/clock/timespec.h>
 #include <porter/porter_result.h>
 #include <porter/porter_type.h>
 
@@ -35,7 +35,7 @@
  *  potr_service_open 時に決定し、全パケットのヘッダーに格納します。\n
  *  session_tv_sec / session_tv_nsec はワイヤ フォーマット (session header) の鏡像であり、
  *  幅が仕様で決まっているため固定幅型を維持します。\n
- *  com_util_timespec との変換には potr_session_ts_to_hdr() / potr_session_ts_from_hdr() を使用します。
+ *  cplat_timespec との変換には potr_session_ts_to_hdr() / potr_session_ts_from_hdr() を使用します。
  */
 typedef struct potr_internal_packet_session_hdr
 {
@@ -46,7 +46,7 @@ typedef struct potr_internal_packet_session_hdr
 } potr_internal_packet_session_hdr;
 
 /**
- *  @brief          com_util_timespec をワイヤ用の固定幅セッション時刻フィールドへ変換します。
+ *  @brief          cplat_timespec をワイヤ用の固定幅セッション時刻フィールドへ変換します。
  *  @param[in]      ts       変換元のセッション開始時刻。
  *  @param[out]     tv_sec   ワイヤ フィールド (int64_t) の格納先。
  *  @param[out]     tv_nsec  ワイヤ フィールド (int32_t) の格納先。
@@ -54,19 +54,19 @@ typedef struct potr_internal_packet_session_hdr
  *  ワイヤ フィールドは幅が仕様で固定されているため、縮小変換を本関数に集約します。\n
  *  正規化済みの tv_nsec (0 以上 999,999,999 以下) は int32_t の表現範囲内に収まります。
  */
-static inline void potr_session_ts_to_hdr(const com_util_timespec *ts, int64_t *tv_sec, int32_t *tv_nsec)
+static inline void potr_session_ts_to_hdr(const cplat_timespec *ts, int64_t *tv_sec, int32_t *tv_nsec)
 {
     *tv_sec = (int64_t)ts->tv_sec;
     *tv_nsec = (int32_t)ts->tv_nsec;
 }
 
 /**
- *  @brief          ワイヤ用の固定幅セッション時刻フィールドを com_util_timespec へ変換します。
+ *  @brief          ワイヤ用の固定幅セッション時刻フィールドを cplat_timespec へ変換します。
  *  @param[in]      tv_sec   ワイヤ フィールド (int64_t) の値。
  *  @param[in]      tv_nsec  ワイヤ フィールド (int32_t) の値。
  *  @param[out]     ts       変換結果の格納先。
  */
-static inline void potr_session_ts_from_hdr(int64_t tv_sec, int32_t tv_nsec, com_util_timespec *ts)
+static inline void potr_session_ts_from_hdr(int64_t tv_sec, int32_t tv_nsec, cplat_timespec *ts)
 {
     ts->tv_sec = (time_t)tv_sec;
     ts->tv_nsec = (int64_t)tv_nsec;

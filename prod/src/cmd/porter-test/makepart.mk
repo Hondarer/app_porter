@@ -1,2 +1,2 @@
 # ライブラリの指定
-LIBS += com_util porter
+LIBS += cplat porter

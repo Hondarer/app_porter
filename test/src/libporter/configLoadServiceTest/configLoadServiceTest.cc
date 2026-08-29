@@ -1,4 +1,4 @@
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 #if defined(PLATFORM_WINDOWS)
     #define _HAS_STD_BYTE 0
@@ -8,7 +8,7 @@
 #include <mock_porter.h>
 #include <porter/protocol/config.h>
 #include <config_test_helper.h>
-#include <mock_com_util.h>
+#include <mock_cplat.h>
 #include <mock_stdio.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
@@ -22,12 +22,12 @@ using namespace testing;
 TEST(configLoadServiceTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     potr_service_def def = {};
 
     // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
+    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
 
     // Act
@@ -52,7 +52,7 @@ TEST(configLoadServiceTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpene
 TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
         "[service.10]\n",
@@ -86,12 +86,12 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
             })); // [状態] - fgets が呼び出された際に複数 service section を含む行列を返すようにモックを設定する。
 
     // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
+    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が 1 回呼び出されること。
-    EXPECT_CALL(mock_com_util, com_util_passphrase_to_key(_, _, _))
+    EXPECT_CALL(mock_cplat, cplat_passphrase_to_key(_, _, _))
         .Times(0); // [Pre-Assert確認_正常系] - 64 桁 hex の encrypt_key では passphrase 変換を呼ばないこと。
 
     // Act
@@ -128,7 +128,7 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
 TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
         "[service.55]\n",
@@ -145,10 +145,10 @@ TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
             })); // [状態] - fgets が呼び出された際に passphrase 形式の encrypt_key を含む行列を返すようにモックを設定する。
 
     // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
+    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
-    EXPECT_CALL(mock_com_util, com_util_passphrase_to_key(_, _, strlen("secret passphrase")))
+    EXPECT_CALL(mock_cplat, cplat_passphrase_to_key(_, _, strlen("secret passphrase")))
         .WillOnce(
             [](uint8_t *key, const uint8_t *passphrase, size_t len)
             {
@@ -176,7 +176,7 @@ TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
 TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
         "[service.56]\n",
@@ -194,10 +194,10 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
             })); // [状態] - fgets が呼び出された際に hash 失敗を確認する service 行列を返すようにモックを設定する。
 
     // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
+    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
-    EXPECT_CALL(mock_com_util, com_util_passphrase_to_key(_, _, strlen("not-a-hex-secret")))
+    EXPECT_CALL(mock_cplat, cplat_passphrase_to_key(_, _, strlen("not-a-hex-secret")))
         .WillOnce(Return(-1)); // [Pre-Assert確認_異常系] - passphrase 変換失敗を 1 回返すこと。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が 1 回呼び出されること。
@@ -217,7 +217,7 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
 TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
         "[service.10]\n",
@@ -232,7 +232,7 @@ TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
             })); // [状態] - fgets が呼び出された際に対象外 service のみを含む行列を返すようにモックを設定する。
 
     // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
+    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))

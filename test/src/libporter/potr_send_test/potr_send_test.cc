@@ -1,10 +1,10 @@
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 #if defined(PLATFORM_WINDOWS)
     #define _HAS_STD_BYTE 0
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
-#include <mock_com_util.h>
+#include <mock_cplat.h>
 #include <mock_porter.h>
 
 #include <porter/porter_result.h>
@@ -16,7 +16,7 @@
 #if defined(PLATFORM_LINUX)
     #include <pthread.h>
 #elif defined(PLATFORM_WINDOWS)
-    #include <com_util/base/windows_sdk.h>
+    #include <cplat/base/windows_sdk.h>
 #endif /* PLATFORM_ */
 #include <string.h>
 
@@ -38,12 +38,12 @@ class potrSendTest : public Test
         ctx.peers = peers;
 
         ASSERT_EQ(POTR_OK, potr_internal_send_queue_init(&ctx.send_queue, 8, 1400));
-        com_util_local_lock_create(&ctx.peers_mutex);
+        cplat_local_lock_create(&ctx.peers_mutex);
     }
 
     void TearDown() override
     {
-        com_util_local_lock_dispose(ctx.peers_mutex);
+        cplat_local_lock_dispose(ctx.peers_mutex);
         potr_internal_send_queue_dispose(&ctx.send_queue);
     }
 
@@ -62,7 +62,7 @@ class potrSendTest : public Test
 TEST_F(potrSendTest, close_requested_returns_canceled)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "closing"; // [状態] - 送信ペイロードを "closing" とする。
     ctx.close_requested = 1;          // [状態] - サービスの終了処理中とする。
@@ -81,7 +81,7 @@ TEST_F(potrSendTest, close_requested_returns_canceled)
 TEST_F(potrSendTest, n1_peer_na_returns_invalid_argument)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "n1-invalid-peer"; // [状態] - 送信ペイロードを "n1-invalid-peer" とする。
     ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
@@ -102,7 +102,7 @@ TEST_F(potrSendTest, n1_peer_na_returns_invalid_argument)
 TEST_F(potrSendTest, n1_unknown_peer_returns_not_found)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "n1-missing-peer"; // [状態] - 送信ペイロードを "n1-missing-peer" とする。
     ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
@@ -122,7 +122,7 @@ TEST_F(potrSendTest, n1_unknown_peer_returns_not_found)
 TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "tcp-before-connected"; // [状態] - 送信ペイロードを "tcp-before-connected" とする。
 
@@ -144,7 +144,7 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
 TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "n1-broadcast"; // [状態] - 送信ペイロードを "n1-broadcast" とする。
 
@@ -169,7 +169,7 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
 TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "n1-connected-peer"; // [状態] - 送信ペイロードを "n1-connected-peer" とする。
 
@@ -204,7 +204,7 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
 TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_log;
+    NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "one-way-still-sendable"; // [状態] - 送信ペイロードを "one-way-still-sendable" とする。
 

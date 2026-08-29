@@ -28,8 +28,8 @@
 
 #include <stddef.h>
 
-#include <com_util/base/platform.h>
-#include <com_util/sync/sync.h>
+#include <cplat/base/platform.h>
+#include <cplat/sync/sync.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/porter_type.h>
@@ -71,10 +71,10 @@ typedef struct potr_internal_send_queue
     size_t tail;                 /**< 書き込み位置 (potr_send 呼び出し元が使用)。 */
     size_t count;                /**< キュー内エントリ数。 */
     size_t inflight;             /**< sendto 実行中エントリ数。 */
-    com_util_local_lock *mutex;  /**< 排他制御。 */
-    com_util_condvar *not_empty; /**< count > 0 になったことを通知する条件変数。 */
-    com_util_condvar *not_full;  /**< count + inflight < depth になったことを通知する条件変数。 */
-    com_util_condvar *drained;   /**< count == 0 && inflight == 0 を通知する条件変数。 */
+    cplat_local_lock *mutex;  /**< 排他制御。 */
+    cplat_condvar *not_empty; /**< count > 0 になったことを通知する条件変数。 */
+    cplat_condvar *not_full;  /**< count + inflight < depth になったことを通知する条件変数。 */
+    cplat_condvar *drained;   /**< count == 0 && inflight == 0 を通知する条件変数。 */
 } potr_internal_send_queue;
 
 #ifdef __cplusplus

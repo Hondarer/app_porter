@@ -20,7 +20,7 @@
 #define CONFIG_H
 
 #include <porter/porter_result.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/crt/stdlib.h>
 #include <porter/porter_type.h>
 
 #ifdef __cplusplus
@@ -57,7 +57,7 @@ extern "C"
      *  @brief          設定ファイルに登録されているすべてのサービス ID を列挙します。
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[out]     ids_out     サービス ID 配列へのポインターを格納する変数。
-     *                              呼び出し元が com_util_free(*ids_out) の責務を持ちます。
+     *                              呼び出し元が cplat_free(*ids_out) の責務を持ちます。
      *  @param[out]     count_out   列挙したサービス ID 数。
      *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
      *                  メモリを確保できない場合は POTR_ERR_OUT_OF_MEMORY、

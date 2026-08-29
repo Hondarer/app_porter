@@ -12,20 +12,20 @@
  */
 
 #include <inttypes.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/crt/stdlib.h>
 #include <stdlib.h>
 #include <string.h>
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 #include <porter/porter_spec.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
-#include <com_util/crypto/crypto.h>
-#include <com_util/net/byteorder.h>
-#include <com_util/net/endpoint.h>
-#include <com_util/net/socket.h>
-#include <com_util/runtime/memory_lock.h>
+#include <cplat/crypto/crypto.h>
+#include <cplat/net/byteorder.h>
+#include <cplat/net/endpoint.h>
+#include <cplat/net/socket.h>
+#include <cplat/runtime/memory_lock.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_send_queue.h>
 #include <porter/infra/potr_tcp_control.h>
@@ -46,30 +46,30 @@ static void dispose_secret_buffers(potr_context *ctx)
 {
     if (ctx->frag_buf != NULL)
     {
-        com_util_secure_zero(ctx->frag_buf, ctx->global.max_message_size);
-        com_util_free(ctx->frag_buf);
+        cplat_secure_zero(ctx->frag_buf, ctx->global.max_message_size);
+        cplat_free(ctx->frag_buf);
         ctx->frag_buf = NULL;
     }
     if (ctx->compress_buf != NULL)
     {
-        com_util_secure_zero(ctx->compress_buf, ctx->compress_buf_size);
-        com_util_free(ctx->compress_buf);
+        cplat_secure_zero(ctx->compress_buf, ctx->compress_buf_size);
+        cplat_free(ctx->compress_buf);
         ctx->compress_buf = NULL;
     }
     if (ctx->crypto_buf != NULL)
     {
-        com_util_secure_zero(ctx->crypto_buf, ctx->crypto_buf_size);
-        com_util_free(ctx->crypto_buf);
+        cplat_secure_zero(ctx->crypto_buf, ctx->crypto_buf_size);
+        cplat_free(ctx->crypto_buf);
         ctx->crypto_buf = NULL;
     }
     if (ctx->recv_buf != NULL)
     {
-        com_util_secure_zero(ctx->recv_buf, PACKET_HEADER_SIZE + ctx->global.max_payload);
-        com_util_free(ctx->recv_buf);
+        cplat_secure_zero(ctx->recv_buf, PACKET_HEADER_SIZE + ctx->global.max_payload);
+        cplat_free(ctx->recv_buf);
         ctx->recv_buf = NULL;
     }
 
-    com_util_secure_zero(ctx->service.encrypt_key, sizeof(ctx->service.encrypt_key));
+    cplat_secure_zero(ctx->service.encrypt_key, sizeof(ctx->service.encrypt_key));
 }
 
 /* FIN パケットを全パスへ送信する */
@@ -91,15 +91,15 @@ static void send_fin(potr_context *ctx)
 
     /* 現セッションで DATA を送っている場合のみ FIN target を有効化する。
      * ack_num は send_window.next_seq をそのまま運び、0 も通常値として扱う。 */
-    com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
     wire_target_seq = ctx->send_window.next_seq;
     has_data = ctx->send_has_data;
-    com_util_local_lock_unlock(ctx->send_window_mutex);
+    cplat_local_lock_unlock(ctx->send_window_mutex);
 
     if (has_data)
     {
-        fin_pkt.flags |= com_util_hton16(POTR_FLAG_FIN_TARGET_VALID);
-        fin_pkt.ack_num = com_util_hton32(wire_target_seq);
+        fin_pkt.flags |= cplat_hton16(POTR_FLAG_FIN_TARGET_VALID);
+        fin_pkt.ack_num = cplat_hton32(wire_target_seq);
     }
 
     if (ctx->service.encrypt_enabled)
@@ -108,8 +108,8 @@ static void send_fin(potr_context *ctx)
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
 
-        fin_pkt.flags |= com_util_hton16(POTR_FLAG_ENCRYPTED);
-        fin_pkt.payload_len = com_util_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
+        fin_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
+        fin_pkt.payload_len = cplat_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
         /* ノンス: session_id(4B) + flags(2B, FIN|ENCRYPTED NBO) + 0(4B) + padding(2B) */
         memcpy(nonce, &fin_pkt.session_id, 4);
@@ -118,8 +118,8 @@ static void send_fin(potr_context *ctx)
         memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, &fin_pkt, PACKET_HEADER_SIZE);
-        if (com_util_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, PACKET_HEADER_SIZE) != COM_UTIL_OK)
+        if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
+                             wire_buf, PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             return;
         }
@@ -129,9 +129,9 @@ static void send_fin(potr_context *ctx)
         {
             size_t sent = 0;
 
-            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
+            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
-            (void)com_util_socket_sendto(ctx->sock[i], wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
+            (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
         }
     }
     else
@@ -142,9 +142,9 @@ static void send_fin(potr_context *ctx)
         {
             size_t sent = 0;
 
-            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
+            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
-            (void)com_util_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &ctx->dest_addr[i], &sent,
+            (void)cplat_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &ctx->dest_addr[i], &sent,
                                          NULL);
         }
     }
@@ -154,13 +154,13 @@ static uint32_t get_fin_target_seq(potr_context *ctx, int *has_data)
 {
     uint32_t wire_target_seq;
 
-    com_util_local_lock_lock(ctx->send_window_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
     wire_target_seq = ctx->send_window.next_seq;
     if (has_data != NULL)
     {
         *has_data = ctx->send_has_data;
     }
-    com_util_local_lock_unlock(ctx->send_window_mutex);
+    cplat_local_lock_unlock(ctx->send_window_mutex);
 
     return wire_target_seq;
 }
@@ -181,30 +181,30 @@ static int send_tcp_fin(potr_context *ctx, uint32_t fin_target_seq)
         return result;
     }
 
-    fin_pkt.flags |= com_util_hton16(POTR_FLAG_FIN_TARGET_VALID);
-    fin_pkt.ack_num = com_util_hton32(fin_target_seq);
+    fin_pkt.flags |= cplat_hton16(POTR_FLAG_FIN_TARGET_VALID);
+    fin_pkt.ack_num = cplat_hton32(fin_target_seq);
 
     return potr_internal_tcp_send_control_packet(ctx, &fin_pkt, 0U);
 }
 
 static void reset_tcp_close_wait(potr_context *ctx)
 {
-    com_util_local_lock_lock(ctx->tcp_close_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->tcp_close_mutex, CPLAT_SYNC_WAIT_FOREVER);
     ctx->tcp_close_waiting_ack = 0;
     ctx->tcp_close_ack_received = 0;
     ctx->tcp_close_wait_target_seq = 0U;
     ctx->tcp_close_ack_seq = 0U;
-    com_util_local_lock_unlock(ctx->tcp_close_mutex);
+    cplat_local_lock_unlock(ctx->tcp_close_mutex);
 }
 
 static void begin_tcp_close_wait(potr_context *ctx, uint32_t fin_target_seq)
 {
-    com_util_local_lock_lock(ctx->tcp_close_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->tcp_close_mutex, CPLAT_SYNC_WAIT_FOREVER);
     ctx->tcp_close_waiting_ack = 1;
     ctx->tcp_close_ack_received = 0;
     ctx->tcp_close_wait_target_seq = fin_target_seq;
     ctx->tcp_close_ack_seq = 0U;
-    com_util_local_lock_unlock(ctx->tcp_close_mutex);
+    cplat_local_lock_unlock(ctx->tcp_close_mutex);
 }
 
 static int wait_for_tcp_close_ack(potr_context *ctx, int timeout_ms)
@@ -218,19 +218,19 @@ static int wait_for_tcp_close_ack(potr_context *ctx, int timeout_ms)
         return POTR_OK;
     }
 
-    com_util_local_lock_lock(ctx->tcp_close_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->tcp_close_mutex, CPLAT_SYNC_WAIT_FOREVER);
     while (ctx->tcp_close_waiting_ack && !ctx->tcp_close_ack_received)
     {
-        wait_result = com_util_condvar_wait(ctx->tcp_close_cv, ctx->tcp_close_mutex, timeout_ms);
-        if (wait_result != COM_UTIL_OK)
+        wait_result = cplat_condvar_wait(ctx->tcp_close_cv, ctx->tcp_close_mutex, timeout_ms);
+        if (wait_result != CPLAT_OK)
         {
-            if (wait_result == COM_UTIL_ERR_TIMEOUT)
+            if (wait_result == CPLAT_ERR_TIMEOUT)
             {
                 result = POTR_ERR_TIMEOUT;
             }
             else
             {
-                /* com_util の同期失敗には、porter の分類へ変換できる詳細コードがありません。 */
+                /* cplat の同期失敗には、porter の分類へ変換できる詳細コードがありません。 */
                 result = POTR_ERR_UNKNOWN;
             }
             break;
@@ -244,7 +244,7 @@ static int wait_for_tcp_close_ack(potr_context *ctx, int timeout_ms)
     ctx->tcp_close_ack_received = 0;
     ctx->tcp_close_wait_target_seq = 0U;
     ctx->tcp_close_ack_seq = 0U;
-    com_util_local_lock_unlock(ctx->tcp_close_mutex);
+    cplat_local_lock_unlock(ctx->tcp_close_mutex);
 
     return result;
 }
@@ -271,11 +271,11 @@ int potr_service_close(potr_context *handle)
 
     if (ctx == NULL)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_service_close: handle is NULL");
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_close: handle is NULL");
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potr_service_close: service_id=%" PRId64 " closing", ctx->service.service_id);
+    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service_id=%" PRId64 " closing", ctx->service.service_id);
     ctx->close_requested = 1;
 
     /* TCP: 接続管理スレッドを停止する (send/recv/health スレッドは connect スレッド内で停止) */
@@ -287,7 +287,7 @@ int potr_service_close(potr_context *handle)
 
             stop_tcp_health_threads(ctx);
 
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                        "potr_service_close: service_id=%" PRId64 " flushing send queue and sending TCP FIN",
                        ctx->service.service_id);
             potr_internal_send_queue_wait_drained(&ctx->send_queue);
@@ -301,7 +301,7 @@ int potr_service_close(potr_context *handle)
                 close_result = send_tcp_fin(ctx, fin_target_seq);
                 if (close_result != POTR_OK)
                 {
-                    POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
+                    POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
                                "potr_service_close: service_id=%" PRId64 " TCP FIN send failed", ctx->service.service_id);
                     reset_tcp_close_wait(ctx);
                     ret = close_result;
@@ -312,14 +312,14 @@ int potr_service_close(potr_context *handle)
                     close_result = wait_for_tcp_close_ack(ctx, (int)ctx->global.tcp_close_timeout_ms);
                     if (close_result != POTR_OK)
                     {
-                        POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
+                        POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
                                    "potr_service_close: service_id=%" PRId64 " TCP FIN_ACK wait failed (%ums)",
                                    ctx->service.service_id, (unsigned)ctx->global.tcp_close_timeout_ms);
                         ret = close_result;
                     }
                     else
                     {
-                        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+                        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                                    "potr_service_close: service_id=%" PRId64 " TCP FIN_ACK received",
                                    ctx->service.service_id);
                     }
@@ -327,7 +327,7 @@ int potr_service_close(potr_context *handle)
             }
             else if (ctx->send_has_data)
             {
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
+                POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
                            "potr_service_close: service_id=%" PRId64 " TCP close without active path",
                            ctx->service.service_id);
                 ret = POTR_ERR_DISCONNECTED;
@@ -338,7 +338,7 @@ int potr_service_close(potr_context *handle)
             }
         }
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "potr_service_close: service_id=%" PRId64 " stopping connect thread (TCP)", ctx->service.service_id);
         potr_internal_connect_thread_stop(ctx);
 
@@ -351,35 +351,35 @@ int potr_service_close(potr_context *handle)
         /* TCP mutex / condvar を解放 */
         {
             int i;
-            com_util_local_lock_dispose(ctx->tcp_state_mutex);
-            com_util_condvar_dispose(ctx->tcp_state_cv);
-            com_util_local_lock_dispose(ctx->tcp_close_mutex);
-            com_util_condvar_dispose(ctx->tcp_close_cv);
+            cplat_local_lock_dispose(ctx->tcp_state_mutex);
+            cplat_condvar_dispose(ctx->tcp_state_cv);
+            cplat_local_lock_dispose(ctx->tcp_close_mutex);
+            cplat_condvar_dispose(ctx->tcp_close_cv);
             for (i = 0; i < (int)POTR_MAX_PATH; i++)
             {
-                com_util_local_lock_dispose(ctx->tcp_send_mutex[i]);
-                com_util_local_lock_dispose(ctx->health_mutex[i]);
-                com_util_condvar_dispose(ctx->health_wakeup[i]);
+                cplat_local_lock_dispose(ctx->tcp_send_mutex[i]);
+                cplat_local_lock_dispose(ctx->health_mutex[i]);
+                cplat_condvar_dispose(ctx->health_wakeup[i]);
             }
-            com_util_local_lock_dispose(ctx->recv_window_mutex);
+            cplat_local_lock_dispose(ctx->recv_window_mutex);
         }
 
         /* 送受信ウィンドウと動的バッファーを解放 */
         potr_internal_window_dispose(&ctx->send_window);
         potr_internal_window_dispose(&ctx->recv_window);
         dispose_secret_buffers(ctx);
-        com_util_free(ctx->send_wire_buf);
+        cplat_free(ctx->send_wire_buf);
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potr_service_close: service closed (TCP)");
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service closed (TCP)");
         potr_internal_callback_mutex_dispose(ctx);
-        com_util_free(ctx);
+        cplat_free(ctx);
         return ret;
     }
 
     /* 非 TCP: ヘルスチェック スレッドを停止 (送信者のみ) */
     if (ctx->health_running[0])
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping health thread",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping health thread",
                    ctx->service.service_id);
         potr_internal_health_thread_stop(ctx);
     }
@@ -390,7 +390,7 @@ int potr_service_close(potr_context *handle)
     /* 送信スレッドを停止してキューを破棄 (送信者のみ) */
     if (ctx->send_thread_running)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "potr_service_close: service_id=%" PRId64 " flushing send queue and sending FIN",
                    ctx->service.service_id);
         potr_internal_send_queue_wait_drained(&ctx->send_queue);
@@ -408,7 +408,7 @@ int potr_service_close(potr_context *handle)
          * send_thread_stop() が send_window_mutex を破棄する前に停止する必要がある。 */
         if (ctx->running[0])
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
                        ctx->service.service_id);
             potr_internal_comm_recv_thread_stop(ctx);
         }
@@ -419,7 +419,7 @@ int potr_service_close(potr_context *handle)
     /* 送信スレッド未起動の受信専用サービスではここで受信スレッドを停止する */
     if (ctx->running[0])
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
                    ctx->service.service_id);
         potr_internal_comm_recv_thread_stop(ctx);
     }
@@ -432,20 +432,20 @@ int potr_service_close(potr_context *handle)
         int i;
         for (i = 0; i < ctx->n_path; i++)
         {
-            if (ctx->sock[i] == COM_UTIL_INVALID_SOCKET)
+            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
             if (potr_raw_base_type(ctx->service.type) == POTR_TYPE_MULTICAST)
             {
                 uint32_t group_addr;
 
-                if (com_util_ipv4_parse(ctx->service.multicast_group, &group_addr) == COM_UTIL_OK)
+                if (cplat_ipv4_parse(ctx->service.multicast_group, &group_addr) == CPLAT_OK)
                 {
-                    (void)com_util_socket_leave_multicast_group(ctx->sock[i], group_addr, ctx->src_addr_resolved[i],
+                    (void)cplat_socket_leave_multicast_group(ctx->sock[i], group_addr, ctx->src_addr_resolved[i],
                                                                 NULL);
                 }
             }
-            com_util_socket_close(ctx->sock[i]);
-            ctx->sock[i] = COM_UTIL_INVALID_SOCKET;
+            cplat_socket_close(ctx->sock[i]);
+            ctx->sock[i] = CPLAT_INVALID_SOCKET;
         }
     }
 
@@ -463,10 +463,10 @@ int potr_service_close(potr_context *handle)
         potr_internal_peer_table_dispose(ctx);
     }
     dispose_secret_buffers(ctx);
-    com_util_free(ctx->send_wire_buf);
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potr_service_close: service closed");
+    cplat_free(ctx->send_wire_buf);
+    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service closed");
 
     potr_internal_callback_mutex_dispose(ctx);
-    com_util_free(ctx);
+    cplat_free(ctx);
     return POTR_OK;
 }

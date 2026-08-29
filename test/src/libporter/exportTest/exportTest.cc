@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <vector>
 
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 #include <porter/porter_spec.h>
 
 // libporter が公開エクスポートすべき関数の一覧。
@@ -23,7 +23,7 @@
                  int(POTR_API *)(potr_context * handle, potr_peer_id peer_id, const void *data, size_t len, int flags)) \
     EXPORT_ENTRY(potr_peer_disconnect, int(POTR_API *)(potr_context * handle, potr_peer_id peer_id)) \
     EXPORT_ENTRY(potr_service_close, int(POTR_API *)(potr_context * handle)) \
-    EXPORT_ENTRY(potr_tracer_get, com_util_tracer *(POTR_API *)(void)) \
+    EXPORT_ENTRY(potr_tracer_get, cplat_tracer *(POTR_API *)(void)) \
     EXPORT_ENTRY(potr_service_get_type, int(POTR_API *)(const char *config_path, int64_t service_id, potr_type *type))
 
 // libporter が公開エクスポートすべき変数の一覧。

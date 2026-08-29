@@ -16,7 +16,7 @@
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
-#include <com_util/sync/sync.h>
+#include <cplat/sync/sync.h>
 #include <porter/potr_path_event.h>
 
 /**
@@ -57,14 +57,14 @@ static int any_path_alive(const int *states)
 
 void potr_internal_callback_mutex_init(potr_context *ctx)
 {
-    com_util_local_lock_create(&ctx->callback_mutex);
+    cplat_local_lock_create(&ctx->callback_mutex);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_internal_callback_mutex_dispose(potr_context *ctx)
 {
-    com_util_local_lock_dispose(ctx->callback_mutex);
+    cplat_local_lock_dispose(ctx->callback_mutex);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -86,9 +86,9 @@ void potr_internal_callback_emit(potr_context *ctx, potr_peer_id peer_id, potr_e
         return;
     }
 
-    com_util_local_lock_lock(ctx->callback_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
     potr_internal_callback_emit_locked(ctx, peer_id, event, data, len);
-    com_util_local_lock_unlock(ctx->callback_mutex);
+    cplat_local_lock_unlock(ctx->callback_mutex);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -144,7 +144,7 @@ void potr_internal_copy_tcp_path_states(const potr_context *ctx, int *states)
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
-        states[k] = (ctx->tcp_conn_fd[k] != COM_UTIL_INVALID_SOCKET) && path_state_is_normal(ctx->path_ping_state[k]) &&
+        states[k] = (ctx->tcp_conn_fd[k] != CPLAT_INVALID_SOCKET) && path_state_is_normal(ctx->path_ping_state[k]) &&
                     path_state_is_normal(ctx->remote_path_ping_state[k]);
     }
 }

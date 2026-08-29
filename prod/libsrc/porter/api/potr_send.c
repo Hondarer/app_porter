@@ -11,8 +11,8 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/base/platform.h>
+#include <cplat/crt/stdlib.h>
 #include <stdlib.h>
 #include <inttypes.h>
 
@@ -23,7 +23,7 @@
 #include <porter/potr_context.h>
 #include <porter/potr_peer_table.h>
 #include <porter/infra/potr_send_queue.h>
-#include <com_util/compress/compress.h>
+#include <cplat/compress/compress.h>
 #include <porter/infra/potr_trace.h>
 
 /* N:1 モードで 1 ピアへ send を行う内部実装 (peers_mutex 取得不要・呼び出し元で検索済み) */
@@ -103,17 +103,17 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
         {
             max_message_size = 0U;
         }
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_send: invalid argument (handle=%p data=%p len=%zu max=%u)",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_send: invalid argument (handle=%p data=%p len=%zu max=%u)",
                    (const void *)handle, data, len, max_message_size);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " peer_id=%u len=%zu flags=0x%x",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " peer_id=%u len=%zu flags=0x%x",
                ctx->service.service_id, (unsigned)peer_id, len, (unsigned)flags);
 
     if (ctx->close_requested)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "potr_send: service_id=%" PRId64 " rejected because close is in progress", ctx->service.service_id);
         return POTR_ERR_CANCELED;
     }
@@ -122,7 +122,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
        POTR_ERR_DISCONNECTED を返す */
     if (potr_is_tcp_type(ctx->service.type) && (ctx->tcp_active_paths == 0 || !ctx->health_alive))
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "potr_send: service_id=%" PRId64 " TCP not connected"
                    " (active_paths=%d health_alive=%d)",
                    ctx->service.service_id, (int)ctx->tcp_active_paths, (int)ctx->health_alive);
@@ -132,7 +132,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
     /* UDP 1:1 双方向: PING 交換による接続確立前は POTR_ERR_DISCONNECTED を返す */
     if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR && !ctx->health_alive)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " UDP bidir not connected",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " UDP bidir not connected",
                    ctx->service.service_id);
         return POTR_ERR_DISCONNECTED;
     }
@@ -149,9 +149,9 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
     {
         size_t cmp_len = ctx->compress_buf_size;
 
-        if (com_util_compress(ctx->compress_buf, &cmp_len, (const uint8_t *)data, len) != COM_UTIL_OK)
+        if (cplat_compress(ctx->compress_buf, &cmp_len, (const uint8_t *)data, len) != CPLAT_OK)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " compression failed (len=%zu)",
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " compression failed (len=%zu)",
                        ctx->service.service_id, len);
             /* 圧縮失敗は入力データ起因と断定できないため、分類不能として扱う。 */
             return POTR_ERR_UNKNOWN;
@@ -159,7 +159,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
 
         if (cmp_len < len)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " compress %zu -> %zu bytes",
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " compress %zu -> %zu bytes",
                        ctx->service.service_id, len, cmp_len);
             ptr = ctx->compress_buf;
             len = cmp_len;
@@ -167,7 +167,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
         }
         else
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                        "potr_send: service_id=%" PRId64 " compression skipped"
                        " (compressed %zu >= original %zu bytes), sending uncompressed",
                        ctx->service.service_id, cmp_len, len);
@@ -180,7 +180,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
     {
         if (peer_id == POTR_PEER_NA)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                        "potr_send: service_id=%" PRId64 " N:1 mode requires valid peer_id (got POTR_PEER_NA)",
                        ctx->service.service_id);
             return POTR_ERR_INVALID_ARGUMENT;
@@ -195,15 +195,15 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
             int i;
             int result = POTR_OK;
 
-            ids = (potr_peer_id *)com_util_malloc((size_t)ctx->max_peers * sizeof(potr_peer_id));
+            ids = (potr_peer_id *)cplat_malloc((size_t)ctx->max_peers * sizeof(potr_peer_id));
             if (ids == NULL)
             {
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " PEER_ALL malloc failed",
+                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " PEER_ALL malloc failed",
                            ctx->service.service_id);
                 return POTR_ERR_OUT_OF_MEMORY;
             }
 
-            com_util_local_lock_lock(ctx->peers_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
             for (i = 0; i < ctx->max_peers; i++)
             {
                 if (ctx->peers[i].active && ctx->peers[i].health_alive)
@@ -211,12 +211,12 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
                     ids[n_ids++] = ctx->peers[i].peer_id;
                 }
             }
-            com_util_local_lock_unlock(ctx->peers_mutex);
+            cplat_local_lock_unlock(ctx->peers_mutex);
 
             if (n_ids == 0)
             {
-                com_util_free(ids);
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " PEER_ALL not connected",
+                cplat_free(ids);
+                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " PEER_ALL not connected",
                            ctx->service.service_id);
                 return POTR_ERR_DISCONNECTED;
             }
@@ -230,30 +230,30 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
                     result = send_result;
                 }
             }
-            com_util_free(ids);
+            cplat_free(ids);
             return result;
         }
         else
         {
             /* 指定ピアへ送信: 存在確認・接続確認だけ mutex で保護し、送信は mutex 外で行う */
             int peer_alive;
-            com_util_local_lock_lock(ctx->peers_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
             {
                 potr_internal_peer_context *peer = potr_internal_peer_find_by_id(ctx, peer_id);
                 if (peer == NULL)
                 {
-                    com_util_local_lock_unlock(ctx->peers_mutex);
-                    POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " peer_id=%u not found",
+                    cplat_local_lock_unlock(ctx->peers_mutex);
+                    POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " peer_id=%u not found",
                                ctx->service.service_id, (unsigned)peer_id);
                     return POTR_ERR_NOT_FOUND;
                 }
                 peer_alive = peer->health_alive;
             }
-            com_util_local_lock_unlock(ctx->peers_mutex);
+            cplat_local_lock_unlock(ctx->peers_mutex);
 
             if (!peer_alive)
             {
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                            "potr_send: service_id=%" PRId64 " peer_id=%u N:1 not connected", ctx->service.service_id,
                            (unsigned)peer_id);
                 return POTR_ERR_DISCONNECTED;

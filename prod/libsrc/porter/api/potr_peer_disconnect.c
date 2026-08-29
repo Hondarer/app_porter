@@ -11,7 +11,7 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 #include <inttypes.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
@@ -31,7 +31,7 @@ int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
 
     if (ctx == NULL)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_peer_disconnect: handle is NULL");
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_peer_disconnect: handle is NULL");
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
@@ -46,7 +46,7 @@ int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
 
     if (peer_id == POTR_PEER_NA || peer_id == POTR_PEER_ALL)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_peer_disconnect: service_id=%" PRId64 " invalid peer_id=%u"
                    " (POTR_PEER_NA or POTR_PEER_ALL not allowed)",
                    service_id, (unsigned)peer_id);
@@ -55,25 +55,25 @@ int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
 
     if (!ctx->is_multi_peer)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_peer_disconnect: service_id=%" PRId64 " not in N:1 mode",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_peer_disconnect: service_id=%" PRId64 " not in N:1 mode",
                    ctx->service.service_id);
         return POTR_ERR_UNSUPPORTED;
     }
 
-    com_util_local_lock_lock(ctx->peers_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     {
         potr_internal_peer_context *peer = potr_internal_peer_find_by_id(ctx, peer_id);
 
         if (peer == NULL)
         {
-            com_util_local_lock_unlock(ctx->peers_mutex);
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_peer_disconnect: service_id=%" PRId64 " peer_id=%u not found",
+            cplat_local_lock_unlock(ctx->peers_mutex);
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_peer_disconnect: service_id=%" PRId64 " peer_id=%u not found",
                        ctx->service.service_id, (unsigned)peer_id);
             return POTR_ERR_NOT_FOUND;
         }
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "potr_peer_disconnect: service_id=%" PRId64 " peer_id=%u disconnecting",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_peer_disconnect: service_id=%" PRId64 " peer_id=%u disconnecting",
                    ctx->service.service_id, (unsigned)peer_id);
 
         /* FIN を送信 */
@@ -85,16 +85,16 @@ int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
             potr_internal_prepared_path_events prepared;
 
             potr_internal_zero_path_states(next_states);
-            com_util_local_lock_lock(ctx->callback_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
             potr_internal_sync_peer_path_state_locked(peer, next_states, &prepared);
             potr_internal_emit_peer_path_events_locked(ctx, peer, &prepared);
-            com_util_local_lock_unlock(ctx->callback_mutex);
+            cplat_local_lock_unlock(ctx->callback_mutex);
         }
 
         /* ピア リソースを解放 */
         potr_internal_peer_free(ctx, peer);
     }
 
-    com_util_local_lock_unlock(ctx->peers_mutex);
+    cplat_local_lock_unlock(ctx->peers_mutex);
     return POTR_OK;
 }

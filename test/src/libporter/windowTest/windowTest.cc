@@ -1,10 +1,10 @@
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 #if defined(PLATFORM_WINDOWS)
     #define _HAS_STD_BYTE 0
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
-#include <mock_com_util.h>
+#include <mock_cplat.h>
 
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
@@ -14,7 +14,7 @@
 #if defined(PLATFORM_LINUX)
     #include <arpa/inet.h>
 #elif defined(PLATFORM_WINDOWS)
-    #include <com_util/base/windows_sdk.h>
+    #include <cplat/base/windows_sdk.h>
 #endif /* PLATFORM_ */
 
 #include <string.h>

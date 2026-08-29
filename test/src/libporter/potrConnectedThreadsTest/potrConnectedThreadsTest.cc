@@ -1,10 +1,10 @@
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 #if defined(PLATFORM_WINDOWS)
     #define _HAS_STD_BYTE 0
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
-#include <mock_com_util.h>
+#include <mock_cplat.h>
 #include <mock_porter.h>
 
 #include <porter/porter_result.h>
@@ -79,7 +79,7 @@ static int fake_health_start(potr_context *ctx, int path_idx)
 static void fake_close_conn(potr_context *ctx, int path_idx)
 {
     s_calls.close_conn_calls++;
-    ctx->tcp_conn_fd[path_idx] = COM_UTIL_INVALID_SOCKET;
+    ctx->tcp_conn_fd[path_idx] = CPLAT_INVALID_SOCKET;
 }
 
 static void fake_join_recv(potr_context *ctx, int path_idx)
@@ -100,12 +100,12 @@ static void fake_set_path_ping_state(potr_context *ctx, int path_idx, uint8_t ne
 class potrConnectedThreadsTest : public Test
 {
   protected:
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
 
     void SetUp() override
     {
-        ON_CALL(mock_com_util, com_util_tracer_writef_at(_, _, _, _)).WillByDefault(Return(0));
+        ON_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _)).WillByDefault(Return(0));
 
         memset(&ctx, 0, sizeof(ctx));
         memset(&s_calls, 0, sizeof(s_calls));
@@ -153,7 +153,7 @@ TEST_F(potrConnectedThreadsTest, recv_failure_stops_send_started_by_this_call)
     EXPECT_EQ(0, s_calls.join_recv_calls);     // [確認_異常系] - 未起動の recv は join されないこと。
     EXPECT_EQ(0, s_calls.tcp_send_ping_calls); // [確認_異常系] - bootstrap ping まで進まないこと。
     EXPECT_EQ(0, s_calls.health_start_calls);  // [確認_異常系] - health 開始まで進まないこと。
-    EXPECT_EQ(COM_UTIL_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - path 0 のソケットが無効化されること。
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - path 0 のソケットが無効化されること。
 }
 
 // recv 開始失敗時に、既存の send スレッドが停止されないことの確認
@@ -203,7 +203,7 @@ TEST_F(potrConnectedThreadsTest, bootstrap_ping_failure_rolls_back_recv_and_new_
     EXPECT_EQ(1, s_calls.join_recv_calls);                  // [確認_異常系] - 起動済みの recv が join されること。
     EXPECT_EQ(1, s_calls.send_stop_calls);                  // [確認_異常系] - 新規に開始した send が停止されること。
     EXPECT_EQ(0, ctx.running[0]);                           // [確認_異常系] - path 0 の running フラグが下がること。
-    EXPECT_EQ(COM_UTIL_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - path 0 のソケットが無効化されること。
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - path 0 のソケットが無効化されること。
 }
 
 // health スレッド開始失敗時に recv と新規 send スレッドがロールバックされることの確認
@@ -230,7 +230,7 @@ TEST_F(potrConnectedThreadsTest, health_failure_rolls_back_recv_and_new_send_thr
     EXPECT_EQ(1, s_calls.join_recv_calls);                  // [確認_異常系] - 起動済みの recv が join されること。
     EXPECT_EQ(1, s_calls.send_stop_calls);                  // [確認_異常系] - 新規に開始した send が停止されること。
     EXPECT_EQ(0, ctx.running[0]);                           // [確認_異常系] - path 0 の running フラグが下がること。
-    EXPECT_EQ(COM_UTIL_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - path 0 のソケットが無効化されること。
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - path 0 のソケットが無効化されること。
 }
 
 // health スレッド開始失敗時に、既存の send スレッドが停止されないことの確認
@@ -280,7 +280,7 @@ TEST_F(potrConnectedThreadsTest, non_primary_path_does_not_touch_send_thread)
     EXPECT_EQ(0, s_calls.send_stop_calls);                  // [確認_異常系] - send 停止が呼ばれないこと。
     EXPECT_EQ(1, s_calls.close_conn_calls);                 // [確認_異常系] - 接続が close されること。
     EXPECT_EQ(0, s_calls.tcp_send_ping_calls);              // [確認_異常系] - bootstrap ping まで進まないこと。
-    EXPECT_EQ(COM_UTIL_INVALID_SOCKET, ctx.tcp_conn_fd[1]); // [確認_異常系] - path 1 のソケットが無効化されること。
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[1]); // [確認_異常系] - path 1 のソケットが無効化されること。
 }
 
 // 全段成功時に ping 状態が設定され、ロールバックが発生しないことの確認

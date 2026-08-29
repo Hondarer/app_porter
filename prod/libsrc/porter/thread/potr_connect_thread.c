@@ -16,8 +16,8 @@
  *******************************************************************************
  */
 
-#include <com_util/base/platform.h>
-#include <com_util/crt/stdlib.h>
+#include <cplat/base/platform.h>
+#include <cplat/crt/stdlib.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
@@ -37,9 +37,9 @@
 #include <porter/thread/potr_recv_thread.h>
 #include <porter/thread/potr_send_thread.h>
 #include <porter/thread/potr_health_thread.h>
-#include <com_util/net/byteorder.h>
-#include <com_util/net/endpoint.h>
-#include <com_util/net/socket.h>
+#include <cplat/net/byteorder.h>
+#include <cplat/net/endpoint.h>
+#include <cplat/net/socket.h>
 
 static void sync_tcp_service_path_state_locked(potr_context *ctx)
 {
@@ -47,10 +47,10 @@ static void sync_tcp_service_path_state_locked(potr_context *ctx)
     potr_internal_prepared_path_events prepared;
 
     potr_internal_copy_tcp_path_states(ctx, next_states);
-    com_util_local_lock_lock(ctx->callback_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
     potr_internal_sync_service_path_state_locked(ctx, next_states, &prepared);
     potr_internal_emit_service_path_events_locked(ctx, &prepared);
-    com_util_local_lock_unlock(ctx->callback_mutex);
+    cplat_local_lock_unlock(ctx->callback_mutex);
 }
 
 static void set_tcp_path_ping_state(potr_context *ctx, int path_idx, uint8_t next_state)
@@ -67,23 +67,23 @@ static void set_tcp_path_ping_state(potr_context *ctx, int path_idx, uint8_t nex
 /* TCP 接続ソケット [path_idx] をシャットダウン・クローズして INVALID にする */
 static void close_tcp_conn(potr_context *ctx, int path_idx)
 {
-    if (ctx->tcp_conn_fd[path_idx] != COM_UTIL_INVALID_SOCKET)
+    if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
     {
-        com_util_socket_shutdown(ctx->tcp_conn_fd[path_idx]);
-        com_util_socket_close(ctx->tcp_conn_fd[path_idx]);
-        ctx->tcp_conn_fd[path_idx] = COM_UTIL_INVALID_SOCKET;
+        cplat_socket_shutdown(ctx->tcp_conn_fd[path_idx]);
+        cplat_socket_close(ctx->tcp_conn_fd[path_idx]);
+        ctx->tcp_conn_fd[path_idx] = CPLAT_INVALID_SOCKET;
     }
 }
 
 /* 再接続待機: reconnect_interval_ms 経過または停止シグナルまでスリープする */
 static void reconnect_wait(potr_context *ctx, int path_idx, int wait_ms)
 {
-    com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
     if (ctx->connect_thread_running[path_idx])
     {
-        com_util_condvar_wait(ctx->tcp_state_cv, ctx->tcp_state_mutex, wait_ms);
+        cplat_condvar_wait(ctx->tcp_state_cv, ctx->tcp_state_mutex, wait_ms);
     }
-    com_util_local_lock_unlock(ctx->tcp_state_mutex);
+    cplat_local_lock_unlock(ctx->tcp_state_mutex);
 }
 
 /* ================================================================
@@ -94,22 +94,22 @@ static void reconnect_wait(potr_context *ctx, int path_idx, int wait_ms)
  * buf は PACKET_HEADER_SIZE + max_payload バイト以上確保されていること。
  * 戻り値: 成功時 (*len_out にバイト数を格納) は POTR_OK、タイムアウト時は POTR_ERR_TIMEOUT、
  * EOF 時は POTR_ERR_EOF、I/O エラー時は POTR_ERR_IO、不正時は POTR_ERR_PROTOCOL。 */
-static int tcp_read_first_packet(com_util_socket fd, uint8_t *buf, size_t max_buf, size_t *len_out, int timeout_ms)
+static int tcp_read_first_packet(cplat_socket fd, uint8_t *buf, size_t max_buf, size_t *len_out, int timeout_ms)
 {
     int ready = 0;
     uint16_t wire_payload_len;
-    com_util_error detail;
+    cplat_error detail;
 
     /* タイムアウト付き待機 */
-    if (com_util_socket_wait_readable(fd, timeout_ms, &ready, &detail) != COM_UTIL_OK)
+    if (cplat_socket_wait_readable(fd, timeout_ms, &ready, &detail) != CPLAT_OK)
         return potr_internal_result_from_error(&detail);
     if (!ready)
         return POTR_ERR_TIMEOUT;
 
     /* 固定長ヘッダー読み取り */
     {
-        int recv_result = com_util_socket_recv_all(fd, buf, PACKET_HEADER_SIZE, &detail);
-        if (recv_result != COM_UTIL_OK)
+        int recv_result = cplat_socket_recv_all(fd, buf, PACKET_HEADER_SIZE, &detail);
+        if (recv_result != CPLAT_OK)
             return potr_internal_result_from_socket_result(recv_result, &detail);
     }
 
@@ -117,7 +117,7 @@ static int tcp_read_first_packet(com_util_socket fd, uint8_t *buf, size_t max_bu
     {
         uint16_t wpl;
         memcpy(&wpl, buf + 34, sizeof(wpl));
-        wire_payload_len = com_util_ntoh16(wpl);
+        wire_payload_len = cplat_ntoh16(wpl);
     }
 
     /* ペイロード長バリデーション */
@@ -127,8 +127,8 @@ static int tcp_read_first_packet(com_util_socket fd, uint8_t *buf, size_t max_bu
     /* ペイロード読み取り */
     if (wire_payload_len > 0)
     {
-        int recv_result = com_util_socket_recv_all(fd, buf + PACKET_HEADER_SIZE, (size_t)wire_payload_len, &detail);
-        if (recv_result != COM_UTIL_OK)
+        int recv_result = cplat_socket_recv_all(fd, buf + PACKET_HEADER_SIZE, (size_t)wire_payload_len, &detail);
+        if (recv_result != CPLAT_OK)
             return potr_internal_result_from_socket_result(recv_result, &detail);
     }
 
@@ -147,14 +147,14 @@ static int tcp_read_first_packet(com_util_socket fd, uint8_t *buf, size_t max_bu
  * 呼び出し前提: session_establish_mutex を取得済みであること。 */
 static int tcp_session_compare(const potr_context *ctx, const potr_packet *pkt)
 {
-    com_util_timespec pkt_session_ts;
+    cplat_timespec pkt_session_ts;
     int ts_cmp;
 
     if (!ctx->peer_session_known)
         return TCP_SESSION_NEW;
 
     potr_session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
-    ts_cmp = com_util_timespec_cmp(&pkt_session_ts, &ctx->peer_session_ts);
+    ts_cmp = cplat_timespec_cmp(&pkt_session_ts, &ctx->peer_session_ts);
 
     if (ts_cmp > 0)
         return TCP_SESSION_NEW;
@@ -171,7 +171,7 @@ static int tcp_session_compare(const potr_context *ctx, const potr_packet *pkt)
    TCP 接続断後 recv スレッドが自然終了する設計のため、ソケットはクローズしない。 */
 static void join_recv_thread(potr_context *ctx, int path_idx)
 {
-    com_util_thread_join(ctx->recv_thread[path_idx], COM_UTIL_SYNC_WAIT_FOREVER);
+    cplat_thread_join(ctx->recv_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER);
 }
 
 /* 接続確立前のコンテキスト状態をリセットする。
@@ -241,27 +241,27 @@ static void stop_connected_threads(potr_context *ctx, int path_idx)
 
 /* SENDER: path_idx 番目の宛先へ TCP 接続を試みる。
    connect_timeout_ms が 0 の場合は OS デフォルト (ブロッキング) で接続する。
-   成功時はソケットを返す。失敗時は COM_UTIL_INVALID_SOCKET を返す。 */
-static com_util_socket tcp_connect_with_timeout(potr_context *ctx, int path_idx)
+   成功時はソケットを返す。失敗時は CPLAT_INVALID_SOCKET を返す。 */
+static cplat_socket tcp_connect_with_timeout(potr_context *ctx, int path_idx)
 {
-    com_util_socket sock;
-    com_util_ipv4_endpoint addr = {0};
+    cplat_socket sock;
+    cplat_ipv4_endpoint addr = {0};
     uint32_t timeout_ms = ctx->service.connect_timeout_ms;
-    com_util_error detail;
+    cplat_error detail;
 
-    if (com_util_socket_open(COM_UTIL_SOCKET_TCP, &sock, &detail) != COM_UTIL_OK)
+    if (cplat_socket_open(CPLAT_SOCKET_TCP, &sock, &detail) != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail,
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
                                   "connect_thread[service_id=%" PRId64 " path=%d]: socket() failed",
                                   ctx->service.service_id, path_idx);
-        return COM_UTIL_INVALID_SOCKET;
+        return CPLAT_INVALID_SOCKET;
     }
 
-    (void)com_util_socket_set_reuse_address(sock, 1, NULL);
+    (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
     if (ctx->service.src_addr[path_idx][0] != '\0' || ctx->service.src_port != 0)
     {
-        com_util_ipv4_endpoint bind_addr = {0};
+        cplat_ipv4_endpoint bind_addr = {0};
 
         if (ctx->service.src_addr[path_idx][0] != '\0')
         {
@@ -269,55 +269,55 @@ static com_util_socket tcp_connect_with_timeout(potr_context *ctx, int path_idx)
         }
         else
         {
-            bind_addr.address = COM_UTIL_IPV4_ADDR_ANY;
+            bind_addr.address = CPLAT_IPV4_ADDR_ANY;
         }
-        bind_addr.port = com_util_hton16(ctx->service.src_port); /* 0 = エフェメラル */
+        bind_addr.port = cplat_hton16(ctx->service.src_port); /* 0 = エフェメラル */
 
-        if (com_util_socket_bind(sock, &bind_addr, &detail) != COM_UTIL_OK)
+        if (cplat_socket_bind(sock, &bind_addr, &detail) != CPLAT_OK)
         {
-            POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_ERROR, &detail,
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
                                       "connect_thread[service_id=%" PRId64 " path=%d]: bind() failed",
                                       ctx->service.service_id, path_idx);
-            com_util_socket_close(sock);
-            return COM_UTIL_INVALID_SOCKET;
+            cplat_socket_close(sock);
+            return CPLAT_INVALID_SOCKET;
         }
     }
 
     addr.address = ctx->dst_addr_resolved[path_idx];
-    addr.port = com_util_hton16(ctx->service.dst_port);
+    addr.port = cplat_hton16(ctx->service.dst_port);
 
     if (timeout_ms == 0U)
     {
         /* ブロッキング接続 */
-        if (com_util_socket_connect(sock, &addr, &detail) != COM_UTIL_OK)
+        if (cplat_socket_connect(sock, &addr, &detail) != CPLAT_OK)
         {
-            POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_VERBOSE, &detail,
                                       "connect_thread[service_id=%" PRId64 " path=%d]: connect() failed (blocking)",
                                       ctx->service.service_id, path_idx);
-            com_util_socket_close(sock);
-            return COM_UTIL_INVALID_SOCKET;
+            cplat_socket_close(sock);
+            return CPLAT_INVALID_SOCKET;
         }
         return sock;
     }
 
     /* タイムアウト付き接続: 非ブロッキング モードで writable ポーリングを使う。
        停止シグナルに素早く応答するため 100ms 単位でポーリングする。 */
-    (void)com_util_socket_set_nonblocking(sock, 1, NULL);
+    (void)cplat_socket_set_nonblocking(sock, 1, NULL);
     {
-        const int connect_result = com_util_socket_connect(sock, &addr, &detail);
-        if (connect_result == COM_UTIL_OK)
+        const int connect_result = cplat_socket_connect(sock, &addr, &detail);
+        if (connect_result == CPLAT_OK)
         {
             /* 即座に接続成功 */
-            (void)com_util_socket_set_nonblocking(sock, 0, NULL);
+            (void)cplat_socket_set_nonblocking(sock, 0, NULL);
             return sock;
         }
-        if (connect_result != COM_UTIL_ERR_IN_PROGRESS)
+        if (connect_result != CPLAT_ERR_IN_PROGRESS)
         {
-            POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_VERBOSE, &detail,
                                       "connect_thread[service_id=%" PRId64 " path=%d]: connect() failed",
                                       ctx->service.service_id, path_idx);
-            com_util_socket_close(sock);
-            return COM_UTIL_INVALID_SOCKET;
+            cplat_socket_close(sock);
+            return CPLAT_INVALID_SOCKET;
         }
     }
 
@@ -333,8 +333,8 @@ static com_util_socket tcp_connect_with_timeout(potr_context *ctx, int path_idx)
             int wait_result;
             if (poll_ms > 100U)
                 poll_ms = 100U;
-            wait_result = com_util_socket_wait_writable(sock, (int)poll_ms, &wait_ready, NULL);
-            if (wait_result != COM_UTIL_OK)
+            wait_result = cplat_socket_wait_writable(sock, (int)poll_ms, &wait_ready, NULL);
+            if (wait_result != CPLAT_OK)
                 break;
             if (wait_ready)
             {
@@ -346,23 +346,23 @@ static com_util_socket tcp_connect_with_timeout(potr_context *ctx, int path_idx)
 
         if (!ready)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: connect() timed out",
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: connect() timed out",
                        ctx->service.service_id);
-            com_util_socket_close(sock);
-            return COM_UTIL_INVALID_SOCKET;
+            cplat_socket_close(sock);
+            return CPLAT_INVALID_SOCKET;
         }
     }
 
-    if (com_util_socket_get_pending_error(sock, &detail) != COM_UTIL_OK)
+    if (cplat_socket_get_pending_error(sock, &detail) != CPLAT_OK)
     {
-        POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_VERBOSE, &detail,
                                   "connect_thread[service_id=%" PRId64 " path=%d]: SO_ERROR", ctx->service.service_id,
                                   path_idx);
-        com_util_socket_close(sock);
-        return COM_UTIL_INVALID_SOCKET;
+        cplat_socket_close(sock);
+        return CPLAT_INVALID_SOCKET;
     }
 
-    (void)com_util_socket_set_nonblocking(sock, 0, NULL);
+    (void)cplat_socket_set_nonblocking(sock, 0, NULL);
     return sock;
 }
 
@@ -373,29 +373,29 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
 
     while (ctx->connect_thread_running[path_idx])
     {
-        com_util_socket sock;
+        cplat_socket sock;
         int active_count;
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: connecting to %s:%u ...",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: connecting to %s:%u ...",
                    ctx->service.service_id, path_idx, ctx->service.dst_addr[path_idx], (unsigned)ctx->service.dst_port);
 
         sock = tcp_connect_with_timeout(ctx, path_idx);
 
-        if (sock == COM_UTIL_INVALID_SOCKET)
+        if (sock == CPLAT_INVALID_SOCKET)
         {
             if (!ctx->connect_thread_running[path_idx])
                 break;
 
             if (ctx->service.reconnect_interval_ms == 0U)
             {
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+                POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                            "connect_thread[service_id=%" PRId64 " path=%d]: connect failed, "
                            "no reconnect (reconnect_interval_ms=0)",
                            ctx->service.service_id, path_idx);
                 break;
             }
 
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                        "connect_thread[service_id=%" PRId64 " path=%d]: connect failed, "
                        "retrying in %ums",
                        ctx->service.service_id, path_idx, (unsigned)ctx->service.reconnect_interval_ms);
@@ -404,16 +404,16 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
             continue;
         }
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP connected",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP connected",
                    ctx->service.service_id, path_idx);
 
         ctx->tcp_conn_fd[path_idx] = sock;
-        ctx->tcp_last_ping_recv_ms[path_idx] = com_util_get_monotonic_ms();
+        ctx->tcp_last_ping_recv_ms[path_idx] = cplat_get_monotonic_ms();
 
         /* tcp_active_paths カウンターをインクリメント (tcp_state_mutex 保護) */
-        com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
         active_count = ++ctx->tcp_active_paths;
-        com_util_local_lock_unlock(ctx->tcp_state_mutex);
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
         (void)active_count; /* CONNECTED イベントは recv スレッドが最初のパケット受信時に発火 */
 
         reset_connection_state(ctx);
@@ -427,9 +427,9 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         if (start_connected_threads(ctx, path_idx) != POTR_OK)
         {
             /* スレッド起動失敗: カウンターを戻す */
-            com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
             active_count = --ctx->tcp_active_paths;
-            com_util_local_lock_unlock(ctx->tcp_state_mutex);
+            cplat_local_lock_unlock(ctx->tcp_state_mutex);
             if (active_count == 0)
             {
                 reset_all_paths_disconnected(ctx);
@@ -449,20 +449,20 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         /* recv スレッドが接続断を検知して自然終了するまで待機する */
         join_recv_thread(ctx, path_idx);
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP disconnected",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP disconnected",
                    ctx->service.service_id, path_idx);
 
         stop_connected_threads(ctx, path_idx);
 
-        com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
         set_tcp_path_ping_state(ctx, path_idx, POTR_PING_STATE_UNDEFINED);
         sync_tcp_service_path_state_locked(ctx);
-        com_util_local_lock_unlock(ctx->tcp_state_mutex);
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
 
         /* tcp_active_paths カウンターをデクリメント (tcp_state_mutex 保護) */
-        com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
         active_count = --ctx->tcp_active_paths;
-        com_util_local_lock_unlock(ctx->tcp_state_mutex);
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
 
         if (active_count == 0)
         {
@@ -474,14 +474,14 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
             break;
         if (ctx->service.reconnect_interval_ms == 0U)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                        "connect_thread[service_id=%" PRId64 " path=%d]: no reconnect "
                        "(reconnect_interval_ms=0)",
                        ctx->service.service_id, path_idx);
             break;
         }
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "connect_thread[service_id=%" PRId64 " path=%d]: waiting %ums before reconnect",
                    ctx->service.service_id, path_idx, (unsigned)ctx->service.reconnect_interval_ms);
         /* reconnect_interval_ms は再接続間隔の設定値。実用範囲は INT_MAX 以下 */
@@ -516,27 +516,27 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
 
     while (ctx->connect_thread_running[path_idx])
     {
-        com_util_socket conn;
-        com_util_ipv4_endpoint peer_addr = {0};
+        cplat_socket conn;
+        cplat_ipv4_endpoint peer_addr = {0};
         int active_count;
-        char peer_addr_str[COM_UTIL_IPV4_ADDR_STRLEN];
-        com_util_error detail;
+        char peer_addr_str[CPLAT_IPV4_ADDR_STRLEN];
+        cplat_error detail;
         int session_result;
 
-        if (com_util_socket_accept(ctx->tcp_listen_sock[path_idx], &peer_addr, &conn, &detail) != COM_UTIL_OK)
+        if (cplat_socket_accept(ctx->tcp_listen_sock[path_idx], &peer_addr, &conn, &detail) != CPLAT_OK)
         {
             if (!ctx->connect_thread_running[path_idx])
             {
                 break;
             }
             /* 一時的なエラー: ループ継続 */
-            POTR_TRACE_SOCKET_FAILURE(COM_UTIL_TRACE_LEVEL_VERBOSE, &detail,
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_VERBOSE, &detail,
                                       "connect_thread[service_id=%" PRId64 " path=%d]: accept() error, retrying",
                                       ctx->service.service_id, path_idx);
             continue;
         }
 
-        (void)com_util_ipv4_to_string(peer_addr.address, peer_addr_str, sizeof(peer_addr_str), NULL);
+        (void)cplat_ipv4_to_string(peer_addr.address, peer_addr_str, sizeof(peer_addr_str), NULL);
 
         /* 接続元フィルター: src_addr[path_idx] / src_port が指定されていれば一致確認 */
         {
@@ -550,24 +550,24 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             }
             if (!filtered && ctx->service.src_port != 0)
             {
-                if (com_util_ntoh16(peer_addr.port) != ctx->service.src_port)
+                if (cplat_ntoh16(peer_addr.port) != ctx->service.src_port)
                 {
                     filtered = 1;
                 }
             }
             if (filtered)
             {
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+                POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                            "connect_thread[service_id=%" PRId64 " path=%d]: rejected connection"
                            " from %s:%u (src filter)",
-                           ctx->service.service_id, path_idx, peer_addr_str, (unsigned)com_util_ntoh16(peer_addr.port));
-                com_util_socket_close(conn);
+                           ctx->service.service_id, path_idx, peer_addr_str, (unsigned)cplat_ntoh16(peer_addr.port));
+                cplat_socket_close(conn);
                 continue;
             }
         }
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP accepted from %s:%u",
-                   ctx->service.service_id, path_idx, peer_addr_str, (unsigned)com_util_ntoh16(peer_addr.port));
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP accepted from %s:%u",
+                   ctx->service.service_id, path_idx, peer_addr_str, (unsigned)cplat_ntoh16(peer_addr.port));
 
         /* ── セッション判定: 最初の 1 パケットを先読みして session_id を取得する ── */
         {
@@ -582,38 +582,38 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             if (r != POTR_OK)
             {
                 /* タイムアウトまたは EOF/エラー */
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
+                POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
                            "connect_thread[service_id=%" PRId64 " path=%d]: "
                            "first packet read failed (r=%d), closing",
                            ctx->service.service_id, path_idx, r);
-                com_util_socket_close(conn);
+                cplat_socket_close(conn);
                 continue;
             }
 
             if (potr_internal_packet_parse(&pkt, ctx->tcp_first_pkt_buf[path_idx], pkt_len) != POTR_OK)
             {
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_WARNING,
+                POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
                            "connect_thread[service_id=%" PRId64 " path=%d]: "
                            "first packet parse failed, closing",
                            ctx->service.service_id, path_idx);
-                com_util_socket_close(conn);
+                cplat_socket_close(conn);
                 continue;
             }
 
             /* session_establish_mutex 下でセッション判定と状態更新を行う */
-            com_util_local_lock_lock(ctx->session_establish_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->session_establish_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
             session_result = tcp_session_compare(ctx, &pkt);
 
             if (session_result == TCP_SESSION_OLD)
             {
                 /* 旧セッション: 拒否 */
-                com_util_local_lock_unlock(ctx->session_establish_mutex);
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO,
+                cplat_local_lock_unlock(ctx->session_establish_mutex);
+                POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                            "connect_thread[service_id=%" PRId64 " path=%d]: "
                            "old session rejected (known_id=%u pkt_id=%u)",
                            ctx->service.service_id, path_idx, ctx->peer_session_id, pkt.session_id);
-                com_util_socket_close(conn);
+                cplat_socket_close(conn);
                 continue;
             }
 
@@ -626,7 +626,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                 {
                     if (k == path_idx)
                         continue;
-                    if (ctx->tcp_conn_fd[k] != COM_UTIL_INVALID_SOCKET)
+                    if (ctx->tcp_conn_fd[k] != CPLAT_INVALID_SOCKET)
                     {
                         ctx->running[k] = 0;
                         close_tcp_conn(ctx, k); /* recv ブロックを解除 */
@@ -637,17 +637,17 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             /* TCP_SESSION_SAME の場合は reset 不要 (セッション継続) */
 
             ctx->tcp_conn_fd[path_idx] = conn;
-            ctx->tcp_last_ping_recv_ms[path_idx] = com_util_get_monotonic_ms();
+            ctx->tcp_last_ping_recv_ms[path_idx] = cplat_get_monotonic_ms();
             ctx->tcp_first_pkt_len[path_idx] = pkt_len; /* 先読みバッファー有効化 */
 
-            com_util_local_lock_unlock(ctx->session_establish_mutex);
+            cplat_local_lock_unlock(ctx->session_establish_mutex);
         }
         /* ── セッション判定ここまで ── */
 
         /* tcp_active_paths カウンターをインクリメント (tcp_state_mutex 保護) */
-        com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
         active_count = ++ctx->tcp_active_paths;
-        com_util_local_lock_unlock(ctx->tcp_state_mutex);
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
         (void)active_count; /* CONNECTED イベントは recv スレッドが最初のパケット受信時に発火 */
 
         /* TCP_BIDIR 新セッション再接続時 (path[0] のみ): shutdown 済みのキューをリセット */
@@ -658,9 +658,9 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
 
         if (start_connected_threads(ctx, path_idx) != POTR_OK)
         {
-            com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
             active_count = --ctx->tcp_active_paths;
-            com_util_local_lock_unlock(ctx->tcp_state_mutex);
+            cplat_local_lock_unlock(ctx->tcp_state_mutex);
             if (active_count == 0)
             {
                 reset_all_paths_disconnected(ctx);
@@ -674,23 +674,23 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
         /* recv スレッドが接続断を検知して自然終了するまで待機する */
         join_recv_thread(ctx, path_idx);
 
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP connection closed",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP connection closed",
                    ctx->service.service_id, path_idx);
 
         stop_connected_threads(ctx, path_idx);
 
-        com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
         set_tcp_path_ping_state(ctx, path_idx, POTR_PING_STATE_UNDEFINED);
         sync_tcp_service_path_state_locked(ctx);
-        com_util_local_lock_unlock(ctx->tcp_state_mutex);
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
 
         /* 先読みバッファーをクリア (recv スレッドが未処理のまま終了した場合の安全策) */
         ctx->tcp_first_pkt_len[path_idx] = 0;
 
         /* tcp_active_paths カウンターをデクリメント (tcp_state_mutex 保護) */
-        com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
         active_count = --ctx->tcp_active_paths;
-        com_util_local_lock_unlock(ctx->tcp_state_mutex);
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
 
         if (active_count == 0)
         {
@@ -729,7 +729,7 @@ static void connect_thread_func(void *arg)
         type_str = "TCP";
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE,
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                "connect_thread[service_id=%" PRId64 " path=%d]: started (role=%s type=%s)", ctx->service.service_id,
                path_idx, role_str, type_str);
 
@@ -744,7 +744,7 @@ static void connect_thread_func(void *arg)
 
     ctx->connect_thread_running[path_idx] = 0;
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 " path=%d]: exited",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 " path=%d]: exited",
                ctx->service.service_id, path_idx);
 
     return;
@@ -761,32 +761,32 @@ int potr_internal_connect_thread_start(potr_context *ctx)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: starting %d path(s)",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: starting %d path(s)",
                ctx->service.service_id, ctx->n_path);
 
     /* RECEIVER: session_establish_mutex と先読みバッファーを初期化する */
     if (ctx->role == POTR_ROLE_RECEIVER)
     {
-        com_util_local_lock_create(&ctx->session_establish_mutex);
+        cplat_local_lock_create(&ctx->session_establish_mutex);
 
         for (i = 0; i < ctx->n_path; i++)
         {
             ctx->tcp_first_pkt_len[i] = 0;
-            ctx->tcp_first_pkt_buf[i] = (uint8_t *)com_util_malloc(PACKET_HEADER_SIZE + ctx->global.max_payload);
+            ctx->tcp_first_pkt_buf[i] = (uint8_t *)cplat_malloc(PACKET_HEADER_SIZE + ctx->global.max_payload);
             if (ctx->tcp_first_pkt_buf[i] == NULL)
             {
                 int j;
-                POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                            "connect_thread[service_id=%" PRId64 "]: "
                            "tcp_first_pkt_buf[%d] malloc failed",
                            ctx->service.service_id, i);
                 /* 確保済み分を解放 */
                 for (j = 0; j < i; j++)
                 {
-                    com_util_free(ctx->tcp_first_pkt_buf[j]);
+                    cplat_free(ctx->tcp_first_pkt_buf[j]);
                     ctx->tcp_first_pkt_buf[j] = NULL;
                 }
-                com_util_local_lock_dispose(ctx->session_establish_mutex);
+                cplat_local_lock_dispose(ctx->session_establish_mutex);
                 return POTR_ERR_OUT_OF_MEMORY;
             }
         }
@@ -798,13 +798,13 @@ int potr_internal_connect_thread_start(potr_context *ctx)
         ctx->connect_args[i].ctx = ctx;
         ctx->connect_args[i].path_idx = i;
 
-        if (com_util_thread_create(&ctx->connect_thread[i], connect_thread_func, &ctx->connect_args[i]) != COM_UTIL_OK)
+        if (cplat_thread_create(&ctx->connect_thread[i], connect_thread_func, &ctx->connect_args[i]) != CPLAT_OK)
         {
             ctx->connect_thread_running[i] = 0;
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                        "connect_thread[service_id=%" PRId64 " path=%d]: thread create failed", ctx->service.service_id,
                        i);
-            /* com_util のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
+            /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
             return POTR_ERR_UNKNOWN;
         }
     }
@@ -844,37 +844,37 @@ void potr_internal_connect_thread_stop(potr_context *ctx)
     }
 
     /* 2. reconnect_wait 中の全スレッドを起床させる */
-    com_util_local_lock_lock(ctx->tcp_state_mutex, COM_UTIL_SYNC_WAIT_FOREVER);
-    com_util_condvar_broadcast(ctx->tcp_state_cv);
-    com_util_local_lock_unlock(ctx->tcp_state_mutex);
+    cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_condvar_broadcast(ctx->tcp_state_cv);
+    cplat_local_lock_unlock(ctx->tcp_state_mutex);
 
     /* 3. RECEIVER: 全 path の listen ソケットをクローズして accept のブロックを解除 */
     if (ctx->role == POTR_ROLE_RECEIVER)
     {
         for (i = 0; i < ctx->n_path; i++)
         {
-            if (ctx->tcp_listen_sock[i] == COM_UTIL_INVALID_SOCKET)
+            if (ctx->tcp_listen_sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
-            com_util_socket_shutdown(ctx->tcp_listen_sock[i]);
-            com_util_socket_close(ctx->tcp_listen_sock[i]);
-            ctx->tcp_listen_sock[i] = COM_UTIL_INVALID_SOCKET;
+            cplat_socket_shutdown(ctx->tcp_listen_sock[i]);
+            cplat_socket_close(ctx->tcp_listen_sock[i]);
+            ctx->tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
         }
     }
 
     /* 4. 全 path の接続ソケットをクローズして recv ループのブロックを解除 */
     for (i = 0; i < ctx->n_path; i++)
     {
-        if (ctx->tcp_conn_fd[i] == COM_UTIL_INVALID_SOCKET)
+        if (ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
             continue;
-        com_util_socket_shutdown(ctx->tcp_conn_fd[i]);
-        com_util_socket_close(ctx->tcp_conn_fd[i]);
-        ctx->tcp_conn_fd[i] = COM_UTIL_INVALID_SOCKET;
+        cplat_socket_shutdown(ctx->tcp_conn_fd[i]);
+        cplat_socket_close(ctx->tcp_conn_fd[i]);
+        ctx->tcp_conn_fd[i] = CPLAT_INVALID_SOCKET;
     }
 
     /* 5. 全 connect スレッドの終了を待機する */
     for (i = 0; i < ctx->n_path; i++)
     {
-        com_util_thread_join(ctx->connect_thread[i], COM_UTIL_SYNC_WAIT_FOREVER);
+        cplat_thread_join(ctx->connect_thread[i], CPLAT_SYNC_WAIT_FOREVER);
     }
 
     /* 6. 送信スレッドを停止する (全 path join 後) */
@@ -888,13 +888,13 @@ void potr_internal_connect_thread_stop(potr_context *ctx)
             ctx->tcp_first_pkt_len[i] = 0;
             if (ctx->tcp_first_pkt_buf[i] != NULL)
             {
-                com_util_free(ctx->tcp_first_pkt_buf[i]);
+                cplat_free(ctx->tcp_first_pkt_buf[i]);
                 ctx->tcp_first_pkt_buf[i] = NULL;
             }
         }
-        com_util_local_lock_dispose(ctx->session_establish_mutex);
+        cplat_local_lock_dispose(ctx->session_establish_mutex);
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: all paths stopped",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: all paths stopped",
                ctx->service.service_id);
 }

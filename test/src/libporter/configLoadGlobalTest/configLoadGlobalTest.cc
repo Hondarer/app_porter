@@ -1,4 +1,4 @@
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 
 #if defined(PLATFORM_WINDOWS)
     #define _HAS_STD_BYTE 0
@@ -8,7 +8,7 @@
 #include <mock_porter.h>
 #include <porter/protocol/config.h>
 #include <config_test_helper.h>
-#include <mock_com_util.h>
+#include <mock_cplat.h>
 #include <mock_stdio.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
@@ -19,12 +19,12 @@ using namespace testing;
 TEST(configLoadGlobalTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     potr_global_config global = {};
 
     // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
+    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
 
     // Act
@@ -49,7 +49,7 @@ TEST(configLoadGlobalTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened
 TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
         "  # comment\n",
@@ -78,7 +78,7 @@ TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
             })); // [状態] - fgets が呼び出された際に [global] 行列を返すようにモックを設定する。
 
     // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
+    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
@@ -106,7 +106,7 @@ TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
 TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
 {
     // Arrange
-    NiceMock<Mock_com_util> mock_com_util;
+    NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
         "[service.10]\n",
@@ -122,7 +122,7 @@ TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
             })); // [状態] - fgets が呼び出された際に [service] のみを含む行列を返すようにモックを設定する。
 
     // Pre-Assert
-    EXPECT_CALL(mock_com_util, com_util_fopen(StrEq("service-only.conf"), StrEq("r"), nullptr))
+    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("service-only.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))

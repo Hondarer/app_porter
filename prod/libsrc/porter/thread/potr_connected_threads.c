@@ -45,7 +45,7 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, const
         result = ops->send_start(ctx);
         if (result != POTR_OK)
         {
-            POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "connect_thread[service_id=%" PRId64 "]: send_thread_start failed",
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "connect_thread[service_id=%" PRId64 "]: send_thread_start failed",
                        ctx->service.service_id);
             return result;
         }
@@ -55,7 +55,7 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, const
     result = ops->recv_start(ctx, path_idx);
     if (result != POTR_OK)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "connect_thread[service_id=%" PRId64 "]: potr_internal_tcp_recv_thread_start failed"
                    " (path=%d)",
                    ctx->service.service_id, path_idx);
@@ -72,7 +72,7 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, const
     result = potr_internal_tcp_send_ping_now(ctx, path_idx);
     if (result != POTR_OK)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "connect_thread[service_id=%" PRId64 "]: bootstrap TCP PING failed"
                    " (path=%d)",
                    ctx->service.service_id, path_idx);
@@ -89,7 +89,7 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, const
     result = ops->health_start(ctx, path_idx);
     if (result != POTR_OK)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "connect_thread[service_id=%" PRId64 "]: tcp_health_thread_start failed"
                    " (path=%d)",
                    ctx->service.service_id, path_idx);

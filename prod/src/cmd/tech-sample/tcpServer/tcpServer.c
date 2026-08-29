@@ -25,8 +25,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <com_util/argparser/argparser.h>
-#include <com_util/console/console.h>
+#include <cplat/argparser/argparser.h>
+#include <cplat/console/console.h>
 
 #include "tcpServer.h"
 
@@ -74,7 +74,7 @@ void handle_client_session(ClientFd fd)
 #endif
 int main(int argc, char *argv[])
 {
-    com_util_console_init();
+    cplat_console_init();
     platform_init(handle_client_session);
 
     if (dispatch_internal_args(argc, argv))
@@ -90,34 +90,34 @@ int main(int argc, char *argv[])
     int need_help = 0;
     const char *mode_str = NULL;
 
-    com_util_argparser_init(argc, argv, "複数のプロセス モードを確認する TCP サーバーを起動します。");
-    com_util_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
-    com_util_argparser_register_option_string(NULL, "--mode", "mode", "fork または prefork。", 0, &mode_str);
-    com_util_argparser_register_option_int(NULL, "--port", "port", "待ち受けポート番号。", 0, &port);
-    com_util_argparser_register_option_int(NULL, "--workers", "count", "ワーカー数。", 0, &workers);
-    com_util_argparser_register_option_int(NULL, "--conns-per-worker", "count", "ワーカーごとの接続数。", 0,
+    cplat_argparser_init(argc, argv, "複数のプロセス モードを確認する TCP サーバーを起動します。");
+    cplat_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
+    cplat_argparser_register_option_string(NULL, "--mode", "mode", "fork または prefork。", 0, &mode_str);
+    cplat_argparser_register_option_int(NULL, "--port", "port", "待ち受けポート番号。", 0, &port);
+    cplat_argparser_register_option_int(NULL, "--workers", "count", "ワーカー数。", 0, &workers);
+    cplat_argparser_register_option_int(NULL, "--conns-per-worker", "count", "ワーカーごとの接続数。", 0,
                                            &conns_per_worker);
 
-    if (com_util_argparser_get_register_error_count() > 0)
+    if (cplat_argparser_get_register_error_count() > 0)
     {
-        com_util_argparser_print_register_error_messages(stderr);
+        cplat_argparser_print_register_error_messages(stderr);
         platform_cleanup();
         return EXIT_FAILURE;
     }
 
-    int parse_result = com_util_argparser_parse();
+    int parse_result = cplat_argparser_parse();
 
     if (need_help != 0)
     {
-        com_util_argparser_print_usage(stdout);
+        cplat_argparser_print_usage(stdout);
         platform_cleanup();
         return EXIT_SUCCESS;
     }
 
-    if (parse_result != COM_UTIL_OK)
+    if (parse_result != CPLAT_OK)
     {
-        com_util_argparser_print_error_messages(stderr);
-        com_util_argparser_print_usage(stderr);
+        cplat_argparser_print_error_messages(stderr);
+        cplat_argparser_print_usage(stderr);
         platform_cleanup();
         return EXIT_FAILURE;
     }
@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
         else
         {
             fprintf(stderr, "エラー: --mode には fork または prefork を指定してください。\n\n");
-            com_util_argparser_print_usage(stderr);
+            cplat_argparser_print_usage(stderr);
             platform_cleanup();
             return EXIT_FAILURE;
         }

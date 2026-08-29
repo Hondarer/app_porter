@@ -1,11 +1,11 @@
 #ifndef MOCK_PORTER_H
 #define MOCK_PORTER_H
 
-#include <com_util/base/platform.h>
+#include <cplat/base/platform.h>
 #include <testfw.h>
 #include <porter.h>
 #include <porter/potr_context.h>
-#include <com_util/trace/tracer.h>
+#include <cplat/trace/tracer.h>
 
 #if defined(COMPILER_MSVC)
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_peer_find_by_id")
@@ -24,8 +24,8 @@ class Mock_porter
     MOCK_METHOD(void, potr_internal_peer_free, (potr_context *, potr_internal_peer_context *));
 
     // Trace mock methods
-    MOCK_METHOD(com_util_tracer *, potr_internal_trace_get, ());
-    MOCK_METHOD(com_util_tracer *, potr_tracer_get, ());
+    MOCK_METHOD(cplat_tracer *, potr_internal_trace_get, ());
+    MOCK_METHOD(cplat_tracer *, potr_tracer_get, ());
 
     Mock_porter();
     ~Mock_porter();

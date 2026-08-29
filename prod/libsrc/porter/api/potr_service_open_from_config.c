@@ -19,7 +19,7 @@
 #include <porter/protocol/config.h>
 #include <porter/infra/potr_trace.h>
 
-#include <com_util/runtime/memory_lock.h>
+#include <cplat/runtime/memory_lock.h>
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -40,12 +40,12 @@ int potr_service_open_from_config(const char *config_path, int64_t service_id, p
         config_label = "(null)";
     }
 
-    POTR_TRACE(COM_UTIL_TRACE_LEVEL_VERBOSE, "potr_service_open_from_config: service_id=%" PRId64 " config=%s", service_id,
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_open_from_config: service_id=%" PRId64 " config=%s", service_id,
                config_label);
 
     if (config_path == NULL || handle == NULL)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_service_open_from_config: invalid argument"
                    " (config_path=%p handle=%p)",
                    (const void *)config_path, (const void *)handle);
@@ -55,7 +55,7 @@ int potr_service_open_from_config(const char *config_path, int64_t service_id, p
     result = potr_internal_config_load_global(config_path, &global);
     if (result != POTR_OK)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR,
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_service_open_from_config: service_id=%" PRId64 " failed to load global config from '%s'",
                    service_id, config_path);
         return result;
@@ -64,7 +64,7 @@ int potr_service_open_from_config(const char *config_path, int64_t service_id, p
     result = potr_internal_config_load_service(config_path, service_id, &service);
     if (result != POTR_OK)
     {
-        POTR_TRACE(COM_UTIL_TRACE_LEVEL_ERROR, "potr_service_open_from_config: service_id=%" PRId64 " not found in '%s'",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open_from_config: service_id=%" PRId64 " not found in '%s'",
                    service_id, config_path);
         return result;
     }
@@ -72,7 +72,7 @@ int potr_service_open_from_config(const char *config_path, int64_t service_id, p
     result = potr_service_open(&global, &service, role, callback, handle);
 
     /* service は AES 鍵を平文で保持するため、復帰前に消去する */
-    com_util_secure_zero(&service, sizeof(service));
+    cplat_secure_zero(&service, sizeof(service));
 
     return result;
 }
