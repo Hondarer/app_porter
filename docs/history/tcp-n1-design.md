@@ -3,7 +3,7 @@
 > [!NOTE]
 > 本書は当該機能の設計時点を保存する履歴文書です。
 > 通信のプラットフォーム抽象化層はその後 cplat の net カテゴリへ移行しており、本文のコード断片に登場する `PotrSocket` や `POTR_INVALID_SOCKET` は現行のコードには存在しません。
-> 現行の型と API は [cplat のネットワーク API ガイドライン](../../../cplat/docs/net-api-guideline.md) を参照してください。
+> 現行の型と API は [cplat のネットワーク (net) 機能仕様](../../../c-platform/docs/functional-spec/net.md) を参照してください。
 
 ## 背景と目的
 

@@ -431,7 +431,7 @@ porter はソケット型・無効値・初期化・クローズのいずれに�
 
 > [!NOTE]
 > 移行前は `potr_context.h` が `PotrSocket` 型や `POTR_INVALID_SOCKET`、`WSAStartup()` / `close()` と `closesocket()` の違いを porter 側で吸収していましたが、通信を cplat の `net` カテゴリへ移行したことで、これらは porter の関心事から外れました。
-> 詳細は [cplat のネットワーク API ガイドライン](../../cplat/docs/net-api-guideline.md) を参照してください。
+> 詳細は [cplat のネットワーク (net) 機能仕様](../../c-platform/docs/functional-spec/net.md) を参照してください。
 
 `potr_context.h` は、ソケット以外の残るプラットフォーム差異を引き続き抽象化します。
 

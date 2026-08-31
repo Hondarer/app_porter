@@ -1,6 +1,6 @@
 # プラットフォーム抽象化規範
 
-一般的な判定マクロとファイル分割は、[cplat のプラットフォーム抽象化規範](../../cplat/docs/platform-abstraction-guideline.md) に従います。
+一般的な判定マクロとファイル分割は、[cplat のプラットフォーム抽象化規範](../../c-platform/docs/platform-abstraction-guideline.md) に従います。
 
 ## porter 固有の規則
 
@@ -27,7 +27,7 @@ porter は通信に `cplat` の `net` カテゴリを使用し、OS のソケッ
 
 `cplat/net` の初期化と終了は API 内部で行われるため、porter が `potr_socket_lib_init()` 相当の呼び出しを行うことはありません。
 
-`cplat/net` カテゴリの API 契約 (複数ソケットの待機、受信半クローズの非対称性、`getaddrinfo` 由来エラーの扱いなど) は [ネットワーク API ガイドライン](../../cplat/docs/net-api-guideline.md) を参照してください。porter 側では同じ内容を繰り返しません。
+`cplat/net` カテゴリの API 契約 (複数ソケットの待機、受信半クローズの非対称性、`getaddrinfo` 由来エラーの扱いなど) は [cplat のネットワーク (net) 機能仕様](../../c-platform/docs/functional-spec/net.md) と `cplat/net/` の公開ヘッダーを参照してください。porter 側では同じ内容を繰り返しません。
 
 ## 移行前との対応
 
