@@ -109,11 +109,11 @@ static inline void potr_fill_path_ping_state(volatile uint8_t *dst, uint8_t valu
 }
 
 /**
- *  未使用の送信先端点 (dest_addr[] スロット) かどうかを判定します。失敗モードのない述語のため
+ *  未使用の送信先エンドポイント (dest_addr[] スロット) かどうかを判定します。失敗モードのない述語のため
  *  共通結果コードの適用対象外。
  *
  *  dest_addr[] スロットは potr_service_open または potr_internal_peer_create でゼロ初期化された後、
- *  実アドレスが設定されて初めて使用状態になる。実際の通信端点がアドレス・ポートともに
+ *  実アドレスが設定されて初めて使用状態になる。実際の通信エンドポイントがアドレス・ポートともに
  *  0 (0.0.0.0:0) になることはないため、両方 0 であることを「未使用」の判定に用いる。
  */
 static inline int potr_endpoint_is_unset(const cplat_ipv4_endpoint *endpoint)
@@ -121,7 +121,7 @@ static inline int potr_endpoint_is_unset(const cplat_ipv4_endpoint *endpoint)
     return endpoint->address == 0U && endpoint->port == 0U;
 }
 
-/** 送信先端点 (dest_addr[] スロット) を未使用状態へ戻します。 */
+/** 送信先エンドポイント (dest_addr[] スロット) を未使用状態へ戻します。 */
 static inline void potr_endpoint_clear(cplat_ipv4_endpoint *endpoint)
 {
     endpoint->address = 0U;
@@ -201,7 +201,7 @@ typedef struct potr_internal_peer_context
      * インデックスは ctx->sock[] / src_addr[] と直接対応します。
      * 未使用スロットは potr_endpoint_is_unset() で判定します。 */
     cplat_ipv4_endpoint dest_addr
-        [POTR_MAX_PATH]; /**< 送信先端点 (インデックス = ctx->sock[] の添字)。未使用スロットは potr_endpoint_is_unset() が真。 */
+        [POTR_MAX_PATH]; /**< 送信先エンドポイント (インデックス = ctx->sock[] の添字)。未使用スロットは potr_endpoint_is_unset() が真。 */
     int n_paths;             /**< アクティブ パス数。ループ境界には使わず管理カウンターとして使用します。 */
     uint32_t _pad_path_recv; /**< パディング (path_last_recv_ts を 8 バイト境界に揃える)。 */
     cplat_timespec
@@ -268,7 +268,7 @@ struct potr_context
     uint32_t src_addr_resolved[POTR_MAX_PATH]; /**< 解決済み送信元 IPv4 アドレス。 */
     uint32_t dst_addr_resolved[POTR_MAX_PATH]; /**< 解決済み宛先 IPv4 アドレス (unicast のみ)。 */
     cplat_ipv4_endpoint dest_addr
-        [POTR_MAX_PATH]; /**< 送信先端点 (送信者が sendto に使用)。未使用スロットは potr_endpoint_is_unset() が真。 */
+        [POTR_MAX_PATH]; /**< 送信先エンドポイント (送信者が sendto に使用)。未使用スロットは potr_endpoint_is_unset() が真。 */
 
     /* 自セッション識別子 (potr_service_open 時に決定) */
     cplat_timespec session_ts; /**< 自セッション開始時刻。 */

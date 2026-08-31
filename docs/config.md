@@ -88,7 +88,7 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 | 通信モデル / 種別 | PING 送信 | タイムアウト監視 |
 |---|---|---|
 | 一方向 UDP (`unicast` / `multicast` / `broadcast` / `*_raw`) | SENDER は open 直後の即時 PING を送らず、最後の `PING` または有効 `DATA` 送信から `health_interval_ms` 経過時にだけ PING を送る。RECEIVER は返信しません。 | RECEIVER が有効な `PING` / `DATA` の最終受信時刻を監視 |
-| 双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) | 各端点 / 各ピアが周期送信し、要求には即応答します。 | 各端点 / 各ピアが最終受信時刻を監視 |
+| 双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) | 各エンドポイント / 各ピアが周期送信し、要求には即応答します。 | 各エンドポイント / 各ピアが最終受信時刻を監視 |
 | TCP (`tcp`) | 接続直後に bootstrap PING を送る。`health_interval_ms > 0` のときだけ SENDER が周期送信し、RECEIVER が応答します。 | `health_interval_ms > 0` のときだけ SENDER は PING 応答待機、RECEIVER は PING 要求到着を監視 |
 | 双方向 TCP (`tcp_bidir`) | 接続直後に両端が bootstrap PING を送る。`health_interval_ms > 0` のときだけ両端が周期送信し、要求には即応答します。 | `health_interval_ms > 0` のときだけ両端が PING 応答待機と PING 要求到着を監視 |
 
