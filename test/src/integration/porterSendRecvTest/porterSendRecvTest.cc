@@ -281,12 +281,13 @@ class porterSendRecvTest : public Test
 #if defined(PLATFORM_LINUX)
         recv_path = ws + "/app/porter/prod/cbin/porter-test";
         send_path = ws + "/app/porter/prod/cbin/porter-test";
-        lib_path = ws + "/app/porter/prod/lib" + ":" + ws + "/app/c-platform/prod/lib" + ":" + ws + "/app/cjson/prod/lib";
+        lib_path = ws + "/app/porter/prod/lib" + ":" + ws + "/app/c-platform/prod/lib" + ":" + ws +
+                   "/app/cjson/prod/lib" + ":" + ws + "/app/zlib/prod/lib";
 #elif defined(PLATFORM_WINDOWS)
         recv_path = ws + "\\app\\porter\\prod\\cbin\\porter-test.exe";
         send_path = ws + "\\app\\porter\\prod\\cbin\\porter-test.exe";
         lib_path = ws + "\\app\\porter\\prod\\lib" + ";" + ws + "\\app\\c-platform\\prod\\lib" + ";" + ws +
-                   "\\app\\cjson\\prod\\lib";
+                   "\\app\\cjson\\prod\\lib" + ";" + ws + "\\app\\zlib\\prod\\lib";
 #endif /* PLATFORM_ */
         resetTraceLevel();
         setTraceLevel("processController", TRACE_DETAIL);
