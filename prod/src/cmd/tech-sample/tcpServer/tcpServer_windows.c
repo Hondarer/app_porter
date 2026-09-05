@@ -30,6 +30,7 @@
 #if defined(PLATFORM_WINDOWS)
 
     #include "tcpServer.h" /* WIN32_LEAN_AND_MEAN / windows.h / winsock2.h / ws2tcpip.h を内包 */
+    #include <cplat/crt/select.h>
     #include <cplat/crt/path.h>
     #include <cplat/sync/sync.h>
     #include <cplat/win32/win32.h>
@@ -230,7 +231,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
             FD_ZERO(&read_fds);
             for (int i = 0; i < active_count; i++)
             {
-                FD_SET(active[i], &read_fds);
+                CPLAT_FD_SET(active[i], &read_fds);
             }
             struct timeval tv = {0, 10000}; /* 10ms */
             /* Windows では select の第 1 引数は無視される */
