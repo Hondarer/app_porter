@@ -493,8 +493,8 @@ NACK / REJECT サイクルも通常どおり動作します。
 
 | プラットフォーム | 実装 |
 |---|---|
-| Linux | zlib (windowBits = -15) |
-| Windows | Compression API (MSZIP \| COMPRESS_RAW) |
+| Linux | app/zlib (windowBits = -15) |
+| Windows | app/zlib (windowBits = -15) |
 
 両プラットフォームは同じ raw DEFLATE フォーマットを出力するため、  
 Linux 送信者と Windows 受信者 (またはその逆) の組み合わせで透過的に動作します。

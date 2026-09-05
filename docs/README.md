@@ -25,7 +25,7 @@ TCP による信頼性の高い接続型通信 (1:1 および双方向) もサ�
 | 通信モデル | ユニキャスト / マルチキャスト / ブロードキャスト (UDP) <br>TCP 接続型通信 (`tcp` / `tcp_bidir`)、双方向ユニキャスト (`unicast_bidir`) |
 | 通信モード | **通常モード**: NACK ベース再送制御・スライディング ウィンドウ (最大 256 スロット) <br>**RAW モード** (`*_raw`): 再送なし・ベスト エフォート。ギャップ検出時に DISCONNECTED を発行 |
 | リオーダー吸収 | `reorder_timeout_ms` でギャップ検出後の待機時間を設定。待機中に追い越しパケットが届けば NACK / DISCONNECT を発行しない (通常・RAW モード共通)。マルチキャスト/ブロードキャスト通常モードでは NACK 送出タイミングを 100%〜200% の範囲で自動ジッタ分散し NACK implosion を抑制 |
-| データ圧縮 | raw DEFLATE (Linux: zlib、Windows: Compression API) |
+| データ圧縮 | raw DEFLATE (両 OS 共通の app/zlib) |
 | フラグメント化 | 最大 65,535 バイトのメッセージを自動分割・結合 |
 | ヘルスチェック | 片方向 type 1-6 は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送り、有効な PING / DATA 受信で疎通を維持します。双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は定周期 PING の送受信で接続を確立するため、実効 `health_interval_ms` が 0 のままでは `CONNECTED` しません。各パスの PING 受信状態変化時には割り込み PING も送信します。 |
 | マルチパス | 最大 4 経路の並列送信 |

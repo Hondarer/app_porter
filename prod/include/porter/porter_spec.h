@@ -292,7 +292,7 @@ extern "C"
      *  @note
      *
      *  圧縮フォーマットには raw DEFLATE (RFC 1951) を使用します。\n
-     *  Linux (zlib) と Windows (Compression API MSZIP|COMPRESS_RAW) は
+     *  Linux と Windows はともに cplat を通じて app/zlib を使用し、
      *  同一フォーマットを出力するため、クロスプラットフォーム通信に対応します。\n
      *  圧縮効果がない場合 (圧縮後サイズ >= 元サイズ) は、アプリケーションへの通知なしに
      *  内部で非圧縮に切り替えて送信します。送受信のデータ内容に影響はありません。
