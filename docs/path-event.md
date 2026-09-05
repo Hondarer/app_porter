@@ -1,12 +1,10 @@
 # パス イベント
 
-porter はセッション全体の接続状態だけでなく、各 path の論理接続状態も  
-`POTR_EVENT_PATH_CONNECTED` / `POTR_EVENT_PATH_DISCONNECTED` で通知します。
+porter はセッション全体の接続状態だけでなく、各 path の論理接続状態も `POTR_EVENT_PATH_CONNECTED` / `POTR_EVENT_PATH_DISCONNECTED` で通知します。
 
 ## 概要
 
-`PATH_*` は物理 path の学習や TCP ソケット確立そのものではなく、  
-「その path が論理的に `CONNECTED` 判定へ寄与しているか」を表します。
+`PATH_*` は物理 path の学習や TCP ソケット確立そのものではなく、「その path が論理的に `CONNECTED` 判定へ寄与しているか」を表します。
 
 - `POTR_EVENT_PATH_CONNECTED`  
   対象 path の論理接続状態が 0 から 1 へ変化したときに発火します。

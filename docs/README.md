@@ -1,13 +1,12 @@
 # porter
 
 porter は UDP/IP および TCP/IP をサポートするクロスプラットフォーム (Linux / Windows) 通信ライブラリです。  
-1:1 (ユニキャスト) ・1:N (マルチキャスト・ブロードキャスト) の UDP 通信に加え、  
-TCP による信頼性の高い接続型通信 (1:1 および双方向) もサポートします。  
+1:1 (ユニキャスト) ・1:N (マルチキャスト・ブロードキャスト) の UDP 通信に加え、TCP による信頼性の高い接続型通信 (1:1 および双方向) もサポートします。  
 スライディング ウィンドウによる NACK ベース再送制御、ヘルスチェック、データ圧縮を提供します。
 
 > [!NOTE]
-> このリポジトリは他のサブモジュールと組み合わせて利用することを想定しています。
-> [c-modernization-kit](https://github.com/Hondarer/c-modernization-kit) に統合された利用例があります。
+> このリポジトリは他のサブモジュールと組み合わせて利用することを想定しています。  
+> [c-modernization-kit](https://github.com/Hondarer/c-modernization-kit) に統合された利用例があります。  
 > `c-modernization-kit` リポジトリ内の `app/porter` サブモジュールの統合例を参照してください。
 
 ## 重要な文書

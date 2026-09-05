@@ -89,8 +89,7 @@ FIN.flags に FIN_TARGET_VALID があり recv_window.next_seq != FIN.ack_num
 
 ### TCP: DISCONNECTED の直前に FIN_ACK を返す
 
-TCP では `pending_fin` が解消された時点、または no-data FIN / 追い付き済み FIN を受けた時点で、  
-receiver は `FIN_ACK` を返してから `POTR_EVENT_DISCONNECTED` を発火します。
+TCP では `pending_fin` が解消された時点、または no-data FIN / 追い付き済み FIN を受けた時点で、receiver は `FIN_ACK` を返してから `POTR_EVENT_DISCONNECTED` を発火します。
 
 ```text
 receiver:
