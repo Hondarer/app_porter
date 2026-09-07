@@ -34,6 +34,8 @@
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
 
+#include "thread_recv_validate.h"
+
 /* 前方宣言: 後で定義される関数 */
 static void send_nack(potr_context *ctx, uint32_t nack_seq);
 static void raw_session_disconnect(potr_context *ctx);
@@ -485,199 +487,6 @@ static void n1_check_health_timeout(potr_context *ctx)
 /* ================================================================
  * N:1 モード専用ここまで
  * ================================================================ */
-
-/* 受信パケットの暗号化要件と GCM 認証を検証する。
-   encrypt_enabled 時は ENCRYPTED フラグを必須とし、成功時のみ後続処理へ進める。
-   成功時は POTR_OK、検証失敗時は POTR_ERR_PROTOCOL を返す。 */
-static int recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const uint8_t *wire_hdr, const char *log_prefix,
-                                    int path_idx)
-{
-    if (!(pkt->flags & POTR_FLAG_ENCRYPTED))
-    {
-        if (!ctx->service.encrypt_enabled)
-        {
-            return POTR_OK;
-        }
-
-        if (path_idx >= 0)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "%s[service_id=%" PRId64 " path=%d]: missing ENCRYPTED flag, dropping flags=0x%04x", log_prefix,
-                       ctx->service.service_id, path_idx, (unsigned)pkt->flags);
-        }
-        else
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "%s[service_id=%" PRId64 "]: missing ENCRYPTED flag, dropping flags=0x%04x", log_prefix,
-                       ctx->service.service_id, (unsigned)pkt->flags);
-        }
-        return POTR_ERR_PROTOCOL;
-    }
-
-    if ((pkt->flags & POTR_FLAG_ENCRYPTED) && (pkt->flags & (POTR_FLAG_DATA | POTR_FLAG_PING)))
-    {
-        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t dec_len = ctx->crypto_buf_size;
-        uint32_t sid_nbo = cplat_hton32(pkt->session_id);
-        uint16_t flags_nbo = cplat_hton16((uint16_t)pkt->flags);
-        uint32_t seq_nbo = cplat_hton32(pkt->seq_num);
-
-        memcpy(nonce, &sid_nbo, 4);
-        memcpy(nonce + 4, &flags_nbo, 2);
-        memcpy(nonce + 6, &seq_nbo, 4);
-        memset(nonce + 10, 0, 2);
-
-        if (cplat_decrypt(ctx->crypto_buf, &dec_len, pkt->payload, pkt->payload_len, ctx->service.encrypt_key, nonce,
-                             wire_hdr, PACKET_HEADER_SIZE) != CPLAT_OK)
-        {
-            if (path_idx >= 0)
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                           "%s[service_id=%" PRId64 " path=%d]: decrypt failed (auth) seq=%u", log_prefix,
-                           ctx->service.service_id, path_idx, (unsigned)pkt->seq_num);
-            }
-            else
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 "]: decrypt failed (auth) seq=%u",
-                           log_prefix, ctx->service.service_id, (unsigned)pkt->seq_num);
-            }
-            return POTR_ERR_PROTOCOL;
-        }
-
-        pkt->payload = ctx->crypto_buf;
-        pkt->payload_len = (uint16_t)dec_len;
-        pkt->flags = (uint16_t)(pkt->flags & ~POTR_FLAG_ENCRYPTED);
-        return POTR_OK;
-    }
-
-    if (pkt->payload_len != POTR_CRYPTO_TAG_SIZE)
-    {
-        if (path_idx >= 0)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "%s[service_id=%" PRId64 " path=%d]: encrypted control pkt bad len=%u flags=0x%04x", log_prefix,
-                       ctx->service.service_id, path_idx, (unsigned)pkt->payload_len, (unsigned)pkt->flags);
-        }
-        else
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "%s[service_id=%" PRId64 "]: encrypted control pkt bad len=%u flags=0x%04x", log_prefix,
-                       ctx->service.service_id, (unsigned)pkt->payload_len, (unsigned)pkt->flags);
-        }
-        return POTR_ERR_PROTOCOL;
-    }
-
-    {
-        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        uint8_t dummy[1];
-        size_t dummy_len = sizeof(dummy);
-        uint32_t val;
-        uint32_t sid_nbo = cplat_hton32(pkt->session_id);
-        uint16_t flags_nbo = cplat_hton16((uint16_t)pkt->flags);
-        uint32_t val_nbo;
-
-        if ((pkt->flags & (POTR_FLAG_NACK | POTR_FLAG_REJECT | POTR_FLAG_FIN_ACK)) != 0)
-        {
-            val = pkt->ack_num;
-        }
-        else
-        {
-            val = pkt->seq_num;
-        }
-        val_nbo = cplat_hton32(val);
-
-        memcpy(nonce, &sid_nbo, 4);
-        memcpy(nonce + 4, &flags_nbo, 2);
-        memcpy(nonce + 6, &val_nbo, 4);
-        memset(nonce + 10, 0, 2);
-
-        if (cplat_decrypt(dummy, &dummy_len, pkt->payload, POTR_CRYPTO_TAG_SIZE, ctx->service.encrypt_key, nonce,
-                             wire_hdr, PACKET_HEADER_SIZE) != CPLAT_OK)
-        {
-            if (path_idx >= 0)
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                           "%s[service_id=%" PRId64 " path=%d]: tag verify failed flags=0x%04x", log_prefix,
-                           ctx->service.service_id, path_idx, (unsigned)pkt->flags);
-            }
-            else
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 "]: tag verify failed flags=0x%04x",
-                           log_prefix, ctx->service.service_id, (unsigned)pkt->flags);
-            }
-            return POTR_ERR_PROTOCOL;
-        }
-    }
-
-    pkt->flags = (uint16_t)(pkt->flags & ~POTR_FLAG_ENCRYPTED);
-    pkt->payload_len = 0;
-    pkt->payload = NULL;
-    return POTR_OK;
-}
-
-/* 送信元 IP が期待アドレスのいずれかと一致するか確認する。
-   N:1 モード: src_port 指定時は送信元ポートのみでフィルタリング。未指定時は全許可。
-   UNICAST_BIDIR SENDER:   受信パケットの送信元は RECEIVER (dst_addr_resolved) と照合する。
-   UNICAST_BIDIR RECEIVER: 受信パケットの送信元は SENDER   (src_addr_resolved) と照合する。
-   その他: src_addr_resolved と照合する。src_addr が未設定の場合は常に 1 (合格) を返す。 */
-static int check_src_addr(const potr_context *ctx, const cplat_ipv4_endpoint *sender)
-{
-    int i;
-
-    /* N:1 モード: src_port 指定時はポートのみでフィルタリング、未指定時は全許可 */
-    if (ctx->is_multi_peer)
-    {
-        if (ctx->service.src_port != 0)
-        {
-            if (cplat_ntoh16(sender->port) == ctx->service.src_port)
-            {
-                return 1;
-            }
-            return 0;
-        }
-        return 1;
-    }
-
-    if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
-    {
-        if (ctx->role == POTR_ROLE_SENDER)
-        {
-            /* SENDER が受け取るパケット: RECEIVER (dst_addr) から来る */
-            if (ctx->service.dst_addr[0][0] == '\0')
-                return 1;
-            for (i = 0; i < ctx->n_path; i++)
-            {
-                if (sender->address == ctx->dst_addr_resolved[i])
-                    return 1;
-            }
-        }
-        else
-        {
-            /* RECEIVER が受け取るパケット: SENDER (src_addr) から来る */
-            if (ctx->service.src_addr[0][0] == '\0')
-                return 1;
-            for (i = 0; i < ctx->n_path; i++)
-            {
-                if (sender->address == ctx->src_addr_resolved[i])
-                    return 1;
-            }
-        }
-        return 0;
-    }
-
-    if (ctx->service.src_addr[0][0] == '\0')
-    {
-        return 1;
-    }
-    for (i = 0; i < ctx->n_path; i++)
-    {
-        if (sender->address == ctx->src_addr_resolved[i])
-        {
-            return 1;
-        }
-    }
-    return 0;
-}
 
 /* セッションの採用判定を行い、必要であればスロットの相手セッション情報を更新する。
    採用すべきセッションなら 1、破棄すべき旧セッションなら 0 を返す。
@@ -1463,7 +1272,7 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
     int is_new_peer = 0;
     recv_slot peer_slot;
 
-    if (recv_authenticate_packet(ctx, pkt, wire_hdr, "recv", -1) != POTR_OK)
+    if (thread_recv_authenticate_packet(ctx, pkt, wire_hdr, "recv", -1) != POTR_OK)
     {
         return;
     }
@@ -2069,7 +1878,7 @@ static void recv_thread_func(void *arg)
                            ctx->service.service_id, pkt.service_id);
                 continue;
             }
-            if (!check_src_addr(ctx, &sender_addr))
+            if (!thread_recv_check_src_addr(ctx, &sender_addr))
                 continue;
 
             /* ── N:1 モード: ピアごとにディスパッチ ── */
@@ -2079,7 +1888,7 @@ static void recv_thread_func(void *arg)
                 continue;
             }
 
-            if (recv_authenticate_packet(ctx, &pkt, buf, "recv", -1) != POTR_OK)
+            if (thread_recv_authenticate_packet(ctx, &pkt, buf, "recv", -1) != POTR_OK)
                 continue;
 
             /* ── 送信者ロール: NACK のみ処理 ── */
@@ -2301,7 +2110,7 @@ static void tcp_recv_thread_func(void *arg)
             continue;
         }
 
-        if (recv_authenticate_packet(ctx, &pkt, buf, "tcp_recv", path_idx) != POTR_OK)
+        if (thread_recv_authenticate_packet(ctx, &pkt, buf, "tcp_recv", path_idx) != POTR_OK)
             continue;
 
         /* 8. パケット種別処理 */
