@@ -9,10 +9,13 @@ porter は UDP/IP および TCP/IP をサポートするクロスプラットフ
 > [c-modernization-kit](https://github.com/Hondarer/c-modernization-kit) に統合された利用例があります。  
 > `c-modernization-kit` リポジトリ内の `app/porter` サブモジュールの統合例を参照してください。
 
-## 重要な文書
+## 目的別の入口
 
 - [API ガイド](api.md)
 - [構成ファイル仕様](config.md)
+- [アーキテクチャーと責務](architecture.md)
+- [通信シーケンス](sequence.md)
+- [実装の保守と未解決事項](maintenance.md)
 - [porter コーディング規範](coding-guideline.md)
 - [TCP N:1 の設計記録](history/tcp-n1-design.md)
 
@@ -54,7 +57,12 @@ dst_port = 5001
 ```c
 #include "porter.h"
 
-void on_event(int64_t service_id, potr_event event, const void *data, size_t len) {
+static void on_event(int64_t service_id, potr_peer_id peer_id,
+                     potr_event event, const void *data, size_t len) {
+    (void)service_id;
+    (void)peer_id;
+    (void)data;
+    (void)len;
     switch (event) {
     case POTR_EVENT_CONNECTED:
         /* 片方向は最初の有効 PING / DATA、双方向は PING ハンドシェイク成立 */
@@ -65,14 +73,20 @@ void on_event(int64_t service_id, potr_event event, const void *data, size_t len
     case POTR_EVENT_DATA:
         /* データ受信: data[0..len-1] に内容 */
         break;
+    case POTR_EVENT_PATH_CONNECTED:
+    case POTR_EVENT_PATH_DISCONNECTED:
+        /* 経路単位の状態変化。引数の意味は API ガイドを参照 */
+        break;
     }
 }
 
 int main(void) {
-    potr_context *handle;
-    potrLogConfig(POTR_TRACE_INFO, NULL, 1);
-    potr_service_open("porter-services.conf", 1001, POTR_ROLE_RECEIVER, on_event, &handle);
-    /* ... 待機 ... */
+    potr_context *handle = NULL;
+    if (potr_service_open_from_config("porter-services.conf", 1001,
+                                     POTR_ROLE_RECEIVER, on_event, &handle) != POTR_OK) {
+        return 1;
+    }
+    /* 実際のアプリでは、ここで終了要求を待ちます。 */
     potr_service_close(handle);
     return 0;
 }
@@ -82,16 +96,23 @@ int main(void) {
 
 ```c
 #include "porter.h"
+#include <string.h>
 
 int main(void) {
-    potr_context *handle;
-    potrLogConfig(POTR_TRACE_INFO, NULL, 1);
-    potr_service_open("porter-services.conf", 1001, POTR_ROLE_SENDER, NULL, &handle);
-
+    potr_context *handle = NULL;
     const char *msg = "Hello, porter!";
-    potr_send(handle, POTR_PEER_NA, msg, strlen(msg), POTR_SEND_BLOCKING);  /* 圧縮なし・ブロッキング送信。1:1 通信では peer_id に POTR_PEER_NA を指定 */
+    int ret;
+    if (potr_service_open_from_config("porter-services.conf", 1001,
+                                     POTR_ROLE_SENDER, NULL, &handle) != POTR_OK) {
+        return 1;
+    }
+
+    ret = potr_send(handle, POTR_PEER_NA, msg, strlen(msg), POTR_SEND_BLOCKING);
 
     potr_service_close(handle);
+    if (ret != POTR_OK) {
+        return 1;
+    }
     return 0;
 }
 ```
@@ -100,10 +121,10 @@ int main(void) {
 
 ```sh
 # 受信側 (別ターミナルで先に起動)
-recv -l TRACE ../sample-config/porter-services.conf 1001
+prod/cbin/porter-test receiver prod/sample-config/porter-services.conf 1001
 
 # 送信側
-send -l TRACE ../sample-config/porter-services.conf 1001
+prod/cbin/porter-test sender prod/sample-config/porter-services.conf 1001
 ```
 
 ## API 仕様書
@@ -136,8 +157,6 @@ send -l TRACE ../sample-config/porter-services.conf 1001
 - [porter (internal)](doxybook2_internal/README.md)
     - [ファイルの一覧](doxybook2_internal/Files/README.md)
     - [カテゴリの一覧](doxybook2_internal/Modules/README.md)
-
-## 関連ドキュメント
 
 ## 文書一覧
 

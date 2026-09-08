@@ -317,12 +317,27 @@ RECEIVER 側は、接続時の session triplet(`session_id + session_tv_sec + se
 
 ## コンポーネント構成
 
+サービスの開始処理は、資源の所有と起動順序を管理する部分と、通信経路を準備する部分に分けています。  
+受信処理は、パケットを受け入れる条件の検証を分離し、セッションや受信ウィンドウを更新する前に呼び出します。
+
+| 実装 | 責務 | 境界で守る条件 |
+|---|---|---|
+| `api/potr_service_open.c` | 設定検証、コンテキストの確保、スレッド起動、失敗時の資源解放 | 起動が完了してからハンドルを呼び出し元へ渡す |
+| `api/api_open_paths.c` | 通信種別ごとのソケット作成、アドレス解決、送信先設定 | 確保したソケットはコンテキストが所有し、開始処理が失敗時に解放する |
+| `thread/potr_recv_thread.c` | ソケット受信、セッション管理、順序制御、イベント通知 | 認証成功後に受信状態を更新する |
+| `thread/thread_recv_validate.c` | 暗号化要件、GCM 認証、UDP 送信元の照合 | 認証失敗は `POTR_ERR_PROTOCOL`、送信元照合は採用可否を返す |
+| `thread/thread_recv_slot.c` | 1:1／N:1 の受信状態参照、フラグメント結合、展開、DATA 配信 | 順序整列済みのエレメントを受け取り、データの所有権は移動しない |
+
+表のパスは `prod/libsrc/porter/` を起点とします。  
+分割した関数の契約は同じディレクトリの私有ヘッダーへ記載し、公開 API やライブラリ内共有 API には追加しません。
+
 ```plantuml
 @startuml
 title porter コンポーネント構成
 
 package "api" {
   [potr_service_open]
+  [api_open_paths]
   [potr_service_open_from_config]
   [potr_send]
   [potr_service_close]
@@ -330,6 +345,8 @@ package "api" {
 
 package "thread" {
   [potr_recv_thread]
+  [thread_recv_validate]
+  [thread_recv_slot]
   [potr_send_thread]
   [potr_health_thread]
   [potr_connect_thread]
@@ -344,7 +361,11 @@ package "protocol" {
 
 package "infra" {
   [potr_send_queue\n(リングバッファ)]
-  [potrLog\n(ロギング・設定)]
+  [potr_trace\n(トレーサー取得)]
+}
+
+package "cplat" {
+  [net\n(socket・endpoint・byteorder)]
   package "compress" {
     [compress\n(raw DEFLATE)]
   }
@@ -353,13 +374,11 @@ package "infra" {
   }
 }
 
-package "cplat" {
-  [net\n(socket・endpoint・byteorder)]
-}
-
 database "potr_context\n(セッション全状態)" as CTX
 
 [potr_service_open] --> CTX : 生成・初期化
+[potr_service_open] --> [api_open_paths] : 経路準備
+[api_open_paths] --> [net\n(socket・endpoint・byteorder)]
 [potr_service_open_from_config] --> [potr_service_open] : 委譲
 [potr_send] --> [potr_send_queue] : エレメント push
 [potr_service_close] --> CTX : スレッド停止・解放
@@ -374,8 +393,11 @@ database "potr_context\n(セッション全状態)" as CTX
 [potr_recv_thread] --> [packet]
 [potr_recv_thread] --> [window]
 [potr_recv_thread] --> [seqnum]
-[potr_recv_thread] --> [compress]
-[potr_recv_thread] --> [crypto]
+[potr_recv_thread] --> [thread_recv_slot] : 受信状態参照・DATA 配信
+[thread_recv_slot] --> [compress]
+[potr_recv_thread] --> [thread_recv_validate] : 認証・送信元照合
+[potr_recv_thread] --> [crypto] : 制御パケットの認証タグ生成
+[thread_recv_validate] --> [crypto]
 [potr_recv_thread] --> [net\n(socket・endpoint・byteorder)] : 受信
 
 api -[hidden]--thread
