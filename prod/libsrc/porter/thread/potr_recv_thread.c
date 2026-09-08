@@ -26,7 +26,6 @@
 #include <porter/potr_peer_table.h>
 #include <porter/thread/potr_health_thread.h>
 #include <porter/thread/potr_recv_thread.h>
-#include <cplat/compress/compress.h>
 #include <cplat/crypto/crypto.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_tcp_control.h>
@@ -35,6 +34,7 @@
 #include <cplat/net/socket.h>
 
 #include "thread_recv_validate.h"
+#include "thread_recv_slot.h"
 
 /* 前方宣言: 後で定義される関数 */
 static void send_nack(potr_context *ctx, uint32_t nack_seq);
@@ -50,84 +50,8 @@ static void n1_fire_disconnected_by_fin(potr_context *ctx, potr_internal_peer_co
 static void n1_send_nack(potr_context *ctx, potr_internal_peer_context *peer, uint32_t nack_seq);
 static void sync_service_path_state(potr_context *ctx);
 
-/* ================================================================
- * 受信セッション スロット
- *
- * 1:1 モード (potr_context が直接保持) と N:1 モード (potr_internal_peer_context が
- * ピアごとに保持) で同じ意味を持つ受信状態フィールド群を、ポインター経由で
- * 一元的に参照するためのビュー。1:1 を「ピア数 1 のスロット」として扱う
- * ことで、受信処理関数の二重実装 (n1_* 系と通常系のペア) を排除する。
- * ================================================================ */
-typedef struct recv_slot
-{
-    potr_context *ctx;      /* 所属コンテキスト */
-    potr_internal_peer_context *peer; /* N:1 のピア。1:1 モードでは NULL */
-    potr_peer_id peer_id;    /* コールバック用ピア識別子 (1:1 は POTR_PEER_NA) */
-    int pad;               /* パディング (recv_window をポインター境界に揃える) */
-    potr_internal_window *recv_window;
-    uint32_t *peer_session_id;
-    cplat_timespec *peer_session_ts;
-    int *peer_session_known;
-    int *reorder_pending;
-    int *pending_fin;
-    uint32_t *fin_target_seq;
-    uint8_t *frag_buf;
-    size_t *frag_buf_len;
-    int *frag_compressed;
-    volatile int *health_alive;
-    cplat_timespec *last_recv_ts;
-    cplat_timespec *path_last_recv_ts;
-    volatile uint8_t *path_ping_state;
-} recv_slot;
-
-/* 1:1 モード用: potr_context 直接保持のフィールド群を指すスロットを構成する */
-static void recv_slot_init_ctx(recv_slot *slot, potr_context *ctx)
-{
-    slot->ctx = ctx;
-    slot->peer = NULL;
-    slot->peer_id = POTR_PEER_NA;
-    slot->pad = 0;
-    slot->recv_window = &ctx->recv_window;
-    slot->peer_session_id = &ctx->peer_session_id;
-    slot->peer_session_ts = &ctx->peer_session_ts;
-    slot->peer_session_known = &ctx->peer_session_known;
-    slot->reorder_pending = &ctx->reorder_pending;
-    slot->pending_fin = &ctx->pending_fin;
-    slot->fin_target_seq = &ctx->fin_target_seq;
-    slot->frag_buf = ctx->frag_buf;
-    slot->frag_buf_len = &ctx->frag_buf_len;
-    slot->frag_compressed = &ctx->frag_compressed;
-    slot->health_alive = &ctx->health_alive;
-    slot->last_recv_ts = &ctx->last_recv_ts;
-    slot->path_last_recv_ts = ctx->path_last_recv_ts;
-    slot->path_ping_state = ctx->path_ping_state;
-}
-
-/* N:1 モード用: potr_internal_peer_context のフィールド群を指すスロットを構成する */
-static void recv_slot_init_peer(recv_slot *slot, potr_context *ctx, potr_internal_peer_context *peer)
-{
-    slot->ctx = ctx;
-    slot->peer = peer;
-    slot->peer_id = peer->peer_id;
-    slot->pad = 0;
-    slot->recv_window = &peer->recv_window;
-    slot->peer_session_id = &peer->peer_session_id;
-    slot->peer_session_ts = &peer->peer_session_ts;
-    slot->peer_session_known = &peer->peer_session_known;
-    slot->reorder_pending = &peer->reorder_pending;
-    slot->pending_fin = &peer->pending_fin;
-    slot->fin_target_seq = &peer->fin_target_seq;
-    slot->frag_buf = peer->frag_buf;
-    slot->frag_buf_len = &peer->frag_buf_len;
-    slot->frag_compressed = &peer->frag_compressed;
-    slot->health_alive = &peer->health_alive;
-    slot->last_recv_ts = &peer->last_recv_ts;
-    slot->path_last_recv_ts = peer->path_last_recv_ts;
-    slot->path_ping_state = peer->path_ping_state;
-}
-
 /* スロットの pending FIN 状態をクリアする */
-static void slot_clear_pending_fin(recv_slot *slot)
+static void slot_clear_pending_fin(thread_recv_slot *slot)
 {
     *slot->pending_fin = 0;
     *slot->fin_target_seq = 0;
@@ -136,7 +60,7 @@ static void slot_clear_pending_fin(recv_slot *slot)
 /* 欠番 nack_num に対するリオーダー待機の完了判定。
    N:1 モードは現状リオーダー待機を持たないため常に 1 (即時処理) を返す。
    真偽値を返す述語のため共通結果コードの適用対象外。 */
-static int slot_gap_ready(recv_slot *slot, uint32_t nack_num)
+static int slot_gap_ready(thread_recv_slot *slot, uint32_t nack_num)
 {
     if (slot->peer != NULL)
     {
@@ -147,7 +71,7 @@ static int slot_gap_ready(recv_slot *slot, uint32_t nack_num)
 }
 
 /* NACK 送信をモードに応じた宛先解決へディスパッチする */
-static void slot_send_nack(recv_slot *slot, uint32_t nack_seq)
+static void slot_send_nack(thread_recv_slot *slot, uint32_t nack_seq)
 {
     if (slot->peer != NULL)
     {
@@ -395,7 +319,7 @@ static void n1_update_path_recv(potr_internal_peer_context *peer, const cplat_ip
 
 /* パスごとのヘルスチェック受信時刻と受信状態を更新する。
    片方向 type 1-6 では PING / 有効 DATA、双方向 type 7/8 では PING 受信時のみ呼ぶこと。 */
-static int slot_update_path_health(recv_slot *slot, int path_idx)
+static int slot_update_path_health(thread_recv_slot *slot, int path_idx)
 {
     cplat_timespec now_ts;
 
@@ -491,7 +415,7 @@ static void n1_check_health_timeout(potr_context *ctx)
 /* セッションの採用判定を行い、必要であればスロットの相手セッション情報を更新する。
    採用すべきセッションなら 1、破棄すべき旧セッションなら 0 を返す。
    採用可否の判定 (真偽値) を返す述語のため共通結果コードの適用対象外。 */
-static int slot_check_and_update_session(recv_slot *slot, const potr_packet *pkt)
+static int slot_check_and_update_session(thread_recv_slot *slot, const potr_packet *pkt)
 {
     potr_context *ctx = slot->ctx;
 
@@ -918,109 +842,6 @@ static void send_reject(potr_context *ctx, uint32_t seq_num)
     }
 }
 
-/* 受信データを展開してコールバックに渡す */
-static void slot_recv_deliver(recv_slot *slot, const uint8_t *payload, size_t payload_len, int compressed)
-{
-    potr_context *ctx = slot->ctx;
-
-    if (compressed)
-    {
-        size_t dec_len = ctx->compress_buf_size;
-
-        if (cplat_decompress(ctx->compress_buf, &dec_len, payload, payload_len) == CPLAT_OK)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: decompress %zu -> %zu bytes",
-                       ctx->service.service_id, payload_len, dec_len);
-            potr_internal_callback_emit(ctx, slot->peer_id, POTR_EVENT_DATA, ctx->compress_buf, dec_len);
-        }
-        else
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv[service_id=%" PRId64 "]: decompress failed (src_len=%zu)",
-                       ctx->service.service_id, payload_len);
-        }
-    }
-    else
-    {
-        potr_internal_callback_emit(ctx, slot->peer_id, POTR_EVENT_DATA, payload, payload_len);
-    }
-}
-
-/* ペイロード エレメント 1 件のフラグメント結合・展開・コールバック処理。
-   potr_internal_window_recv_pop で取り出した外側パケットを potr_internal_packet_unpack_next で展開した
-   各ペイロード エレメントに対して呼び出す。 */
-static void slot_deliver_payload_elem(recv_slot *slot, const potr_packet *elem)
-{
-    potr_context *ctx = slot->ctx;
-
-    /* 未接続状態では DATA を破棄する。接続確立前/DISCONNECTED 後の DATA が
-       アプリに届かないようにする。CONNECTED 発火は health_alive=1 への遷移で行う。 */
-    if (!*slot->health_alive)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: drop DATA elem while health_alive=0",
-                   ctx->service.service_id);
-        return;
-    }
-
-    if (elem->flags & POTR_FLAG_MORE_FRAG)
-    {
-        /* 中間フラグメント: バッファーに追記 */
-        if (*slot->frag_buf_len + elem->payload_len <= ctx->global.max_message_size)
-        {
-            if (*slot->frag_buf_len == 0)
-            {
-                if (elem->flags & POTR_FLAG_COMPRESSED)
-                {
-                    *slot->frag_compressed = 1;
-                }
-                else
-                {
-                    *slot->frag_compressed = 0;
-                }
-            }
-            memcpy(slot->frag_buf + *slot->frag_buf_len, elem->payload, elem->payload_len);
-            *slot->frag_buf_len += elem->payload_len;
-        }
-        else
-        {
-            *slot->frag_buf_len = 0;
-            *slot->frag_compressed = 0;
-        }
-    }
-    else if (*slot->frag_buf_len > 0)
-    {
-        /* 最終フラグメント: バッファーに追記してコールバック */
-        if (*slot->frag_buf_len + elem->payload_len <= ctx->global.max_message_size)
-        {
-            memcpy(slot->frag_buf + *slot->frag_buf_len, elem->payload, elem->payload_len);
-            *slot->frag_buf_len += elem->payload_len;
-
-            if (ctx->callback != NULL)
-            {
-                slot_recv_deliver(slot, slot->frag_buf, *slot->frag_buf_len, *slot->frag_compressed);
-            }
-        }
-        *slot->frag_buf_len = 0;
-        *slot->frag_compressed = 0;
-    }
-    else
-    {
-        /* フラグメントなし: 直接コールバック */
-        if (ctx->callback != NULL)
-        {
-            int is_compressed;
-            if (elem->flags & POTR_FLAG_COMPRESSED)
-            {
-                is_compressed = 1;
-            }
-            else
-            {
-                is_compressed = 0;
-            }
-            slot_recv_deliver(slot, elem->payload, (size_t)elem->payload_len, is_compressed);
-        }
-    }
-}
-
 /* FIN 受信時の DISCONNECTED 発火とセッション リセットを行う。
    pending_fin の即時解消パスと drain_recv_window() 経由の遅延解消パスの両方から呼ぶ。 */
 static void fire_disconnected_by_fin(potr_context *ctx, uint32_t fin_target_seq)
@@ -1064,7 +885,7 @@ static void fire_disconnected_by_fin(potr_context *ctx, uint32_t fin_target_seq)
 
 /* recv_window から順序整列済みの外側パケットを取り出してペイロード エレメントを配信する。
    REJECT 処理後と通常受信処理の両方から呼び出す。 */
-static void slot_drain_recv_window(recv_slot *slot)
+static void slot_drain_recv_window(thread_recv_slot *slot)
 {
     potr_context *ctx = slot->ctx;
     potr_packet pop_pkt;
@@ -1095,7 +916,7 @@ static void slot_drain_recv_window(recv_slot *slot)
 
             while (potr_internal_packet_unpack_next(&pop_pkt, &offset, &elem) == POTR_OK)
             {
-                slot_deliver_payload_elem(slot, &elem);
+                thread_recv_slot_deliver_payload_elem(slot, &elem);
             }
         }
     }
@@ -1133,7 +954,7 @@ static void raw_session_disconnect(potr_context *ctx)
    再送・順序整列の単位は外側パケットであり、NACK も外側パケットの seq_num を指定する。
    RAW モードでは NACK を送信せず、ギャップ検出時は DISCONNECTED を発行してウィンドウを
    新しい基点通番でリセットする。 */
-static void slot_process_outer_pkt(recv_slot *slot, const potr_packet *pkt, int path_idx)
+static void slot_process_outer_pkt(thread_recv_slot *slot, const potr_packet *pkt, int path_idx)
 {
     potr_context *ctx = slot->ctx;
     uint32_t nack_num;
@@ -1270,7 +1091,7 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
 {
     potr_internal_peer_context *peer = NULL;
     int is_new_peer = 0;
-    recv_slot peer_slot;
+    thread_recv_slot peer_slot;
 
     if (thread_recv_authenticate_packet(ctx, pkt, wire_hdr, "recv", -1) != POTR_OK)
     {
@@ -1313,7 +1134,7 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
         return; /* max_peers 超過または初回受理対象外 */
     }
 
-    recv_slot_init_peer(&peer_slot, ctx, peer);
+    thread_recv_slot_init_peer(&peer_slot, ctx, peer);
 
     if (is_new_peer)
     {
@@ -1580,7 +1401,7 @@ static int sender_handle_packet(potr_context *ctx, const potr_packet *pkt)
 }
 
 /* 受信者ロール: FIN / REJECT / DATA / PING を処理する (1:1 モード) */
-static void receiver_handle_packet(recv_slot *svc_slot, potr_packet *pkt, const cplat_ipv4_endpoint *sender_addr,
+static void receiver_handle_packet(thread_recv_slot *svc_slot, potr_packet *pkt, const cplat_ipv4_endpoint *sender_addr,
                                    int path_idx)
 {
     potr_context *ctx = svc_slot->ctx;
@@ -1774,9 +1595,9 @@ static void recv_thread_func(void *arg)
     potr_packet pkt;
     cplat_ipv4_endpoint sender_addr;
     uint32_t poll_ms;
-    recv_slot svc_slot; /* 1:1 モード用スロット (フィールド位置は不変のため 1 回だけ構成) */
+    thread_recv_slot svc_slot; /* 1:1 モード用スロット (フィールド位置は不変のため 1 回だけ構成) */
 
-    recv_slot_init_ctx(&svc_slot, ctx);
+    thread_recv_slot_init_ctx(&svc_slot, ctx);
 
     if ((ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR) &&
         ctx->health_timeout_ms > 0U)
@@ -1952,9 +1773,9 @@ static void tcp_recv_thread_func(void *arg)
     int path_idx = rarg->path_idx;
     uint8_t *buf = ctx->recv_buf; /* PACKET_HEADER_SIZE + max_payload バイト */
     cplat_socket fd;
-    recv_slot svc_slot; /* TCP は 1:1 モードのみ */
+    thread_recv_slot svc_slot; /* TCP は 1:1 モードのみ */
 
-    recv_slot_init_ctx(&svc_slot, ctx);
+    thread_recv_slot_init_ctx(&svc_slot, ctx);
 
     /* PING 受信タイムアウト監視を使用するか判定する。
      * TCP は bootstrap PING 往復だけでも CONNECTED できるが、受信タイムアウト監視は
@@ -2224,7 +2045,7 @@ static void tcp_recv_thread_func(void *arg)
                         cplat_local_lock_unlock(ctx->recv_window_mutex);
                         while (potr_internal_packet_unpack_next(&out, &offset, &elem) == POTR_OK)
                         {
-                            slot_deliver_payload_elem(&svc_slot, &elem);
+                            thread_recv_slot_deliver_payload_elem(&svc_slot, &elem);
                         }
                         cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
                     }
