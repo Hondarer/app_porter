@@ -162,7 +162,7 @@ RRT -> RRT: seq=11, 12 の順で整列
 @enduml
 ```
 
-## リオーダー バッファー (reorder_timeout_ms > 0)
+## リオーダー バッファー (reorder_timeout_ms > 0) {#reorder-buffer}
 
 `reorder_timeout_ms` を 0 より大きな値に設定すると、欠番検出後にただちに NACK や DISCONNECTED を発行せず、指定時間だけ待機します。待機中に欠落パケットが届いた場合は NACK/DISCONNECTED を発行せずに正常配信します。
 

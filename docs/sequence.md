@@ -16,7 +16,7 @@ API の契約は [API ガイド](api.md)、処理を担当する実装は [ア�
 - [正常送受信 (ブロッキング)](sequence-data.md#正常送受信-ブロッキング)
 - [フラグメント化と結合](sequence-data.md#フラグメント化と結合)
 - [NACK による再送](sequence-data.md#nack-による再送)
-- [リオーダー バッファー (reorder_timeout_ms > 0)](sequence-data.md#リオーダー-バッファー-reorder_timeout_ms-0)
+- [リオーダー バッファー (reorder_timeout_ms > 0)](sequence-data.md#reorder-buffer)
 - [REJECT による切断と復帰](sequence-data.md#reject-による切断と復帰)
 - [RAW モード: ギャップ検出による切断と復帰 (DATA)](sequence-data.md#raw-モード-ギャップ検出による切断と復帰-data)
 - [RAW モード: ギャップ検出による切断と復帰 (PING)](sequence-data.md#raw-モード-ギャップ検出による切断と復帰-ping)
