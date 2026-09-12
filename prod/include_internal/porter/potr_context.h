@@ -201,7 +201,7 @@ typedef struct potr_internal_peer_context
      * インデックスは ctx->sock[] / src_addr[] と直接対応します。
      * 未使用スロットは potr_endpoint_is_unset() で判定します。 */
     cplat_ipv4_endpoint dest_addr
-        [POTR_MAX_PATH]; /**< 送信先エンドポイント (インデックス = ctx->sock[] の添字)。未使用スロットは potr_endpoint_is_unset() が真。 */
+        [POTR_MAX_PATH]; /**< 送信先エンドポイント (インデックス = ctx->sock[] のインデックス)。未使用スロットは potr_endpoint_is_unset() が真。 */
     int n_paths;             /**< アクティブ パス数。ループ境界には使わず管理カウンターとして使用します。 */
     uint32_t _pad_path_recv; /**< パディング (path_last_recv_ts を 8 バイト境界に揃える)。 */
     cplat_timespec

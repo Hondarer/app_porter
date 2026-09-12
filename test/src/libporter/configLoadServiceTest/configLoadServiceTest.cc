@@ -88,14 +88,14 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
-            ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
+            ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 構成ファイル open が 1 回呼び出されること。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が 1 回呼び出されること。
     EXPECT_CALL(mock_cplat, cplat_passphrase_to_key(_, _, _))
-        .Times(0); // [Pre-Assert確認_正常系] - 64 桁 hex の encrypt_key では passphrase 変換を呼ばないこと。
+        .Times(0); // [Pre-Assert確認_正常系] - 64 桁 hex の encrypt_key では passphrase 変換を呼び出さないこと。
 
     // Act
-    int actual_ret = potr_internal_config_load_service("config.conf", 42, &def); // [手順] - service_id 42 の設定を読み込む。
+    int actual_ret = potr_internal_config_load_service("config.conf", 42, &def); // [手順] - service_id 42 の構成を読み込む。
 
     // Assert
     EXPECT_EQ(

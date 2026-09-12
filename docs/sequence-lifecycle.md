@@ -19,7 +19,7 @@ participant "ヘルスチェックスレッド" as HT
 APP -> OPEN: potr_service_open(&global, &service,\nPOTR_ROLE_SENDER, NULL, &handle)
 
 activate OPEN
-OPEN -> OPEN: 設定構造体の検証
+OPEN -> OPEN: 構成構造体の検証
 OPEN -> OPEN: セッション識別子生成\n(session_id + 現在時刻)
 OPEN -> OPEN: UDP ソケット作成・bind\n(src_addr, src_port)
 OPEN -> OPEN: 送信キュー初期化
@@ -58,7 +58,7 @@ participant "受信スレッド" as RT
 APP -> OPEN: potr_service_open(&global, &service,\nPOTR_ROLE_RECEIVER, callback, &handle)
 
 activate OPEN
-OPEN -> OPEN: 設定構造体の検証
+OPEN -> OPEN: 構成構造体の検証
 OPEN -> OPEN: UDP ソケット作成・bind\n(dst_addr, dst_port)
 OPEN -> OPEN: マルチキャスト時:\nグループ参加
 OPEN -> OPEN: 受信ウィンドウ初期化
@@ -78,7 +78,7 @@ note over RT: DATA/PING/FIN を\n待機するポーリングループ\nヘルス
 
 `potr_service_close()` による正常終了シーケンスです。
 
-### 送信者側の終了 (DATA/FIN が順序通りに届く場合)
+### 送信者側の終了 (DATA/FIN が順序通りに到着する場合)
 
 ```plantuml
 @startuml 正常終了 (送信者側)
@@ -101,7 +101,7 @@ CLOSE -> CLOSE: 送信キュー drain 完了待機
 
 CLOSE -> UDP: FIN パケット送信\n(全パス, DATA送信済みなら FIN_TARGET_VALID + ack_num=send_window.next_seq)
 
-note over UDP: DATA と FIN が順序通りに届く場合
+note over UDP: DATA と FIN が順序通りに到着する場合
 UDP -> RRT: DATA[seq=N] 受信 → 配信
 UDP -> RRT: FIN[target_valid, ack_num=N+1] 受信
 RRT -> RRT: recv_window.next_seq == N+1\n(追い付き済み)
@@ -121,14 +121,14 @@ note over SAPP: handle は以後使用不可
 @enduml
 ```
 
-### 送信者側の終了 (FIN が DATA より先に届く場合)
+### 送信者側の終了 (FIN が DATA より先に到着する場合)
 
-UDP の到達順序は保証されないため、FIN が最後の DATA より先に受信側へ届く場合があります。  
+UDP の到達順序は保証されないため、FIN が最後の DATA より先に受信側へ到着する場合があります。  
 受信側は `FIN.ack_num` を参照して DATA の到着を待機します。
 
 ```plantuml
 @startuml 正常終了 FIN pending
-caption 正常終了 (FIN が DATA より先に届く場合)
+caption 正常終了 (FIN が DATA より先に到着する場合)
 
 participant "送信スレッド" as ST
 participant "UDP\n(送信側)" as SUDP

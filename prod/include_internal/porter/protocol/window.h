@@ -69,9 +69,9 @@ extern "C"
     extern void potr_internal_window_dispose(potr_internal_window *win);
 
     /**
-     *  @brief          送信ウィンドウにパケットを積みます。
+     *  @brief          送信ウィンドウにパケットを格納します。
      *  @param[in,out]  win     送信ウィンドウ構造体へのポインター。
-     *  @param[in]      packet  積むパケットへのポインター。
+     *  @param[in]      packet  格納するパケットへのポインター。
      *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT を返します。
      *
      *  ACK なし設計のため、満杯の場合も失敗とせず、最古エントリを evict して循環利用します。\n

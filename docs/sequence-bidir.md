@@ -127,7 +127,7 @@ participant "Side B\n(停止)" as B
 note over A,B: 通信中
 
 A -> B: PING (ack_num=0, seq_num=N)
-note over B: アプリケーションが停止\n（パケットが一切届かなくなる）
+note over B: アプリケーションが停止\n（パケットが一切到着しなくなる）
 note over A: health_timeout_ms 経過\nlast_recv_tv_sec が更新されない\ncheck_health_timeout() → DISCONNECTED
 note over A: POTR_EVENT_DISCONNECTED 発火
 

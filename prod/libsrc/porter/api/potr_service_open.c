@@ -114,7 +114,7 @@ static void ctx_cleanup(potr_context *ctx)
     cplat_free(ctx);
 }
 
-/* callback と role・通信種別の整合性を検証する (ctx->service 確定後に呼ぶ) */
+/* callback と role・通信種別の整合性を検証する (ctx->service 確定後に呼び出す) */
 static int open_validate_callback(const potr_context *ctx, potr_role role, potr_recv_fn callback)
 {
     if (role == POTR_ROLE_SENDER && callback != NULL && ctx->service.type != POTR_TYPE_UNICAST_BIDIR &&

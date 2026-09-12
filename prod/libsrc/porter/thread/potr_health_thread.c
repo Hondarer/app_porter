@@ -81,7 +81,7 @@ static void health_sleep(potr_context *ctx, int path_idx, uint32_t interval_ms)
     cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
 }
 
-/* 次回 PING 送信時刻まで待機する。PING を送るべきなら 1、health_running 停止なら 0 を返す。
+/* 次回 PING 送信時刻まで待機する。PING を送信すべきなら 1、health_running 停止なら 0 を返す。
    待機結果の判定 (真偽値) を返す述語のため共通結果コードの適用対象外。 */
 static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due_ms, uint64_t *last_logged_data_ms)
 {
@@ -158,7 +158,7 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
     }
 
     /* path_ping_state スナップショットの採取と TCP 書き込みを同一クリティカル セクション
-     * に閉じ込め、同一 path で送る PING が「古いスナップショットを後に届ける」 順序逆転を
+     * に閉じ込め、同一 path で送信する PING が「古いスナップショットを後から配送する」 順序逆転を
      * 起こさないようにする。順序が崩れると peer 側の remote_path_ping_state が
      * NORMAL から UNDEFINED へ後退し、瞬間的に DISCONNECTED と判定される。 */
     if (ctx->service.encrypt_enabled)

@@ -4,7 +4,7 @@
 
 ## ヘルスチェック (正常疎通)
 
-ヘルスチェックが有効な場合の PING 送信です。片方向 type 1-6 は open 直後の即時 PING を行わず、最後の `PING` または有効 `DATA` 送信から `health_interval_ms` 経過したときだけ PING を送ります。双方向 UDP では従来どおり定周期 PING と、`path_ping_state[]` 変化時の割り込み PING を送出します。双方向 UDP はこの PING 往復で `CONNECTED` するため、実効 `health_interval_ms = 0` のままでは接続確立しません。
+ヘルスチェックが有効な場合の PING 送信です。片方向 type 1-6 は open 直後の即時 PING を行わず、最後の `PING` または有効 `DATA` 送信から `health_interval_ms` 経過したときだけ PING を送信します。双方向 UDP では従来どおり定周期 PING と、`path_ping_state[]` 変化時の割り込み PING を送出します。双方向 UDP はこの PING 往復で `CONNECTED` するため、実効 `health_interval_ms = 0` のままでは接続確立しません。
 
 ```plantuml
 @startuml ヘルスチェック (正常疎通)
@@ -26,7 +26,7 @@ RRT -> RRT: notify_health_alive()\n(health_alive=0 のとき CONNECTED 発火)
 RRT -> RRT: next_seq〜N-1 を全スキャン\n欠番を一括 NACK する
 note over RRT: 欠番なければ返信なし
 
-HT -> HT: DATA が送られたら期限を後ろへずらす\n送信が止まったら 3000ms 後に PING
+HT -> HT: DATA が送信されたら期限を延長する\n送信が停止したら 3000ms 後に PING
 
 note over HT, UDP: 片方向は recent DATA により PING を抑止する\n双方向系は従来どおり定周期 + 割り込み送信
 
@@ -35,7 +35,7 @@ note over HT, UDP: 片方向は recent DATA により PING を抑止する\n双�
 
 ## ヘルスチェック タイムアウト
 
-片方向 type 1-6 で、最後の有効な `PING` / `DATA` から一定時間パケットが届かなくなった場合の切断検知と復帰です。
+片方向 type 1-6 で、最後の有効な `PING` / `DATA` から一定時間パケットが到着しなくなった場合の切断検知と復帰です。
 
 ```plantuml
 @startuml ヘルスチェックタイムアウト

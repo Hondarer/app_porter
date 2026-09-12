@@ -320,7 +320,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
                    ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq, packed_len);
     }
 
-    /* N:1 はインデックス = ctx->sock[] の添字として全パスへ送信する */
+    /* N:1 はインデックス = ctx->sock[] のインデックスとして全パスへ送信する */
     {
         int k;
         for (k = 0; k < (int)POTR_MAX_PATH; k++)

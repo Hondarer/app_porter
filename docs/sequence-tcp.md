@@ -5,7 +5,7 @@
 ## TCP サービス開始 (SENDER)
 
 `potr_service_open()` を TCP SENDER として呼び出したときの内部処理です。  
-`potr_service_open()` はすぐに返り、接続確立は connect スレッドが非同期に行います。
+`potr_service_open()` は即座に復帰し、接続確立は connect スレッドが非同期に行います。
 
 ```plantuml
 @startuml TCP サービス開始 (SENDER)
@@ -20,7 +20,7 @@ participant "ヘルスチェックスレッド" as HT
 
 APP -> OPEN: potr_service_open(&global, &service, POTR_ROLE_SENDER, cb, &handle)
 activate OPEN
-OPEN -> OPEN: 設定構造体の検証・セッション識別子生成
+OPEN -> OPEN: 構成構造体の検証・セッション識別子生成
 OPEN -> OPEN: 送信キュー / ウィンドウ初期化
 OPEN -> OPEN: tcp_state_mutex / tcp_state_cv 初期化
 
@@ -54,7 +54,7 @@ participant "recv スレッド" as RT
 
 APP -> OPEN: potr_service_open(&global, &service, POTR_ROLE_RECEIVER, callback, &handle)
 activate OPEN
-OPEN -> OPEN: 設定構造体の検証
+OPEN -> OPEN: 構成構造体の検証
 OPEN -> OPEN: TCP listen ソケット作成\nbind(dst_addr, dst_port) → listen()
 
 OPEN -> AT**: accept スレッド起動
@@ -160,7 +160,7 @@ participant "RECEIVER\n(応答なし)" as R
 note over S,R: 通信中
 
 S -> R: PING (ack_num=0, seq_num=N)
-note over R: アプリケーション層がハング\n（TCP 接続は生きているが PING 応答が返らない）
+note over R: アプリケーション層がハング\n（TCP 接続は維持されているが PING 応答が返却されない）
 note over S: tcp_health_timeout_ms 経過\nPING 応答（ack_num=N）未受信
 note over S: POTR_EVENT_DISCONNECTED 発火\nTCP 接続を切断
 
@@ -172,7 +172,7 @@ note over S: reconnect_interval_ms 待機後\nconnect() 再試行
 ## TCP RECEIVER 側 PING タイムアウト
 
 SENDER のアプリケーション層がハングして PING 送信が停止した場合に RECEIVER が切断を検知するシーケンスです。  
-TCP 接続は OS レベルで生存していても、PING 要求が届かなくなることで RECEIVER が検知します。
+TCP 接続は OS レベルで生存していても、PING 要求が到着しなくなることで RECEIVER が検知します。
 
 ```plantuml
 @startuml TCP RECEIVER PING タイムアウト
@@ -185,7 +185,7 @@ note over S,R: 通信中
 
 S -> R: 定周期 PING (seq_num=N, payload=UNDEFINED)
 R -> S: 割り込み PING (seq_num=M,\npayload に NORMAL を含む)
-note over S: アプリケーション層がハング\n（TCP 接続は生きているが PING を送信できない）
+note over S: アプリケーション層がハング\n（TCP 接続は維持されているが PING を送信できない）
 
 note over R: tcp_health_timeout_ms 経過\nPING 要求（ack_num=0）未着信
 note over R: POTR_EVENT_DISCONNECTED 発火\nTCP 接続を切断
@@ -225,7 +225,7 @@ RA1 -> RA1: tcp_conn_fd[1] = accept()\ntcp_active_paths 1→2
 note over RA1: POTR_EVENT_CONNECTED は発火しない
 note over RA1: recv スレッド #1 起動
 
-note over SC0,RA1: 2 path で接続確立。同一 seq_num のパケットが両 path から届く
+note over SC0,RA1: 2 path で接続確立。同一 seq_num のパケットが両 path から到着する
 @enduml
 ```
 

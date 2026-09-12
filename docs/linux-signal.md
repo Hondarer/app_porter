@@ -37,13 +37,13 @@ UDP (`POTR_TYPE_UNICAST` / `POTR_TYPE_MULTICAST` / `POTR_TYPE_BROADCAST`) の送
 
 ## graceful shutdown の実装パターン
 
-`potr_service_close()` は非同期シグナル安全ではありません (内部でミューテックスを使用します)。**シグナル ハンドラー内から `potr_service_close()` を呼んではなりません**。
+`potr_service_close()` は非同期シグナル安全ではありません (内部でミューテックスを使用します)。**シグナル ハンドラー内から `potr_service_close()` を呼び出してはなりません**。
 
 正しい終了シーケンスは以下のとおりです。
 
 1. シグナル ハンドラーで `volatile sig_atomic_t` フラグを 0 にセットします。
-2. メイン ループがフラグを検出してループを抜ける
-3. ループ脱出後に `potr_service_close()` を呼んでリソースを解放します。
+2. メイン ループがフラグを検出してループを抜けます。
+3. ループ脱出後に `potr_service_close()` を呼び出してリソースを解放します。
 
 ```c
 static volatile sig_atomic_t s_running = 1;
@@ -68,7 +68,7 @@ int main(void)
         /* メイン ループ処理 */
     }
 
-    potr_service_close(handle);  /* シグナル ハンドラーの外で呼ぶ */
+    potr_service_close(handle);  /* シグナル ハンドラーの外で呼び出す */
     return 0;
 }
 ```
@@ -79,7 +79,7 @@ int main(void)
 
 ## シグナル ハンドラーの制約 (async-signal-safe)
 
-シグナル ハンドラーはプロセス内の任意の箇所に割り込むため、ハンドラー内から呼べる関数は **async-signal-safe** なものに限定されます。
+シグナル ハンドラーはプロセス内の任意の箇所に割り込むため、ハンドラー内から呼び出し可能な関数は **async-signal-safe** なものに限定されます。
 
 | 関数 | 安全性 |
 |------|--------|
@@ -135,7 +135,7 @@ pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
 | SIGPIPE | プロセス終了 | porter 内部の TCP 送信では抑制します。porter 外の送信は利用者が対処します。 |
 | SIGUSR1 / SIGUSR2 | プロセス終了 | 外部から `kill` コマンドで誤送信された場合に即終了します。 |
 | SIGALRM | プロセス終了 | `alarm()` を使うサード パーティー ライブラリとの組み合わせで発生し得ます。 |
-| SIGHUP | プロセス終了 | 端末切断時に発生。デーモン化する場合は `SIG_IGN` か設定リロードに使用するのが一般的 |
+| SIGHUP | プロセス終了 | 端末切断時に発生。デーモン化する場合は `SIG_IGN` か設定リロードに使用するのが一般的です。 |
 
 ### シグナルによるシステム コールの中断 (EINTR)
 

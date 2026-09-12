@@ -122,8 +122,8 @@ porter の公開 API および内部関数が戻り値として使用する共�
 | 成功・その他 | `POTR_ERR_UNKNOWN` | -1 | 分類済みコードに該当しない内部障害 |
 | 契約・探索 | `POTR_ERR_INVALID_ARGUMENT` | -2 | 引数または設定値が不正 |
 | 契約・探索 | `POTR_ERR_UNSUPPORTED` | -3 | 現在の通信種別または状態では操作が未対応 |
-| 契約・探索 | `POTR_ERR_NOT_FOUND` | -4 | 対象エントリが存在しません。 |
-| 資源・状態 | `POTR_ERR_OUT_OF_MEMORY` | -10 | メモリを確保できません。 |
+| 契約・探索 | `POTR_ERR_NOT_FOUND` | -4 | 対象エントリが存在しない |
+| 資源・状態 | `POTR_ERR_OUT_OF_MEMORY` | -10 | メモリ確保不可 |
 | 資源・状態 | `POTR_ERR_FULL` | -11 | キューまたはウィンドウが満杯 |
 | 資源・状態 | `POTR_ERR_EMPTY` | -12 | キューが空、または順序整列済みパケットが未着 |
 | 資源・状態 | `POTR_ERR_OUT_OF_WINDOW` | -13 | 受信ウィンドウの範囲外 |
@@ -131,7 +131,7 @@ porter の公開 API および内部関数が戻り値として使用する共�
 | 通信・I/O | `POTR_ERR_TIMEOUT` | -21 | タイムアウト |
 | 通信・I/O | `POTR_ERR_EOF` | -22 | 終端到達、または TCP 切断 |
 | 通信・I/O | `POTR_ERR_IO` | -23 | ファイルまたはネットワークの I/O 失敗 |
-| 通信・I/O | `POTR_ERR_PROTOCOL` | -24 | 受信データがプロトコル要件を満たさない |
+| 通信・I/O | `POTR_ERR_PROTOCOL` | -24 | 受信データがプロトコル要件不適合 |
 | 制御 | `POTR_ERR_CANCELED` | -40 | シャットダウンによる待機または処理の中断 |
 
 数値範囲は用途を識別しやすくするための区分であり、範囲だけを使った判定規約ではありません。  
@@ -157,7 +157,7 @@ if (ret != POTR_OK)
 ### cplat 呼び出し結果の扱い
 
 cplat の API を呼び出した結果は `ret != CPLAT_OK` の名前比較で判定します。  
-porter の関数から返す場合は、`CPLAT_ERR_*` を porter の結果コードへ変換して返します。cplat の結果コードをそのまま porter の戻り値として素通ししません。  
+porter の関数から返す場合は、`CPLAT_ERR_*` を porter の結果コードへ変換して返します。cplat の結果コードをそのまま porter の戻り値として直接返却しません。  
 タイムアウトは `POTR_ERR_TIMEOUT`、ファイルおよびネットワークの失敗は `POTR_ERR_IO` のように、原因が判別できる場合は対応する分類へ変換します。  
 下位 API が詳細コードを提供せず、ほかの分類へ変換できない場合だけ `POTR_ERR_UNKNOWN` を返し、その理由をソース コメントに記載します。  
 ソケット API (`cplat/net`) の失敗は `cplat_error *detail_out` で受け取り、対応する `POTR_ERR_*` へ変換します。  
@@ -185,7 +185,7 @@ if (ret != CPLAT_OK)
 | 戻り値を持たない関数 | `void` | 同上 |
 
 > [!NOTE]
-> ソケットに対する素通しラッパー (`potr_sendto`、`potr_recvfrom`、`potr_poll_readable`、`potr_poll_writable`) と合成ラッパー (`potr_socket_open`、`potr_bind`、`potr_listen`、`potr_accept`、`potr_connect`、`potr_setsockopt`、`potr_socket_get_pending_error`) は、この表から除外しています。
+> ソケットに対する直接委譲ラッパー (`potr_sendto`、`potr_recvfrom`、`potr_poll_readable`、`potr_poll_writable`) と合成ラッパー (`potr_socket_open`、`potr_bind`、`potr_listen`、`potr_accept`、`potr_connect`、`potr_setsockopt`、`potr_socket_get_pending_error`) は、この表から除外しています。
 > 通信のプラットフォーム抽象化層を cplat の net カテゴリへ移行したことで、porter はこれらの porter 独自ラッパーを持たず、`cplat_socket_sendto()` などの cplat API を直接呼び出します。
 > cplat API の戻り値の扱いは、上記「cplat 呼び出し結果の扱い」に従います。
 

@@ -189,7 +189,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
         if (peer_id == POTR_PEER_ALL)
         {
             /* 全アクティブ ピアへ送信: peers_mutex を保持しない状態で送信するため
-             * まず peer_id リストを収集してからキューに積む */
+             * まず peer_id リストを収集してからキューに格納する */
             potr_peer_id *ids;
             int n_ids = 0;
             int i;

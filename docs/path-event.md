@@ -131,7 +131,7 @@ bootstrap PING を含む往復確認が成立して初めて logical connected �
 - `potr_peer_disconnect()`
 - TCP 全断
 
-この場合は、現在 1 の path をすべて 0 に落としてから、
+この場合は、現在 1 の path をすべて 0 に設定してから、
 
 - `PATH_DISCONNECTED` を path index 昇順で全件発火
 - 最後に `DISCONNECTED`
@@ -145,7 +145,7 @@ bootstrap PING を含む往復確認が成立して初めて logical connected �
 - 初回の有効 `PING` または `DATA` を path `k` で受けると `PATH_CONNECTED(k)` が発火します。
 - それが service 全体で最初の alive path なら直後に `CONNECTED` が発火します。
 - path timeout でその path だけ 0 になれば `PATH_DISCONNECTED(k)` だけが発火します。
-- 全 path が落ちれば最後の `PATH_DISCONNECTED` の直後に `DISCONNECTED` が発火します。
+- 全 path が切断されれば最後の `PATH_DISCONNECTED` の直後に `DISCONNECTED` が発火します。
 
 ### type 7
 
@@ -163,7 +163,7 @@ bootstrap PING を含む往復確認が成立して初めて logical connected �
 
 ### type 9-10
 
-- TCP ソケット確立では `PATH_CONNECTED` は出ません。
+- TCP ソケット確立では `PATH_CONNECTED` は発火しません。
 - 応答 PING による往復確認が成立した path だけが `PATH_CONNECTED` になります。
 - ある TCP path が閉じて logical state が 0 になったときは  
   `PATH_DISCONNECTED(path_idx)` が発火します。
@@ -190,7 +190,7 @@ TCP でも複数スレッドからイベントが競合しない前提で利用�
 
 ## 利用時の注意
 
-- `PATH_*` は「物理的に path が見えたか」ではなく「論理的に接続判定へ寄与しているか」です。
+- `PATH_*` は「物理的に path を検出したか」ではなく「論理的に接続判定へ寄与しているか」です。
 - `CONNECTED` を service / peer 全体の状態、`PATH_*` をその内訳として扱うのが自然です。
 - `path_states` は発火後状態なので、差分を追いたい場合は前回スナップショットを利用側で保持してください。
 - `POTR_EVENT_DATA` は未接続中には発火しません。

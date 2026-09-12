@@ -92,7 +92,7 @@ TEST_F(windowTest, initInitializesStateAndReusesBuffersOnSameSize)
 TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
 {
     // Arrange
-    uint8_t payload[4] = {0xAA, 0xBB, 0xCC, 0xDD}; // [状態] - 4 バイトのペイロードを持つパケットを積む。
+    uint8_t payload[4] = {0xAA, 0xBB, 0xCC, 0xDD}; // [状態] - 4 バイトのペイロードを持つパケットを用意する。
     potr_packet out;
     uint32_t seq;
 

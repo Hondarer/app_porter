@@ -291,7 +291,7 @@ static void clear_pending_fin_ctx(potr_context *ctx)
     ctx->fin_target_seq = 0;
 }
 
-/* N:1: FIN による DISCONNECTED 発火とピア解放を行う。peers_mutex 保護下で呼ぶこと。 */
+/* N:1: FIN による DISCONNECTED 発火とピア解放を行う。peers_mutex 保護下で呼び出すこと。 */
 static void n1_fire_disconnected_by_fin(potr_context *ctx, potr_internal_peer_context *peer)
 {
     disconnect_peer_all_paths(ctx, peer);
@@ -318,7 +318,7 @@ static void n1_update_path_recv(potr_internal_peer_context *peer, const cplat_ip
 }
 
 /* パスごとのヘルスチェック受信時刻と受信状態を更新する。
-   片方向 type 1-6 では PING / 有効 DATA、双方向 type 7/8 では PING 受信時のみ呼ぶこと。 */
+   片方向 type 1-6 では PING / 有効 DATA、双方向 type 7/8 では PING 受信時のみ呼び出すこと。 */
 static int slot_update_path_health(thread_recv_slot *slot, int path_idx)
 {
     cplat_timespec now_ts;
@@ -746,7 +746,7 @@ static void check_reorder_timeout(potr_context *ctx)
     if (potr_is_raw_type(ctx->service.type))
     {
         /* RAW モード: DISCONNECTED を発行してセッション状態をリセットする。
-           次のパケット受信時に check_and_update_session で potr_internal_window_init が呼ばれ
+           次のパケット受信時に check_and_update_session で potr_internal_window_init が呼び出され
            自然に再同期する。 */
         raw_session_disconnect(ctx);
         ctx->peer_session_known = 0;
@@ -843,7 +843,7 @@ static void send_reject(potr_context *ctx, uint32_t seq_num)
 }
 
 /* FIN 受信時の DISCONNECTED 発火とセッション リセットを行う。
-   pending_fin の即時解消パスと drain_recv_window() 経由の遅延解消パスの両方から呼ぶ。 */
+   pending_fin の即時解消パスと drain_recv_window() 経由の遅延解消パスの両方から呼び出す。 */
 static void fire_disconnected_by_fin(potr_context *ctx, uint32_t fin_target_seq)
 {
     if (ctx->service.type == POTR_TYPE_TCP || ctx->service.type == POTR_TYPE_TCP_BIDIR)
@@ -936,7 +936,7 @@ static void slot_drain_recv_window(thread_recv_slot *slot)
 }
 
 /* RAW モード用: DISCONNECTED イベントを発行してセッション状態を部分的にリセットする。
-   ウィンドウ リセットは呼び出し元が行う (新しい基点通番が確定してから呼ぶため)。
+   ウィンドウ リセットは呼び出し元が行う (新しい基点通番が確定してから呼び出すため)。
    フラグメント組み立てバッファーも破棄する。 */
 static void raw_session_disconnect(potr_context *ctx)
 {
@@ -985,7 +985,7 @@ static void slot_process_outer_pkt(thread_recv_slot *slot, const potr_packet *pk
         else
         {
             /* 通番がウィンドウ範囲外のためドロップ (受信ウィンドウ満杯、または古い重複パケット)。
-               受信者は next_seq を待ち続けるが、ヘルスチェックや後続パケット到着時に NACK が送られる。 */
+               受信者は next_seq を待ち続けるが、ヘルスチェックや後続パケット到着時に NACK が送信される。 */
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                        "recv[service_id=%" PRId64 "]: peer=%u recv_window full (100%%), dropping seq=%u"
                        " (base_seq=%u window_size=%u)",
@@ -1061,7 +1061,7 @@ static void slot_process_outer_pkt(thread_recv_slot *slot, const potr_packet *pk
 
     slot_drain_recv_window(slot);
 
-    /* drain 後に next_seq が前進した結果、新たな欠番が先頭に現れる場合は NACK を送る。
+    /* drain 後に next_seq が前進した結果、新たな欠番が先頭に現れる場合は NACK を送信する。
        例: seq=3,4 欠落・seq=5 着時、drain 前は NACK(3)、seq=3 再送着→ drain で pop 後
        next_seq=4 が欠番になるが次のパケット到着まで NACK(4) が遅延するのを防ぐ。
        RAW モードで reorder_gap_ready が 1 を返した場合は reset + 再 push によりウィンドウに
@@ -1419,7 +1419,7 @@ static void receiver_handle_packet(thread_recv_slot *svc_slot, potr_packet *pkt,
                    ctx->service.service_id, (unsigned)pkt->ack_num, (unsigned)ctx->recv_window.next_seq);
 
         /* target 付き FIN かつ recv_window.next_seq が目標値に未到達: FIN をペンディング。
-         * 後着の DATA がウィンドウを満たした時点で fire_disconnected_by_fin() が呼ばれる。
+         * 後着の DATA がウィンドウを満たした時点で fire_disconnected_by_fin() が呼び出される。
          * セッション リセットを遅延することで後着 DATA を引き続き受け入れ可能にする。 */
         if (fin_packet_has_target(pkt) && !recv_window_reached_fin_target(ctx->recv_window.next_seq, pkt->ack_num))
         {
@@ -1779,7 +1779,7 @@ static void tcp_recv_thread_func(void *arg)
 
     /* PING 受信タイムアウト監視を使用するか判定する。
      * TCP は bootstrap PING 往復だけでも CONNECTED できるが、受信タイムアウト監視は
-     * 定周期 PING を送る構成でのみ有効とする。 */
+     * 定周期 PING を送信する構成でのみ有効とする。 */
     int use_recv_timeout = (ctx->health_interval_ms > 0 && ctx->health_timeout_ms > 0);
     /* ポーリング間隔: 1 秒単位でチェックし、health_timeout_ms を超えないようにする。 */
     uint32_t poll_ms;
@@ -1844,7 +1844,7 @@ static void tcp_recv_thread_func(void *arg)
         else
         {
             /* タイムアウト付きポーリングで PING 受信を監視する。
-             * データが届くまで poll_ms 待機し、タイムアウト時は PING 受信時刻を確認する。 */
+             * データが到着するまで poll_ms 待機し、タイムアウト時は PING 受信時刻を確認する。 */
             if (use_recv_timeout)
             {
                 /* poll_ms は health_timeout から算出したポーリング間隔。INT_MAX 以下 */

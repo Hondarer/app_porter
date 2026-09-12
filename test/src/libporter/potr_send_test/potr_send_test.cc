@@ -162,10 +162,10 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
 
     // Assert
     EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret); // [確認_異常系] - potr_send の戻り値が POTR_ERR_DISCONNECTED であること。
-    EXPECT_EQ(0U, ctx.send_queue.count);   // [確認_異常系] - 送信キューに積まれないこと。
+    EXPECT_EQ(0U, ctx.send_queue.count);   // [確認_異常系] - 送信キューに格納されないこと。
 }
 
-// N:1 の全 peer 送信が接続済み peer だけへ送られることの確認
+// N:1 の全 peer 送信が接続済み peer だけへ送信されることの確認
 TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
 {
     // Arrange

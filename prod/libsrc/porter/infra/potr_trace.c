@@ -53,7 +53,7 @@ cplat_tracer *potr_internal_trace_get(void)
             /* set_name は OS トレースの識別名のみに作用する。出力先はデフォルト設定に従い、
              * デフォルトはファイル トレースのみ (実行ファイルのディレクトリ配下の
              * log/{実行ファイル名}.log、OS と stderr は CPLAT_TRACE_LEVEL_NONE)。
-             * start は potr_tracer_get() 経由で利用者が明示的に呼ぶ。 */
+             * start は potr_tracer_get() 経由で利用者が明示的に呼び出す。 */
         }
     }
     return s_trace;

@@ -46,7 +46,7 @@ UDP データグラム 1 個が外側パケット 1 個に対応します。
 
 | フィールド | 型 (NBO) | 説明 |
 |---|---|---|
-| `service_id` | int64 | サービス識別子。受信時に設定ファイルの値と照合します。 |
+| `service_id` | int64 | サービス識別子。受信時に構成ファイルの値と照合します。 |
 | `session_tv_sec` | int64 | セッション開始時刻 (POSIX 秒) |
 | `session_id` | uint32 | セッション乱数識別子 |
 | `session_tv_nsec` | int32 | セッション開始時刻 (ナノ秒部、0〜999,999,999) |
@@ -58,7 +58,7 @@ UDP データグラム 1 個が外側パケット 1 個に対応します。
 | `payload` | 可変長 | ペイロード データ (最大 1,400 バイト) |
 
 受信側は `protocol_version` が `POTR_PROTOCOL_VERSION` と一致しないパケットを破棄します。  
-破壊的変更が発生した場合は `POTR_PROTOCOL_VERSION` を上げ、旧バージョンとの通信を受信時に遮断します。
+破壊的変更が発生した場合は `POTR_PROTOCOL_VERSION` をインクリメントし、旧バージョンとの通信を受信時に遮断します。
 
 ### パケット種別フラグ (flags)
 
@@ -115,9 +115,9 @@ DATA パケットでは `ack_num` は 0 固定とし、受信時は無視しま�
 | `POTR_FLAG_DATA` | ○ | データ送信に使用 |
 | `POTR_FLAG_NACK` | × | TCP が配送を保証するため不要 |
 | `POTR_FLAG_PING` | ○ | ヘルスチェック。`ack_num=0` で要求、`ack_num=N` で応答 |
-| `POTR_FLAG_REJECT` | × | 再送不能は発生しません。 |
-| `POTR_FLAG_FIN` | ○ | `potr_service_close()` 時に protocol-level FIN を送る |
-| `POTR_FLAG_FIN_ACK` | ○ | receiver が最後の DATA callback 完了後に返す close 完了通知 |
+| `POTR_FLAG_REJECT` | × | 再送不能は発生しないため不要 |
+| `POTR_FLAG_FIN` | ○ | `potr_service_close()` 時にプロトコル レベルの FIN を送信 |
+| `POTR_FLAG_FIN_ACK` | ○ | receiver が最後の DATA コールバック完了後に返却する close 完了通知 |
 | `POTR_FLAG_ENCRYPTED` | ○ | UDP と同様に使用可能 |
 
 ### TCP マルチパスにおける重複排除
@@ -321,11 +321,11 @@ RAW モード (`unicast_raw` / `multicast_raw` / `broadcast_raw`) でも通番�
 送信スレッドは DATA パケットを送出するたびに送信ウィンドウに登録します。  
 PING パケットはウィンドウに登録されません (NACK・再送の対象外)。  
 ウィンドウが満杯になると、最も古いエントリを **evict** (削除) して循環利用します。  
-evict された通番に対して後から NACK が届いた場合、そのパケットは再送不能となり REJECT を返します。
+evict された通番に対して後から NACK が到着した場合、そのパケットは再送不能となり REJECT を返却します。
 
 ### 受信ウィンドウの動作
 
-受信スレッドは届いたパケットを受信ウィンドウに格納します。  
+受信スレッドは到着したパケットを受信ウィンドウに格納します。  
 期待する通番より大きい通番のパケット (追い越し) もウィンドウ内に保持します。  
 ウィンドウの先頭から連続した通番のパケットが揃ったところで、上位層へ順番に渡します。
 
@@ -343,10 +343,10 @@ RAW モードでは NACK を送出しません。欠番を検出した場合 (DA
 2. 受信ウィンドウを到着パケットの通番でリセットします。
 3. 到着パケットを配信し、`POTR_EVENT_CONNECTED` をコールバックで通知します。
 
-追い越しパケット自体は破棄されません。ギャップをまたいで届いた最初のパケットが即座に配信されます。
+追い越しパケット自体は破棄されません。ギャップをまたいで到着した最初のパケットが即座に配信されます。
 
 > **`reorder_timeout_ms` との組み合わせ**: `reorder_timeout_ms > 0` の場合、欠番を検出しても
-> 即座に DISCONNECTED を発行せず、指定時間だけ待機します。待機中に欠落パケットが届いた場合は
+> 即座に DISCONNECTED を発行せず、指定時間だけ待機します。待機中に欠落パケットが到着した場合は
 > 通常どおり順序整列して配信します (DISCONNECTED は発行されません)。
 > タイムアウトを経過してなお欠落のままであれば DISCONNECTED を発行してセッションをリセットします。
 
@@ -357,7 +357,7 @@ RAW モードでは NACK を送出しません。欠番を検出した場合 (DA
 1 回の `potr_send()` で送信するデータが `max_payload` を超える場合、複数のフラグメントに分割します。  
 圧縮を指定した場合は圧縮後のデータをフラグメント化します。
 
-各フラグメントは個別のペイロード エレメントとして送信キューに積まれ、  
+各フラグメントは個別のペイロード エレメントとして送信キューに格納され、  
 後続フラグメントが存在する場合は `POTR_FLAG_MORE_FRAG` フラグを立てます。  
 最終フラグメントには `POTR_FLAG_MORE_FRAG` を立てません。
 
@@ -380,7 +380,7 @@ RAW モードでは NACK を送出しません。欠番を検出した場合 (DA
 通常モードは **NACK のみ方式** (ACK なし) を採用します。  
 通常時は ACK を返さないためスループットが高く、問題発生時のみ受信側から通知します。
 
-RAW モードでは再送制御を行いません。送信ウィンドウへの登録は行いますが、受信側から NACK が届いても無視します。  
+RAW モードでは再送制御を行いません。送信ウィンドウへの登録は行いますが、受信側から NACK が到着しても無視します。  
 到達保証が不要で低遅延・ベスト エフォートを優先する用途に適します。
 
 ### 再送フロー
@@ -395,7 +395,7 @@ RAW モードでは再送制御を行いません。送信ウィンドウへの�
 2. 受信者が欠番の通番を NACK パケットで送信者へ送出する
 3. 送信者が NACK を受信し、該当通番のパケットを送信ウィンドウから検索する
 4a. 該当パケットが存在する → 全パスへ再送する
-4b. 該当パケットが存在しない (evict 済み) → REJECT パケットを返す
+4b. 該当パケットが存在しない (evict 済み) → REJECT パケットを返却する
 ```
 
 再送パケットはマルチキャスト・ブロードキャスト時でも全受信者へ送信されます。  
@@ -403,7 +403,7 @@ RAW モードでは再送制御を行いません。送信ウィンドウへの�
 
 ### NACK タイムアウト ジッタ (マルチキャスト/ブロードキャスト)
 
-`multicast` / `broadcast` 通常モードかつ `reorder_timeout_ms > 0` の場合、複数の受信者が同一欠番の NACK を同時に送出すると送信者への NACK が集中する (NACK implosion)。
+`multicast` / `broadcast` 通常モードかつ `reorder_timeout_ms > 0` の場合、複数の受信者が同一欠番の NACK を同時に送出すると送信者への NACK が集中します (NACK インプロージョン)。
 
 これを回避するため、受信者ごとに `reorder_timeout_ms` の 100%〜200% のランダムな待機時間を設定します。各受信者のタイマーが独立した時刻に期限を迎えることで、NACK が時間軸上に分散されます。
 
@@ -418,36 +418,36 @@ RAW モードでは再送制御を行いません。送信ウィンドウへの�
 
 ### NACK 重複抑制
 
-マルチキャスト・ブロードキャスト環境では、複数の受信者が同じ通番の NACK を短時間に送る場合があります。  
-また、同一受信者が再送の到着を待たずに同じ NACK を複数回送る場合もあります。
+マルチキャスト・ブロードキャスト環境では、複数の受信者が同じ通番の NACK を短時間に送信する場合があります。  
+また、同一受信者が再送の到着を待たずに同じ NACK を複数回送信する場合もあります。
 
 送信者は直近 8 エントリのリング バッファーで NACK 受信履歴を管理し、  
-同一通番の NACK が **200ms** 以内に再度届いた場合は処理をスキップします。
+同一通番の NACK が **200ms** 以内に再度到着した場合は処理をスキップします。
 
 ### REJECT の役割
 
-送信者が REJECT を返す状況は、受信者が送信ウィンドウから evict 済みの通番を要求した場合です。
+送信者が REJECT を返却する状況は、受信者が送信ウィンドウから evict 済みの通番を要求した場合です。
 
 受信者は REJECT を受信すると:
 
 1. 直ちに `POTR_EVENT_DISCONNECTED` を発火します。
 2. 欠落した通番をスキップし、次の通番から処理を再開できる状態になります。
-3. 次のパケットが届いた時点で `POTR_EVENT_CONNECTED` を発火します。
+3. 次のパケットが到着した時点で `POTR_EVENT_CONNECTED` を発火します。
 
 ## FIN と DATA の順序保証
 
 ### 問題の背景
 
 UDP では `sendto()` の完了は「OS のネットワーク バッファーへの書き込み完了」を意味し、  
-受信側への到達を保証しません。送信者が最後の DATA を送出した直後に `potr_service_close()` を呼ぶと、  
-FIN パケットが最後の DATA より先に受信側へ届く場合があります。
+受信側への到達を保証しません。送信者が最後の DATA を送出した直後に `potr_service_close()` を呼び出すと、  
+FIN パケットが最後の DATA より先に受信側へ到着する場合があります。
 
 受信側が FIN を先に受け取ると、即 `POTR_EVENT_DISCONNECTED` を発火して受信ウィンドウをリセットするため、  
-後着の DATA パケットが捨てられます。
+後着の DATA パケットが破棄されます。
 
 ### 解決策: FIN target の有無を flag で区別する
 
-送信者は FIN 送出時に、現セッションで DATA を 1 件以上送っている場合だけ  
+送信者は FIN 送出時に、現セッションで DATA を 1 件以上送信している場合だけ  
 `POTR_FLAG_FIN_TARGET_VALID` を立てて `ack_num` へ **送信側 `send_window.next_seq`** を格納します。  
 DATA を 1 件も送っていない場合は `POTR_FLAG_FIN_TARGET_VALID` を立てず、`ack_num` は無視されます。
 
@@ -516,7 +516,7 @@ Linux 送信者と Windows 受信者 (またはその逆) の組み合わせで�
 圧縮済みエレメントには `POTR_FLAG_COMPRESSED` フラグが立ちます。
 
 圧縮後のサイズが元のサイズ以上になった場合 (圧縮効果なし) は、内部で自動的に非圧縮に切り替えて送信します。  
-この場合、圧縮前のデータを `POTR_FLAG_COMPRESSED` なしで送ります。
+この場合、圧縮前のデータを `POTR_FLAG_COMPRESSED` なしで送信します。
 
 ## ヘルスチェック プロトコル
 
@@ -524,7 +524,7 @@ Linux 送信者と Windows 受信者 (またはその逆) の組み合わせで�
 
 ヘルスチェック送信は通信種別を問わず設定周期で実行されます。  
 `unicast` / `multicast` / `broadcast` ではヘルスチェックは **一方向** (送信者 → 受信者のみ) です。  
-`unicast_bidir` / `unicast_bidir_n1` では、各エンドポイントまたは各ピアが独立して PING 送信・応答を行います (後述「双方向 UDP のヘルスチェック動作」参照)。UDP 双方向ではこの定周期 PING 送信自体が接続確立の前提であり、PING を送らないと `CONNECTED` は成立しません。
+`unicast_bidir` / `unicast_bidir_n1` では、各エンドポイントまたは各ピアが独立して PING 送信・応答を行います (後述「双方向 UDP のヘルスチェック動作」参照)。UDP 双方向ではこの定周期 PING 送信自体が接続確立の前提であり、PING を送信しないと `CONNECTED` は成立しません。
 
 ### 送信者の動作
 
@@ -532,7 +532,7 @@ Linux 送信者と Windows 受信者 (またはその逆) の組み合わせで�
 
 ヘルスチェック スレッドは `health_interval_ms` 周期で PING を送信します。  
 データ送信の有無は PING の送信周期に影響しません。  
-双方向 UDP では、受信 PING ペイロードに相手側の `POTR_PING_STATE_NORMAL` が載るまで `CONNECTED` しないため、実効 `health_interval_ms = 0` で PING 送信が止まると初回 `CONNECTED` に到達しません。
+双方向 UDP では、受信 PING ペイロードに相手側の `POTR_PING_STATE_NORMAL` が載るまで `CONNECTED` しないため、実効 `health_interval_ms = 0` で PING 送信が停止すると初回 `CONNECTED` に到達しません。
 
 ### 一方向通信の受信者の動作
 
@@ -546,7 +546,7 @@ Linux 送信者と Windows 受信者 (またはその逆) の組み合わせで�
 1. `health_alive` を 0 に設定します。
 2. `POTR_EVENT_DISCONNECTED` をコールバックで通知します。
 3. `peer_session_known` をリセットして次の接続を受け入れ可能にします。
-4. 受信ウィンドウをリセットする (次に受信するパケットの `seq_num` で再初期化される)
+4. 受信ウィンドウをリセットします (次に受信するパケットの `seq_num` で再初期化されます)。
 
 次のパケットを受信したとき:
 
@@ -601,12 +601,12 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 ```
 1:1 モードでは両端それぞれ、N:1 モードではサーバが各ピアごとに独立して次を行います:
   health_interval_ms 周期で PING 要求（ack_num=0）を送信する
-  相手から PING 要求（ack_num=0）を受け取ったら即 PING 応答（ack_num=要求の seq_num）を返す
+  相手から PING 要求（ack_num=0）を受信したら直ちに PING 応答（ack_num=要求の seq_num）を返却する
   last_recv_tv_sec を PING 応答受信時にも更新する
   check_health_timeout() で last_recv_tv_sec を監視 → health_timeout_ms 超過で DISCONNECTED
 ```
 
-双方向 UDP の `CONNECTED` は、受信した PING ペイロードの `remote_path_ping_state[]` に少なくとも 1 つ `POTR_PING_STATE_NORMAL` が入った時点で成立します。これは「相手が自端からの PING を正常受信し、その状態を載せた PING を返してきた」ことを意味します。したがって `health_interval_ms = 0`、またはグローバル既定値として `udp_health_interval_ms = 0` かつサービス側で上書きしない構成では、初回 PING が送られず `CONNECTED` は成立しません。
+双方向 UDP の `CONNECTED` は、受信した PING ペイロードの `remote_path_ping_state[]` に少なくとも 1 つ `POTR_PING_STATE_NORMAL` が入った時点で成立します。これは「相手が自端からの PING を正常受信し、その状態を載せた PING を返してきた」ことを意味します。したがって `health_interval_ms = 0`、またはグローバル既定値として `udp_health_interval_ms = 0` かつサービス側で上書きしない構成では、初回 PING が送信されず `CONNECTED` は成立しません。
 
 #### 双方向 UDP で last_recv_tv_sec 監視だけで十分な理由
 
@@ -614,14 +614,14 @@ TCP では「OS レベルの接続が生存したままアプリケーション�
 PING 応答の個別タイムアウト監視が必要です。
 
 UDP には接続概念がありません。相手のアプリケーションが停止すると、データ パケットも PING パケットも  
-一切届かなくなります。`last_recv_tv_sec` が更新されないため、`check_health_timeout()` のみで  
+一切到着しなくなります。`last_recv_tv_sec` が更新されないため、`check_health_timeout()` のみで  
 切断を検知できます。PING 応答の個別タイムアウト管理は不要です。
 
 | モード | タイムアウト検知方法 | 理由 |
 |---|---|---|
 | UDP unicast | RECEIVER: `last_recv_tv_sec` 監視 | 片方向 type 1-6 は有効な `PING` / `DATA` 受信で更新 |
 | UDP unicast_bidir | 1:1 は両端、N:1 は各ピア単位で `last_recv_tv_sec` を監視 | 相手停止で当該相手からの全パケットが途絶える → timeout 発火 |
-| TCP / TCP_bidir | SENDER: PING 応答タイムアウト監視 | OS 接続が生存したままアプリがハングし得ます。 |
+| TCP / TCP_bidir | SENDER: PING 応答タイムアウト監視 | OS 接続が生存したままアプリケーションがハングし得るため |
 
 ### TCP 通信種別のヘルスチェック動作
 
@@ -631,17 +631,17 @@ TCP では接続直後に bootstrap PING を送信し、`tcp_health_interval_ms 
 定周期 PING は UDP と同様にデータ送信頻度の影響を受けません。  
 TCP では加えて、「OS 接続が生存したままアプリケーション層がハングする」状況に対応するため、  
 `tcp_health_interval_ms > 0` のときだけ PING 要求 / 応答を個別に監視します。  
-初回 CONNECTED は、受信した PING ペイロードの `remote_path_ping_state[]` に少なくとも 1 つ `POTR_PING_STATE_NORMAL` が載った時点で成立します。これは「自端が先に送った bootstrap PING を相手が受信し、その結果を載せた応答 PING が戻ってきた」ことを意味します。
+初回 CONNECTED は、受信した PING ペイロードの `remote_path_ping_state[]` に少なくとも 1 つ `POTR_PING_STATE_NORMAL` が載った時点で成立します。これは「自端が先に送信した bootstrap PING を相手が受信し、その結果を載せた応答 PING が戻ってきた」ことを意味します。
 
 #### タイムアウト監視
 
 | 通信種別 | 役割 | 監視内容 |
 |---|---|---|
 | UDP unicast 等 | RECEIVER | `last_recv_tv_sec` が `udp_health_timeout_ms` を超えたら DISCONNECTED |
-| TCP / TCP_BIDIR | SENDER | `tcp_health_interval_ms > 0` のとき、PING 応答 (`ack_num > 0`) が `tcp_health_timeout_ms` 以内に返らなければ DISCONNECTED (health スレッド) |
-| TCP / TCP_BIDIR | RECEIVER | `tcp_health_interval_ms > 0` のとき、PING 要求 (`ack_num = 0`) が `tcp_health_timeout_ms` 以内に届かなければ DISCONNECTED (recv スレッド) |
-| TCP_BIDIR | SENDER | `tcp_health_interval_ms > 0` のとき、PING 要求 (`ack_num = 0`) が `tcp_health_timeout_ms` 以内に届かなければ DISCONNECTED (recv スレッド) |
-| TCP_BIDIR | RECEIVER | `tcp_health_interval_ms > 0` のとき、PING 応答 (`ack_num > 0`) が `tcp_health_timeout_ms` 以内に返らなければ DISCONNECTED (health スレッド) |
+| TCP / TCP_BIDIR | SENDER | `tcp_health_interval_ms > 0` のとき、PING 応答 (`ack_num > 0`) が `tcp_health_timeout_ms` 以内に返却されなければ DISCONNECTED (health スレッド) |
+| TCP / TCP_BIDIR | RECEIVER | `tcp_health_interval_ms > 0` のとき、PING 要求 (`ack_num = 0`) が `tcp_health_timeout_ms` 以内に到着しなければ DISCONNECTED (recv スレッド) |
+| TCP_BIDIR | SENDER | `tcp_health_interval_ms > 0` のとき、PING 要求 (`ack_num = 0`) が `tcp_health_timeout_ms` 以内に到着しなければ DISCONNECTED (recv スレッド) |
+| TCP_BIDIR | RECEIVER | `tcp_health_interval_ms > 0` のとき、PING 応答 (`ack_num > 0`) が `tcp_health_timeout_ms` 以内に返却されなければ DISCONNECTED (health スレッド) |
 
 TCP は bootstrap PING の往復で初回 CONNECTED を確立し、`tcp_health_interval_ms > 0` のときだけ定周期 PING により両端が互いの生死を独立して監視できます。  
 `tcp_bidir` では両端が PING 送信側・受信側の両方を兼ねるため、PING 応答タイムアウト (health スレッド) と  
@@ -652,9 +652,9 @@ PING 要求到着タイムアウト (recv スレッド) の 2 種類を両端で
 送信者は最大 4 経路の UDP ソケットを同時に保持できます。  
 DATA パケット・PING パケット・再送パケットはすべての経路へ同時に送信されます。
 
-経路の冗長化により、1 経路がパケット ロスした場合でも他の経路で届く可能性があります。
+経路の冗長化により、1 経路がパケット ロスした場合でも他の経路で到着する可能性があります。
 
-NACK パケットは送信者へのユニキャストで返されます。  
+NACK パケットは送信者へのユニキャストで返却されます。  
 マルチキャスト・ブロードキャスト環境でも、NACK は送信元アドレスへユニキャストされます。  
 なお、受信者が保持する全パスのソケットからそれぞれユニキャスト送信されます。
 

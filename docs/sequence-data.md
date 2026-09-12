@@ -17,7 +17,7 @@ participant "UDP" as UDP
 participant "受信スレッド\n(受信者)" as RRT
 participant "アプリ\n(受信側)" as RAPP
 
-SAPP -> Q: potr_send(handle, POTR_PEER_NA, data, len, 0)\n→ エレメントを push して即座に返る
+SAPP -> Q: potr_send(handle, POTR_PEER_NA, data, len, 0)\n→ エレメントを push して即座に復帰
 SAPP <-- Q: POTR_OK
 
 note over Q, ST: 非同期に処理
@@ -41,7 +41,7 @@ RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data, len)
 ## 正常送受信 (ブロッキング)
 
 `POTR_SEND_BLOCKING` を指定して `potr_send()` を呼び出したときのデータフローです。  
-送信完了まで `potr_send()` が返りません。
+送信完了まで `potr_send()` は復帰しません。
 
 ```plantuml
 @startuml 正常送受信 (ブロッキング)
@@ -142,7 +142,7 @@ RRT -> RRT: seq=11 の欠番を検出
 alt reorder_timeout_ms = 0 (即時・デフォルト)
   RRT -> SUDP: NACK[ack_num=11] 送信\n(全パスから送信者へユニキャスト)
 else reorder_timeout_ms > 0 (リオーダー待機)
-  RRT -> RRT: タイマー開始\n(deadline = now + reorder_timeout_ms)\n→ 待機中に seq=11 が届けば NACK 不要
+  RRT -> RRT: タイマー開始\n(deadline = now + reorder_timeout_ms)\n→ 待機中に seq=11 が到着すれば NACK 不要
   note over RRT, SUDP: タイムアウト後に check_reorder_timeout が NACK を送出\n(以下は NACK 送出後と同じフロー)
   RRT -> SUDP: NACK[ack_num=11] 送信 (タイムアウト後)
 end
@@ -164,13 +164,13 @@ RRT -> RRT: seq=11, 12 の順で整列
 
 ## リオーダー バッファー (reorder_timeout_ms > 0) {#reorder-buffer}
 
-`reorder_timeout_ms` を 0 より大きな値に設定すると、欠番検出後にただちに NACK や DISCONNECTED を発行せず、指定時間だけ待機します。待機中に欠落パケットが届いた場合は NACK/DISCONNECTED を発行せずに正常配信します。
+`reorder_timeout_ms` を 0 より大きな値に設定すると、欠番検出後にただちに NACK や DISCONNECTED を発行せず、指定時間だけ待機します。待機中に欠落パケットが到着した場合は NACK/DISCONNECTED を発行せずに正常配信します。
 
-### 通常モード: 待機中に届いた場合 (NACK なし)
+### 通常モード: 待機中に到着した場合 (NACK なし)
 
 ```plantuml
 @startuml リオーダー - 通常モード 待機中に届いた場合
-caption リオーダー - 通常モード: 待機中に届いた場合 (NACK なし)
+caption リオーダー - 通常モード: 待機中に到着した場合 (NACK なし)
 
 participant "送信スレッド" as ST
 participant "UDP\n(送信側)" as SUDP
@@ -203,7 +203,7 @@ note over RRT: NACK は送出されなかった
 @enduml
 ```
 
-### RAW モード: 待機中に届いた場合 (DISCONNECTED なし)
+### RAW モード: 待機中に到着した場合 (DISCONNECTED なし)
 
 ```plantuml
 @startuml リオーダー - RAW モード 待機中に届いた場合
@@ -308,7 +308,7 @@ SUDP -> RUDP: DATA[seq=12] 到着
 RUDP -> RRT: DATA[seq=10] 受信 → 処理 OK
 RUDP -> RRT: DATA[seq=12] 受信
 
-RRT -> RRT: seq=11 の欠番を検出\n(RAW: NACK は送らない)
+RRT -> RRT: seq=11 の欠番を検出\n(RAW: NACK は送信しない)
 
 alt reorder_timeout_ms = 0 (即時・デフォルト)
   RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
@@ -317,7 +317,7 @@ alt reorder_timeout_ms = 0 (即時・デフォルト)
   RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
   RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[seq=12], len)
 else reorder_timeout_ms > 0 (リオーダー待機)
-  RRT -> RRT: タイマー開始\n(deadline = now + reorder_timeout_ms)\n→ 待機中に seq=11 が届けば DISCONNECTED 不要
+  RRT -> RRT: タイマー開始\n(deadline = now + reorder_timeout_ms)\n→ 待機中に seq=11 が到着すれば DISCONNECTED 不要
   note over RRT: タイムアウト後に check_reorder_timeout で\nDISCONNECTED 発火・ウィンドウリセット
 end
 
@@ -354,7 +354,7 @@ alt reorder_timeout_ms = 0 (即時・デフォルト)
   RRT -> RRT: recv_window を seq=13 でリセット
   RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
 else reorder_timeout_ms > 0 (リオーダー待機)
-  RRT -> RRT: タイマー開始 (next_seq=10 の欠番に対して)\n→ 待機中に seq=10〜12 が届けば DISCONNECTED 不要
+  RRT -> RRT: タイマー開始 (next_seq=10 の欠番に対して)\n→ 待機中に seq=10〜12 が到着すれば DISCONNECTED 不要
   note over RRT: タイムアウト後に check_reorder_timeout で\nDISCONNECTED 発火・ウィンドウリセット
 end
 

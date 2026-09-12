@@ -1,4 +1,4 @@
-﻿# 設定ファイル仕様
+# 設定ファイル仕様
 
 ## 概要
 
@@ -7,7 +7,7 @@ porter は INI 形式のテキスト ファイルでサービスを定義しま�
 
 `potr_service_open_from_config()` 呼び出し時にファイルを読み込み、指定した `service_id` のエントリを使用します。  
 以後はファイルを参照しないため、起動後にファイルを変更しても動作に影響はありません。  
-`potr_service_open()` を直接呼ぶ場合は設定ファイルを使用せず、`potr_global_config` / `potr_service_def` 構造体を直接渡します。
+`potr_service_open()` を直接呼び出す場合は設定ファイルを使用せず、`potr_global_config` / `potr_service_def` 構造体を直接渡します。
 
 ## ファイル形式
 
@@ -37,7 +37,7 @@ porter は INI 形式のテキスト ファイルでサービスを定義しま�
 | `udp_health_timeout_ms`  | uint32 | 10,000 | UDP 通信種別の受信タイムアウト (ms)。片方向 type 1-6 では有効な `PING` / `DATA`、双方向 UDP では `PING` の最終受信から本値を超えたら DISCONNECTED。0 でタイムアウト検知を無効化 |
 | `tcp_health_interval_ms` | uint32 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。接続直後の bootstrap PING とは別に、設定周期ごとに PING を送信します。0 の場合は定周期 PING を無効化するが、初回接続確立用の bootstrap PING は送信します。 |
 | `tcp_health_timeout_ms`  | uint32 | 31,000 | TCP 通信種別の PING 応答待機タイムアウト (ms)。`tcp_health_interval_ms > 0` のときだけ有効で、SENDER 側が PING 応答を本値以内に受信できなければ DISCONNECTED。0 でタイムアウト検知を無効化 |
-| `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potr_service_close()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送り、本値以内に `FIN_ACK` が返らなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む |
+| `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potr_service_close()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送信し、本値以内に `FIN_ACK` が返信されなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む |
 | `reorder_timeout_ms` | uint32 | 0 | 受信ウィンドウで欠番を検出してから NACK 送出 (通常モード) または DISCONNECTED 発行 (RAW モード) を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 で即時 (デフォルト)。推奨値: LAN/マルチパス = 10〜30 ms、遠距離 WAN = 30〜100 ms |
 
 ### window_size の影響
@@ -57,17 +57,17 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 
 | 構成 | 推奨値 | 理由 |
 |---|---|---|
-| 単一パス・同一 LAN | 0 (無効) | 遅延変動が小さく追い越しはほぼ発生しません。 |
+| 単一パス・同一 LAN | 0 (無効) | 遅延変動が小さく追い越しが極めて稀な環境 |
 | マルチパス (2 経路以上) | 10〜30 ms | 経路差異で数 ms〜数十 ms の追い越しが起こりうる |
 | 遠距離 WAN / 無線 LAN | 30〜100 ms | 遅延変動が大きく再順序付けが頻繁に発生する環境 |
 
 - 設定値を大きくするほど、追い越しを吸収できるが NACK の遅延 (= 再送遅延) も増加します。
 - RAW モードでは DISCONNECTED の遅延にも直結するため、リアルタイム性の要件と合わせて調整してください。
-- タイムアウト経過後も欠落パケットが届いた場合は NACK なしで正常にウィンドウへ取り込まれる (次の `process_outer_pkt` 呼び出しで自動検出)。
+- タイムアウト経過後も欠落パケットが到着した場合は NACK なしで正常にウィンドウへ取り込まれます (次の `process_outer_pkt` 呼び出しで自動検出)。
 
 ### マルチキャスト/ブロードキャスト通常モードでの NACK 分散
 
-`multicast` / `broadcast` の通常モードかつ `reorder_timeout_ms > 0` の場合、複数の受信者が同一欠番を同時に NACK すると送信者への負荷が集中する (NACK implosion)。
+`multicast` / `broadcast` の通常モードかつ `reorder_timeout_ms > 0` の場合、複数の受信者が同一欠番を同時に NACK すると送信者への負荷が集中します (NACK implosion)。
 
 これを回避するため、タイマー起動時に **100%〜200%** の範囲でランダムなジッタを自動付加します。
 
@@ -83,16 +83,16 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 
 ### health_interval_ms と health_timeout_ms の関係
 
-グローバル設定の `udp_*` / `tcp_*` は、コードの組み込みデフォルトに次ぐ「サービス定義へ適用する既定値」です。最終的な動作は、通信種別に応じて選ばれたグローバル既定値に対し、`[service.N]` の `health_interval_ms` / `health_timeout_ms` を重ねた実効値で決まります。実効 `health_interval_ms > 0` のとき、片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時だけ PING を送り、双方向 UDP は設定周期で PING を送信します。TCP は実効 `health_interval_ms` にかかわらず接続直後に bootstrap PING を送り、`health_interval_ms > 0` のときだけ定周期 PING と timeout 監視を有効にします。
+グローバル設定の `udp_*` / `tcp_*` は、コードの組み込みデフォルトに次ぐ「サービス定義へ適用する既定値」です。最終的な動作は、通信種別に応じて選ばれたグローバル既定値に対し、`[service.N]` の `health_interval_ms` / `health_timeout_ms` を重ねた実効値で決まります。実効 `health_interval_ms > 0` のとき、片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時だけ PING を送信し、双方向 UDP は設定周期で PING を送信します。TCP は実効 `health_interval_ms` にかかわらず接続直後に bootstrap PING を送信し、`health_interval_ms > 0` のときだけ定周期 PING と timeout 監視を有効にします。
 
 | 通信モデル / 種別 | PING 送信 | タイムアウト監視 |
 |---|---|---|
-| 一方向 UDP (`unicast` / `multicast` / `broadcast` / `*_raw`) | SENDER は open 直後の即時 PING を送らず、最後の `PING` または有効 `DATA` 送信から `health_interval_ms` 経過時にだけ PING を送る。RECEIVER は返信しません。 | RECEIVER が有効な `PING` / `DATA` の最終受信時刻を監視 |
+| 一方向 UDP (`unicast` / `multicast` / `broadcast` / `*_raw`) | SENDER は open 直後の即時 PING を送信せず、最後の `PING` または有効 `DATA` 送信から `health_interval_ms` 経過時にだけ PING を送信します。RECEIVER は返信しません。 | RECEIVER が有効な `PING` / `DATA` の最終受信時刻を監視 |
 | 双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) | 各エンドポイント / 各ピアが周期送信し、要求には即応答します。 | 各エンドポイント / 各ピアが最終受信時刻を監視 |
-| TCP (`tcp`) | 接続直後に bootstrap PING を送る。`health_interval_ms > 0` のときだけ SENDER が周期送信し、RECEIVER が応答します。 | `health_interval_ms > 0` のときだけ SENDER は PING 応答待機、RECEIVER は PING 要求到着を監視 |
-| 双方向 TCP (`tcp_bidir`) | 接続直後に両端が bootstrap PING を送る。`health_interval_ms > 0` のときだけ両端が周期送信し、要求には即応答します。 | `health_interval_ms > 0` のときだけ両端が PING 応答待機と PING 要求到着を監視 |
+| TCP (`tcp`) | 接続直後に bootstrap PING を送信します。`health_interval_ms > 0` のときだけ SENDER が周期送信し、RECEIVER が応答します。 | `health_interval_ms > 0` のときだけ SENDER は PING 応答待機、RECEIVER は PING 要求到着を監視 |
+| 双方向 TCP (`tcp_bidir`) | 接続直後に両端が bootstrap PING を送信します。`health_interval_ms > 0` のときだけ両端が周期送信し、要求には即応答します。 | `health_interval_ms > 0` のときだけ両端が PING 応答待機と PING 要求到着を監視 |
 
-一方向 UDP (type 1-6) の RECEIVER は、有効な `PING` または `DATA` を受信すると `health_alive` を立てて `POTR_EVENT_CONNECTED` を発火します。`health_interval_ms = 0` で PING 送信が無効でも、有効な `DATA` が届けば CONNECTED します。双方向 UDP は従来どおり PING ベースで CONNECTED します。TCP は `health_interval_ms = 0` でも bootstrap PING の往復により CONNECTED できますが、定周期 PING と timeout 監視は無効になります。
+一方向 UDP (type 1-6) の RECEIVER は、有効な `PING` または `DATA` を受信すると `health_alive` を立てて `POTR_EVENT_CONNECTED` を発火します。`health_interval_ms = 0` で PING 送信が無効でも、有効な `DATA` が到着すれば CONNECTED します。双方向 UDP は従来どおり PING ベースで CONNECTED します。TCP は `health_interval_ms = 0` でも bootstrap PING の往復により CONNECTED できますが、定周期 PING と timeout 監視は無効になります。
 
 双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は、相手が返してきた PING ペイロードに `POTR_PING_STATE_NORMAL` が含まれて初めて `CONNECTED` します。したがって実効 `health_interval_ms = 0` で PING 自動送信が無効な構成では、`health_timeout_ms` の有無にかかわらず初回 `CONNECTED` に到達しません。
 
@@ -100,7 +100,7 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 |---|---|
 | `udp_health_interval_ms = 0` | UDP 通信種別に適用する既定の PING 周期を 0 にします。サービス側で `health_interval_ms` を指定しない限り、UDP サービスの実効 PING 周期は無効になります。双方向 UDP ではこの状態のまま `CONNECTED` しません。 |
 | `udp_health_timeout_ms = 0` | UDP 通信種別に適用する既定のタイムアウトを 0 にします。サービス側で `health_timeout_ms` を指定しない限り、UDP サービスの実効タイムアウト監視は無効になります。 |
-| `tcp_health_interval_ms = 0` | TCP 通信種別に適用する既定の定周期 PING 周期を 0 にします。サービス側で `health_interval_ms` を指定しない限り、TCP サービスは bootstrap PING の往復だけで CONNECTED し、その後の定周期 PING は送らない |
+| `tcp_health_interval_ms = 0` | TCP 通信種別に適用する既定の定周期 PING 周期を 0 にします。サービス側で `health_interval_ms` を指定しない限り、TCP サービスは bootstrap PING の往復だけで CONNECTED し、その後の定周期 PING は送信しません。 |
 | `tcp_health_timeout_ms = 0` | TCP 通信種別に適用する既定のタイムアウトを 0 にします。サービス側で `health_timeout_ms` を指定しない限り、TCP サービスの PING 要求 / 応答監視は無効になります。 |
 
 ## service.N セクション
@@ -118,7 +118,7 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 | `health_interval_ms` | uint32 | 省略可 | グローバルの `udp_health_interval_ms` または `tcp_health_interval_ms` をサービス単位でオーバーライドします。 |
 | `health_timeout_ms`  | uint32 | 省略可 | グローバルの `udp_health_timeout_ms` または `tcp_health_timeout_ms` をサービス単位でオーバーライドします。 |
 | `pack_wait_ms` | uint32 | 省略可 | パッキング待機時間 (ミリ秒)。0 で即時送信 |
-| `encrypt_key` | 文字列 | 省略可 | AES-256-GCM 事前共有鍵。以下の 2 形式を受け付ける:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列で指定<br>**② パスフレーズ**: 上記以外の任意の文字列を指定すると SHA-256 で 32 バイト鍵に変換します。省略時は暗号化なし |
+| `encrypt_key` | 文字列 | 省略可 | AES-256-GCM 事前共有鍵。以下の 2 形式を受け付けます:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列で指定<br>**② パスフレーズ**: 上記以外の任意の文字列を指定すると SHA-256 で 32 バイト鍵に変換します。省略時は暗号化なし |
 
 ### unicast 専用フィールド
 
@@ -220,7 +220,7 @@ src_addr.1   = 192.168.2.20   # path 1 の bind アドレス
 
 | `src_addr` | `src_port` | `connect()` 前の `bind()` 動作 |
 |---|---|---|
-| 未指定 | `0` または省略 | `bind()` しません。 |
+| 未指定 | `0` または省略 | `bind()` しない |
 | 未指定 | 指定 | `INADDR_ANY:src_port` で bind |
 | 指定 | `0` または省略 | `src_addr:0` (エフェメラル ポート) で bind |
 | 指定 | 指定 | `src_addr:src_port` で bind |
@@ -231,10 +231,10 @@ src_addr.1   = 192.168.2.20   # path 1 の bind アドレス
 
 | `src_addr` | `src_port` | フィルター動作 |
 |---|---|---|
-| 未指定 | `0` または省略 | 全接続を受け付ける |
-| 未指定 | 指定 | 接続元ポートが一致する接続のみ受け付ける |
-| 指定 | `0` または省略 | 接続元 IP が一致する接続のみ受け付ける |
-| 指定 | 指定 | 接続元 IP・ポート両方が一致する接続のみ受け付ける |
+| 未指定 | `0` または省略 | 全接続を受理 |
+| 未指定 | 指定 | 接続元ポートが一致する接続のみ受理 |
+| 指定 | `0` または省略 | 接続元 IP が一致する接続のみ受理 |
+| 指定 | 指定 | 接続元 IP・ポートの両方が一致する接続のみ受理 |
 
 ### broadcast 専用フィールド
 
@@ -254,7 +254,7 @@ src_addr.1   = 192.168.2.20   # path 1 の bind アドレス
 | AAD | ヘッダー 40 バイトを追加認証データ (AAD) として使用するため、ヘッダー改ざんも検知します。 |
 | 認証タグ (DATA) | 16 バイトの GCM 認証タグを暗号文末尾に付与します。実効ペイロードが `max_payload - 16` バイトに減少します。 |
 | 認証タグ (その他) | PING / NACK / REJECT / FIN / FIN_ACK は平文ペイロードが 0 バイトだが、AAD (ヘッダー 40B) に対して 16 バイトの GCM 認証タグのみを付与します。ヘッダー改ざんを検知できます。 |
-| 双方一致 | 送信者・受信者ともに同一の `encrypt_key` を設定すること |
+| 双方一致 | 送信者・受信者ともに同一の `encrypt_key` を設定する必要があります。 |
 | 受信要件 | `encrypt_key` を設定した受信側は `POTR_FLAG_ENCRYPTED` 付きパケットのみ受理します。平文パケット、およびタグ検証失敗パケットは破棄します。 |
 | マルチキャスト | 受信者全員が同一の `encrypt_key` を持っていれば動作します。 |
 
@@ -445,7 +445,7 @@ note over R: accept() → 接続ソケット取得
 | listen ソケット | なし | あり (接続待機専用) |
 | 接続ソケット | `connect()` の fd | `accept()` の fd |
 
-RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を呼んで `listen()` に入っている必要があります。
+RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を呼び出して `listen()` に入っている必要があります。
 
 ## 送信元フィルタリング
 
@@ -453,7 +453,7 @@ RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を
 
 - `unicast` / `multicast` / `broadcast`: `src_addr` を用いて送信元 IP アドレスを照合します
 - `unicast_bidir` (src_addr 指定): `src_addr` で送信元 IP アドレスを照合します
-- `unicast_bidir` (src_addr 省略・RECEIVER 動的学習): 学習前は全受け入れ、学習後は学習済みアドレスから受信します。セッション追跡により 1:1 が保証されます
+- `unicast_bidir` (src_addr 省略・RECEIVER 動的学習): 学習前は全パケットを受理、学習後は学習済みアドレスから受信します。セッション追跡により 1:1 が保証されます
 - `unicast_bidir_n1`: `src_addr` は照合しません。`src_port` が 0 以外のときのみ送信元ポートを照合します
 
 一致しないパケットはアプリケーション層で破棄します。
@@ -582,7 +582,7 @@ dst_addr  = 0.0.0.0
 dst_port  = 9050
 max_peers = 256
 
-; N:1 サーバ: src_port を使って送信元ポートをフィルタする例
+; N:1 サーバ: src_port を使って送信元ポートをフィルターする例
 [service.4051]
 type      = unicast_bidir_n1
 src_port  = 19050

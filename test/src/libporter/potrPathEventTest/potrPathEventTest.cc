@@ -89,7 +89,7 @@ TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
 
     potr_internal_emit_service_path_events_locked(&ctx, &prepared); // [手順] - 準備済みイベントを callback へ発行する。
 
-    EXPECT_EQ(3, s_event_count); // [確認_正常系] - callback が 3 回呼ばれること。
+    EXPECT_EQ(3, s_event_count); // [確認_正常系] - callback が 3 回呼び出されること。
     EXPECT_EQ(POTR_PEER_NA,
               s_events[0].peer_id); // [確認_正常系] - service イベントの peer_id が POTR_PEER_NA であること。
     EXPECT_EQ(POTR_EVENT_PATH_CONNECTED,
@@ -138,7 +138,7 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
 
     potr_internal_emit_peer_path_events_locked(&ctx, &peer, &prepared); // [手順] - 準備済みイベントを callback へ発行する。
 
-    EXPECT_EQ(3, s_event_count);                   // [確認_正常系] - callback が 3 回呼ばれること。
+    EXPECT_EQ(3, s_event_count);                   // [確認_正常系] - callback が 3 回呼び出されること。
     EXPECT_EQ((potr_peer_id)7, s_events[0].peer_id); // [確認_正常系] - peer イベントの peer_id が 7 であること。
     EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED,
               s_events[0].event);   // [確認_正常系] - 1 番目に path 1 の PATH_DISCONNECTED が通知されること。
