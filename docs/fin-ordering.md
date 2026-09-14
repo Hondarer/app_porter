@@ -178,7 +178,8 @@ FIN_TARGET_VALID なし
 | ファイル | 役割 |
 |---|---|
 | `prod/libsrc/porter/api/potr_service_close.c` | TCP close の `FIN` 送信、`FIN_ACK` 待機、タイムアウト処理 |
-| `prod/libsrc/porter/thread/potr_recv_thread.c` | UDP/TCP 共通の pending FIN 管理、TCP の `FIN_ACK` 送受信 |
+| `prod/libsrc/porter/thread/thread_recv_fin.c` | UDP/TCP 共通の pending FIN 判定、切断発火、TCP の `FIN_ACK` 送受信 |
+| `prod/libsrc/porter/thread/potr_recv_thread.c` | 受信ループからの FIN 判定と発火の呼び出し、必要なロックの保持 |
 | `prod/libsrc/porter/protocol/packet.c` | `potr_internal_packet_build_fin()` / `potr_internal_packet_build_fin_ack()` |
 | `prod/libsrc/porter/protocol/config.c` | `tcp_close_timeout_ms` の読込 |
 | `prod/libsrc/porter/potr_context.h` | close wait 状態、`pending_fin` / `fin_target_seq` などの保持 |
