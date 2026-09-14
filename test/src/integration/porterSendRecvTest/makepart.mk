@@ -1,4 +1,4 @@
-# 結合テストはライブラリ本体をリンクしない。
-# send / recv バイナリ (外部プロセス) を実行するため、リンク対象は testfw のみ。
-LIBS      := cplat mock_libc
+# コマンドの別プロセス試験と、実ライブラリを使う TCP マルチパス試験。
+# 複数コンポーネントの結合確認のため TEST_SRCS は指定しない。
+LIBS      := porter cplat mock_libc
 INCDIR    += $(MYAPP_DIR)/test/include

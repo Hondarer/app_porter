@@ -44,6 +44,27 @@
  * 展開後または結合後の平文を保持しうるため、解放前に消去する。 */
 static void dispose_secret_buffers(potr_context *ctx)
 {
+    for (int i = 0; i < (int)POTR_MAX_PATH; i++)
+    {
+        if (ctx->tcp_recv_buf[i] != NULL)
+        {
+            cplat_secure_zero(ctx->tcp_recv_buf[i], PACKET_HEADER_SIZE + ctx->global.max_payload);
+            cplat_free(ctx->tcp_recv_buf[i]);
+            ctx->tcp_recv_buf[i] = NULL;
+        }
+    }
+    if (ctx->recv_crypto_buf != NULL)
+    {
+        cplat_secure_zero(ctx->recv_crypto_buf, ctx->crypto_buf_size);
+        cplat_free(ctx->recv_crypto_buf);
+        ctx->recv_crypto_buf = NULL;
+    }
+    if (ctx->recv_compress_buf != NULL)
+    {
+        cplat_secure_zero(ctx->recv_compress_buf, ctx->compress_buf_size);
+        cplat_free(ctx->recv_compress_buf);
+        ctx->recv_compress_buf = NULL;
+    }
     if (ctx->frag_buf != NULL)
     {
         cplat_secure_zero(ctx->frag_buf, ctx->global.max_message_size);
@@ -362,6 +383,7 @@ int potr_service_close(potr_context *handle)
                 cplat_condvar_dispose(ctx->health_wakeup[i]);
             }
             cplat_local_lock_dispose(ctx->recv_window_mutex);
+            cplat_local_lock_dispose(ctx->tcp_recv_mutex);
         }
 
         /* 送受信ウィンドウと動的バッファーを解放 */

@@ -14,6 +14,8 @@
 #include <cplat/base/platform.h>
 #include <cplat/crt/stdlib.h>
 #include <cplat/crypto/random.h>
+#include <cplat/crypto/crypto.h>
+#include <cplat/runtime/memory_lock.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
@@ -83,6 +85,24 @@ static void ctx_cleanup(potr_context *ctx)
     cplat_free(ctx->frag_buf);
     cplat_free(ctx->compress_buf);
     cplat_free(ctx->crypto_buf);
+    if (ctx->recv_compress_buf != NULL)
+    {
+        cplat_secure_zero(ctx->recv_compress_buf, ctx->compress_buf_size);
+        cplat_free(ctx->recv_compress_buf);
+    }
+    if (ctx->recv_crypto_buf != NULL)
+    {
+        cplat_secure_zero(ctx->recv_crypto_buf, ctx->crypto_buf_size);
+        cplat_free(ctx->recv_crypto_buf);
+    }
+    for (int i = 0; i < (int)POTR_MAX_PATH; i++)
+    {
+        if (ctx->tcp_recv_buf[i] != NULL)
+        {
+            cplat_secure_zero(ctx->tcp_recv_buf[i], PACKET_HEADER_SIZE + ctx->global.max_payload);
+            cplat_free(ctx->tcp_recv_buf[i]);
+        }
+    }
     cplat_free(ctx->recv_buf);
     cplat_free(ctx->send_wire_buf);
     if (ctx->is_multi_peer && ctx->peers != NULL)
@@ -244,6 +264,24 @@ static int alloc_context_buffers(potr_context *ctx)
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
+    ctx->recv_compress_buf = cplat_malloc(ctx->compress_buf_size);
+    ctx->recv_crypto_buf = cplat_malloc(ctx->crypto_buf_size);
+    if (ctx->recv_compress_buf == NULL || ctx->recv_crypto_buf == NULL)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    if (potr_is_tcp_type(ctx->service.type))
+    {
+        for (int i = 0; i < ctx->n_path; i++)
+        {
+            ctx->tcp_recv_buf[i] = cplat_malloc(PACKET_HEADER_SIZE + ctx->global.max_payload);
+            if (ctx->tcp_recv_buf[i] == NULL)
+            {
+                return POTR_ERR_OUT_OF_MEMORY;
+            }
+        }
+    }
+
     return POTR_OK;
 }
 
@@ -261,6 +299,7 @@ static void destroy_tcp_sync_primitives(potr_context *ctx)
         cplat_local_lock_dispose(ctx->tcp_send_mutex[i]);
     }
     cplat_local_lock_dispose(ctx->recv_window_mutex);
+    cplat_local_lock_dispose(ctx->tcp_recv_mutex);
 }
 
 /* TCP: 同期プリミティブと送信キューを初期化し、接続管理スレッドを起動する。
@@ -268,6 +307,11 @@ static void destroy_tcp_sync_primitives(potr_context *ctx)
 static int start_threads_tcp(potr_context *ctx, potr_role role)
 {
     int result;
+
+    if (cplat_local_lock_create(&ctx->tcp_recv_mutex) != CPLAT_OK)
+    {
+        return POTR_ERR_UNKNOWN;
+    }
 
     /* tcp_state_mutex / tcp_state_cv / tcp_close_mutex / tcp_close_cv /
        tcp_send_mutex[] / recv_window_mutex /
@@ -287,7 +331,8 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
         cplat_local_lock_create(&ctx->recv_window_mutex);
     }
 
-    /* SENDER または TCP_BIDIR: 送信キューを初期化 (connect スレッドが reconnect 時に dispose+init する) */
+    /* SENDER または TCP_BIDIR: 送信キューを初期化。
+       TCP の部分再接続では共有キューを維持し、サービス終了時にだけ破棄する。 */
     if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
     {
         result = potr_internal_send_queue_init(&ctx->send_queue, (size_t)ctx->global.send_queue_depth, ctx->global.max_payload);

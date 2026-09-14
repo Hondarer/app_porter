@@ -1765,13 +1765,187 @@ static int tcp_read_all(cplat_socket fd, uint8_t *buf, size_t n)
     return POTR_ERR_IO;
 }
 
+/* 呼び出し元は tcp_recv_mutex を保持し、配信完了まで受信状態を直列化する。
+ * 破棄するパケットは POTR_OK、ストリームを切断する解析失敗は POTR_ERR_PROTOCOL。 */
+static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, const uint8_t *buf,
+                             uint16_t wire_payload_len, int path_idx)
+{
+    potr_packet pkt;
+
+    /* 5. パケット解析 */
+    if (potr_internal_packet_parse(&pkt, buf, PACKET_HEADER_SIZE + wire_payload_len) != POTR_OK)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 "]: potr_internal_packet_parse failed",
+                   ctx->service.service_id);
+        return POTR_ERR_PROTOCOL;
+    }
+
+    /* 6. service_id チェック */
+    if (pkt.service_id != ctx->service.service_id)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                   "tcp_recv[service_id=%" PRId64 "]: service_id mismatch (%" PRId64 ")", ctx->service.service_id,
+                   pkt.service_id);
+        return POTR_OK;
+    }
+
+    if (thread_recv_authenticate_packet(ctx, &pkt, buf, "tcp_recv", path_idx) != POTR_OK)
+        return POTR_OK;
+
+    /* accept で採用したセッション以外は PING を含めて状態へ反映しない。
+     * ウィンドウの開始通番は引き続き最初の DATA から決定する。 */
+    if (ctx->role == POTR_ROLE_RECEIVER && ctx->tcp_accepted_session_known)
+    {
+        cplat_timespec packet_session_ts;
+        potr_session_ts_from_hdr(pkt.session_tv_sec, pkt.session_tv_nsec, &packet_session_ts);
+        if (pkt.session_id != ctx->tcp_accepted_session_id ||
+            cplat_timespec_cmp(&packet_session_ts, &ctx->tcp_accepted_session_ts) != 0)
+        {
+            return POTR_OK;
+        }
+    }
+
+    /* 8. パケット種別処理 */
+    if (pkt.flags & POTR_FLAG_FIN_ACK)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "tcp_recv[service_id=%" PRId64 " path=%d]: FIN_ACK ack=%u",
+                   ctx->service.service_id, path_idx, (unsigned)pkt.ack_num);
+        notify_tcp_close_ack_received(ctx, pkt.ack_num);
+        return POTR_OK;
+    }
+    else if (pkt.flags & POTR_FLAG_FIN)
+    {
+        uint32_t fin_target_seq = pkt.ack_num;
+        int should_fire_fin = 0;
+
+        cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        if (!slot_check_and_update_session(svc_slot, &pkt))
+        {
+            cplat_local_lock_unlock(ctx->recv_window_mutex);
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                       "tcp_recv[service_id=%" PRId64 " path=%d]: FIN session mismatch, ignored",
+                       ctx->service.service_id, path_idx);
+            return POTR_OK;
+        }
+
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                   "tcp_recv[service_id=%" PRId64 " path=%d]: FIN received (fin_target_seq=%u recv_next=%u)",
+                   ctx->service.service_id, path_idx, (unsigned)fin_target_seq,
+                   (unsigned)ctx->recv_window.next_seq);
+
+        if (fin_packet_has_target(&pkt) &&
+            !recv_window_reached_fin_target(ctx->recv_window.next_seq, fin_target_seq))
+        {
+            ctx->pending_fin = 1;
+            ctx->fin_target_seq = fin_target_seq;
+            cplat_local_lock_unlock(ctx->recv_window_mutex);
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                       "tcp_recv[service_id=%" PRId64 " path=%d]: FIN pending (waiting for seq=%u)",
+                       ctx->service.service_id, path_idx, (unsigned)fin_target_seq);
+            return POTR_OK;
+        }
+
+        should_fire_fin = 1;
+        cplat_local_lock_unlock(ctx->recv_window_mutex);
+
+        if (should_fire_fin)
+        {
+            fire_disconnected_by_fin(ctx, fin_target_seq);
+        }
+        return POTR_OK;
+    }
+    else if (pkt.flags & POTR_FLAG_PING)
+    {
+        int ping_state_changed;
+
+        /* PING 受信: 最終受信時刻と受信状態を更新する。*/
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: PING seq=%u",
+                   ctx->service.service_id, path_idx, (unsigned)pkt.seq_num);
+        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        ctx->tcp_last_ping_recv_ms[path_idx] = cplat_get_monotonic_ms();
+        ping_state_changed = set_path_ping_state(&ctx->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
+        if (pkt.payload_len >= POTR_MAX_PATH && pkt.payload != NULL)
+        {
+            apply_remote_path_ping_state_payload(ctx->remote_path_ping_state, pkt.payload, POTR_MAX_PATH);
+        }
+        sync_service_path_state(ctx);
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
+        wake_tcp_interrupt_ping_if_needed(ctx, path_idx, ping_state_changed);
+    }
+    else if (pkt.flags & POTR_FLAG_DATA)
+    {
+        /* セッション照合 + recv_window への投入 (recv_window_mutex で保護) */
+        {
+            uint32_t fin_target_seq = 0U;
+            int should_fire_fin = 0;
+            int pushed;
+
+            cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            if (!slot_check_and_update_session(svc_slot, &pkt))
+            {
+                cplat_local_lock_unlock(ctx->recv_window_mutex);
+                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                           "tcp_recv[service_id=%" PRId64 " path=%d]: DATA session mismatch, ignored",
+                           ctx->service.service_id, path_idx);
+                return POTR_OK;
+            }
+            pushed = potr_internal_window_recv_push(&ctx->recv_window, &pkt);
+            cplat_local_lock_unlock(ctx->recv_window_mutex);
+
+            if (pushed != POTR_OK)
+            {
+                /* 重複パケット → スキップ */
+                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                           "tcp_recv[service_id=%" PRId64 " path=%d]: DATA seq=%u duplicate, skipped",
+                           ctx->service.service_id, path_idx, (unsigned)pkt.seq_num);
+                return POTR_OK;
+            }
+
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                       "tcp_recv[service_id=%" PRId64 " path=%d]: DATA seq=%u payload=%u", ctx->service.service_id,
+                       path_idx, (unsigned)pkt.seq_num, (unsigned)pkt.payload_len);
+
+            /* 順序整列済みパケットをポップして配信 */
+            cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            {
+                potr_packet out;
+                while (potr_internal_window_recv_pop(&ctx->recv_window, &out) == POTR_OK)
+                {
+                    size_t offset = 0;
+                    potr_packet elem;
+                    cplat_local_lock_unlock(ctx->recv_window_mutex);
+                    while (potr_internal_packet_unpack_next(&out, &offset, &elem) == POTR_OK)
+                    {
+                        thread_recv_slot_deliver_payload_elem(svc_slot, &elem);
+                    }
+                    cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+                }
+
+                if (ctx->pending_fin &&
+                    recv_window_reached_fin_target(ctx->recv_window.next_seq, ctx->fin_target_seq))
+                {
+                    fin_target_seq = ctx->fin_target_seq;
+                    should_fire_fin = 1;
+                }
+            }
+            cplat_local_lock_unlock(ctx->recv_window_mutex);
+
+            if (should_fire_fin)
+            {
+                fire_disconnected_by_fin(ctx, fin_target_seq);
+            }
+        }
+    }
+    return POTR_OK;
+}
+
 /* TCP ストリーム受信スレッド本体 (path ごと) */
 static void tcp_recv_thread_func(void *arg)
 {
     potr_internal_path_thread_arg *rarg = (potr_internal_path_thread_arg *)arg;
     potr_context *ctx = rarg->ctx;
     int path_idx = rarg->path_idx;
-    uint8_t *buf = ctx->recv_buf; /* PACKET_HEADER_SIZE + max_payload バイト */
+    uint8_t *buf = ctx->tcp_recv_buf[path_idx]; /* PACKET_HEADER_SIZE + max_payload バイト */
     cplat_socket fd;
     thread_recv_slot svc_slot; /* TCP は 1:1 モードのみ */
 
@@ -1815,7 +1989,6 @@ static void tcp_recv_thread_func(void *arg)
 
     while (ctx->running[path_idx])
     {
-        potr_packet pkt;
         uint16_t wire_payload_len;
         int r;
 
@@ -1914,156 +2087,19 @@ static void tcp_recv_thread_func(void *arg)
             }
         } /* else (先読みバッファーなし) ここまで */
 
-        /* 5. パケット解析 */
-        if (potr_internal_packet_parse(&pkt, buf, PACKET_HEADER_SIZE + wire_payload_len) != POTR_OK)
+        cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        if (ctx->running[path_idx])
         {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 "]: potr_internal_packet_parse failed",
-                       ctx->service.service_id);
+            r = tcp_handle_packet(ctx, &svc_slot, buf, wire_payload_len, path_idx);
+        }
+        else
+        {
+            r = POTR_ERR_CANCELED;
+        }
+        cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+        if (r != POTR_OK)
+        {
             break;
-        }
-
-        /* 6. service_id チェック */
-        if (pkt.service_id != ctx->service.service_id)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "tcp_recv[service_id=%" PRId64 "]: service_id mismatch (%" PRId64 ")", ctx->service.service_id,
-                       pkt.service_id);
-            continue;
-        }
-
-        if (thread_recv_authenticate_packet(ctx, &pkt, buf, "tcp_recv", path_idx) != POTR_OK)
-            continue;
-
-        /* 8. パケット種別処理 */
-        if (pkt.flags & POTR_FLAG_FIN_ACK)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "tcp_recv[service_id=%" PRId64 " path=%d]: FIN_ACK ack=%u",
-                       ctx->service.service_id, path_idx, (unsigned)pkt.ack_num);
-            notify_tcp_close_ack_received(ctx, pkt.ack_num);
-            continue;
-        }
-        else if (pkt.flags & POTR_FLAG_FIN)
-        {
-            uint32_t fin_target_seq = pkt.ack_num;
-            int should_fire_fin = 0;
-
-            cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
-            if (!slot_check_and_update_session(&svc_slot, &pkt))
-            {
-                cplat_local_lock_unlock(ctx->recv_window_mutex);
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                           "tcp_recv[service_id=%" PRId64 " path=%d]: FIN session mismatch, ignored",
-                           ctx->service.service_id, path_idx);
-                continue;
-            }
-
-            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
-                       "tcp_recv[service_id=%" PRId64 " path=%d]: FIN received (fin_target_seq=%u recv_next=%u)",
-                       ctx->service.service_id, path_idx, (unsigned)fin_target_seq,
-                       (unsigned)ctx->recv_window.next_seq);
-
-            if (fin_packet_has_target(&pkt) &&
-                !recv_window_reached_fin_target(ctx->recv_window.next_seq, fin_target_seq))
-            {
-                ctx->pending_fin = 1;
-                ctx->fin_target_seq = fin_target_seq;
-                cplat_local_lock_unlock(ctx->recv_window_mutex);
-                POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
-                           "tcp_recv[service_id=%" PRId64 " path=%d]: FIN pending (waiting for seq=%u)",
-                           ctx->service.service_id, path_idx, (unsigned)fin_target_seq);
-                continue;
-            }
-
-            should_fire_fin = 1;
-            cplat_local_lock_unlock(ctx->recv_window_mutex);
-
-            if (should_fire_fin)
-            {
-                fire_disconnected_by_fin(ctx, fin_target_seq);
-            }
-            continue;
-        }
-        else if (pkt.flags & POTR_FLAG_PING)
-        {
-            int ping_state_changed;
-
-            /* PING 受信: 最終受信時刻と受信状態を更新する。*/
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: PING seq=%u",
-                       ctx->service.service_id, path_idx, (unsigned)pkt.seq_num);
-            cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-            ctx->tcp_last_ping_recv_ms[path_idx] = cplat_get_monotonic_ms();
-            ping_state_changed = set_path_ping_state(&ctx->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
-            if (pkt.payload_len >= POTR_MAX_PATH && pkt.payload != NULL)
-            {
-                apply_remote_path_ping_state_payload(ctx->remote_path_ping_state, pkt.payload, POTR_MAX_PATH);
-            }
-            sync_service_path_state(ctx);
-            cplat_local_lock_unlock(ctx->tcp_state_mutex);
-            wake_tcp_interrupt_ping_if_needed(ctx, path_idx, ping_state_changed);
-        }
-        else if (pkt.flags & POTR_FLAG_DATA)
-        {
-            /* セッション照合 + recv_window への投入 (recv_window_mutex で保護) */
-            {
-                uint32_t fin_target_seq = 0U;
-                int should_fire_fin = 0;
-                int pushed;
-
-                cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
-                if (!slot_check_and_update_session(&svc_slot, &pkt))
-                {
-                    cplat_local_lock_unlock(ctx->recv_window_mutex);
-                    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                               "tcp_recv[service_id=%" PRId64 " path=%d]: DATA session mismatch, ignored",
-                               ctx->service.service_id, path_idx);
-                    continue;
-                }
-                pushed = potr_internal_window_recv_push(&ctx->recv_window, &pkt);
-                cplat_local_lock_unlock(ctx->recv_window_mutex);
-
-                if (pushed != POTR_OK)
-                {
-                    /* 重複パケット → スキップ */
-                    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                               "tcp_recv[service_id=%" PRId64 " path=%d]: DATA seq=%u duplicate, skipped",
-                               ctx->service.service_id, path_idx, (unsigned)pkt.seq_num);
-                    continue;
-                }
-
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                           "tcp_recv[service_id=%" PRId64 " path=%d]: DATA seq=%u payload=%u", ctx->service.service_id,
-                           path_idx, (unsigned)pkt.seq_num, (unsigned)pkt.payload_len);
-
-                /* 順序整列済みパケットをポップして配信 */
-                cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
-                {
-                    potr_packet out;
-                    while (potr_internal_window_recv_pop(&ctx->recv_window, &out) == POTR_OK)
-                    {
-                        size_t offset = 0;
-                        potr_packet elem;
-                        cplat_local_lock_unlock(ctx->recv_window_mutex);
-                        while (potr_internal_packet_unpack_next(&out, &offset, &elem) == POTR_OK)
-                        {
-                            thread_recv_slot_deliver_payload_elem(&svc_slot, &elem);
-                        }
-                        cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
-                    }
-
-                    if (ctx->pending_fin &&
-                        recv_window_reached_fin_target(ctx->recv_window.next_seq, ctx->fin_target_seq))
-                    {
-                        fin_target_seq = ctx->fin_target_seq;
-                        should_fire_fin = 1;
-                    }
-                }
-                cplat_local_lock_unlock(ctx->recv_window_mutex);
-
-                if (should_fire_fin)
-                {
-                    fire_disconnected_by_fin(ctx, fin_target_seq);
-                }
-            }
         }
     }
 

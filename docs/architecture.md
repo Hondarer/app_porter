@@ -639,19 +639,29 @@ potr_send()
 ### TCP 受信フロー
 
 ```
-tcp_recv_thread_func(path_idx)  ← path ごとに 1 スレッド起動
-  → tcp_wait_readable(tcp_conn_fd[path_idx])
-  → tcp_read_all()
-  → potr_internal_packet_parse()
-  → encrypt_key 設定時は POTR_FLAG_ENCRYPTED を確認
-  → AES-256-GCM 復号 / tag-only 検証
-  → [recv_window_mutex lock]
-  → potr_internal_window_recv_push()          ← 重複排除 + 順序整列（複数 path 対応、NACK なし）
-  → potr_internal_window_recv_pop()
-  → deliver_payload_elem()      ← コールバック呼び出し前に unlock
-  → callback(POTR_EVENT_DATA)
-  → [recv_window_mutex unlock]
+tcp_recv_thread_func(path_idx)
+  -> tcp_wait_readable(tcp_conn_fd[path_idx])
+  -> tcp_read_all(tcp_recv_buf[path_idx])
+  -> [tcp_recv_mutex lock]
+  -> tcp_handle_packet()
+     -> パケット解析、認証、受信専用領域への復号
+     -> [recv_window_mutex lock]
+     -> セッション照合、ウィンドウへの投入と順序整列
+     -> パケット取り出し
+     -> [recv_window_mutex unlock]
+     -> フラグメント結合、受信専用領域への展開
+     -> callback(POTR_EVENT_DATA)
+     -> 後続の取り出しと配信、保留 FIN の処理
+  -> [tcp_recv_mutex unlock]
 ```
+
+ソケットの読み取り先は経路別に確保し、解析から DATA 配信完了までは `tcp_recv_mutex` で直列化します。  
+読み取りとポーリングはこのロックの外で行うため、片方の経路が受信待ちでも別経路の処理を継続できます。  
+ウィンドウから取り出したペイロード、フラグメント結合領域、展開済み領域は、コールバックが復帰するまで別の受信スレッドから変更されません。
+
+暗号化・圧縮と復号・展開の作業領域は送受信で分離します。  
+これにより、双方向通信の送信処理やコールバックからの圧縮返信が受信データを書き換えることを防ぎます。  
+受信専用領域と経路別バッファーはサービス開始時に確保し、受信スレッドの終了後に消去して解放します。
 
 ---
 

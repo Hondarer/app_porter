@@ -40,6 +40,7 @@
 #include <cplat/net/byteorder.h>
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
+#include "thread_recv_validate.h"
 
 static void sync_tcp_service_path_state_locked(potr_context *ctx)
 {
@@ -143,26 +144,26 @@ static int tcp_read_first_packet(cplat_socket fd, uint8_t *buf, size_t max_buf, 
 #define TCP_SESSION_OLD  (-1) /* 旧セッション (破棄すべき)      */
 
 /* ctx に記録されている相手セッションと pkt のセッション triplet を比較する。
- * peer_session_known == 0 の場合は TCP_SESSION_NEW を返す。
- * 呼び出し前提: session_establish_mutex を取得済みであること。 */
+ * tcp_accepted_session_known == 0 の場合は TCP_SESSION_NEW を返す。
+ * 呼び出し前提: session_establish_mutex と tcp_recv_mutex を取得済みであること。 */
 static int tcp_session_compare(const potr_context *ctx, const potr_packet *pkt)
 {
     cplat_timespec pkt_session_ts;
     int ts_cmp;
 
-    if (!ctx->peer_session_known)
+    if (!ctx->tcp_accepted_session_known)
         return TCP_SESSION_NEW;
 
     potr_session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
-    ts_cmp = cplat_timespec_cmp(&pkt_session_ts, &ctx->peer_session_ts);
+    ts_cmp = cplat_timespec_cmp(&pkt_session_ts, &ctx->tcp_accepted_session_ts);
 
     if (ts_cmp > 0)
         return TCP_SESSION_NEW;
     else if (ts_cmp < 0)
         return TCP_SESSION_OLD;
-    else if (pkt->session_id > ctx->peer_session_id)
+    else if (pkt->session_id > ctx->tcp_accepted_session_id)
         return TCP_SESSION_NEW;
-    else if (pkt->session_id < ctx->peer_session_id)
+    else if (pkt->session_id < ctx->tcp_accepted_session_id)
         return TCP_SESSION_OLD;
     return TCP_SESSION_SAME;
 }
@@ -178,11 +179,13 @@ static void join_recv_thread(potr_context *ctx, int path_idx)
    フラグメント バッファーや peer_session 状態をクリアする。
    TCP v2 マルチパスでは send_window 通番と health_alive は保持する
    (部分切断・再接続時のセッション継続のため)。
-   呼び出しタイミング: start_connected_threads 前 (他スレッド未起動)。 */
+   呼び出し前提: tcp_recv_mutex を取得済みであること。 */
 static void reset_connection_state(potr_context *ctx)
 {
     ctx->peer_session_known = 0;
     ctx->frag_buf_len = 0;
+    ctx->frag_compressed = 0;
+    ctx->pending_fin = 0;
 }
 
 /* 全 path 切断時のリセット: send_window 通番・peer_session 状態・health_alive をクリアし
@@ -190,8 +193,18 @@ static void reset_connection_state(potr_context *ctx)
    呼び出しタイミング: tcp_active_paths が 0 になった直後 (tcp_state_mutex 非保護)。 */
 static void reset_all_paths_disconnected(potr_context *ctx)
 {
+    cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    if (ctx->tcp_active_paths != 0)
+    {
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
+        cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+        return;
+    }
     ctx->peer_session_known = 0;
     ctx->frag_buf_len = 0;
+    ctx->frag_compressed = 0;
+    ctx->pending_fin = 0;
     ctx->send_window.next_seq = 0U;
     ctx->send_window.base_seq = 0U;
     ctx->send_has_data = 0;
@@ -202,16 +215,9 @@ static void reset_all_paths_disconnected(potr_context *ctx)
     memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
     memset((void *)ctx->path_logical_alive, 0, sizeof(ctx->path_logical_alive));
     ctx->health_alive = 0;
-}
-
-/* 送信キューを再初期化する (reconnect 時に shutdown 済みのキューをリセットする)。
-   depth と max_payload はキュー構造体から取得する。 */
-static void reset_send_queue(potr_context *ctx)
-{
-    size_t depth = ctx->send_queue.depth;
-    uint16_t max_payload = (uint16_t)ctx->global.max_payload;
-    potr_internal_send_queue_dispose(&ctx->send_queue);
-    (void)potr_internal_send_queue_init(&ctx->send_queue, depth, max_payload);
+    ctx->tcp_accepted_session_known = 0;
+    cplat_local_lock_unlock(ctx->tcp_state_mutex);
+    cplat_local_lock_unlock(ctx->tcp_recv_mutex);
 }
 
 /* 接続確立後に依存スレッドを起動する (path ごと)。
@@ -220,6 +226,8 @@ static void reset_send_queue(potr_context *ctx)
    失敗時は起動済みスレッドをすべて停止して、失敗した処理の結果コードを返す。 */
 static int start_connected_threads(potr_context *ctx, int path_idx)
 {
+    /* キューの shutdown は待機解除だけであり、再初期化は不要。
+     * 共有送信スレッドと API が参照するキューを再接続時も維持する。 */
     const potr_internal_connected_threads_ops ops = {potr_internal_send_thread_start,       potr_internal_send_thread_stop, potr_internal_tcp_recv_thread_start,
                                          potr_internal_tcp_health_thread_start, close_tcp_conn,        join_recv_thread,
                                          set_tcp_path_ping_state};
@@ -369,8 +377,6 @@ static cplat_socket tcp_connect_with_timeout(potr_context *ctx, int path_idx)
 /* SENDER 用接続ループ (path ごと) */
 static void sender_connect_loop(potr_context *ctx, int path_idx)
 {
-    int is_reconnect = 0; /* 初回接続フラグ */
-
     while (ctx->connect_thread_running[path_idx])
     {
         cplat_socket sock;
@@ -407,22 +413,19 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP connected",
                    ctx->service.service_id, path_idx);
 
-        ctx->tcp_conn_fd[path_idx] = sock;
-        ctx->tcp_last_ping_recv_ms[path_idx] = cplat_get_monotonic_ms();
-
-        /* tcp_active_paths カウンターをインクリメント (tcp_state_mutex 保護) */
+        /* 0→1 の初期化を完了してから接続を公開する。 */
+        cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
         active_count = ++ctx->tcp_active_paths;
-        cplat_local_lock_unlock(ctx->tcp_state_mutex);
-        (void)active_count; /* CONNECTED イベントは recv スレッドが最初のパケット受信時に発火 */
-
-        reset_connection_state(ctx);
-
-        /* 再接続時 (path[0] のみ): 全 path 切断後の再起動ではキューをリセット */
-        if (is_reconnect && path_idx == 0)
+        if (active_count == 1)
         {
-            reset_send_queue(ctx);
+            reset_connection_state(ctx);
         }
+
+        ctx->tcp_conn_fd[path_idx] = sock;
+        ctx->tcp_last_ping_recv_ms[path_idx] = cplat_get_monotonic_ms();
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
+        cplat_local_lock_unlock(ctx->tcp_recv_mutex);
 
         if (start_connected_threads(ctx, path_idx) != POTR_OK)
         {
@@ -442,7 +445,6 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
 
             /* reconnect_interval_ms は再接続間隔の設定値。実用範囲は INT_MAX 以下 */
             reconnect_wait(ctx, path_idx, (int)ctx->service.reconnect_interval_ms);
-            is_reconnect = 1;
             continue;
         }
 
@@ -486,7 +488,6 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
                    ctx->service.service_id, path_idx, (unsigned)ctx->service.reconnect_interval_ms);
         /* reconnect_interval_ms は再接続間隔の設定値。実用範囲は INT_MAX 以下 */
         reconnect_wait(ctx, path_idx, (int)ctx->service.reconnect_interval_ms);
-        is_reconnect = 1;
     }
 }
 
@@ -504,9 +505,6 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
  * 先読みパケットは tcp_first_pkt_buf/len に保存し、recv スレッドが起動直後に処理する。 */
 static void receiver_accept_loop(potr_context *ctx, int path_idx)
 {
-    int is_bidir = (ctx->service.type == POTR_TYPE_TCP_BIDIR);
-    int is_reconnect = 0;
-
     /* 先読みタイムアウト: TCP ヘルスチェック タイムアウトの POTR_TCP_FIRST_PKT_TIMEOUT_SCALE 倍、未設定時は既定値 */
     uint32_t first_pkt_timeout_ms = POTR_DEFAULT_TCP_FIRST_PKT_TIMEOUT_MS;
     if (ctx->global.tcp_health_timeout_ms > 0U)
@@ -603,16 +601,27 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             /* session_establish_mutex 下でセッション判定と状態更新を行う */
             cplat_local_lock_lock(ctx->session_establish_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
+            cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            if (pkt.service_id != ctx->service.service_id ||
+                thread_recv_authenticate_packet(ctx, &pkt, ctx->tcp_first_pkt_buf[path_idx],
+                                                "tcp_accept", path_idx) != POTR_OK)
+            {
+                cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+                cplat_local_lock_unlock(ctx->session_establish_mutex);
+                cplat_socket_close(conn);
+                continue;
+            }
             session_result = tcp_session_compare(ctx, &pkt);
 
             if (session_result == TCP_SESSION_OLD)
             {
                 /* 旧セッション: 拒否 */
-                cplat_local_lock_unlock(ctx->session_establish_mutex);
                 POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                            "connect_thread[service_id=%" PRId64 " path=%d]: "
                            "old session rejected (known_id=%u pkt_id=%u)",
-                           ctx->service.service_id, path_idx, ctx->peer_session_id, pkt.session_id);
+                           ctx->service.service_id, path_idx, ctx->tcp_accepted_session_id, pkt.session_id);
+                cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+                cplat_local_lock_unlock(ctx->session_establish_mutex);
                 cplat_socket_close(conn);
                 continue;
             }
@@ -633,28 +642,22 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                     }
                 }
                 reset_connection_state(ctx); /* peer_session_known = 0, frag_buf_len = 0 */
+                ctx->tcp_accepted_session_id = pkt.session_id;
+                potr_session_ts_from_hdr(pkt.session_tv_sec, pkt.session_tv_nsec, &ctx->tcp_accepted_session_ts);
+                ctx->tcp_accepted_session_known = 1;
             }
             /* TCP_SESSION_SAME の場合は reset 不要 (セッション継続) */
 
+            cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            ++ctx->tcp_active_paths;
             ctx->tcp_conn_fd[path_idx] = conn;
             ctx->tcp_last_ping_recv_ms[path_idx] = cplat_get_monotonic_ms();
             ctx->tcp_first_pkt_len[path_idx] = pkt_len; /* 先読みバッファー有効化 */
 
-            cplat_local_lock_unlock(ctx->session_establish_mutex);
+            cplat_local_lock_unlock(ctx->tcp_state_mutex);
+            cplat_local_lock_unlock(ctx->tcp_recv_mutex);
         }
         /* ── セッション判定ここまで ── */
-
-        /* tcp_active_paths カウンターをインクリメント (tcp_state_mutex 保護) */
-        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-        active_count = ++ctx->tcp_active_paths;
-        cplat_local_lock_unlock(ctx->tcp_state_mutex);
-        (void)active_count; /* CONNECTED イベントは recv スレッドが最初のパケット受信時に発火 */
-
-        /* TCP_BIDIR 新セッション再接続時 (path[0] のみ): shutdown 済みのキューをリセット */
-        if (is_bidir && session_result == TCP_SESSION_NEW && is_reconnect && path_idx == 0)
-        {
-            reset_send_queue(ctx);
-        }
 
         if (start_connected_threads(ctx, path_idx) != POTR_OK)
         {
@@ -667,9 +670,10 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             }
             ctx->tcp_first_pkt_len[path_idx] = 0; /* 先読みバッファーを無効化 */
             close_tcp_conn(ctx, path_idx);
-            is_reconnect = 1;
+            cplat_local_lock_unlock(ctx->session_establish_mutex);
             continue;
         }
+        cplat_local_lock_unlock(ctx->session_establish_mutex);
 
         /* recv スレッドが接続断を検知して自然終了するまで待機する */
         join_recv_thread(ctx, path_idx);
@@ -697,7 +701,6 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             reset_all_paths_disconnected(ctx);
         }
 
-        is_reconnect = 1;
         /* ループ継続: 次の accept へ */
     }
 }

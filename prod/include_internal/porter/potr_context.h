@@ -293,10 +293,13 @@ struct potr_context
     int frag_compressed;      /**< フラグメント受信中の圧縮フラグ (非 0: 圧縮あり)。 */
     uint32_t _pad_frag;       /**< パディング (frag_buf を 8 バイト境界に揃える)。 */
     uint8_t *frag_buf;        /**< フラグメント結合バッファー (動的確保。max_message_size バイト)。 */
-    uint8_t *compress_buf;    /**< 圧縮・展開用一時バッファー (動的確保)。 */
+    uint8_t *compress_buf;    /**< 送信圧縮用一時バッファー (動的確保)。 */
     size_t compress_buf_size; /**< compress_buf のサイズ (バイト)。 */
-    uint8_t *crypto_buf;      /**< 暗号化・復号用一時バッファー (動的確保)。 */
+    uint8_t *crypto_buf;      /**< 送信暗号化用一時バッファー (動的確保)。 */
     size_t crypto_buf_size;   /**< crypto_buf のサイズ (バイト)。 */
+    uint8_t *recv_compress_buf; /**< 受信展開用バッファー (動的確保、compress_buf_size バイト)。 */
+    uint8_t *recv_crypto_buf; /**< 受信復号用バッファー (動的確保、crypto_buf_size バイト)。 */
+    uint8_t *tcp_recv_buf[POTR_MAX_PATH]; /**< TCP 経路専用受信バッファー (動的確保、PACKET_HEADER_SIZE + max_payload バイト)。 */
     uint8_t *
         recv_buf; /**< 受信バッファー / 再送 wire 組立バッファー (動的確保。PACKET_HEADER_SIZE + max_payload バイト)。 */
     uint8_t *
@@ -349,6 +352,11 @@ struct potr_context
 
     /* recv_window 保護 (TCP v2: 複数 recv スレッドが同一 recv_window にアクセスするため) */
     cplat_local_lock *recv_window_mutex; /**< recv_window 保護用ミューテックス。 */
+    /* TCP の解析・認証から配信・FIN 処理と受信状態初期化までを保護します。
+     * ソケット読み取りとスレッド join 中は保持しません。
+     * session_establish_mutex → tcp_recv_mutex → recv_window_mutex / tcp_state_mutex /
+     * tcp_send_mutex / callback_mutex の順で取得し、逆順には取得しません。 */
+    cplat_local_lock *tcp_recv_mutex;
 
     /* connect/accept スレッド */
     cplat_thread
@@ -375,6 +383,12 @@ struct potr_context
      * 複数 path の accept スレッドが並行して session_id 判定を行う際の競合を防ぎます。
      * potr_internal_connect_thread_start で初期化、potr_internal_connect_thread_stop で破棄します。 */
     cplat_local_lock *session_establish_mutex;
+
+    /* 認証済みの TCP accept セッション。tcp_recv_mutex で保護します。
+     * DATA による受信ウィンドウ初期化とは独立して保持します。 */
+    cplat_timespec tcp_accepted_session_ts;
+    uint32_t tcp_accepted_session_id;
+    int tcp_accepted_session_known;
 
     /* TCP 先読みバッファー (path ごと)。
      * accept スレッドが session 判定のために読み取った最初の 1 パケット分のバイト列を

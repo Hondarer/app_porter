@@ -69,11 +69,11 @@ static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, si
     {
         size_t dec_len = ctx->compress_buf_size;
 
-        if (cplat_decompress(ctx->compress_buf, &dec_len, payload, payload_len) == CPLAT_OK)
+        if (cplat_decompress(ctx->recv_compress_buf, &dec_len, payload, payload_len) == CPLAT_OK)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: decompress %zu -> %zu bytes",
                        ctx->service.service_id, payload_len, dec_len);
-            potr_internal_callback_emit(ctx, slot->peer_id, POTR_EVENT_DATA, ctx->compress_buf, dec_len);
+            potr_internal_callback_emit(ctx, slot->peer_id, POTR_EVENT_DATA, ctx->recv_compress_buf, dec_len);
         }
         else
         {
