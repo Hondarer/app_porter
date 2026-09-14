@@ -4,12 +4,14 @@
 
 #include <inttypes.h>
 
+#include <cplat/base/platform.h>
 #include <porter/porter_const.h>
 #include <porter/protocol/packet.h>
 #include <porter/protocol/window.h>
 #include <porter/potr_path_event.h>
 #include <porter/infra/potr_trace.h>
 #include <cplat/clock/timespec.h>
+#include <cplat/net/endpoint.h>
 #include <cplat/sync/sync.h>
 
 #include "thread_recv_session.h"
@@ -163,4 +165,90 @@ void thread_recv_disconnect_peer_all_paths(potr_context *ctx, potr_internal_peer
     potr_internal_sync_peer_path_state_locked(peer, next_states, &prepared);
     potr_internal_emit_peer_path_events_locked(ctx, peer, &prepared);
     cplat_local_lock_unlock(ctx->callback_mutex);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int thread_recv_update_path_health(thread_recv_slot *slot, int path_idx)
+{
+    cplat_timespec now_ts;
+
+    cplat_get_monotonic(&now_ts);
+    *slot->last_recv_ts = now_ts;
+    slot->path_last_recv_ts[path_idx] = now_ts;
+    return thread_recv_set_path_ping_state(&slot->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void thread_recv_sync_path_state(thread_recv_slot *slot)
+{
+    potr_context *ctx = slot->ctx;
+    int next_states[POTR_MAX_PATH];
+    potr_internal_prepared_path_events prepared;
+
+    if (slot->peer != NULL)
+    {
+        potr_internal_copy_bidir_n1_path_states(slot->peer, next_states);
+        cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        potr_internal_sync_peer_path_state_locked(slot->peer, next_states, &prepared);
+        potr_internal_emit_peer_path_events_locked(ctx, slot->peer, &prepared);
+        cplat_local_lock_unlock(ctx->callback_mutex);
+        return;
+    }
+
+    if (potr_is_tcp_type(ctx->service.type))
+    {
+        potr_internal_copy_tcp_path_states(ctx, next_states);
+    }
+    else if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
+    {
+        potr_internal_copy_bidir_udp_path_states(ctx, next_states);
+    }
+    else
+    {
+        potr_internal_copy_oneway_path_states(ctx, next_states);
+    }
+
+    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    potr_internal_sync_service_path_state_locked(ctx, next_states, &prepared);
+    potr_internal_emit_service_path_events_locked(ctx, &prepared);
+    cplat_local_lock_unlock(ctx->callback_mutex);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void thread_recv_learn_sender_path(thread_recv_slot *slot, int path_idx, const cplat_ipv4_endpoint *sender)
+{
+    potr_context *ctx = slot->ctx;
+
+    if (slot->peer != NULL)
+    {
+        if (!potr_endpoint_is_unset(&slot->dest_addr[path_idx]))
+        {
+            slot->dest_addr[path_idx].port = sender->port;
+        }
+        else
+        {
+            slot->dest_addr[path_idx] = *sender;
+            slot->peer->n_paths++;
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "n1_update_path_recv: peer=%u path %d learned",
+                       (unsigned)slot->peer->peer_id, path_idx);
+        }
+        return;
+    }
+
+    ctx->peer_port[path_idx] = sender->port;
+
+    if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
+    {
+        if (ctx->service.src_addr[0][0] == '\0' && slot->dest_addr[path_idx].address == 0)
+        {
+            slot->dest_addr[path_idx].address = sender->address;
+        }
+        if (slot->dest_addr[path_idx].port == 0)
+        {
+            slot->dest_addr[path_idx].port = sender->port;
+        }
+    }
 }

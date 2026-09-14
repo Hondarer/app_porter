@@ -21,10 +21,19 @@ void thread_recv_slot_init_ctx(thread_recv_slot *slot, potr_context *ctx)
     slot->peer_id = POTR_PEER_NA;
     slot->pad = 0;
     slot->recv_window = &ctx->recv_window;
+    slot->send_window = &ctx->send_window;
+    slot->send_window_mutex = ctx->send_window_mutex;
+    slot->session_id = &ctx->session_id;
+    slot->session_ts = &ctx->session_ts;
+    slot->dest_addr = ctx->dest_addr;
+    slot->nack_dedup_buf = ctx->nack_dedup_buf;
+    slot->nack_dedup_next = &ctx->nack_dedup_next;
     slot->peer_session_id = &ctx->peer_session_id;
     slot->peer_session_ts = &ctx->peer_session_ts;
     slot->peer_session_known = &ctx->peer_session_known;
     slot->reorder_pending = &ctx->reorder_pending;
+    slot->reorder_nack_num = &ctx->reorder_nack_num;
+    slot->reorder_deadline_ts = &ctx->reorder_deadline_ts;
     slot->pending_fin = &ctx->pending_fin;
     slot->fin_target_seq = &ctx->fin_target_seq;
     slot->frag_buf = ctx->frag_buf;
@@ -34,6 +43,7 @@ void thread_recv_slot_init_ctx(thread_recv_slot *slot, potr_context *ctx)
     slot->last_recv_ts = &ctx->last_recv_ts;
     slot->path_last_recv_ts = ctx->path_last_recv_ts;
     slot->path_ping_state = ctx->path_ping_state;
+    slot->remote_path_ping_state = ctx->remote_path_ping_state;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -45,10 +55,19 @@ void thread_recv_slot_init_peer(thread_recv_slot *slot, potr_context *ctx, potr_
     slot->peer_id = peer->peer_id;
     slot->pad = 0;
     slot->recv_window = &peer->recv_window;
+    slot->send_window = &peer->send_window;
+    slot->send_window_mutex = peer->send_window_mutex;
+    slot->session_id = &peer->session_id;
+    slot->session_ts = &peer->session_ts;
+    slot->dest_addr = peer->dest_addr;
+    slot->nack_dedup_buf = peer->nack_dedup_buf;
+    slot->nack_dedup_next = &peer->nack_dedup_next;
     slot->peer_session_id = &peer->peer_session_id;
     slot->peer_session_ts = &peer->peer_session_ts;
     slot->peer_session_known = &peer->peer_session_known;
     slot->reorder_pending = &peer->reorder_pending;
+    slot->reorder_nack_num = &peer->reorder_nack_num;
+    slot->reorder_deadline_ts = &peer->reorder_deadline_ts;
     slot->pending_fin = &peer->pending_fin;
     slot->fin_target_seq = &peer->fin_target_seq;
     slot->frag_buf = peer->frag_buf;
@@ -58,6 +77,7 @@ void thread_recv_slot_init_peer(thread_recv_slot *slot, potr_context *ctx, potr_
     slot->last_recv_ts = &peer->last_recv_ts;
     slot->path_last_recv_ts = peer->path_last_recv_ts;
     slot->path_ping_state = peer->path_ping_state;
+    slot->remote_path_ping_state = peer->remote_path_ping_state;
 }
 
 /* 受信データを展開してコールバックに渡す */

@@ -19,10 +19,19 @@ typedef struct thread_recv_slot
     potr_peer_id peer_id;             /* コールバック用ピア識別子 (1:1 は POTR_PEER_NA) */
     int pad;                          /* パディング (recv_window をポインター境界に揃える) */
     potr_internal_window *recv_window;
+    potr_internal_window *send_window;   /* NACK 再送元 */
+    cplat_local_lock *send_window_mutex; /* send_window 保護 */
+    uint32_t *session_id;                /* 自セッション識別子 (制御パケット構築) */
+    cplat_timespec *session_ts;          /* 自セッション開始時刻 */
+    cplat_ipv4_endpoint *dest_addr;      /* 送信先配列 (POTR_MAX_PATH) */
+    potr_internal_nack_dedup_entry *nack_dedup_buf;
+    uint8_t *nack_dedup_next;
     uint32_t *peer_session_id;
     cplat_timespec *peer_session_ts;
     int *peer_session_known;
     int *reorder_pending;
+    uint32_t *reorder_nack_num;
+    cplat_timespec *reorder_deadline_ts;
     int *pending_fin;
     uint32_t *fin_target_seq;
     uint8_t *frag_buf;
@@ -32,6 +41,7 @@ typedef struct thread_recv_slot
     cplat_timespec *last_recv_ts;
     cplat_timespec *path_last_recv_ts;
     volatile uint8_t *path_ping_state;
+    uint8_t *remote_path_ping_state; /* 相手端の経路受信状態 (POTR_MAX_PATH) */
 } thread_recv_slot;
 
 /**

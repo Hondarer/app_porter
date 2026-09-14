@@ -319,17 +319,19 @@ RECEIVER 側は、接続時の session triplet(`session_id + session_tv_sec + se
 
 サービスの開始処理は、資源の所有と起動順序を管理する部分と、通信経路を準備する部分に分けています。  
 受信処理は、パケットを受け入れる条件の検証を分離し、セッションや受信ウィンドウを更新する前に呼び出します。  
-セッション採用と FIN 制御は受信状態の更新として集約し、受信ループはソケット I/O、パケット振り分け、再送、ヘルス監視を担当します。
+セッション採用と FIN 制御は受信状態の更新として集約します。  
+再送と順序整列は受信状態ビュー経由で 1:1 と N:1 が共有し、受信ループはソケット I/O、パケット振り分け、ヘルス監視を担当します。
 
 | 実装 | 責務 | 境界で守る条件 |
 |---|---|---|
 | `api/potr_service_open.c` | 設定検証、コンテキストの確保、スレッド起動、失敗時の資源解放 | 起動完了後にハンドルを呼び出し元へ返却 |
 | `api/api_open_paths.c` | 通信種別ごとのソケット作成、アドレス解決、送信先設定 | 確保したソケットはコンテキストが所有し、開始処理の失敗時に解放 |
-| `thread/potr_recv_thread.c` | ソケット受信、パケット振り分け、再送、ヘルス監視、リオーダー | 認証成功後に受信状態を更新する |
+| `thread/potr_recv_thread.c` | ソケット受信、パケット振り分け、ヘルス監視 | 認証成功後に受信状態を更新する |
 | `thread/thread_recv_validate.c` | 暗号化要件、GCM 認証、UDP 送信元の照合 | 認証失敗は `POTR_ERR_PROTOCOL`、送信元照合は採用可否を返す |
 | `thread/thread_recv_slot.c` | 1:1／N:1 の受信状態参照、フラグメント結合、展開、DATA 配信 | 順序整列済みのエレメントを受け取り、データの所有権は移動しない |
-| `thread/thread_recv_session.c` | セッション triplet の採用判定、経路切断、PING 受信状態の更新 | 旧セッションでは受信状態を変更しない |
+| `thread/thread_recv_session.c` | セッション triplet の採用判定、経路切断、PING 受信状態の更新、送信元学習 | 旧セッションでは受信状態を変更しない |
 | `thread/thread_recv_fin.c` | pending FIN の判定、`FIN_ACK` 送受信、FIN による切断 | 判定と発火を分離し、`recv_window_mutex` 保持中は発火しない |
+| `thread/thread_recv_window.c` | ウィンドウ投入、NACK 再送要求、REJECT、リオーダー | ループへ個別の状態操作を公開せず、再送と順序整列を入口関数へ集約する |
 
 表のパスは `prod/libsrc/porter/` を起点とします。  
 分割した関数の契約は同じディレクトリの私有ヘッダーへ記載し、公開 API やライブラリ内共有 API には追加しません。
@@ -352,6 +354,7 @@ package "thread" {
   [thread_recv_slot]
   [thread_recv_session]
   [thread_recv_fin]
+  [thread_recv_window]
   [potr_send_thread]
   [potr_health_thread]
   [potr_connect_thread]
@@ -396,17 +399,23 @@ database "potr_context\n(セッション全状態)" as CTX
 [potr_send_thread] --> [net\n(socket・endpoint・byteorder)] : 送信
 
 [potr_recv_thread] --> [packet]
-[potr_recv_thread] --> [window]
-[potr_recv_thread] --> [seqnum]
 [potr_recv_thread] --> [thread_recv_slot] : 受信状態参照・DATA 配信
 [thread_recv_slot] --> [compress]
 [potr_recv_thread] --> [thread_recv_validate] : 認証・送信元照合
 [potr_recv_thread] --> [thread_recv_session] : セッション採用・経路切断
 [potr_recv_thread] --> [thread_recv_fin] : FIN 判定・切断発火
+[potr_recv_thread] --> [thread_recv_window] : 再送・順序整列
+[thread_recv_window] --> [window]
+[thread_recv_window] --> [seqnum]
+[thread_recv_window] --> [packet]
+[thread_recv_window] --> [crypto] : 制御パケットの認証タグ生成
+[thread_recv_window] --> [thread_recv_slot] : 整列済みデータの配信
+[thread_recv_window] --> [thread_recv_session] : 経路学習・経路状態同期
+[thread_recv_window] --> [thread_recv_fin] : pending FIN 到達
 [thread_recv_fin] --> [thread_recv_session] : 経路切断
-[potr_recv_thread] --> [crypto] : 制御パケットの認証タグ生成
 [thread_recv_validate] --> [crypto]
 [potr_recv_thread] --> [net\n(socket・endpoint・byteorder)] : 受信
+[thread_recv_window] --> [net\n(socket・endpoint・byteorder)] : NACK / REJECT / 再送
 
 api -[hidden]--thread
 thread -[hidden]-- infra

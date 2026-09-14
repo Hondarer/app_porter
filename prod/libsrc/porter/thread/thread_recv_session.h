@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <cplat/net/endpoint.h>
 #include <porter/protocol/packet.h>
 #include <porter/potr_peer_table.h>
 
@@ -55,5 +56,32 @@ void thread_recv_disconnect_service_all_paths(potr_context *ctx);
  * @note コールバック mutex を取得します。所有権は移動しません。
  */
 void thread_recv_disconnect_peer_all_paths(potr_context *ctx, potr_internal_peer_context *peer);
+
+/**
+ * @brief パスごとの最終受信時刻と PING 受信状態を更新します。
+ * @param[in,out] slot 構成済みの受信状態ビュー。NULL は許可しません。
+ * @param[in] path_idx 更新する経路番号。
+ * @return 受信状態が変化した場合は 1、変化がない場合は 0 を返します。
+ * @note 変化の有無を返す述語のため共通結果コードの適用対象外です。
+ *       所有権は移動しません。
+ */
+int thread_recv_update_path_health(thread_recv_slot *slot, int path_idx);
+
+/**
+ * @brief 現在の経路受信状態を経路イベントへ反映します。
+ * @param[in,out] slot 構成済みの受信状態ビュー。NULL は許可しません。
+ * @note コールバック mutex を取得します。所有権は移動しません。
+ */
+void thread_recv_sync_path_state(thread_recv_slot *slot);
+
+/**
+ * @brief 受信した送信元アドレスを経路の送信先として記録します。
+ * @param[in,out] slot 構成済みの受信状態ビュー。NULL は許可しません。
+ * @param[in] path_idx 更新する経路番号。
+ * @param[in] sender 受信した送信元アドレス。NULL は許可しません。
+ * @note N:1 はピアの送信先を学習します。1:1 は peer_port と、必要なら dest_addr を更新します。
+ *       所有権は移動しません。
+ */
+void thread_recv_learn_sender_path(thread_recv_slot *slot, int path_idx, const cplat_ipv4_endpoint *sender);
 
 #endif
