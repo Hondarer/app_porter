@@ -34,6 +34,7 @@
 #include "thread_recv_session.h"
 #include "thread_recv_fin.h"
 #include "thread_recv_window.h"
+#include "thread_recv_dispatch.h"
 
 /* N:1: poll タイムアウト時にヘルスチェック タイムアウトを確認する */
 static void n1_check_health_timeout(potr_context *ctx)
@@ -120,32 +121,6 @@ static void n1_check_health_timeout(potr_context *ctx)
 /* ================================================================
  * N:1 モード専用ここまで
  * ================================================================ */
-
-/* PING ペイロード (相手端のパス受信状態ベクトル) を remote_path_ping_state[] に取り込む。
- * 入力バイトが POTR_PING_STATE_UNDEFINED の場合は当該スロットを更新しない。
- * これは bootstrap PING や送信競合で stale な UNDEFINED が後着した場合に、確立済みの
- * NORMAL を後退させて瞬間 DISCONNECTED を起こさないための防御。
- * NORMAL / ABNORMAL への遷移のみ反映する。 */
-static void apply_remote_path_ping_state_payload(uint8_t *dst, const uint8_t *src, size_t count)
-{
-    size_t i;
-
-    for (i = 0; i < count; i++)
-    {
-        if (src[i] != POTR_PING_STATE_UNDEFINED)
-        {
-            dst[i] = src[i];
-        }
-    }
-}
-
-static void wake_udp_interrupt_ping_if_needed(potr_context *ctx, int state_changed)
-{
-    if (state_changed && ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
-    {
-        potr_internal_health_thread_wake(ctx);
-    }
-}
 
 static void wake_tcp_interrupt_ping_if_needed(potr_context *ctx, int path_idx, int state_changed)
 {
@@ -251,7 +226,7 @@ static void check_health_timeout(thread_recv_slot *slot)
         }
     }
 
-    wake_udp_interrupt_ping_if_needed(ctx, should_wake_health);
+    thread_recv_wake_udp_interrupt_ping(ctx, should_wake_health);
 }
 
 /* N:1 モード: 受信パケットをピアごとにディスパッチして処理する。
@@ -318,102 +293,15 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
                    (unsigned)cplat_ntoh16(sender_addr->port));
     }
 
-    /* FIN: ピアの正常終了通知 */
-    if (pkt->flags & POTR_FLAG_FIN)
     {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
-                   "recv[service_id=%" PRId64 "]: peer=%u FIN received"
-                   " (fin_target_seq=%u recv_next=%u)",
-                   ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)pkt->ack_num,
-                   (unsigned)peer->recv_window.next_seq);
+        int should_wake_health = thread_recv_dispatch_packet(&peer_slot, pkt, path_idx, sender_addr);
 
-        {
-            uint32_t fin_target_seq = 0U;
-            int fin_action = thread_recv_fin_on_packet(&peer_slot, pkt, &fin_target_seq);
-
-            if (fin_action == THREAD_RECV_FIN_PENDING)
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
-                           "recv[service_id=%" PRId64 "]: peer=%u FIN pending (waiting for seq=%u)",
-                           ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)pkt->ack_num);
-                cplat_local_lock_unlock(ctx->peers_mutex);
-                return;
-            }
-
-            /* 即時: no-data FIN またはウィンドウ到達済み。 */
-            if (fin_action == THREAD_RECV_FIN_FIRE)
-            {
-                thread_recv_fin_fire(&peer_slot, fin_target_seq);
-            }
-            cplat_local_lock_unlock(ctx->peers_mutex);
-            return;
-        }
-    }
-
-    if ((pkt->flags & POTR_FLAG_NACK) != 0)
-    {
-        thread_recv_window_on_nack(&peer_slot, pkt);
         cplat_local_lock_unlock(ctx->peers_mutex);
-        return;
-    }
-
-    if ((pkt->flags & POTR_FLAG_REJECT) != 0)
-    {
-        thread_recv_window_on_reject(&peer_slot, pkt, path_idx, sender_addr);
-        cplat_local_lock_unlock(ctx->peers_mutex);
-        return;
-    }
-
-    /* DATA / PING */
-    if (!(pkt->flags & (POTR_FLAG_DATA | POTR_FLAG_PING)))
-    {
-        cplat_local_lock_unlock(ctx->peers_mutex);
-        return;
-    }
-
-    if (!thread_recv_session_adopt(&peer_slot, pkt))
-    {
-        cplat_local_lock_unlock(ctx->peers_mutex);
-        return;
-    }
-
-    thread_recv_learn_sender_path(&peer_slot, path_idx, sender_addr);
-
-    {
-        const char *pkt_kind_str;
-        if ((pkt->flags & POTR_FLAG_PING) != 0)
-        {
-            pkt_kind_str = "PING";
-        }
-        else
-        {
-            pkt_kind_str = "DATA";
-        }
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: peer=%u %s seq=%u",
-                   ctx->service.service_id, (unsigned)peer->peer_id, pkt_kind_str, (unsigned)pkt->seq_num);
-    }
-
-    if ((pkt->flags & POTR_FLAG_PING) != 0)
-    {
-        int ping_state_changed = thread_recv_update_path_health(&peer_slot, path_idx);
-
-        if (pkt->payload_len >= POTR_MAX_PATH && pkt->payload != NULL)
-        {
-            apply_remote_path_ping_state_payload(peer->remote_path_ping_state, pkt->payload, POTR_MAX_PATH);
-        }
-
-        thread_recv_sync_path_state(&peer_slot);
-        thread_recv_window_scan_ping_gap(&peer_slot, pkt);
-        cplat_local_lock_unlock(ctx->peers_mutex);
-        if (ping_state_changed)
+        if (should_wake_health != 0)
         {
             potr_internal_health_thread_wake(ctx);
         }
-        return;
     }
-
-    thread_recv_window_accept_outer(&peer_slot, pkt, path_idx);
-    cplat_local_lock_unlock(ctx->peers_mutex);
 }
 
 /* 送信者ロール: NACK のみ処理する。
@@ -436,109 +324,6 @@ static int sender_handle_packet(thread_recv_slot *slot, const potr_packet *pkt)
     }
 
     return 0;
-}
-
-/* 受信者ロール: FIN / REJECT / DATA / PING を処理する (1:1 モード) */
-static void receiver_handle_packet(thread_recv_slot *svc_slot, potr_packet *pkt, const cplat_ipv4_endpoint *sender_addr,
-                                   int path_idx)
-{
-    potr_context *ctx = svc_slot->ctx;
-
-    /* FIN: 送信者からの正常終了通知 */
-    if (pkt->flags & POTR_FLAG_FIN)
-    {
-        if (!thread_recv_session_adopt(svc_slot, pkt))
-        {
-            return; /* 旧セッションの FIN → 無視 */
-        }
-
-        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
-                   "recv[service_id=%" PRId64 "]: FIN received (fin_target_seq=%u recv_next=%u)",
-                   ctx->service.service_id, (unsigned)pkt->ack_num, (unsigned)ctx->recv_window.next_seq);
-
-        /* target 付き FIN かつ recv_window.next_seq が目標値に未到達: FIN をペンディング。
-         * 後着の DATA がウィンドウを満たした時点で thread_recv_fin_fire() が呼び出される。
-         * セッション リセットを遅延することで後着 DATA を引き続き受け入れ可能にする。 */
-        {
-            uint32_t fin_target_seq = 0U;
-            int fin_action = thread_recv_fin_on_packet(svc_slot, pkt, &fin_target_seq);
-
-            if (fin_action == THREAD_RECV_FIN_PENDING)
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "recv[service_id=%" PRId64 "]: FIN pending (waiting for seq=%u)",
-                           ctx->service.service_id, (unsigned)pkt->ack_num);
-                return;
-            }
-
-            /* 即時: no-data FIN またはウィンドウ到達済み。 */
-            if (fin_action == THREAD_RECV_FIN_FIRE)
-            {
-                thread_recv_fin_fire(svc_slot, fin_target_seq);
-            }
-            return;
-        }
-    }
-
-    if ((pkt->flags & POTR_FLAG_REJECT) != 0)
-    {
-        thread_recv_window_on_reject(svc_slot, pkt, path_idx, sender_addr);
-        return;
-    }
-
-    if ((pkt->flags & (POTR_FLAG_DATA | POTR_FLAG_PING)) == 0)
-    {
-        return;
-    }
-
-    if (thread_recv_session_adopt(svc_slot, pkt) == 0)
-    {
-        return;
-    }
-
-    thread_recv_learn_sender_path(svc_slot, path_idx, sender_addr);
-
-    {
-        const char *pkt_kind_str;
-        if ((pkt->flags & POTR_FLAG_PING) != 0)
-        {
-            pkt_kind_str = "PING";
-        }
-        else
-        {
-            pkt_kind_str = "DATA";
-        }
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: %s seq=%u path=%d",
-                   ctx->service.service_id, pkt_kind_str, (unsigned)pkt->seq_num, path_idx);
-    }
-
-    if ((pkt->flags & POTR_FLAG_PING) != 0)
-    {
-        int ping_state_changed = thread_recv_update_path_health(svc_slot, path_idx);
-
-        if (pkt->payload_len >= POTR_MAX_PATH && pkt->payload != NULL)
-        {
-            apply_remote_path_ping_state_payload(ctx->remote_path_ping_state, pkt->payload, POTR_MAX_PATH);
-        }
-
-        if (potr_is_raw_type(ctx->service.type))
-        {
-            thread_recv_window_scan_ping_gap(svc_slot, pkt);
-            thread_recv_sync_path_state(svc_slot);
-        }
-        else
-        {
-            if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
-            {
-                wake_udp_interrupt_ping_if_needed(ctx, ping_state_changed);
-            }
-            thread_recv_sync_path_state(svc_slot);
-            thread_recv_window_scan_ping_gap(svc_slot, pkt);
-        }
-    }
-    else
-    {
-        thread_recv_window_accept_outer(svc_slot, pkt, path_idx);
-    }
 }
 
 /* 受信スレッド本体 */
@@ -677,7 +462,7 @@ static void recv_thread_func(void *arg)
             }
 
             /* ── 受信者ロール: FIN / REJECT / DATA / PING を処理 ── */
-            receiver_handle_packet(&svc_slot, &pkt, &sender_addr, i);
+            (void)thread_recv_dispatch_packet(&svc_slot, &pkt, i, &sender_addr);
         }
     }
 
@@ -816,7 +601,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
         ping_state_changed = thread_recv_set_path_ping_state(&ctx->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
         if (pkt.payload_len >= POTR_MAX_PATH && pkt.payload != NULL)
         {
-            apply_remote_path_ping_state_payload(ctx->remote_path_ping_state, pkt.payload, POTR_MAX_PATH);
+            thread_recv_apply_remote_path_ping_state(ctx->remote_path_ping_state, pkt.payload, POTR_MAX_PATH);
         }
         thread_recv_sync_path_state(svc_slot);
         cplat_local_lock_unlock(ctx->tcp_state_mutex);
