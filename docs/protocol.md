@@ -567,7 +567,7 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 | 値 | 定数 | 意味 |
 |---|---|---|
 | `0` | `POTR_PING_STATE_UNDEFINED` | 不定 (片方向 / まだ有効な PING / DATA 未受信) |
-| `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルス信号を継続受信中) |
+| `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルスチェック信号を継続受信中) |
 | `2` | `POTR_PING_STATE_ABNORMAL` | 異常 (PING 途絶) |
 
 片方向通信 (type 1-6) の送信側は返送用 PING を持たないため、送出する PING ペイロードは全パス `UNDEFINED` のままです。受信側ローカルの `path_ping_state[]` は有効な `PING` または `DATA` 受信で更新されます。双方向通信 (type 7-10) は実際の PING 受信状態を格納します。

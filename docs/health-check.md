@@ -1,6 +1,6 @@
 # PING ヘルスチェック設計まとめ
 
-porter フレームワークにおける potr_type ごとの PING 送出ロジック、マルチパスごとの振る舞い、タイムアウト検出方式を整理します。PONG (PING 応答) は存在しません。片方向 type 1-6 は有効な `PING` / `DATA` 受信をヘルス信号として扱い、送信側は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送信します。双方向 type 7-10 は PING 応答ベースで path logical を判定し、service / peer の `CONNECTED` はその OR で決まります。
+porter フレームワークにおける potr_type ごとの PING 送出ロジック、マルチパスごとの振る舞い、タイムアウト検出方式を整理します。PONG (PING 応答) は存在しません。片方向 type 1-6 は有効な `PING` / `DATA` 受信をヘルスチェック信号として扱い、送信側は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送信します。双方向 type 7-10 は PING 応答ベースで path logical を判定し、service / peer の `CONNECTED` はその OR で決まります。
 
 ## 概要
 
@@ -47,7 +47,7 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 | 値 | 定数 | 意味 |
 |---|---|---|
 | `0` | `POTR_PING_STATE_UNDEFINED` | 不定 (片方向通信 / まだ有効な PING / DATA 未受信) |
-| `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルス信号を継続受信中) |
+| `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルスチェック信号を継続受信中) |
 | `2` | `POTR_PING_STATE_ABNORMAL` | 異常 (PING 途絶・タイムアウト) |
 
 片方向通信 (type 1-6) では送信側が返送用 PING を持たないため、送出される PING ペイロードは全バイト `UNDEFINED` のままです。一方、受信側ローカルの `path_ping_state[]` は有効な `PING` または `DATA` を受けると `NORMAL` に更新されます。双方向通信 (type 7-10) は実際の PING 受信状態を格納します。

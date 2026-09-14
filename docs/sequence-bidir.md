@@ -119,7 +119,7 @@ S -> S: peer table から peer_id=2 を削除
 
 ```plantuml
 @startuml unicast_bidir タイムアウト
-title unicast_bidir ヘルスタイムアウトによる切断検知
+title unicast_bidir ヘルスチェック タイムアウトによる切断検知
 
 participant "Side A" as A
 participant "Side B\n(停止)" as B

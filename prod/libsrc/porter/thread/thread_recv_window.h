@@ -10,7 +10,7 @@
  * @brief 外側パケットを受信ウィンドウへ投入し、欠番なら再送要求し、整列済みデータを配信します。
  * @param[in,out] slot 構成済みの受信状態ビュー。NULL は許可しません。
  * @param[in] pkt 投入する DATA または PING の外側パケット。NULL は許可しません。
- * @param[in] path_idx 受信した経路番号。片方向 DATA のヘルス更新に使います。
+ * @param[in] path_idx 受信した経路番号。片方向 DATA のヘルスチェック状態の更新に使います。
  * @note 再送と順序整列の入口です。NACK 送出、RAW リセット、ウィンドウ取り出しを内部で完結します。
  *       所有権は移動しません。呼び出し側は同一スロットへの並行更新を避けてください。
  *       N:1 では peers_mutex 保護下で呼び出してください。
@@ -44,7 +44,7 @@ void thread_recv_window_on_nack(thread_recv_slot *slot, const potr_packet *pkt);
  * @brief PING が示す前方通番までの欠番を走査し、NACK または RAW リセットを行います。
  * @param[in,out] slot 構成済みの受信状態ビュー。NULL は許可しません。
  * @param[in] pkt 受信した PING。NULL は許可しません。
- * @note ヘルス更新や経路イベント発行は呼び出し側が行います。
+ * @note ヘルスチェック状態の更新や経路イベント発行は呼び出し側が行います。
  *       N:1 は先頭欠番だけを即時 NACK します。所有権は移動しません。
  */
 void thread_recv_window_scan_ping_gap(thread_recv_slot *slot, const potr_packet *pkt);

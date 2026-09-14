@@ -170,7 +170,7 @@ typedef struct potr_internal_peer_context
     size_t   frag_buf_len;
     int      frag_compressed;
 
-    /* ヘルス */
+    /* ヘルスチェック */
     volatile int health_alive;
     int64_t last_recv_tv_sec;
     int32_t last_recv_tv_nsec;
