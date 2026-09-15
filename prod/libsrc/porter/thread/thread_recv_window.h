@@ -12,8 +12,9 @@
  * @param[in] pkt 投入する DATA または PING の外側パケット。NULL は許可しません。
  * @param[in] path_idx 受信した経路番号。片方向 DATA のヘルスチェック状態の更新に使います。
  * @note 再送と順序整列の入口です。NACK 送出、RAW リセット、ウィンドウ取り出しを内部で完結します。
- *       所有権は移動しません。呼び出し側は同一スロットへの並行更新を避けてください。
- *       N:1 では peers_mutex 保護下で呼び出してください。
+ *       呼び出し側は同一スロットへの並行更新を避けてください。
+ *       N:1 では peers_mutex 保護下で呼び出してください。pending FIN の目標通番に到達すると
+ *       peer とその受信ウィンドウを解放するため、関数からの復帰後は slot の peer 固有メンバーを参照できません。
  */
 void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *pkt, int path_idx);
 
@@ -24,8 +25,9 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
  * @param[in] path_idx 受信した経路番号。
  * @param[in] sender 受信した送信元アドレス。NULL は許可しません。
  * @note RAW では何もしません。旧セッションは破棄します。
- *       経路切断とウィンドウ前進を内部で完結します。所有権は移動しません。
- *       N:1 では peers_mutex 保護下で呼び出してください。
+ *       経路切断とウィンドウ前進を内部で完結します。
+ *       N:1 では peers_mutex 保護下で呼び出してください。ウィンドウ前進によって pending FIN の
+ *       目標通番に到達すると peer を解放するため、関数からの復帰後は slot の peer 固有メンバーを参照できません。
  */
 void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt, int path_idx,
                                   const cplat_ipv4_endpoint *sender);

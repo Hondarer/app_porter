@@ -40,6 +40,7 @@ int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, u
         memset(win->valid, 0, window_size);
         win->base_seq = initial_seq;
         win->next_seq = initial_seq;
+        win->base_index = 0U;
         return POTR_OK;
     }
 
@@ -78,6 +79,7 @@ int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, u
 
     win->base_seq = initial_seq;
     win->next_seq = initial_seq;
+    win->base_index = 0U;
     win->window_size = window_size;
     win->max_payload = max_payload;
 
@@ -105,16 +107,21 @@ void potr_internal_window_dispose(potr_internal_window *win)
  *  @brief          通番に対応するウィンドウ内インデックスを計算します。
  *  @param[in]      win  ウィンドウ構造体へのポインター。
  *  @param[in]      seq  インデックスを求める通番。
- *  @return         通番を window_size で剰余したインデックス。
+ *  @return         通番に対応する循環バッファー位置。
  *
- *  base_seq を基準にすると pop / evict による base_seq の前進で
- *  格納時と取り出し時のインデックスがずれるため、通番のみから決まる
- *  安定したマッピングを使用します。連続する window_size 個の通番は
- *  互いに異なるインデックスへ写像されるため衝突しません。
+ *  base_seq と base_index を同時に前進させることで、uint32 通番の周回時も
+ *  格納時と取り出し時の対応を維持します。
  */
 static uint16_t win_index(const potr_internal_window *win, uint32_t seq)
 {
-    return (uint16_t)(seq % win->window_size);
+    uint32_t distance = (uint32_t)(seq - win->base_seq);
+    return (uint16_t)(((uint32_t)win->base_index + distance) % (uint32_t)win->window_size);
+}
+
+static void win_advance_base(potr_internal_window *win)
+{
+    win->base_seq++;
+    win->base_index = (uint16_t)(((uint32_t)win->base_index + 1U) % (uint32_t)win->window_size);
 }
 
 /* ---------- 送信側 ---------- */
@@ -136,7 +143,7 @@ int potr_internal_window_send_push(potr_internal_window *win, const potr_packet 
     {
         idx = win_index(win, win->base_seq);
         win->valid[idx] = 0;
-        win->base_seq++;
+        win_advance_base(win);
     }
 
     idx = win_index(win, win->next_seq);
@@ -246,7 +253,7 @@ int potr_internal_window_recv_pop(potr_internal_window *win, potr_packet *packet
 
     *packet = win->packets[idx];
     win->valid[idx] = 0;
-    win->base_seq++;
+    win_advance_base(win);
     win->next_seq++;
 
     return POTR_OK;
@@ -264,8 +271,8 @@ void potr_internal_window_recv_skip(potr_internal_window *win, uint32_t seq_num)
     }
 
     idx = win_index(win, seq_num);
-    win->valid[idx] = 0; /* 万一セットされていても無効化 */
-    win->base_seq++;
+    win->valid[idx] = 0; /* 設定されている場合も無効化 */
+    win_advance_base(win);
     win->next_seq++;
 }
 
@@ -303,6 +310,22 @@ int potr_internal_window_recv_needs_nack(const potr_internal_window *win, uint32
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
+int potr_internal_window_recv_has_packet(const potr_internal_window *win, uint32_t seq_num)
+{
+    uint16_t idx;
+
+    if (win == NULL || win->valid == NULL || win->window_size == 0U ||
+        !potr_internal_seqnum_in_window(seq_num, win->base_seq, win->window_size))
+    {
+        return 0;
+    }
+
+    idx = win_index(win, seq_num);
+    return win->valid[idx] != 0;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_internal_window_recv_reset(potr_internal_window *win, uint32_t new_base_seq)
 {
     if (win == NULL || win->valid == NULL)
@@ -313,4 +336,5 @@ void potr_internal_window_recv_reset(potr_internal_window *win, uint32_t new_bas
     memset(win->valid, 0, (size_t)win->window_size);
     win->base_seq = new_base_seq;
     win->next_seq = new_base_seq;
+    win->base_index = 0U;
 }

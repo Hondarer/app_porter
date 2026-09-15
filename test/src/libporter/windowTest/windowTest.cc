@@ -160,6 +160,43 @@ TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
         actual_ret_out_of_range); // [確認_異常系] - 範囲外の通番 99 の potr_internal_window_send_get の戻り値が POTR_ERR_NOT_FOUND であること。
 }
 
+// - 2 の累乗でないウィンドウでも、通番周回前後の送信パケットを別スロットで保持すること。
+TEST_F(windowTest, sendGetKeepsPacketsDistinctAcrossSequenceWrap)
+{
+    // Arrange
+    uint8_t payload[1] = {0x42}; // [状態] - 送信パケットのペイロード 1 バイトを用意する。
+    potr_packet out_before_wrap;
+    potr_packet out_at_wrap;
+    potr_packet out_after_wrap;
+
+    ASSERT_EQ(POTR_OK,
+              potr_internal_window_init(&win, UINT32_MAX - 1U, 3U,
+                                        16U)); // [状態] - サイズ 3 で通番上限をまたぐ送信ウィンドウを用意する。
+                                               // [状態確認] - 初期化が成功すること。
+
+    // Pre-Assert
+
+    // Act
+    potr_packet packet_before_wrap = make_send_packet(UINT32_MAX - 1U, payload, sizeof(payload));
+    potr_packet packet_at_wrap = make_send_packet(UINT32_MAX, payload, sizeof(payload));
+    potr_packet packet_after_wrap = make_send_packet(0U, payload, sizeof(payload));
+    ASSERT_EQ(POTR_OK,
+              potr_internal_window_send_push(&win, &packet_before_wrap)); // [手順] - 周回前の 3 通番を順に格納する。
+    ASSERT_EQ(POTR_OK, potr_internal_window_send_push(&win, &packet_at_wrap));
+    ASSERT_EQ(POTR_OK, potr_internal_window_send_push(&win, &packet_after_wrap));
+    int actual_before_wrap = potr_internal_window_send_get(&win, UINT32_MAX - 1U, &out_before_wrap);
+    int actual_at_wrap = potr_internal_window_send_get(&win, UINT32_MAX, &out_at_wrap);
+    int actual_after_wrap = potr_internal_window_send_get(&win, 0U, &out_after_wrap);
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_before_wrap);              // [確認_正常系] - 周回前の先頭パケットを取得できること。
+    EXPECT_EQ(POTR_OK, actual_at_wrap);                  // [確認_正常系] - 通番上限のパケットを取得できること。
+    EXPECT_EQ(POTR_OK, actual_after_wrap);               // [確認_正常系] - 周回後のパケットを取得できること。
+    EXPECT_EQ(UINT32_MAX - 1U, out_before_wrap.seq_num); // [確認_正常系] - 周回前の先頭通番が保持されること。
+    EXPECT_EQ(UINT32_MAX, out_at_wrap.seq_num);          // [確認_正常系] - 通番上限が保持されること。
+    EXPECT_EQ(0U, out_after_wrap.seq_num);               // [確認_正常系] - 周回後の通番 0 が保持されること。
+}
+
 // - 順序どおりに push したパケットが pop で順に取り出せること。
 // - 空ウィンドウの pop が POTR_ERR_EMPTY を返すこと。
 TEST_F(windowTest, recvPushAndPopDeliversInOrder)
@@ -201,6 +238,41 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
     EXPECT_EQ(1U, seq1); // [確認_正常系] - 2 件目が通番 1 で取り出され、通番順が保たれること。
     EXPECT_EQ(POTR_ERR_EMPTY,
               actual_ret_pop_empty); // [確認_異常系] - 空ウィンドウの potr_internal_window_recv_pop の戻り値が POTR_ERR_EMPTY であること。
+}
+
+// - 2 の累乗でないウィンドウでも、通番周回前後の受信パケットを順に取り出すこと。
+TEST_F(windowTest, recvPushAndPopAcrossSequenceWrap)
+{
+    // Arrange
+    uint8_t payload[1] = {0x24}; // [状態] - 受信パケットのペイロード 1 バイトを用意する。
+    potr_packet out;
+    uint32_t actual_sequences[3] = {};
+
+    ASSERT_EQ(POTR_OK,
+              potr_internal_window_init(&win, UINT32_MAX - 1U, 3U,
+                                        16U)); // [状態] - サイズ 3 で通番上限をまたぐ受信ウィンドウを用意する。
+                                               // [状態確認] - 初期化が成功すること。
+
+    // Pre-Assert
+
+    // Act
+    potr_packet packet_before_wrap = make_recv_packet(UINT32_MAX - 1U, payload, sizeof(payload));
+    potr_packet packet_at_wrap = make_recv_packet(UINT32_MAX, payload, sizeof(payload));
+    potr_packet packet_after_wrap = make_recv_packet(0U, payload, sizeof(payload));
+    ASSERT_EQ(POTR_OK,
+              potr_internal_window_recv_push(&win, &packet_before_wrap)); // [手順] - 周回前の 3 通番を順に格納する。
+    ASSERT_EQ(POTR_OK, potr_internal_window_recv_push(&win, &packet_at_wrap));
+    ASSERT_EQ(POTR_OK, potr_internal_window_recv_push(&win, &packet_after_wrap));
+    for (size_t i = 0U; i < 3U; i++)
+    {
+        ASSERT_EQ(POTR_OK, potr_internal_window_recv_pop(&win, &out)); // [手順] - 格納した 3 パケットを順に取り出す。
+        actual_sequences[i] = out.seq_num;
+    }
+
+    // Assert
+    EXPECT_EQ(UINT32_MAX - 1U, actual_sequences[0]); // [確認_正常系] - 周回前の先頭通番を最初に取り出すこと。
+    EXPECT_EQ(UINT32_MAX, actual_sequences[1]);      // [確認_正常系] - 通番上限を 2 番目に取り出すこと。
+    EXPECT_EQ(0U, actual_sequences[2]);              // [確認_正常系] - 周回後の通番 0 を最後に取り出すこと。
 }
 
 // - 先行パケットのみ到着した状態で欠番 (next_seq) が NACK 対象になること。
@@ -280,6 +352,74 @@ TEST_F(windowTest, recvPushRejectsOutOfWindowAndAcceptsDuplicate)
     EXPECT_EQ(POTR_OK,
               actual_ret_first); // [確認_正常系] - potr_internal_window_recv_push の戻り値から、範囲内の push が成功したと判断できること。
     EXPECT_EQ(POTR_OK, actual_ret_dup); // [確認_正常系] - 重複 push が成功扱いになること。
+}
+
+// - 到着済み問い合わせが非ゼロ基点でも、格納時と同じ循環スロットを参照すること。
+TEST_F(windowTest, recvHasPacketUsesStableIndexWithNonzeroBase)
+{
+    // Arrange
+    uint8_t payload[1] = {0x5a}; // [状態] - 受信パケットのペイロード 1 バイトを用意する。
+    potr_packet pkt12 = make_recv_packet(12U, payload, sizeof(payload));
+    ASSERT_EQ(POTR_OK,
+              potr_internal_window_init(&win, 10U, 4U, 16U));         // [状態] - 非ゼロ基点 10 のウィンドウを用意する。
+                                                                      // [状態確認] - 初期化が成功すること。
+    ASSERT_EQ(POTR_OK, potr_internal_window_recv_push(&win, &pkt12)); // [状態] - 基点から 2 先の通番 12 を格納する。
+                                                                      // [状態確認] - 格納が成功すること。
+
+    // Pre-Assert
+
+    // Act
+    int actual_has_12 =
+        potr_internal_window_recv_has_packet(&win, 12U); // [手順] - 非ゼロ基点で到着済み通番を確認する。
+    int actual_has_11 = potr_internal_window_recv_has_packet(&win, 11U);      // [手順] - 未着通番を確認する。
+    int actual_has_outside = potr_internal_window_recv_has_packet(&win, 14U); // [手順] - ウィンドウ外通番を確認する。
+
+    // Assert
+    EXPECT_EQ(1, actual_has_12);      // [確認_正常系] - 非ゼロ基点でも通番 12 が到着済みと判定されること。
+    EXPECT_EQ(0, actual_has_11);      // [確認_正常系] - 未着通番 11 が未到着と判定されること。
+    EXPECT_EQ(0, actual_has_outside); // [確認_正常系] - ウィンドウ外通番が未到着と判定されること。
+}
+
+// - 到着済み問い合わせが通番周回後も格納時と同じ循環スロットを参照すること。
+TEST_F(windowTest, recvHasPacketUsesStableIndexAcrossSequenceWrap)
+{
+    // Arrange
+    uint8_t payload[1] = {0x5a}; // [状態] - 受信パケットのペイロード 1 バイトを用意する。
+    potr_packet pkt0 = make_recv_packet(0U, payload, sizeof(payload));
+
+    ASSERT_EQ(POTR_OK, potr_internal_window_init(&win, UINT32_MAX - 1U, 3U,
+                                                 16U)); // [状態] - UINT32_MAX をまたぐウィンドウを用意する。
+                                                        // [状態確認] - 初期化が成功すること。
+    ASSERT_EQ(POTR_OK, potr_internal_window_recv_push(&win, &pkt0)); // [状態] - 周回後の通番 0 を格納する。
+                                                                     // [状態確認] - 格納が成功すること。
+
+    // Pre-Assert
+
+    // Act
+    int actual_has_wrapped =
+        potr_internal_window_recv_has_packet(&win, 0U); // [手順] - 周回後の到着済み通番を確認する。
+
+    // Assert
+    EXPECT_EQ(1, actual_has_wrapped); // [確認_正常系] - 周回後の通番 0 が到着済みと判定されること。
+}
+
+// - NULL と解放済みのウィンドウは未到着と判定すること。
+TEST_F(windowTest, recvHasPacketReturnsFalseForUnavailableWindow)
+{
+    // Arrange
+    ASSERT_EQ(POTR_OK, potr_internal_window_init(&win, 0U, 4U, 16U)); // [状態] - 解放済み状態を作るため初期化する。
+                                                                      // [状態確認] - 初期化が成功すること。
+    potr_internal_window_dispose(&win);                               // [状態] - ウィンドウを解放済みにする。
+
+    // Pre-Assert
+
+    // Act
+    int actual_null = potr_internal_window_recv_has_packet(NULL, 0U);     // [手順] - NULL を問い合わせる。
+    int actual_disposed = potr_internal_window_recv_has_packet(&win, 0U); // [手順] - 解放済みウィンドウを問い合わせる。
+
+    // Assert
+    EXPECT_EQ(0, actual_null);     // [確認_異常系] - NULL は未到着と判定されること。
+    EXPECT_EQ(0, actual_disposed); // [確認_異常系] - 解放済みウィンドウは未到着と判定されること。
 }
 
 // - skip が next_seq と一致する通番のときのみウィンドウを前進させること。

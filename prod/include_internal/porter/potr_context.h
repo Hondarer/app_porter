@@ -354,8 +354,10 @@ struct potr_context
     cplat_local_lock *recv_window_mutex; /**< recv_window 保護用ミューテックス。 */
     /* TCP の解析・認証から配信・FIN 処理と受信状態初期化までを保護します。
      * ソケット読み取りとスレッド join 中は保持しません。
-     * session_establish_mutex → tcp_recv_mutex → recv_window_mutex / tcp_state_mutex /
-     * tcp_send_mutex / callback_mutex の順で取得し、逆順には取得しません。 */
+     * session_establish_mutex の次に tcp_recv_mutex を取得します。tcp_recv_mutex の内側では
+     * recv_window_mutex、tcp_state_mutex、tcp_send_mutex、callback_mutex、send_window_mutex を取得できます。
+     * tcp_state_mutex と send_window_mutex の両方を取得する場合は、この順序とします。
+     * send_window_mutex と tcp_send_mutex の両方を取得する場合は、この順序とします。 */
     cplat_local_lock *tcp_recv_mutex;
 
     /* connect/accept スレッド */

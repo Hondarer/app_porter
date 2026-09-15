@@ -253,6 +253,23 @@ static void sleep_ms(unsigned int ms)
 #endif /* PLATFORM_ */
 }
 
+static bool wait_for_stderr(AsyncProcessHandle &handle, const string &needle, unsigned int timeout_ms)
+{
+    const unsigned int poll_interval_ms = 10U;
+    unsigned int elapsed_ms = 0U;
+
+    while (elapsed_ms < timeout_ms)
+    {
+        if (getStderr(handle).find(needle) != string::npos)
+        {
+            return true;
+        }
+        sleep_ms(poll_interval_ms);
+        elapsed_ms += poll_interval_ms;
+    }
+    return getStderr(handle).find(needle) != string::npos;
+}
+
 static size_t count_occurrences(const string &text, const string &needle)
 {
     size_t count = 0;
@@ -806,6 +823,58 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
         EXPECT_NE(string::npos, disc_pos); // [確認_正常系] - "切断検知" が出力されていること。
         EXPECT_LT(data_pos, disc_pos);     // [確認_正常系] - 最終 DATA の配信が peer 解放より先であること。
     }
+}
+
+// N:1 の pending FIN 完了後に解放済み peer を再参照せず、受信処理を継続できることを確認する
+TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
+{
+    // Arrange
+    PorterConfigBuilder cfg;
+    const string payload = "n1-pending-fin-complete"; // [状態] - FIN の目標通番に到達させるメッセージを用意する。
+    const string recovery_payload = "n1-after-fin";   // [状態] - peer 解放後の受信継続を確認するメッセージを用意する。
+    string config_path = cfg.addUnicastBidirN1Service(58, 19058, 1, "0.0.0.0")
+                             .build(); // [状態] - N:1 サーバー側サービスをポート 19058 で定義する。
+
+    recv_h_ = startProcessAsync(recv_path, {"receiver", "-l", "INFO", config_path, "58"},
+                                makeOpts());                     // [状態] - INFO トレース付きで RECEIVER を起動する。
+    ASSERT_NE(nullptr, recv_h_);                                 // [状態確認] - RECEIVER が起動すること。
+    ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECEIVER が受信待機状態になるまで待機する。
+                                                                 // [状態確認] - 例外を投げないこと。
+
+    // Pre-Assert
+
+    // Act
+    ASSERT_EQ(0, send_udp_packet(make_plain_ping_packet(58, 0x5801U, 6234, 10678, 0U, POTR_PING_STATE_NORMAL),
+                                 19058));                      // [手順] - PING を送信して N:1 peer を作成する。
+    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - peer の接続確立を待機する。
+
+    ASSERT_EQ(0, send_udp_packet(make_plain_fin_packet(58, 0x5801U, 6234, 10678, 1U, true),
+                                 19058)); // [手順] - 未到達の通番 1 を目標とする FIN を送信する。
+    ASSERT_TRUE(wait_for_stderr(recv_h_, "FIN pending",
+                                3000U)); // [手順] - FIN が pending 状態に登録されるまで待機する。
+    ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(58, 0x5801U, 6234, 10678, 0U, payload),
+                                 19058)); // [手順] - 通番 0 の DATA で pending FIN の目標に到達させる。
+    ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000));    // [手順] - FIN 完了前に DATA が配信されるまで待機する。
+    ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - pending FIN による peer 切断を待機する。
+
+    ASSERT_EQ(0, send_udp_packet(make_plain_ping_packet(58, 0x5802U, 6235, 10679, 0U, POTR_PING_STATE_NORMAL),
+                                 19058)); // [手順] - 切断後に別セッションの PING を送信する。
+    ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(58, 0x5802U, 6235, 10679, 0U, recovery_payload),
+                                 19058)); // [手順] - 新しい peer から DATA を送信する。
+    ASSERT_NO_THROW(waitForOutput(recv_h_, recovery_payload,
+                                  3000)); // [手順] - 新しい peer の DATA が配信されるまで待機する。
+
+    interruptProcess(recv_h_);                      // [手順] - RECEIVER に SIGINT (Ctrl+C) を入力する。
+    int receiver_exit = waitForExit(recv_h_, 3000); // [手順] - RECEIVER の終了を待機する。
+
+    // Assert
+    string recv_out = getStdout(recv_h_);
+    EXPECT_EQ(0, receiver_exit); // [確認_正常系] - FIN 完了後も RECEIVER が正常終了できること。
+    EXPECT_NE(string::npos,
+              recv_out.find(payload)); // [確認_正常系] - pending FIN 完了前に最終 DATA が配信されること。
+    EXPECT_NE(
+        string::npos,
+        recv_out.find(recovery_payload)); // [確認_正常系] - peer 解放後に新しいセッションの DATA を受信できること。
 }
 
 // pending FIN のまま health timeout した後、新セッション受理で stale 状態が再発しないことを確認する

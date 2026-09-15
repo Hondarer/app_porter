@@ -68,12 +68,22 @@ static void set_tcp_path_ping_state(potr_context *ctx, int path_idx, uint8_t nex
 /* TCP 接続ソケット [path_idx] をシャットダウン・クローズして INVALID にする */
 static void close_tcp_conn(potr_context *ctx, int path_idx)
 {
-    if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
+    cplat_socket closing_fd = ctx->tcp_conn_fd[path_idx];
+
+    if (closing_fd == CPLAT_INVALID_SOCKET)
     {
-        cplat_socket_shutdown(ctx->tcp_conn_fd[path_idx]);
-        cplat_socket_close(ctx->tcp_conn_fd[path_idx]);
+        return;
+    }
+
+    /* 送信完了待ちを先に解除し、その後で close と fd 無効化を送信処理と直列化する。 */
+    cplat_socket_shutdown(closing_fd);
+    cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    if (ctx->tcp_conn_fd[path_idx] == closing_fd)
+    {
+        cplat_socket_close(closing_fd);
         ctx->tcp_conn_fd[path_idx] = CPLAT_INVALID_SOCKET;
     }
+    cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
 }
 
 /* 再接続待機: reconnect_interval_ms 経過または停止シグナルまでスリープする */
@@ -188,8 +198,10 @@ static void reset_connection_state(potr_context *ctx)
     ctx->pending_fin = 0;
 }
 
-/* 全 path 切断時のリセット: send_window 通番・peer_session 状態・health_alive をクリアし
-   DISCONNECTED イベントを発火する。
+/* 全 path 切断時のリセット: send_window 通番・peer_session 状態・health_alive をクリアする。
+   ロック順は tcp_recv_mutex -> tcp_state_mutex -> send_window_mutex とする。
+   共有送信スレッドと送信キューは再接続に備えて維持する。接続がない間に送信スレッドが
+   取り出したデータは、既存の動作どおり送信せずに破棄される。
    呼び出しタイミング: tcp_active_paths が 0 になった直後 (tcp_state_mutex 非保護)。 */
 static void reset_all_paths_disconnected(potr_context *ctx)
 {
@@ -201,16 +213,28 @@ static void reset_all_paths_disconnected(potr_context *ctx)
         cplat_local_lock_unlock(ctx->tcp_recv_mutex);
         return;
     }
+
+    /* send_window_mutex は send_thread と送信状態を共有する場合だけ存在する。
+     * 未起動または起動失敗後は並行更新元がないため、NULL のままリセットできる。 */
+    if (ctx->send_window_mutex != NULL)
+    {
+        cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    }
     ctx->peer_session_known = 0;
     ctx->frag_buf_len = 0;
     ctx->frag_compressed = 0;
     ctx->pending_fin = 0;
     ctx->send_window.next_seq = 0U;
     ctx->send_window.base_seq = 0U;
+    ctx->send_window.base_index = 0U;
     ctx->send_has_data = 0;
     if (ctx->send_window.valid != NULL)
     {
         memset(ctx->send_window.valid, 0, (size_t)ctx->send_window.window_size * sizeof(uint8_t));
+    }
+    if (ctx->send_window_mutex != NULL)
+    {
+        cplat_local_lock_unlock(ctx->send_window_mutex);
     }
     memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
     memset((void *)ctx->path_logical_alive, 0, sizeof(ctx->path_logical_alive));
@@ -240,11 +264,9 @@ static int start_connected_threads(potr_context *ctx, int path_idx)
    注意: 送信スレッドは共有のため、potr_internal_connect_thread_stop で全 path join 後に停止する。 */
 static void stop_connected_threads(potr_context *ctx, int path_idx)
 {
-    /* health スレッドを先に停止 (PING 送信が tcp_conn_fd を参照するため) */
-    potr_internal_tcp_health_thread_stop(ctx, path_idx);
-
-    /* 接続ソケットをクローズ */
+    /* shutdown で DATA/PING 送信待ちを解除してから health スレッドを停止する。 */
     close_tcp_conn(ctx, path_idx);
+    potr_internal_tcp_health_thread_stop(ctx, path_idx);
 }
 
 /* SENDER: path_idx 番目の宛先へ TCP 接続を試みる。
@@ -867,11 +889,7 @@ void potr_internal_connect_thread_stop(potr_context *ctx)
     /* 4. 全 path の接続ソケットをクローズして recv ループのブロックを解除 */
     for (i = 0; i < ctx->n_path; i++)
     {
-        if (ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
-            continue;
-        cplat_socket_shutdown(ctx->tcp_conn_fd[i]);
-        cplat_socket_close(ctx->tcp_conn_fd[i]);
-        ctx->tcp_conn_fd[i] = CPLAT_INVALID_SOCKET;
+        close_tcp_conn(ctx, i);
     }
 
     /* 5. 全 connect スレッドの終了を待機する */

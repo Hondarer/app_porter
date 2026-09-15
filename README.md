@@ -4,6 +4,7 @@ porter は、UDP/IP と TCP/IP に対応するクロスプラットフォーム�
 
 - [作業規則](AGENTS.md)
 - [公開 API の生成入口](prod/README.md)
+- [機能仕様](docs/functional-spec/README.md)
 - [利用方法と設計文書](docs/README.md)
 - [API ガイド](docs/api.md)
 - [構成ファイル仕様](docs/config.md)

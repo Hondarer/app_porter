@@ -40,7 +40,8 @@ typedef struct potr_internal_window
     uint32_t next_seq;     /**< 送信側: 次に割り当てる通番。受信側: 次に期待する通番。 */
     uint16_t window_size;  /**< ウィンドウ サイズ (パケット数)。 */
     uint16_t max_payload;  /**< エントリごとのペイロード最大長 (バイト)。 */
-    uint32_t _pad;         /**< パディング (構造体サイズを 8 バイト境界に揃える)。 */
+    uint16_t base_index;   /**< base_seq に対応する循環バッファー位置。 */
+    uint16_t _pad;         /**< パディング (構造体サイズを 8 バイト境界に揃える)。 */
 } potr_internal_window;
 
 #ifdef __cplusplus
@@ -126,6 +127,16 @@ extern "C"
      *                  失敗モードのない述語のため、共通結果コード (POTR_RESULT) の適用対象外です。
      */
     extern int potr_internal_window_recv_needs_nack(const potr_internal_window *win, uint32_t *nack_num);
+
+    /**
+     *  @brief          受信ウィンドウに指定通番のパケットが到着済みかどうかを返します。
+     *  @param[in]      win     受信ウィンドウ構造体へのポインター。
+     *  @param[in]      seq_num 確認する通番。
+     *  @return         指定通番がウィンドウ内にあり、到着済みの場合は 1、それ以外は 0 を返します。
+     *                  失敗モードのない述語のため、共通結果コード (POTR_RESULT) の適用対象外です。
+     *                  win が NULL、未初期化、または解放済みの場合も 0 を返します。
+     */
+    extern int potr_internal_window_recv_has_packet(const potr_internal_window *win, uint32_t seq_num);
 
     /**
      *  @brief          受信ウィンドウで指定通番をスキップして次の通番へ前進させます。

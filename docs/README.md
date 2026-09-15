@@ -11,12 +11,14 @@ porter は UDP/IP および TCP/IP をサポートするクロスプラットフ
 
 ## 目的別の入口
 
+- [機能仕様](functional-spec/README.md)
 - [API ガイド](api.md)
 - [構成ファイル仕様](config.md)
 - [アーキテクチャーと責務](architecture.md)
 - [通信シーケンス](sequence.md)
 - [実装の保守と未解決事項](maintenance.md)
 - [porter コーディング規範](coding-guideline.md)
+- [porter 機能仕様の記載規範](functional-spec-guideline.md)
 - [TCP N:1 の設計記録](history/tcp-n1-design.md)
 
 ## 特徴
@@ -29,7 +31,7 @@ porter は UDP/IP および TCP/IP をサポートするクロスプラットフ
 | リオーダー吸収 | `reorder_timeout_ms` でギャップ検出後の待機時間を設定。待機中に追い越しパケットが到着すれば NACK / DISCONNECT を発行しない (通常・RAW モード共通)。マルチキャスト/ブロードキャスト通常モードでは NACK 送出タイミングを 100%〜200% の範囲で自動ジッタ分散し NACK implosion を抑制 |
 | データ圧縮 | raw DEFLATE (両 OS 共通の app/zlib) |
 | フラグメント化 | 最大 65,535 バイトのメッセージを自動分割・結合 |
-| ヘルスチェック | 片方向 type 1-6 は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送信し、有効な PING / DATA 受信で疎通を維持します。双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は定周期 PING の送受信で接続を確立するため、実効 `health_interval_ms` が 0 のままでは `CONNECTED` しません。各パスの PING 受信状態変化時には割り込み PING も送信します。 |
+| ヘルスチェック | 片方向 type 1-6 は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送信し、有効な PING / DATA 受信で疎通を維持します。双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は定周期 PING の送受信で接続を確立するため、実効 `health_interval_ms` が 0 のままでは `CONNECTED` 状態へ遷移しません。各パスの PING 受信状態変化時には割り込み PING も送信します。 |
 | マルチパス | 最大 4 経路の並列送信 |
 | プラットフォーム | Linux、Windows 両プラットフォーム対応 |
 
@@ -86,7 +88,7 @@ int main(void) {
                                      POTR_ROLE_RECEIVER, on_event, &handle) != POTR_OK) {
         return 1;
     }
-    /* 実際のアプリでは、ここで終了要求を待ちます。 */
+    /* 実際のアプリケーションでは、ここで終了要求を待機します。 */
     potr_service_close(handle);
     return 0;
 }

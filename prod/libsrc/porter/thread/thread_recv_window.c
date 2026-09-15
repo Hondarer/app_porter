@@ -235,7 +235,8 @@ static void raw_session_disconnect(thread_recv_slot *slot)
     *slot->frag_compressed = 0;
 }
 
-static void slot_drain_recv_window(thread_recv_slot *slot)
+/* N:1 の pending FIN 発火で peer が解放された場合は 0、それ以外は 1 を返す。 */
+static int slot_drain_recv_window(thread_recv_slot *slot)
 {
     potr_context *ctx = slot->ctx;
     potr_packet pop_pkt;
@@ -275,9 +276,17 @@ static void slot_drain_recv_window(thread_recv_slot *slot)
 
         if (thread_recv_fin_pending_reached(slot, &fin_target_seq) != 0)
         {
+            int peer_will_be_freed = (slot->peer != NULL);
+
             thread_recv_fin_fire(slot, fin_target_seq);
+            if (peer_will_be_freed != 0)
+            {
+                return 0;
+            }
         }
     }
+
+    return 1;
 }
 
 static int nack_is_duplicate(thread_recv_slot *slot, uint32_t ack_num)
@@ -414,7 +423,10 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
         thread_recv_sync_path_state(slot);
     }
 
-    slot_drain_recv_window(slot);
+    if (slot_drain_recv_window(slot) == 0)
+    {
+        return;
+    }
 
     if (potr_internal_window_recv_needs_nack(slot->recv_window, &nack_num) == 0)
     {
@@ -537,8 +549,7 @@ void thread_recv_window_scan_ping_gap(thread_recv_slot *slot, const potr_packet 
         while (scan_seq != pkt->seq_num && potr_internal_seqnum_in_window(scan_seq, slot->recv_window->base_seq,
                                                                           slot->recv_window->window_size) != 0)
         {
-            uint16_t idx = (uint16_t)((scan_seq - slot->recv_window->base_seq) % slot->recv_window->window_size);
-            if (slot->recv_window->valid[idx] == 0)
+            if (potr_internal_window_recv_has_packet(slot->recv_window, scan_seq) == 0)
             {
                 if (reorder_gap_ready(slot, scan_seq) != 0)
                 {
