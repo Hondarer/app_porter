@@ -50,7 +50,7 @@ static int peer_generate_session(potr_internal_peer_context *peer)
     return POTR_OK;
 }
 
-/* 使用中でない peer_id を単調増加カウンターから生成する (peers_mutex 取得済みの文脈で呼ぶ) */
+/* 使用中でない peer_id を単調増加カウンターから生成する (peers_mutex 取得済みの文脈で呼び出す) */
 static potr_peer_id allocate_peer_id(potr_context *ctx)
 {
     potr_peer_id candidate = ctx->next_peer_id;
@@ -366,7 +366,7 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     peer->frag_buf_len = 0;
     peer->frag_compressed = 0;
 
-    /* 送信元アドレスを最初のパスとして記録 (インデックス = path_idx = ctx->sock[] の添字) */
+    /* 送信元アドレスを最初のパスとして記録 (インデックス = path_idx = ctx->sock[] のインデックス) */
     peer->dest_addr[path_idx] = *sender_addr;
     peer->path_last_recv_ts[path_idx].tv_sec = 0; /* n1_update_path_recv() で更新される */
     peer->n_paths = 1;

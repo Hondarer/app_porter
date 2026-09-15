@@ -104,7 +104,7 @@ extern "C"
      *
      *  @param[in,out]  ctx         セッション コンテキスト。
      *  @param[in]      sender_addr ピアの送信元アドレス (recvfrom で取得したアドレス)。
-     *  @param[in]      path_idx    パケットを受信したサーバー ソケットのインデックス (ctx->sock[] の添字)。
+     *  @param[in]      path_idx    パケットを受信したサーバー ソケットのインデックス (ctx->sock[] のインデックス)。
      *  @return         成功時はピア コンテキストへのポインター、失敗時は NULL。
      */
     extern potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const cplat_ipv4_endpoint *sender_addr, int path_idx);
@@ -118,7 +118,7 @@ extern "C"
      *
      *  @param[in]      ctx         セッション コンテキスト。
      *  @param[in,out]  peer        対象ピア コンテキスト。
-     *  @param[in]      path_idx    クリアするパスのインデックス (ctx->sock[] の添字)。
+     *  @param[in]      path_idx    クリアするパスのインデックス (ctx->sock[] のインデックス)。
      */
     extern void potr_internal_peer_path_clear(const potr_context *ctx, potr_internal_peer_context *peer, int path_idx);
 

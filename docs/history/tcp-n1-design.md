@@ -1,4 +1,4 @@
-﻿# TCP N:1 サポート追加の設計記録
+# TCP N:1 サポート追加の設計記録
 
 > [!NOTE]
 > 本書は当該機能の設計時点を保存する履歴文書です。
@@ -59,7 +59,7 @@ SENDER 側の変更は不要です。既存の `POTR_TYPE_TCP` または `POTR_T
 
 ```
 [accept スレッド (path 0)]
-  accept() ---------- conn_A が来るまで待機
+  accept() ---------- conn_A の到着まで待機
      |
      +- ctx->tcp_conn_fd[0] = conn_A
         start_connected_threads()   <- recv/health スレッド起動
@@ -74,14 +74,14 @@ SENDER 側の変更は不要です。既存の `POTR_TYPE_TCP` または `POTR_T
 
 ```
 [accept スレッド (path 0)]
-  accept() ---- conn_A が来る
+  accept() ---- conn_A の到着
      |
      +- peer_create_tcp(conn_A) -> peer_A
         tcp_peer_recv_thread_start(peer_A)   <- 非同期
         tcp_peer_health_thread_start(peer_A) <- 非同期 (BIDIR_N1 のみ)
         <- join しない。即座に次の accept へ
      |
-  accept() ---- conn_B が来る (conn_A の切断を待たない)
+  accept() ---- conn_B の到着 (conn_A の切断を待たない)
      |
      +- peer_create_tcp(conn_B) -> peer_B
         ...
@@ -170,7 +170,7 @@ typedef struct potr_internal_peer_context
     size_t   frag_buf_len;
     int      frag_compressed;
 
-    /* ヘルス */
+    /* ヘルスチェック */
     volatile int health_alive;
     int64_t last_recv_tv_sec;
     int32_t last_recv_tv_nsec;

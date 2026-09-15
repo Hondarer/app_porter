@@ -8,7 +8,7 @@ porter の製品コード (`prod/libsrc/porter/`、`prod/include/`、`prod/inclu
 
 > [!IMPORTANT]
 > OS 差異の吸収は cplat の責務であり、porter は cplat が提供する OS 非依存の API だけを呼び出します。
-> 新しい OS 分岐が必要になった場合は、porter 側へ書くのではなく cplat の対応するカテゴリを拡張してください。
+> 新しい OS 分岐が必要になった場合は、porter 側に実装するのではなく cplat の対応するカテゴリを拡張してください。
 
 porter は通信に `cplat` の `net` カテゴリを使用し、OS のソケット API (`socket`、`bind`、`listen`、`accept`、`connect`、`getsockopt`、`setsockopt`、`sendto`、`recvfrom`、`poll`、`select` など) を直接呼び出しません。
 

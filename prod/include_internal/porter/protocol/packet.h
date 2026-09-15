@@ -197,7 +197,7 @@ extern "C"
      *  @return         パケットの送信サイズ (バイト)。packet が NULL の場合は 0。
      *
      *  UDP 送信時に sendto() へ渡すバイト数を求めるために使用します。\n
-     *  内部で ntohs(packet->payload_len) を呼ぶため、引数は必ず NBO 状態で渡してください。
+     *  内部で ntohs(packet->payload_len) を呼び出すため、引数は必ず NBO 状態で渡してください。
      */
     extern size_t potr_internal_packet_wire_size(const potr_packet *packet);
 

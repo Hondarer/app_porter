@@ -1,6 +1,6 @@
 # PING ヘルスチェック設計まとめ
 
-porter フレームワークにおける potr_type ごとの PING 送出ロジック、マルチパスごとの振る舞い、タイムアウト検出方式を整理します。PONG (PING 応答) は存在しません。片方向 type 1-6 は有効な `PING` / `DATA` 受信をヘルス信号として扱い、送信側は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送ります。双方向 type 7-10 は PING 応答ベースで path logical を判定し、service / peer の `CONNECTED` はその OR で決まります。
+porter フレームワークにおける potr_type ごとの PING 送出ロジック、マルチパスごとの振る舞い、タイムアウト検出方式を整理します。PONG (PING 応答) は存在しません。片方向 type 1-6 は有効な `PING` / `DATA` 受信をヘルスチェック信号として扱い、送信側は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送信します。双方向 type 7-10 は PING 応答ベースで path logical を判定し、service / peer の `CONNECTED` はその OR で決まります。
 
 ## 概要
 
@@ -47,7 +47,7 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 | 値 | 定数 | 意味 |
 |---|---|---|
 | `0` | `POTR_PING_STATE_UNDEFINED` | 不定 (片方向通信 / まだ有効な PING / DATA 未受信) |
-| `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルス信号を継続受信中) |
+| `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルスチェック信号を継続受信中) |
 | `2` | `POTR_PING_STATE_ABNORMAL` | 異常 (PING 途絶・タイムアウト) |
 
 片方向通信 (type 1-6) では送信側が返送用 PING を持たないため、送出される PING ペイロードは全バイト `UNDEFINED` のままです。一方、受信側ローカルの `path_ping_state[]` は有効な `PING` または `DATA` を受けると `NORMAL` に更新されます。双方向通信 (type 7-10) は実際の PING 受信状態を格納します。
@@ -63,7 +63,7 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 - TCP PING タイムアウト時: `POTR_PING_STATE_ABNORMAL` に設定します。
 - セッション DISCONNECTED 発火時 / TCP 切断時: 全パスを `POTR_PING_STATE_UNDEFINED` にリセットします。
 
-双方向系 (`UNICAST_BIDIR` / `UNICAST_BIDIR_N1` / `TCP` / `TCP_BIDIR`) では、これらの値が変化した時点で health スレッドを即時起床させ、次周期を待たずに割り込み PING を送出します。PING ペイロードには更新後の `path_ping_state[]` 全体が載るため、相手端は往復疎通状態の変化をより早く把握できます。
+双方向系 (`UNICAST_BIDIR` / `UNICAST_BIDIR_N1` / `TCP` / `TCP_BIDIR`) では、これらの値が変化した時点で health スレッドを即時起床させ、次周期を待たずに割り込み PING を送出します。PING ペイロードには更新後の `path_ping_state[]` 全体が含まれるため、相手端は往復疎通状態の変化をより早く把握できます。
 
 ## 回線確立 (CONNECTED) 検出
 
@@ -77,18 +77,18 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 
 双方向 UDP では `remote_path_ping_state[k] == POTR_PING_STATE_NORMAL` が一つ以上存在するときに CONNECTED を発火します。これは「相手端が自端からの PING を正常受信済みである」ことを意味し、往復疎通が確認できた時点で CONNECTED となります。
 
-TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED を発火しません。接続直後に送る bootstrap PING に対する応答 PING を受信し、そのペイロード中の `remote_path_ping_state[]` に `POTR_PING_STATE_NORMAL` を確認した時点で CONNECTED となります。つまり TCP 双方向でも「自端が PING を送り、相手がその受信結果を返し、それを受け取る」往復完了が初回 CONNECTED の条件です。
+TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED を発火しません。接続直後に送る bootstrap PING に対する応答 PING を受信し、そのペイロード中の `remote_path_ping_state[]` に `POTR_PING_STATE_NORMAL` を確認した時点で CONNECTED となります。つまり TCP 双方向でも「自端が PING を送信し、相手端がその受信結果を返信し、それを受信する」往復完了が初回 CONNECTED の条件です。
 
-片方向 type 1-6 では、PING ヘルスチェックが無効 (最終的な `health_interval_ms = 0`) でも有効な `DATA` を受信すれば CONNECTED が発火します。open 直後の即時 PING は送らないため、初回 CONNECTED は「最初の有効 DATA」または「最初の通常 PING」受信時に成立します。双方向 UDP (type 7, 8) は PING が送出されないと CONNECTED が発火しません。
+片方向 type 1-6 では、PING ヘルスチェックが無効 (最終的な `health_interval_ms = 0`) でも有効な `DATA` を受信すれば CONNECTED が発火します。open 直後の即時 PING は送信しないため、初回 CONNECTED は「最初の有効 DATA」または「最初の通常 PING」受信時に成立します。双方向 UDP (type 7, 8) は PING が送出されないと CONNECTED が発火しません。
 
 双方向 UDP では、以下の順序でハンドシェイクが完了して CONNECTED が発火します。
 
-1. 自端が PING 送出を開始する (ペイロードは全パス `UNDEFINED`)。通信経路オープン時は最初のスリープをスキップして即座に送出するため、最大 `health_interval_ms` を待たずに相手端へ PING が届く。
+1. 自端が PING 送出を開始する (ペイロードは全パス `UNDEFINED`)。通信経路オープン時は最初のスリープをスキップして即座に送出するため、最大 `health_interval_ms` を待たずに相手端へ PING が到着します。
 2. 相手端が自端の PING を受信し、`path_ping_state` を `NORMAL` に更新します。
 3. 相手端が `path_ping_state` 変化に反応して割り込み PING を送出する (変化がなければ次の定周期 PING まで待つ)。
 4. 自端がその PING を受信し、ペイロードに `NORMAL` を確認して CONNECTED を発火します。
 
-双方向 UDP では、この往復 PING が接続確立そのものです。実効 `health_interval_ms = 0`、または `udp_health_interval_ms = 0` かつサービス側で `health_interval_ms` を上書きしない構成では初回 PING が送られないため、CONNECTED は成立しません。
+双方向 UDP では、この往復 PING が接続確立そのものです。実効 `health_interval_ms = 0`、または `udp_health_interval_ms = 0` かつサービス側で `health_interval_ms` を上書きしない構成では初回 PING が送信されないため、CONNECTED は成立しません。
 
 片方向通信では手順 2-3 に相当する往復が不要で、有効な `PING` または `DATA` の受信で即 CONNECTED となります。
 
@@ -106,7 +106,7 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 
 | 状態 | 実装 |
 |---|---|
-| CONNECTED 前 | `PING` は health スレッドが「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過したときだけ送信します。open 直後の即時 PING はありません。`potr_send()` は通常どおり `DATA` を送信キューへ積む。受信側は最初の有効な `PING` または `DATA` を受理した時点で `health_alive == 1` になり、`POTR_EVENT_CONNECTED` を発火します。 |
+| CONNECTED 前 | `PING` は health スレッドが「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過したときだけ送信します。open 直後の即時 PING はありません。`potr_send()` は通常どおり `DATA` を送信キューへ格納します。受信側は最初の有効な `PING` または `DATA` を受理した時点で `health_alive == 1` になり、`POTR_EVENT_CONNECTED` を発火します。 |
 | CONNECTED 後 | 受信側が `health_alive == 1` を維持して `DATA` を配送します。 |
 | CONNECTED 解除 | `health_timeout_ms` 超過、`FIN` 受信、`REJECT` 受信、RAW 系のギャップ検出で `health_alive == 0` に戻り、以後は再び CONNECTED 前と同じ扱いになります。 |
 | potr_event 順序 | 初回の有効 `DATA` を受理した場合も、先に `POTR_EVENT_CONNECTED` を発火してから `POTR_EVENT_DATA` を配送します。 |
@@ -115,7 +115,7 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 
 | 状態 | 実装 |
 |---|---|
-| CONNECTED 前 | `PING` は両端が送信します。`potr_send()` は `health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返す。受信側は `health_alive == 0` の間 `DATA` を配送しません。 |
+| CONNECTED 前 | `PING` は両端が送信します。`potr_send()` は `health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返します。受信側は `health_alive == 0` の間 `DATA` を配送しません。 |
 | CONNECTED 後 | `health_alive == 1` になり、`potr_send()` が成功します。受信側も `DATA` を配送します。 |
 | CONNECTED 解除 | `health_timeout_ms` 超過、`FIN` 受信、`REJECT` 受信で `health_alive == 0` に戻り、以後は再び CONNECTED 前と同じ扱いになります。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。 |
@@ -124,7 +124,7 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 
 | 状態 | 実装 |
 |---|---|
-| CONNECTED 前 | サーバー/クライアントとも `PING` を送信します。`peer_id` 指定送信は `peer->health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返す。`POTR_PEER_ALL` は接続済み peer が 0 件なら `POTR_ERR_DISCONNECTED` を返す。受信側は `peer->health_alive == 0` の間 `n1_deliver_payload_elem()` で `DATA` を配送しません。未知 peer の初回 `DATA` は peer を作らず破棄し、初回 `PING` でのみ peer slot と session 状態を作る。 |
+| CONNECTED 前 | サーバー/クライアントとも `PING` を送信します。`peer_id` 指定送信は `peer->health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返します。`POTR_PEER_ALL` は接続済み peer が 0 件なら `POTR_ERR_DISCONNECTED` を返します。受信側は `peer->health_alive == 0` の間 `n1_deliver_payload_elem()` で `DATA` を配送しません。未知 peer の初回 `DATA` では peer を生成せずに破棄し、初回 `PING` でのみ peer slot と session 状態を生成します。 |
 | CONNECTED 後 | 対象 peer の `health_alive == 1` になり、その peer に対する送受信が有効になります。 |
 | CONNECTED 解除 | ピア単位で `health_timeout_ms` 超過または `FIN` 受信時に `peer->health_alive == 0` となり、`potr_internal_peer_free()` でピアを削除します。以後はその peer を未接続として扱い、再接続は再度 `PING` 起点で行います。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。未知 peer の初回 `DATA` でも peer table は前進しません。 |
@@ -133,9 +133,9 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 
 | 状態 | 実装 |
 |---|---|
-| CONNECTED 前 | TCP 接続確立後に各 path が bootstrap PING を送信し、その応答 `PING` の `remote_path_ping_state[]` に `POTR_PING_STATE_NORMAL` が載ると論理 CONNECTED へ遷移します。`health_interval_ms > 0` の場合のみ tcp_health スレッドが定周期 `PING` を送る。`potr_send()` は `tcp_active_paths == 0` または `health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返す。受信側は `health_alive == 0` の間 `deliver_payload_elem()` で `DATA` を破棄します。 |
+| CONNECTED 前 | TCP 接続確立後に各 path が bootstrap PING を送信し、その応答 `PING` の `remote_path_ping_state[]` に `POTR_PING_STATE_NORMAL` が載ると論理 CONNECTED へ遷移します。`health_interval_ms > 0` の場合のみ tcp_health スレッドが定周期 `PING` を送信します。`potr_send()` は `tcp_active_paths == 0` または `health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返します。受信側は `health_alive == 0` の間 `deliver_payload_elem()` で `DATA` を破棄します。 |
 | CONNECTED 後 | `health_alive == 1` になり、`potr_send()` が成功します。受信側も `DATA` を配送します。 |
-| CONNECTED 解除 | path ごとの PING タイムアウトや TCP 切断で `tcp_active_paths` が減少し、全 path が失われると connect スレッドが `health_alive == 0` に戻して `POTR_EVENT_DISCONNECTED` を発火します。加えて正常 close では、recv スレッドが protocol-level `FIN` を受信して最後の DATA 配送完了後に `FIN_ACK` を返し、その直後に `POTR_EVENT_DISCONNECTED` を発火します。以後は再び CONNECTED 前と同じ扱いになり、再接続後に `PING` 交換で CONNECTED へ戻る。 |
+| CONNECTED 解除 | path ごとの PING タイムアウトや TCP 切断で `tcp_active_paths` が減少し、全 path が失われると connect スレッドが `health_alive == 0` に戻して `POTR_EVENT_DISCONNECTED` を発火します。加えて正常 close では、recv スレッドが protocol-level `FIN` を受信して最後の DATA 配送完了後に `FIN_ACK` を返信し、その直後に `POTR_EVENT_DISCONNECTED` を発火します。以後は再び CONNECTED 前と同じ扱いになり、再接続後に `PING` 交換で CONNECTED へ復帰します。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。 |
 
 ## potr_event 順序
@@ -152,7 +152,7 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 
 ### PING 送出 (health スレッド)
 
-`potr_health_thread.c` の `health_thread_func()` が非 TCP 用の共有 health スレッドとして動作します。片方向 type 1-6 は open 直後の即時 PING を行わず、最初の PING も `health_interval_ms` 経過後に送ります。有効 DATA がその前に送られた場合は、次回期限を「最後の DATA 送信時刻 + health_interval_ms」へ後ろ倒しします。双方向 UDP (`UNICAST_BIDIR`, `UNICAST_BIDIR_N1`) では従来どおり `health_interval_ms` 周期で送信し、`path_ping_state[]` が変化した場合にも条件変数 wakeup により即時送出されます。ここで `health_interval_ms = 0` になると health スレッド自体が起動しないため、双方向 UDP の初回 CONNECTED に必要な PING 送信も始まりません。
+`potr_health_thread.c` の `health_thread_func()` が非 TCP 用の共有 health スレッドとして動作します。片方向 type 1-6 は open 直後の即時 PING を行わず、最初の PING も `health_interval_ms` 経過後に送信します。有効 DATA がその前に送信された場合は、次回期限を「最後の DATA 送信時刻 + health_interval_ms」へ後ろ倒しします。双方向 UDP (`UNICAST_BIDIR`, `UNICAST_BIDIR_N1`) では従来どおり `health_interval_ms` 周期で送信し、`path_ping_state[]` が変化した場合にも条件変数 wakeup により即時送出されます。ここで `health_interval_ms = 0` になると health スレッド自体が起動しないため、双方向 UDP の初回 CONNECTED に必要な PING 送信も始まりません。
 
 非 N:1 モード (UNICAST_RAW / MULTICAST_RAW / BROADCAST_RAW / UNICAST / MULTICAST / BROADCAST / UNICAST_BIDIR) の処理は次のとおりです。
 
@@ -166,7 +166,7 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 
 N:1 モード (UNICAST_BIDIR_N1 のサーバー側) の処理は次のとおりです。
 
-1. ピア テーブルからアクティブなピアをループします。
+1. ピア テーブルからアクティブな各ピアを巡回します。
 2. ピアごとに `potr_internal_packet_build_ping()` でパケットを構築します。
 3. ピアごとに全パスへ `cplat_socket_sendto()` を実行します。
 
@@ -176,7 +176,7 @@ UNICAST_BIDIR_N1 (type 8) は `n1_notify_health_alive()` でそのピアを aliv
 
 片方向 UDP (type 1-6) は有効な `PING` または `DATA` を受信すると最終受信時刻を更新し、タイムアウト計測をリセットします。双方向 UDP (type 7, 8) は従来どおり PING 受信時のみ更新します。
 
-RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送らず `POTR_EVENT_DISCONNECTED` を発火してセッションをリセットします。UNICAST / MULTICAST / BROADCAST (type 4, 5, 6) のギャップ検出時は NACK を送出して再送を要求します。MULTICAST / BROADCAST では複数受信者の NACK が集中しないよう、送出タイミングに `reorder_timeout_ms` の 100〜200% のジッタを付加します。
+RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送信せず `POTR_EVENT_DISCONNECTED` を発火してセッションをリセットします。UNICAST / MULTICAST / BROADCAST (type 4, 5, 6) のギャップ検出時は NACK を送出して再送を要求します。MULTICAST / BROADCAST では複数受信者の NACK が集中しないよう、送出タイミングに `reorder_timeout_ms` の 100〜200% のジッタを付加します。
 
 ### タイムアウト検出 (受信スレッド)
 
@@ -184,7 +184,7 @@ RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送らず `POTR_EVENT
 
 タイムアウト判定は CLOCK_MONOTONIC を使用します。
 
-片方向 UDP (type 1-6) は「最後に有効な PING / DATA を受け取った時刻」を、双方向 UDP / TCP (type 7-10) は「最後に PING を受け取った時刻」をタイムアウトの根拠とします。RAW 系も非 RAW 系も同じ `last_recv_tv_sec` / `path_last_recv_sec` を参照する点は共通です。
+片方向 UDP (type 1-6) は「最後に有効な PING / DATA を受信した時刻」を、双方向 UDP / TCP (type 7-10) は「最後に PING を受信した時刻」をタイムアウトの根拠とします。RAW 系も非 RAW 系も同じ `last_recv_tv_sec` / `path_last_recv_sec` を参照する点は共通です。
 
 1:1 モードの判定は次のとおりです。
 
@@ -201,7 +201,7 @@ N:1 モードの判定は次のとおりです。
 
 ### PING 送出 (tcp_health スレッド)
 
-`potr_health_thread.c` の `tcp_health_thread_func()` がパスごと (`path_idx`) に独立して起動します。TCP では SENDER / RECEIVER を問わず全ロールで、`health_interval_ms > 0` の場合のみ起動します。接続直後の初回 PING は connect/accept 側が bootstrap PING として即座に送出し、`path_ping_state[]` が変化した場合は `health_interval_ms > 0` のとき全 tcp_health スレッドを即時起床させます。`health_interval_ms = 0` のときは recv 側が状態変化を検知した path から直接 PING を返し、bootstrap ハンドシェイクを完了させます。
+`potr_health_thread.c` の `tcp_health_thread_func()` がパスごと (`path_idx`) に独立して起動します。TCP では SENDER / RECEIVER を問わず全ロールで、`health_interval_ms > 0` の場合のみ起動します。接続直後の初回 PING は connect/accept 側が bootstrap PING として即座に送出し、`path_ping_state[]` が変化した場合は `health_interval_ms > 0` のとき全 tcp_health スレッドを即時起床させます。`health_interval_ms = 0` のときは recv 側が状態変化を検知した path から直接 PING を返信し、bootstrap ハンドシェイクを完了させます。
 
 1. 接続直後に bootstrap PING を 1 回送信します。
 2. `health_interval_ms > 0` の場合のみ、`tcp_conn_fd[path_idx]` を確認してから `ctx->health_interval_ms` 周期で送信します。
@@ -214,7 +214,7 @@ UDP 系と同様に受信スレッドが判定します。TCP の両端がそれ
 2. PING を受信するたびに `tcp_last_ping_recv_ms[path_idx]` を現在時刻で更新します。
 3. `get_ms() - tcp_last_ping_recv_ms[path_idx] > ctx->health_timeout_ms` を超過するとタイムアウトと判定します。
 4. タイムアウト時はそのパスのソケットを `cplat_socket_shutdown()` / `cplat_socket_close()` で閉じ、`tcp_conn_fd[path_idx]` を `CPLAT_INVALID_SOCKET` にします。
-5. connect スレッド (`potr_connect_thread.c`) が `tcp_active_paths` をデクリメントして再接続ループに入る。
+5. connect スレッド (`potr_connect_thread.c`) が `tcp_active_paths` をデクリメントして再接続ループへ遷移します。
 
 DATA パケットの受信は `tcp_last_ping_recv_ms` をリセットしません。`health_interval_ms > 0` の場合は PING は DATA 送信とは独立して定周期送出されるため、PING の到達有無のみで接続状態を判定できます。`health_interval_ms = 0` の場合は bootstrap PING のみで CONNECTED を確立し、その後の timeout 監視は行いません。
 

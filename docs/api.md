@@ -29,13 +29,13 @@
 
 | 戻り値 | 意味 |
 |---|---|
-| `POTR_OK` | 送信キューへの積み込み成功 |
+| `POTR_OK` | 送信キューへの追加成功 |
 | `POTR_ERR_INVALID_ARGUMENT` | ハンドル、データ、サイズ、または N:1 モードの `peer_id` が不正 |
 | `POTR_ERR_DISCONNECTED` | 論理 CONNECTED 前または切断中。`unicast_bidir`、`unicast_bidir_n1` の未接続 peer、`POTR_PEER_ALL` で接続済み peer 0 件、`tcp` / `tcp_bidir` の CONNECTED 前または全 path 切断中が該当 |
-| `POTR_ERR_NOT_FOUND` | N:1 モードで指定した peer が存在しません。 |
-| `POTR_ERR_OUT_OF_MEMORY` | `POTR_PEER_ALL` の送信先一覧を確保できません。 |
-| `POTR_ERR_CANCELED` | サービスの終了処理によって送信を中止した |
-| `POTR_ERR_UNKNOWN` | 圧縮などの分類不能な内部処理に失敗した |
+| `POTR_ERR_NOT_FOUND` | N:1 モードで指定した peer が存在しない |
+| `POTR_ERR_OUT_OF_MEMORY` | `POTR_PEER_ALL` の送信先一覧のメモリ確保失敗 |
+| `POTR_ERR_CANCELED` | サービスの終了処理による送信中止 |
+| `POTR_ERR_UNKNOWN` | 圧縮など分類不能な内部処理の失敗 |
 
 `POTR_ERR_DISCONNECTED` は「送信先が論理的に CONNECTED していない」ことを示します。  
 片方向 type 1-6 は受信側が有効な `PING` または `DATA` を契機に CONNECTED しますが、送信側はその状態を観測できないため、本戻り値の対象外です。
@@ -51,21 +51,21 @@
 | `potr_service_open()` | はい | 複数スレッドから並行してハンドルを取得可 (低レベル API) |
 | `potr_service_open_from_config()` | はい | 複数スレッドから並行してハンドルを取得可 (高レベル API) |
 | `potr_send()` | **いいえ** | 同一ハンドルへの並行呼び出し不可 |
-| `potr_service_close()` | **いいえ** | 他の API と同一ハンドルへ並行して呼ばないこと |
-| `potr_peer_disconnect()` | はい (条件付き) | コールバック内からは呼ばないこと (デッドロック) |
+| `potr_service_close()` | **いいえ** | 他の API と同一ハンドルへ並行して呼び出さないこと |
+| `potr_peer_disconnect()` | はい (条件付き) | コールバック内からは呼び出さないこと (デッドロック) |
 | `potr_service_get_type()` | はい | グローバル状態なし |
 
 ### サービスを開く API の使い分け
 
 | API | 入力 | 用途 |
 |---|---|---|
-| `potr_service_open()` | `potr_global_config` + `potr_service_def` 構造体 | テストやプログラム的な設定構築。設定ファイル不要 |
-| `potr_service_open_from_config()` | 設定ファイル パス + service_id | 設定ファイル ベースの既存フロー。後方互換 |
+| `potr_service_open()` | `potr_global_config` + `potr_service_def` 構造体 | テストやプログラム的な設定構築。構成ファイル不要 |
+| `potr_service_open_from_config()` | 構成ファイル パス + service_id | 構成ファイル ベースの既存フロー。後方互換 |
 
-`potr_service_open_from_config()` の実装は設定ファイルを解析して構造体を構築し、`potr_service_open()` に委譲します。
+`potr_service_open_from_config()` の実装は構成ファイルを解析して構造体を構築し、`potr_service_open()` に委譲します。
 
 ### ハンドルとスレッドの対応
 
 - **ハンドルはスレッド セーフではありません。** 同一ハンドルへの操作 (`potr_send` / `potr_service_close` など) は 1 スレッドから行ってください。
 - **ハンドルが異なれば、別スレッドから独立して使用できます。** スレッド A でサービス 1001 を、スレッド B でサービス 1002 を同時に運用することは問題ありません。
-- `potr_service_open()` / `potr_service_open_from_config()` でのハンドル作成スレッドと、その後 `potr_send()` を呼ぶスレッドが異なっていても構いません。ハンドル生成後はそのハンドルを操作するスレッドを 1 つに固定してください。
+- `potr_service_open()` / `potr_service_open_from_config()` でのハンドル作成スレッドと、その後 `potr_send()` を呼び出すスレッドが異なっていても構いません。ハンドル生成後はそのハンドルを操作するスレッドを 1 つに固定してください。

@@ -12,7 +12,7 @@ porter は通信の参加者を **送信者 (SENDER)** と **受信者 (RECEIVER
 | 役割 | 説明 |
 |---|---|
 | SENDER | `potr_send()` でデータを送出します。ヘルスチェック PING を送信します。 |
-| RECEIVER | 到着したパケットをコールバックで上位層へ渡す。NACK で再送を要求します。 |
+| RECEIVER | 到着したパケットをコールバックで上位層へ渡します。NACK で再送を要求します。 |
 
 1:1 (ユニキャスト) 通信では送信者 1 : 受信者 1 の構成となります。  
 1:N (マルチキャスト・ブロードキャスト) 通信では送信者 1 : 受信者 N の構成となります。
@@ -27,9 +27,9 @@ porter は通信の参加者を **送信者 (SENDER)** と **受信者 (RECEIVER
 | モード | Role / 設定の意味 |
 |---|---|
 | 1:1 | `POTR_ROLE_SENDER` は `src_addr:src_port` で bind し、`dst_addr:dst_port` へ送信する側。`POTR_ROLE_RECEIVER` は `dst_addr:dst_port` で bind し、必要に応じて送信元を学習して返信する側 |
-| N:1 | サーバーは `POTR_ROLE_RECEIVER` として `dst_addr:dst_port` で待ち受ける。各クライアントは従来どおり `src_addr` を持つ `unicast_bidir` エンドポイントとして接続します。 |
+| N:1 | サーバーは `POTR_ROLE_RECEIVER` として `dst_addr:dst_port` で待ち受けます。各クライアントは従来どおり `src_addr` を持つ `unicast_bidir` エンドポイントとして接続します。 |
 
-> UDP は無接続であるため、1:1 モードではどちらの端が先に `potr_service_open_from_config()` / `potr_service_open()` を呼んでも動作に違いはありません。N:1 モードではサーバーが受信ソケットを先に開いて待ち受ける運用が自然です。
+> UDP は無接続であるため、1:1 モードではどちらの端が先に `potr_service_open_from_config()` / `potr_service_open()` を呼び出しても動作に違いはありません。N:1 モードではサーバーが受信ソケットを先に開いて待ち受ける運用が自然です。
 
 ### TCP 通信種別における役割の解釈
 
@@ -40,7 +40,7 @@ porter は通信の参加者を **送信者 (SENDER)** と **受信者 (RECEIVER
 | `POTR_ROLE_SENDER` | TCP クライアント (`connect()`) | tcp: 送信のみ / tcp_bidir: 送受信 |
 | `POTR_ROLE_RECEIVER` | TCP サーバー (`listen()` → `accept()`) | tcp: 受信のみ / tcp_bidir: 送受信 |
 
-UDP は無接続のため先に開いた方が待機するだけですが、TCP では RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を呼んで `listen()` に入っている必要があります。
+UDP は無接続のため先に開いた方が待機するだけですが、TCP では RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を呼び出して `listen()` に入っている必要があります。
 
 ## スレッド構成
 
@@ -161,7 +161,7 @@ HT --> SOCK : PING 要求送信 / タイムアウト監視
 
 | スレッド | 役割 |
 |---|---|
-| 送信スレッド | 共有送信キューから `peer_id` 付きエレメントを取り出し、対応するピアの送信先へ `sendto` します。`POTR_PEER_ALL` は `potr_send()` 呼び出し時点で全ピア分に展開される |
+| 送信スレッド | 共有送信キューから `peer_id` 付きエレメントを取り出し、対応するピアの送信先へ `sendto` します。`POTR_PEER_ALL` は `potr_send()` 呼び出し時点で全ピア分に展開されます。 |
 | 受信スレッド | `recvfrom` 後に暗号化必須判定と GCM 認証を行い、成功したパケットだけを session triplet (`session_id` + `session_tv_sec` + `session_tv_nsec`) でピア特定します。未知セッションは DATA / PING のみ新規ピア作成対象とします。 |
 | ヘルスチェック スレッド | 非 TCP の共有 1 本が接続中の各ピアを巡回し、`health_interval_ms` に従って PING を送信し、`health_timeout_ms` 超過で個別に切断を検知します。双方向 UDP ではこの定周期 PING が接続確立の前提であり、実効 `health_interval_ms = 0` のままでは `CONNECTED` しません。 |
 
@@ -218,9 +218,9 @@ RTN .. NOTE
 | スレッド | 数 | 役割 |
 |---|---|---|
 | connect スレッド | N | path ごとに起動。`connect()` で接続を確立し、成功したら recv / health スレッドを起動します。切断後は `reconnect_interval_ms` 待機して再試行します。 |
-| 送信スレッド | 1 | 全 path 共有。送信キューからエレメントを取り出し、全アクティブ path にループ送信します。各 path の送信前に `poll()` で書き込み可能を確認し、バッファー満杯の path はスキップする (他 path への送信は続行) |
+| 送信スレッド | 1 | 全 path 共有。送信キューからエレメントを取り出し、全アクティブ path にループ送信します。各 path の送信前に `poll()` で書き込み可能を確認し、バッファー満杯の path はスキップします (他 path への送信は続行)。 |
 | recv スレッド | N | path ごとに起動。PING 応答 (`ack_num > 0`) を受信して対応する health スレッドに通知します。TCP 接続断を検知したら `tcp_active_paths` をデクリメントし、0 になった時点で `POTR_EVENT_DISCONNECTED` を発火します。 |
-| health スレッド | N | path ごとに起動。`tcp_health_interval_ms` 周期で PING 要求を送信します。`tcp_health_timeout_ms` 以内に応答が届かなければその path の接続断と判定して `shutdown()` します。 |
+| health スレッド | N | path ごとに起動。`tcp_health_interval_ms` 周期で PING 要求を送信します。`tcp_health_timeout_ms` 以内に応答を受信しなければその path の接続断と判定して `shutdown()` します。 |
 
 **スレッド数の合計** (SENDER、path 数 N のとき):
 
@@ -269,7 +269,7 @@ RTN --> [コールバック] : DATA / DISCONNECTED
 | スレッド | 数 | 役割 |
 |---|---|---|
 | accept スレッド | N | path ごとに起動。`listen()` ソケットで `accept()` を待機し、接続確立後に recv スレッドを起動します。 |
-| recv スレッド | N | path ごとに起動。ヘッダー読み取り → ペイロード読み取りの 2 ステップで受信します。`recv_window_mutex` で保護しながら `potr_internal_window_recv_push()` で重複排除します。`ack_num=0` の PING 要求に即応答し、`tcp_health_timeout_ms` 以内に PING 要求が届かない場合は接続断と判定します。 |
+| recv スレッド | N | path ごとに起動。ヘッダー読み取り → ペイロード読み取りの 2 ステップで受信します。`recv_window_mutex` で保護しながら `potr_internal_window_recv_push()` で重複排除します。`ack_num=0` の PING 要求に即応答し、`tcp_health_timeout_ms` 以内に PING 要求を受信しない場合は接続断と判定します。 |
 
 #### TCP_BIDIR のスレッド構成
 
@@ -292,7 +292,7 @@ RTN --> [コールバック] : DATA / DISCONNECTED
 | イベント | 発火条件 |
 |---|---|
 | `POTR_EVENT_CONNECTED` | アクティブ path 数が 0 → 1 になった時 (最初の 1 本が接続した瞬間) |
-| `POTR_EVENT_DISCONNECTED` | アクティブ path 数が 1 → 0 になった時 (最後の 1 本が切れた瞬間) |
+| `POTR_EVENT_DISCONNECTED` | アクティブ path 数が 1 → 0 になった時 (全 path が切断された瞬間) |
 
 2 本目以降の接続確立・切断では上記イベントは発火しません。
 
@@ -308,7 +308,7 @@ RECEIVER 側は、接続時の session triplet(`session_id + session_tv_sec + se
 
 **送信スレッドのバッファー満杯対策**
 
-単一の送信スレッドが全 path に逐次 `tcp_send_all()` を呼ぶため、  
+単一の送信スレッドが全 path に逐次 `tcp_send_all()` を呼び出すため、  
 特定 path の TCP 送信バッファーが満杯になると他 path への送信も遅延します。  
 これを避けるため、各 path への送信前に `poll()` で書き込み可能かを確認し、  
 書き込み不可の path はその送信をスキップします (他 path への冗長送信で補完)。  
@@ -317,12 +317,34 @@ RECEIVER 側は、接続時の session triplet(`session_id + session_tv_sec + se
 
 ## コンポーネント構成
 
+サービスの開始処理は、資源の所有と起動順序を管理する部分と、通信経路を準備する部分に分けています。  
+受信処理は、パケットを受け入れる条件の検証を分離し、セッションや受信ウィンドウを更新する前に呼び出します。  
+セッション採用と FIN 制御は受信状態の更新として集約します。  
+再送と順序整列は受信状態ビュー経由で 1:1 と N:1 が共有します。  
+構成済みスロットへのパケット振り分けも共有し、受信ループはソケット I/O、ピア解決、ヘルスチェック タイムアウトの監視を担当します。
+
+| 実装 | 責務 | 境界で守る条件 |
+|---|---|---|
+| `api/potr_service_open.c` | 設定検証、コンテキストの確保、スレッド起動、失敗時の資源解放 | 起動完了後にハンドルを呼び出し元へ返却 |
+| `api/api_open_paths.c` | 通信種別ごとのソケット作成、アドレス解決、送信先設定 | 確保したソケットはコンテキストが所有し、開始処理の失敗時に解放 |
+| `thread/potr_recv_thread.c` | ソケット受信、ピア解決、ヘルスチェック タイムアウトの監視 | 認証成功後に受信状態を更新する |
+| `thread/thread_recv_validate.c` | 暗号化要件、GCM 認証、UDP 送信元の照合 | 認証失敗は `POTR_ERR_PROTOCOL`、送信元照合は採用可否を返す |
+| `thread/thread_recv_slot.c` | 1:1／N:1 の受信状態参照、フラグメント結合、展開、DATA 配信 | 順序整列済みのエレメントを受け取り、データの所有権は移動しない |
+| `thread/thread_recv_session.c` | セッション triplet の採用判定、経路切断、PING 受信状態の更新、送信元学習 | 旧セッションでは受信状態を変更しない |
+| `thread/thread_recv_fin.c` | pending FIN の判定、`FIN_ACK` 送受信、FIN による切断 | 判定と発火を分離し、`recv_window_mutex` 保持中は発火しない |
+| `thread/thread_recv_window.c` | ウィンドウ投入、NACK 再送要求、REJECT、リオーダー | ループへ個別の状態操作を公開せず、再送と順序整列を入口関数へ集約する |
+| `thread/thread_recv_dispatch.c` | 構成済みスロットへの FIN / REJECT / DATA / PING 振り分け | ピア検索と mutex は呼び出し側が担当する |
+
+表のパスは `prod/libsrc/porter/` を起点とします。  
+分割した関数の契約は同じディレクトリの私有ヘッダーへ記載し、公開 API やライブラリ内共有 API には追加しません。
+
 ```plantuml
 @startuml
 title porter コンポーネント構成
 
 package "api" {
   [potr_service_open]
+  [api_open_paths]
   [potr_service_open_from_config]
   [potr_send]
   [potr_service_close]
@@ -330,6 +352,12 @@ package "api" {
 
 package "thread" {
   [potr_recv_thread]
+  [thread_recv_validate]
+  [thread_recv_slot]
+  [thread_recv_session]
+  [thread_recv_fin]
+  [thread_recv_window]
+  [thread_recv_dispatch]
   [potr_send_thread]
   [potr_health_thread]
   [potr_connect_thread]
@@ -344,7 +372,11 @@ package "protocol" {
 
 package "infra" {
   [potr_send_queue\n(リングバッファ)]
-  [potrLog\n(ロギング・設定)]
+  [potr_trace\n(トレーサー取得)]
+}
+
+package "cplat" {
+  [net\n(socket・endpoint・byteorder)]
   package "compress" {
     [compress\n(raw DEFLATE)]
   }
@@ -353,13 +385,11 @@ package "infra" {
   }
 }
 
-package "cplat" {
-  [net\n(socket・endpoint・byteorder)]
-}
-
 database "potr_context\n(セッション全状態)" as CTX
 
 [potr_service_open] --> CTX : 生成・初期化
+[potr_service_open] --> [api_open_paths] : 経路準備
+[api_open_paths] --> [net\n(socket・endpoint・byteorder)]
 [potr_service_open_from_config] --> [potr_service_open] : 委譲
 [potr_send] --> [potr_send_queue] : エレメント push
 [potr_service_close] --> CTX : スレッド停止・解放
@@ -372,11 +402,27 @@ database "potr_context\n(セッション全状態)" as CTX
 [potr_send_thread] --> [net\n(socket・endpoint・byteorder)] : 送信
 
 [potr_recv_thread] --> [packet]
-[potr_recv_thread] --> [window]
-[potr_recv_thread] --> [seqnum]
-[potr_recv_thread] --> [compress]
-[potr_recv_thread] --> [crypto]
+[potr_recv_thread] --> [thread_recv_slot] : 受信状態参照・DATA 配信
+[thread_recv_slot] --> [compress]
+[potr_recv_thread] --> [thread_recv_validate] : 認証・送信元照合
+[potr_recv_thread] --> [thread_recv_session] : セッション採用・経路切断
+[potr_recv_thread] --> [thread_recv_dispatch] : 構成済みスロットへ振り分け
+[thread_recv_dispatch] --> [thread_recv_fin] : FIN 判定・切断発火
+[thread_recv_dispatch] --> [thread_recv_window] : 再送・順序整列
+[thread_recv_dispatch] --> [thread_recv_session] : セッション採用・経路学習
+[potr_recv_thread] --> [thread_recv_fin] : TCP の FIN 判定・切断発火
+[potr_recv_thread] --> [thread_recv_window] : リオーダー期限切れ
+[thread_recv_window] --> [window]
+[thread_recv_window] --> [seqnum]
+[thread_recv_window] --> [packet]
+[thread_recv_window] --> [crypto] : 制御パケットの認証タグ生成
+[thread_recv_window] --> [thread_recv_slot] : 整列済みデータの配信
+[thread_recv_window] --> [thread_recv_session] : 経路学習・経路状態同期
+[thread_recv_window] --> [thread_recv_fin] : pending FIN 到達
+[thread_recv_fin] --> [thread_recv_session] : 経路切断
+[thread_recv_validate] --> [crypto]
 [potr_recv_thread] --> [net\n(socket・endpoint・byteorder)] : 受信
+[thread_recv_window] --> [net\n(socket・endpoint・byteorder)] : NACK / REJECT / 再送
 
 api -[hidden]--thread
 thread -[hidden]-- infra
@@ -458,9 +504,9 @@ porter はソケット型・無効値・初期化・クローズのいずれに�
 [フラグメント化] --- データが max_payload を超える場合に分割
  |                    各フラグメントにエレメントヘッダー (6 バイト) を付与
  |
-[送信キュー push] --- ペイロードエレメントとして積む
+[送信キュー push] --- ペイロード エレメントとしてキューへ格納
  |                    POTR_SEND_BLOCKING なし: キュー満杯時は空き待ち
- |                    POTR_SEND_BLOCKING あり: 事前に drained 待ち → 積む → sendto 完了待ち
+ |                    POTR_SEND_BLOCKING あり: 事前に drained 待ち → 格納 → sendto 完了待ち
  ▼
 [送信スレッド] --- キューから pop
  |               複数エレメントを 1 パケットにパッキング
@@ -488,7 +534,7 @@ porter はソケット型・無効値・初期化・クローズのいずれに�
  |                          (reorder_timeout_ms > 0 の場合: 待機タイマー開始 → 期限後に NACK)
  |            【RAW モード】欠番検出 → DISCONNECTED 発火 → ウィンドウリセット
  |                          (reorder_timeout_ms > 0 の場合: 待機タイマー開始 → 期限後に DISCONNECTED)
- |            ↓ 連続した通番が揃ったら順番に取り出し
+ |            ↓ 連続した通番が揃った段階で順番に取り出し
  |           フラグメント結合・展開
  |            ↓
  |           コールバック POTR_EVENT_DATA
@@ -617,19 +663,29 @@ potr_send()
 ### TCP 受信フロー
 
 ```
-tcp_recv_thread_func(path_idx)  ← path ごとに 1 スレッド起動
-  → tcp_wait_readable(tcp_conn_fd[path_idx])
-  → tcp_read_all()
-  → potr_internal_packet_parse()
-  → encrypt_key 設定時は POTR_FLAG_ENCRYPTED を確認
-  → AES-256-GCM 復号 / tag-only 検証
-  → [recv_window_mutex lock]
-  → potr_internal_window_recv_push()          ← 重複排除 + 順序整列（複数 path 対応、NACK なし）
-  → potr_internal_window_recv_pop()
-  → deliver_payload_elem()      ← コールバック呼び出し前に unlock
-  → callback(POTR_EVENT_DATA)
-  → [recv_window_mutex unlock]
+tcp_recv_thread_func(path_idx)
+  -> tcp_wait_readable(tcp_conn_fd[path_idx])
+  -> tcp_read_all(tcp_recv_buf[path_idx])
+  -> [tcp_recv_mutex lock]
+  -> tcp_handle_packet()
+     -> パケット解析、認証、受信専用領域への復号
+     -> [recv_window_mutex lock]
+     -> セッション照合、ウィンドウへの投入と順序整列
+     -> パケット取り出し
+     -> [recv_window_mutex unlock]
+     -> フラグメント結合、受信専用領域への展開
+     -> callback(POTR_EVENT_DATA)
+     -> 後続の取り出しと配信、保留 FIN の処理
+  -> [tcp_recv_mutex unlock]
 ```
+
+ソケットの読み取り先は経路別に確保し、解析から DATA 配信完了までは `tcp_recv_mutex` で直列化します。  
+読み取りとポーリングはこのロックの外で行うため、片方の経路が受信待ちでも別経路の処理を継続できます。  
+ウィンドウから取り出したペイロード、フラグメント結合領域、展開済み領域は、コールバックが復帰するまで別の受信スレッドから変更されません。
+
+暗号化・圧縮と復号・展開の作業領域は送受信で分離します。  
+これにより、双方向通信の送信処理やコールバックからの圧縮返信が受信データを書き換えることを防ぎます。  
+受信専用領域と経路別バッファーはサービス開始時に確保し、受信スレッドの終了後に消去して解放します。
 
 ---
 
@@ -643,7 +699,7 @@ tcp_recv_thread_func(path_idx)  ← path ごとに 1 スレッド起動
 | health | `potr_service_open()` 時に 1 本 | path 接続ごとに 1 本 (`start_connected_threads()` 内) |
 
 UDP は `potr_service_open.c` が直接全スレッドを起動します。  
-TCP は ConnectThread が接続確立後に `start_connected_threads()` (`potr_connect_thread.c`) を呼んで  
+TCP は ConnectThread が接続確立後に `start_connected_threads()` (`potr_connect_thread.c`) を呼び出して  
 recv/send/health の各スレッドを起動します。
 
 ---
@@ -651,7 +707,7 @@ recv/send/health の各スレッドを起動します。
 ## n_path 決定ロジック
 
 `potr_service_open.c` にて `dst_addr[i]` の非空エントリを先頭から順に確認し、  
-最初の空エントリで打ち切る (最大 `POTR_MAX_PATH`)。  
+最初の空エントリで探索を終了します (最大 `POTR_MAX_PATH`)。  
 N:1 モード (`max_peers > 1`) では `n_path = 1` に固定。
 
 ---
@@ -676,7 +732,7 @@ N:1 モード (`max_peers > 1`) では `n_path = 1` に固定。
 - `src_addr[i]`: listen アドレスではなく、accept 後の **接続元 IP フィルター**
 - `src_port`: accept 後の **接続元ポート フィルター**
 
-不一致の場合は即座に `close()` して棄却し、次の `accept()` に戻る。
+不一致の場合は即座に `close()` して破棄し、次の `accept()` に戻ります。
 
 **② セッション識別 (先読みパケットによる UDP との対称化)**
 
@@ -684,8 +740,8 @@ N:1 モード (`max_peers > 1`) では `n_path = 1` に固定。
 
 | 分類 | 意味 | 処置 |
 |---|---|---|
-| `TCP_SESSION_NEW` | 新セッション (または初回接続) | 全アクティブ パスを切断し `reset_connection_state()` を呼ぶ。その後 recv スレッドを起動します。 |
-| `TCP_SESSION_SAME` | 既存セッションの追加パス | `reset_connection_state()` は呼ばずに recv スレッドを起動します。 |
-| `TCP_SESSION_OLD` | 期限切れセッション | `close()` して棄却し次の `accept()` に戻る。 |
+| `TCP_SESSION_NEW` | 新セッション (または初回接続) | 全アクティブ パスを切断し `reset_connection_state()` を呼び出します。その後 recv スレッドを起動します。 |
+| `TCP_SESSION_SAME` | 既存セッションの追加パス | `reset_connection_state()` は呼び出さずに recv スレッドを起動します。 |
+| `TCP_SESSION_OLD` | 期限切れセッション | `close()` して破棄し、次の `accept()` に戻ります。 |
 
 先読みしたパケットは `tcp_first_pkt_buf[path_idx]` に格納され、recv スレッドがループ開始時に優先的に処理します。これにより、UDP の `recvfrom()` が原子的に行うデータ受信・送信元識別・セッション識別を、TCP でもセッション層レベルで対称に実現します。

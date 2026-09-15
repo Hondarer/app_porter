@@ -201,7 +201,7 @@ typedef struct potr_internal_peer_context
      * インデックスは ctx->sock[] / src_addr[] と直接対応します。
      * 未使用スロットは potr_endpoint_is_unset() で判定します。 */
     cplat_ipv4_endpoint dest_addr
-        [POTR_MAX_PATH]; /**< 送信先エンドポイント (インデックス = ctx->sock[] の添字)。未使用スロットは potr_endpoint_is_unset() が真。 */
+        [POTR_MAX_PATH]; /**< 送信先エンドポイント (インデックス = ctx->sock[] のインデックス)。未使用スロットは potr_endpoint_is_unset() が真。 */
     int n_paths;             /**< アクティブ パス数。ループ境界には使わず管理カウンターとして使用します。 */
     uint32_t _pad_path_recv; /**< パディング (path_last_recv_ts を 8 バイト境界に揃える)。 */
     cplat_timespec
@@ -257,9 +257,9 @@ struct potr_context
     volatile uint8_t path_ping_state
         [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。 */
     volatile uint64_t
-        last_ping_send_ms; /**< 送信側 health 用 PING 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。 */
+        last_ping_send_ms; /**< 送信側ヘルスチェック用 PING 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。 */
     volatile uint64_t
-        last_valid_data_send_ms; /**< 送信側 health 用有効 DATA 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。 */
+        last_valid_data_send_ms; /**< 送信側ヘルスチェック用有効 DATA 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。 */
     uint8_t remote_path_ping_state
         [POTR_MAX_PATH]; /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     potr_role role;       /**< 役割 (POTR_ROLE_SENDER / POTR_ROLE_RECEIVER)。 */
@@ -293,10 +293,13 @@ struct potr_context
     int frag_compressed;      /**< フラグメント受信中の圧縮フラグ (非 0: 圧縮あり)。 */
     uint32_t _pad_frag;       /**< パディング (frag_buf を 8 バイト境界に揃える)。 */
     uint8_t *frag_buf;        /**< フラグメント結合バッファー (動的確保。max_message_size バイト)。 */
-    uint8_t *compress_buf;    /**< 圧縮・展開用一時バッファー (動的確保)。 */
+    uint8_t *compress_buf;    /**< 送信圧縮用一時バッファー (動的確保)。 */
     size_t compress_buf_size; /**< compress_buf のサイズ (バイト)。 */
-    uint8_t *crypto_buf;      /**< 暗号化・復号用一時バッファー (動的確保)。 */
+    uint8_t *crypto_buf;      /**< 送信暗号化用一時バッファー (動的確保)。 */
     size_t crypto_buf_size;   /**< crypto_buf のサイズ (バイト)。 */
+    uint8_t *recv_compress_buf; /**< 受信展開用バッファー (動的確保、compress_buf_size バイト)。 */
+    uint8_t *recv_crypto_buf; /**< 受信復号用バッファー (動的確保、crypto_buf_size バイト)。 */
+    uint8_t *tcp_recv_buf[POTR_MAX_PATH]; /**< TCP 経路専用受信バッファー (動的確保、PACKET_HEADER_SIZE + max_payload バイト)。 */
     uint8_t *
         recv_buf; /**< 受信バッファー / 再送 wire 組立バッファー (動的確保。PACKET_HEADER_SIZE + max_payload バイト)。 */
     uint8_t *
@@ -349,6 +352,13 @@ struct potr_context
 
     /* recv_window 保護 (TCP v2: 複数 recv スレッドが同一 recv_window にアクセスするため) */
     cplat_local_lock *recv_window_mutex; /**< recv_window 保護用ミューテックス。 */
+    /* TCP の解析・認証から配信・FIN 処理と受信状態初期化までを保護します。
+     * ソケット読み取りとスレッド join 中は保持しません。
+     * session_establish_mutex の次に tcp_recv_mutex を取得します。tcp_recv_mutex の内側では
+     * recv_window_mutex、tcp_state_mutex、tcp_send_mutex、callback_mutex、send_window_mutex を取得できます。
+     * tcp_state_mutex と send_window_mutex の両方を取得する場合は、この順序とします。
+     * send_window_mutex と tcp_send_mutex の両方を取得する場合は、この順序とします。 */
+    cplat_local_lock *tcp_recv_mutex;
 
     /* connect/accept スレッド */
     cplat_thread
@@ -375,6 +385,12 @@ struct potr_context
      * 複数 path の accept スレッドが並行して session_id 判定を行う際の競合を防ぎます。
      * potr_internal_connect_thread_start で初期化、potr_internal_connect_thread_stop で破棄します。 */
     cplat_local_lock *session_establish_mutex;
+
+    /* 認証済みの TCP accept セッション。tcp_recv_mutex で保護します。
+     * DATA による受信ウィンドウ初期化とは独立して保持します。 */
+    cplat_timespec tcp_accepted_session_ts;
+    uint32_t tcp_accepted_session_id;
+    int tcp_accepted_session_known;
 
     /* TCP 先読みバッファー (path ごと)。
      * accept スレッドが session 判定のために読み取った最初の 1 パケット分のバイト列を

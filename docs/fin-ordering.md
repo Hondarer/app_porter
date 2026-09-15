@@ -27,9 +27,9 @@ potr_send() 完了
 
 本仕様が保証するのは次の時点までです。
 
-- receiver 側で最後の DATA が `recv_window` から pop される
-- 復号・展開が完了します。
-- 同期 `potr_recv_fn(POTR_EVENT_DATA)` が return します。
+- receiver 側での `recv_window` からの最終 DATA の pop
+- 復号および展開の完了
+- 同期 `potr_recv_fn(POTR_EVENT_DATA)` の復帰 (return)
 
 以下は保証対象外です。
 
@@ -41,7 +41,7 @@ potr_send() 完了
 
 ### UDP: FIN target を使った遅延切断
 
-`potr_service_close()` の `send_fin()` / `potr_internal_peer_send_fin()` は、現セッションで DATA を 1 件以上送っている場合だけ  
+`potr_service_close()` の `send_fin()` / `potr_internal_peer_send_fin()` は、現セッションで DATA を 1 件以上送信している場合のみ  
 `POTR_FLAG_FIN_TARGET_VALID` を立てて `ack_num` に `send_window.next_seq` を設定します。
 
 ```text
@@ -49,7 +49,7 @@ FIN.flags   = FIN | FIN_TARGET_VALID
 FIN.ack_num = send_window.next_seq
 ```
 
-DATA を 1 件も送っていない場合は no-data FIN とし、`FIN_TARGET_VALID` を付けません。
+DATA を 1 件も送信していない場合は no-data FIN とし、`FIN_TARGET_VALID` を付けません。
 
 ### TCP: close 時に FIN_ACK を待つ
 
@@ -59,8 +59,8 @@ TCP (`POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR`) の送信側 `potr_service_close()
 1. close_requested = 1 にして新規 potr_send() を禁止
 2. tcp_health スレッドを停止
 3. send_queue drain を待つ
-4. FIN[target_valid, ack_num=send_window.next_seq] を送る
-5. FIN_ACK[ack_num=FIN.ack_num] を待つ
+4. FIN[target_valid, ack_num=send_window.next_seq] を送信
+5. FIN_ACK[ack_num=FIN.ack_num] を待機
 6. FIN_ACK 受信後に connect thread / socket teardown
 ```
 
@@ -87,9 +87,9 @@ FIN.flags に FIN_TARGET_VALID があり recv_window.next_seq != FIN.ack_num
 
 `pending_fin` 中は既存の NACK / REJECT / reorder timeout の仕組みがそのまま働きます。
 
-### TCP: DISCONNECTED の直前に FIN_ACK を返す
+### TCP: DISCONNECTED の直前に FIN_ACK を返信
 
-TCP では `pending_fin` が解消された時点、または no-data FIN / 追い付き済み FIN を受けた時点で、receiver は `FIN_ACK` を返してから `POTR_EVENT_DISCONNECTED` を発火します。
+TCP では `pending_fin` が解消された時点、または no-data FIN / 追い付き済み FIN を受けた時点で、receiver は `FIN_ACK` を返信してから `POTR_EVENT_DISCONNECTED` を発火します。
 
 ```text
 receiver:
@@ -150,7 +150,7 @@ FIN_ACK 受信
 FIN.flags = FIN
 FIN_TARGET_VALID なし
 → receiver は即 DISCONNECTED
-→ TCP では続けて FIN_ACK を返す
+→ TCP では続けて FIN_ACK を返信
 ```
 
 ## エッジ ケース
@@ -167,10 +167,10 @@ FIN_TARGET_VALID なし
 
 | 通信種別 | FIN 送受信 | FIN_ACK | 備考 |
 |---|---|---|---|
-| unicast / multicast / broadcast / raw | ○ | × | 従来どおり FIN pending だけで順序保証します。 |
+| unicast / multicast / broadcast / raw | ○ | × | 従来どおり FIN pending だけで順序保証 |
 | unicast_bidir 1:1 | ○ | × | UDP 系として動作 |
-| unicast_bidir_n1 | ○ | × | `potr_internal_peer_context` ごとに pending FIN を管理します。 |
-| tcp (type 9) | ○ | ○ | `potr_service_close()` が FIN_ACK を待つ |
+| unicast_bidir_n1 | ○ | × | `potr_internal_peer_context` ごとに pending FIN を管理 |
+| tcp (type 9) | ○ | ○ | `potr_service_close()` が FIN_ACK を待機 |
 | tcp_bidir (type 10) | ○ | ○ | 同上 |
 
 ## 実装ファイル
@@ -178,7 +178,8 @@ FIN_TARGET_VALID なし
 | ファイル | 役割 |
 |---|---|
 | `prod/libsrc/porter/api/potr_service_close.c` | TCP close の `FIN` 送信、`FIN_ACK` 待機、タイムアウト処理 |
-| `prod/libsrc/porter/thread/potr_recv_thread.c` | UDP/TCP 共通の pending FIN 管理、TCP の `FIN_ACK` 送受信 |
+| `prod/libsrc/porter/thread/thread_recv_fin.c` | UDP/TCP 共通の pending FIN 判定、切断発火、TCP の `FIN_ACK` 送受信 |
+| `prod/libsrc/porter/thread/potr_recv_thread.c` | 受信ループからの FIN 判定と発火の呼び出し、必要なロックの保持 |
 | `prod/libsrc/porter/protocol/packet.c` | `potr_internal_packet_build_fin()` / `potr_internal_packet_build_fin_ack()` |
 | `prod/libsrc/porter/protocol/config.c` | `tcp_close_timeout_ms` の読込 |
 | `prod/libsrc/porter/potr_context.h` | close wait 状態、`pending_fin` / `fin_target_seq` などの保持 |

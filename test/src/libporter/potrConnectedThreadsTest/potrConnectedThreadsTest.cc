@@ -146,8 +146,8 @@ TEST_F(potrConnectedThreadsTest, recv_failure_stops_send_started_by_this_call)
     // Assert
     EXPECT_EQ(POTR_ERR_IO,
               actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_IO であること。
-    EXPECT_EQ(1, s_calls.send_start_calls);    // [確認_異常系] - send 開始が 1 回呼ばれること。
-    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - recv 開始が 1 回呼ばれること。
+    EXPECT_EQ(1, s_calls.send_start_calls);    // [確認_異常系] - send 開始が 1 回呼び出されること。
+    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - recv 開始が 1 回呼び出されること。
     EXPECT_EQ(1, s_calls.send_stop_calls);     // [確認_異常系] - この呼び出しで開始した send が停止されること。
     EXPECT_EQ(1, s_calls.close_conn_calls);    // [確認_異常系] - 接続が close されること。
     EXPECT_EQ(0, s_calls.join_recv_calls);     // [確認_異常系] - 未起動の recv は join されないこと。
@@ -172,8 +172,8 @@ TEST_F(potrConnectedThreadsTest, recv_failure_keeps_preexisting_send_thread_runn
     // Assert
     EXPECT_EQ(POTR_ERR_IO,
               actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_IO であること。
-    EXPECT_EQ(0, s_calls.send_start_calls);    // [確認_異常系] - 既存 send があるため send 開始が呼ばれないこと。
-    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - recv 開始が 1 回呼ばれること。
+    EXPECT_EQ(0, s_calls.send_start_calls);    // [確認_異常系] - 既存 send があるため send 開始が呼び出されないこと。
+    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - recv 開始が 1 回呼び出されること。
     EXPECT_EQ(0, s_calls.send_stop_calls);     // [確認_異常系] - 既存の send スレッドが停止されないこと。
     EXPECT_EQ(1, s_calls.close_conn_calls);    // [確認_異常系] - 接続が close されること。
     EXPECT_EQ(0, s_calls.tcp_send_ping_calls); // [確認_異常系] - bootstrap ping まで進まないこと。
@@ -195,9 +195,9 @@ TEST_F(potrConnectedThreadsTest, bootstrap_ping_failure_rolls_back_recv_and_new_
     // Assert
     EXPECT_EQ(POTR_ERR_DISCONNECTED,
               actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_DISCONNECTED であること。
-    EXPECT_EQ(1, s_calls.send_start_calls);                 // [確認_異常系] - send 開始が 1 回呼ばれること。
-    EXPECT_EQ(1, s_calls.recv_start_calls);                 // [確認_異常系] - recv 開始が 1 回呼ばれること。
-    EXPECT_EQ(1, s_calls.tcp_send_ping_calls);              // [確認_異常系] - bootstrap ping が 1 回呼ばれること。
+    EXPECT_EQ(1, s_calls.send_start_calls);                 // [確認_異常系] - send 開始が 1 回呼び出されること。
+    EXPECT_EQ(1, s_calls.recv_start_calls);                 // [確認_異常系] - recv 開始が 1 回呼び出されること。
+    EXPECT_EQ(1, s_calls.tcp_send_ping_calls);              // [確認_異常系] - bootstrap ping が 1 回呼び出されること。
     EXPECT_EQ(0, s_calls.health_start_calls);               // [確認_異常系] - health 開始まで進まないこと。
     EXPECT_EQ(1, s_calls.close_conn_calls);                 // [確認_異常系] - 接続が close されること。
     EXPECT_EQ(1, s_calls.join_recv_calls);                  // [確認_異常系] - 起動済みの recv が join されること。
@@ -222,10 +222,10 @@ TEST_F(potrConnectedThreadsTest, health_failure_rolls_back_recv_and_new_send_thr
     // Assert
     EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY,
               actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_OUT_OF_MEMORY であること。
-    EXPECT_EQ(1, s_calls.send_start_calls);                 // [確認_異常系] - send 開始が 1 回呼ばれること。
-    EXPECT_EQ(1, s_calls.recv_start_calls);                 // [確認_異常系] - recv 開始が 1 回呼ばれること。
-    EXPECT_EQ(1, s_calls.tcp_send_ping_calls);              // [確認_異常系] - bootstrap ping が 1 回呼ばれること。
-    EXPECT_EQ(1, s_calls.health_start_calls);               // [確認_異常系] - health 開始が 1 回呼ばれること。
+    EXPECT_EQ(1, s_calls.send_start_calls);                 // [確認_異常系] - send 開始が 1 回呼び出されること。
+    EXPECT_EQ(1, s_calls.recv_start_calls);                 // [確認_異常系] - recv 開始が 1 回呼び出されること。
+    EXPECT_EQ(1, s_calls.tcp_send_ping_calls);              // [確認_異常系] - bootstrap ping が 1 回呼び出されること。
+    EXPECT_EQ(1, s_calls.health_start_calls);               // [確認_異常系] - health 開始が 1 回呼び出されること。
     EXPECT_EQ(1, s_calls.close_conn_calls);                 // [確認_異常系] - 接続が close されること。
     EXPECT_EQ(1, s_calls.join_recv_calls);                  // [確認_異常系] - 起動済みの recv が join されること。
     EXPECT_EQ(1, s_calls.send_stop_calls);                  // [確認_異常系] - 新規に開始した send が停止されること。
@@ -250,10 +250,10 @@ TEST_F(potrConnectedThreadsTest, health_failure_keeps_preexisting_send_thread_ru
     // Assert
     EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY,
               actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_OUT_OF_MEMORY であること。
-    EXPECT_EQ(0, s_calls.send_start_calls);    // [確認_異常系] - 既存 send があるため send 開始が呼ばれないこと。
-    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - recv 開始が 1 回呼ばれること。
-    EXPECT_EQ(1, s_calls.tcp_send_ping_calls); // [確認_異常系] - bootstrap ping が 1 回呼ばれること。
-    EXPECT_EQ(1, s_calls.health_start_calls);  // [確認_異常系] - health 開始が 1 回呼ばれること。
+    EXPECT_EQ(0, s_calls.send_start_calls);    // [確認_異常系] - 既存 send があるため send 開始が呼び出されないこと。
+    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - recv 開始が 1 回呼び出されること。
+    EXPECT_EQ(1, s_calls.tcp_send_ping_calls); // [確認_異常系] - bootstrap ping が 1 回呼び出されること。
+    EXPECT_EQ(1, s_calls.health_start_calls);  // [確認_異常系] - health 開始が 1 回呼び出されること。
     EXPECT_EQ(1, s_calls.close_conn_calls);    // [確認_異常系] - 接続が close されること。
     EXPECT_EQ(1, s_calls.join_recv_calls);     // [確認_異常系] - 起動済みの recv が join されること。
     EXPECT_EQ(0, s_calls.send_stop_calls);     // [確認_異常系] - 既存の send スレッドが停止されないこと。
@@ -275,9 +275,9 @@ TEST_F(potrConnectedThreadsTest, non_primary_path_does_not_touch_send_thread)
     // Assert
     EXPECT_EQ(POTR_ERR_IO,
               actual_ret); // [確認_異常系] - potr_internal_start_connected_threads の戻り値が POTR_ERR_IO であること。
-    EXPECT_EQ(0, s_calls.send_start_calls);                 // [確認_異常系] - send 開始が呼ばれないこと。
-    EXPECT_EQ(1, s_calls.recv_start_calls);                 // [確認_異常系] - recv 開始が 1 回呼ばれること。
-    EXPECT_EQ(0, s_calls.send_stop_calls);                  // [確認_異常系] - send 停止が呼ばれないこと。
+    EXPECT_EQ(0, s_calls.send_start_calls);                 // [確認_異常系] - send 開始が呼び出されないこと。
+    EXPECT_EQ(1, s_calls.recv_start_calls);                 // [確認_異常系] - recv 開始が 1 回呼び出されること。
+    EXPECT_EQ(0, s_calls.send_stop_calls);                  // [確認_異常系] - send 停止が呼び出されないこと。
     EXPECT_EQ(1, s_calls.close_conn_calls);                 // [確認_異常系] - 接続が close されること。
     EXPECT_EQ(0, s_calls.tcp_send_ping_calls);              // [確認_異常系] - bootstrap ping まで進まないこと。
     EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[1]); // [確認_異常系] - path 1 のソケットが無効化されること。
@@ -296,15 +296,15 @@ TEST_F(potrConnectedThreadsTest, success_sets_ping_state_without_rollback)
 
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_start_connected_threads の戻り値が POTR_OK であること。
-    EXPECT_EQ(1, s_calls.send_start_calls);        // [確認_正常系] - send 開始が 1 回呼ばれること。
-    EXPECT_EQ(1, s_calls.recv_start_calls);        // [確認_正常系] - recv 開始が 1 回呼ばれること。
-    EXPECT_EQ(1, s_calls.tcp_send_ping_calls);     // [確認_正常系] - bootstrap ping が 1 回呼ばれること。
+    EXPECT_EQ(1, s_calls.send_start_calls);        // [確認_正常系] - send 開始が 1 回呼び出されること。
+    EXPECT_EQ(1, s_calls.recv_start_calls);        // [確認_正常系] - recv 開始が 1 回呼び出されること。
+    EXPECT_EQ(1, s_calls.tcp_send_ping_calls);     // [確認_正常系] - bootstrap ping が 1 回呼び出されること。
     EXPECT_EQ(0, s_calls.last_tcp_send_ping_path); // [確認_正常系] - bootstrap ping の対象が path 0 であること。
-    EXPECT_EQ(1, s_calls.health_start_calls);      // [確認_正常系] - health 開始が 1 回呼ばれること。
-    EXPECT_EQ(0, s_calls.close_conn_calls);        // [確認_正常系] - close が呼ばれないこと。
-    EXPECT_EQ(0, s_calls.join_recv_calls);         // [確認_正常系] - join が呼ばれないこと。
-    EXPECT_EQ(0, s_calls.send_stop_calls);         // [確認_正常系] - send 停止が呼ばれないこと。
-    EXPECT_EQ(1, s_calls.set_ping_state_calls);    // [確認_正常系] - ping 状態設定が 1 回呼ばれること。
+    EXPECT_EQ(1, s_calls.health_start_calls);      // [確認_正常系] - health 開始が 1 回呼び出されること。
+    EXPECT_EQ(0, s_calls.close_conn_calls);        // [確認_正常系] - close が呼び出されないこと。
+    EXPECT_EQ(0, s_calls.join_recv_calls);         // [確認_正常系] - join が呼び出されないこと。
+    EXPECT_EQ(0, s_calls.send_stop_calls);         // [確認_正常系] - send 停止が呼び出されないこと。
+    EXPECT_EQ(1, s_calls.set_ping_state_calls);    // [確認_正常系] - ping 状態設定が 1 回呼び出されること。
     EXPECT_EQ(0, s_calls.last_set_ping_path);      // [確認_正常系] - 設定対象が path 0 であること。
     EXPECT_EQ((int)POTR_PING_STATE_UNDEFINED,
               s_calls.last_set_ping_state); // [確認_正常系] - 設定値が POTR_PING_STATE_UNDEFINED であること。

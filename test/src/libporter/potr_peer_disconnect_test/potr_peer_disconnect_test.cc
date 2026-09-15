@@ -222,17 +222,17 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
         .Times(1); // [Pre-Assert確認_正常系] - INFO ログに "disconnecting" が含まれること。
 
     EXPECT_CALL(mock_peer_table, potr_internal_peer_send_fin(&ctx, &peer_ctx))
-        .Times(1); // [Pre-Assert確認_正常系] - potr_internal_peer_send_fin が 1 回呼ばれること。
+        .Times(1); // [Pre-Assert確認_正常系] - potr_internal_peer_send_fin が 1 回呼び出されること。
 
     EXPECT_CALL(mock_peer_table, potr_internal_peer_free(&ctx, &peer_ctx))
-        .Times(1); // [Pre-Assert確認_正常系] - potr_internal_peer_free が 1 回呼ばれること。
+        .Times(1); // [Pre-Assert確認_正常系] - potr_internal_peer_free が 1 回呼び出されること。
 
     // Act
     int actual_ret = potr_peer_disconnect(&ctx, 1); // [手順] - 正常な状態で potr_peer_disconnect を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret);                       // [確認_正常系] - potr_peer_disconnect の戻り値が POTR_OK であること。
-    EXPECT_EQ(static_cast<size_t>(3), s_cb.count); // [確認_正常系] - PATH 2 件 + DISCONNECTED が呼ばれること。
+    EXPECT_EQ(static_cast<size_t>(3), s_cb.count); // [確認_正常系] - PATH 2 件 + DISCONNECTED が呼び出されること。
     EXPECT_EQ(42, s_cb.entries[0].service_id);
     EXPECT_EQ((potr_peer_id)1, s_cb.entries[0].peer_id);
     EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED, s_cb.entries[0].event);
@@ -271,10 +271,10 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
         .WillOnce(Return(&peer_ctx)); // [Pre-Assert確認_正常系] - potr_internal_peer_find_by_id がピア コンテキストを返すこと。
 
     EXPECT_CALL(mock_peer_table, potr_internal_peer_send_fin(&ctx, &peer_ctx))
-        .Times(1); // [Pre-Assert確認_正常系] - potr_internal_peer_send_fin が 1 回呼ばれること。
+        .Times(1); // [Pre-Assert確認_正常系] - potr_internal_peer_send_fin が 1 回呼び出されること。
 
     EXPECT_CALL(mock_peer_table, potr_internal_peer_free(&ctx, &peer_ctx))
-        .Times(1); // [Pre-Assert確認_正常系] - potr_internal_peer_free が 1 回呼ばれること。
+        .Times(1); // [Pre-Assert確認_正常系] - potr_internal_peer_free が 1 回呼び出されること。
 
     // Act
     int actual_ret = potr_peer_disconnect(&ctx, 1); // [手順] - health_alive=0 の状態で potr_peer_disconnect を呼び出す。
@@ -282,5 +282,5 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_peer_disconnect の戻り値が POTR_OK であること。
     EXPECT_EQ(static_cast<size_t>(0),
-              s_cb.count); // [確認_正常系] - health_alive=0 のためコールバックが呼ばれないこと。
+              s_cb.count); // [確認_正常系] - health_alive=0 のためコールバックが呼び出されないこと。
 }

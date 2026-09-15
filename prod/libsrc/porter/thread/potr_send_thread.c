@@ -134,10 +134,9 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
 
         if (is_tcp)
         {
-            /* TCP: ウィンドウ登録不要。next_seq をインクリメントして mutex を解放 */
+            /* TCP: ウィンドウ登録不要。実送信完了まで mutex を保持して全 path リセットと直列化する。 */
             ctx->send_window.next_seq++;
             ctx->send_has_data = 1;
-            cplat_local_lock_unlock(ctx->send_window_mutex);
         }
         else
         {
@@ -161,10 +160,9 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
     {
         if (is_tcp)
         {
-            /* TCP: ウィンドウ登録不要。next_seq をインクリメントして mutex を解放 */
+            /* TCP: ウィンドウ登録不要。実送信完了まで mutex を保持して全 path リセットと直列化する。 */
             ctx->send_window.next_seq++;
             ctx->send_has_data = 1;
-            cplat_local_lock_unlock(ctx->send_window_mutex);
         }
         else
         {
@@ -219,6 +217,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
                 }
             }
         }
+        cplat_local_lock_unlock(ctx->send_window_mutex);
     }
     else
     {
@@ -320,7 +319,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
                    ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq, packed_len);
     }
 
-    /* N:1 はインデックス = ctx->sock[] の添字として全パスへ送信する */
+    /* N:1 はインデックス = ctx->sock[] のインデックスとして全パスへ送信する */
     {
         int k;
         for (k = 0; k < (int)POTR_MAX_PATH; k++)
@@ -575,6 +574,7 @@ int potr_internal_send_thread_start(potr_context *ctx)
     {
         ctx->send_thread_running = 0;
         cplat_local_lock_dispose(ctx->send_window_mutex);
+        ctx->send_window_mutex = NULL;
         /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
         return POTR_ERR_UNKNOWN;
     }
@@ -591,4 +591,5 @@ void potr_internal_send_thread_stop(potr_context *ctx)
 
     cplat_thread_join(ctx->send_thread, CPLAT_SYNC_WAIT_FOREVER);
     cplat_local_lock_dispose(ctx->send_window_mutex);
+    ctx->send_window_mutex = NULL;
 }
