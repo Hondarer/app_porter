@@ -229,9 +229,12 @@ class tcpMultipathTest : public Test
         int ready = 0;
         ASSERT_EQ(CPLAT_OK, cplat_socket_wait_readable(sockets[1], 5000, &ready, nullptr));
         ASSERT_EQ(1, ready);
+        // 応答 PING は accept スレッドの bootstrap 送信でも発生するため、読み取り可能なだけでは
+        // 受信スレッドが先読み PING を処理し終えた証拠になりません。PATH_CONNECTED の到達で、
+        // 各経路の受信スレッドが次のヘッダー読み取りへ進むことを保証します。
+        ASSERT_TRUE(wait_for([] { return s_live_paths == 3; }));
         if (!seed_first_path)
         {
-            ASSERT_TRUE(wait_for([] { return s_live_paths == 3; }));
             send_packet(0, data_packet(0, bytes{'s'}, crypto));
             ASSERT_TRUE(wait_for([] { return s_received.size() == 1; }));
         }
