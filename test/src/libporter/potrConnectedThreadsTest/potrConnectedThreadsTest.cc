@@ -31,6 +31,7 @@ struct ConnectedThreadsCallState
     int last_set_ping_state;
     int last_tcp_send_ping_path;
     int recv_start_result;
+    int ping_state_at_recv_start;
     int tcp_send_ping_result;
     int health_start_result;
 };
@@ -53,6 +54,7 @@ static void fake_send_stop(potr_context *ctx)
 static int fake_recv_start(potr_context *ctx, int path_idx)
 {
     s_calls.recv_start_calls++;
+    s_calls.ping_state_at_recv_start = (int)ctx->path_ping_state[path_idx];
     if (s_calls.recv_start_result == POTR_OK)
     {
         ctx->running[path_idx] = 1;
@@ -310,4 +312,25 @@ TEST_F(potrConnectedThreadsTest, success_sets_ping_state_without_rollback)
               s_calls.last_set_ping_state); // [確認_正常系] - 設定値が POTR_PING_STATE_UNDEFINED であること。
     EXPECT_EQ(POTR_PING_STATE_UNDEFINED,
               ctx.path_ping_state[0]); // [確認_正常系] - path 0 の ping 状態が UNDEFINED になること。
+}
+
+// recv スレッド起動前に ping 状態が初期化され、起動後の受信結果を上書きしないことの確認
+TEST_F(potrConnectedThreadsTest, ping_state_is_reset_before_recv_start)
+{
+    // Arrange
+    potr_internal_connected_threads_ops ops = make_ops();
+    ctx.path_ping_state[1] = POTR_PING_STATE_NORMAL; // [状態] - path 1 の ping 状態が前回接続の NORMAL のまま残っている。
+    s_calls.ping_state_at_recv_start = -1;
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret =
+        potr_internal_start_connected_threads(&ctx, 1, &ops); // [手順] - 非 primary path (1) で接続時スレッド群を開始する。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_start_connected_threads の戻り値が POTR_OK であること。
+    EXPECT_EQ(1, s_calls.set_ping_state_calls); // [確認_正常系] - ping 状態設定が 1 回呼び出されること。
+    EXPECT_EQ((int)POTR_PING_STATE_UNDEFINED,
+              s_calls.ping_state_at_recv_start); // [確認_正常系] - recv 開始時点で path 1 の ping 状態が UNDEFINED であること。
 }

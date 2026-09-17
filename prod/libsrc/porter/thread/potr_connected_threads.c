@@ -52,6 +52,10 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, const
         started_send_thread = 1;
     }
 
+    /* recv スレッドは accept 時に先読みした PING を起動直後に処理し、経路状態を NORMAL にする。
+     * 起動後に初期化すると、その NORMAL を上書きして経路を切断扱いにするため、起動前に初期化する。 */
+    ops->set_path_ping_state(ctx, path_idx, POTR_PING_STATE_UNDEFINED);
+
     result = ops->recv_start(ctx, path_idx);
     if (result != POTR_OK)
     {
@@ -66,8 +70,6 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, const
         }
         return result;
     }
-
-    ops->set_path_ping_state(ctx, path_idx, POTR_PING_STATE_UNDEFINED);
 
     result = potr_internal_tcp_send_ping_now(ctx, path_idx);
     if (result != POTR_OK)
