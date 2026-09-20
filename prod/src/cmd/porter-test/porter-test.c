@@ -275,14 +275,21 @@ static void trace_console_hook(cplat_tracer_hook_entry *prev, cplat_tracer *hand
 {
     static const char lc_table[] = {'C', 'E', 'W', 'I', 'V', 'D'};
     cplat_trace_level threshold = *(const cplat_trace_level *)context;
+    cplat_trace_level display_level = level;
     char ts[CPLAT_CLOCK_ISO8601_LOCAL_MSEC_LEN + 1];
     char lc;
 
+    /* 強制出力は、しきい値によらず出力する指定であり、記録の重大度は対応する通常のレベルと同じ */
+    if (CPLAT_TRACE_LEVEL_IS_FORCE(level))
+    {
+        display_level = CPLAT_TRACE_LEVEL_FROM_FORCE(level);
+    }
+
     if (threshold != CPLAT_TRACE_LEVEL_NONE && (int)level <= (int)threshold)
     {
-        if ((int)level >= 0 && (int)level < (int)CPLAT_TRACE_LEVEL_NONE)
+        if ((int)display_level >= 0 && (int)display_level < (int)CPLAT_TRACE_LEVEL_NONE)
         {
-            lc = lc_table[(int)level];
+            lc = lc_table[(int)display_level];
         }
         else
         {
