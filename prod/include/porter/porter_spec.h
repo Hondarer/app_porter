@@ -389,6 +389,14 @@ extern "C"
      *  取得したハンドルに対して cplat_tracer_set_stderr_level() と
      *  cplat_tracer_start() を呼び出すことで、stderr へのトレース出力を有効化できます。
      *
+     *  @note           出力先の詳細度は、すべて CPLAT_TRACE_LEVEL_NONE (無効) が初期値です。\n
+     *                  cplat_tracer_start() だけを呼び出しても、どこへも出力されません。\n
+     *                  開始する前に、使用する出力先の詳細度を設定してください。
+     *                  標準エラー出力は cplat_tracer_set_stderr_level()、ファイルは
+     *                  cplat_tracer_set_file_level()、OS のログ基盤は cplat_tracer_set_os_level() です。\n
+     *                  porter 自身は出力先を設定しません。出力先の選択は利用側の判断であり、
+     *                  ライブラリが利用側の実行ファイルの配置先へログ ファイルを作らないためです。
+     *
      *  @par            stderr 出力を有効にする例
         @code{.c}
         cplat_tracer *tracer = potr_tracer_get();
