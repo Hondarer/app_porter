@@ -418,8 +418,8 @@ int potr_service_close(potr_context *handle)
         potr_internal_send_queue_wait_drained(&ctx->send_queue);
         if (ctx->is_multi_peer)
         {
-            /* N:1: 全アクティブ ピアへ FIN を送信してピア テーブルを破棄 */
-            potr_internal_peer_table_dispose(ctx);
+            /* N:1: 受信スレッドが参照するピア テーブルを保持したまま全アクティブ ピアへ FIN を送信する */
+            potr_internal_peer_table_send_fin(ctx);
         }
         else
         {
@@ -480,8 +480,7 @@ int potr_service_close(potr_context *handle)
     }
     else if (ctx->peers != NULL)
     {
-        /* N:1 モード: 送信スレッド未起動の場合もピア テーブルを解放する
-           (すでに potr_internal_peer_table_dispose 済みの場合は ctx->peers が NULL になっている) */
+        /* N:1 モード: 参照する全スレッドの停止後にピア テーブルを解放する */
         potr_internal_peer_table_dispose(ctx);
     }
     dispose_secret_buffers(ctx);

@@ -222,9 +222,6 @@ void potr_internal_peer_table_dispose(potr_context *ctx)
             continue;
         }
 
-        /* 各ピアへ FIN を送信 */
-        potr_internal_peer_send_fin(ctx, &ctx->peers[i]);
-
         /* リソース解放 */
         potr_internal_window_dispose(&ctx->peers[i].send_window);
         potr_internal_window_dispose(&ctx->peers[i].recv_window);
@@ -239,6 +236,23 @@ void potr_internal_peer_table_dispose(potr_context *ctx)
     cplat_free(ctx->peers);
     ctx->peers = NULL;
     ctx->n_peers = 0;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_peer_table_send_fin(potr_context *ctx)
+{
+    int i;
+
+    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    for (i = 0; i < ctx->max_peers; i++)
+    {
+        if (ctx->peers[i].active)
+        {
+            potr_internal_peer_send_fin(ctx, &ctx->peers[i]);
+        }
+    }
+    cplat_local_lock_unlock(ctx->peers_mutex);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

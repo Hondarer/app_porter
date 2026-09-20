@@ -45,6 +45,16 @@ extern "C"
     extern void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *peer);
 
     /**
+     *  @brief  全アクティブ ピアへ FIN パケットを送信します。
+     *
+     *  peers_mutex を取得して全アクティブ ピアへ FIN を送信します。\n
+     *  ピア テーブルと各ピアのリソースは解放しません。
+     *
+     *  @param[in,out]  ctx     セッション コンテキスト。
+     */
+    extern void potr_internal_peer_table_send_fin(potr_context *ctx);
+
+    /**
      *  @brief  ピア テーブルを初期化します。
      *
      *  ctx->peers を max_peers 分確保し、peers_mutex を初期化します。\n
@@ -59,8 +69,9 @@ extern "C"
     /**
      *  @brief  ピア テーブルを破棄します。
      *
-     *  全アクティブ ピアに FIN を送信し、リソースを解放します。\n
-     *  peers_mutex を解放します。
+     *  全アクティブ ピアのリソースと peers_mutex を解放します。\n
+     *  呼び出し前にピア テーブルを参照する全スレッドを停止すること。\n
+     *  FIN の送信は呼び出し元が行うこと (本関数は送信しない)。
      *
      *  @param[in,out]  ctx         セッション コンテキスト。
      */
