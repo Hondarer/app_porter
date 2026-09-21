@@ -48,6 +48,10 @@ make_build.stamp
 make_test.stamp
 make_doxy.stamp
 
+## パッケージの展開/パッチ適用スキップ用スタンプ (app/<name>/bin/extract_package.py が生成)
+make_extract.stamp
+make_extract.lock
+
 ## leaf テスト ディレクトリ単位の再テスト スキップ用スタンプ
 test.stamp
 
