@@ -75,6 +75,7 @@ lib
 bin
 cbin
 !/bin
+!/prod/bin
 *.exe
 *.pdb
 *.warn
