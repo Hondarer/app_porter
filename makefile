@@ -131,72 +131,59 @@ default:
 		if [ $$make_exit -ne 0 ]; then exit $$make_exit; fi; \
 	fi
 
-.PHONY: _makefw_with_cov_or_default
-_makefw_with_cov_or_default:
+# app/makefile の with-cov から、対象 app 直下で呼ばれる。
+# prod/coverity.mk がある app は with-cov、無い app (coverity 対象の依存先) は prod だけを通常どおり make する。
+# 依存先の test (モックとテスト コード) は with-cov の対象外であり、make_build.stamp も更新しない。
+.PHONY: _makefw_with_cov_prod
+_makefw_with_cov_prod:
 	@if [ -f "$(COVERITY_CONFIG)" ]; then \
 		echo $(MAKE) with-cov; \
 		$(MAKE) with-cov; \
-	else \
-		echo $(MAKE); \
-		$(MAKE); \
+	elif [ -f prod/makefile ]; then \
+		echo $(MAKE) -C prod; \
+		$(MAKE) -C prod || exit 1; \
 	fi
 
-.PHONY: with-cov
-with-cov: __ensure-coverity
-	@sig_file=$$(mktemp); \
-	signature_available=1; \
-	if ! CONFIG="$(CONFIG)" MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" DEFINES="$(DEFINES)" LIBS="$(LIBS)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" build > "$$sig_file"; then \
-		signature_available=0; \
-		rm -f "$$sig_file"; \
-		sig_file=""; \
-		echo "Warning: failed to calculate build signature. Running build without skip."; \
-	fi; \
-	if [ $$signature_available -eq 1 ] && [ -f "$(BUILD_STAMP)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
+# with-cov の前提。cov-build が prod の翻訳単位を取得できるよう、prod の成果物と make_build.stamp を削除する。
+# assured.stamp の有無に関係なく、cov-build の外で実行する。test は with-cov の対象外のため clean しない。
+.PHONY: _makefw_clean_for_coverity
+_makefw_clean_for_coverity: __ensure-coverity
+	@if [ -f "$(BUILD_STAMP)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
 		prev_crt=$$(sed -n 's/^MSVC_CRT=//p' "$(BUILD_STAMP)"); \
 		if [ -n "$$prev_crt" ] && [ "$$prev_crt" != "$(MSVC_CRT_SUBDIR)" ]; then \
-			rm -f "$$sig_file"; \
 			echo "ERROR: MSVC runtime mismatch detected. Run 'make clean' first, then rebuild.  Previous build: $$prev_crt  Current request: $(MSVC_CRT_SUBDIR)" >&2; \
 			exit 1; \
 		fi; \
-	fi; \
-	current_clean=0; \
-	if [ $$signature_available -eq 1 ]; then current_clean=$$(sed -n '1s/^CLEAN=//p' "$$sig_file"); fi; \
-	if [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ] && [ -f "$(BUILD_STAMP)" ] && cmp -s "$$sig_file" "$(BUILD_STAMP)"; then \
-		echo "INFO: Skipping build (dependencies are unchanged and clean)"; \
-		rm -f "$$sig_file"; \
-	else \
-		rm -f "$(BUILD_STAMP)"; \
-		make_exit=0; \
-		for dir in $(SUBDIRS); do \
-			if [ -f $$dir/makefile ]; then \
-				if [ "$$dir" = "prod" ]; then \
-					echo "$(COVERITY_MAKE_WRAPPER)" "$(COVERITY_TOOLCHAIN)" $(MAKE) -C $$dir; \
-					"$(COVERITY_MAKE_WRAPPER)" "$(COVERITY_TOOLCHAIN)" $(MAKE) -C $$dir || { make_exit=$$?; break; }; \
-				else \
-					skip_src=""; \
-					if [ "$$dir" = "test" ] && [ -f "$(CURDIR)/assured.stamp" ]; then \
-						skip_src="MAKEFW_SKIP_TEST_SRC=1"; \
-					fi; \
-					echo $(MAKE) -C $$dir $$skip_src; \
-					$(MAKE) -C $$dir $$skip_src || { make_exit=$$?; break; }; \
-				fi; \
-			fi; \
-		done; \
-		if [ $$make_exit -eq 0 ] && [ "$(IDENT)" = "1" ]; then \
-			_idir="$(WORKSPACE_DIR)/app/idir"; \
-			if [ -d "$$_idir" ]; then \
-				echo "IDENT=1: removing _ident_manifest.c emit from Coverity idir"; \
-				"$(COVERITY_HOME)/bin/cov-manage-emit" \
-					--dir "$$_idir" \
-					--tu-pattern "file('*_ident_manifest.c')" \
-					delete; \
-			fi; \
+	fi
+	@if [ -f prod/makefile ]; then \
+		echo $(MAKE) -C prod clean; \
+		$(MAKE) -C prod clean || exit 1; \
+	fi
+	@rm -f "$(BUILD_STAMP)"
+
+# with-cov は、解析対象の prod を cov-build 経由で通常どおり make (リンクを含む) する。
+# 構文解析や自動生成を伴う app では、解析対象のソースがリンクまでのビルド過程で生成されるため、
+# コンパイルのみにはしない。
+# test (モックとテスト コード) のビルドと、make_build.stamp / make_test.stamp の更新は行わない。
+.PHONY: with-cov
+with-cov: __ensure-coverity
+ifneq ($(wildcard $(COVERITY_CONFIG)),)
+with-cov: _makefw_clean_for_coverity
+endif
+with-cov:
+	@if [ -f prod/makefile ]; then \
+		echo "$(COVERITY_MAKE_WRAPPER)" "$(COVERITY_TOOLCHAIN)" $(MAKE) -C prod; \
+		"$(COVERITY_MAKE_WRAPPER)" "$(COVERITY_TOOLCHAIN)" $(MAKE) -C prod || exit 1; \
+	fi
+	@if [ "$(IDENT)" = "1" ]; then \
+		_idir="$(WORKSPACE_DIR)/app/idir"; \
+		if [ -d "$$_idir" ]; then \
+			echo "IDENT=1: removing _ident_manifest.c emit from Coverity idir"; \
+			"$(COVERITY_HOME)/bin/cov-manage-emit" \
+				--dir "$$_idir" \
+				--tu-pattern "file('*_ident_manifest.c')" \
+				delete; \
 		fi; \
-		if [ $$make_exit -eq 0 ] && [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ]; then \
-			cp "$$sig_file" "$(BUILD_STAMP)"; \
-		fi; \
-		if [ -n "$$sig_file" ]; then rm -f "$$sig_file"; fi; \
-		if [ $$make_exit -ne 0 ]; then exit $$make_exit; fi; \
 	fi
 
 .PHONY: clean
