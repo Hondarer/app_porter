@@ -33,7 +33,7 @@ class potrSendTest : public Test
         ctx.service.service_id = 42;
         ctx.global.max_payload = 1400;
         ctx.global.max_message_size = 4096;
-        ctx.send_thread_running = 1;
+        cplat_atomic_store_i32(&ctx.send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED);
         ctx.max_peers = (int)(sizeof(peers) / sizeof(peers[0]));
         ctx.peers = peers;
 
@@ -65,7 +65,7 @@ TEST_F(potrSendTest, close_requested_returns_canceled)
     NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "closing"; // [状態] - 送信ペイロードを "closing" とする。
-    ctx.close_requested = 1;          // [状態] - サービスの終了処理中とする。
+    cplat_atomic_store_i32(&ctx.close_requested, 1, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - サービスの終了処理中とする。
 
     // Pre-Assert
 
@@ -127,8 +127,8 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
     const char payload[] = "tcp-before-connected"; // [状態] - 送信ペイロードを "tcp-before-connected" とする。
 
     ctx.service.type = POTR_TYPE_TCP_BIDIR;
-    ctx.tcp_active_paths = 1;
-    ctx.health_alive = 0; // [状態] - TCP_BIDIR で物理パスは active、論理接続 (health_alive) は未成立とする。
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.health_alive, 0, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - TCP_BIDIR で物理パスは active、論理接続 (health_alive) は未成立とする。
 
     // Pre-Assert
 
@@ -152,7 +152,7 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
     ctx.is_multi_peer = 1;
     peers[0].active = 1;
     peers[0].peer_id = 10;
-    peers[0].health_alive = 0; // [状態] - active だが未接続 (health_alive=0) の peer を 1 件だけ用意する。
+    cplat_atomic_store_i32(&peers[0].health_alive, 0, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - active だが未接続 (health_alive=0) の peer を 1 件だけ用意する。
 
     // Pre-Assert
 
@@ -177,10 +177,10 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
     ctx.is_multi_peer = 1;
     peers[0].active = 1;
     peers[0].peer_id = 10;
-    peers[0].health_alive = 1; // [状態] - 接続済み (health_alive=1) の peer 10 を用意する。
+    cplat_atomic_store_i32(&peers[0].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 接続済み (health_alive=1) の peer 10 を用意する。
     peers[1].active = 1;
     peers[1].peer_id = 11;
-    peers[1].health_alive = 0; // [状態] - 未接続の peer 11 を用意する。
+    cplat_atomic_store_i32(&peers[1].health_alive, 0, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 未接続の peer 11 を用意する。
 
     // Pre-Assert
 
@@ -209,7 +209,7 @@ TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
     const char payload[] = "one-way-still-sendable"; // [状態] - 送信ペイロードを "one-way-still-sendable" とする。
 
     ctx.service.type = POTR_TYPE_UNICAST;
-    ctx.health_alive = 0; // [状態] - 片方向 unicast で接続状態 (health_alive) は未成立とする。
+    cplat_atomic_store_i32(&ctx.health_alive, 0, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 片方向 unicast で接続状態 (health_alive) は未成立とする。
 
     // Pre-Assert
 

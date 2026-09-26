@@ -51,6 +51,7 @@
 #include <cplat/crt/unistd.h>
 #include <cplat/prompt/pinned_prompt.h>
 #include <cplat/runtime/shutdown.h>
+#include <cplat/sync/atomic.h>
 #include <inttypes.h>
 #include <signal.h>
 #include <stdio.h>
@@ -71,7 +72,7 @@
 #define PROMPT_STATE_SIZE 32
 
 /** REPL 継続フラグ。終了要求 callback で 0 に設定される。 */
-static volatile int s_running = 1;
+static cplat_atomic_i32 s_running = CPLAT_ATOMIC_INIT(1);
 /** 終了要求の受信有無。main 側の表示制御に使う。 */
 static volatile sig_atomic_t s_shutdown_requested = 0;
 /** pinned prompt ハンドル。on_recv や trace hook から参照する。 */
@@ -141,7 +142,7 @@ static void porter_test_shutdown_request_callback(const cplat_shutdown_event *ev
     (void)event;
     (void)context;
     s_shutdown_requested = 1;
-    s_running = 0;
+    cplat_atomic_store_i32(&s_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
 
 #if defined(PLATFORM_LINUX)
     cplat_close(STDIN_FILENO, NULL); /* readline (fgets) のブロックを解除する */
@@ -1088,7 +1089,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    s_running = 1;
+    cplat_atomic_store_i32(&s_running, 1, CPLAT_MEMORY_ORDER_RELEASE);
     s_shutdown_requested = 0;
 
     s_screen = cplat_pinned_prompt_create(NULL);
@@ -1139,7 +1140,7 @@ int main(int argc, char *argv[])
                                       "help でコマンド一覧を表示します。\n");
     }
 
-    while (s_running)
+    while (cplat_atomic_load_i32(&s_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         build_prompt_state(&session, prompt_state, sizeof(prompt_state));
         if (cplat_pinned_prompt_readline_fmt(s_screen, line, sizeof(line), "porter-test[%s]> ", prompt_state) !=

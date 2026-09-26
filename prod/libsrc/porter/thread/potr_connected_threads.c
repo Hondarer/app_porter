@@ -40,7 +40,8 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, const
     is_bidir = (ctx->service.type == POTR_TYPE_TCP_BIDIR);
     is_sender = (ctx->role == POTR_ROLE_SENDER);
 
-    if ((is_sender || is_bidir) && path_idx == 0 && !ctx->send_thread_running)
+    if ((is_sender || is_bidir) && path_idx == 0 &&
+        cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
         result = ops->send_start(ctx);
         if (result != POTR_OK)
@@ -78,7 +79,7 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, const
                    "connect_thread[service_id=%" PRId64 "]: bootstrap TCP PING failed"
                    " (path=%d)",
                    ctx->service.service_id, path_idx);
-        ctx->running[path_idx] = 0;
+        cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
         ops->close_conn(ctx, path_idx);
         ops->join_recv(ctx, path_idx);
         if (started_send_thread)
@@ -95,7 +96,7 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, const
                    "connect_thread[service_id=%" PRId64 "]: tcp_health_thread_start failed"
                    " (path=%d)",
                    ctx->service.service_id, path_idx);
-        ctx->running[path_idx] = 0;
+        cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
         ops->close_conn(ctx, path_idx);
         ops->join_recv(ctx, path_idx);
         if (started_send_thread)

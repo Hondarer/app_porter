@@ -55,8 +55,8 @@ static int generate_session(potr_context *ctx)
     }
     cplat_get_realtime(&ctx->session_ts);
 
-    ctx->last_ping_send_ms = 0U;
-    ctx->last_valid_data_send_ms = 0U;
+    cplat_atomic_store_u64(&ctx->last_ping_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
 
     return CPLAT_OK;
 }
@@ -393,10 +393,10 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
             return result;
         }
 
-        ctx->health_send_immediate[0] = 0;
+        cplat_atomic_store_i32(&ctx->health_send_immediate[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
         if (potr_type_uses_immediate_health_ping(ctx->service.type))
         {
-            ctx->health_send_immediate[0] = 1;
+            cplat_atomic_store_i32(&ctx->health_send_immediate[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
         }
         result = potr_internal_health_thread_start(ctx);
         if (result != POTR_OK)

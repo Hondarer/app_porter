@@ -41,23 +41,23 @@ static ConnectedThreadsCallState s_calls;
 static int fake_send_start(potr_context *ctx)
 {
     s_calls.send_start_calls++;
-    ctx->send_thread_running = 1;
+    cplat_atomic_store_i32(&ctx->send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED);
     return POTR_OK;
 }
 
 static void fake_send_stop(potr_context *ctx)
 {
     s_calls.send_stop_calls++;
-    ctx->send_thread_running = 0;
+    cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELAXED);
 }
 
 static int fake_recv_start(potr_context *ctx, int path_idx)
 {
     s_calls.recv_start_calls++;
-    s_calls.ping_state_at_recv_start = (int)ctx->path_ping_state[path_idx];
+    s_calls.ping_state_at_recv_start = (int)cplat_atomic_load_u8(&ctx->path_ping_state[path_idx], CPLAT_MEMORY_ORDER_RELAXED);
     if (s_calls.recv_start_result == POTR_OK)
     {
-        ctx->running[path_idx] = 1;
+        cplat_atomic_store_i32(&ctx->running[path_idx], 1, CPLAT_MEMORY_ORDER_RELAXED);
     }
     return s_calls.recv_start_result;
 }
@@ -96,7 +96,7 @@ static void fake_set_path_ping_state(potr_context *ctx, int path_idx, uint8_t ne
     s_calls.set_ping_state_calls++;
     s_calls.last_set_ping_path = path_idx;
     s_calls.last_set_ping_state = (int)next_state;
-    ctx->path_ping_state[path_idx] = next_state;
+    cplat_atomic_store_u8(&ctx->path_ping_state[path_idx], next_state, CPLAT_MEMORY_ORDER_RELAXED);
 }
 
 class potrConnectedThreadsTest : public Test
@@ -163,7 +163,7 @@ TEST_F(potrConnectedThreadsTest, recv_failure_keeps_preexisting_send_thread_runn
 {
     // Arrange
     potr_internal_connected_threads_ops ops = make_ops();
-    ctx.send_thread_running = 1; // [状態] - send スレッドがすでに起動済みの状態とする。
+    cplat_atomic_store_i32(&ctx.send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - send スレッドがすでに起動済みの状態とする。
 
     // Pre-Assert
     s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - recv 開始 fake から POTR_ERR_IO を返却する。
@@ -204,7 +204,7 @@ TEST_F(potrConnectedThreadsTest, bootstrap_ping_failure_rolls_back_recv_and_new_
     EXPECT_EQ(1, s_calls.close_conn_calls);                 // [確認_異常系] - 接続が close されること。
     EXPECT_EQ(1, s_calls.join_recv_calls);                  // [確認_異常系] - 起動済みの recv が join されること。
     EXPECT_EQ(1, s_calls.send_stop_calls);                  // [確認_異常系] - 新規に開始した send が停止されること。
-    EXPECT_EQ(0, ctx.running[0]);                           // [確認_異常系] - path 0 の running フラグが下がること。
+    EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.running[0], CPLAT_MEMORY_ORDER_RELAXED)); // [確認_異常系] - path 0 の running フラグが下がること。
     EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - path 0 のソケットが無効化されること。
 }
 
@@ -231,7 +231,7 @@ TEST_F(potrConnectedThreadsTest, health_failure_rolls_back_recv_and_new_send_thr
     EXPECT_EQ(1, s_calls.close_conn_calls);                 // [確認_異常系] - 接続が close されること。
     EXPECT_EQ(1, s_calls.join_recv_calls);                  // [確認_異常系] - 起動済みの recv が join されること。
     EXPECT_EQ(1, s_calls.send_stop_calls);                  // [確認_異常系] - 新規に開始した send が停止されること。
-    EXPECT_EQ(0, ctx.running[0]);                           // [確認_異常系] - path 0 の running フラグが下がること。
+    EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.running[0], CPLAT_MEMORY_ORDER_RELAXED)); // [確認_異常系] - path 0 の running フラグが下がること。
     EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - path 0 のソケットが無効化されること。
 }
 
@@ -240,7 +240,7 @@ TEST_F(potrConnectedThreadsTest, health_failure_keeps_preexisting_send_thread_ru
 {
     // Arrange
     potr_internal_connected_threads_ops ops = make_ops();
-    ctx.send_thread_running = 1; // [状態] - send スレッドがすでに起動済みの状態とする。
+    cplat_atomic_store_i32(&ctx.send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - send スレッドがすでに起動済みの状態とする。
 
     // Pre-Assert
     s_calls.health_start_result =
@@ -311,7 +311,7 @@ TEST_F(potrConnectedThreadsTest, success_sets_ping_state_without_rollback)
     EXPECT_EQ((int)POTR_PING_STATE_UNDEFINED,
               s_calls.last_set_ping_state); // [確認_正常系] - 設定値が POTR_PING_STATE_UNDEFINED であること。
     EXPECT_EQ(POTR_PING_STATE_UNDEFINED,
-              ctx.path_ping_state[0]); // [確認_正常系] - path 0 の ping 状態が UNDEFINED になること。
+              cplat_atomic_load_u8(&ctx.path_ping_state[0], CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - path 0 の ping 状態が UNDEFINED になること。
 }
 
 // recv スレッド起動前に ping 状態が初期化され、起動後の受信結果を上書きしないことの確認
@@ -319,7 +319,7 @@ TEST_F(potrConnectedThreadsTest, ping_state_is_reset_before_recv_start)
 {
     // Arrange
     potr_internal_connected_threads_ops ops = make_ops();
-    ctx.path_ping_state[1] = POTR_PING_STATE_NORMAL; // [状態] - path 1 の ping 状態が前回接続の NORMAL のまま残っている。
+    cplat_atomic_store_u8(&ctx.path_ping_state[1], POTR_PING_STATE_NORMAL, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - path 1 の ping 状態が前回接続の NORMAL のまま残っている。
     s_calls.ping_state_at_recv_start = -1;
 
     // Pre-Assert

@@ -83,7 +83,7 @@ TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
               prepared.changed_events[1]); // [確認_正常系] - path 2 のイベントが PATH_CONNECTED であること。
     EXPECT_EQ(POTR_EVENT_CONNECTED,
               prepared.session_event);       // [確認_正常系] - セッション イベントが CONNECTED であること。
-    EXPECT_EQ(1, ctx.health_alive);          // [確認_正常系] - health_alive が 1 になること。
+    EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - health_alive が 1 になること。
     EXPECT_EQ(1, ctx.path_logical_alive[0]); // [確認_正常系] - path 0 の論理状態が接続になること。
     EXPECT_EQ(1, ctx.path_logical_alive[2]); // [確認_正常系] - path 2 の論理状態が接続になること。
 
@@ -112,7 +112,7 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
     potr_internal_prepared_path_events prepared;
     int next_states[POTR_MAX_PATH] = {0, 0, 0, 0}; // [状態] - 全 path が切断へ遷移する次状態を用意する。
 
-    peer.health_alive = 1;
+    cplat_atomic_store_i32(&peer.health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
     peer.path_logical_alive[1] = 1;
     peer.path_logical_alive[3] = 1; // [状態] - peer 7 を path 1 と 3 が接続済みの状態とする。
 
@@ -132,7 +132,7 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
               prepared.changed_events[1]); // [確認_正常系] - path 3 のイベントが PATH_DISCONNECTED であること。
     EXPECT_EQ(POTR_EVENT_DISCONNECTED,
               prepared.session_event);        // [確認_正常系] - セッション イベントが DISCONNECTED であること。
-    EXPECT_EQ(0, peer.health_alive);          // [確認_正常系] - health_alive が 0 になること。
+    EXPECT_EQ(0, cplat_atomic_load_i32(&peer.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - health_alive が 0 になること。
     EXPECT_EQ(0, peer.path_logical_alive[1]); // [確認_正常系] - path 1 の論理状態が切断になること。
     EXPECT_EQ(0, peer.path_logical_alive[3]); // [確認_正常系] - path 3 の論理状態が切断になること。
 

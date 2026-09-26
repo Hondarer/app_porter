@@ -182,7 +182,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
     if (is_tcp)
     {
         /* TCP v2: アクティブな全 path にループ送信する */
-        if (ctx->tcp_active_paths > 0)
+        if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) > 0)
         {
             int i;
             for (i = 0; i < ctx->n_path; i++)
@@ -238,7 +238,8 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
 
         if (sent_any && should_track_valid_data_send_time(ctx))
         {
-            ctx->last_valid_data_send_ms = cplat_get_monotonic_ms();
+            cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, cplat_get_monotonic_ms(),
+                                   CPLAT_MEMORY_ORDER_RELAXED);
             potr_internal_health_thread_wake(ctx);
         }
     }
@@ -567,12 +568,12 @@ int potr_internal_send_thread_start(potr_context *ctx)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    ctx->send_thread_running = 1;
+    cplat_atomic_store_i32(&ctx->send_thread_running, 1, CPLAT_MEMORY_ORDER_RELEASE);
 
     cplat_local_lock_create(&ctx->send_window_mutex);
     if (cplat_thread_create(&ctx->send_thread, send_thread_func, ctx) != CPLAT_OK)
     {
-        ctx->send_thread_running = 0;
+        cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
         cplat_local_lock_dispose(ctx->send_window_mutex);
         ctx->send_window_mutex = NULL;
         /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
@@ -586,7 +587,7 @@ int potr_internal_send_thread_start(potr_context *ctx)
 
 void potr_internal_send_thread_stop(potr_context *ctx)
 {
-    ctx->send_thread_running = 0;
+    cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
     potr_internal_send_queue_shutdown(&ctx->send_queue);
 
     cplat_thread_join(ctx->send_thread, CPLAT_SYNC_WAIT_FOREVER);

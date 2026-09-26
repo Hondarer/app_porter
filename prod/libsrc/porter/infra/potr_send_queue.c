@@ -101,7 +101,7 @@ int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
-                              uint16_t payload_len, volatile int *running)
+                              uint16_t payload_len, cplat_atomic_i32 *running)
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -109,7 +109,7 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
        inflight エントリもプール スロットを占有するため、count だけでは不足。 */
     while (q->count + q->inflight >= q->depth)
     {
-        if (!*running)
+        if (cplat_atomic_load_i32(running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
         {
             cplat_local_lock_unlock(q->mutex);
             return POTR_ERR_CANCELED;
@@ -132,13 +132,13 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out, volatile int *running)
+int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out, cplat_atomic_i32 *running)
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     while (q->count == 0)
     {
-        if (!*running)
+        if (cplat_atomic_load_i32(running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
         {
             cplat_local_lock_unlock(q->mutex);
             return POTR_ERR_CANCELED;

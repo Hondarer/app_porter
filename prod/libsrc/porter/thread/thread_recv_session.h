@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include <cplat/net/endpoint.h>
+#include <cplat/sync/atomic.h>
 #include <porter/protocol/packet.h>
 #include <porter/potr_peer_table.h>
 
@@ -25,22 +26,22 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt);
 
 /**
  * @brief 1 経路の PING 受信状態を更新します。
- * @param[in,out] state 更新する状態。NULL は許可しません。
+ * @param[in,out] state 更新する状態。NULL は許可しません。アトミックに読み書きします。
  * @param[in] next_state 設定する状態。
  * @return 値が変更された場合は 1、変更がない場合は 0 を返します。
  * @note 変化の有無を返す述語のため共通結果コードの適用対象外です。
  */
-int thread_recv_set_path_ping_state(volatile uint8_t *state, uint8_t next_state);
+int thread_recv_set_path_ping_state(cplat_atomic_u8 *state, uint8_t next_state);
 
 /**
  * @brief 複数経路の PING 受信状態を同じ値へ更新します。
- * @param[in,out] states 更新する状態配列。NULL は許可しません。
+ * @param[in,out] states 更新する状態配列。NULL は許可しません。アトミックに読み書きします。
  * @param[in] count 要素数。
  * @param[in] next_state 設定する状態。
  * @return 1 要素でも値が変更された場合は 1、いずれの要素も変更がない場合は 0 を返します。
  * @note 変化の有無を返す述語のため共通結果コードの適用対象外です。
  */
-int thread_recv_set_all_path_ping_states(volatile uint8_t *states, size_t count, uint8_t next_state);
+int thread_recv_set_all_path_ping_states(cplat_atomic_u8 *states, size_t count, uint8_t next_state);
 
 /**
  * @brief サービスの全経路を切断し、経路イベントを発行します。

@@ -1,6 +1,7 @@
 #ifndef THREAD_RECV_SLOT_PRIVATE_H
 #define THREAD_RECV_SLOT_PRIVATE_H
 
+#include <cplat/sync/atomic.h>
 #include <porter/potr_context.h>
 #include <porter/potr_peer_table.h>
 
@@ -37,10 +38,10 @@ typedef struct thread_recv_slot
     uint8_t *frag_buf;
     size_t *frag_buf_len;
     int *frag_compressed;
-    volatile int *health_alive;
+    cplat_atomic_i32 *health_alive;
     cplat_timespec *last_recv_ts;
     cplat_timespec *path_last_recv_ts;
-    volatile uint8_t *path_ping_state;
+    cplat_atomic_u8 *path_ping_state;
     uint8_t *remote_path_ping_state; /* 相手端の経路受信状態 (POTR_MAX_PATH) */
 } thread_recv_slot;
 

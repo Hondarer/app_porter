@@ -87,7 +87,7 @@ TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     const uint8_t payload[4] = {0x11, 0x22, 0x33, 0x44};
-    volatile int running = 0; // [状態] - 実行フラグ running を 0 (停止済み) とする。
+    cplat_atomic_i32 running = CPLAT_ATOMIC_INIT(0); // [状態] - 実行フラグ running を 0 (停止済み) とする。
     size_t i;
 
     for (i = 0; i < 4; i++)
@@ -114,7 +114,7 @@ TEST_F(potrSendQueueTest, pop_returns_canceled_when_stopped)
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     potr_internal_payload_elem elem;
-    volatile int running = 0; // [状態] - エントリのない空キューと、値 0 (停止済み) の実行フラグ running を用意する。
+    cplat_atomic_i32 running = CPLAT_ATOMIC_INIT(0); // [状態] - エントリのない空キューと、値 0 (停止済み) の実行フラグ running を用意する。
 
     // Pre-Assert
 

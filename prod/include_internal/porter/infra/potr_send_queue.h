@@ -29,6 +29,7 @@
 #include <stddef.h>
 
 #include <cplat/base/platform.h>
+#include <cplat/sync/atomic.h>
 #include <cplat/sync/sync.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
@@ -122,11 +123,11 @@ extern "C"
      *  @param[in]      flags       ペイロード エレメント フラグ。
      *  @param[in]      payload     送信ペイロード データへのポインター。
      *  @param[in]      payload_len 送信ペイロード長 (バイト)。
-     *  @param[in]      running     実行フラグへのポインター。0 になると待機を中断します。
+     *  @param[in]      running     実行フラグへのポインター。取得順序で読み、0 になると待機を中断します。
      *  @return         成功時は POTR_OK、running が 0 になった場合は POTR_ERR_CANCELED。
      */
     extern int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
-                                         uint16_t payload_len, volatile int *running);
+                                         uint16_t payload_len, cplat_atomic_i32 *running);
 
     /**
      *  @brief          先頭エントリを取り出して inflight に移行する (ブロッキング)。
@@ -135,10 +136,10 @@ extern "C"
      *
      *  @param[in,out]  q       送信キュー。
      *  @param[out]     out     取り出したエントリの書き戻し先。
-     *  @param[in]      running 実行フラグへのポインター。0 になると待機を中断します。
+     *  @param[in]      running 実行フラグへのポインター。取得順序で読み、0 になると待機を中断します。
      *  @return         成功時は POTR_OK、running が 0 になった場合は POTR_ERR_CANCELED。
      */
-    extern int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out, volatile int *running);
+    extern int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out, cplat_atomic_i32 *running);
 
     /**
      *  @brief          先頭エントリを参照する (inflight へは移行しない)。

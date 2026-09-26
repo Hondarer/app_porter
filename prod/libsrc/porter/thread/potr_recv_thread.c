@@ -58,7 +58,7 @@ static void n1_check_health_timeout(potr_context *ctx)
 
         if (!ctx->peers[i].active)
             continue;
-        if (!ctx->peers[i].health_alive)
+        if (cplat_atomic_load_i32(&ctx->peers[i].health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
             continue;
 
         /* パス単位のタイムアウト: 不通パスを dest_addr から削除する */
@@ -126,7 +126,8 @@ static void wake_tcp_interrupt_ping_if_needed(potr_context *ctx, int path_idx, i
 {
     if (state_changed && potr_is_tcp_type(ctx->service.type))
     {
-        if (ctx->health_interval_ms > 0 && ctx->health_running[path_idx])
+        if (ctx->health_interval_ms > 0 &&
+            cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             /*
              * TCP は path ごとに health スレッドを持つが、PING ペイロードは全 path の
@@ -196,7 +197,7 @@ static void check_health_timeout(thread_recv_slot *slot)
     }
 
     /* 全体の health_alive 判定 */
-    if (!ctx->health_alive || ctx->last_recv_ts.tv_sec == 0)
+    if (cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0 || ctx->last_recv_ts.tv_sec == 0)
         return;
 
     {
@@ -359,7 +360,7 @@ static void recv_thread_func(void *arg)
         }
     }
 
-    while (ctx->running[0])
+    while (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         unsigned char ready[POTR_MAX_PATH];
         cplat_error detail;
@@ -369,7 +370,7 @@ static void recv_thread_func(void *arg)
         poll_result = cplat_socket_wait_readable_multi(ctx->sock, (size_t)ctx->n_path, (int)poll_ms, ready, &detail);
         if (poll_result != CPLAT_OK)
         {
-            if (!ctx->running[0])
+            if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
                 break;
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv[service_id=%" PRId64 "]: socket poll failed: rc=%d",
                        ctx->service.service_id, poll_result);
@@ -418,7 +419,7 @@ static void recv_thread_func(void *arg)
                                                    &sender_addr, &recv_len, NULL);
             if (recv_result != CPLAT_OK || recv_len == 0U)
             {
-                if (!ctx->running[0])
+                if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
                     break; /* 正常終了: ソケット クローズによる割り込み */
                 POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: recvfrom failed (rc=%d)",
                            ctx->service.service_id, recv_result);
@@ -597,7 +598,8 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: PING seq=%u",
                    ctx->service.service_id, path_idx, (unsigned)pkt.seq_num);
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-        ctx->tcp_last_ping_recv_ms[path_idx] = cplat_get_monotonic_ms();
+        cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], cplat_get_monotonic_ms(),
+                               CPLAT_MEMORY_ORDER_RELAXED);
         ping_state_changed = thread_recv_set_path_ping_state(&ctx->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
         if (pkt.payload_len >= POTR_MAX_PATH && pkt.payload != NULL)
         {
@@ -720,7 +722,7 @@ static void tcp_recv_thread_func(void *arg)
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: starting (recv_timeout=%s)",
                ctx->service.service_id, path_idx, recv_timeout_label);
 
-    while (ctx->running[path_idx])
+    while (cplat_atomic_load_i32(&ctx->running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         uint16_t wire_payload_len;
         int r;
@@ -755,14 +757,15 @@ static void tcp_recv_thread_func(void *arg)
             {
                 /* poll_ms は health_timeout から算出したポーリング間隔。INT_MAX 以下 */
                 int readable = tcp_wait_readable(fd, (int)poll_ms);
-                if (!ctx->running[path_idx])
+                if (cplat_atomic_load_i32(&ctx->running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
                     break;
                 if (readable < 0)
                     break; /* エラー */
                 if (readable == 0)
                 {
                     /* ポーリング タイムアウト: PING 受信時刻を確認する */
-                    uint64_t last = ctx->tcp_last_ping_recv_ms[path_idx];
+                    uint64_t last =
+                        cplat_atomic_load_u64(&ctx->tcp_last_ping_recv_ms[path_idx], CPLAT_MEMORY_ORDER_RELAXED);
                     uint64_t elapsed = cplat_get_monotonic_ms() - last;
                     if (last > 0 && elapsed > (uint64_t)ctx->health_timeout_ms)
                     {
@@ -821,7 +824,7 @@ static void tcp_recv_thread_func(void *arg)
         } /* else (先読みバッファーなし) ここまで */
 
         cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
-        if (ctx->running[path_idx])
+        if (cplat_atomic_load_i32(&ctx->running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             r = tcp_handle_packet(ctx, &svc_slot, buf, wire_payload_len, path_idx);
         }
@@ -837,7 +840,7 @@ static void tcp_recv_thread_func(void *arg)
     }
 
     /* 接続断処理: DISCONNECTED イベントは connect スレッドが tcp_active_paths == 0 時に発火する */
-    ctx->running[path_idx] = 0;
+    cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: exited",
                ctx->service.service_id, path_idx);
@@ -854,13 +857,13 @@ int potr_internal_comm_recv_thread_start(potr_context *ctx)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    ctx->running[0] = 1;
+    cplat_atomic_store_i32(&ctx->running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv_thread[service_id=%" PRId64 "]: starting", ctx->service.service_id);
 
     if (cplat_thread_create(&ctx->recv_thread[0], recv_thread_func, ctx) != CPLAT_OK)
     {
-        ctx->running[0] = 0;
+        cplat_atomic_store_i32(&ctx->running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv_thread[service_id=%" PRId64 "]: thread create failed",
                    ctx->service.service_id);
         /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
@@ -879,7 +882,7 @@ int potr_internal_comm_recv_thread_stop(potr_context *ctx)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    ctx->running[0] = 0;
+    cplat_atomic_store_i32(&ctx->running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
 
     {
         int i;
@@ -906,7 +909,7 @@ int potr_internal_tcp_recv_thread_start(potr_context *ctx, int path_idx)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    ctx->running[path_idx] = 1;
+    cplat_atomic_store_i32(&ctx->running[path_idx], 1, CPLAT_MEMORY_ORDER_RELEASE);
 
     ctx->tcp_recv_args[path_idx].ctx = ctx;
     ctx->tcp_recv_args[path_idx].path_idx = path_idx;
@@ -917,7 +920,7 @@ int potr_internal_tcp_recv_thread_start(potr_context *ctx, int path_idx)
     if (cplat_thread_create(&ctx->recv_thread[path_idx], tcp_recv_thread_func, &ctx->tcp_recv_args[path_idx]) !=
         CPLAT_OK)
     {
-        ctx->running[path_idx] = 0;
+        cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "tcp_recv_thread[service_id=%" PRId64 " path=%d]: thread create failed",
                    ctx->service.service_id, path_idx);
         /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
@@ -936,7 +939,7 @@ int potr_internal_tcp_recv_thread_stop(potr_context *ctx, int path_idx)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    ctx->running[path_idx] = 0;
+    cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
 
     cplat_thread_join(ctx->recv_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER);
 

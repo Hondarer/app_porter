@@ -115,7 +115,7 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
 
     /* 未接続状態では DATA を破棄する。接続確立前/DISCONNECTED 後の DATA が
        アプリに到着しないようにする。CONNECTED 発火は health_alive=1 への遷移で行う。 */
-    if (!*slot->health_alive)
+    if (cplat_atomic_load_i32(slot->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: drop DATA elem while health_alive=0",
                    ctx->service.service_id);

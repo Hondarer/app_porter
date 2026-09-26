@@ -36,8 +36,8 @@
 
 static uint64_t get_last_health_signal_send_ms(const potr_context *ctx)
 {
-    uint64_t last_ping = ctx->last_ping_send_ms;
-    uint64_t last_data = ctx->last_valid_data_send_ms;
+    uint64_t last_ping = cplat_atomic_load_u64(&ctx->last_ping_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
+    uint64_t last_data = cplat_atomic_load_u64(&ctx->last_valid_data_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
 
     if (last_ping > last_data)
     {
@@ -49,13 +49,14 @@ static uint64_t get_last_health_signal_send_ms(const potr_context *ctx)
 
 static void signal_health_thread(potr_context *ctx, int path_idx)
 {
-    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH || !ctx->health_running[path_idx])
+    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH ||
+        cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
         return;
     }
 
     cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
-    if (ctx->health_running[path_idx])
+    if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         cplat_condvar_signal(ctx->health_wakeup[path_idx]);
     }
@@ -65,15 +66,15 @@ static void signal_health_thread(potr_context *ctx, int path_idx)
 /* health_interval_ms ミリ秒、または停止シグナルが来るまでスリープする (path_idx 版) */
 static void health_sleep(potr_context *ctx, int path_idx, uint32_t interval_ms)
 {
-    /* オープン時割り込み PING フラグが立っていれば即リターン (初回スリープをスキップ) */
-    if (ctx->health_send_immediate[path_idx])
+    /* オープン時割り込み PING フラグが立っていれば即リターン (初回スリープをスキップ)。
+       チェックと直後のクリアに割り込みが入らないよう交換 (exchange) で一体に行う。 */
+    if (cplat_atomic_exchange_i32(&ctx->health_send_immediate[path_idx], 0, CPLAT_MEMORY_ORDER_ACQ_REL) != 0)
     {
-        ctx->health_send_immediate[path_idx] = 0;
         return;
     }
 
     cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
-    if (ctx->health_running[path_idx])
+    if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         /* interval_ms は PING 間隔の設定値。実用範囲は INT_MAX 以下 */
         cplat_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], (int)interval_ms);
@@ -85,11 +86,11 @@ static void health_sleep(potr_context *ctx, int path_idx, uint32_t interval_ms)
    待機結果の判定 (真偽値) を返す述語のため共通結果コードの適用対象外。 */
 static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due_ms, uint64_t *last_logged_data_ms)
 {
-    while (ctx->health_running[0])
+    while (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         uint64_t now = cplat_get_monotonic_ms();
-        uint64_t last_ping = ctx->last_ping_send_ms;
-        uint64_t last_data = ctx->last_valid_data_send_ms;
+        uint64_t last_ping = cplat_atomic_load_u64(&ctx->last_ping_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
+        uint64_t last_data = cplat_atomic_load_u64(&ctx->last_valid_data_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
         uint64_t due_ms;
 
         if (last_ping == 0U && last_data == 0U)
@@ -135,11 +136,12 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
-    if (ctx->close_requested)
+    if (cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         return POTR_ERR_CANCELED;
     }
-    if (ctx->tcp_active_paths == 0 || ctx->tcp_conn_fd[path_idx] == CPLAT_INVALID_SOCKET)
+    if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) == 0 ||
+        ctx->tcp_conn_fd[path_idx] == CPLAT_INVALID_SOCKET)
     {
         return POTR_ERR_DISCONNECTED;
     }
@@ -258,7 +260,7 @@ static void health_thread_func(void *arg)
         potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
     }
 
-    while (ctx->health_running[0])
+    while (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         if (is_oneway_udp)
         {
@@ -271,7 +273,7 @@ static void health_thread_func(void *arg)
         {
             health_sleep(ctx, 0, ctx->health_interval_ms);
 
-            if (!ctx->health_running[0])
+            if (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
                 break;
         }
 
@@ -283,7 +285,9 @@ static void health_thread_func(void *arg)
 
             cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
-            for (i = 0; i < ctx->max_peers && ctx->health_running[0]; i++)
+            for (i = 0; i < ctx->max_peers &&
+                 cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0;
+                 i++)
             {
                 potr_packet ping_pkt;
                 potr_internal_packet_session_hdr peer_shdr;
@@ -460,7 +464,7 @@ static void health_thread_func(void *arg)
 
             if (is_oneway_udp && sent_any)
             {
-                ctx->last_ping_send_ms = cplat_get_monotonic_ms();
+                cplat_atomic_store_u64(&ctx->last_ping_send_ms, cplat_get_monotonic_ms(), CPLAT_MEMORY_ORDER_RELAXED);
                 last_logged_data_ms = 0U;
             }
         }
@@ -481,12 +485,12 @@ static void tcp_health_thread_func(void *arg)
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_health[service_id=%" PRId64 " path=%d]: starting",
                ctx->service.service_id, path_idx);
 
-    while (ctx->health_running[path_idx])
+    while (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         /* 固定間隔でスリープ */
         health_sleep(ctx, path_idx, ctx->health_interval_ms);
 
-        if (!ctx->health_running[path_idx])
+        if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
             break;
         (void)tcp_send_ping_packet(ctx, path_idx);
     }
@@ -526,11 +530,11 @@ int potr_internal_health_thread_start(potr_context *ctx)
     cplat_local_lock_create(&ctx->health_mutex[0]);
     cplat_condvar_create(&ctx->health_wakeup[0]);
 
-    ctx->health_running[0] = 1;
+    cplat_atomic_store_i32(&ctx->health_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
 
     if (cplat_thread_create(&ctx->health_thread[0], health_thread_func, ctx) != CPLAT_OK)
     {
-        ctx->health_running[0] = 0;
+        cplat_atomic_store_i32(&ctx->health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "health_thread[service_id=%" PRId64 "]: thread create failed",
                    ctx->service.service_id);
         /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
@@ -548,12 +552,12 @@ int potr_internal_health_thread_stop(potr_context *ctx)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
-    if (!ctx->health_running[0])
+    if (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
         return POTR_OK;
     }
 
-    ctx->health_running[0] = 0;
+    cplat_atomic_store_i32(&ctx->health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
 
     cplat_local_lock_lock(ctx->health_mutex[0], CPLAT_SYNC_WAIT_FOREVER);
     cplat_condvar_signal(ctx->health_wakeup[0]);
@@ -593,12 +597,12 @@ int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx)
     ctx->health_args[path_idx].ctx = ctx;
     ctx->health_args[path_idx].path_idx = path_idx;
 
-    ctx->health_running[path_idx] = 1;
+    cplat_atomic_store_i32(&ctx->health_running[path_idx], 1, CPLAT_MEMORY_ORDER_RELEASE);
 
     if (cplat_thread_create(&ctx->health_thread[path_idx], tcp_health_thread_func, &ctx->health_args[path_idx]) !=
         CPLAT_OK)
     {
-        ctx->health_running[path_idx] = 0;
+        cplat_atomic_store_i32(&ctx->health_running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "tcp_health_thread[service_id=%" PRId64 " path=%d]: thread create failed", ctx->service.service_id,
                    path_idx);
@@ -617,12 +621,12 @@ int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
-    if (!ctx->health_running[path_idx])
+    if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
         return POTR_OK;
     }
 
-    ctx->health_running[path_idx] = 0;
+    cplat_atomic_store_i32(&ctx->health_running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
 
     cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
     cplat_condvar_signal(ctx->health_wakeup[path_idx]);

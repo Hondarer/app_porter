@@ -208,7 +208,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     NiceMock<Mock_porter> mock_peer_table;
     ctx.is_multi_peer = 1;        // [状態] - N:1 モードに設定する。
     ctx.callback = mock_callback; // [状態] - 受信コールバックを設定する。
-    peer_ctx.health_alive = 1;    // [状態] - ピアを疎通済み状態 (health_alive=1) に設定する。
+    cplat_atomic_store_i32(&peer_ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - ピアを疎通済み状態 (health_alive=1) に設定する。
     peer_ctx.path_logical_alive[0] = 1;
     peer_ctx.path_logical_alive[2] = 1;
 
@@ -249,7 +249,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     EXPECT_EQ((potr_peer_id)1, s_cb.entries[2].peer_id);
     EXPECT_EQ(POTR_EVENT_DISCONNECTED, s_cb.entries[2].event);
     EXPECT_EQ(0U, s_cb.entries[2].len);
-    EXPECT_EQ(0, peer_ctx.health_alive); // [確認_正常系] - health_alive が 0 にクリアされること。
+    EXPECT_EQ(0, cplat_atomic_load_i32(&peer_ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - health_alive が 0 にクリアされること。
     EXPECT_EQ(0, peer_ctx.path_logical_alive[0]);
     EXPECT_EQ(0, peer_ctx.path_logical_alive[2]);
 }
@@ -264,7 +264,7 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
     NiceMock<Mock_porter> mock_peer_table;
     ctx.is_multi_peer = 1;        // [状態] - N:1 モードに設定する。
     ctx.callback = mock_callback; // [状態] - 受信コールバックを設定する。
-    peer_ctx.health_alive = 0;    // [状態] - ピアを切断済み状態 (health_alive=0) に設定する。
+    cplat_atomic_store_i32(&peer_ctx.health_alive, 0, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - ピアを切断済み状態 (health_alive=0) に設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_peer_table, potr_internal_peer_find_by_id(&ctx, (potr_peer_id)1))

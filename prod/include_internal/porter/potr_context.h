@@ -26,6 +26,7 @@
 
 #include <cplat/base/platform.h>
 #include <cplat/clock/timespec.h>
+#include <cplat/sync/atomic.h>
 #include <cplat/sync/sync.h>
 #include <porter/porter_type.h>
 
@@ -86,25 +87,25 @@ static inline int potr_type_uses_immediate_health_ping(potr_type t)
     return !potr_is_oneway_udp_type(t);
 }
 
-/** volatile な path_ping_state 配列を通常配列へコピーします。 */
-static inline void potr_copy_path_ping_state(uint8_t *dst, const volatile uint8_t *src, size_t count)
+/** アトミックな path_ping_state 配列を通常配列へコピーします。 */
+static inline void potr_copy_path_ping_state(uint8_t *dst, const cplat_atomic_u8 *src, size_t count)
 {
     size_t i;
 
     for (i = 0; i < count; i++)
     {
-        dst[i] = src[i];
+        dst[i] = cplat_atomic_load_u8(&src[i], CPLAT_MEMORY_ORDER_RELAXED);
     }
 }
 
-/** volatile な path_ping_state 配列を同一値で初期化します。 */
-static inline void potr_fill_path_ping_state(volatile uint8_t *dst, uint8_t value, size_t count)
+/** アトミックな path_ping_state 配列を同一値で初期化します。 */
+static inline void potr_fill_path_ping_state(cplat_atomic_u8 *dst, uint8_t value, size_t count)
 {
     size_t i;
 
     for (i = 0; i < count; i++)
     {
-        dst[i] = value;
+        cplat_atomic_store_u8(&dst[i], value, CPLAT_MEMORY_ORDER_RELAXED);
     }
 }
 
@@ -174,10 +175,10 @@ typedef struct potr_internal_peer_context
     int frag_compressed; /**< 圧縮フラグ (非 0: 圧縮あり)。 */
 
     /* ヘルスチェック */
-    volatile int health_alive;             /**< 疎通状態 (1: alive, 0: dead/未接続)。 */
+    cplat_atomic_i32 health_alive;         /**< 疎通状態 (1: alive, 0: dead/未接続)。アトミックに読み書きします。 */
     int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。 */
-    volatile uint8_t path_ping_state
-        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。 */
+    cplat_atomic_u8 path_ping_state
+        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。アトミックに読み書きします。 */
     uint8_t remote_path_ping_state
         [POTR_MAX_PATH];            /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     cplat_timespec last_recv_ts; /**< 最終受信時刻 (CLOCK_MONOTONIC)。tv_sec == 0 は未受信。 */
@@ -247,19 +248,19 @@ struct potr_context
     int n_path;                          /**< 有効パス数。 */
     cplat_socket sock[POTR_MAX_PATH]; /**< 各パスの UDP ソケット。 */
 
-    volatile int running[POTR_MAX_PATH]; /**< 受信スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。 */
-    volatile int
-        health_running[POTR_MAX_PATH]; /**< ヘルスチェック スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。 */
-    volatile int health_send_immediate
-        [POTR_MAX_PATH];       /**< オープン時割り込み PING フラグ。health_sleep() 冒頭でチェック・クリア。 */
-    volatile int health_alive; /**< 疎通状態 (1: alive, 0: dead/未接続)。UDP 用。受信者が管理。 */
+    cplat_atomic_i32 running[POTR_MAX_PATH]; /**< 受信スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
+    cplat_atomic_i32
+        health_running[POTR_MAX_PATH]; /**< ヘルスチェック スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
+    cplat_atomic_i32 health_send_immediate
+        [POTR_MAX_PATH]; /**< オープン時割り込み PING フラグ。health_sleep() 冒頭でチェック・クリア。アトミックに読み書きします。 */
+    cplat_atomic_i32 health_alive; /**< 疎通状態 (1: alive, 0: dead/未接続)。UDP 用。受信者が管理。アトミックに読み書きします。 */
     int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。 */
-    volatile uint8_t path_ping_state
-        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。 */
-    volatile uint64_t
-        last_ping_send_ms; /**< 送信側ヘルスチェック用 PING 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。 */
-    volatile uint64_t
-        last_valid_data_send_ms; /**< 送信側ヘルスチェック用有効 DATA 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。 */
+    cplat_atomic_u8 path_ping_state
+        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。アトミックに読み書きします。 */
+    cplat_atomic_u64
+        last_ping_send_ms; /**< 送信側ヘルスチェック用 PING 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。アトミックに読み書きします。 */
+    cplat_atomic_u64
+        last_valid_data_send_ms; /**< 送信側ヘルスチェック用有効 DATA 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。アトミックに読み書きします。 */
     uint8_t remote_path_ping_state
         [POTR_MAX_PATH]; /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     potr_role role;       /**< 役割 (POTR_ROLE_SENDER / POTR_ROLE_RECEIVER)。 */
@@ -307,7 +308,7 @@ struct potr_context
 
     /* 非同期送信 (POTR_ROLE_SENDER のみ使用) */
     cplat_thread *send_thread;     /**< 送信スレッド ハンドル。 */
-    volatile int send_thread_running; /**< 送信スレッド実行フラグ (1: 実行中, 0: 停止)。 */
+    cplat_atomic_i32 send_thread_running; /**< 送信スレッド実行フラグ (1: 実行中, 0: 停止)。アトミックに読み書きします。 */
     uint32_t _pad_send_thread;        /**< パディング (nack_dedup_buf を 8 バイト境界に揃える)。 */
 
     /* 送信者: NACK 重複抑制リング バッファー */
@@ -315,9 +316,9 @@ struct potr_context
     uint8_t nack_dedup_next;                                  /**< 次に書き込むスロット インデックス。 */
     uint8_t _pad_nack_dedup[7];          /**< パディング (reorder フィールドを 4 バイト境界に揃える)。 */
     int send_has_data;                   /**< 現セッションで DATA を 1 件以上送信済みか (1: 送信済み, 0: 未送信)。 */
-    volatile int close_requested;        /**< potr_service_close 開始後の新規送信禁止フラグ。 */
-    volatile int tcp_close_waiting_ack;  /**< TCP close が FIN_ACK 待機中か。 */
-    volatile int tcp_close_ack_received; /**< 期待する FIN_ACK を受信済みか。 */
+    cplat_atomic_i32 close_requested;    /**< potr_service_close 開始後の新規送信禁止フラグ。アトミックに読み書きします。 */
+    int tcp_close_waiting_ack;  /**< TCP close が FIN_ACK 待機中か。tcp_close_mutex の下でだけ読み書きします。 */
+    int tcp_close_ack_received; /**< 期待する FIN_ACK を受信済みか。tcp_close_mutex の下でだけ読み書きします。 */
     uint32_t tcp_close_wait_target_seq;  /**< 待機中の FIN target 通番。 */
     uint32_t tcp_close_ack_seq;          /**< 受信済み FIN_ACK の ack_num。 */
 
@@ -344,7 +345,7 @@ struct potr_context
     /* --- TCP 接続管理 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR のみ有効) ---
      * tcp_active_paths は tcp_listen_sock (8 バイト境界) の前に置き、next_peer_id 直後の
      * 暗黙パディングを埋める。この並びにより tcp_send_mutex 側の明示パディングは不要になった。 */
-    volatile int tcp_active_paths;                  /**< アクティブ TCP path 数 (0 = 全切断)。 */
+    cplat_atomic_i32 tcp_active_paths;               /**< アクティブ TCP path 数 (0 = 全切断)。アトミックに読み書きします。 */
     cplat_socket tcp_listen_sock[POTR_MAX_PATH]; /**< RECEIVER: listen ソケット (path ごと)。 */
     cplat_socket tcp_conn_fd[POTR_MAX_PATH];     /**< アクティブ TCP 接続 fd (path ごと)。 */
     cplat_local_lock *tcp_send_mutex
@@ -363,8 +364,8 @@ struct potr_context
     /* connect/accept スレッド */
     cplat_thread
         *connect_thread[POTR_MAX_PATH]; /**< SENDER: connect スレッド。RECEIVER: accept スレッド。path ごと。 */
-    volatile int
-        connect_thread_running[POTR_MAX_PATH]; /**< connect スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。 */
+    cplat_atomic_i32
+        connect_thread_running[POTR_MAX_PATH]; /**< connect スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
 
     /* 切断通知 (recv/health スレッド → connect スレッドへの通知) */
     cplat_local_lock
@@ -374,8 +375,8 @@ struct potr_context
     cplat_condvar *tcp_close_cv;       /**< FIN_ACK 待機解除用条件変数。 */
 
     /* PING 受信追跡 (TCP recv スレッドが参照・更新。両端 PING 受信タイムアウト監視に使用) */
-    volatile uint64_t tcp_last_ping_recv_ms
-        [POTR_MAX_PATH]; /**< TCP PING 最終受信時刻 (ms, CLOCK_MONOTONIC 基準)。path ごと。接続確立時に現在時刻で初期化。受信タイムアウト判定に使用。 */
+    cplat_atomic_u64 tcp_last_ping_recv_ms
+        [POTR_MAX_PATH]; /**< TCP PING 最終受信時刻 (ms, CLOCK_MONOTONIC 基準)。path ごと。接続確立時に現在時刻で初期化。受信タイムアウト判定に使用。アトミックに読み書きします。 */
 
     /* 送信バッファー満杯ログ抑制 (TCP v2 送信スレッド用) */
     int buf_full_suppress_cnt

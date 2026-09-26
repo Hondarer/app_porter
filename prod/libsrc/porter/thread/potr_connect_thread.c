@@ -56,12 +56,12 @@ static void sync_tcp_service_path_state_locked(potr_context *ctx)
 
 static void set_tcp_path_ping_state(potr_context *ctx, int path_idx, uint8_t next_state)
 {
-    if (ctx->path_ping_state[path_idx] == next_state)
+    if (cplat_atomic_load_u8(&ctx->path_ping_state[path_idx], CPLAT_MEMORY_ORDER_RELAXED) == next_state)
     {
         return;
     }
 
-    ctx->path_ping_state[path_idx] = next_state;
+    cplat_atomic_store_u8(&ctx->path_ping_state[path_idx], next_state, CPLAT_MEMORY_ORDER_RELAXED);
     potr_internal_tcp_health_thread_wake_all(ctx);
 }
 
@@ -90,7 +90,7 @@ static void close_tcp_conn(potr_context *ctx, int path_idx)
 static void reconnect_wait(potr_context *ctx, int path_idx, int wait_ms)
 {
     cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-    if (ctx->connect_thread_running[path_idx])
+    if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         cplat_condvar_wait(ctx->tcp_state_cv, ctx->tcp_state_mutex, wait_ms);
     }
@@ -207,7 +207,7 @@ static void reset_all_paths_disconnected(potr_context *ctx)
 {
     cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
     cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-    if (ctx->tcp_active_paths != 0)
+    if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         cplat_local_lock_unlock(ctx->tcp_state_mutex);
         cplat_local_lock_unlock(ctx->tcp_recv_mutex);
@@ -238,7 +238,7 @@ static void reset_all_paths_disconnected(potr_context *ctx)
     }
     memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
     memset((void *)ctx->path_logical_alive, 0, sizeof(ctx->path_logical_alive));
-    ctx->health_alive = 0;
+    cplat_atomic_store_i32(&ctx->health_alive, 0, CPLAT_MEMORY_ORDER_RELEASE);
     ctx->tcp_accepted_session_known = 0;
     cplat_local_lock_unlock(ctx->tcp_state_mutex);
     cplat_local_lock_unlock(ctx->tcp_recv_mutex);
@@ -356,7 +356,8 @@ static cplat_socket tcp_connect_with_timeout(potr_context *ctx, int path_idx)
         uint32_t elapsed_ms = 0U;
         int ready = 0;
 
-        while (elapsed_ms < timeout_ms && ctx->connect_thread_running[path_idx])
+        while (elapsed_ms < timeout_ms &&
+               cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             uint32_t poll_ms = timeout_ms - elapsed_ms;
             int wait_ready = 0;
@@ -399,7 +400,7 @@ static cplat_socket tcp_connect_with_timeout(potr_context *ctx, int path_idx)
 /* SENDER 用接続ループ (path ごと) */
 static void sender_connect_loop(potr_context *ctx, int path_idx)
 {
-    while (ctx->connect_thread_running[path_idx])
+    while (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         cplat_socket sock;
         int active_count;
@@ -411,7 +412,7 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
 
         if (sock == CPLAT_INVALID_SOCKET)
         {
-            if (!ctx->connect_thread_running[path_idx])
+            if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
                 break;
 
             if (ctx->service.reconnect_interval_ms == 0U)
@@ -438,14 +439,15 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         /* 0→1 の初期化を完了してから接続を公開する。 */
         cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-        active_count = ++ctx->tcp_active_paths;
+        active_count = cplat_atomic_fetch_add_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL) + 1;
         if (active_count == 1)
         {
             reset_connection_state(ctx);
         }
 
         ctx->tcp_conn_fd[path_idx] = sock;
-        ctx->tcp_last_ping_recv_ms[path_idx] = cplat_get_monotonic_ms();
+        cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], cplat_get_monotonic_ms(),
+                               CPLAT_MEMORY_ORDER_RELAXED);
         cplat_local_lock_unlock(ctx->tcp_state_mutex);
         cplat_local_lock_unlock(ctx->tcp_recv_mutex);
 
@@ -453,14 +455,14 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         {
             /* スレッド起動失敗: カウンターを戻す */
             cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-            active_count = --ctx->tcp_active_paths;
+            active_count = cplat_atomic_fetch_sub_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL) - 1;
             cplat_local_lock_unlock(ctx->tcp_state_mutex);
             if (active_count == 0)
             {
                 reset_all_paths_disconnected(ctx);
             }
 
-            if (!ctx->connect_thread_running[path_idx])
+            if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
                 break;
             if (ctx->service.reconnect_interval_ms == 0U)
                 break;
@@ -485,7 +487,7 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
 
         /* tcp_active_paths カウンターをデクリメント (tcp_state_mutex 保護) */
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-        active_count = --ctx->tcp_active_paths;
+        active_count = cplat_atomic_fetch_sub_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL) - 1;
         cplat_local_lock_unlock(ctx->tcp_state_mutex);
 
         if (active_count == 0)
@@ -494,7 +496,7 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
             reset_all_paths_disconnected(ctx);
         }
 
-        if (!ctx->connect_thread_running[path_idx])
+        if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
             break;
         if (ctx->service.reconnect_interval_ms == 0U)
         {
@@ -534,7 +536,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
         first_pkt_timeout_ms = ctx->global.tcp_health_timeout_ms * POTR_TCP_FIRST_PKT_TIMEOUT_SCALE;
     }
 
-    while (ctx->connect_thread_running[path_idx])
+    while (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         cplat_socket conn;
         cplat_ipv4_endpoint peer_addr = {0};
@@ -545,7 +547,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
 
         if (cplat_socket_accept(ctx->tcp_listen_sock[path_idx], &peer_addr, &conn, &detail) != CPLAT_OK)
         {
-            if (!ctx->connect_thread_running[path_idx])
+            if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
             {
                 break;
             }
@@ -659,7 +661,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                         continue;
                     if (ctx->tcp_conn_fd[k] != CPLAT_INVALID_SOCKET)
                     {
-                        ctx->running[k] = 0;
+                        cplat_atomic_store_i32(&ctx->running[k], 0, CPLAT_MEMORY_ORDER_RELEASE);
                         close_tcp_conn(ctx, k); /* recv ブロックを解除 */
                     }
                 }
@@ -671,9 +673,10 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             /* TCP_SESSION_SAME の場合は reset 不要 (セッション継続) */
 
             cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-            ++ctx->tcp_active_paths;
+            (void)cplat_atomic_fetch_add_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL);
             ctx->tcp_conn_fd[path_idx] = conn;
-            ctx->tcp_last_ping_recv_ms[path_idx] = cplat_get_monotonic_ms();
+            cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], cplat_get_monotonic_ms(),
+                                   CPLAT_MEMORY_ORDER_RELAXED);
             ctx->tcp_first_pkt_len[path_idx] = pkt_len; /* 先読みバッファー有効化 */
 
             cplat_local_lock_unlock(ctx->tcp_state_mutex);
@@ -684,7 +687,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
         if (start_connected_threads(ctx, path_idx) != POTR_OK)
         {
             cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-            active_count = --ctx->tcp_active_paths;
+            active_count = cplat_atomic_fetch_sub_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL) - 1;
             cplat_local_lock_unlock(ctx->tcp_state_mutex);
             if (active_count == 0)
             {
@@ -715,7 +718,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
 
         /* tcp_active_paths カウンターをデクリメント (tcp_state_mutex 保護) */
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-        active_count = --ctx->tcp_active_paths;
+        active_count = cplat_atomic_fetch_sub_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL) - 1;
         cplat_local_lock_unlock(ctx->tcp_state_mutex);
 
         if (active_count == 0)
@@ -767,7 +770,7 @@ static void connect_thread_func(void *arg)
         receiver_accept_loop(ctx, path_idx);
     }
 
-    ctx->connect_thread_running[path_idx] = 0;
+    cplat_atomic_store_i32(&ctx->connect_thread_running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 " path=%d]: exited",
                ctx->service.service_id, path_idx);
@@ -819,13 +822,13 @@ int potr_internal_connect_thread_start(potr_context *ctx)
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        ctx->connect_thread_running[i] = 1;
+        cplat_atomic_store_i32(&ctx->connect_thread_running[i], 1, CPLAT_MEMORY_ORDER_RELEASE);
         ctx->connect_args[i].ctx = ctx;
         ctx->connect_args[i].path_idx = i;
 
         if (cplat_thread_create(&ctx->connect_thread[i], connect_thread_func, &ctx->connect_args[i]) != CPLAT_OK)
         {
-            ctx->connect_thread_running[i] = 0;
+            cplat_atomic_store_i32(&ctx->connect_thread_running[i], 0, CPLAT_MEMORY_ORDER_RELEASE);
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                        "connect_thread[service_id=%" PRId64 " path=%d]: thread create failed", ctx->service.service_id,
                        i);
@@ -851,7 +854,7 @@ void potr_internal_connect_thread_stop(potr_context *ctx)
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        if (ctx->connect_thread_running[i])
+        if (cplat_atomic_load_i32(&ctx->connect_thread_running[i], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             any_running = 1;
             break;
@@ -865,7 +868,7 @@ void potr_internal_connect_thread_stop(potr_context *ctx)
     /* 1. 全 path の停止フラグをクリア */
     for (i = 0; i < ctx->n_path; i++)
     {
-        ctx->connect_thread_running[i] = 0;
+        cplat_atomic_store_i32(&ctx->connect_thread_running[i], 0, CPLAT_MEMORY_ORDER_RELEASE);
     }
 
     /* 2. reconnect_wait 中の全スレッドを起床させる */

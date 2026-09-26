@@ -111,7 +111,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " peer_id=%u len=%zu flags=0x%x",
                ctx->service.service_id, (unsigned)peer_id, len, (unsigned)flags);
 
-    if (ctx->close_requested)
+    if (cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "potr_send: service_id=%" PRId64 " rejected because close is in progress", ctx->service.service_id);
@@ -120,17 +120,22 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
 
     /* TCP: 物理 path 未接続、または PING 交換による論理 CONNECTED 前は
        POTR_ERR_DISCONNECTED を返す */
-    if (potr_is_tcp_type(ctx->service.type) && (ctx->tcp_active_paths == 0 || !ctx->health_alive))
+    if (potr_is_tcp_type(ctx->service.type) &&
+        (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) == 0 ||
+         cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0))
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "potr_send: service_id=%" PRId64 " TCP not connected"
                    " (active_paths=%d health_alive=%d)",
-                   ctx->service.service_id, (int)ctx->tcp_active_paths, (int)ctx->health_alive);
+                   ctx->service.service_id,
+                   (int)cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_RELAXED),
+                   (int)cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_RELAXED));
         return POTR_ERR_DISCONNECTED;
     }
 
     /* UDP 1:1 双方向: PING 交換による接続確立前は POTR_ERR_DISCONNECTED を返す */
-    if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR && !ctx->health_alive)
+    if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR &&
+        cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " UDP bidir not connected",
                    ctx->service.service_id);
@@ -206,7 +211,8 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
             cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
             for (i = 0; i < ctx->max_peers; i++)
             {
-                if (ctx->peers[i].active && ctx->peers[i].health_alive)
+                if (ctx->peers[i].active &&
+                    cplat_atomic_load_i32(&ctx->peers[i].health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
                 {
                     ids[n_ids++] = ctx->peers[i].peer_id;
                 }
@@ -247,7 +253,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
                                ctx->service.service_id, (unsigned)peer_id);
                     return POTR_ERR_NOT_FOUND;
                 }
-                peer_alive = peer->health_alive;
+                peer_alive = cplat_atomic_load_i32(&peer->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE);
             }
             cplat_local_lock_unlock(ctx->peers_mutex);
 

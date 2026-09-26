@@ -106,7 +106,7 @@ void potr_internal_copy_oneway_path_states(const potr_context *ctx, int *states)
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
-        states[k] = path_state_is_normal(ctx->path_ping_state[k]);
+        states[k] = path_state_is_normal(cplat_atomic_load_u8(&ctx->path_ping_state[k], CPLAT_MEMORY_ORDER_RELAXED));
     }
 }
 
@@ -118,8 +118,8 @@ void potr_internal_copy_bidir_udp_path_states(const potr_context *ctx, int *stat
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
-        states[k] =
-            path_state_is_normal(ctx->path_ping_state[k]) && path_state_is_normal(ctx->remote_path_ping_state[k]);
+        states[k] = path_state_is_normal(cplat_atomic_load_u8(&ctx->path_ping_state[k], CPLAT_MEMORY_ORDER_RELAXED)) &&
+                    path_state_is_normal(ctx->remote_path_ping_state[k]);
     }
 }
 
@@ -132,7 +132,8 @@ void potr_internal_copy_bidir_n1_path_states(const potr_internal_peer_context *p
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
         states[k] =
-            path_state_is_normal(peer->path_ping_state[k]) && path_state_is_normal(peer->remote_path_ping_state[k]);
+            path_state_is_normal(cplat_atomic_load_u8(&peer->path_ping_state[k], CPLAT_MEMORY_ORDER_RELAXED)) &&
+            path_state_is_normal(peer->remote_path_ping_state[k]);
     }
 }
 
@@ -144,7 +145,8 @@ void potr_internal_copy_tcp_path_states(const potr_context *ctx, int *states)
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
-        states[k] = (ctx->tcp_conn_fd[k] != CPLAT_INVALID_SOCKET) && path_state_is_normal(ctx->path_ping_state[k]) &&
+        states[k] = (ctx->tcp_conn_fd[k] != CPLAT_INVALID_SOCKET) &&
+                    path_state_is_normal(cplat_atomic_load_u8(&ctx->path_ping_state[k], CPLAT_MEMORY_ORDER_RELAXED)) &&
                     path_state_is_normal(ctx->remote_path_ping_state[k]);
     }
 }
@@ -160,7 +162,7 @@ void potr_internal_sync_service_path_state_locked(potr_context *ctx, const int *
     memset(prepared, 0, sizeof(*prepared));
     memcpy(prepared->final_states, next_states, sizeof(prepared->final_states));
 
-    if (ctx->health_alive)
+    if (cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         old_alive = 1;
     }
@@ -190,7 +192,7 @@ void potr_internal_sync_service_path_state_locked(potr_context *ctx, const int *
     }
 
     memcpy(ctx->path_logical_alive, next_states, sizeof(ctx->path_logical_alive));
-    ctx->health_alive = new_alive;
+    cplat_atomic_store_i32(&ctx->health_alive, new_alive, CPLAT_MEMORY_ORDER_RELEASE);
 
     if (old_alive != new_alive)
     {
@@ -216,7 +218,7 @@ void potr_internal_sync_peer_path_state_locked(potr_internal_peer_context *peer,
     memset(prepared, 0, sizeof(*prepared));
     memcpy(prepared->final_states, next_states, sizeof(prepared->final_states));
 
-    if (peer->health_alive)
+    if (cplat_atomic_load_i32(&peer->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         old_alive = 1;
     }
@@ -246,7 +248,7 @@ void potr_internal_sync_peer_path_state_locked(potr_internal_peer_context *peer,
     }
 
     memcpy(peer->path_logical_alive, next_states, sizeof(peer->path_logical_alive));
-    peer->health_alive = new_alive;
+    cplat_atomic_store_i32(&peer->health_alive, new_alive, CPLAT_MEMORY_ORDER_RELEASE);
 
     if (old_alive != new_alive)
     {

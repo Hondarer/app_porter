@@ -109,29 +109,29 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int thread_recv_set_path_ping_state(volatile uint8_t *state, uint8_t next_state)
+int thread_recv_set_path_ping_state(cplat_atomic_u8 *state, uint8_t next_state)
 {
-    if (*state == next_state)
+    if (cplat_atomic_load_u8(state, CPLAT_MEMORY_ORDER_RELAXED) == next_state)
     {
         return 0;
     }
 
-    *state = next_state;
+    cplat_atomic_store_u8(state, next_state, CPLAT_MEMORY_ORDER_RELAXED);
     return 1;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int thread_recv_set_all_path_ping_states(volatile uint8_t *states, size_t count, uint8_t next_state)
+int thread_recv_set_all_path_ping_states(cplat_atomic_u8 *states, size_t count, uint8_t next_state)
 {
     size_t i;
     int changed = 0;
 
     for (i = 0; i < count; i++)
     {
-        if (states[i] != next_state)
+        if (cplat_atomic_load_u8(&states[i], CPLAT_MEMORY_ORDER_RELAXED) != next_state)
         {
-            states[i] = next_state;
+            cplat_atomic_store_u8(&states[i], next_state, CPLAT_MEMORY_ORDER_RELAXED);
             changed = 1;
         }
     }

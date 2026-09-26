@@ -276,7 +276,7 @@ static void stop_tcp_health_threads(potr_context *ctx)
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        if (ctx->health_running[i])
+        if (cplat_atomic_load_i32(&ctx->health_running[i], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             (void)potr_internal_tcp_health_thread_stop(ctx, i);
         }
@@ -297,12 +297,12 @@ int potr_service_close(potr_context *handle)
     }
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service_id=%" PRId64 " closing", ctx->service.service_id);
-    ctx->close_requested = 1;
+    cplat_atomic_store_i32(&ctx->close_requested, 1, CPLAT_MEMORY_ORDER_RELEASE);
 
     /* TCP: 接続管理スレッドを停止する (send/recv/health スレッドは connect スレッド内で停止) */
     if (potr_is_tcp_type(ctx->service.type))
     {
-        if (ctx->send_thread_running)
+        if (cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             uint32_t fin_target_seq;
 
@@ -314,7 +314,7 @@ int potr_service_close(potr_context *handle)
             potr_internal_send_queue_wait_drained(&ctx->send_queue);
             fin_target_seq = get_fin_target_seq(ctx, NULL);
 
-            if (ctx->tcp_active_paths > 0)
+            if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) > 0)
             {
                 int close_result;
 
@@ -399,18 +399,18 @@ int potr_service_close(potr_context *handle)
     }
 
     /* 非 TCP: ヘルスチェック スレッドを停止 (送信者のみ) */
-    if (ctx->health_running[0])
+    if (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping health thread",
                    ctx->service.service_id);
         potr_internal_health_thread_stop(ctx);
     }
 
-    ctx->last_ping_send_ms = 0U;
-    ctx->last_valid_data_send_ms = 0U;
+    cplat_atomic_store_u64(&ctx->last_ping_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
 
     /* 送信スレッドを停止してキューを破棄 (送信者のみ) */
-    if (ctx->send_thread_running)
+    if (cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "potr_service_close: service_id=%" PRId64 " flushing send queue and sending FIN",
@@ -428,7 +428,7 @@ int potr_service_close(potr_context *handle)
         }
         /* recv_thread は NACK 処理で send_window_mutex を参照する。
          * send_thread_stop() が send_window_mutex を破棄する前に停止する必要がある。 */
-        if (ctx->running[0])
+        if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
                        ctx->service.service_id);
@@ -439,7 +439,7 @@ int potr_service_close(potr_context *handle)
     }
 
     /* 送信スレッド未起動の受信専用サービスではここで受信スレッドを停止する */
-    if (ctx->running[0])
+    if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
                    ctx->service.service_id);
