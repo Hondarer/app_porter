@@ -140,18 +140,7 @@ extern "C"
         @endcode
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。\n
-     *  異なるスレッドから独立したハンドルを取得するために並行して呼び出すことができます。\n
-     *  ただし取得したハンドルはスレッド セーフではありません。\n
-     *  同一ハンドルに対する操作は 1 スレッドから行ってください。
-     *
-     *  @warning        global が NULL の場合は失敗を返します。\n
-     *                  service が NULL の場合は失敗を返します。\n
-     *                  handle が NULL の場合は失敗を返します。\n
-     *                  POTR_ROLE_RECEIVER かつ callback が NULL の場合は失敗を返します。\n
-     *                  POTR_ROLE_SENDER かつ callback が NULL でない場合は失敗を返します。\n
-     *                  ただし POTR_TYPE_TCP_BIDIR および POTR_TYPE_UNICAST_BIDIR では SENDER にも\n
-     *                  コールバックが必須であり、この場合 callback が NULL の場合は失敗を返します。
+     *  本関数はスレッド セーフです。
      */
     POTR_EXPORT extern int POTR_API potr_service_open(const potr_global_config *global, const potr_service_def *service,
                                                     potr_role role, potr_recv_fn callback, potr_context **handle);
@@ -226,18 +215,7 @@ extern "C"
         @endcode
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。\n
-     *  異なるスレッドから独立したハンドルを取得するために並行して呼び出すことができます。\n
-     *  ただし取得したハンドルはスレッド セーフではありません。\n
-     *  同一ハンドルに対する操作は 1 スレッドから行ってください。
-     *
-     *  @warning        handle が NULL の場合は失敗を返します。\n
-     *                  config_path が NULL または存在しない場合は失敗を返します。\n
-     *                  指定した service_id が設定ファイルに存在しない場合は失敗を返します。\n
-     *                  POTR_ROLE_RECEIVER かつ callback が NULL の場合は失敗を返します。\n
-     *                  POTR_ROLE_SENDER かつ callback が NULL でない場合は失敗を返します。\n
-     *                  ただし POTR_TYPE_TCP_BIDIR および POTR_TYPE_UNICAST_BIDIR では SENDER にも\n
-     *                  コールバックが必須であり、この場合 callback が NULL の場合は失敗を返します。
+     *  本関数はスレッド セーフです。
      */
     POTR_EXPORT extern int POTR_API potr_service_open_from_config(const char *config_path, int64_t service_id,
                                                               potr_role role, potr_recv_fn callback,
@@ -298,32 +276,16 @@ extern "C"
      *  その後、本呼び出しのメッセージをキューを通じて sendto して返ります。\n
      *  本関数が返った時点で、自身のメッセージの sendto は完了しています。
      *
-     *  @note
-     *
-     *  圧縮フォーマットには raw DEFLATE (RFC 1951) を使用します。\n
-     *  Linux と Windows はともに cplat を通じて app/zlib を使用し、
-     *  同一フォーマットを出力するため、クロスプラットフォーム通信に対応します。\n
-     *  圧縮効果がない場合 (圧縮後サイズ >= 元サイズ) は、アプリケーションへの通知なしに
-     *  内部で非圧縮に切り替えて送信します。送受信のデータ内容に影響はありません。
+     *  @note           圧縮フォーマットには raw DEFLATE (RFC 1951) を使用します。\n
+     *                  Linux と Windows はともに cplat を通じて app/zlib を使用し、
+     *                  同一フォーマットを出力するため、クロスプラットフォーム通信に対応します。\n
+     *                  圧縮効果がない場合 (圧縮後サイズ >= 元サイズ) は、アプリケーションへの通知なしに
+     *                  内部で非圧縮に切り替えて送信します。送受信のデータ内容に影響はありません。
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフではありません。\n
-     *  同一ハンドルへの並行呼び出しは未定義動作です。\n
-     *  送信は 1 スレッドから行ってください。
-     *
-     *  @warning        handle が NULL の場合は失敗を返します。\n
-     *                  data が NULL の場合は失敗を返します。\n
-     *                  len が 0 の場合は失敗を返します。\n
-     *                  len が POTR_MAX_MESSAGE_SIZE を超える場合は失敗を返します。\n
-     *                  送信スレッドが停止している場合 (potr_service_close 呼び出し後など) は失敗を返します。\n
-     *                  N:1 モードで peer_id = POTR_PEER_NA (0) を指定した場合は失敗を返します。\n
-     *                  `unicast_bidir` で CONNECTED 前に呼び出した場合は\n
-     *                  POTR_ERR_DISCONNECTED を返します。\n
-     *                  N:1 モードでは未接続 peer への送信、および `POTR_PEER_ALL` 指定時に\n
-     *                  接続済み peer が 0 件のとき POTR_ERR_DISCONNECTED を返します。\n
-     *                  TCP 通信種別 (`POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR`) では、\n
-     *                  物理 TCP 接続済みでも CONNECTED 前または全 path 切断中は\n
-     *                  POTR_ERR_DISCONNECTED を返します。
+     *  本関数は条件付きスレッド セーフです。\n
+     *  異なる @p handle に対する操作は同時に実行できます。\n
+     *  同一 @p handle に対する操作は、呼び出し側で直列化してください。
      */
     POTR_EXPORT extern int POTR_API potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len,
                                              int flags);
@@ -343,15 +305,11 @@ extern "C"
      *  1:1 モードおよびその他の通信種別では POTR_ERR_UNSUPPORTED を返します。
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。\n
-     *  内部で peers_mutex により排他制御されるため、複数スレッドから並行して呼び出せます。\n
-     *  ただし potr_recv_fn の内部から本関数を呼び出すとデッドロックが発生します。\n
-     *  コールバック内からの呼び出しは避けてください。
+     *  本関数はスレッド セーフです。
      *
-     *  @warning        handle が NULL の場合は失敗を返します。\n
-     *                  peer_id = POTR_PEER_NA または POTR_PEER_ALL の場合は失敗を返します。\n
-     *                  指定した peer_id が存在しない場合は失敗を返します。\n
-     *                  1:1 モードまたは N:1 モード以外で呼び出した場合は失敗を返します。
+     *  @warning        受信コールバック (potr_recv_fn) の内部から同一サービスに対して本関数を呼び出さないでください。\n
+     *                  内部排他制御の競合によりデッドロックが発生します。\n
+     *                  切断要求はコールバックの外 (別スレッドまたはコールバック復帰後) で実行してください。
      */
     POTR_EXPORT extern int POTR_API potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id);
 
@@ -380,12 +338,14 @@ extern "C"
      *  POTR_ERR_TIMEOUT を返します。\n
      *  いずれの場合も、相手側では POTR_EVENT_DISCONNECTED が発火します。
      *
-     *  @par            スレッド セーフ
-     *  本関数はスレッド セーフではありません。\n
-     *  同一ハンドルに対して他の porter API と並行して呼び出さないでください。\n
-     *  本関数を呼び出す前に、同一ハンドルへのすべての potr_send() が完了していることを確認してください。
+     *  @attention      本関数を呼び出すと、指定したハンドルは直ちに無効化されます。\n
+     *                  本関数を呼び出す前に、同一ハンドルに対するすべての送信 (potr_send) が完了していることを呼び出し側で保証してください。\n
+     *                  無効化後のハンドルに対するアクセスや、他の porter API との並行呼び出しは未定義動作を引き起こします。
      *
-     *  @warning        handle が NULL の場合は失敗を返します。
+     *  @par            スレッド セーフ
+     *  本関数は条件付きスレッド セーフです。\n
+     *  異なる @p handle に対する操作は同時に実行できます。\n
+     *  同一 @p handle に対する操作は、呼び出し側で直列化してください。
      */
     POTR_EXPORT extern int POTR_API potr_service_close(potr_context *handle);
 
@@ -452,11 +412,7 @@ extern "C"
         @endcode
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。\n
-     *  グローバルな共有状態にアクセスしないため、複数スレッドから並行して呼び出せます。
-     *
-     *  @warning        config_path または type が NULL の場合は失敗を返します。\n
-     *                  指定した service_id が設定ファイルに存在しない場合は失敗を返します。
+     *  本関数はスレッド セーフです。
      */
     POTR_EXPORT extern int POTR_API potr_service_get_type(const char *config_path, int64_t service_id, potr_type *type);
 
