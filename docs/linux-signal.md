@@ -28,7 +28,7 @@ TCP 接続 (`POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR`) で相手が接続を切断
 内部の TCP 送信は Linux の `MSG_NOSIGNAL` を使用し、SIGPIPE を送信単位で抑制します。
 
 SIGPIPE を抑制しても送信エラーは破棄しません。  
-porter は送信エラーを既存の接続状態と結果コードの処理へ渡します。`potr_send()` のキュー登録型の戻り値契約は変わりません。
+porter は送信エラーを既存の接続状態と結果コードの処理へ渡します。`potr_service_send()` のキュー登録型の戻り値契約は変わりません。
 
 porter は利用者が登録した SIGPIPE ハンドラーやシグナル マスクを変更しません。  
 porter の外で利用者が直接 `send()` や `write()` を呼び出す場合の SIGPIPE 対策は、利用者の責務です。

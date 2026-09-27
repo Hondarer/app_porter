@@ -46,7 +46,7 @@ static int tcp_send_all_locked(cplat_socket fd, cplat_local_lock *mtx, const uin
 
 int potr_internal_tcp_send_control_packet(const potr_context *ctx, potr_packet *pkt, uint32_t nonce_val)
 {
-    uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
+    uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
     size_t wire_len;
     int attempted = 0;
     int sent_any = 0;
@@ -71,19 +71,19 @@ int potr_internal_tcp_send_control_packet(const potr_context *ctx, potr_packet *
         memcpy(nonce + 6, &nonce_nbo, 4);
         memset(nonce + 10, 0, 2);
 
-        memcpy(wire_buf, pkt, PACKET_HEADER_SIZE);
-        if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, PACKET_HEADER_SIZE) != CPLAT_OK)
+        memcpy(wire_buf, pkt, POTR_PACKET_HEADER_SIZE);
+        if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
+                             wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             /* 暗号化失敗は入力データ起因と断定できないため、分類不能として扱う。 */
             return POTR_ERR_UNKNOWN;
         }
-        wire_len = PACKET_HEADER_SIZE + enc_out;
+        wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
     }
     else
     {
-        memcpy(wire_buf, pkt, PACKET_HEADER_SIZE);
-        wire_len = PACKET_HEADER_SIZE;
+        memcpy(wire_buf, pkt, POTR_PACKET_HEADER_SIZE);
+        wire_len = POTR_PACKET_HEADER_SIZE;
     }
 
     for (i = 0; i < ctx->n_path; i++)

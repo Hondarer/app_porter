@@ -11,7 +11,7 @@ UDP では `sendto()` 完了は OS の送信バッファーへの書き込み完
 一方 TCP はストリーム順序自体は保証しますが、`potr_service_close()` がソケットを即 close すると、
 
 ```text
-potr_send() 完了
+potr_service_send() 完了
 → 送信スレッドが tcp_send_all() を完了
 → sender が potr_service_close() で close
 → receiver 側 callback より先に切断処理へ進む
@@ -56,7 +56,7 @@ DATA を 1 件も送信していない場合は no-data FIN とし、`FIN_TARGET
 TCP (`POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR`) の送信側 `potr_service_close()` は次の順序で動作します。
 
 ```text
-1. close_requested = 1 にして新規 potr_send() を禁止
+1. close_requested = 1 にして新規 potr_service_send() を禁止
 2. tcp_health スレッドを停止
 3. send_queue drain を待つ
 4. FIN[target_valid, ack_num=send_window.next_seq] を送信

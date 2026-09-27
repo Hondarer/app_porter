@@ -102,7 +102,7 @@ static void reconnect_wait(potr_context *ctx, int path_idx, int wait_ms)
  * ================================================================ */
 
 /* accept 直後の TCP ソケットから 1 パケット分を buf に読み取る。
- * buf は PACKET_HEADER_SIZE + max_payload バイト以上確保されていること。
+ * buf は POTR_PACKET_HEADER_SIZE + max_payload バイト以上確保されていること。
  * 戻り値: 成功時 (*len_out にバイト数を格納) は POTR_OK、タイムアウト時は POTR_ERR_TIMEOUT、
  * EOF 時は POTR_ERR_EOF、I/O エラー時は POTR_ERR_IO、不正時は POTR_ERR_PROTOCOL。 */
 static int tcp_read_first_packet(cplat_socket fd, uint8_t *buf, size_t max_buf, size_t *len_out, int timeout_ms)
@@ -119,7 +119,7 @@ static int tcp_read_first_packet(cplat_socket fd, uint8_t *buf, size_t max_buf, 
 
     /* 固定長ヘッダー読み取り */
     {
-        int recv_result = cplat_socket_recv_all(fd, buf, PACKET_HEADER_SIZE, &detail);
+        int recv_result = cplat_socket_recv_all(fd, buf, POTR_PACKET_HEADER_SIZE, &detail);
         if (recv_result != CPLAT_OK)
             return potr_internal_result_from_socket_result(recv_result, &detail);
     }
@@ -132,18 +132,18 @@ static int tcp_read_first_packet(cplat_socket fd, uint8_t *buf, size_t max_buf, 
     }
 
     /* ペイロード長バリデーション */
-    if (PACKET_HEADER_SIZE + (size_t)wire_payload_len > max_buf)
+    if (POTR_PACKET_HEADER_SIZE + (size_t)wire_payload_len > max_buf)
         return POTR_ERR_PROTOCOL;
 
     /* ペイロード読み取り */
     if (wire_payload_len > 0)
     {
-        int recv_result = cplat_socket_recv_all(fd, buf + PACKET_HEADER_SIZE, (size_t)wire_payload_len, &detail);
+        int recv_result = cplat_socket_recv_all(fd, buf + POTR_PACKET_HEADER_SIZE, (size_t)wire_payload_len, &detail);
         if (recv_result != CPLAT_OK)
             return potr_internal_result_from_socket_result(recv_result, &detail);
     }
 
-    *len_out = PACKET_HEADER_SIZE + (size_t)wire_payload_len;
+    *len_out = POTR_PACKET_HEADER_SIZE + (size_t)wire_payload_len;
     return POTR_OK;
 }
 
@@ -164,7 +164,7 @@ static int tcp_session_compare(const potr_context *ctx, const potr_packet *pkt)
     if (!ctx->tcp_accepted_session_known)
         return TCP_SESSION_NEW;
 
-    potr_session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
+    session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
     ts_cmp = cplat_timespec_cmp(&pkt_session_ts, &ctx->tcp_accepted_session_ts);
 
     if (ts_cmp > 0)
@@ -599,7 +599,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
 
             /* first_pkt_timeout_ms は先読み待機の ms。実用範囲は INT_MAX 以下 */
             r = tcp_read_first_packet(conn, ctx->tcp_first_pkt_buf[path_idx],
-                                      PACKET_HEADER_SIZE + ctx->global.max_payload, &pkt_len,
+                                      POTR_PACKET_HEADER_SIZE + ctx->global.max_payload, &pkt_len,
                                       (int)first_pkt_timeout_ms);
             if (r != POTR_OK)
             {
@@ -667,7 +667,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                 }
                 reset_connection_state(ctx); /* peer_session_known = 0, frag_buf_len = 0 */
                 ctx->tcp_accepted_session_id = pkt.session_id;
-                potr_session_ts_from_hdr(pkt.session_tv_sec, pkt.session_tv_nsec, &ctx->tcp_accepted_session_ts);
+                session_ts_from_hdr(pkt.session_tv_sec, pkt.session_tv_nsec, &ctx->tcp_accepted_session_ts);
                 ctx->tcp_accepted_session_known = 1;
             }
             /* TCP_SESSION_SAME の場合は reset 不要 (セッション継続) */
@@ -800,7 +800,7 @@ int potr_internal_connect_thread_start(potr_context *ctx)
         for (i = 0; i < ctx->n_path; i++)
         {
             ctx->tcp_first_pkt_len[i] = 0;
-            ctx->tcp_first_pkt_buf[i] = (uint8_t *)cplat_malloc(PACKET_HEADER_SIZE + ctx->global.max_payload);
+            ctx->tcp_first_pkt_buf[i] = (uint8_t *)cplat_malloc(POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
             if (ctx->tcp_first_pkt_buf[i] == NULL)
             {
                 int j;

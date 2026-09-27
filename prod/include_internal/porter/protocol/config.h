@@ -16,8 +16,8 @@
 /* NOTE: このヘッダーは多数のソース ファイルから参照されるため、            */
 /*       @hideincludedbygraph によって "Included by" グラフを無効にします。 */
 
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef POTR_PROTOCOL_CONFIG_H
+#define POTR_PROTOCOL_CONFIG_H
 
 #include <porter/porter_result.h>
 #include <cplat/crt/stdlib.h>
@@ -71,4 +71,4 @@ extern "C"
 }
 #endif /* __cplusplus */
 
-#endif /* CONFIG_H */
+#endif /* POTR_PROTOCOL_CONFIG_H */

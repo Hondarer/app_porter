@@ -16,8 +16,8 @@
 /* NOTE: このヘッダーは多数のソース ファイルから参照されるため、            */
 /*       @hideincludedbygraph によって "Included by" グラフを無効にします。 */
 
-#ifndef SEQNUM_H
-#define SEQNUM_H
+#ifndef POTR_PROTOCOL_SEQNUM_H
+#define POTR_PROTOCOL_SEQNUM_H
 
 #include <stdint.h>
 
@@ -40,4 +40,4 @@ extern "C"
 }
 #endif /* __cplusplus */
 
-#endif /* SEQNUM_H */
+#endif /* POTR_PROTOCOL_SEQNUM_H */

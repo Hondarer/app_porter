@@ -82,10 +82,10 @@ S -> S: session triplet で未知ピア判定\npeer table に新規登録\npeer_
 S -> APP: callback(service_id, 1, POTR_EVENT_CONNECTED, NULL, 0)
 S -> APP: callback(service_id, 1, POTR_EVENT_DATA, data, len)
 
-APP -> S: potr_send(handle, 1, reply, len, 0)
+APP -> S: potr_service_send(handle, 1, reply, len, 0)
 S -> CA: DATA (server session=S_1, seq=0)
 
-APP -> S: potr_send(handle, POTR_PEER_ALL, notice, len, 0)
+APP -> S: potr_service_send(handle, POTR_PEER_ALL, notice, len, 0)
 S -> CA: DATA (peer_id=1 向け送信)
 @enduml
 ```

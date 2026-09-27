@@ -9,7 +9,7 @@
  *  送信キュー (potr_internal_send_queue) からペイロード エレメントを取り出して
  *  外側パケット (POTR_FLAG_DATA) を構築し sendto を呼び出す送信スレッド。\n
  *  potr_service_open (POTR_ROLE_SENDER) 時に起動し、potr_service_close 時に停止します。\n
- *  potr_send の flags 引数の値によらず常に起動しており、
+ *  potr_service_send の flags 引数の値によらず常に起動しており、
  *  非ブロッキング送信 (POTR_SEND_BLOCKING なし) 時のみキューが使用されます。
  *
  *  @par            通番管理
@@ -53,7 +53,7 @@
 
 static int should_track_valid_data_send_time(const potr_context *ctx)
 {
-    return ctx != NULL && !ctx->is_multi_peer && potr_is_oneway_udp_type(ctx->service.type);
+    return ctx != NULL && !ctx->is_multi_peer && is_oneway_udp_type(ctx->service.type);
 }
 
 /* ペイロード エレメントを packed_buf に追記する */
@@ -70,7 +70,7 @@ static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const p
     *packed_len += entry->payload_len;
 }
 
-/* send_wire_buf の [PACKET_HEADER_SIZE .. PACKET_HEADER_SIZE+packed_len-1] に
+/* send_wire_buf の [POTR_PACKET_HEADER_SIZE .. POTR_PACKET_HEADER_SIZE+packed_len-1] に
    詰め済みのペイロードから外側コンテナーを構築して送信する。
    seq_num を付与する。UDP では再送バッファー (send_window) にも登録する。
    send_wire_buf = [NBO ヘッダー 32B][packed_payload packed_len B] として組み立てる。 */
@@ -80,12 +80,12 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
     potr_internal_packet_session_hdr shdr;
     uint32_t seq;
     size_t wire_len;
-    uint8_t *packed_buf = ctx->send_wire_buf + PACKET_HEADER_SIZE;
-    int is_tcp = potr_is_tcp_type(ctx->service.type);
+    uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
+    int is_tcp = is_tcp_type(ctx->service.type);
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     /* send_window へのアクセスを排他制御する (送信スレッド・ヘルスチェック スレッド・受信スレッドが競合) */
     cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
@@ -124,7 +124,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
         memset(nonce + 10, 0, 2);
 
         if (cplat_crypto_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
-                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != CPLAT_OK)
+                             (const uint8_t *)&outer_pkt, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             cplat_local_lock_unlock(ctx->send_window_mutex);
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: encrypt failed seq=%u",
@@ -148,9 +148,9 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
         }
 
         /* wire 組立: NBO ヘッダー + 暗号文 + タグ */
-        memcpy(ctx->send_wire_buf, &outer_pkt, PACKET_HEADER_SIZE);
-        memcpy(ctx->send_wire_buf + PACKET_HEADER_SIZE, ctx->crypto_buf, enc_len);
-        wire_len = PACKET_HEADER_SIZE + enc_len;
+        memcpy(ctx->send_wire_buf, &outer_pkt, POTR_PACKET_HEADER_SIZE);
+        memcpy(ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE, ctx->crypto_buf, enc_len);
+        wire_len = POTR_PACKET_HEADER_SIZE + enc_len;
 
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "sender[service_id=%" PRId64 "]: DATA(enc) seq=%u packed_len=%zu enc_len=%zu",
@@ -172,8 +172,8 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
         }
 
         /* NBO ヘッダー (32B) を send_wire_buf 先頭に書き込む (ペイロードはすでに直後に配置済み) */
-        memcpy(ctx->send_wire_buf, &outer_pkt, PACKET_HEADER_SIZE);
-        wire_len = PACKET_HEADER_SIZE + packed_len;
+        memcpy(ctx->send_wire_buf, &outer_pkt, POTR_PACKET_HEADER_SIZE);
+        wire_len = POTR_PACKET_HEADER_SIZE + packed_len;
 
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: DATA seq=%u packed_len=%zu",
                    ctx->service.service_id, (unsigned)seq, packed_len);
@@ -252,11 +252,11 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
     potr_internal_packet_session_hdr shdr;
     uint32_t seq;
     size_t wire_len;
-    uint8_t *packed_buf = ctx->send_wire_buf + PACKET_HEADER_SIZE;
+    uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = peer->session_id;
-    potr_session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+    session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     cplat_local_lock_lock(peer->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -284,7 +284,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         memset(nonce + 10, 0, 2);
 
         if (cplat_crypto_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
-                             (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != CPLAT_OK)
+                             (const uint8_t *)&outer_pkt, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             cplat_local_lock_unlock(peer->send_window_mutex);
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: peer=%u encrypt failed seq=%u",
@@ -298,9 +298,9 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
 
         cplat_local_lock_unlock(peer->send_window_mutex);
 
-        memcpy(ctx->send_wire_buf, &outer_pkt, PACKET_HEADER_SIZE);
-        memcpy(ctx->send_wire_buf + PACKET_HEADER_SIZE, ctx->crypto_buf, enc_len);
-        wire_len = PACKET_HEADER_SIZE + enc_len;
+        memcpy(ctx->send_wire_buf, &outer_pkt, POTR_PACKET_HEADER_SIZE);
+        memcpy(ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE, ctx->crypto_buf, enc_len);
+        wire_len = POTR_PACKET_HEADER_SIZE + enc_len;
 
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "sender[service_id=%" PRId64 "]: peer=%u DATA(enc) seq=%u packed_len=%zu", ctx->service.service_id,
@@ -313,8 +313,8 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
 
         cplat_local_lock_unlock(peer->send_window_mutex);
 
-        memcpy(ctx->send_wire_buf, &outer_pkt, PACKET_HEADER_SIZE);
-        wire_len = PACKET_HEADER_SIZE + packed_len;
+        memcpy(ctx->send_wire_buf, &outer_pkt, POTR_PACKET_HEADER_SIZE);
+        wire_len = POTR_PACKET_HEADER_SIZE + packed_len;
 
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: peer=%u DATA seq=%u packed_len=%zu",
                    ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq, packed_len);
@@ -327,7 +327,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         {
             size_t sent = 0;
 
-            if (potr_endpoint_is_unset(&peer->dest_addr[k]))
+            if (endpoint_is_unset(&peer->dest_addr[k]))
                 continue;
             (void)cplat_socket_sendto(ctx->sock[k], ctx->send_wire_buf, wire_len, &peer->dest_addr[k], &sent, NULL);
         }
@@ -339,7 +339,7 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
 {
     potr_peer_id target_peer_id = first->peer_id;
     potr_internal_peer_context *peer = NULL;
-    uint8_t *packed_buf = ctx->send_wire_buf + PACKET_HEADER_SIZE;
+    uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
     size_t packed_len = 0;
     int n_dequeued = 1;
 
@@ -433,7 +433,7 @@ static void send_thread_func(void *arg)
         /* パッキング試行 */
         {
             /* packed_buf は send_wire_buf のヘッダー直後領域を直接使用 (ゼロ コピー) */
-            uint8_t *packed_buf = ctx->send_wire_buf + PACKET_HEADER_SIZE;
+            uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
             size_t packed_len = 0;
             int n_dequeued = 1;
 

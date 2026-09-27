@@ -22,7 +22,7 @@
 #include <porter/protocol/packet.h>
 #include <cplat/net/byteorder.h>
 
-/* packet.h で公開した PACKET_HEADER_SIZE をそのまま使用する */
+/* packet.h で公開した POTR_PACKET_HEADER_SIZE をそのまま使用する */
 
 /**
  *  @brief          64 ビット値をホスト バイト オーダーからネットワーク バイト オーダーへ変換します。
@@ -77,7 +77,7 @@ int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_pac
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    memset(packet, 0, PACKET_HEADER_SIZE);
+    memset(packet, 0, POTR_PACKET_HEADER_SIZE);
     packet->payload = NULL;
     fill_session_hdr(packet, shdr);
     packet->seq_num = 0;
@@ -101,7 +101,7 @@ int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_pac
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    memset(packet, 0, PACKET_HEADER_SIZE);
+    memset(packet, 0, POTR_PACKET_HEADER_SIZE);
     fill_session_hdr(packet, shdr);
     packet->seq_num = cplat_hton32(seq_num);
     packet->ack_num = 0;
@@ -130,7 +130,7 @@ int potr_internal_packet_build_reject(potr_packet *packet, const potr_internal_p
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    memset(packet, 0, PACKET_HEADER_SIZE);
+    memset(packet, 0, POTR_PACKET_HEADER_SIZE);
     packet->payload = NULL;
     fill_session_hdr(packet, shdr);
     packet->seq_num = 0;
@@ -150,7 +150,7 @@ int potr_internal_packet_build_fin(potr_packet *packet, const potr_internal_pack
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    memset(packet, 0, PACKET_HEADER_SIZE);
+    memset(packet, 0, POTR_PACKET_HEADER_SIZE);
     packet->payload = NULL;
     fill_session_hdr(packet, shdr);
     packet->seq_num = 0;
@@ -170,7 +170,7 @@ int potr_internal_packet_build_fin_ack(potr_packet *packet, const potr_internal_
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    memset(packet, 0, PACKET_HEADER_SIZE);
+    memset(packet, 0, POTR_PACKET_HEADER_SIZE);
     packet->payload = NULL;
     fill_session_hdr(packet, shdr);
     packet->seq_num = 0;
@@ -191,7 +191,7 @@ int potr_internal_packet_build_packed(potr_packet *out, const potr_internal_pack
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    memset(out, 0, PACKET_HEADER_SIZE);
+    memset(out, 0, POTR_PACKET_HEADER_SIZE);
     fill_session_hdr(out, shdr);
     out->seq_num = cplat_hton32(seq_num);
     out->ack_num = 0;
@@ -236,7 +236,7 @@ int potr_internal_packet_unpack_next(const potr_packet *container, size_t *offse
         return POTR_ERR_PROTOCOL;
     }
 
-    memset(elem_out, 0, PACKET_HEADER_SIZE);
+    memset(elem_out, 0, POTR_PACKET_HEADER_SIZE);
     elem_out->payload = NULL;
     elem_out->service_id = container->service_id;
     elem_out->session_id = container->session_id;
@@ -269,7 +269,7 @@ int potr_internal_packet_parse(potr_packet *packet, const void *buf, size_t buf_
     }
 
     /* ヘッダー長未満の受信データは不正パケットとして扱う */
-    if (buf_len < PACKET_HEADER_SIZE)
+    if (buf_len < POTR_PACKET_HEADER_SIZE)
     {
         return POTR_ERR_PROTOCOL;
     }
@@ -294,14 +294,14 @@ int potr_internal_packet_parse(potr_packet *packet, const void *buf, size_t buf_
     packet->protocol_version = cplat_ntoh32(tmp32);
 
     if (packet->protocol_version != POTR_PROTOCOL_VERSION || packet->payload_len > POTR_MAX_PAYLOAD ||
-        (size_t)packet->payload_len + PACKET_HEADER_SIZE > buf_len)
+        (size_t)packet->payload_len + POTR_PACKET_HEADER_SIZE > buf_len)
     {
         return POTR_ERR_PROTOCOL;
     }
 
     /* ゼロ コピー: 受信バッファー内のペイロード領域を直接指す
        呼び出し元バッファー (recv_buf) の生存期間中のみ有効 */
-    packet->payload = b + PACKET_HEADER_SIZE;
+    packet->payload = b + POTR_PACKET_HEADER_SIZE;
 
     return POTR_OK;
 }
@@ -315,5 +315,5 @@ size_t potr_internal_packet_wire_size(const potr_packet *packet)
         return 0;
     }
 
-    return PACKET_HEADER_SIZE + cplat_ntoh16(packet->payload_len);
+    return POTR_PACKET_HEADER_SIZE + cplat_ntoh16(packet->payload_len);
 }

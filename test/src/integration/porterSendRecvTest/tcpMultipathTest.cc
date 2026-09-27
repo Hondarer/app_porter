@@ -108,7 +108,7 @@ void receive(int64_t, potr_peer_id, potr_event event, const void *data, size_t l
         if (s_reply_handle != nullptr && s_received.size() == 1)
         {
             bytes reply(400, 'R');
-            s_reply_result = potr_send(s_reply_handle, POTR_PEER_NA, reply.data(), reply.size(), POTR_SEND_COMPRESS);
+            s_reply_result = potr_service_send(s_reply_handle, POTR_PEER_NA, reply.data(), reply.size(), POTR_SEND_COMPRESS);
             s_payload_stable = before == bytes(ptr, ptr + len);
         }
         if (s_hold_callback && s_received.size() == 1)

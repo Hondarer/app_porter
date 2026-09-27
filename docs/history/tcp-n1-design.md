@@ -245,8 +245,8 @@ static inline int potr_is_tcp_n1_type(potr_type t)
     return t == POTR_TYPE_TCP_N1 || t == POTR_TYPE_TCP_BIDIR_N1;
 }
 
-/* 変更: 既存 potr_is_tcp_type() に新型を追加 */
-static inline int potr_is_tcp_type(potr_type t)
+/* 変更: 既存 is_tcp_type() に新型を追加 */
+static inline int is_tcp_type(potr_type t)
 {
     return t == POTR_TYPE_TCP
         || t == POTR_TYPE_TCP_BIDIR
@@ -654,7 +654,7 @@ case POTR_TYPE_TCP_BIDIR_N1:
         POTR_CONDVAR_INIT(&ctx->tcp_state_cv);
 
         /* 4. TCP_BIDIR_N1: 送信スレッドを事前起動 */
-        /*    (最初の peer 接続前から起動しておく。n_peers=0 時の potr_send はエラーを返す) */
+        /*    (最初の peer 接続前から起動しておく。n_peers=0 時の potr_service_send はエラーを返す) */
         if (is_bidir_n1) {
             if (potr_internal_send_queue_init(&ctx->send_queue,
                                      POTR_SEND_QUEUE_DEPTH,
@@ -759,9 +759,9 @@ case POTR_TYPE_TCP_BIDIR_N1:
 }
 ```
 
-### potr_send.c - BIDIR_N1 RECEIVER からの送信許可
+### potr_service_send.c - BIDIR_N1 RECEIVER からの送信許可
 
-**ファイル**: `app/porter/prod/libsrc/porter/api/potr_send.c`
+**ファイル**: `app/porter/prod/libsrc/porter/api/potr_service_send.c`
 
 ```c
 /* 送信可否チェック部分 */
@@ -935,7 +935,7 @@ TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 
 | ファイル | 変更種別 | 内容 |
 |---|---|---|
 | `app/porter/prod/include/porter_type.h` | 変更 | `POTR_TYPE_TCP_N1 = 10`, `POTR_TYPE_TCP_BIDIR_N1 = 11` を追加 |
-| `app/porter/prod/libsrc/porter/potr_context.h` | 変更 | `potr_internal_peer_context` に TCP N:1 フィールド追加; `potr_is_tcp_n1_type()` 追加; `potr_is_tcp_type()` 拡張 |
+| `app/porter/prod/libsrc/porter/potr_context.h` | 変更 | `potr_internal_peer_context` に TCP N:1 フィールド追加; `potr_is_tcp_n1_type()` 追加; `is_tcp_type()` 拡張 |
 | `app/porter/prod/libsrc/porter/potr_peer_table.h` | 変更 | `peer_create_tcp()` シグネチャ追加 |
 | `app/porter/prod/libsrc/porter/potr_peer_table.c` | 変更 | `peer_create_tcp()` 実装追加; `potr_internal_peer_free()` 拡張 |
 | `app/porter/prod/libsrc/porter/thread/potr_connect_thread.c` | 変更 | `receiver_accept_n1_loop()` 追加; `connect_thread_func()` に型判定分岐; `tcp_read_first_packet()`, `tcp_session_compare()` 追加; `receiver_accept_loop()` をセッション先読み方式に改修; `session_establish_mutex` の初期化・破棄; `tcp_first_pkt_buf` の malloc/free |
@@ -946,7 +946,7 @@ TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 
 | `app/porter/prod/libsrc/porter/thread/potr_health_thread.c` | 変更 | per-peer PING タイムアウト処理 (N:1 向け) |
 | `app/porter/prod/api/potr_service_open.c` | 変更 | TCP N:1 初期化 `case` 追加 |
 | `app/porter/prod/api/potr_service_close.c` | 変更 | TCP N:1 終了処理追加 |
-| `app/porter/prod/api/potr_send.c` | 変更 | BIDIR_N1 RECEIVER からの送信許可; peer_id ルーティング |
+| `app/porter/prod/api/potr_service_send.c` | 変更 | BIDIR_N1 RECEIVER からの送信許可; peer_id ルーティング |
 | `app/porter/prod/api/potr_peer_disconnect.c` | 変更 | TCP N:1 ピア切断対応 |
 
 Table: TCP N:1 対応に伴う変更ファイル一覧
@@ -961,7 +961,7 @@ Table: TCP N:1 対応に伴う変更ファイル一覧
     - `POTR_TYPE_TCP_N1`, `POTR_TYPE_TCP_BIDIR_N1` を追加
     - `potr_internal_peer_context` に TCP N:1 フィールドを追加
     - `potr_is_tcp_n1_type()` を追加
-    - `potr_is_tcp_type()` を拡張
+    - `is_tcp_type()` を拡張
     - → ビルド確認 (既存コードへの影響なし)
 
 2. **ピア テーブル拡張** (`potr_peer_table.c`)
@@ -983,7 +983,7 @@ Table: TCP N:1 対応に伴う変更ファイル一覧
     - `flush_packed_peer()` に TCP N:1 分岐を追加
     - → ビルド確認
 
-6. **API 対応** (`potr_service_open.c`, `potr_service_close.c`, `potr_send.c`, `potr_peer_disconnect.c`)
+6. **API 対応** (`potr_service_open.c`, `potr_service_close.c`, `potr_service_send.c`, `potr_peer_disconnect.c`)
     - 各 API に TCP N:1 の `case` / 分岐を追加
     - → ビルド確認
 
@@ -1024,7 +1024,7 @@ make -C app/porter/prod
 
 ```
 # RECEIVER から peer_id=A への返信
-potr_send(handle, peer_id_A, "response to A", len, 0);
+potr_service_send(handle, peer_id_A, "response to A", len, 0);
 ```
 
 ### クリーン シャットダウン確認

@@ -19,9 +19,9 @@
 #ifndef PORTER_CONST_H
 #define PORTER_CONST_H
 
-/** @defgroup POTR_SEND_FLAG 送信オプション フラグ (potr_send の flags 引数)
+/** @defgroup POTR_SEND_FLAG 送信オプション フラグ (potr_service_send の flags 引数)
  *  @ingroup        PORTER_PUBLIC_API
- *  `potr_send()` の `flags` 引数に論理和で組み合わせて指定するビット フラグです。\n
+ *  `potr_service_send()` の `flags` 引数に論理和で組み合わせて指定するビット フラグです。\n
  *  0 を指定すると非圧縮・非ブロッキング送信になります。
  */
 
@@ -159,7 +159,7 @@
 #define POTR_MAX_SERVICES \
     64U /**< potr_internal_config_list_service_ids() の初期バッファー容量。サービス数がこれを超えた場合は realloc で自動拡張します。 */
 #define POTR_MAX_MESSAGE_SIZE \
-    65535U /**< 1 回の potr_send で送信できる最大メッセージ長 (バイト) のデフォルト値。設定ファイルの max_message_size で変更可能。フラグメント化により max_payload を超えるメッセージも送受信できます。 */
+    65535U /**< 1 回の potr_service_send で送信できる最大メッセージ長 (バイト) のデフォルト値。設定ファイルの max_message_size で変更可能。フラグメント化により max_payload を超えるメッセージも送受信できます。 */
 #define POTR_SEND_QUEUE_DEPTH \
     1024U /**< 非同期送信キューの最大エントリ数のデフォルト値。設定ファイルの send_queue_depth で変更可能。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。 */
 #define POTR_PAYLOAD_ELEM_HDR_SIZE \

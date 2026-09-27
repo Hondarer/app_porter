@@ -667,7 +667,7 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
         send_flags = 0;
     }
     /* send_flags と POTR_SEND_* は 0x0003U 以下であり int に収まる */
-    send_ret = potr_send(handle, POTR_PEER_NA, send_data, send_len, (int)(send_flags | POTR_SEND_BLOCKING));
+    send_ret = potr_service_send(handle, POTR_PEER_NA, send_data, send_len, (int)(send_flags | POTR_SEND_BLOCKING));
     if (send_ret != POTR_OK)
     {
         if (send_ret == POTR_ERR_DISCONNECTED)

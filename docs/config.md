@@ -39,7 +39,7 @@ porter は JSONC 形式のテキスト ファイルでサービスを定義し�
 |---|---|---|---|
 | `window_size` | uint16 | 16 | スライディング ウィンドウ サイズ (2〜256) |
 | `max_payload` | uint16 | 1,400 | DATA パケットのペイロード上限バイト数 (64〜65507) |
-| `max_message_size` | uint32 | 65,535 | 1 回の potr_send で送信できる最大メッセージ長 (バイト)。フラグメント化により max_payload を超えるメッセージを送受信できます。 |
+| `max_message_size` | uint32 | 65,535 | 1 回の potr_service_send で送信できる最大メッセージ長 (バイト)。フラグメント化により max_payload を超えるメッセージを送受信できます。 |
 | `send_queue_depth` | uint32 | 1,024 | 非同期送信キューの最大エントリ数。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。 |
 | `udp_health_interval_ms` | uint32 | 3,000 | UDP 通信種別の PING 送信判定間隔 (ms)。片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時に PING を送信し、双方向 UDP は設定周期ごとに PING を送信します。0 でヘルスチェック送信を無効化。双方向 UDP は定周期 PING の送受信で `CONNECTED` を成立させるため、実効 `health_interval_ms` が 0 のままでは接続確立しません。 |
 | `udp_health_timeout_ms`  | uint32 | 10,000 | UDP 通信種別の受信タイムアウト (ms)。片方向 type 1-6 では有効な `PING` / `DATA`、双方向 UDP では `PING` の最終受信から本値を超えたら DISCONNECTED。0 でタイムアウト検知を無効化 |
@@ -61,7 +61,7 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 ### max_payload の影響
 
 ペイロード エレメント 1 個分のデータ サイズ上限です。  
-`potr_send()` で送信するデータがこのサイズを超える場合、複数のフラグメントに分割されます。
+`potr_service_send()` で送信するデータがこのサイズを超える場合、複数のフラグメントに分割されます。
 
 ### reorder_timeout_ms の使い所
 
@@ -168,7 +168,7 @@ RAW モードは通常モード (`unicast` / `multicast` / `broadcast`) と同�
 |---|---|---|
 | 再送制御 | NACK ベース再送あり | 再送なし |
 | ギャップ検出時 | NACK を返送して欠落パケットを待機 | 即 `POTR_EVENT_DISCONNECTED` を発行し、次の正規パケットで `POTR_EVENT_CONNECTED` |
-| `potr_send` の動作 | `flags` 引数に従う (非ブロッキング / ブロッキング) | 常にブロッキング送信 (`POTR_SEND_BLOCKING` 相当) |
+| `potr_service_send` の動作 | `flags` 引数に従う (非ブロッキング / ブロッキング) | 常にブロッキング送信 (`POTR_SEND_BLOCKING` 相当) |
 | 通番 (`seq_num`) | 再送制御・ウィンドウ管理に使用 | AES ノンス生成用のみ (再送制御には使用しない) |
 | ヘルスチェック | `health_interval_ms` / `health_timeout_ms` に従う | 同左 (制限なし) |
 

@@ -134,7 +134,7 @@ extern "C"
         potr_context * handle;
         if (potr_service_open(&global, &service,
                             POTR_ROLE_SENDER, NULL, &handle) == POTR_OK) {
-            potr_send(handle, POTR_PEER_NA, "hello", 5, 0);
+            potr_service_send(handle, POTR_PEER_NA, "hello", 5, 0);
             potr_service_close(handle);
         }
         @endcode
@@ -209,7 +209,7 @@ extern "C"
         potr_context * handle;
         if (potr_service_open_from_config("porter-services.jsonc", 1001,
                                       POTR_ROLE_SENDER, NULL, &handle) == POTR_OK) {
-            potr_send(handle, POTR_PEER_NA, "hello", 5, 0);
+            potr_service_send(handle, POTR_PEER_NA, "hello", 5, 0);
             potr_service_close(handle);
         }
         @endcode
@@ -287,7 +287,7 @@ extern "C"
      *  異なる @p handle に対する操作は同時に実行できます。\n
      *  同一 @p handle に対する操作は、呼び出し側で直列化してください。
      */
-    POTR_EXPORT extern int POTR_API potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len,
+    POTR_EXPORT extern int POTR_API potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len,
                                              int flags);
 
     /**
@@ -339,7 +339,7 @@ extern "C"
      *  いずれの場合も、相手側では POTR_EVENT_DISCONNECTED が発火します。
      *
      *  @attention      本関数を呼び出すと、指定したハンドルは直ちに無効化されます。\n
-     *                  本関数を呼び出す前に、同一ハンドルに対するすべての送信 (potr_send) が完了していることを呼び出し側で保証してください。\n
+     *                  本関数を呼び出す前に、同一ハンドルに対するすべての送信 (potr_service_send) が完了していることを呼び出し側で保証してください。\n
      *                  無効化後のハンドルに対するアクセスや、他の porter API との並行呼び出しは未定義動作を引き起こします。
      *
      *  @par            スレッド セーフ

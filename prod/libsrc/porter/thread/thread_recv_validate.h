@@ -8,7 +8,7 @@
  * @brief 暗号化要件と GCM 認証を検証します。
  * @param[in,out] ctx 復号バッファーを所有するコンテキスト。NULL は許可しません。
  * @param[in,out] pkt 解析済みパケット。復号した DATA/PING は ctx の復号バッファーを参照します。
- * @param[in] wire_hdr PACKET_HEADER_SIZE バイト以上の受信ヘッダー。
+ * @param[in] wire_hdr POTR_PACKET_HEADER_SIZE バイト以上の受信ヘッダー。
  * @param[in] log_prefix ログの接頭辞。
  * @param[in] path_idx TCP の経路番号。UDP は -1 を指定します。
  * @return 成功時は POTR_OK、認証失敗時は POTR_ERR_PROTOCOL を返します。

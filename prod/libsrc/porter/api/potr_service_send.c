@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
- *  @file           potr_send.c
- *  @brief          データを送信する potr_send 関数を提供します。
+ *  @file           potr_service_send.c
+ *  @brief          データを送信する potr_service_send 関数を提供します。
  *  @author         Tetsuo Honda
  *  @date           2026/03/04
  *  @version        1.0.0
@@ -86,7 +86,7 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len, int flags)
+int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len, int flags)
 {
     potr_context *ctx = (potr_context *)handle;
     const uint8_t *ptr = (const uint8_t *)data;
@@ -103,29 +103,29 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
         {
             max_message_size = 0U;
         }
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_send: invalid argument (handle=%p data=%p len=%zu max=%u)",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_send: invalid argument (handle=%p data=%p len=%zu max=%u)",
                    (const void *)handle, data, len, max_message_size);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " peer_id=%u len=%zu flags=0x%x",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_send: service_id=%" PRId64 " peer_id=%u len=%zu flags=0x%x",
                ctx->service.service_id, (unsigned)peer_id, len, (unsigned)flags);
 
     if (cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                   "potr_send: service_id=%" PRId64 " rejected because close is in progress", ctx->service.service_id);
+                   "potr_service_send: service_id=%" PRId64 " rejected because close is in progress", ctx->service.service_id);
         return POTR_ERR_CANCELED;
     }
 
     /* TCP: 物理 path 未接続、または PING 交換による論理 CONNECTED 前は
        POTR_ERR_DISCONNECTED を返す */
-    if (potr_is_tcp_type(ctx->service.type) &&
+    if (is_tcp_type(ctx->service.type) &&
         (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) == 0 ||
          cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0))
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                   "potr_send: service_id=%" PRId64 " TCP not connected"
+                   "potr_service_send: service_id=%" PRId64 " TCP not connected"
                    " (active_paths=%d health_alive=%d)",
                    ctx->service.service_id,
                    (int)cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_RELAXED),
@@ -137,13 +137,13 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
     if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR &&
         cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " UDP bidir not connected",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_send: service_id=%" PRId64 " UDP bidir not connected",
                    ctx->service.service_id);
         return POTR_ERR_DISCONNECTED;
     }
 
     /* RAW モードは常にブロッキング送信 */
-    if (potr_is_raw_type(ctx->service.type))
+    if (is_raw_type(ctx->service.type))
     {
         /* POTR_SEND_BLOCKING は 0x0002U であり int に収まる */
         flags |= (int)POTR_SEND_BLOCKING;
@@ -156,7 +156,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
 
         if (cplat_compress(ctx->compress_buf, &cmp_len, (const uint8_t *)data, len) != CPLAT_OK)
         {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " compression failed (len=%zu)",
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_send: service_id=%" PRId64 " compression failed (len=%zu)",
                        ctx->service.service_id, len);
             /* 圧縮失敗は入力データ起因と断定できないため、分類不能として扱う。 */
             return POTR_ERR_UNKNOWN;
@@ -164,7 +164,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
 
         if (cmp_len < len)
         {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " compress %zu -> %zu bytes",
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_send: service_id=%" PRId64 " compress %zu -> %zu bytes",
                        ctx->service.service_id, len, cmp_len);
             ptr = ctx->compress_buf;
             len = cmp_len;
@@ -173,7 +173,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
         else
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "potr_send: service_id=%" PRId64 " compression skipped"
+                       "potr_service_send: service_id=%" PRId64 " compression skipped"
                        " (compressed %zu >= original %zu bytes), sending uncompressed",
                        ctx->service.service_id, cmp_len, len);
             /* 圧縮効果なし: 非圧縮のまま送信 (ptr, len, base_flags は初期値を維持) */
@@ -186,7 +186,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
         if (peer_id == POTR_PEER_NA)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                       "potr_send: service_id=%" PRId64 " N:1 mode requires valid peer_id (got POTR_PEER_NA)",
+                       "potr_service_send: service_id=%" PRId64 " N:1 mode requires valid peer_id (got POTR_PEER_NA)",
                        ctx->service.service_id);
             return POTR_ERR_INVALID_ARGUMENT;
         }
@@ -203,7 +203,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
             ids = (potr_peer_id *)cplat_malloc((size_t)ctx->max_peers * sizeof(potr_peer_id));
             if (ids == NULL)
             {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " PEER_ALL malloc failed",
+                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_send: service_id=%" PRId64 " PEER_ALL malloc failed",
                            ctx->service.service_id);
                 return POTR_ERR_OUT_OF_MEMORY;
             }
@@ -222,7 +222,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
             if (n_ids == 0)
             {
                 cplat_free(ids);
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_send: service_id=%" PRId64 " PEER_ALL not connected",
+                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_send: service_id=%" PRId64 " PEER_ALL not connected",
                            ctx->service.service_id);
                 return POTR_ERR_DISCONNECTED;
             }
@@ -249,7 +249,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
                 if (peer == NULL)
                 {
                     cplat_local_lock_unlock(ctx->peers_mutex);
-                    POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_send: service_id=%" PRId64 " peer_id=%u not found",
+                    POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_send: service_id=%" PRId64 " peer_id=%u not found",
                                ctx->service.service_id, (unsigned)peer_id);
                     return POTR_ERR_NOT_FOUND;
                 }
@@ -260,7 +260,7 @@ int potr_send(potr_context *handle, potr_peer_id peer_id, const void *data, size
             if (!peer_alive)
             {
                 POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                           "potr_send: service_id=%" PRId64 " peer_id=%u N:1 not connected", ctx->service.service_id,
+                           "potr_service_send: service_id=%" PRId64 " peer_id=%u N:1 not connected", ctx->service.service_id,
                            (unsigned)peer_id);
                 return POTR_ERR_DISCONNECTED;
             }

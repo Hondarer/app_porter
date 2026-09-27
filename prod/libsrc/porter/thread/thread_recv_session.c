@@ -38,7 +38,7 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
            FIN/タイムアウト後は送信者が同一セッションのまま任意の seq から
            再開する可能性があるため pkt->seq_num を使用する。 */
         *slot->peer_session_id = pkt->session_id;
-        potr_session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, slot->peer_session_ts);
+        session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, slot->peer_session_ts);
         *slot->peer_session_known = 1;
         *slot->reorder_pending = 0;
         slot_clear_pending_fin(slot);
@@ -57,7 +57,7 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
        新セッションと判定された分岐は LOG のみで return しないため、
        if-else チェーンを抜けた後に必ず末尾の採用ブロックに到達する。 */
     cplat_timespec pkt_session_ts;
-    potr_session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
+    session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
     int ts_cmp = cplat_timespec_cmp(&pkt_session_ts, slot->peer_session_ts);
 
     if (ts_cmp > 0)
@@ -197,7 +197,7 @@ void thread_recv_sync_path_state(thread_recv_slot *slot)
         return;
     }
 
-    if (potr_is_tcp_type(ctx->service.type))
+    if (is_tcp_type(ctx->service.type))
     {
         potr_internal_copy_tcp_path_states(ctx, next_states);
     }
@@ -224,7 +224,7 @@ void thread_recv_learn_sender_path(thread_recv_slot *slot, int path_idx, const c
 
     if (slot->peer != NULL)
     {
-        if (!potr_endpoint_is_unset(&slot->dest_addr[path_idx]))
+        if (!endpoint_is_unset(&slot->dest_addr[path_idx]))
         {
             slot->dest_addr[path_idx].port = sender->port;
         }

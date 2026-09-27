@@ -39,19 +39,19 @@
 #include <porter/infra/potr_send_queue.h>
 
 /** TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
-static inline int potr_is_tcp_type(potr_type t)
+static inline int is_tcp_type(potr_type t)
 {
     return t == POTR_TYPE_TCP || t == POTR_TYPE_TCP_BIDIR;
 }
 
 /** RAW 系通信種別 (POTR_TYPE_*_RAW) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
-static inline int potr_is_raw_type(potr_type t)
+static inline int is_raw_type(potr_type t)
 {
     return t == POTR_TYPE_UNICAST_RAW || t == POTR_TYPE_MULTICAST_RAW || t == POTR_TYPE_BROADCAST_RAW;
 }
 
 /** RAW 系通信種別をベース通信種別に変換する (非 RAW 型はそのまま返す)。値をそのまま返す関数のため共通結果コードの適用対象外。 */
-static inline potr_type potr_raw_base_type(potr_type t)
+static inline potr_type raw_base_type(potr_type t)
 {
     switch (t)
     {
@@ -74,21 +74,21 @@ static inline potr_type potr_raw_base_type(potr_type t)
 }
 
 /** 片方向 UDP 系通信種別 (type 1-6) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
-static inline int potr_is_oneway_udp_type(potr_type t)
+static inline int is_oneway_udp_type(potr_type t)
 {
-    potr_type base = potr_raw_base_type(t);
+    potr_type base = raw_base_type(t);
 
     return base == POTR_TYPE_UNICAST || base == POTR_TYPE_MULTICAST || base == POTR_TYPE_BROADCAST;
 }
 
 /** open 直後の即時 PING を使う通信種別か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
-static inline int potr_type_uses_immediate_health_ping(potr_type t)
+static inline int type_uses_immediate_health_ping(potr_type t)
 {
-    return !potr_is_oneway_udp_type(t);
+    return !is_oneway_udp_type(t);
 }
 
 /** アトミックな path_ping_state 配列を通常配列へコピーします。 */
-static inline void potr_copy_path_ping_state(uint8_t *dst, const cplat_atomic_u8 *src, size_t count)
+static inline void copy_path_ping_state(uint8_t *dst, const cplat_atomic_u8 *src, size_t count)
 {
     size_t i;
 
@@ -99,7 +99,7 @@ static inline void potr_copy_path_ping_state(uint8_t *dst, const cplat_atomic_u8
 }
 
 /** アトミックな path_ping_state 配列を同一値で初期化します。 */
-static inline void potr_fill_path_ping_state(cplat_atomic_u8 *dst, uint8_t value, size_t count)
+static inline void fill_path_ping_state(cplat_atomic_u8 *dst, uint8_t value, size_t count)
 {
     size_t i;
 
@@ -117,13 +117,13 @@ static inline void potr_fill_path_ping_state(cplat_atomic_u8 *dst, uint8_t value
  *  実アドレスが設定されて初めて使用状態になる。実際の通信エンドポイントがアドレス・ポートともに
  *  0 (0.0.0.0:0) になることはないため、両方 0 であることを「未使用」の判定に用いる。
  */
-static inline int potr_endpoint_is_unset(const cplat_ipv4_endpoint *endpoint)
+static inline int endpoint_is_unset(const cplat_ipv4_endpoint *endpoint)
 {
     return endpoint->address == 0U && endpoint->port == 0U;
 }
 
 /** 送信先エンドポイント (dest_addr[] スロット) を未使用状態へ戻します。 */
-static inline void potr_endpoint_clear(cplat_ipv4_endpoint *endpoint)
+static inline void endpoint_clear(cplat_ipv4_endpoint *endpoint)
 {
     endpoint->address = 0U;
     endpoint->port = 0U;
@@ -200,9 +200,9 @@ typedef struct potr_internal_peer_context
 
     /* マルチパス: ピアごとの送信先 (recvfrom で学習)
      * インデックスは ctx->sock[] / src_addr[] と直接対応します。
-     * 未使用スロットは potr_endpoint_is_unset() で判定します。 */
+     * 未使用スロットは endpoint_is_unset() で判定します。 */
     cplat_ipv4_endpoint dest_addr
-        [POTR_MAX_PATH]; /**< 送信先エンドポイント (インデックス = ctx->sock[] のインデックス)。未使用スロットは potr_endpoint_is_unset() が真。 */
+        [POTR_MAX_PATH]; /**< 送信先エンドポイント (インデックス = ctx->sock[] のインデックス)。未使用スロットは endpoint_is_unset() が真。 */
     int n_paths;             /**< アクティブ パス数。ループ境界には使わず管理カウンターとして使用します。 */
     uint32_t _pad_path_recv; /**< パディング (path_last_recv_ts を 8 バイト境界に揃える)。 */
     cplat_timespec
@@ -269,7 +269,7 @@ struct potr_context
     uint32_t src_addr_resolved[POTR_MAX_PATH]; /**< 解決済み送信元 IPv4 アドレス。 */
     uint32_t dst_addr_resolved[POTR_MAX_PATH]; /**< 解決済み宛先 IPv4 アドレス (unicast のみ)。 */
     cplat_ipv4_endpoint dest_addr
-        [POTR_MAX_PATH]; /**< 送信先エンドポイント (送信者が sendto に使用)。未使用スロットは potr_endpoint_is_unset() が真。 */
+        [POTR_MAX_PATH]; /**< 送信先エンドポイント (送信者が sendto に使用)。未使用スロットは endpoint_is_unset() が真。 */
 
     /* 自セッション識別子 (potr_service_open 時に決定) */
     cplat_timespec session_ts; /**< 自セッション開始時刻。 */
@@ -300,11 +300,11 @@ struct potr_context
     size_t crypto_buf_size;   /**< crypto_buf のサイズ (バイト)。 */
     uint8_t *recv_compress_buf; /**< 受信展開用バッファー (動的確保、compress_buf_size バイト)。 */
     uint8_t *recv_crypto_buf; /**< 受信復号用バッファー (動的確保、crypto_buf_size バイト)。 */
-    uint8_t *tcp_recv_buf[POTR_MAX_PATH]; /**< TCP 経路専用受信バッファー (動的確保、PACKET_HEADER_SIZE + max_payload バイト)。 */
+    uint8_t *tcp_recv_buf[POTR_MAX_PATH]; /**< TCP 経路専用受信バッファー (動的確保、POTR_PACKET_HEADER_SIZE + max_payload バイト)。 */
     uint8_t *
-        recv_buf; /**< 受信バッファー / 再送 wire 組立バッファー (動的確保。PACKET_HEADER_SIZE + max_payload バイト)。 */
+        recv_buf; /**< 受信バッファー / 再送 wire 組立バッファー (動的確保。POTR_PACKET_HEADER_SIZE + max_payload バイト)。 */
     uint8_t *
-        send_wire_buf; /**< 送信 wire 組立バッファー (動的確保。PACKET_HEADER_SIZE + max_payload バイト)。送信スレッドのみ使用。 */
+        send_wire_buf; /**< 送信 wire 組立バッファー (動的確保。POTR_PACKET_HEADER_SIZE + max_payload バイト)。送信スレッドのみ使用。 */
 
     /* 非同期送信 (POTR_ROLE_SENDER のみ使用) */
     cplat_thread *send_thread;     /**< 送信スレッド ハンドル。 */
@@ -399,7 +399,7 @@ struct potr_context
      * 書き込み→起動→読み出しの順序が保証され、mutex は不要。
      * recv スレッドは起動直後に先読みパケットを処理し tcp_first_pkt_len[i] を 0 に戻す。 */
     uint8_t *tcp_first_pkt_buf
-        [POTR_MAX_PATH]; /**< 先読みパケット バッファー (動的確保、PACKET_HEADER_SIZE + max_payload バイト)。 */
+        [POTR_MAX_PATH]; /**< 先読みパケット バッファー (動的確保、POTR_PACKET_HEADER_SIZE + max_payload バイト)。 */
     size_t tcp_first_pkt_len[POTR_MAX_PATH]; /**< 先読みパケットのバイト数 (0: 先読みなし)。 */
 
     /* path 単位スレッドの引数 (スレッド起動前に書き込み、スレッド生存中は不変) */

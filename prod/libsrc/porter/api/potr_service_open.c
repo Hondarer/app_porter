@@ -99,7 +99,7 @@ static void ctx_cleanup(potr_context *ctx)
     {
         if (ctx->tcp_recv_buf[i] != NULL)
         {
-            cplat_secure_zero(ctx->tcp_recv_buf[i], PACKET_HEADER_SIZE + ctx->global.max_payload);
+            cplat_secure_zero(ctx->tcp_recv_buf[i], POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
             cplat_free(ctx->tcp_recv_buf[i]);
         }
     }
@@ -192,7 +192,7 @@ static int open_validate_config(potr_context *ctx)
     }
 
     /* 通信種別ごとのグローバル既定値を選び、サービス単位設定で実効値を上書きする。 */
-    if (potr_is_tcp_type(ctx->service.type))
+    if (is_tcp_type(ctx->service.type))
     {
         ctx->health_interval_ms = ctx->global.tcp_health_interval_ms;
         ctx->health_timeout_ms = ctx->global.tcp_health_timeout_ms;
@@ -245,13 +245,13 @@ static int alloc_context_buffers(potr_context *ctx)
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
-    ctx->recv_buf = (uint8_t *)cplat_malloc(PACKET_HEADER_SIZE + ctx->global.max_payload);
+    ctx->recv_buf = (uint8_t *)cplat_malloc(POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
     if (ctx->recv_buf == NULL)
     {
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
-    ctx->send_wire_buf = (uint8_t *)cplat_malloc(PACKET_HEADER_SIZE + ctx->global.max_payload);
+    ctx->send_wire_buf = (uint8_t *)cplat_malloc(POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
     if (ctx->send_wire_buf == NULL)
     {
         return POTR_ERR_OUT_OF_MEMORY;
@@ -270,11 +270,11 @@ static int alloc_context_buffers(potr_context *ctx)
     {
         return POTR_ERR_OUT_OF_MEMORY;
     }
-    if (potr_is_tcp_type(ctx->service.type))
+    if (is_tcp_type(ctx->service.type))
     {
         for (int i = 0; i < ctx->n_path; i++)
         {
-            ctx->tcp_recv_buf[i] = cplat_malloc(PACKET_HEADER_SIZE + ctx->global.max_payload);
+            ctx->tcp_recv_buf[i] = cplat_malloc(POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
             if (ctx->tcp_recv_buf[i] == NULL)
             {
                 return POTR_ERR_OUT_OF_MEMORY;
@@ -394,7 +394,7 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
         }
 
         cplat_atomic_store_i32(&ctx->health_send_immediate[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-        if (potr_type_uses_immediate_health_ping(ctx->service.type))
+        if (type_uses_immediate_health_ping(ctx->service.type))
         {
             cplat_atomic_store_i32(&ctx->health_send_immediate[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
         }
@@ -535,7 +535,7 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
     }
 
     /* 通信種別に応じてスレッドを起動する */
-    if (potr_is_tcp_type(ctx->service.type))
+    if (is_tcp_type(ctx->service.type))
     {
         start_result = start_threads_tcp(ctx, role);
     }

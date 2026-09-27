@@ -34,7 +34,7 @@ porter は当初、公開 API を camelCase、型を PascalCase、内部関数�
 上位規範は、スコープ判定をヘッダー配置で行ったうえで、ライブラリ内共有の関数・型に `<lib>_internal_`、外部リンケージ変数に `g_<lib>_internal_` を付けると定めています。  
 porter もこの規則に従い、`include_internal/` で宣言する関数・型は `potr_internal_`、外部リンケージ変数は `g_potr_internal_` とします。
 
-porter には利用者が存在しないため、互換のための旧名の別名 (alias) は提供しません。
+命名規則に反する既存の API も改名し、旧名の別名 (alias) は提供しません。
 
 ### 公開関数の改名対応
 
@@ -45,12 +45,12 @@ porter には利用者が存在しないため、互換のための旧名の別�
 | `potrCloseService` | `potr_service_close` |
 | `potrGetServiceType` | `potr_service_get_type` |
 | `potrGetTracer` | `potr_tracer_get` |
-| `potrSend` | `potr_send` |
+| `potrSend` | `potr_service_send` |
 | `potrDisconnectPeer` | `potr_peer_disconnect` |
 
 Table: 公開関数の旧名新名対応表
 
-`potr_send` はカテゴリ名詞を持たない横断的な API のため、動詞先行を許容します。
+`potr_service_send` はサービス ハンドルを使ってデータを送信する API です。
 
 ### 公開型の改名対応
 
@@ -150,7 +150,7 @@ Table: porter 共通結果コード一覧
 呼び出し側の成否判定は、コード名との比較を正とします。
 
 ```c
-int ret = potr_send(ctx, peer_id, data, len, 0);
+int ret = potr_service_send(ctx, peer_id, data, len, 0);
 if (ret != POTR_OK)
 {
     return ret;
@@ -188,7 +188,7 @@ if (ret != CPLAT_OK)
 |---|---|---|
 | 0/1 述語 (`potr_internal_seqnum_in_window`、`potr_internal_window_send_full`、`potr_internal_window_recv_needs_nack`、`potr_context.h` の inline 述語) | 真 1 / 偽 0 | 失敗モードのない純関数であり、成否の概念が適用されない |
 | 3 状態以上の判定結果を返す比較・分類関数 | 判定結果そのもの | 成否ではなく状態の分類を返す |
-| 値をそのまま返す関数 (`potr_internal_packet_wire_size`、`potr_raw_base_type` などの getter) | 値そのもの | 結果コードの概念が適用されない |
+| 値をそのまま返す関数 (`potr_internal_packet_wire_size`、`raw_base_type` などの getter) | 値そのもの | 結果コードの概念が適用されない |
 | ハンドル・ポインター返却系 (`potr_tracer_get`、`potr_internal_peer_create`、`potr_internal_peer_find_by_*` など) | 成功時ポインター / 失敗・不在時 NULL | ポインター返却 API の慣用 |
 | 戻り値を持たない関数 | `void` | 同上 |
 

@@ -66,7 +66,7 @@ static void n1_check_health_timeout(potr_context *ctx)
         {
             int64_t path_elapsed;
 
-            if (potr_endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
+            if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                 continue; /* 未使用 */
             if (ctx->peers[i].path_last_recv_ts[k].tv_sec == 0)
                 continue; /* 初回受信前 */
@@ -124,7 +124,7 @@ static void n1_check_health_timeout(potr_context *ctx)
 
 static void wake_tcp_interrupt_ping_if_needed(potr_context *ctx, int path_idx, int state_changed)
 {
-    if (state_changed && potr_is_tcp_type(ctx->service.type))
+    if (state_changed && is_tcp_type(ctx->service.type))
     {
         if (ctx->health_interval_ms > 0 &&
             cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
@@ -248,7 +248,7 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
 
     /* session_triplet でピアを検索 */
     cplat_timespec pkt_session_ts;
-    potr_session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
+    session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
     peer = potr_internal_peer_find_by_session(ctx, pkt->session_id, &pkt_session_ts);
 
     if (peer == NULL)
@@ -312,7 +312,7 @@ static int sender_handle_packet(thread_recv_slot *slot, const potr_packet *pkt)
 {
     potr_context *ctx = slot->ctx;
 
-    if (potr_is_raw_type(ctx->service.type))
+    if (is_raw_type(ctx->service.type))
     {
         return 1;
     }
@@ -331,7 +331,7 @@ static int sender_handle_packet(thread_recv_slot *slot, const potr_packet *pkt)
 static void recv_thread_func(void *arg)
 {
     potr_context *ctx = (potr_context *)arg;
-    uint8_t *buf = ctx->recv_buf; /* PACKET_HEADER_SIZE + max_payload バイト */
+    uint8_t *buf = ctx->recv_buf; /* POTR_PACKET_HEADER_SIZE + max_payload バイト */
     potr_packet pkt;
     cplat_ipv4_endpoint sender_addr;
     uint32_t poll_ms;
@@ -415,7 +415,7 @@ static void recv_thread_func(void *arg)
 
             memset(&sender_addr, 0, sizeof(sender_addr));
 
-            recv_result = cplat_socket_recvfrom(ctx->sock[i], buf, PACKET_HEADER_SIZE + ctx->global.max_payload,
+            recv_result = cplat_socket_recvfrom(ctx->sock[i], buf, POTR_PACKET_HEADER_SIZE + ctx->global.max_payload,
                                                    &sender_addr, &recv_len, NULL);
             if (recv_result != CPLAT_OK || recv_len == 0U)
             {
@@ -513,7 +513,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
     potr_packet pkt;
 
     /* 5. パケット解析 */
-    if (potr_internal_packet_parse(&pkt, buf, PACKET_HEADER_SIZE + wire_payload_len) != POTR_OK)
+    if (potr_internal_packet_parse(&pkt, buf, POTR_PACKET_HEADER_SIZE + wire_payload_len) != POTR_OK)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 "]: potr_internal_packet_parse failed",
                    ctx->service.service_id);
@@ -537,7 +537,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
     if (ctx->role == POTR_ROLE_RECEIVER && ctx->tcp_accepted_session_known)
     {
         cplat_timespec packet_session_ts;
-        potr_session_ts_from_hdr(pkt.session_tv_sec, pkt.session_tv_nsec, &packet_session_ts);
+        session_ts_from_hdr(pkt.session_tv_sec, pkt.session_tv_nsec, &packet_session_ts);
         if (pkt.session_id != ctx->tcp_accepted_session_id ||
             cplat_timespec_cmp(&packet_session_ts, &ctx->tcp_accepted_session_ts) != 0)
         {
@@ -680,7 +680,7 @@ static void tcp_recv_thread_func(void *arg)
     potr_internal_path_thread_arg *rarg = (potr_internal_path_thread_arg *)arg;
     potr_context *ctx = rarg->ctx;
     int path_idx = rarg->path_idx;
-    uint8_t *buf = ctx->tcp_recv_buf[path_idx]; /* PACKET_HEADER_SIZE + max_payload バイト */
+    uint8_t *buf = ctx->tcp_recv_buf[path_idx]; /* POTR_PACKET_HEADER_SIZE + max_payload バイト */
     cplat_socket fd;
     thread_recv_slot svc_slot; /* TCP は 1:1 モードのみ */
 
@@ -789,7 +789,7 @@ static void tcp_recv_thread_func(void *arg)
             }
 
             /* 1. 固定長ヘッダー読み取り */
-            r = tcp_read_all(fd, buf, PACKET_HEADER_SIZE);
+            r = tcp_read_all(fd, buf, POTR_PACKET_HEADER_SIZE);
             if (r != POTR_OK)
             {
                 break; /* 切断 or エラー */
@@ -815,7 +815,7 @@ static void tcp_recv_thread_func(void *arg)
             /* 4. ペイロード読み取り */
             if (wire_payload_len > 0)
             {
-                r = tcp_read_all(fd, buf + PACKET_HEADER_SIZE, wire_payload_len);
+                r = tcp_read_all(fd, buf + POTR_PACKET_HEADER_SIZE, wire_payload_len);
                 if (r != POTR_OK)
                 {
                     break;

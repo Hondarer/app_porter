@@ -6,7 +6,7 @@
  *  @date           2026/03/08
  *  @version        1.0.0
  *
- *  非ブロッキング送信 (potr_send の flags に POTR_SEND_BLOCKING なし) で使用される
+ *  非ブロッキング送信 (potr_service_send の flags に POTR_SEND_BLOCKING なし) で使用される
  *  スレッド セーフな送信キューです。\n
  *  ペイロード エレメントをリング バッファーに積み、送信スレッドが順に
  *  sendto で送出します。\n
@@ -55,7 +55,7 @@ typedef struct potr_internal_payload_elem
  *  @brief  非同期送信キュー。
  *
  *  リング バッファーとミューテックス・条件変数により、
- *  potr_send 呼び出し元スレッドと送信スレッドの間でスレッド セーフに
+ *  potr_service_send 呼び出し元スレッドと送信スレッドの間でスレッド セーフに
  *  ペイロード エレメント (メッセージのフラグメント) を受け渡します。\n
  *  - count: キュー内エントリ数\n
  *  - inflight: 送信スレッドが sendto 実行中のエントリ数\n
@@ -69,7 +69,7 @@ typedef struct potr_internal_send_queue
     uint8_t *payload_pool;       /**< ペイロード プール (動的確保。depth × max_payload バイト)。 */
     size_t depth;                /**< キュー容量 (エントリ数)。 */
     size_t head;                 /**< 読み出し位置 (送信スレッドが使用)。 */
-    size_t tail;                 /**< 書き込み位置 (potr_send 呼び出し元が使用)。 */
+    size_t tail;                 /**< 書き込み位置 (potr_service_send 呼び出し元が使用)。 */
     size_t count;                /**< キュー内エントリ数。 */
     size_t inflight;             /**< sendto 実行中エントリ数。 */
     cplat_local_lock *mutex;  /**< 排他制御。 */

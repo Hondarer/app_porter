@@ -34,7 +34,7 @@ static int send_tcp_fin_ack(potr_context *ctx, uint32_t fin_target_seq)
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     result = potr_internal_packet_build_fin_ack(&fin_ack_pkt, &shdr, fin_target_seq);
     if (result != POTR_OK)
@@ -108,7 +108,7 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
         }
     }
 
-    if (potr_is_tcp_type(ctx->service.type))
+    if (is_tcp_type(ctx->service.type))
     {
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
         thread_recv_set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);

@@ -3,7 +3,7 @@
 ## 概要
 
 porter は、アプリケーションと UDP ソケット層の間に抽象レイヤーを置き、非同期送受信・再送制御・ヘルスチェックを透過的に提供します。  
-アプリケーションは `potr_service_open()` または `potr_service_open_from_config()` でサービスを開き、送信側は `potr_send(handle, peer_id, ...)` を呼び出すだけで、内部スレッドが送受信・再送・ヘルスチェックをすべて担います。1:1 モードおよび他通信種別では `peer_id` に `POTR_PEER_NA` を指定し、`unicast_bidir` の N:1 モードでは接続中ピアの `peer_id` を指定します。
+アプリケーションは `potr_service_open()` または `potr_service_open_from_config()` でサービスを開き、送信側は `potr_service_send(handle, peer_id, ...)` を呼び出すだけで、内部スレッドが送受信・再送・ヘルスチェックをすべて担います。1:1 モードおよび他通信種別では `peer_id` に `POTR_PEER_NA` を指定し、`unicast_bidir` の N:1 モードでは接続中ピアの `peer_id` を指定します。
 
 ## 役割モデル
 
@@ -11,7 +11,7 @@ porter は通信の参加者を **送信者 (SENDER)** と **受信者 (RECEIVER
 
 | 役割 | 説明 |
 |---|---|
-| SENDER | `potr_send()` でデータを送出します。ヘルスチェック PING を送信します。 |
+| SENDER | `potr_service_send()` でデータを送出します。ヘルスチェック PING を送信します。 |
 | RECEIVER | 到着したパケットをコールバックで上位層へ渡します。NACK で再送を要求します。 |
 
 Table: porter 通信参加者の役割定義
@@ -57,7 +57,7 @@ UDP は無接続のため先に開いた方が待機するだけですが、TCP 
 title 送信者のスレッド構成
 
 rectangle "アプリケーション" {
-  [potr_send()]
+  [potr_service_send()]
 }
 
 rectangle "porter ライブラリ (送信者) " {
@@ -68,7 +68,7 @@ rectangle "porter ライブラリ (送信者) " {
   [UDP ソケット] as SOCK
 }
 
-[potr_send()] --> Q : エレメントを push
+[potr_service_send()] --> Q : エレメントを push
 Q --> ST : pop → パケット構築
 ST --> SOCK : sendto\n(DATA / PING / 再送)
 RT <-- SOCK : recvfrom\n(NACK / REJECT / FIN)
@@ -110,7 +110,7 @@ Table: 送信者 (SENDER) のスレッド構成と役割
 title unicast_bidir 1:1 のスレッド構成
 
 rectangle "アプリケーション" {
-  [potr_send(peer_id=POTR_PEER_NA)]
+  [potr_service_send(peer_id=POTR_PEER_NA)]
   [コールバック]
 }
 
@@ -122,7 +122,7 @@ rectangle "porter ライブラリ (unicast_bidir 1:1)" {
   [UDP ソケット\n(bind 済み)] as SOCK
 }
 
-[potr_send(peer_id=POTR_PEER_NA)] --> Q : エレメントを push
+[potr_service_send(peer_id=POTR_PEER_NA)] --> Q : エレメントを push
 Q --> ST : pop → パケット構築
 ST --> SOCK : sendto\n(DATA / 再送)
 HT --> SOCK : sendto (PING 要求)\n一定間隔で送信
@@ -142,7 +142,7 @@ N:1 モードではサーバー側に 1 つの共有スレッド群があり、�
 title unicast_bidir N:1 サーバのスレッド構成
 
 rectangle "アプリケーション" {
-  [potr_send(peer_id)]
+  [potr_service_send(peer_id)]
   [コールバック]
 }
 
@@ -155,7 +155,7 @@ rectangle "porter ライブラリ (unicast_bidir N:1 サーバ)" {
   [UDP ソケット\n(dst_addr:dst_port で bind)] as SOCK
 }
 
-[potr_send(peer_id)] --> Q : peer_id 付きで push
+[potr_service_send(peer_id)] --> Q : peer_id 付きで push
 Q --> ST : pop → peer_id で送信先解決
 ST --> PT : peer_id ごとの send_window / 送信先参照
 ST --> SOCK : sendto(peer ごとの dest_addr)
@@ -169,7 +169,7 @@ HT --> SOCK : PING 要求送信 / タイムアウト監視
 
 | スレッド | 役割 |
 |---|---|
-| 送信スレッド | 共有送信キューから `peer_id` 付きエレメントを取り出し、対応するピアの送信先へ `sendto` します。`POTR_PEER_ALL` は `potr_send()` 呼び出し時点で全ピア分に展開されます。 |
+| 送信スレッド | 共有送信キューから `peer_id` 付きエレメントを取り出し、対応するピアの送信先へ `sendto` します。`POTR_PEER_ALL` は `potr_service_send()` 呼び出し時点で全ピア分に展開されます。 |
 | 受信スレッド | `recvfrom` 後に暗号化必須判定と GCM 認証を行い、成功したパケットだけを session triplet (`session_id` + `session_tv_sec` + `session_tv_nsec`) でピア特定します。未知セッションは DATA / PING のみ新規ピア作成対象とします。 |
 | ヘルスチェック スレッド | 非 TCP の共有 1 本が接続中の各ピアを巡回し、`health_interval_ms` に従って PING を送信し、`health_timeout_ms` 超過で個別に切断を検知します。双方向 UDP ではこの定周期 PING が接続確立の前提であり、実効 `health_interval_ms = 0` のままでは `CONNECTED` しません。 |
 
@@ -190,7 +190,7 @@ path 数 N (最大 `POTR_MAX_PATH = 4`) の例。各 path に独立した connec
 title TCP SENDER のスレッド構成（path 数 = N の例）
 
 rectangle "アプリケーション" {
-  [potr_send()]
+  [potr_service_send()]
 }
 
 rectangle "porter ライブラリ (TCP SENDER)" {
@@ -206,7 +206,7 @@ rectangle "porter ライブラリ (TCP SENDER)" {
   [TCP ソケット #N-1] as SN
 }
 
-[potr_send()] --> Q
+[potr_service_send()] --> Q
 CT0 --> S0 : connect()
 CTN --> SN : connect()
 Q --> ST : pop → パケット構築
@@ -368,7 +368,7 @@ package "api" {
   [potr_service_open]
   [api_open_paths]
   [potr_service_open_from_config]
-  [potr_send]
+  [potr_service_send]
   [potr_service_close]
 }
 
@@ -413,7 +413,7 @@ database "potr_context\n(セッション全状態)" as CTX
 [potr_service_open] --> [api_open_paths] : 経路準備
 [api_open_paths] --> [net\n(socket・endpoint・byteorder)]
 [potr_service_open_from_config] --> [potr_service_open] : 委譲
-[potr_send] --> [potr_send_queue] : エレメント push
+[potr_service_send] --> [potr_send_queue] : エレメント push
 [potr_service_close] --> CTX : スレッド停止・解放
 
 [potr_send_thread] --> [packet]
@@ -523,7 +523,7 @@ Table: プラットフォーム抽象化の型と定義
 
 ```
 アプリ
- | potr_send(peer_id, data, len, flags)
+ | potr_service_send(peer_id, data, len, flags)
  ▼
 [圧縮] --- flags に POTR_SEND_COMPRESS が指定された場合、メッセージ全体を raw DEFLATE 圧縮
  |
@@ -652,7 +652,7 @@ Table: 通信種別ごとの特性比較
 | 機能ブロック | UDP | TCP | 備考 |
 |---|---|---|---|
 | `flush_packed()` | ✅ | ✅ | `is_tcp` フラグで送信部分を分岐。TCP は全アクティブ path にループ送信 |
-| `health_thread_func()` | ✅ | ✅ | `potr_is_tcp_type()` で分岐済み |
+| `health_thread_func()` | ✅ | ✅ | `is_tcp_type()` で分岐済み |
 | `deliver_payload_elem()` | ✅ | ✅ | 完全共有 |
 | `potr_internal_packet_parse()` | ✅ | ✅ | 完全共有 |
 | `potr_internal_window_recv_push/pop()` | ✅ | ✅ | TCP では複数 path からの重複排除に使用。`recv_window_mutex` で保護 |
@@ -685,7 +685,7 @@ TCP は各接続でトランスポート層が再送を保証するため `potr_
 ### TCP 送信フロー
 
 ```
-potr_send()
+potr_service_send()
   -> フラグメント化 -> send_queue.push()
     -> send_thread_func() -> flush_packed()
         +- UDP: sock[i].sendto()                          (全 path)

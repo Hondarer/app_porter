@@ -42,18 +42,18 @@ static int build_ctrl_pkt_wire(const potr_context *ctx, potr_packet *pkt, uint8_
         memcpy(nonce + 6, &pkt->ack_num, 4);
         memset(nonce + 10, 0, 2);
 
-        memcpy(wire_buf, pkt, PACKET_HEADER_SIZE);
-        if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce, wire_buf,
-                          PACKET_HEADER_SIZE) != CPLAT_OK)
+        memcpy(wire_buf, pkt, POTR_PACKET_HEADER_SIZE);
+        if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce, wire_buf,
+                          POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがありません。 */
             return POTR_ERR_UNKNOWN;
         }
-        *wire_len = PACKET_HEADER_SIZE + enc_out;
+        *wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
         return POTR_OK;
     }
 
-    memcpy(wire_buf, pkt, PACKET_HEADER_SIZE);
+    memcpy(wire_buf, pkt, POTR_PACKET_HEADER_SIZE);
     *wire_len = potr_internal_packet_wire_size(pkt);
     return POTR_OK;
 }
@@ -62,7 +62,7 @@ static void fill_own_session_hdr(const thread_recv_slot *slot, potr_internal_pac
 {
     shdr->service_id = slot->ctx->service.service_id;
     shdr->session_id = *slot->session_id;
-    potr_session_ts_to_hdr(slot->session_ts, &shdr->session_tv_sec, &shdr->session_tv_nsec);
+    session_ts_to_hdr(slot->session_ts, &shdr->session_tv_sec, &shdr->session_tv_nsec);
 }
 
 static void slot_send_wire_to_dests(thread_recv_slot *slot, const uint8_t *wire_buf, size_t wire_len)
@@ -76,7 +76,7 @@ static void slot_send_wire_to_dests(thread_recv_slot *slot, const uint8_t *wire_
         {
             size_t sent = 0;
 
-            if (potr_endpoint_is_unset(&slot->dest_addr[i]))
+            if (endpoint_is_unset(&slot->dest_addr[i]))
             {
                 continue;
             }
@@ -95,7 +95,7 @@ static void slot_send_wire_to_dests(thread_recv_slot *slot, const uint8_t *wire_
 
 static void slot_send_ctrl(thread_recv_slot *slot, potr_packet *pkt)
 {
-    uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
+    uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
     size_t wire_len;
 
     if (build_ctrl_pkt_wire(slot->ctx, pkt, wire_buf, &wire_len) != POTR_OK)
@@ -111,7 +111,7 @@ static void slot_send_nack(thread_recv_slot *slot, uint32_t nack_seq)
     potr_context *ctx = slot->ctx;
     potr_packet nack_pkt;
     potr_internal_packet_session_hdr shdr;
-    uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
+    uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
     size_t wire_len;
     int i;
 
@@ -322,8 +322,8 @@ static void slot_retransmit_or_reject(thread_recv_slot *slot, uint32_t ack_num)
     if (get_result == POTR_OK)
     {
         wire_len = potr_internal_packet_wire_size(&resend_pkt);
-        memcpy(ctx->recv_buf, &resend_pkt, PACKET_HEADER_SIZE);
-        memcpy(ctx->recv_buf + PACKET_HEADER_SIZE, resend_pkt.payload, wire_len - PACKET_HEADER_SIZE);
+        memcpy(ctx->recv_buf, &resend_pkt, POTR_PACKET_HEADER_SIZE);
+        memcpy(ctx->recv_buf + POTR_PACKET_HEADER_SIZE, resend_pkt.payload, wire_len - POTR_PACKET_HEADER_SIZE);
     }
     cplat_local_lock_unlock(slot->send_window_mutex);
 
@@ -349,7 +349,7 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
     potr_context *ctx = slot->ctx;
     uint32_t nack_num;
     uint32_t stretch;
-    int is_raw = potr_is_raw_type(ctx->service.type);
+    int is_raw = is_raw_type(ctx->service.type);
 
     if (potr_internal_window_recv_push(slot->recv_window, pkt) != POTR_OK)
     {
@@ -447,7 +447,7 @@ void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt
 {
     potr_context *ctx = slot->ctx;
 
-    if (potr_is_raw_type(ctx->service.type))
+    if (is_raw_type(ctx->service.type))
     {
         return;
     }
@@ -492,7 +492,7 @@ void thread_recv_window_on_nack(thread_recv_slot *slot, const potr_packet *pkt)
         return;
     }
 
-    if (potr_is_raw_type(slot->ctx->service.type))
+    if (is_raw_type(slot->ctx->service.type))
     {
         return;
     }
@@ -525,7 +525,7 @@ void thread_recv_window_scan_ping_gap(thread_recv_slot *slot, const potr_packet 
         return;
     }
 
-    if (potr_is_raw_type(ctx->service.type))
+    if (is_raw_type(ctx->service.type))
     {
         if (pkt->seq_num != next_seq &&
             potr_internal_seqnum_in_window(pkt->seq_num, next_seq + 1U, slot->recv_window->window_size) != 0)
@@ -586,7 +586,7 @@ void thread_recv_window_check_reorder_timeout(thread_recv_slot *slot)
         return;
     }
 
-    if (potr_is_raw_type(ctx->service.type))
+    if (is_raw_type(ctx->service.type))
     {
         raw_session_disconnect(slot);
         *slot->peer_session_known = 0;

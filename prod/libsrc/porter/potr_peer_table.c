@@ -101,7 +101,7 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = peer->session_id;
-    potr_session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+    session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     if (potr_internal_packet_build_fin(&fin_pkt, &shdr) != POTR_OK)
     {
@@ -122,7 +122,7 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
 
     if (ctx->service.encrypt_enabled)
     {
-        uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
+        uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
 
@@ -135,19 +135,19 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
         memset(nonce + 6, 0, 4);
         memset(nonce + 10, 0, 2);
 
-        memcpy(wire_buf, &fin_pkt, PACKET_HEADER_SIZE);
-        if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, PACKET_HEADER_SIZE) != CPLAT_OK)
+        memcpy(wire_buf, &fin_pkt, POTR_PACKET_HEADER_SIZE);
+        if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
+                             wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             return;
         }
-        wire_len = PACKET_HEADER_SIZE + enc_out;
+        wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
 
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
             size_t sent = 0;
 
-            if (potr_endpoint_is_unset(&peer->dest_addr[i]))
+            if (endpoint_is_unset(&peer->dest_addr[i]))
                 continue;
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
@@ -162,7 +162,7 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
         {
             size_t sent = 0;
 
-            if (potr_endpoint_is_unset(&peer->dest_addr[i]))
+            if (endpoint_is_unset(&peer->dest_addr[i]))
                 continue;
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
@@ -397,7 +397,7 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
 
 void potr_internal_peer_path_clear(const potr_context *ctx, potr_internal_peer_context *peer, int path_idx)
 {
-    if (potr_endpoint_is_unset(&peer->dest_addr[path_idx]))
+    if (endpoint_is_unset(&peer->dest_addr[path_idx]))
     {
         return; /* すでに未使用スロット */
     }
@@ -405,7 +405,7 @@ void potr_internal_peer_path_clear(const potr_context *ctx, potr_internal_peer_c
     POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING, "potr_internal_peer_path_clear: service_id=%" PRId64 " peer=%u path %d cleared",
                ctx->service.service_id, (unsigned)peer->peer_id, path_idx);
 
-    potr_endpoint_clear(&peer->dest_addr[path_idx]);
+    endpoint_clear(&peer->dest_addr[path_idx]);
     peer->path_last_recv_ts[path_idx].tv_sec = 0;
     peer->path_last_recv_ts[path_idx].tv_nsec = 0;
     peer->n_paths--;

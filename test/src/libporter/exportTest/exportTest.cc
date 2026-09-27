@@ -19,7 +19,7 @@
     EXPORT_ENTRY(potr_service_open_from_config, \
                  int(POTR_API *)(const char *config_path, int64_t service_id, potr_role role, \
                                  potr_recv_fn callback, potr_context **handle)) \
-    EXPORT_ENTRY(potr_send, \
+    EXPORT_ENTRY(potr_service_send, \
                  int(POTR_API *)(potr_context * handle, potr_peer_id peer_id, const void *data, size_t len, int flags)) \
     EXPORT_ENTRY(potr_peer_disconnect, int(POTR_API *)(potr_context * handle, potr_peer_id peer_id)) \
     EXPORT_ENTRY(potr_service_close, int(POTR_API *)(potr_context * handle)) \

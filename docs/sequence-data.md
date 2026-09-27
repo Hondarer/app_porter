@@ -4,7 +4,7 @@
 
 ## 正常送受信 (非ブロッキング)
 
-`POTR_SEND_BLOCKING` を指定せずに `potr_send()` を呼び出したときのデータフローです。片方向 type 1-6 では初回の有効 `DATA` 受信でも CONNECTED が成立します。
+`POTR_SEND_BLOCKING` を指定せずに `potr_service_send()` を呼び出したときのデータフローです。片方向 type 1-6 では初回の有効 `DATA` 受信でも CONNECTED が成立します。
 
 ```plantuml
 @startuml 正常送受信 (非ブロッキング)
@@ -17,7 +17,7 @@ participant "UDP" as UDP
 participant "受信スレッド\n(受信者)" as RRT
 participant "アプリ\n(受信側)" as RAPP
 
-SAPP -> Q: potr_send(handle, POTR_PEER_NA, data, len, 0)\n→ エレメントを push して即座に復帰
+SAPP -> Q: potr_service_send(handle, POTR_PEER_NA, data, len, 0)\n→ エレメントを push して即座に復帰
 SAPP <-- Q: POTR_OK
 
 note over Q, ST: 非同期に処理
@@ -40,8 +40,8 @@ RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data, len)
 
 ## 正常送受信 (ブロッキング)
 
-`POTR_SEND_BLOCKING` を指定して `potr_send()` を呼び出したときのデータフローです。  
-送信完了まで `potr_send()` は復帰しません。
+`POTR_SEND_BLOCKING` を指定して `potr_service_send()` を呼び出したときのデータフローです。  
+送信完了まで `potr_service_send()` は復帰しません。
 
 ```plantuml
 @startuml 正常送受信 (ブロッキング)
@@ -52,7 +52,7 @@ participant "送信キュー" as Q
 participant "送信スレッド" as ST
 participant "UDP" as UDP
 
-SAPP -> Q: potr_send(handle, POTR_PEER_NA, data, len, POTR_SEND_BLOCKING)
+SAPP -> Q: potr_service_send(handle, POTR_PEER_NA, data, len, POTR_SEND_BLOCKING)
 activate SAPP
 
 Q -> Q: (1) 既存キューが drained になるまで待機\n count == 0 && inflight == 0
@@ -89,7 +89,7 @@ participant "UDP" as UDP
 participant "受信スレッド\n(受信者)" as RRT
 participant "アプリ\n(受信側)" as RAPP
 
-SAPP -> Q: potr_send(handle, POTR_PEER_NA, data, len=max_payload×3, 0)\nlen が max_payload を超えるためフラグメント化
+SAPP -> Q: potr_service_send(handle, POTR_PEER_NA, data, len=max_payload×3, 0)\nlen が max_payload を超えるためフラグメント化
 
 Q -> Q: フラグ MORE_FRAG のエレメント push (1/3)
 Q -> Q: フラグ MORE_FRAG のエレメント push (2/3)

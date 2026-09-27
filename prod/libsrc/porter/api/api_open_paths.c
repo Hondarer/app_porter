@@ -721,7 +721,7 @@ static int open_paths_tcp(potr_context *ctx, potr_role role)
 
 int api_open_paths_by_type(potr_context *ctx, potr_role role)
 {
-    switch (potr_raw_base_type(ctx->service.type))
+    switch (raw_base_type(ctx->service.type))
     {
     case POTR_TYPE_UNICAST:
         return open_paths_unicast(ctx, role);
@@ -739,7 +739,7 @@ int api_open_paths_by_type(potr_context *ctx, potr_role role)
     case POTR_TYPE_UNICAST_RAW:
     case POTR_TYPE_MULTICAST_RAW:
     case POTR_TYPE_BROADCAST_RAW:
-        /* potr_raw_base_type() は RAW 型をベース型に変換するため、ここには到達しない */
+        /* raw_base_type() は RAW 型をベース型に変換するため、ここには到達しない */
         /* fall through */
     default:
         return POTR_ERR_UNSUPPORTED;
@@ -757,13 +757,13 @@ int api_setup_dest_addr(potr_context *ctx, potr_role role)
         return POTR_OK;
     }
 
-    switch (potr_raw_base_type(ctx->service.type))
+    switch (raw_base_type(ctx->service.type))
     {
     case POTR_TYPE_UNICAST_BIDIR:
     case POTR_TYPE_UNICAST_BIDIR_N1:
         for (i = 0; i < ctx->n_path; i++)
         {
-            potr_endpoint_clear(&ctx->dest_addr[i]);
+            endpoint_clear(&ctx->dest_addr[i]);
             if (role == POTR_ROLE_SENDER)
             {
                 /* SENDER: dst_addr:dst_port (RECEIVER の bind アドレス) へ送信 */
@@ -782,7 +782,7 @@ int api_setup_dest_addr(potr_context *ctx, potr_role role)
     case POTR_TYPE_UNICAST:
         for (i = 0; i < ctx->n_path; i++)
         {
-            potr_endpoint_clear(&ctx->dest_addr[i]);
+            endpoint_clear(&ctx->dest_addr[i]);
             ctx->dest_addr[i].address = ctx->dst_addr_resolved[i];
             ctx->dest_addr[i].port = cplat_hton16(ctx->service.dst_port);
         }
@@ -797,7 +797,7 @@ int api_setup_dest_addr(potr_context *ctx, potr_role role)
         }
         for (i = 0; i < ctx->n_path; i++)
         {
-            potr_endpoint_clear(&ctx->dest_addr[i]);
+            endpoint_clear(&ctx->dest_addr[i]);
             ctx->dest_addr[i].address = mcast_ip;
             ctx->dest_addr[i].port = cplat_hton16(ctx->service.dst_port);
         }
@@ -813,7 +813,7 @@ int api_setup_dest_addr(potr_context *ctx, potr_role role)
         }
         for (i = 0; i < ctx->n_path; i++)
         {
-            potr_endpoint_clear(&ctx->dest_addr[i]);
+            endpoint_clear(&ctx->dest_addr[i]);
             ctx->dest_addr[i].address = bcast_ip;
             ctx->dest_addr[i].port = cplat_hton16(ctx->service.dst_port);
         }
@@ -827,7 +827,7 @@ int api_setup_dest_addr(potr_context *ctx, potr_role role)
     case POTR_TYPE_UNICAST_RAW:
     case POTR_TYPE_MULTICAST_RAW:
     case POTR_TYPE_BROADCAST_RAW:
-        /* potr_raw_base_type() は RAW 型をベース型に変換するため、ここには到達しない */
+        /* raw_base_type() は RAW 型をベース型に変換するため、ここには到達しない */
         /* fall through */
     default:
         break;

@@ -16,8 +16,8 @@
 /* NOTE: このヘッダーは多数のソース ファイルから参照されるため、            */
 /*       @hideincludedbygraph によって "Included by" グラフを無効にします。 */
 
-#ifndef WINDOW_H
-#define WINDOW_H
+#ifndef POTR_PROTOCOL_WINDOW_H
+#define POTR_PROTOCOL_WINDOW_H
 
 #include <stdint.h>
 
@@ -163,4 +163,4 @@ extern "C"
 }
 #endif /* __cplusplus */
 
-#endif /* WINDOW_H */
+#endif /* POTR_PROTOCOL_WINDOW_H */

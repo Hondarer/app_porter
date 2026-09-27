@@ -149,7 +149,7 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
     cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
     seq = ctx->send_window.next_seq;
     build_result = potr_internal_packet_build_ping(&ping_pkt, &shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
     cplat_local_lock_unlock(ctx->send_window_mutex);
@@ -165,7 +165,7 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
      * NORMAL から UNDEFINED へ後退し、瞬間的に DISCONNECTED と判定される。 */
     if (ctx->service.encrypt_enabled)
     {
-        uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
+        uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
         int encrypt_failed = 0;
@@ -178,15 +178,15 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
         memcpy(nonce + 6, &ping_pkt.seq_num, 4);
         memset(nonce + 10, 0, 2);
 
-        memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
+        memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
 
         cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
         if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
         {
-            potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
-            memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-            if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE, POTR_MAX_PATH,
-                                 ctx->service.encrypt_key, nonce, wire_buf, PACKET_HEADER_SIZE) != CPLAT_OK)
+            copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
+            memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+            if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, wire_buf + POTR_PACKET_HEADER_SIZE, POTR_MAX_PATH,
+                                 ctx->service.encrypt_key, nonce, wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
             {
                 encrypt_failed = 1;
             }
@@ -194,7 +194,7 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
             {
                 cplat_error detail;
 
-                wire_len = PACKET_HEADER_SIZE + enc_out;
+                wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
                 if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) == CPLAT_OK)
                 {
                     send_result = POTR_OK;
@@ -215,17 +215,17 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
     }
     else
     {
-        uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_MAX_PATH];
-        memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
-        wire_len = PACKET_HEADER_SIZE + POTR_MAX_PATH;
+        uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH];
+        memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
+        wire_len = POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH;
 
         cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
         if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
         {
             cplat_error detail;
 
-            potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
-            memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+            copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
+            memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
             if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) == CPLAT_OK)
             {
                 send_result = POTR_OK;
@@ -248,7 +248,7 @@ static void health_thread_func(void *arg)
 {
     potr_context *ctx = (potr_context *)arg;
     potr_internal_packet_session_hdr shdr;
-    int is_oneway_udp = potr_is_oneway_udp_type(ctx->service.type);
+    int is_oneway_udp = is_oneway_udp_type(ctx->service.type);
     uint64_t initial_ping_due_ms = cplat_clock_get_monotonic_ms() + (uint64_t)ctx->health_interval_ms;
     uint64_t last_logged_data_ms = 0U;
 
@@ -257,7 +257,7 @@ static void health_thread_func(void *arg)
     if (!ctx->is_multi_peer)
     {
         shdr.session_id = ctx->session_id;
-        potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+        session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
     }
 
     while (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
@@ -301,19 +301,19 @@ static void health_thread_func(void *arg)
 
                 peer_shdr.service_id = ctx->service.service_id;
                 peer_shdr.session_id = ctx->peers[i].session_id;
-                potr_session_ts_to_hdr(&ctx->peers[i].session_ts, &peer_shdr.session_tv_sec,
+                session_ts_to_hdr(&ctx->peers[i].session_ts, &peer_shdr.session_tv_sec,
                                        &peer_shdr.session_tv_nsec);
 
                 cplat_local_lock_lock(ctx->peers[i].send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
                 seq = ctx->peers[i].send_window.next_seq;
                 /* N:1 (UNICAST_BIDIR_N1) は双方向 PING。ピアごとの自端パス受信状態をペイロードに設定する。 */
-                potr_copy_path_ping_state(health_states, ctx->peers[i].path_ping_state, POTR_MAX_PATH);
+                copy_path_ping_state(health_states, ctx->peers[i].path_ping_state, POTR_MAX_PATH);
                 potr_internal_packet_build_ping(&ping_pkt, &peer_shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
                 cplat_local_lock_unlock(ctx->peers[i].send_window_mutex);
 
                 if (ctx->service.encrypt_enabled)
                 {
-                    uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
+                    uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
                     uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
                     size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
 
@@ -325,21 +325,21 @@ static void health_thread_func(void *arg)
                     memcpy(nonce + 6, &ping_pkt.seq_num, 4);
                     memset(nonce + 10, 0, 2);
 
-                    memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
-                    memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                    if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
+                    memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
+                    memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+                    if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, wire_buf + POTR_PACKET_HEADER_SIZE,
                                          POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
-                                         PACKET_HEADER_SIZE) != CPLAT_OK)
+                                         POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
                     {
                         continue;
                     }
-                    wire_len = PACKET_HEADER_SIZE + enc_out;
+                    wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
 
                     for (k = 0; k < (int)POTR_MAX_PATH; k++)
                     {
                         size_t sent = 0;
 
-                        if (potr_endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
+                        if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                             continue;
                         (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k],
                                                      &sent, NULL);
@@ -347,16 +347,16 @@ static void health_thread_func(void *arg)
                 }
                 else
                 {
-                    uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_MAX_PATH];
-                    memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
-                    memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                    wire_len = PACKET_HEADER_SIZE + POTR_MAX_PATH;
+                    uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH];
+                    memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
+                    memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+                    wire_len = POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH;
 
                     for (k = 0; k < (int)POTR_MAX_PATH; k++)
                     {
                         size_t sent = 0;
 
-                        if (potr_endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
+                        if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                             continue;
                         (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k],
                                                      &sent, NULL);
@@ -384,7 +384,7 @@ static void health_thread_func(void *arg)
                それ以外 (UNICAST/MULTICAST/BROADCAST/RAW 系) は PING を受信しないため UNDEFINED を設定する。 */
             if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
             {
-                potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
+                copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             }
             else
             {
@@ -406,7 +406,7 @@ static void health_thread_func(void *arg)
 
             if (ctx->service.encrypt_enabled)
             {
-                uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
+                uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
                 uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
                 size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
 
@@ -418,15 +418,15 @@ static void health_thread_func(void *arg)
                 memcpy(nonce + 6, &ping_pkt.seq_num, 4);
                 memset(nonce + 10, 0, 2);
 
-                memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
-                memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
+                memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
+                memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+                if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, wire_buf + POTR_PACKET_HEADER_SIZE,
                                      POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
-                                     PACKET_HEADER_SIZE) != CPLAT_OK)
+                                     POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
                 {
                     continue;
                 }
-                wire_len = PACKET_HEADER_SIZE + enc_out;
+                wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
 
                 for (k = 0; k < ctx->n_path; k++)
                 {
@@ -443,10 +443,10 @@ static void health_thread_func(void *arg)
             }
             else
             {
-                uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_MAX_PATH];
-                memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
-                memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                wire_len = PACKET_HEADER_SIZE + POTR_MAX_PATH;
+                uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH];
+                memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
+                memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+                wire_len = POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH;
 
                 for (k = 0; k < ctx->n_path; k++)
                 {

@@ -48,7 +48,7 @@ static void dispose_secret_buffers(potr_context *ctx)
     {
         if (ctx->tcp_recv_buf[i] != NULL)
         {
-            cplat_secure_zero(ctx->tcp_recv_buf[i], PACKET_HEADER_SIZE + ctx->global.max_payload);
+            cplat_secure_zero(ctx->tcp_recv_buf[i], POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
             cplat_free(ctx->tcp_recv_buf[i]);
             ctx->tcp_recv_buf[i] = NULL;
         }
@@ -85,7 +85,7 @@ static void dispose_secret_buffers(potr_context *ctx)
     }
     if (ctx->recv_buf != NULL)
     {
-        cplat_secure_zero(ctx->recv_buf, PACKET_HEADER_SIZE + ctx->global.max_payload);
+        cplat_secure_zero(ctx->recv_buf, POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
         cplat_free(ctx->recv_buf);
         ctx->recv_buf = NULL;
     }
@@ -105,7 +105,7 @@ static void send_fin(potr_context *ctx)
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     if (potr_internal_packet_build_fin(&fin_pkt, &shdr) != POTR_OK)
         return;
@@ -125,7 +125,7 @@ static void send_fin(potr_context *ctx)
 
     if (ctx->service.encrypt_enabled)
     {
-        uint8_t wire_buf[PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
+        uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t enc_out = POTR_CRYPTO_TAG_SIZE;
 
@@ -138,13 +138,13 @@ static void send_fin(potr_context *ctx)
         memset(nonce + 6, 0, 4);
         memset(nonce + 10, 0, 2);
 
-        memcpy(wire_buf, &fin_pkt, PACKET_HEADER_SIZE);
-        if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, PACKET_HEADER_SIZE) != CPLAT_OK)
+        memcpy(wire_buf, &fin_pkt, POTR_PACKET_HEADER_SIZE);
+        if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
+                             wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             return;
         }
-        wire_len = PACKET_HEADER_SIZE + enc_out;
+        wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
 
         for (i = 0; i < ctx->n_path; i++)
         {
@@ -194,7 +194,7 @@ static int send_tcp_fin(potr_context *ctx, uint32_t fin_target_seq)
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
-    potr_session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     result = potr_internal_packet_build_fin(&fin_pkt, &shdr);
     if (result != POTR_OK)
@@ -300,7 +300,7 @@ int potr_service_close(potr_context *handle)
     cplat_atomic_store_i32(&ctx->close_requested, 1, CPLAT_MEMORY_ORDER_RELEASE);
 
     /* TCP: 接続管理スレッドを停止する (send/recv/health スレッドは connect スレッド内で停止) */
-    if (potr_is_tcp_type(ctx->service.type))
+    if (is_tcp_type(ctx->service.type))
     {
         if (cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
@@ -456,7 +456,7 @@ int potr_service_close(potr_context *handle)
         {
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
-            if (potr_raw_base_type(ctx->service.type) == POTR_TYPE_MULTICAST)
+            if (raw_base_type(ctx->service.type) == POTR_TYPE_MULTICAST)
             {
                 uint32_t group_addr;
 

@@ -39,7 +39,7 @@
  *    受信ウィンドウによる順序整列とセッション管理は有効。\n
  *    ギャップ検出時は NACK の代わりに POTR_EVENT_DISCONNECTED を発行します。\n
  *    通番は AES ノンス用にインクリメントするが、再送制御には使用しない。\n
- *    potr_send は常にブロッキング送信。マルチパス対応。\n
+ *    potr_service_send は常にブロッキング送信。マルチパス対応。\n
  *    PING ヘルスチェックは health_interval_ms / health_timeout_ms の設定に従う。
  * 
  *  - POTR_TYPE_UNICAST, POTR_TYPE_MULTICAST, POTR_TYPE_BROADCAST\n
@@ -47,7 +47,7 @@
  *    NACK / 再送・スライディング ウィンドウによる信頼性・順序保証。\n
  *    ギャップ検出時は RECEIVER が SENDER に NACK を送信し再送を要求します。\n
  *    再送不可能な場合は REJECT を送出し POTR_EVENT_DISCONNECTED を発行します。\n
- *    potr_send は送信ウィンドウに空きがある場合は非同期、満杯の場合はブロッキング。\n
+ *    potr_service_send は送信ウィンドウに空きがある場合は非同期、満杯の場合はブロッキング。\n
  * 
  *  - POTR_TYPE_UNICAST_BIDIR\n
  *    双方向 1:1 通信 (UDP ユニキャスト)。\n
@@ -90,9 +90,9 @@ typedef enum
 
     POTR_TYPE_UNICAST_BIDIR_N1 = 8, /**< N:1 双方向通信 (UDP ユニキャスト)。 */
 
-    POTR_TYPE_TCP = 9, /**< TCP ユニキャスト通信 (単方向: SENDER のみ potr_send 可)。 */
+    POTR_TYPE_TCP = 9, /**< TCP ユニキャスト通信 (単方向: SENDER のみ potr_service_send 可)。 */
 
-    POTR_TYPE_TCP_BIDIR = 10, /**< TCP 双方向通信 (両端が potr_send 可)。 */
+    POTR_TYPE_TCP_BIDIR = 10, /**< TCP 双方向通信 (両端が potr_service_send 可)。 */
 
     /* POTR_TYPE_TCP_BIDIR_N1 = 11, */ /**< TCP 双方向 N:1 通信 (将来)。 */
 } potr_type;
@@ -178,7 +178,7 @@ typedef struct potr_global_config
     uint32_t
         reorder_timeout_ms; /**< 受信ウィンドウ欠番検出後、NACK または切断を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 = 即時 (デフォルト)。推奨値: LAN/マルチパス=10〜30 ms、遠距離 WAN=30〜100 ms。 */
     uint32_t
-        max_message_size; /**< 1 回の potr_send で送信できる最大メッセージ長 (バイト)。デフォルト: POTR_MAX_MESSAGE_SIZE。 */
+        max_message_size; /**< 1 回の potr_service_send で送信できる最大メッセージ長 (バイト)。デフォルト: POTR_MAX_MESSAGE_SIZE。 */
     uint32_t send_queue_depth; /**< 非同期送信キューの最大エントリ数。デフォルト: POTR_SEND_QUEUE_DEPTH。 */
     uint32_t
         udp_health_interval_ms; /**< UDP 通信種別の既定 PING 送信間隔 (ミリ秒)。設定周期ごとに PING を送信します。0 = 無効。設定ファイル キー: udp_health_interval_ms。 */
@@ -253,7 +253,7 @@ typedef uint32_t potr_peer_id;
 
 /** @defgroup POTR_PEER ピア ID 予約値
  *  @ingroup        PORTER_PUBLIC_API
- *  `potr_send()` の `peer_id` 引数および `potr_recv_fn` の `peer_id` 引数で使用する予約値です。
+ *  `potr_service_send()` の `peer_id` 引数および `potr_recv_fn` の `peer_id` 引数で使用する予約値です。
  */
 
 /**
@@ -263,7 +263,7 @@ typedef uint32_t potr_peer_id;
 #define POTR_PEER_NA \
     ((potr_peer_id)0U) /**< ピア ID 未割当を示す予約値。
                                                 *   1:1 モードのコールバックで渡される (ピアの概念がない)。
-                                                *   `potr_send()` に N:1 モードで指定した場合はエラーを返します。 */
+                                                *   `potr_service_send()` に N:1 モードで指定した場合はエラーを返します。 */
 #define POTR_PEER_ALL \
     ((potr_peer_id)UINT32_MAX) /**< 全接続ピアへの一斉送信を指示する予約ピア ID。
                                                 *   N:1 モードでは全アクティブ ピアへユニキャスト送信します。

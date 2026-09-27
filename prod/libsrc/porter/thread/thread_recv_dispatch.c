@@ -87,7 +87,7 @@ static int dispatch_ping(thread_recv_slot *slot, const potr_packet *pkt, int pat
         thread_recv_apply_remote_path_ping_state(slot->remote_path_ping_state, pkt->payload, POTR_MAX_PATH);
     }
 
-    if (potr_is_raw_type(ctx->service.type))
+    if (is_raw_type(ctx->service.type))
     {
         thread_recv_window_scan_ping_gap(slot, pkt);
         thread_recv_sync_path_state(slot);

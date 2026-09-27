@@ -16,8 +16,8 @@
 /* NOTE: このヘッダーは多数のソース ファイルから参照されるため、            */
 /*       @hideincludedbygraph によって "Included by" グラフを無効にします。 */
 
-#ifndef PACKET_H
-#define PACKET_H
+#ifndef POTR_PROTOCOL_PACKET_H
+#define POTR_PROTOCOL_PACKET_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -27,7 +27,7 @@
 #include <porter/porter_type.h>
 
 /** パケット ヘッダーの固定長 (バイト)。payload フィールドの開始オフセット。 */
-#define PACKET_HEADER_SIZE ((size_t)offsetof(potr_packet, payload))
+#define POTR_PACKET_HEADER_SIZE ((size_t)offsetof(potr_packet, payload))
 
 /**
  *  @brief  パケットに付与するセッション識別情報。
@@ -35,7 +35,7 @@
  *  potr_service_open 時に決定し、全パケットのヘッダーに格納します。\n
  *  session_tv_sec / session_tv_nsec はワイヤ フォーマット (session header) の鏡像であり、
  *  幅が仕様で決まっているため固定幅型を維持します。\n
- *  cplat_timespec との変換には potr_session_ts_to_hdr() / potr_session_ts_from_hdr() を使用します。
+ *  cplat_timespec との変換には session_ts_to_hdr() / session_ts_from_hdr() を使用します。
  */
 typedef struct potr_internal_packet_session_hdr
 {
@@ -54,7 +54,7 @@ typedef struct potr_internal_packet_session_hdr
  *  ワイヤ フィールドは幅が仕様で固定されているため、縮小変換を本関数に集約します。\n
  *  正規化済みの tv_nsec (0 以上 999,999,999 以下) は int32_t の表現範囲内に収まります。
  */
-static inline void potr_session_ts_to_hdr(const cplat_timespec *ts, int64_t *tv_sec, int32_t *tv_nsec)
+static inline void session_ts_to_hdr(const cplat_timespec *ts, int64_t *tv_sec, int32_t *tv_nsec)
 {
     *tv_sec = (int64_t)ts->tv_sec;
     *tv_nsec = (int32_t)ts->tv_nsec;
@@ -66,7 +66,7 @@ static inline void potr_session_ts_to_hdr(const cplat_timespec *ts, int64_t *tv_
  *  @param[in]      tv_nsec  ワイヤ フィールド (int32_t) の値。
  *  @param[out]     ts       変換結果の格納先。
  */
-static inline void potr_session_ts_from_hdr(int64_t tv_sec, int32_t tv_nsec, cplat_timespec *ts)
+static inline void session_ts_from_hdr(int64_t tv_sec, int32_t tv_nsec, cplat_timespec *ts)
 {
     ts->tv_sec = (time_t)tv_sec;
     ts->tv_nsec = (int64_t)tv_nsec;
@@ -205,4 +205,4 @@ extern "C"
 }
 #endif /* __cplusplus */
 
-#endif /* PACKET_H */
+#endif /* POTR_PROTOCOL_PACKET_H */

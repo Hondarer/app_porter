@@ -117,7 +117,7 @@ int main(void) {
         return 1;
     }
 
-    ret = potr_send(handle, POTR_PEER_NA, msg, strlen(msg), POTR_SEND_BLOCKING);
+    ret = potr_service_send(handle, POTR_PEER_NA, msg, strlen(msg), POTR_SEND_BLOCKING);
 
     potr_service_close(handle);
     if (ret != POTR_OK) {

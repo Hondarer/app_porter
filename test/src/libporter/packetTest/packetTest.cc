@@ -51,7 +51,7 @@ class packetTest : public Test
 
     static void build_wire_packet(uint8_t *buf, uint32_t protocol_version)
     {
-        memset(buf, 0, PACKET_HEADER_SIZE);
+        memset(buf, 0, POTR_PACKET_HEADER_SIZE);
         write_i64_be(buf, 0, 42);
         write_i64_be(buf, 8, 1000);
         write_u32_be(buf, 16, 1234U);
@@ -93,7 +93,7 @@ TEST_F(packetTest, potr_internal_packet_build_packed_sets_protocol_version)
 TEST_F(packetTest, potr_internal_packet_parse_accepts_current_protocol_version)
 {
     // Arrange
-    uint8_t wire[PACKET_HEADER_SIZE];
+    uint8_t wire[POTR_PACKET_HEADER_SIZE];
     potr_packet pkt;
 
     build_wire_packet(wire, POTR_PROTOCOL_VERSION); // [状態] - 現行バージョンの wire パケットを組み立てる。
@@ -114,7 +114,7 @@ TEST_F(packetTest, potr_internal_packet_parse_accepts_current_protocol_version)
 TEST_F(packetTest, potr_internal_packet_parse_rejects_different_protocol_version)
 {
     // Arrange
-    uint8_t wire[PACKET_HEADER_SIZE];
+    uint8_t wire[POTR_PACKET_HEADER_SIZE];
     potr_packet pkt;
 
     build_wire_packet(wire, POTR_PROTOCOL_VERSION + 1U); // [状態] - 現行バージョン + 1 の wire パケットを組み立てる。
@@ -133,7 +133,7 @@ TEST_F(packetTest, potr_internal_packet_parse_rejects_different_protocol_version
 TEST_F(packetTest, potr_internal_packet_parse_rejects_legacy_reserved_zero)
 {
     // Arrange
-    uint8_t wire[PACKET_HEADER_SIZE];
+    uint8_t wire[POTR_PACKET_HEADER_SIZE];
     potr_packet pkt;
 
     build_wire_packet(wire, 0U); // [状態] - protocol_version が 0 の wire パケットを組み立てる。
