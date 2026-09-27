@@ -139,7 +139,7 @@ static void send_fin(potr_context *ctx)
         memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, &fin_pkt, PACKET_HEADER_SIZE);
-        if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
+        if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
                              wire_buf, PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             return;

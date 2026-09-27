@@ -42,7 +42,7 @@ static void n1_check_health_timeout(potr_context *ctx)
     cplat_timespec now_ts;
     int i;
 
-    cplat_get_monotonic(&now_ts);
+    cplat_clock_get_monotonic(&now_ts);
     int k;
     int should_wake_health = 0;
 
@@ -155,7 +155,7 @@ static void check_health_timeout(thread_recv_slot *slot)
     if (ctx->health_timeout_ms == 0)
         return;
 
-    cplat_get_monotonic(&now_ts);
+    cplat_clock_get_monotonic(&now_ts);
 
     /* パスごとのタイムアウト: peer_port をクリア */
     for (i = 0; i < ctx->n_path; i++)
@@ -598,7 +598,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: PING seq=%u",
                    ctx->service.service_id, path_idx, (unsigned)pkt.seq_num);
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-        cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], cplat_get_monotonic_ms(),
+        cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], cplat_clock_get_monotonic_ms(),
                                CPLAT_MEMORY_ORDER_RELAXED);
         ping_state_changed = thread_recv_set_path_ping_state(&ctx->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
         if (pkt.payload_len >= POTR_MAX_PATH && pkt.payload != NULL)
@@ -766,7 +766,7 @@ static void tcp_recv_thread_func(void *arg)
                     /* ポーリング タイムアウト: PING 受信時刻を確認する */
                     uint64_t last =
                         cplat_atomic_load_u64(&ctx->tcp_last_ping_recv_ms[path_idx], CPLAT_MEMORY_ORDER_RELAXED);
-                    uint64_t elapsed = cplat_get_monotonic_ms() - last;
+                    uint64_t elapsed = cplat_clock_get_monotonic_ms() - last;
                     if (last > 0 && elapsed > (uint64_t)ctx->health_timeout_ms)
                     {
                         int ping_state_changed;

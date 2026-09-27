@@ -88,7 +88,7 @@ static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due
 {
     while (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
-        uint64_t now = cplat_get_monotonic_ms();
+        uint64_t now = cplat_clock_get_monotonic_ms();
         uint64_t last_ping = cplat_atomic_load_u64(&ctx->last_ping_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
         uint64_t last_data = cplat_atomic_load_u64(&ctx->last_valid_data_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
         uint64_t due_ms;
@@ -185,7 +185,7 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
         {
             potr_copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-            if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE, POTR_MAX_PATH,
+            if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE, POTR_MAX_PATH,
                                  ctx->service.encrypt_key, nonce, wire_buf, PACKET_HEADER_SIZE) != CPLAT_OK)
             {
                 encrypt_failed = 1;
@@ -249,7 +249,7 @@ static void health_thread_func(void *arg)
     potr_context *ctx = (potr_context *)arg;
     potr_internal_packet_session_hdr shdr;
     int is_oneway_udp = potr_is_oneway_udp_type(ctx->service.type);
-    uint64_t initial_ping_due_ms = cplat_get_monotonic_ms() + (uint64_t)ctx->health_interval_ms;
+    uint64_t initial_ping_due_ms = cplat_clock_get_monotonic_ms() + (uint64_t)ctx->health_interval_ms;
     uint64_t last_logged_data_ms = 0U;
 
     shdr.service_id = ctx->service.service_id;
@@ -327,7 +327,7 @@ static void health_thread_func(void *arg)
 
                     memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
                     memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                    if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
+                    if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
                                          POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
                                          PACKET_HEADER_SIZE) != CPLAT_OK)
                     {
@@ -420,7 +420,7 @@ static void health_thread_func(void *arg)
 
                 memcpy(wire_buf, &ping_pkt, PACKET_HEADER_SIZE);
                 memcpy(wire_buf + PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
+                if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, wire_buf + PACKET_HEADER_SIZE,
                                      POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
                                      PACKET_HEADER_SIZE) != CPLAT_OK)
                 {
@@ -464,7 +464,7 @@ static void health_thread_func(void *arg)
 
             if (is_oneway_udp && sent_any)
             {
-                cplat_atomic_store_u64(&ctx->last_ping_send_ms, cplat_get_monotonic_ms(), CPLAT_MEMORY_ORDER_RELAXED);
+                cplat_atomic_store_u64(&ctx->last_ping_send_ms, cplat_clock_get_monotonic_ms(), CPLAT_MEMORY_ORDER_RELAXED);
                 last_logged_data_ms = 0U;
             }
         }

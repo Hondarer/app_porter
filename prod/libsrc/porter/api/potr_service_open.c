@@ -53,7 +53,7 @@ static int generate_session(potr_context *ctx)
     {
         return ret;
     }
-    cplat_get_realtime(&ctx->session_ts);
+    cplat_clock_get_realtime(&ctx->session_ts);
 
     cplat_atomic_store_u64(&ctx->last_ping_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
     cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);

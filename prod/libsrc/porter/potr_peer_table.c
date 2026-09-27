@@ -45,7 +45,7 @@ static int peer_generate_session(potr_internal_peer_context *peer)
     {
         return potr_internal_result_from_socket_result(ret, NULL);
     }
-    cplat_get_realtime(&peer->session_ts);
+    cplat_clock_get_realtime(&peer->session_ts);
 
     return POTR_OK;
 }
@@ -136,7 +136,7 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
         memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, &fin_pkt, PACKET_HEADER_SIZE);
-        if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
+        if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
                              wire_buf, PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             return;

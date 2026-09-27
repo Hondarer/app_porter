@@ -173,7 +173,7 @@ int thread_recv_update_path_health(thread_recv_slot *slot, int path_idx)
 {
     cplat_timespec now_ts;
 
-    cplat_get_monotonic(&now_ts);
+    cplat_clock_get_monotonic(&now_ts);
     *slot->last_recv_ts = now_ts;
     slot->path_last_recv_ts[path_idx] = now_ts;
     return thread_recv_set_path_ping_state(&slot->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);

@@ -78,7 +78,7 @@ bytes packet(uint32_t seq, uint16_t flags, const bytes &payload, bool encrypted)
         memcpy(nonce + 6, out.data() + 24, 4);
         bytes cipher(payload.size() + POTR_CRYPTO_TAG_SIZE);
         size_t len = cipher.size();
-        EXPECT_EQ(CPLAT_OK, cplat_encrypt(cipher.data(), &len, payload.data(), payload.size(), key, nonce, out.data(),
+        EXPECT_EQ(CPLAT_OK, cplat_crypto_encrypt(cipher.data(), &len, payload.data(), payload.size(), key, nonce, out.data(),
                                           header_size));
         out.insert(out.end(), cipher.begin(), cipher.end());
     }

@@ -123,7 +123,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
         memcpy(nonce + 6, &outer_pkt.seq_num, 4);
         memset(nonce + 10, 0, 2);
 
-        if (cplat_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
+        if (cplat_crypto_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
                              (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             cplat_local_lock_unlock(ctx->send_window_mutex);
@@ -238,7 +238,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
 
         if (sent_any && should_track_valid_data_send_time(ctx))
         {
-            cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, cplat_get_monotonic_ms(),
+            cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, cplat_clock_get_monotonic_ms(),
                                    CPLAT_MEMORY_ORDER_RELAXED);
             potr_internal_health_thread_wake(ctx);
         }
@@ -283,7 +283,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         memcpy(nonce + 6, &outer_pkt.seq_num, 4);
         memset(nonce + 10, 0, 2);
 
-        if (cplat_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
+        if (cplat_crypto_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
                              (const uint8_t *)&outer_pkt, PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             cplat_local_lock_unlock(peer->send_window_mutex);
@@ -447,12 +447,12 @@ static void send_thread_func(void *arg)
                 if (pack_wait_ms > 0)
                 {
                     /* パッキング待ちあり: タイムアウトまで追加エントリを待ち合わせる */
-                    uint64_t deadline = cplat_get_monotonic_ms() + pack_wait_ms;
+                    uint64_t deadline = cplat_clock_get_monotonic_ms() + pack_wait_ms;
                     potr_internal_payload_elem next;
 
                     for (;;)
                     {
-                        uint64_t now = cplat_get_monotonic_ms();
+                        uint64_t now = cplat_clock_get_monotonic_ms();
                         uint32_t remaining;
                         size_t elem_size;
                         size_t crypto_tag_overhead;

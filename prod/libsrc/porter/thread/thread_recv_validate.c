@@ -53,7 +53,7 @@ int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const u
         memcpy(nonce + 6, &seq_nbo, 4);
         memset(nonce + 10, 0, 2);
 
-        if (cplat_decrypt(ctx->recv_crypto_buf, &dec_len, pkt->payload, pkt->payload_len, ctx->service.encrypt_key, nonce,
+        if (cplat_crypto_decrypt(ctx->recv_crypto_buf, &dec_len, pkt->payload, pkt->payload_len, ctx->service.encrypt_key, nonce,
                           wire_hdr, PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             if (path_idx >= 0)
@@ -117,7 +117,7 @@ int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const u
         memcpy(nonce + 6, &val_nbo, 4);
         memset(nonce + 10, 0, 2);
 
-        if (cplat_decrypt(dummy, &dummy_len, pkt->payload, POTR_CRYPTO_TAG_SIZE, ctx->service.encrypt_key, nonce,
+        if (cplat_crypto_decrypt(dummy, &dummy_len, pkt->payload, POTR_CRYPTO_TAG_SIZE, ctx->service.encrypt_key, nonce,
                           wire_hdr, PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             if (path_idx >= 0)

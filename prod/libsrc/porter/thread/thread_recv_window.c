@@ -43,7 +43,7 @@ static int build_ctrl_pkt_wire(const potr_context *ctx, potr_packet *pkt, uint8_
         memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, pkt, PACKET_HEADER_SIZE);
-        if (cplat_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce, wire_buf,
+        if (cplat_crypto_encrypt(wire_buf + PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce, wire_buf,
                           PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがありません。 */
@@ -189,7 +189,7 @@ static int reorder_gap_ready(thread_recv_slot *slot, uint32_t nack_num)
     {
         uint32_t effective_ms;
 
-        cplat_get_monotonic(&now_ts);
+        cplat_clock_get_monotonic(&now_ts);
         effective_ms = ms;
         if (ctx->service.type == POTR_TYPE_MULTICAST || ctx->service.type == POTR_TYPE_BROADCAST)
         {
@@ -202,7 +202,7 @@ static int reorder_gap_ready(thread_recv_slot *slot, uint32_t nack_num)
         return 0;
     }
 
-    cplat_get_monotonic(&now_ts);
+    cplat_clock_get_monotonic(&now_ts);
     if (cplat_timespec_cmp(&now_ts, slot->reorder_deadline_ts) >= 0)
     {
         *slot->reorder_pending = 0;
@@ -291,7 +291,7 @@ static int slot_drain_recv_window(thread_recv_slot *slot)
 
 static int nack_is_duplicate(thread_recv_slot *slot, uint32_t ack_num)
 {
-    uint64_t now_ms = cplat_get_monotonic_ms();
+    uint64_t now_ms = cplat_clock_get_monotonic_ms();
     int dedup_idx;
 
     for (dedup_idx = 0; dedup_idx < (int)POTR_NACK_DEDUP_SLOTS; dedup_idx++)

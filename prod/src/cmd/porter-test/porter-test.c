@@ -298,7 +298,7 @@ static void trace_console_hook(cplat_tracer_hook_entry *prev, cplat_tracer *hand
         {
             lc = 'D';
         }
-        cplat_format_realtime_iso8601_local(ts, sizeof(ts), timestamp);
+        cplat_clock_format_realtime_iso8601_local(ts, sizeof(ts), timestamp);
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR, "%s %c %s\n", ts, lc, message);
     }
     cplat_tracer_call_next_hook(prev, handle, level, timestamp, message);

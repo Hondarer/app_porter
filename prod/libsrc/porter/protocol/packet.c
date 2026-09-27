@@ -91,7 +91,7 @@ int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_pac
 /* Doxygen コメントは、ヘッダーに記載 */
 /**
  *  @details
- *  暗号化時はヘルスチェック スレッドが wire_buf にコピー後に cplat_encrypt を適用します。
+ *  暗号化時はヘルスチェック スレッドが wire_buf にコピー後に cplat_crypto_encrypt を適用します。
  */
 int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
                       const uint8_t *health_payload, uint16_t health_payload_len)
