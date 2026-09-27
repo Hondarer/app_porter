@@ -14,104 +14,108 @@
 #ifndef PORTER_PROTOCOL_CONFIG_PARSE_COMMON_H
 #define PORTER_PROTOCOL_CONFIG_PARSE_COMMON_H
 
+#include <cJSON.h>
+#include <cJSON_JSONC.h>
+#include <cJSON_Integer.h>
 #include <cplat/crt/stdio.h>
-#include <ctype.h>
-#include <stddef.h>
+#include <cplat/crt/stdlib.h>
+#include <cplat/runtime/memory_lock.h>
+#include <porter/porter_result.h>
+#include <inttypes.h>
+#include <stdint.h>
 #include <string.h>
 
-/** 設定ファイル 1 行の最大長。 */
-#define CONFIG_LINE_MAX 256
-
-/** セクション名の最大長。 */
-#define CONFIG_SECTION_MAX 64
-
-/** キー名の最大長。 */
-#define CONFIG_KEY_MAX 64
-
-/** 値文字列の最大長。 */
-#define CONFIG_VAL_MAX 128
-
-/* 読み取り専用で設定ファイルを開く。失敗時は NULL を返します。 */
-static FILE *config_open_file_read(const char *path)
+/* JSONC ファイルを読み込む。呼び出し元が cJSON_Delete で解放する。 */
+static int config_read_jsonc(const char *path, cJSON **root_out)
 {
-    if (path == NULL)
-    {
-        return NULL;
-    }
+    FILE *fp;
+    char chunk[1024];
+    char *text;
+    size_t length;
+    size_t capacity;
+    cJSON *root;
 
-    return cplat_fopen(path, "r", NULL);
+    fp = cplat_fopen(path, "r", NULL);
+    if (fp == NULL)
+    {
+        return POTR_ERR_IO;
+    }
+    capacity = sizeof(chunk);
+    text = (char *)cplat_malloc(capacity);
+    if (text == NULL)
+    {
+        fclose(fp);
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    length = 0U;
+    while (fgets(chunk, (int)sizeof(chunk), fp) != NULL)
+    {
+        size_t size = strlen(chunk);
+        if (size > SIZE_MAX - length - 1U)
+        {
+            cplat_secure_zero(text, length);
+            cplat_free(text);
+            fclose(fp);
+            return POTR_ERR_OUT_OF_MEMORY;
+        }
+        if (length + size + 1U > capacity)
+        {
+            size_t new_capacity = capacity;
+            char *expanded;
+            while (new_capacity < length + size + 1U)
+            {
+                if (new_capacity > SIZE_MAX / 2U)
+                {
+                    cplat_secure_zero(text, length);
+                    cplat_free(text);
+                    fclose(fp);
+                    return POTR_ERR_OUT_OF_MEMORY;
+                }
+                new_capacity *= 2U;
+            }
+            expanded = (char *)cplat_realloc(text, new_capacity, 1U);
+            if (expanded == NULL)
+            {
+                cplat_secure_zero(text, length);
+                cplat_free(text);
+                fclose(fp);
+                return POTR_ERR_OUT_OF_MEMORY;
+            }
+            text = expanded;
+            capacity = new_capacity;
+        }
+        memcpy(text + length, chunk, size);
+        length += size;
+    }
+    cplat_secure_zero(chunk, sizeof(chunk));
+    fclose(fp);
+    text[length] = '\0';
+    root = cJSON_ParseJSONCWithLength(text, length);
+    cplat_secure_zero(text, length);
+    cplat_free(text);
+    if (!cJSON_IsObject(root))
+    {
+        cJSON_Delete(root);
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    *root_out = root;
+    return POTR_OK;
 }
 
-/* 文字列の先頭・末尾の空白を除去して buf に格納します。 */
-static void config_trim(const char *src, char *buf, size_t buf_size)
+/* 既存の値域検査を使うため、JSON 整数を十進文字列として返す。 */
+static inline const char *config_value_text(const cJSON *item, char *buffer, size_t buffer_size)
 {
-    const char *start;
-    size_t len;
-
-    if (buf == NULL || buf_size == 0)
+    int64_t parsed;
+    if (cJSON_IsString(item))
     {
-        return;
+        return cJSON_GetStringValue(item);
     }
-
-    if (src == NULL)
+    if (cJSON_HasExactInteger(item) && cJSON_GetInt64Value(item, &parsed) && buffer_size >= 32U)
     {
-        buf[0] = '\0';
-        return;
+        (void)snprintf(buffer, buffer_size, "%" PRId64, parsed);
+        return buffer;
     }
-
-    start = src;
-    while (*start != '\0' && isspace((unsigned char)*start))
-    {
-        start++;
-    }
-
-    len = strlen(start);
-    while (len > 0U && isspace((unsigned char)start[len - 1U]))
-    {
-        len--;
-    }
-
-    if (len >= buf_size)
-    {
-        len = buf_size - 1U;
-    }
-
-    memcpy(buf, start, len);
-    buf[len] = '\0';
-}
-
-/* "[section]" 形式の行から section 名を抽出します。成功時は 1 を返します。 */
-static int config_parse_section_name(const char *line, char *section_out, size_t section_size)
-{
-    const char *close;
-    size_t section_len;
-
-    if (line == NULL || section_out == NULL || section_size == 0U)
-    {
-        return 0;
-    }
-
-    if (line[0] != '[')
-    {
-        return 0;
-    }
-
-    close = strchr(line, ']');
-    if (close == NULL)
-    {
-        return 0;
-    }
-
-    section_len = (size_t)(close - line - 1);
-    if (section_len >= section_size)
-    {
-        section_len = section_size - 1U;
-    }
-
-    memcpy(section_out, line + 1, section_len);
-    section_out[section_len] = '\0';
-
-    return 1;
+    return NULL;
 }
 
 #endif /* PORTER_PROTOCOL_CONFIG_PARSE_COMMON_H */

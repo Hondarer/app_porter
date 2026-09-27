@@ -111,7 +111,7 @@ typedef enum
 /**
  *  @brief          サービス定義。
  *
- *  設定ファイルの [service.N] セクションから読み込まれるサービス設定です。
+ *  設定ファイルの services オブジェクトから読み込まれるサービス設定です。
  *
  *  通信種別によって有効なフィールドが異なります。
  */
@@ -169,7 +169,7 @@ typedef struct potr_service_def
 /**
  *  @brief          グローバル設定。
  *
- *  設定ファイルの [global] セクションから読み込まれる共通プロトコル設定です。
+ *  設定ファイルの global オブジェクトから読み込まれる共通プロトコル設定です。
  */
 typedef struct potr_global_config
 {

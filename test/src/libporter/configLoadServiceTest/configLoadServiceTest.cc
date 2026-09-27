@@ -67,27 +67,7 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
-        "[service.10]\n",
-        "type = unicast\n",
-        "dst_port = 4000\n",
-        "[service.42]\n",
-        "type = tcp_bidir\n",
-        "dst_port = 5001\n",
-        "src_port = 6001\n",
-        "ttl = 3\n",
-        "pack_wait_ms = 7\n",
-        "src_addr1 = 10.0.0.1\n",
-        "src_addr2 = 10.0.0.2\n",
-        "dst_addr1 = 10.0.1.1\n",
-        "dst_addr2 = 10.0.1.2\n",
-        "health_interval_ms = 111\n",
-        "health_timeout_ms = 222\n",
-        "reconnect_interval_ms = 333\n",
-        "connect_timeout_ms = -1\n",
-        "max_peers = 16\n",
-        "encrypt_key = 00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF\n",
-        "[service.77]\n",
-        "dst_port = 9000\n",
+        R"({/* JSONC block comment */"services":{"10":{"type":"unicast","dst_port":4000},"42":{"type":"tcp_bidir","dst_port":5001,"src_port":6001,"ttl":3,"pack_wait_ms":7,"src_addr1":"10.0.0.1","src_addr2":"10.0.0.2","dst_addr1":"10.0.1.1","dst_addr2":"10.0.1.2","broadcast_addr":"tcp://host,}","health_interval_ms":111,"health_timeout_ms":222,"reconnect_interval_ms":333,"connect_timeout_ms":-1,"max_peers":16,"encrypt_key":"00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF",},"77":{"dst_port":9000}}})"
     });
     potr_service_def def = {};
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
@@ -95,7 +75,7 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [状態] - fgets が呼び出された際に複数 service section を含む行列を返すようにモックを設定する。
+            })); // [状態] - fgets が呼び出された際に複数 service 定義を含む JSONC を返すようにモックを設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
@@ -123,6 +103,7 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
     EXPECT_STREQ("10.0.0.2", def.src_addr[1]);  // [確認_正常系] - src_addr2 を読み込むこと。
     EXPECT_STREQ("10.0.1.1", def.dst_addr[0]);  // [確認_正常系] - dst_addr1 を読み込むこと。
     EXPECT_STREQ("10.0.1.2", def.dst_addr[1]);  // [確認_正常系] - dst_addr2 を読み込むこと。
+    EXPECT_STREQ("tcp://host,}", def.broadcast_addr); // [確認_正常系] - 文字列内の // はコメントとして扱わないこと。
     EXPECT_EQ(16U, def.max_peers);              // [確認_正常系] - max_peers を読み込むこと。
     EXPECT_EQ(111U, def.health_interval_ms);    // [確認_正常系] - health_interval_ms を読み込むこと。
     EXPECT_EQ(222U, def.health_timeout_ms);     // [確認_正常系] - health_timeout_ms を読み込むこと。
@@ -143,10 +124,7 @@ TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
-        "[service.55]\n",
-        "type = unicast_bidir\n",
-        "dst_port = 5001\n",
-        "encrypt_key = secret passphrase\n",
+        R"({"services":{"55":{"type":"unicast_bidir","dst_port":5001,"encrypt_key":"secret passphrase"}}})"
     });
     potr_service_def def = {};
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
@@ -191,10 +169,7 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
-        "[service.56]\n",
-        "type = tcp\n",
-        "dst_port = 5002\n",
-        "encrypt_key = not-a-hex-secret\n",
+        R"({"services":{"56":{"type":"tcp","dst_port":5002,"encrypt_key":"not-a-hex-secret"}}})"
     });
     potr_service_def def = {};
     memset(&def, 0xA5, sizeof(def));
@@ -232,8 +207,7 @@ TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
     ConfigLineStream lines({
-        "[service.10]\n",
-        "dst_port = 4000\n",
+        R"({"services":{"10":{"dst_port":4000}}})"
     });
     potr_service_def def = {};
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
@@ -241,7 +215,7 @@ TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [状態] - fgets が呼び出された際に対象外 service のみを含む行列を返すようにモックを設定する。
+            })); // [状態] - fgets が呼び出された際に対象外 service のみを含む JSONC を返すようにモックを設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))

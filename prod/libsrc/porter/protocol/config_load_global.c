@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           config_load_global.c
- *  @brief          設定の global セクションを読み込む機能を実装します。
+ *  @brief          JSONC 設定の global オブジェクトを読み込む機能を実装します。
  *  @author         Tetsuo Honda
  *  @date           2026/04/26
  *  @version        1.0.0
@@ -23,7 +23,6 @@
 #include <porter/infra/potr_trace.h>
 #include <porter/protocol/config.h>
 #include <porter/protocol/config_parse_common.h>
-#include <porter/protocol/config_parse_kv_common.h>
 
 static int parse_u32_field(const char *text, uint32_t *value_out)
 {
@@ -83,12 +82,10 @@ static void config_set_global_defaults(potr_global_config *global)
 
 int potr_internal_config_load_global(const char *config_path, potr_global_config *global)
 {
-    FILE *fp;
-    char line[CONFIG_LINE_MAX];
-    char section[CONFIG_SECTION_MAX];
-    char key[CONFIG_KEY_MAX];
-    char val[CONFIG_VAL_MAX];
-    int in_global;
+    cJSON *root;
+    const cJSON *global_object;
+    const cJSON *item;
+    int ret;
 
     if (config_path == NULL || global == NULL)
     {
@@ -96,49 +93,26 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
     }
 
     config_set_global_defaults(global);
-
-    fp = config_open_file_read(config_path);
-    if (fp == NULL)
+    ret = config_read_jsonc(config_path, &root);
+    if (ret != POTR_OK)
     {
-        return POTR_ERR_IO;
+        return ret;
     }
-
-    section[0] = '\0';
-    in_global = 0;
-
-    while (fgets(line, (int)sizeof(line), fp) != NULL)
+    global_object = cJSON_GetObjectItemCaseSensitive(root, "global");
+    if (global_object != NULL && !cJSON_IsObject(global_object))
     {
-        char trimmed[CONFIG_LINE_MAX];
-        config_trim(line, trimmed, sizeof(trimmed));
-
-        if (trimmed[0] == '\0' || trimmed[0] == '#' || trimmed[0] == ';')
+        cJSON_Delete(root);
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    cJSON_ArrayForEach(item, global_object)
+    {
+        char value_buffer[32];
+        const char *val = config_value_text(item, value_buffer, sizeof(value_buffer));
+        const char *key = item->string;
+        if (val == NULL)
         {
             continue;
         }
-
-        if (config_parse_section_name(trimmed, section, sizeof(section)))
-        {
-            if (strcmp(section, "global") == 0)
-            {
-                in_global = 1;
-            }
-            else
-            {
-                in_global = 0;
-            }
-            continue;
-        }
-
-        if (!in_global)
-        {
-            continue;
-        }
-
-        if (!config_parse_kv(trimmed, key, sizeof(key), val, sizeof(val)))
-        {
-            continue;
-        }
-
         if (strcmp(key, "window_size") == 0)
         {
             (void)parse_u16_field(val, &global->window_size);
@@ -180,6 +154,7 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
             (void)parse_u32_field(val, &global->send_queue_depth);
         }
     }
+    cJSON_Delete(root);
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                "config loaded: window_size=%u max_payload=%u "
@@ -191,6 +166,5 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
                (unsigned)global->tcp_health_timeout_ms, (unsigned)global->tcp_close_timeout_ms,
                (unsigned)global->reorder_timeout_ms);
 
-    fclose(fp);
     return POTR_OK;
 }

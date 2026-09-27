@@ -37,7 +37,6 @@
 
 #include <porter/protocol/config.h>
 #include <porter/protocol/config_parse_common.h>
-#include <porter/protocol/config_parse_kv_common.h>
 #include <porter/protocol/packet.h>
 #include <porter/protocol/seqnum.h>
 #include <porter/protocol/window.h>

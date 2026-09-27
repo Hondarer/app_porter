@@ -1,0 +1,179 @@
+// porter のサービス定義。設定項目の説明は docs/config.md を参照してください。
+{
+  // すべてのサービスに共通する既定値。
+  "global": {
+    "window_size": 16,
+    "max_payload": 1400,
+    "udp_health_interval_ms": 3000,
+    "udp_health_timeout_ms": 10000,
+    "tcp_health_interval_ms": 10000,
+    "tcp_health_timeout_ms": 31000,
+  },
+  "services": {
+    // 一方向ユニキャスト: ループバックで動作確認。
+    "1001": {
+      "type": "unicast",
+      "src_addr1": "127.0.0.1",
+      "dst_addr1": "127.0.0.1",
+      "dst_port": 5001,
+    },
+    "1002": {
+      "type": "unicast",
+      "src_addr1": "192.168.1.10",
+      "dst_addr1": "192.168.1.20",
+      "dst_port": 5002
+    },
+    "1003": {
+      "type": "unicast",
+      "src_addr1": "sender.example.local",
+      "dst_addr1": "receiver.example.local",
+      "dst_port": 5003
+    },
+    "1004": {
+      "type": "unicast",
+      "src_addr1": "192.168.1.10",
+      "src_port": 5010,
+      "dst_addr1": "192.168.1.20",
+      "dst_port": 5004
+    },
+    "1005": {
+      "type": "unicast",
+      "src_addr1": "192.168.1.10",
+      "dst_addr1": "192.168.1.20",
+      "dst_port": 5005,
+      "pack_wait_ms": 5
+    },
+    // 暗号化: 64 桁の十六進鍵。
+    "1006": {
+      "type": "unicast",
+      "src_addr1": "127.0.0.1",
+      "dst_addr1": "127.0.0.1",
+      "dst_port": 5006,
+      "encrypt_key": "0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f0a1b2c3d4e5f6a7b8c9d0e1f2a3b"
+    },
+    // 暗号化: 任意のパスフレーズ。
+    "1007": {
+      "type": "unicast",
+      "src_addr1": "127.0.0.1",
+      "dst_addr1": "127.0.0.1",
+      "dst_port": 5007,
+      "encrypt_key": "MySecretPassphrase2026!"
+    },
+    // 双方向 UDP: 両端が同じサービス定義を使用。
+    "1031": {
+      "type": "unicast_bidir",
+      "src_addr1": "127.0.0.1",
+      "src_port": 5031,
+      "dst_addr1": "127.0.0.1",
+      "dst_port": 5032
+    },
+    "1041": {
+      "type": "unicast_bidir",
+      "src_addr1": "192.168.1.10",
+      "src_port": 5041,
+      "dst_addr1": "192.168.1.20",
+      "dst_port": 5042
+    },
+    "1051": {
+      "type": "unicast_bidir",
+      "src_addr1": "192.168.1.10",
+      "dst_addr1": "192.168.1.20",
+      "dst_port": 5052
+    },
+    "1055": {
+      "type": "unicast_bidir",
+      "src_port": 5055,
+      "dst_addr1": "192.168.1.20",
+      "dst_port": 5056
+    },
+    // N:1 双方向 UDP: 複数クライアントを受け入れる。
+    "1060": {
+      "type": "unicast_bidir_n1",
+      "dst_addr1": "127.0.0.1",
+      "dst_port": 5060
+    },
+    "1061": {
+      "type": "unicast_bidir_n1",
+      "dst_addr1": "192.168.1.20",
+      "dst_port": 5061
+    },
+    "1062": {
+      "type": "unicast_bidir_n1",
+      "dst_addr1": "192.168.1.20",
+      "dst_port": 5062,
+      "src_port": 6000
+    },
+    // マルチキャスト: グループ宛てに送信。
+    "2001": {
+      "type": "multicast",
+      "src_addr1": "127.0.0.1",
+      "dst_port": 6001,
+      "multicast_group": "239.0.0.1",
+      "ttl": 1
+    },
+    "2002": {
+      "type": "multicast",
+      "src_addr1": "192.168.1.10",
+      "dst_port": 6002,
+      "multicast_group": "239.0.0.2",
+      "ttl": 1
+    },
+    // ブロードキャスト: 同一ネットワークへ送信。
+    "3001": {
+      "type": "broadcast",
+      "src_addr1": "127.0.0.1",
+      "dst_port": 7001,
+      "broadcast_addr": "255.255.255.255"
+    },
+    "3002": {
+      "type": "broadcast",
+      "src_addr1": "192.168.1.10",
+      "dst_port": 7002,
+      "broadcast_addr": "192.168.1.255"
+    },
+    // 複数経路: 対応する送信元と宛先を番号で指定。
+    "1010": {
+      "type": "unicast",
+      "src_addr1": "192.168.1.10",
+      "dst_addr1": "192.168.1.20",
+      "src_addr2": "10.0.0.10",
+      "dst_addr2": "10.0.0.20",
+      "dst_port": 5010
+    },
+    "2010": {
+      "type": "multicast",
+      "src_addr1": "192.168.1.10",
+      "src_addr2": "10.0.0.10",
+      "dst_port": 6010,
+      "multicast_group": "239.0.0.10",
+      "ttl": 1
+    },
+    "3010": {
+      "type": "broadcast",
+      "src_addr1": "192.168.1.10",
+      "src_addr2": "10.0.0.10",
+      "dst_port": 7010,
+      "broadcast_addr": "255.255.255.255"
+    },
+    // RAW モード: 再送制御を使わない。
+    "1021": {
+      "type": "unicast_raw",
+      "src_addr1": "127.0.0.1",
+      "dst_addr1": "127.0.0.1",
+      "dst_port": 5021
+    },
+    "2021": {
+      "type": "multicast_raw",
+      "src_addr1": "127.0.0.1",
+      "dst_port": 6021,
+      "multicast_group": "239.0.0.21",
+      "ttl": 1
+    },
+    "3021": {
+      "type": "broadcast_raw",
+      "src_addr1": "192.168.1.10",
+      "dst_port": 7021,
+      "broadcast_addr": "255.255.255.255"
+    }
+  }
+}

@@ -39,21 +39,27 @@ class ConfigLineStream
             return nullptr;
         }
 
-        len = lines_[next_].size();
+        len = lines_[next_].size() - offset_;
         if (len >= (size_t)size)
         {
             len = (size_t)size - 1U;
         }
 
-        memcpy(buf, lines_[next_].data(), len);
+        memcpy(buf, lines_[next_].data() + offset_, len);
         buf[len] = '\0';
-        next_++;
+        offset_ += len;
+        if (offset_ == lines_[next_].size())
+        {
+            next_++;
+            offset_ = 0U;
+        }
         return buf;
     }
 
   private:
     std::vector<std::string> lines_;
     size_t next_ = 0U;
+    size_t offset_ = 0U;
 };
 
 #endif /* PORTER_CONFIG_TEST_HELPER_H */

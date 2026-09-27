@@ -29,13 +29,13 @@ extern "C"
 #endif /* __cplusplus */
 
     /**
-     *  @brief          設定ファイルから global セクションを読み込みます。
+     *  @brief          JSONC 設定ファイルから global オブジェクトを読み込みます。
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[out]     global      読み込み結果を格納する構造体へのポインター。
-     *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
-     *                  設定ファイルを開けない場合は POTR_ERR_IO を返します。
+     *  @return         成功時は POTR_OK、引数が NULL または構文が不正な場合は
+     *                  POTR_ERR_INVALID_ARGUMENT、設定ファイルを開けない場合は POTR_ERR_IO を返します。
      *
-     *  global セクションが存在しない場合はデフォルト値を設定します。
+     *  global オブジェクトが存在しない場合はデフォルト値を設定します。
      */
     extern int potr_internal_config_load_global(const char *config_path, potr_global_config *global);
 
@@ -44,12 +44,12 @@ extern "C"
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[in]      service_id  読み込むサービスの ID。
      *  @param[out]     def         読み込み結果を格納する構造体へのポインター。
-     *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
+     *  @return         成功時は POTR_OK、引数が NULL または構文が不正な場合は POTR_ERR_INVALID_ARGUMENT、
      *                  指定した service_id が存在しない場合は POTR_ERR_NOT_FOUND、
      *                  設定ファイルを開けない場合は POTR_ERR_IO を返します。
      *
-     *  [service.id] 形式のセクション名から id 部分を取得し、service_id と照合します。\n
-     *  サービスの識別子はセクション名の id であり、ポート番号とは無関係です。
+     *  services オブジェクトの十進 ID キーを service_id と照合します。\n
+     *  サービスの識別子はキーの ID であり、ポート番号とは無関係です。
      */
     extern int potr_internal_config_load_service(const char *config_path, int64_t service_id, potr_service_def *def);
 
@@ -59,7 +59,7 @@ extern "C"
      *  @param[out]     ids_out     サービス ID 配列へのポインターを格納する変数。
      *                              呼び出し元が cplat_free(*ids_out) の責務を持ちます。
      *  @param[out]     count_out   列挙したサービス ID 数。
-     *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
+     *  @return         成功時は POTR_OK、引数が NULL または構文が不正な場合は POTR_ERR_INVALID_ARGUMENT、
      *                  メモリを確保できない場合は POTR_ERR_OUT_OF_MEMORY、
      *                  設定ファイルを開けない場合は POTR_ERR_IO を返します。
      *

@@ -57,72 +57,29 @@ class PorterConfigBuilder
         return *this;
     }
 
-    /** unicast サービス エントリを追加する。 */
-    PorterConfigBuilder &addUnicastService(int64_t service_id, int port, const std::string &host = "127.0.0.1",
-                                           const std::string &encrypt_key = "")
+    PorterConfigBuilder &addUnicastService(int64_t id, int port, const std::string &host = "127.0.0.1",
+                                           const std::string &key = "")
     {
-        lines_.push_back("[service." + std::to_string(service_id) + "]");
-        lines_.push_back("type      = unicast");
-        lines_.push_back("src_addr1 = " + host);
-        lines_.push_back("dst_addr1 = " + host);
-        lines_.push_back("dst_port  = " + std::to_string(port));
-        if (!encrypt_key.empty())
-        {
-            lines_.push_back("encrypt_key = " + encrypt_key);
-        }
-        lines_.push_back("");
-        return *this;
+        return addService(id, "unicast", port, host, key, false, 0);
     }
 
-    /** unicast_bidir サービス エントリを追加する。 */
-    PorterConfigBuilder &addUnicastBidirService(int64_t service_id, int port, const std::string &host = "127.0.0.1",
-                                                const std::string &encrypt_key = "")
+    PorterConfigBuilder &addUnicastBidirService(int64_t id, int port, const std::string &host = "127.0.0.1",
+                                                const std::string &key = "")
     {
-        lines_.push_back("[service." + std::to_string(service_id) + "]");
-        lines_.push_back("type      = unicast_bidir");
-        lines_.push_back("src_addr1 = " + host);
-        lines_.push_back("dst_addr1 = " + host);
-        lines_.push_back("dst_port  = " + std::to_string(port));
-        if (!encrypt_key.empty())
-        {
-            lines_.push_back("encrypt_key = " + encrypt_key);
-        }
-        lines_.push_back("");
-        return *this;
+        return addService(id, "unicast_bidir", port, host, key, false, 0);
     }
 
-    /** unicast_bidir_n1 サービス エントリを追加する。 */
-    PorterConfigBuilder &addUnicastBidirN1Service(int64_t service_id, int port, int max_peers,
+    PorterConfigBuilder &addUnicastBidirN1Service(int64_t id, int port, int max_peers,
                                                   const std::string &bind_addr = "0.0.0.0",
-                                                  const std::string &encrypt_key = "")
+                                                  const std::string &key = "")
     {
-        lines_.push_back("[service." + std::to_string(service_id) + "]");
-        lines_.push_back("type      = unicast_bidir_n1");
-        lines_.push_back("dst_addr1 = " + bind_addr);
-        lines_.push_back("dst_port  = " + std::to_string(port));
-        lines_.push_back("max_peers = " + std::to_string(max_peers));
-        if (!encrypt_key.empty())
-        {
-            lines_.push_back("encrypt_key = " + encrypt_key);
-        }
-        lines_.push_back("");
-        return *this;
+        return addService(id, "unicast_bidir_n1", port, bind_addr, key, false, max_peers);
     }
 
-    /** tcp_bidir サービス エントリを追加する。 */
-    PorterConfigBuilder &addTcpBidirService(int64_t service_id, int port, const std::string &host = "127.0.0.1",
-                                            const std::string &encrypt_key = "")
+    PorterConfigBuilder &addTcpBidirService(int64_t id, int port, const std::string &host = "127.0.0.1",
+                                            const std::string &key = "")
     {
-        lines_.push_back("[service." + std::to_string(service_id) + "]");
-        lines_.push_back("type      = tcp_bidir");
-        lines_.push_back("dst_addr1 = " + host);
-        lines_.push_back("dst_port  = " + std::to_string(port));
-        if (!encrypt_key.empty())
-        {
-            lines_.push_back("encrypt_key = " + encrypt_key);
-        }
-        lines_.push_back("");
-        return *this;
+        return addService(id, "tcp_bidir", port, host, key, true, 0);
     }
 
     /**
@@ -134,8 +91,8 @@ class PorterConfigBuilder
         if (tmp_path_.empty())
         {
 #if defined(PLATFORM_LINUX)
-            char tmpl[] = "/tmp" PLATFORM_PATH_SEP "porter_test_XXXXXX.conf";
-            int fd = mkstemps(tmpl, 5); /* ".conf" = 5 文字 */
+            char tmpl[] = "/tmp" PLATFORM_PATH_SEP "porter_test_XXXXXX.json";
+            int fd = mkstemps(tmpl, 5); /* ".json" = 5 文字 */
             if (fd == -1)
             {
                 return "";
@@ -147,9 +104,9 @@ class PorterConfigBuilder
             GetTempPathA(sizeof(tmp_dir), tmp_dir);
             char tmp_file[PLATFORM_PATH_MAX] = {};
             GetTempFileNameA(tmp_dir, "ptr", 0, tmp_file);
-            /* .conf 拡張子に変更 */
-            tmp_path_ = std::string(tmp_file) + ".conf";
-            /* GetTempFileName が作成した元ファイルを削除して .conf で作り直す */
+            /* .json 拡張子に変更 */
+            tmp_path_ = std::string(tmp_file) + ".json";
+            /* GetTempFileName が作成した元ファイルを削除して .json で作り直す */
             DeleteFileA(tmp_file);
 #endif /* PLATFORM_ */
         }
@@ -160,21 +117,17 @@ class PorterConfigBuilder
             return "";
         }
 
-        /* global セクション (テスト向けに短いタイムアウト) */
-        cplat_fprintf(f, "[global]\n");
-        cplat_fprintf(f, "window_size             = 16\n");
-        cplat_fprintf(f, "max_payload             = 1400\n");
-        cplat_fprintf(f, "udp_health_interval_ms  = %u\n", udp_health_interval_ms_);
-        cplat_fprintf(f, "udp_health_timeout_ms   = %u\n", udp_health_timeout_ms_);
-        cplat_fprintf(f, "tcp_health_interval_ms  = %u\n", tcp_health_interval_ms_);
-        cplat_fprintf(f, "tcp_health_timeout_ms   = %u\n", tcp_health_timeout_ms_);
-        cplat_fprintf(f, "tcp_close_timeout_ms    = %u\n", tcp_close_timeout_ms_);
-        cplat_fprintf(f, "\n");
-
-        for (const auto &line : lines_)
+        cplat_fprintf(f, "// テスト用の共通設定\n{\"global\":{\"window_size\":16,\"max_payload\":1400,");
+        cplat_fprintf(f, "\"udp_health_interval_ms\":%u,", udp_health_interval_ms_);
+        cplat_fprintf(f, "\"udp_health_timeout_ms\":%u,", udp_health_timeout_ms_);
+        cplat_fprintf(f, "\"tcp_health_interval_ms\":%u,", tcp_health_interval_ms_);
+        cplat_fprintf(f, "\"tcp_health_timeout_ms\":%u,", tcp_health_timeout_ms_);
+        cplat_fprintf(f, "\"tcp_close_timeout_ms\":%u},\"services\":{", tcp_close_timeout_ms_);
+        for (size_t i = 0; i < services_.size(); i++)
         {
-            cplat_fprintf(f, "%s\n", line.c_str());
+            cplat_fprintf(f, "%s%s", i == 0 ? "" : ",", services_[i].c_str());
         }
+        cplat_fprintf(f, "}}\n");
         fclose(f);
 
         return tmp_path_;
@@ -201,7 +154,27 @@ class PorterConfigBuilder
     uint32_t udp_health_timeout_ms_ = 3000U;
     uint32_t tcp_health_interval_ms_ = 1000U;
     uint32_t tcp_health_timeout_ms_ = 3000U;
-    std::vector<std::string> lines_;
+    PorterConfigBuilder &addService(int64_t id, const std::string &type, int port, const std::string &host,
+                                    const std::string &key, bool tcp, int max_peers)
+    {
+        std::string entry = "\"" + std::to_string(id) + "\":{\"type\":\"" + type +
+                            "\",\"dst_port\":" + std::to_string(port) + ",\"dst_addr1\":\"" + host + "\"";
+        if (!tcp && max_peers == 0)
+        {
+            entry += ",\"src_addr1\":\"" + host + "\"";
+        }
+        if (max_peers > 0)
+        {
+            entry += ",\"max_peers\":" + std::to_string(max_peers);
+        }
+        if (!key.empty())
+        {
+            entry += ",\"encrypt_key\":\"" + key + "\"";
+        }
+        services_.push_back(entry + "}");
+        return *this;
+    }
+    std::vector<std::string> services_;
     std::string tmp_path_;
     uint32_t tcp_close_timeout_ms_ = 5000U;
     uint32_t _pad_tcp_close_timeout_ = 0U;

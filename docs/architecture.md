@@ -618,10 +618,10 @@ cplat_condvar    *health_wakeup;
 
 ```c
 /* SENDER 側 (設定ファイル使用) */
-potr_service_open_from_config("config.conf", 4020, POTR_ROLE_SENDER, on_recv, &handle);
+potr_service_open_from_config("porter-services.jsonc", 4020, POTR_ROLE_SENDER, on_recv, &handle);
 
 /* RECEIVER 側 (設定ファイル使用) */
-potr_service_open_from_config("config.conf", 4020, POTR_ROLE_RECEIVER, on_recv, &handle);
+potr_service_open_from_config("porter-services.jsonc", 4020, POTR_ROLE_RECEIVER, on_recv, &handle);
 ```
 
 ## 通信種別の比較

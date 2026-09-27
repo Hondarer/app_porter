@@ -68,7 +68,7 @@ TEST(configListServiceIdsTest, returnsIoErrorWhenFileCannotBeOpened)
         actual_ret_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_IO であること。
 }
 
-// 設定ファイルから service セクションのみを列挙し、既定容量 (64 件) を超える場合も動的に領域を拡張して全 ID を取得できることの確認
+// 設定ファイルから services のサービス ID のみを列挙し、既定容量 (64 件) を超える場合も動的に領域を拡張して全 ID を取得できることの確認
 TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCapacity)
 {
     // Arrange
@@ -78,15 +78,13 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
     int64_t *ids = nullptr;
     int count = 0;
 
-    config_lines.emplace_back("[global]\n");
-    config_lines.emplace_back("window_size = 16\n");
-    config_lines.emplace_back("[misc]\n");
-    config_lines.emplace_back("name = ignored\n");
+    config_lines.emplace_back("{\"global\":{\"window_size\":16},\"services\":{");
     for (int i = 0; i < 70; i++)
     {
-        config_lines.emplace_back("[service." + std::to_string(1000 + i) + "]\n");
-        config_lines.emplace_back("dst_port = 5001\n");
+        config_lines.emplace_back((i == 0 ? "" : ",") + std::string("\"") +
+                                  std::to_string(1000 + i) + "\":{\"dst_port\":5001}");
     }
+    config_lines.emplace_back("}}");
 
     ConfigLineStream lines(config_lines);
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
@@ -94,7 +92,7 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [状態] - fgets が呼び出された際に 70 個の service section を含む行列を返すようにモックを設定する。
+            })); // [状態] - fgets が呼び出された際に 70 個の service 定義を含む JSONC を返すようにモックを設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
@@ -105,13 +103,13 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
 
     // Act
     int actual_ret = potr_internal_config_list_service_ids("config.conf", &ids,
-                                      &count); // [手順] - 複数 service section を含む設定から ID を列挙する。
+                                      &count); // [手順] - 複数 service 定義を含む設定から ID を列挙する。
 
     // Assert
     ASSERT_EQ(POTR_OK,
               actual_ret);           // [確認_正常系] - potr_internal_config_list_service_ids の戻り値から、列挙に成功したと判断できること。
     ASSERT_NE(nullptr, ids);  // [確認_正常系] - service ID 配列が確保されること。
-    EXPECT_EQ(70, count);     // [確認_正常系] - 非 service section を除いた 70 件が列挙されること。
+    EXPECT_EQ(70, count);     // [確認_正常系] - 70 件の service ID が列挙されること。
     EXPECT_EQ(1000, ids[0]);  // [確認_正常系] - 先頭 service ID を保持すること。
     EXPECT_EQ(1069, ids[69]); // [確認_正常系] - 64 件超でも末尾 service ID を保持すること。
 

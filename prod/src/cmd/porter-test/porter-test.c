@@ -34,9 +34,9 @@
  *
  *  @par            使用例
     @code{.sh}
-    porter-test sender porter-services.conf 10
-    porter-test receiver porter-services.conf 10
-    porter-test -l INFO sender porter-services.conf 10
+    porter-test sender porter-services.jsonc 10
+    porter-test receiver porter-services.jsonc 10
+    porter-test -l INFO sender porter-services.jsonc 10
     porter-test
     @endcode
  *

@@ -208,7 +208,7 @@ extern "C"
         }
 
         potr_context * handle;
-        if (potr_service_open_from_config("porter-services.conf", 1001,
+        if (potr_service_open_from_config("porter-services.jsonc", 1001,
                                       POTR_ROLE_RECEIVER, on_recv, &handle) == POTR_OK) {
             // 受信待機中 (受信スレッドが動作)
             potr_service_close(handle);
@@ -218,7 +218,7 @@ extern "C"
      *  @par            使用例 (送信者)
         @code{.c}
         potr_context * handle;
-        if (potr_service_open_from_config("porter-services.conf", 1001,
+        if (potr_service_open_from_config("porter-services.jsonc", 1001,
                                       POTR_ROLE_SENDER, NULL, &handle) == POTR_OK) {
             potr_send(handle, POTR_PEER_NA, "hello", 5, 0);
             potr_service_close(handle);
@@ -442,11 +442,11 @@ extern "C"
      *  @par            使用例
         @code{.c}
         potr_type type;
-        if (potr_service_get_type("porter-services.conf", 1031, &type) == POTR_OK) {
+        if (potr_service_get_type("porter-services.jsonc", 1031, &type) == POTR_OK) {
             if (type == POTR_TYPE_UNICAST_BIDIR) {
                 // unicast_bidir: コールバックが必須
-                potr_service_open("porter-services.conf", 1031,
-                                POTR_ROLE_SENDER, on_recv, &handle);
+                potr_service_open_from_config("porter-services.jsonc", 1031,
+                                            POTR_ROLE_SENDER, on_recv, &handle);
             }
         }
         @endcode

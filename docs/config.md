@@ -2,7 +2,7 @@
 
 ## 概要
 
-porter は INI 形式のテキスト ファイルでサービスを定義します。  
+porter は JSONC 形式のテキスト ファイルでサービスを定義します。サンプル ファイルの拡張子には `.jsonc` を使用します。ファイル名による形式の制限はなく、`.json` のファイルも読み込めます。  
 1 つの設定ファイルに定義できるサービス数に上限はありません (初期バッファー容量は 64 で、超過時は自動拡張されます)。
 
 `potr_service_open_from_config()` 呼び出し時にファイルを読み込み、指定した `service_id` のエントリを使用します。  
@@ -11,19 +11,27 @@ porter は INI 形式のテキスト ファイルでサービスを定義しま�
 
 ## ファイル形式
 
-```ini
-[global]
-キー = 値
-
-[service.サービスID]
-キー = 値
+```jsonc
+{
+  // 全サービス共通の設定
+  "global": {
+    "window_size": 16,
+  },
+  "services": {
+    // キーはサービス ID の十進文字列
+    "1001": {
+      "type": "unicast",
+      "src_addr1": "127.0.0.1",
+      "dst_addr1": "127.0.0.1",
+      "dst_port": 5001,
+    }
+  }
+}
 ```
 
-- セクション名は `[global]` と `[service.数値]` の 2 種類です。
-- コメントは `#` または `;` で始まる行です。
-- 値前後の空白は無視されます。
+`global` は共通設定、`services` はサービス ID を十進文字列のキーとするオブジェクトです。ID は符号付き 64 ビット整数の範囲で指定します。ポート番号や時間などは JSON の整数、通信種別やアドレス、暗号鍵は JSON の文字列で記載します。`//` と `/* ... */` のコメント、およびオブジェクトや配列の末尾カンマを使用できます。存在しない項目には既定値を適用します。構文が不正なファイルは `POTR_ERR_INVALID_ARGUMENT` を返します。
 
-## global セクション
+## global オブジェクト
 
 すべてのサービスに適用されるグローバル設定です。
 
@@ -40,7 +48,7 @@ porter は INI 形式のテキスト ファイルでサービスを定義しま�
 | `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potr_service_close()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送信し、本値以内に `FIN_ACK` が返信されなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む |
 | `reorder_timeout_ms` | uint32 | 0 | 受信ウィンドウで欠番を検出してから NACK 送出 (通常モード) または DISCONNECTED 発行 (RAW モード) を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 で即時 (デフォルト)。推奨値: LAN/マルチパス = 10〜30 ms、遠距離 WAN = 30〜100 ms |
 
-Table: global セクションの設定項目一覧
+Table: global オブジェクトの設定項目一覧
 
 ### window_size の影響
 
@@ -89,7 +97,7 @@ Table: 通信種別ごとの実効並べ替えタイムアウト
 
 ### health_interval_ms と health_timeout_ms の関係
 
-グローバル設定の `udp_*` / `tcp_*` は、コードの組み込みデフォルトに次ぐ「サービス定義へ適用する既定値」です。最終的な動作は、通信種別に応じて選ばれたグローバル既定値に対し、`[service.N]` の `health_interval_ms` / `health_timeout_ms` を重ねた実効値で決まります。実効 `health_interval_ms > 0` のとき、片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時だけ PING を送信し、双方向 UDP は設定周期で PING を送信します。TCP は実効 `health_interval_ms` にかかわらず接続直後に bootstrap PING を送信し、`health_interval_ms > 0` のときだけ定周期 PING と timeout 監視を有効にします。
+グローバル設定の `udp_*` / `tcp_*` は、コードの組み込みデフォルトに次ぐ「サービス定義へ適用する既定値」です。最終的な動作は、通信種別に応じて選ばれたグローバル既定値に対し、`services` 内にあるサービスの `health_interval_ms` / `health_timeout_ms` を重ねた実効値で決まります。実効 `health_interval_ms > 0` のとき、片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時だけ PING を送信し、双方向 UDP は設定周期で PING を送信します。TCP は実効 `health_interval_ms` にかかわらず接続直後に bootstrap PING を送信し、`health_interval_ms > 0` のときだけ定周期 PING と timeout 監視を有効にします。
 
 | 通信モデル / 種別 | PING 送信 | タイムアウト監視 |
 |---|---|---|
@@ -113,17 +121,17 @@ Table: 通信モデル別のヘルスチェック動作
 
 Table: ヘルスチェック設定値とその効果
 
-## service.N セクション
+## services の各サービス
 
-`N` には整数のサービス ID を指定します。
+`services` のキーには、十進文字列のサービス ID を指定します。
 
 ### 全通信種別で共通のフィールド
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
 | `type` | 文字列 | 必須 | `unicast` / `multicast` / `broadcast` / `unicast_raw` / `multicast_raw` / `broadcast_raw` / `unicast_bidir` / `unicast_bidir_n1` / `tcp` / `tcp_bidir` |
-| `dst_port` | uint16 | 必須 | 宛先ポート番号 (サービスの識別子) |
-| `src_addr` | 文字列 | 条件付き | 通常は送信元 bind アドレスまたは受信側の送信元 IP フィルター。`unicast_bidir` では SENDER・RECEIVER ともに省略可能 (各役割の省略時動作は後述) |
+| `dst_port` | uint16 | 必須 | 宛先ポート番号。サービス ID とは独立して指定します。 |
+| `src_addr1` | 文字列 | 条件付き | 通常は送信元 bind アドレスまたは受信側の送信元 IP フィルター。`unicast_bidir` では SENDER・RECEIVER ともに省略可能 (各役割の省略時動作は後述) |
 | `src_port` | uint16 | 省略可 | 送信者の送信元 bind ポート (0 = OS が自動選定) |
 | `health_interval_ms` | uint32 | 省略可 | グローバルの `udp_health_interval_ms` または `tcp_health_interval_ms` をサービス単位でオーバーライドします。 |
 | `health_timeout_ms`  | uint32 | 省略可 | グローバルの `udp_health_timeout_ms` または `tcp_health_timeout_ms` をサービス単位でオーバーライドします。 |
@@ -136,7 +144,7 @@ Table: 全通信種別共通のサービス設定項目
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
-| `dst_addr` | 文字列 | 必須 | 送信者: 送信先アドレス。受信者: bind アドレス |
+| `dst_addr1` | 文字列 | 必須 | 送信者: 送信先アドレス。受信者: bind アドレス |
 
 Table: unicast 専用の設定項目
 
@@ -174,18 +182,18 @@ RAW モードでもスライディング ウィンドウによる **順序整列
 
 | src 情報の指定 | SENDER の bind 動作 | RECEIVER の bind 動作 | 送信元フィルター |
 |---|---|---|---|
-| `src_addr` + `src_port` 指定 | `src_addr:src_port` で bind | `dst_addr:dst_port` で bind | アドレス + ポート |
-| `src_addr` のみ指定 | `src_addr:エフェメラル` で bind | `dst_addr:dst_port` で bind | アドレスのみ |
-| `src_addr` 省略 (SENDER) | `INADDR_ANY:src_port` で bind (OS がアダプターを自動選択) | — | なし |
-| `src_addr` 省略 (RECEIVER) | — | `dst_addr:dst_port` で bind し、最初の受信パケットから SENDER のアドレスを動的学習します。 | なし (学習後は学習アドレスから受信) |
+| `src_addr1` + `src_port` 指定 | `src_addr1:src_port` で bind | `dst_addr1:dst_port` で bind | アドレス + ポート |
+| `src_addr1` のみ指定 | `src_addr1:エフェメラル` で bind | `dst_addr1:dst_port` で bind | アドレスのみ |
+| `src_addr1` 省略 (SENDER) | `INADDR_ANY:src_port` で bind (OS がアダプターを自動選択) | — | なし |
+| `src_addr1` 省略 (RECEIVER) | — | `dst_addr1:dst_port` で bind し、最初の受信パケットから SENDER のアドレスを動的学習します。 | なし (学習後は学習アドレスから受信) |
 
 Table: unicast_bidir の送信元指定に応じた bind およびフィルター動作
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
-| `src_addr` | 文字列 | 省略可 | SENDER: 省略時は `INADDR_ANY` で bind し OS がアダプターを自動選択。RECEIVER: 省略時は SENDER アドレスを動的学習します。 |
+| `src_addr1` | 文字列 | 省略可 | SENDER: 省略時は `INADDR_ANY` で bind し OS がアダプターを自動選択。RECEIVER: 省略時は SENDER アドレスを動的学習します。 |
 | `src_port` | uint16 | 省略可 | SENDER の bind ポート。`0` または省略でエフェメラル ポートを使用し、RECEIVER がパケット受信後に動的学習します。 |
-| `dst_addr` | 文字列 | 条件付き | SENDER: 送信先アドレス。RECEIVER: bind アドレス。省略時は `INADDR_ANY` で bind します。 |
+| `dst_addr1` | 文字列 | 条件付き | SENDER: 送信先アドレス。RECEIVER: bind アドレス。省略時は `INADDR_ANY` で bind します。 |
 | `dst_port` | uint16 | 必須 | SENDER: 送信先ポート (RECEIVER の bind ポート) |
 
 Table: unicast_bidir 専用の設定項目
@@ -196,7 +204,7 @@ Table: unicast_bidir 専用の設定項目
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
-| `dst_addr` | 文字列 | 省略可 | サーバーの bind アドレス。省略時は `INADDR_ANY` で bind します。 |
+| `dst_addr1` | 文字列 | 省略可 | サーバーの bind アドレス。省略時は `INADDR_ANY` で bind します。 |
 | `dst_port` | uint16 | 必須 | サーバーの受信ポート |
 | `src_port` | uint16 | 省略可 | 送信元ポート フィルター。`0` または省略でフィルターなし (全クライアント受け入れ) |
 | `max_peers` | uint32 | 省略可 | 最大同時接続クライアント数。既定値は `1024` |
@@ -207,9 +215,9 @@ Table: unicast_bidir_n1 専用の設定項目
 
 | キー | 型 | 必須 | デフォルト | 説明 |
 |---|---|---|---|---|
-| `dst_addr` | 文字列 | 必須 | — | SENDER: 接続先アドレス (ホスト名可)。RECEIVER: bind アドレス |
+| `dst_addr1` | 文字列 | 必須 | — | SENDER: 接続先アドレス (ホスト名可)。RECEIVER: bind アドレス |
 | `dst_port` | uint16 | 必須 | — | SENDER: 接続先ポート。RECEIVER: listen ポート |
-| `src_addr` | 文字列 | 省略可 | — | SENDER: ローカル bind アドレス (省略で自動選択)。RECEIVER: 接続元 IP フィルター (省略でフィルターなし) |
+| `src_addr1` | 文字列 | 省略可 | — | SENDER: ローカル bind アドレス (省略で自動選択)。RECEIVER: 接続元 IP フィルター (省略でフィルターなし) |
 | `src_port` | uint16 | 省略可 | 0 | SENDER: ローカル bind ポート (`0` または省略でエフェメラル)。RECEIVER: 接続元ポート フィルター (`0` または省略でフィルターなし) |
 | `reconnect_interval_ms` | uint32 | 省略可 | 5,000 | SENDER の自動再接続間隔 (ms)。`0` で自動再接続なし。RECEIVER では無視 |
 | `connect_timeout_ms` | uint32 | 省略可 | 10,000 | SENDER の TCP 接続タイムアウト (ms)。`0` で OS デフォルト。RECEIVER では無視 |
@@ -228,38 +236,44 @@ Table: TCP 通信で無視される UDP 専用設定項目
 
 ### TCP マルチパス設定
 
-`dst_addr` 〜 `dst_addr.3` (最大 4 エントリ) に接続先アドレスを設定すると、  
+`dst_addr1` 〜 `dst_addr4` (最大 4 エントリ) に接続先アドレスを設定すると、  
 各エントリに対して独立した TCP 接続 (path) が確立されます。  
 エントリが 1 つのみの場合は単一接続として動作します。
 
-```ini
-[service.1]
-type         = tcp
-dst_addr     = 192.168.1.10   # path 0
-dst_addr.1   = 192.168.2.10   # path 1
-dst_port     = 5000
-src_addr     = 192.168.1.20   # path 0 の bind アドレス
-src_addr.1   = 192.168.2.20   # path 1 の bind アドレス
+```jsonc
+{
+  "services": {
+    // TCP の経路ごとに送信元と宛先を指定
+    "1": {
+      "type": "tcp",
+      "dst_addr1": "192.168.1.10",
+      "dst_addr2": "192.168.2.10",
+      "dst_port": 5000,
+      "src_addr1": "192.168.1.20",
+      "src_addr2": "192.168.2.20"
+    }
+  }
+}
 ```
 
-#### SENDER の bind 動作 (src_addr / src_port の組み合わせ)
+#### SENDER の bind 動作 (src_addr1 / src_port の組み合わせ)
 
 各 path[i] に独立して適用されます。
 
-| `src_addr` | `src_port` | `connect()` 前の `bind()` 動作 |
+| `src_addr1` | `src_port` | `connect()` 前の `bind()` 動作 |
 |---|---|---|
 | 未指定 | `0` または省略 | `bind()` しない |
 | 未指定 | 指定 | `INADDR_ANY:src_port` で bind |
-| 指定 | `0` または省略 | `src_addr:0` (エフェメラル ポート) で bind |
-| 指定 | 指定 | `src_addr:src_port` で bind |
+| 指定 | `0` または省略 | `src_addr1:0` (エフェメラル ポート) で bind |
+| 指定 | 指定 | `src_addr1:src_port` で bind |
 
 Table: TCP SENDER における送信元指定別の bind 動作
 
-#### RECEIVER の接続フィルター動作 (src_addr / src_port の組み合わせ)
+#### RECEIVER の接続フィルター動作 (src_addr1 / src_port の組み合わせ)
 
 各 path[i] の `accept()` 後に接続元を検証します。
 
-| `src_addr` | `src_port` | フィルター動作 |
+| `src_addr1` | `src_port` | フィルター動作 |
 |---|---|---|
 | 未指定 | `0` または省略 | 全接続を受理 |
 | 未指定 | 指定 | 接続元ポートが一致する接続のみ受理 |
@@ -324,12 +338,14 @@ Table: GCM ノンスのフィールド構成
 
 Table: パケット種別別の flags 値一覧
 
-`src_addr`・`dst_addr` には以下のいずれかを指定できます。
+### アドレスの指定形式と DNS 解決
+
+`src_addr1` 〜 `src_addr4`、`dst_addr1` 〜 `dst_addr4` には以下のいずれかを指定できます。
 
 - **IPv4 アドレス** (例: `192.168.1.10`)
 - **DNS で解決できるホスト名** (例: `receiver.local`)
 
-### DNS 解決のポリシー
+#### DNS 解決のポリシー
 
 | 項目 | 仕様 |
 |---|---|
@@ -351,24 +367,24 @@ title unicast のソケット bind / sendto
 participant "送信者\nsrc_addr:src_port" as S
 participant "受信者\ndst_addr:dst_port" as R
 
-note over S: bind(src_addr, src_port)\n src_port=0 → OS 自動選定
-note over R: bind(dst_addr, dst_port)
+note over S: bind(src_addr1, src_port)\n src_port=0 → OS 自動選定
+note over R: bind(dst_addr1, dst_port)
 
-S -> R: sendto(dst_addr, dst_port)\nDATA / PING / FIN
-R -> S: sendto(src_addr, src_port)\nNACK (NACK 送信元は dst_addr:dst_port)
+S -> R: sendto(dst_addr1, dst_port)\nDATA / PING / FIN
+R -> S: sendto(src_addr1, src_port)\nNACK (NACK 送信元は dst_addr1:dst_port)
 @enduml
 ```
 
 | | 送信者 | 受信者 |
 |---|---|---|
-| bind アドレス | `src_addr` | `dst_addr` |
+| bind アドレス | `src_addr1` | `dst_addr1` |
 | bind ポート | `src_port` (0 = OS 自動) | `dst_port` |
-| 送信先 | `dst_addr:dst_port` | — |
-| 送信元フィルター | — | `src_addr` |
+| 送信先 | `dst_addr1:dst_port` | — |
+| 送信元フィルター | — | `src_addr1` |
 
 Table: unicast (1:1) のソケット動作仕様
 
-受信者は `dst_addr` でソケットを bind するため、`dst_addr` は当該ホストの NIC に割り当てられているアドレスでなければなりません。
+受信者は `dst_addr1` でソケットを bind するため、`dst_addr1` は当該ホストの NIC に割り当てられているアドレスでなければなりません。
 
 ### unicast_bidir
 
@@ -381,21 +397,21 @@ title unicast_bidir 1:1 のソケット bind / sendto
 participant "Side A\n(POTR_ROLE_SENDER)\nsrc_addr=A, src_port=PA" as A
 participant "Side B\n(POTR_ROLE_RECEIVER)\ndst_addr=B, dst_port=PB" as B
 
-note over A: bind(src_addr=A, src_port=PA または 0)
-note over B: bind(dst_addr=B, dst_port=PB)
+note over A: bind(src_addr1=A, src_port=PA または 0)
+note over B: bind(dst_addr1=B, dst_port=PB)
 
-A -> B: sendto(dst_addr=B, dst_port=PB)\nDATA / PING 要求 / PING 応答 / NACK / REJECT
-B -> A: sendto(dst_addr=A, learned or configured port)\nDATA / PING 要求 / PING 応答 / NACK / REJECT
+A -> B: sendto(dst_addr1=B, dst_port=PB)\nDATA / PING 要求 / PING 応答 / NACK / REJECT
+B -> A: sendto(dst_addr1=A, learned or configured port)\nDATA / PING 要求 / PING 応答 / NACK / REJECT
 @enduml
 ```
 
 | | Side A (SENDER) | Side B (RECEIVER) |
 |---|---|---|
-| bind アドレス | `src_addr` | `dst_addr` |
+| bind アドレス | `src_addr1` | `dst_addr1` |
 | bind ポート | `src_port` (省略可、`0` でエフェメラル) | `dst_port` |
-| 送信先アドレス | `dst_addr` | `src_addr` (省略時は最初の受信パケットから動的学習) |
+| 送信先アドレス | `dst_addr1` | `src_addr1` (省略時は最初の受信パケットから動的学習) |
 | 送信先ポート | `dst_port` | `src_port` (`0` / 省略時は受信した送信元ポートを動的学習) |
-| 送信元フィルター | — | `src_addr` 指定時はアドレスを照合。省略時は動的学習後に学習済みアドレスを照合 |
+| 送信元フィルター | — | `src_addr1` 指定時はアドレスを照合。省略時は動的学習後に学習済みアドレスを照合 |
 
 Table: unicast_bidir (1:1) のソケット動作仕様
 
@@ -409,12 +425,12 @@ participant "Client A\n(unicast_bidir 1:1)" as CA
 participant "Client B\n(unicast_bidir 1:1)" as CB
 participant "Server\n(unicast_bidir_n1\nPOTR_ROLE_RECEIVER)" as S
 
-note over S: bind(dst_addr, dst_port)\ndst_addr 省略時は INADDR_ANY
+note over S: bind(dst_addr1, dst_port)\ndst_addr 省略時は INADDR_ANY
 note over CA: unicast_bidir クライアント
 note over CB: unicast_bidir クライアント
 
-CA -> S: sendto(server dst_addr, dst_port)\nDATA / PING / NACK / REJECT
-CB -> S: sendto(server dst_addr, dst_port)\nDATA / PING / NACK / REJECT
+CA -> S: sendto(server dst_addr1, dst_port)\nDATA / PING / NACK / REJECT
+CB -> S: sendto(server dst_addr1, dst_port)\nDATA / PING / NACK / REJECT
 S -> CA: sendto(recvfrom で学習した送信元)\nDATA / PING / NACK / REJECT
 S -> CB: sendto(recvfrom で学習した送信元)\nDATA / PING / NACK / REJECT
 @enduml
@@ -422,9 +438,9 @@ S -> CB: sendto(recvfrom で学習した送信元)\nDATA / PING / NACK / REJECT
 
 | | N:1 サーバー (unicast_bidir_n1) | クライアント (unicast_bidir) |
 |---|---|---|
-| bind アドレス | `dst_addr` (省略時 `INADDR_ANY`) | `src_addr` |
+| bind アドレス | `dst_addr1` (省略時 `INADDR_ANY`) | `src_addr1` |
 | bind ポート | `dst_port` | `src_port` (省略可) |
-| 送信先 | `recvfrom` で学習した各ピアの送信元 | `dst_addr:dst_port` |
+| 送信先 | `recvfrom` で学習した各ピアの送信元 | `dst_addr1:dst_port` |
 | 送信元フィルター | `src_port` 指定時のみポートで照合 | — |
 | 最大接続数 | `max_peers` | — |
 
@@ -442,13 +458,13 @@ participant "送信者\nsrc_addr" as S
 participant "受信者 A\nsrc_addr_A" as RA
 participant "受信者 B\nsrc_addr_B" as RB
 
-note over S: bind(INADDR_ANY, src_port)\n IP_MULTICAST_IF = src_addr
+note over S: bind(INADDR_ANY, src_port)\n IP_MULTICAST_IF = src_addr1
 note over RA: bind(INADDR_ANY, dst_port)\n グループ参加: src_addr_A
 note over RB: bind(INADDR_ANY, dst_port)\n グループ参加: src_addr_B
 
 S -> RA: sendto(multicast_group, dst_port)\nDATA / PING
 S -> RB: sendto(multicast_group, dst_port)\nDATA / PING
-RA -> S: sendto(src_addr, src_port)\nNACK (全パスからユニキャスト)
+RA -> S: sendto(src_addr1, src_port)\nNACK (全パスからユニキャスト)
 @enduml
 ```
 
@@ -456,9 +472,9 @@ RA -> S: sendto(src_addr, src_port)\nNACK (全パスからユニキャスト)
 |---|---|---|
 | bind アドレス | `INADDR_ANY` | `INADDR_ANY` |
 | bind ポート | `src_port` (0 = OS 自動) | `dst_port` |
-| マルチキャスト設定 | `IP_MULTICAST_IF = src_addr` | グループ参加: `src_addr` (NIC 指定) |
+| マルチキャスト設定 | `IP_MULTICAST_IF = src_addr1` | グループ参加: `src_addr1` (NIC 指定) |
 | 送信先 | `multicast_group:dst_port` | — |
-| 送信元フィルター | — | `src_addr` |
+| 送信元フィルター | — | `src_addr1` |
 
 Table: multicast (1:N) のソケット動作仕様
 
@@ -466,11 +482,11 @@ Table: multicast (1:N) のソケット動作仕様
 
 | | 送信者 | 受信者 |
 |---|---|---|
-| bind アドレス | `src_addr` | `INADDR_ANY` |
+| bind アドレス | `src_addr1` | `INADDR_ANY` |
 | bind ポート | `src_port` (0 = OS 自動) | `dst_port` |
 | ソケット オプション | `SO_BROADCAST` 有効 | `SO_BROADCAST` 有効 |
 | 送信先 | `broadcast_addr:dst_port` | — |
-| 送信元フィルター | — | `src_addr` |
+| 送信元フィルター | — | `src_addr1` |
 
 Table: broadcast (1:N) のソケット動作仕様
 
@@ -483,8 +499,8 @@ title tcp のソケット connect / accept
 participant "SENDER\n(TCP クライアント)" as S
 participant "RECEIVER\n(TCP サーバー)" as R
 
-note over R: bind(dst_addr, dst_port)\nlisten()
-note over S: connect(dst_addr, dst_port)
+note over R: bind(dst_addr1, dst_port)\nlisten()
+note over S: connect(dst_addr1, dst_port)
 S -> R: TCP 3way handshake
 note over R: accept() → 接続ソケット取得
 @enduml
@@ -493,7 +509,7 @@ note over R: accept() → 接続ソケット取得
 | | SENDER | RECEIVER |
 |---|---|---|
 | ソケット種別 | `SOCK_STREAM` | `SOCK_STREAM` |
-| 動作 | `connect(dst_addr, dst_port)` | `bind(dst_addr, dst_port)` → `listen()` → `accept()` |
+| 動作 | `connect(dst_addr1, dst_port)` | `bind(dst_addr1, dst_port)` → `listen()` → `accept()` |
 | listen ソケット | なし | あり (接続待機専用) |
 | 接続ソケット | `connect()` の fd | `accept()` の fd |
 
@@ -505,10 +521,10 @@ RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を
 
 受信スレッドは通信種別とモードに応じて送信元を検査します。
 
-- `unicast` / `multicast` / `broadcast`: `src_addr` を用いて送信元 IP アドレスを照合します
-- `unicast_bidir` (src_addr 指定): `src_addr` で送信元 IP アドレスを照合します
-- `unicast_bidir` (src_addr 省略・RECEIVER 動的学習): 学習前は全パケットを受理、学習後は学習済みアドレスから受信します。セッション追跡により 1:1 が保証されます
-- `unicast_bidir_n1`: `src_addr` は照合しません。`src_port` が 0 以外のときのみ送信元ポートを照合します
+- `unicast` / `multicast` / `broadcast`: `src_addr1` を用いて送信元 IP アドレスを照合します
+- `unicast_bidir` (src_addr1 指定): `src_addr1` で送信元 IP アドレスを照合します
+- `unicast_bidir` (src_addr1 省略・RECEIVER 動的学習): 学習前は全パケットを受理、学習後は学習済みアドレスから受信します。セッション追跡により 1:1 が保証されます
+- `unicast_bidir_n1`: `src_addr1` は照合しません。`src_port` が 0 以外のときのみ送信元ポートを照合します
 
 一致しないパケットはアプリケーション層で破棄します。
 
@@ -516,8 +532,8 @@ RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を
 
 | 用途 | 推奨する type |
 |---|---|
-| 双方向 1:1 通信 (相手アドレス既知) | `unicast_bidir` (src_addr あり) |
-| RECEIVER が SENDER のアドレスを事前に知らない 1:1 | `unicast_bidir` (RECEIVER 側 src_addr 省略) |
+| 双方向 1:1 通信 (相手アドレス既知) | `unicast_bidir` (src_addr1 あり) |
+| RECEIVER が SENDER のアドレスを事前に知らない 1:1 | `unicast_bidir` (RECEIVER 側 src_addr1 省略) |
 | 複数クライアントを同時に受け入れる N:1 サーバー | `unicast_bidir_n1` |
 
 Table: 用途別の推奨通信種別
@@ -527,178 +543,156 @@ Table: 用途別の推奨通信種別
 最大 4 経路を並列に設定できます。  
 各経路は独立した UDP ソケットを持ちます。
 
-```ini
-[service.1001]
-type     = unicast
-
-; 経路 0
-src_addr = 192.168.1.20
-dst_addr = 192.168.1.10
-dst_port = 5001
-
-; 経路 1
-src_addr.1 = 10.0.0.20
-dst_addr.1 = 10.0.0.10
-
-; 経路 2
-src_addr.2 = 172.16.0.20
-dst_addr.2 = 172.16.0.10
+```jsonc
+// マルチパス設定の例
+{
+  "services": {
+    "1001": {
+      "type": "unicast",
+      "src_addr1": "192.168.1.20",
+      "dst_addr1": "192.168.1.10",
+      "dst_port": 5001,
+      "src_addr2": "10.0.0.20",
+      "dst_addr2": "10.0.0.10",
+      "src_addr3": "172.16.0.20",
+      "dst_addr3": "172.16.0.10"
+    }
+  }
+}
 ```
 
 マルチパスを使用すると、DATA・PING・再送パケットがすべての経路へ同時送信されます。
 
 ## サンプル設定ファイル
 
-```ini
-[global]
-window_size        = 16
-max_payload        = 1400
-# max_message_size   = 65535
-# send_queue_depth   = 1024
-udp_health_interval_ms = 3000
-udp_health_timeout_ms  = 10000
-# tcp_close_timeout_ms = 5000 ; TCP close 時の FIN_ACK 待機
-# reorder_timeout_ms = 0    ; 0=即時 (デフォルト)。マルチパスは 20 程度が目安
-
-; ---- ユニキャスト ----
-[service.1001]
-type     = unicast
-src_addr = 192.168.1.20
-dst_addr = 192.168.1.10
-dst_port = 5001
-
-; ホスト名でも指定可能
-[service.1002]
-type     = unicast
-src_addr = sender.local
-dst_addr = receiver.local
-dst_port = 5002
-
-; ---- マルチキャスト ----
-[service.2001]
-type            = multicast
-src_addr        = 192.168.1.20
-dst_port        = 6001
-multicast_group = 224.0.0.1
-ttl             = 1
-
-; ---- ブロードキャスト ----
-[service.3001]
-type           = broadcast
-src_addr       = 192.168.1.20
-dst_port       = 7001
-broadcast_addr = 192.168.1.255
-
-; ---- RAW モード (ベストエフォート) ----
-[service.1021]
-type      = unicast_raw
-src_addr  = 127.0.0.1
-dst_addr  = 127.0.0.1
-dst_port  = 5021
-
-[service.2021]
-type            = multicast_raw
-src_addr        = 127.0.0.1
-dst_port        = 6021
-multicast_group = 239.0.0.21
-ttl             = 1
-
-; ---- AES-256-GCM 暗号化 (encrypt_key に 64 文字の16進数文字列を指定) ----
-[service.1010]
-type        = unicast
-src_addr    = 192.168.1.20
-dst_addr    = 192.168.1.10
-dst_port    = 5010
-encrypt_key = 0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f0a1b2c3d4e5f6a7b8c9d0e1f2a3b
-
-; ---- UDP unicast 双方向 (1:1) ----
-
-; ループバック（Side A: SENDER ロール）
-[service.4020]
-type      = unicast_bidir
-src_addr  = 127.0.0.1
-src_port  = 9020
-dst_addr  = 127.0.0.1
-dst_port  = 9021
-
-; ループバック（Side B: RECEIVER ロール）
-[service.4021]
-type      = unicast_bidir
-src_addr  = 127.0.0.1
-src_port  = 9021
-dst_addr  = 127.0.0.1
-dst_port  = 9020
-
-; ---- UDP unicast 双方向 (N:1 サーバ) ----
-
-; N:1 サーバ: dst_port で待ち受ける (全クライアント受け入れ)
-[service.4050]
-type      = unicast_bidir_n1
-dst_addr  = 0.0.0.0
-dst_port  = 9050
-max_peers = 256
-
-; N:1 サーバ: src_port を使って送信元ポートをフィルターする例
-[service.4051]
-type      = unicast_bidir_n1
-src_port  = 19050
-dst_addr  = 192.168.1.10
-dst_port  = 9051
-max_peers = 64
-
-; N:1 サーバへ接続するクライアント (unicast_bidir 1:1 として接続)
-[service.4052]
-type      = unicast_bidir
-src_addr  = 192.168.1.20
-src_port  = 19050
-dst_addr  = 192.168.1.10
-dst_port  = 9051
-
-; AES-256-GCM 暗号化
-[service.4031]
-type        = unicast_bidir
-src_addr    = 192.168.1.10
-src_port    = 9031
-dst_addr    = 192.168.1.20
-dst_port    = 9031
-encrypt_key = mysecretphrase
-
-; ---- TCP ユニキャスト ----
-
-; 基本設定（ループバック）
-[service.5001]
-type     = tcp
-dst_addr = 127.0.0.1
-dst_port = 9001
-
-; 再接続設定あり
-[service.5002]
-type                  = tcp
-dst_addr              = 192.168.1.100
-dst_port              = 9002
-reconnect_interval_ms = 5000    ; SENDER のみ有効
-connect_timeout_ms    = 10000   ; SENDER のみ有効
-
-; AES-256-GCM 暗号化
-[service.5003]
-type        = tcp
-dst_addr    = 192.168.1.100
-dst_port    = 9003
-encrypt_key = mysecretphrase
-
-; 再接続なし（切断後に自動復帰しない）
-[service.5004]
-type                  = tcp
-dst_addr              = 192.168.1.100
-dst_port              = 9004
-reconnect_interval_ms = 0
-
-; ---- TCP 双方向 ----
-
-[service.5010]
-type                  = tcp_bidir
-dst_addr              = 192.168.1.100
-dst_port              = 9010
-reconnect_interval_ms = 5000    ; SENDER のみ有効
-connect_timeout_ms    = 10000   ; SENDER のみ有効
+```jsonc
+// サンプル設定の例
+{
+  "global": {
+    "window_size": 16,
+    "max_payload": 1400,
+    "udp_health_interval_ms": 3000,
+    "udp_health_timeout_ms": 10000
+  },
+  "services": {
+    "1001": {
+      "type": "unicast",
+      "src_addr1": "192.168.1.20",
+      "dst_addr1": "192.168.1.10",
+      "dst_port": 5001
+    },
+    "1002": {
+      "type": "unicast",
+      "src_addr1": "sender.local",
+      "dst_addr1": "receiver.local",
+      "dst_port": 5002
+    },
+    "2001": {
+      "type": "multicast",
+      "src_addr1": "192.168.1.20",
+      "dst_port": 6001,
+      "multicast_group": "224.0.0.1",
+      "ttl": 1
+    },
+    "3001": {
+      "type": "broadcast",
+      "src_addr1": "192.168.1.20",
+      "dst_port": 7001,
+      "broadcast_addr": "192.168.1.255"
+    },
+    "1021": {
+      "type": "unicast_raw",
+      "src_addr1": "127.0.0.1",
+      "dst_addr1": "127.0.0.1",
+      "dst_port": 5021
+    },
+    "2021": {
+      "type": "multicast_raw",
+      "src_addr1": "127.0.0.1",
+      "dst_port": 6021,
+      "multicast_group": "239.0.0.21",
+      "ttl": 1
+    },
+    "1010": {
+      "type": "unicast",
+      "src_addr1": "192.168.1.20",
+      "dst_addr1": "192.168.1.10",
+      "dst_port": 5010,
+      "encrypt_key": "0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f0a1b2c3d4e5f6a7b8c9d0e1f2a3b"
+    },
+    "4020": {
+      "type": "unicast_bidir",
+      "src_addr1": "127.0.0.1",
+      "src_port": 9020,
+      "dst_addr1": "127.0.0.1",
+      "dst_port": 9021
+    },
+    "4021": {
+      "type": "unicast_bidir",
+      "src_addr1": "127.0.0.1",
+      "src_port": 9021,
+      "dst_addr1": "127.0.0.1",
+      "dst_port": 9020
+    },
+    "4050": {
+      "type": "unicast_bidir_n1",
+      "dst_addr1": "0.0.0.0",
+      "dst_port": 9050,
+      "max_peers": 256
+    },
+    "4051": {
+      "type": "unicast_bidir_n1",
+      "src_port": 19050,
+      "dst_addr1": "192.168.1.10",
+      "dst_port": 9051,
+      "max_peers": 64
+    },
+    "4052": {
+      "type": "unicast_bidir",
+      "src_addr1": "192.168.1.20",
+      "src_port": 19050,
+      "dst_addr1": "192.168.1.10",
+      "dst_port": 9051
+    },
+    "4031": {
+      "type": "unicast_bidir",
+      "src_addr1": "192.168.1.10",
+      "src_port": 9031,
+      "dst_addr1": "192.168.1.20",
+      "dst_port": 9031,
+      "encrypt_key": "mysecretphrase"
+    },
+    "5001": {
+      "type": "tcp",
+      "dst_addr1": "127.0.0.1",
+      "dst_port": 9001
+    },
+    "5002": {
+      "type": "tcp",
+      "dst_addr1": "192.168.1.100",
+      "dst_port": 9002,
+      "reconnect_interval_ms": 5000,
+      "connect_timeout_ms": 10000
+    },
+    "5003": {
+      "type": "tcp",
+      "dst_addr1": "192.168.1.100",
+      "dst_port": 9003,
+      "encrypt_key": "mysecretphrase"
+    },
+    "5004": {
+      "type": "tcp",
+      "dst_addr1": "192.168.1.100",
+      "dst_port": 9004,
+      "reconnect_interval_ms": 0
+    },
+    "5010": {
+      "type": "tcp_bidir",
+      "dst_addr1": "192.168.1.100",
+      "dst_port": 9010,
+      "reconnect_interval_ms": 5000,
+      "connect_timeout_ms": 10000
+    }
+  }
+}
 ```

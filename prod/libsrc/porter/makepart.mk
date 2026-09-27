@@ -1,5 +1,5 @@
 # ライブラリの指定
-LIBS += cplat
+LIBS += cplat cjson
 
 ifdef PLATFORM_WINDOWS
     # DLL エクスポート定義

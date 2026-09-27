@@ -8,4 +8,4 @@ INCDIR += \
 	$(MYAPP_DIR)/test/include
 
 # mock_cplat はリンクしない
-LIBS += mock_porter cplat mock_libc
+LIBS += mock_porter cplat mock_libc cjson

@@ -41,19 +41,25 @@ Table: porter の主要機能一覧
 
 ### 構成ファイルの準備
 
-porter は INI 形式の構成ファイルでサービスを定義します。詳細は [構成ファイル仕様](config.md) を参照してください。
+porter は JSONC 形式の構成ファイルでサービスを定義します。詳細は [構成ファイル仕様](config.md) を参照してください。
 
-```ini
-[global]
-window_size        = 16
-udp_health_interval_ms = 3000
-udp_health_timeout_ms  = 10000
-
-[service.1001]
-type     = unicast
-src_addr = 192.168.1.20
-dst_addr = 192.168.1.10
-dst_port = 5001
+```jsonc
+// 共通設定とユニキャスト サービスの例
+{
+  "global": {
+    "window_size": 16,
+    "udp_health_interval_ms": 3000,
+    "udp_health_timeout_ms": 10000,
+  },
+  "services": {
+    "1001": {
+      "type": "unicast",
+      "src_addr1": "192.168.1.20",
+      "dst_addr1": "192.168.1.10",
+      "dst_port": 5001,
+    }
+  }
+}
 ```
 
 ### 受信者の実装例
@@ -86,7 +92,7 @@ static void on_event(int64_t service_id, potr_peer_id peer_id,
 
 int main(void) {
     potr_context *handle = NULL;
-    if (potr_service_open_from_config("porter-services.conf", 1001,
+    if (potr_service_open_from_config("porter-services.jsonc", 1001,
                                      POTR_ROLE_RECEIVER, on_event, &handle) != POTR_OK) {
         return 1;
     }
@@ -106,7 +112,7 @@ int main(void) {
     potr_context *handle = NULL;
     const char *msg = "Hello, porter!";
     int ret;
-    if (potr_service_open_from_config("porter-services.conf", 1001,
+    if (potr_service_open_from_config("porter-services.jsonc", 1001,
                                      POTR_ROLE_SENDER, NULL, &handle) != POTR_OK) {
         return 1;
     }
@@ -125,10 +131,10 @@ int main(void) {
 
 ```sh
 # 受信側 (別ターミナルで先に起動)
-prod/cbin/porter-test receiver prod/sample-config/porter-services.conf 1001
+prod/cbin/porter-test receiver prod/sample-config/porter-services.jsonc 1001
 
 # 送信側
-prod/cbin/porter-test sender prod/sample-config/porter-services.conf 1001
+prod/cbin/porter-test sender prod/sample-config/porter-services.jsonc 1001
 ```
 
 ## API 仕様書

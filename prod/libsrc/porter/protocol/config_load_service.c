@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           config_load_service.c
- *  @brief          設定の service.id セクションを読み込む機能を実装します。
+ *  @brief          JSONC 設定のサービス定義を読み込む機能を実装します。
  *  @author         Tetsuo Honda
  *  @date           2026/04/26
  *  @version        1.0.0
@@ -27,7 +27,6 @@
 #include <porter/infra/potr_trace.h>
 #include <porter/protocol/config.h>
 #include <porter/protocol/config_parse_common.h>
-#include <porter/protocol/config_parse_kv_common.h>
 
 static int parse_u32_field(const char *text, uint32_t *value_out)
 {
@@ -317,92 +316,61 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
 
 int potr_internal_config_load_service(const char *config_path, int64_t service_id, potr_service_def *def)
 {
-    FILE *fp;
-    char line[CONFIG_LINE_MAX];
-    char key[CONFIG_KEY_MAX];
-    char val[CONFIG_VAL_MAX];
-    int in_target;
-    int found;
-    int64_t parsed_id;
+    cJSON *root;
+    cJSON *services;
+    cJSON *service;
+    cJSON *item;
+    char id_text[32];
+    int ret;
 
     if (config_path == NULL || def == NULL)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
-
-    fp = config_open_file_read(config_path);
-    if (fp == NULL)
+    ret = config_read_jsonc(config_path, &root);
+    if (ret != POTR_OK)
     {
-        return POTR_ERR_IO;
+        return ret;
     }
-
-    in_target = 0;
-    found = 0;
-
-    while (fgets(line, (int)sizeof(line), fp) != NULL)
+    services = cJSON_GetObjectItemCaseSensitive(root, "services");
+    if (services != NULL && !cJSON_IsObject(services))
     {
-        char trimmed[CONFIG_LINE_MAX];
-        config_trim(line, trimmed, sizeof(trimmed));
-
-        if (trimmed[0] == '\0' || trimmed[0] == '#' || trimmed[0] == ';')
-        {
-            continue;
-        }
-
-        if (trimmed[0] == '[')
-        {
-            char section[CONFIG_SECTION_MAX];
-
-            if (in_target)
-            {
-                break;
-            }
-
-            if (config_parse_section_name(trimmed, section, sizeof(section)) && strncmp(section, "service.", 8) == 0 &&
-                cplat_parse_int64(&parsed_id, section + 8, 10) == CPLAT_OK && parsed_id == service_id)
-            {
-                memset(def, 0, sizeof(*def));
-                def->ttl = (uint8_t)POTR_DEFAULT_TTL;
-                def->pack_wait_ms = (uint32_t)POTR_DEFAULT_PACK_WAIT_MS;
-                def->max_peers = 1024U;
-                def->service_id = service_id;
-                def->health_interval_ms = 0U;
-                def->health_timeout_ms = 0U;
-                def->reconnect_interval_ms = (uint32_t)POTR_DEFAULT_RECONNECT_INTERVAL_MS;
-                def->connect_timeout_ms = (uint32_t)POTR_DEFAULT_CONNECT_TIMEOUT_MS;
-                in_target = 1;
-                found = 1;
-            }
-            continue;
-        }
-
-        if (!in_target)
-        {
-            continue;
-        }
-
-        if (!config_parse_kv(trimmed, key, sizeof(key), val, sizeof(val)))
-        {
-            continue;
-        }
-
-        apply_service_kv(key, val, def);
-
-        /* trimmed は行の生の内容 (パスフレーズを含みうる) を保持する */
-        cplat_secure_zero(trimmed, sizeof(trimmed));
+        cJSON_Delete(root);
+        return POTR_ERR_INVALID_ARGUMENT;
     }
-
-    fclose(fp);
-
-    /* line / key / val はパスフレーズ平文を保持しうるため、復帰前に消去する */
-    cplat_secure_zero(line, sizeof(line));
-    cplat_secure_zero(key, sizeof(key));
-    cplat_secure_zero(val, sizeof(val));
-
-    if (!found)
+    (void)snprintf(id_text, sizeof(id_text), "%" PRId64, service_id);
+    service = cJSON_GetObjectItemCaseSensitive(services, id_text);
+    if (service == NULL)
     {
+        cJSON_Delete(root);
         return POTR_ERR_NOT_FOUND;
     }
+    if (!cJSON_IsObject(service))
+    {
+        cJSON_Delete(root);
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    memset(def, 0, sizeof(*def));
+    def->ttl = (uint8_t)POTR_DEFAULT_TTL;
+    def->pack_wait_ms = (uint32_t)POTR_DEFAULT_PACK_WAIT_MS;
+    def->max_peers = 1024U;
+    def->service_id = service_id;
+    def->reconnect_interval_ms = (uint32_t)POTR_DEFAULT_RECONNECT_INTERVAL_MS;
+    def->connect_timeout_ms = (uint32_t)POTR_DEFAULT_CONNECT_TIMEOUT_MS;
+    cJSON_ArrayForEach(item, service)
+    {
+        char value_buffer[32];
+        const char *val = config_value_text(item, value_buffer, sizeof(value_buffer));
+        if (val != NULL)
+        {
+            apply_service_kv(item->string, val, def);
+            if (strcmp(item->string, "encrypt_key") == 0 && item->valuestring != NULL)
+            {
+                cplat_secure_zero(item->valuestring, strlen(item->valuestring));
+            }
+        }
+    }
+    cJSON_Delete(root);
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                "service loaded: service_id=%" PRId64 " type=%d "
