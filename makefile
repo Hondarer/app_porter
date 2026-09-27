@@ -27,6 +27,13 @@ endif
 export MAKEFW_APP_PATHS_CACHE_APP
 export MAKEFW_APP_PATHS_CACHE
 
+# app/<name>.assured.stamp が HEAD と一致し、追加・削除・変更が無いとき 1。
+# サブモジュールでない app は警告して 0。子 make へは渡さず、署名コマンドの直前だけで渡す。
+_MAKEFW_ASSURED_ACTIVE := $(strip $(shell bash "$(APPDEPS_RESOLVER)" --assured "$(CURDIR)"))
+ifneq ($(strip $(.SHELLSTATUS)),0)
+    $(error Failed to evaluate assured.stamp for $(CURDIR))
+endif
+
 DOXY_SIGNATURE_GENERATOR = $(MAKEFW_HOME)/bin_internal/doxy_signature.py
 COVERITY_MAKE_WRAPPER = $(MAKEFW_HOME)/bin_internal/cov-build-app.sh
 COVERITY_CONFIG = $(CURDIR)/prod/coverity.mk
@@ -92,7 +99,7 @@ __ensure-coverity:
 default:
 	@sig_file=$$(mktemp); \
 	signature_available=1; \
-	if ! CONFIG="$(CONFIG)" MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" DEFINES="$(DEFINES)" LIBS="$(LIBS)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" build > "$$sig_file"; then \
+	if ! CONFIG="$(CONFIG)" MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" DEFINES="$(DEFINES)" LIBS="$(LIBS)" MAKEFW_ASSURED_ACTIVE="$(_MAKEFW_ASSURED_ACTIVE)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" build > "$$sig_file"; then \
 		signature_available=0; \
 		rm -f "$$sig_file"; \
 		sig_file=""; \
@@ -117,7 +124,7 @@ default:
 		for dir in $(SUBDIRS); do \
 			if [ -f $$dir/makefile ]; then \
 				skip_src=""; \
-				if [ "$$dir" = "test" ] && [ -f "$(CURDIR)/assured.stamp" ]; then \
+				if [ "$$dir" = "test" ] && [ "$(_MAKEFW_ASSURED_ACTIVE)" = "1" ]; then \
 					skip_src="MAKEFW_SKIP_TEST_SRC=1"; \
 				fi; \
 				echo $(MAKE) -C $$dir $$skip_src; \
@@ -145,7 +152,7 @@ _makefw_with_cov_prod:
 	fi
 
 # with-cov の前提。cov-build が prod の翻訳単位を取得できるよう、prod の成果物と make_build.stamp を削除する。
-# assured.stamp の有無に関係なく、cov-build の外で実行する。test は with-cov の対象外のため clean しない。
+# assured.stamp の省略条件に関係なく、cov-build の外で毎回実行する。test は with-cov の対象外のため clean しない。
 .PHONY: _makefw_clean_for_coverity
 _makefw_clean_for_coverity: __ensure-coverity
 	@if [ -f "$(BUILD_STAMP)" ] && [ -n "$(MSVC_CRT_SUBDIR)" ]; then \
@@ -186,8 +193,11 @@ with-cov:
 		fi; \
 	fi
 
+# clean を省略するのは assured が有効かつ make_build.stamp があるときだけ。
+# スタンプはサブディレクトリのビルド前に削除し、終了コード 0 のときだけ戻す。
+# I/O エラーや異常終了でビルドが完了しないときはスタンプが無く、clean を実行する。
 .PHONY: clean
-ifeq ($(wildcard $(CURDIR)/assured.stamp),)
+ifneq ($(_MAKEFW_ASSURED_ACTIVE),1)
 clean : SUBDIR_GOAL = clean
 clean : $(SUBDIR_TARGETS)
 	@rm -f "$(DOXY_WARN_FILE)" "$(BUILD_STAMP)" "$(TEST_STAMP)" "$(DOXY_STAMP)"
@@ -201,18 +211,18 @@ clean : $(SUBDIR_TARGETS)
 	@find "$(CURDIR)" -type d -name log -prune -exec rm -rf {} +
 else
 clean:
-	@echo "INFO: Skipping clean (assured.stamp is present and make succeeded)"
+	@echo "INFO: Skipping clean (assured.stamp matches the commit and make succeeded)"
 endif
 
 .PHONY: test
 test :
 	@$(MAKE) $(MFLAGS)
-	@if [ -f "$(CURDIR)/assured.stamp" ] && [ -f test/makefile ]; then \
-		echo "INFO: Skipping test/src (assured.stamp is present)"; \
+	@if [ "$(_MAKEFW_ASSURED_ACTIVE)" = "1" ] && [ -f test/makefile ]; then \
+		echo "INFO: Skipping test/src (assured.stamp matches the commit and the tree is clean)"; \
 	elif [ -f test/makefile ]; then \
 		sig_file=$$(mktemp); \
 		signature_available=1; \
-		if ! CONFIG="$(CONFIG)" MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" DEFINES="$(DEFINES)" LIBS="$(LIBS)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" test > "$$sig_file"; then \
+		if ! CONFIG="$(CONFIG)" MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" DEFINES="$(DEFINES)" LIBS="$(LIBS)" MAKEFW_ASSURED_ACTIVE="$(_MAKEFW_ASSURED_ACTIVE)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" test > "$$sig_file"; then \
 			signature_available=0; \
 			rm -f "$$sig_file"; \
 			sig_file=""; \
