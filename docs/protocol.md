@@ -57,6 +57,8 @@ UDP データグラム 1 個が外側パケット 1 個に対応します。
 | `protocol_version` | uint32 | ワイヤー プロトコル バージョン。現行値は `POTR_PROTOCOL_VERSION` (= 1) |
 | `payload` | 可変長 | ペイロード データ (最大 1,400 バイト) |
 
+Table: 外側パケット (potr_packet) ヘッダーのフィールド構成
+
 受信側は `protocol_version` が `POTR_PROTOCOL_VERSION` と一致しないパケットを破棄します。  
 破壊的変更が発生した場合は `POTR_PROTOCOL_VERSION` をインクリメントし、旧バージョンとの通信を受信時に遮断します。
 
@@ -72,6 +74,8 @@ UDP データグラム 1 個が外側パケット 1 個に対応します。
 | `POTR_FLAG_FIN_TARGET_VALID` | 0x0040 | FIN の `ack_num` が有効な受信完了目標 `next_seq` を表すことを示します。 |
 | `POTR_FLAG_FIN_ACK` | 0x0080 | TCP close 完了通知。`ack_num` に確認対象の FIN target を格納 |
 
+Table: パケット種別フラグ (flags) の定義一覧
+
 ### flags 種別ごとの ack_num の意味
 
 | `flags` | `ack_num` の意味 |
@@ -83,6 +87,8 @@ UDP データグラム 1 個が外側パケット 1 個に対応します。
 | `POTR_FLAG_REJECT` | 再送不能の通番 |
 | `POTR_FLAG_FIN` | `POTR_FLAG_FIN_TARGET_VALID=1` のとき送信側 `send_window.next_seq`、未設定時は無視 |
 | `POTR_FLAG_FIN_ACK` | TCP close 完了を確認した `FIN.ack_num` |
+
+Table: パケット種別フラグごとの ack_num の意味
 
 `ack_num` の意味はパケット種別 (`flags`) ごとに独立しているため、NACK / REJECT パケットでの `ack_num` 使用とは競合しません。
 
@@ -106,6 +112,8 @@ TCP では NACK / REJECT が不要なため、**PING 要求と PING 応答の識
 | `0` | PING 要求 (応答を求める) |
 | `N` (N > 0) | PING 応答 (`seq_num = N` の PING 要求への返答) |
 
+Table: TCP PING における ack_num の値と意味
+
 DATA パケットでは `ack_num` は 0 固定とし、受信時は無視します。
 
 ### TCP モードでのパケット種別フラグ使用可否
@@ -119,6 +127,8 @@ DATA パケットでは `ack_num` は 0 固定とし、受信時は無視しま�
 | `POTR_FLAG_FIN` | ○ | `potr_service_close()` 時にプロトコル レベルの FIN を送信 |
 | `POTR_FLAG_FIN_ACK` | ○ | receiver が最後の DATA コールバック完了後に返却する close 完了通知 |
 | `POTR_FLAG_ENCRYPTED` | ○ | UDP と同様に使用可能 |
+
+Table: TCP モードにおけるパケット種別フラグの使用可否と理由
 
 ### TCP マルチパスにおける重複排除
 
@@ -183,6 +193,8 @@ porter はバイト オーダーの変換を行いません。エンディアン
 | `POTR_FLAG_MORE_FRAG` | 0x0001 | 後続フラグメントが存在する (フラグメント続行) |
 | `POTR_FLAG_COMPRESSED` | 0x0002 | ペイロードが raw DEFLATE 圧縮済み |
 
+Table: エレメント フラグ (elem_flags) の定義一覧
+
 ### パッキングの動作
 
 送信スレッドは送信キューから複数のエレメントを取り出し、1 つの DATA パケットにまとめます。  
@@ -207,6 +219,8 @@ porter はバイト オーダーの変換を行いません。エンディアン
 | `session_id` | 乱数 (シード: 現在時刻 × PID) |
 | `session_tv_sec` | `CLOCK_REALTIME` (Linux) または `GetSystemTimeAsFileTime()` (Windows) による現在時刻 (秒) |
 | `session_tv_nsec` | 同上 (ナノ秒部) |
+
+Table: セッション識別子のフィールド構成と決定方法
 
 採用判定はタイムスタンプを同一送信者の 2 パケット間で比較するため、  
 送信者と受信者のクロック同期には依存しません。
@@ -257,6 +271,8 @@ OS クロックが手動設定や NTP スラムで過去に戻った場合、新
 | `recvfrom()` の送信元 IP:Port | 返信先アドレスの学習、パス追加 |
 | `src_port` 設定 | N:1 サーバーでの任意の送信元ポート フィルター |
 
+Table: unicast_bidir N:1 モードにおけるピア識別手段と用途
+
 N:1 モードの各ピアは、以下の状態を独立して持ちます。
 
 - 自セッション ID / 相手セッション ID
@@ -300,6 +316,8 @@ RAW モード (`unicast_raw` / `multicast_raw` / `broadcast_raw`) でも通番�
 | 順序整列 | 不使用 (TCP が保証) |
 | AES-256-GCM ノンス生成 | 使用 (`session_id + seq_num`) |
 | フラグメント順序確認 | 使用 (デバッグ・ログ用途) |
+
+Table: TCP モードにおける通番の目的と利用状況
 
 ## スライディング ウィンドウ
 
@@ -480,6 +498,8 @@ FIN をペンディング中に期待する DATA が届かない場合、以下�
 | `reorder_timeout_ms` タイムアウト後 | `potr_internal_window_recv_skip()` → 同上 |
 | `health_timeout_ms` タイムアウト | ヘルスチェックが `DISCONNECTED` を発火 (既存フォールバック) |
 
+Table: FIN ペンディング中のエッジ ケースと解消パス
+
 ペンディング中はセッション状態をリセットしないため、欠番 DATA は引き続き受け入れられます。  
 NACK / REJECT サイクルも通常どおり動作します。
 
@@ -495,6 +515,8 @@ NACK / REJECT サイクルも通常どおり動作します。
 |---|---|
 | Linux | app/zlib (windowBits = -15) |
 | Windows | app/zlib (windowBits = -15) |
+
+Table: プラットフォームごとの圧縮ライブラリ実装
 
 両プラットフォームは同じ raw DEFLATE フォーマットを出力するため、  
 Linux 送信者と Windows 受信者 (またはその逆) の組み合わせで透過的に動作します。
@@ -570,6 +592,8 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 | `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルスチェック信号を継続受信中) |
 | `2` | `POTR_PING_STATE_ABNORMAL` | 異常 (PING 途絶) |
 
+Table: PING ペイロードにおける各パス受信状態の値と意味
+
 片方向通信 (type 1-6) の送信側は返送用 PING を持たないため、送出する PING ペイロードは全パス `UNDEFINED` のままです。受信側ローカルの `path_ping_state[]` は有効な `PING` または `DATA` 受信で更新されます。双方向通信 (type 7-10) は実際の PING 受信状態を格納します。
 
 暗号化 (`POTR_FLAG_ENCRYPTED`) 時は末尾に GCM 認証タグ (`POTR_CRYPTO_TAG_SIZE` = 16 バイト) が付加され、`payload_len = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE` になります。
@@ -595,6 +619,8 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 |---|---|---|---|---|
 | 要求 | `POTR_FLAG_PING` | 送信側の `next_seq` | `0` | `POTR_MAX_PATH` (非暗号化) または `POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE` (暗号化) |
 | 応答 | `POTR_FLAG_PING` | 応答側の `next_seq` | 要求の `seq_num` | 同上 |
+
+Table: 双方向 UDP における PING パケットのフォーマット
 
 #### 両端の動作
 
@@ -623,6 +649,8 @@ UDP には接続概念がありません。相手のアプリケーションが�
 | UDP unicast_bidir | 1:1 は両端、N:1 は各ピア単位で `last_recv_tv_sec` を監視 | 相手停止で当該相手からの全パケットが途絶える → timeout 発火 |
 | TCP / TCP_bidir | SENDER: PING 応答タイムアウト監視 | OS 接続が生存したままアプリケーションがハングし得るため |
 
+Table: 通信モードごとのタイムアウト検知方法と選定理由
+
 ### TCP 通信種別のヘルスチェック動作
 
 #### PING 送信のタイミング
@@ -642,6 +670,8 @@ TCP では加えて、「OS 接続が生存したままアプリケーション�
 | TCP / TCP_BIDIR | RECEIVER | `tcp_health_interval_ms > 0` のとき、PING 要求 (`ack_num = 0`) が `tcp_health_timeout_ms` 以内に到着しなければ DISCONNECTED (recv スレッド) |
 | TCP_BIDIR | SENDER | `tcp_health_interval_ms > 0` のとき、PING 要求 (`ack_num = 0`) が `tcp_health_timeout_ms` 以内に到着しなければ DISCONNECTED (recv スレッド) |
 | TCP_BIDIR | RECEIVER | `tcp_health_interval_ms > 0` のとき、PING 応答 (`ack_num > 0`) が `tcp_health_timeout_ms` 以内に返却されなければ DISCONNECTED (health スレッド) |
+
+Table: 通信種別および役割ごとのタイムアウト監視内容
 
 TCP は bootstrap PING の往復で初回 CONNECTED を確立し、`tcp_health_interval_ms > 0` のときだけ定周期 PING により両端が互いの生死を独立して監視できます。  
 `tcp_bidir` では両端が PING 送信側・受信側の両方を兼ねるため、PING 応答タイムアウト (health スレッド) と  
@@ -671,3 +701,5 @@ NACK パケットは送信者へのユニキャストで返却されます。
 | `POTR_NACK_DEDUP_MS` | 200 ms | NACK 重複抑制の時間窓 |
 | `POTR_DEFAULT_RECONNECT_INTERVAL_MS` | 5,000 ms | TCP SENDER 自動再接続間隔デフォルト |
 | `POTR_DEFAULT_CONNECT_TIMEOUT_MS` | 10,000 ms | TCP SENDER 接続タイムアウト デフォルト |
+
+Table: porter プロトコルの定数および上限値一覧

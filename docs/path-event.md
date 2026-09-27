@@ -29,6 +29,8 @@ porter はセッション全体の接続状態だけでなく、各 path の論�
 | `data` | `const int[POTR_MAX_PATH]` の path 論理接続状態スナップショット |
 | `len` | 状態が変化した path index |
 
+Table: パスイベント通知時の potr_recv_fn 引数の意味
+
 `path_states` は常にイベント発火後の状態です。  
 したがって `PATH_DISCONNECTED` でも `path_states[path_idx]` は必ず 0 です。
 

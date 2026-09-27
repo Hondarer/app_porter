@@ -17,6 +17,8 @@ TCP ポートを待ち受け、接続ごとに別プロセスで処理を行う�
 | 接続ごとに fork | 接続を受け付けるたびに新しいプロセスを生成 |
 | プリフォーク | 事前に N 個のワーカー プロセスを起動しておく |
 
+Table: TCP サーバーのプロセス モデルと特徴
+
 ## コマンド ライン インターフェイス
 
 ```
@@ -29,6 +31,8 @@ tcpServer [--mode fork|prefork] [--port <num>] [--workers <num>] [--conns-per-wo
 | `--port` | `8080` | 待ち受けポート番号 |
 | `--workers` | `4` | prefork 時のワーカー数 |
 | `--conns-per-worker` | `1` | prefork 時の 1 ワーカーあたり同時接続数。1 の場合は逐次処理、2 以上の場合はイベント駆動型の多重処理 |
+
+Table: tcpServer のコマンド ライン引数一覧
 
 ## ファイル構成
 
@@ -165,6 +169,8 @@ Windows では `fork()` がないため、親プロセスが `accept()` を行�
 | `run_fork_server(port)` | accept → fork ループ |
 | `run_prefork_server(port, n, conns_per_worker)` | n ワーカー生成 + pause + SIGTERM |
 
+Table: Linux 版 tcpServer の主要関数一覧
+
 ### Windows (tcpServer_windows.c)
 
 | 関数 | 説明 |
@@ -180,6 +186,8 @@ Windows では `fork()` がないため、親プロセスが `accept()` を行�
 | `dispatch_internal_args(argc, argv)` | --child/--worker を検出して処理 |
 | `run_fork_server(port)` | accept + CreateProcess(`--child`) ループ |
 | `run_prefork_server(port, n, conns_per_worker)` | listen_socket 確保 + workers 起動 + 振り分けループ |
+
+Table: Windows 版 tcpServer の主要関数一覧
 
 ## stdin, stdout, stderr の継承
 
@@ -202,6 +210,8 @@ Windows では `fork()` がないため、親プロセスが `accept()` を行�
 | メモリ使用量 | 接続数に比例 | 一定 |
 | 実装の複雑さ | シンプル | やや複雑 |
 | 過負荷時の挙動 | 新規 fork が遅延 | 新規接続がキューで待機 |
+
+Table: 接続ごと fork とプリフォーク モデルの比較
 
 ## ビルド方法
 

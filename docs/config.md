@@ -40,6 +40,8 @@ porter は INI 形式のテキスト ファイルでサービスを定義しま�
 | `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potr_service_close()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送信し、本値以内に `FIN_ACK` が返信されなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む |
 | `reorder_timeout_ms` | uint32 | 0 | 受信ウィンドウで欠番を検出してから NACK 送出 (通常モード) または DISCONNECTED 発行 (RAW モード) を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 で即時 (デフォルト)。推奨値: LAN/マルチパス = 10〜30 ms、遠距離 WAN = 30〜100 ms |
 
+Table: global セクションの設定項目一覧
+
 ### window_size の影響
 
 ウィンドウ サイズは再送可能な過去パケット数の上限です。  
@@ -61,6 +63,8 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 | マルチパス (2 経路以上) | 10〜30 ms | 経路差異で数 ms〜数十 ms の追い越しが起こりうる |
 | 遠距離 WAN / 無線 LAN | 30〜100 ms | 遅延変動が大きく再順序付けが頻繁に発生する環境 |
 
+Table: 構成別の reorder_timeout_ms 推奨設定
+
 - 設定値を大きくするほど、追い越しを吸収できるが NACK の遅延 (= 再送遅延) も増加します。
 - RAW モードでは DISCONNECTED の遅延にも直結するため、リアルタイム性の要件と合わせて調整してください。
 - タイムアウト経過後も欠落パケットが到着した場合は NACK なしで正常にウィンドウへ取り込まれます (次の `process_outer_pkt` 呼び出しで自動検出)。
@@ -77,6 +81,8 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 | `multicast` / `broadcast` (通常モード) | `reorder_timeout_ms` 〜 `reorder_timeout_ms × 2` (ランダム分散) |
 | `*_raw` (RAW モード全種別) | `reorder_timeout_ms` (固定、DISCONNECTED 発行用) |
 
+Table: 通信種別ごとの実効並べ替えタイムアウト
+
 - ジッタは monotonic クロックのナノ秒部を乱数源とするため、外部 RNG への依存はありません。
 - `reorder_timeout_ms = 20` に設定すると実際のタイマーは **20〜40 ms** の範囲に分散されます。
 - NACK が遅延する分だけ再送が遅れる可能性があるため、`reorder_timeout_ms` の設定値には余裕を持たせてください。
@@ -92,6 +98,8 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 | TCP (`tcp`) | 接続直後に bootstrap PING を送信します。`health_interval_ms > 0` のときだけ SENDER が周期送信し、RECEIVER が応答します。 | `health_interval_ms > 0` のときだけ SENDER は PING 応答待機、RECEIVER は PING 要求到着を監視 |
 | 双方向 TCP (`tcp_bidir`) | 接続直後に両端が bootstrap PING を送信します。`health_interval_ms > 0` のときだけ両端が周期送信し、要求には即応答します。 | `health_interval_ms > 0` のときだけ両端が PING 応答待機と PING 要求到着を監視 |
 
+Table: 通信モデル別のヘルスチェック動作
+
 一方向 UDP (type 1-6) の RECEIVER は、有効な `PING` または `DATA` を受信すると `health_alive` を立てて `POTR_EVENT_CONNECTED` を発火します。`health_interval_ms = 0` で PING 送信が無効でも、有効な `DATA` が到着すれば CONNECTED します。双方向 UDP は従来どおり PING ベースで CONNECTED します。TCP は `health_interval_ms = 0` でも bootstrap PING の往復により CONNECTED できますが、定周期 PING と timeout 監視は無効になります。
 
 双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は、相手が返してきた PING ペイロードに `POTR_PING_STATE_NORMAL` が含まれて初めて `CONNECTED` します。したがって実効 `health_interval_ms = 0` で PING 自動送信が無効な構成では、`health_timeout_ms` の有無にかかわらず初回 `CONNECTED` に到達しません。
@@ -102,6 +110,8 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 | `udp_health_timeout_ms = 0` | UDP 通信種別に適用する既定のタイムアウトを 0 にします。サービス側で `health_timeout_ms` を指定しない限り、UDP サービスの実効タイムアウト監視は無効になります。 |
 | `tcp_health_interval_ms = 0` | TCP 通信種別に適用する既定の定周期 PING 周期を 0 にします。サービス側で `health_interval_ms` を指定しない限り、TCP サービスは bootstrap PING の往復だけで CONNECTED し、その後の定周期 PING は送信しません。 |
 | `tcp_health_timeout_ms = 0` | TCP 通信種別に適用する既定のタイムアウトを 0 にします。サービス側で `health_timeout_ms` を指定しない限り、TCP サービスの PING 要求 / 応答監視は無効になります。 |
+
+Table: ヘルスチェック設定値とその効果
 
 ## service.N セクション
 
@@ -120,11 +130,15 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 | `pack_wait_ms` | uint32 | 省略可 | パッキング待機時間 (ミリ秒)。0 で即時送信 |
 | `encrypt_key` | 文字列 | 省略可 | AES-256-GCM 事前共有鍵。以下の 2 形式を受け付けます:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列で指定<br>**② パスフレーズ**: 上記以外の任意の文字列を指定すると SHA-256 で 32 バイト鍵に変換します。省略時は暗号化なし |
 
+Table: 全通信種別共通のサービス設定項目
+
 ### unicast 専用フィールド
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
 | `dst_addr` | 文字列 | 必須 | 送信者: 送信先アドレス。受信者: bind アドレス |
+
+Table: unicast 専用の設定項目
 
 ### multicast 専用フィールド
 
@@ -132,6 +146,8 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 |---|---|---|---|---|
 | `multicast_group` | 文字列 | 必須 | — | マルチキャスト グループ IP アドレス (例: `224.0.0.1`) |
 | `ttl` | uint8 | 省略可 | 1 | マルチキャスト TTL |
+
+Table: multicast 専用の設定項目
 
 ### unicast_raw / multicast_raw / broadcast_raw (RAW モード)
 
@@ -148,6 +164,8 @@ RAW モードは通常モード (`unicast` / `multicast` / `broadcast`) と同�
 | 通番 (`seq_num`) | 再送制御・ウィンドウ管理に使用 | AES ノンス生成用のみ (再送制御には使用しない) |
 | ヘルスチェック | `health_interval_ms` / `health_timeout_ms` に従う | 同左 (制限なし) |
 
+Table: 通常モードと RAW モードの機能比較
+
 RAW モードでもスライディング ウィンドウによる **順序整列** と **セッション管理** は有効です。
 
 ### unicast_bidir 専用フィールド
@@ -161,12 +179,16 @@ RAW モードでもスライディング ウィンドウによる **順序整列
 | `src_addr` 省略 (SENDER) | `INADDR_ANY:src_port` で bind (OS がアダプターを自動選択) | — | なし |
 | `src_addr` 省略 (RECEIVER) | — | `dst_addr:dst_port` で bind し、最初の受信パケットから SENDER のアドレスを動的学習します。 | なし (学習後は学習アドレスから受信) |
 
+Table: unicast_bidir の送信元指定に応じた bind およびフィルター動作
+
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
 | `src_addr` | 文字列 | 省略可 | SENDER: 省略時は `INADDR_ANY` で bind し OS がアダプターを自動選択。RECEIVER: 省略時は SENDER アドレスを動的学習します。 |
 | `src_port` | uint16 | 省略可 | SENDER の bind ポート。`0` または省略でエフェメラル ポートを使用し、RECEIVER がパケット受信後に動的学習します。 |
 | `dst_addr` | 文字列 | 条件付き | SENDER: 送信先アドレス。RECEIVER: bind アドレス。省略時は `INADDR_ANY` で bind します。 |
 | `dst_port` | uint16 | 必須 | SENDER: 送信先ポート (RECEIVER の bind ポート) |
+
+Table: unicast_bidir 専用の設定項目
 
 ### unicast_bidir_n1 専用フィールド
 
@@ -179,6 +201,8 @@ RAW モードでもスライディング ウィンドウによる **順序整列
 | `src_port` | uint16 | 省略可 | 送信元ポート フィルター。`0` または省略でフィルターなし (全クライアント受け入れ) |
 | `max_peers` | uint32 | 省略可 | 最大同時接続クライアント数。既定値は `1024` |
 
+Table: unicast_bidir_n1 専用の設定項目
+
 ### tcp / tcp_bidir 専用フィールド
 
 | キー | 型 | 必須 | デフォルト | 説明 |
@@ -190,6 +214,8 @@ RAW モードでもスライディング ウィンドウによる **順序整列
 | `reconnect_interval_ms` | uint32 | 省略可 | 5,000 | SENDER の自動再接続間隔 (ms)。`0` で自動再接続なし。RECEIVER では無視 |
 | `connect_timeout_ms` | uint32 | 省略可 | 10,000 | SENDER の TCP 接続タイムアウト (ms)。`0` で OS デフォルト。RECEIVER では無視 |
 
+Table: tcp および tcp_bidir 専用の設定項目
+
 **tcp / tcp_bidir では使用しないフィールド (記述しても無視)**
 
 | フィールド | UDP での用途 |
@@ -197,6 +223,8 @@ RAW モードでもスライディング ウィンドウによる **順序整列
 | `multicast_group` | マルチキャスト グループ |
 | `ttl` | マルチキャスト TTL |
 | `broadcast_addr` | ブロードキャスト宛先 |
+
+Table: TCP 通信で無視される UDP 専用設定項目
 
 ### TCP マルチパス設定
 
@@ -225,6 +253,8 @@ src_addr.1   = 192.168.2.20   # path 1 の bind アドレス
 | 指定 | `0` または省略 | `src_addr:0` (エフェメラル ポート) で bind |
 | 指定 | 指定 | `src_addr:src_port` で bind |
 
+Table: TCP SENDER における送信元指定別の bind 動作
+
 #### RECEIVER の接続フィルター動作 (src_addr / src_port の組み合わせ)
 
 各 path[i] の `accept()` 後に接続元を検証します。
@@ -236,11 +266,15 @@ src_addr.1   = 192.168.2.20   # path 1 の bind アドレス
 | 指定 | `0` または省略 | 接続元 IP が一致する接続のみ受理 |
 | 指定 | 指定 | 接続元 IP・ポートの両方が一致する接続のみ受理 |
 
+Table: TCP RECEIVER における接続元検証動作
+
 ### broadcast 専用フィールド
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
 | `broadcast_addr` | 文字列 | 必須 | 送信者: 送信先ブロードキャスト アドレス (例: `192.168.1.255`) |
+
+Table: broadcast 専用の設定項目
 
 ### encrypt_key の詳細
 
@@ -258,6 +292,8 @@ src_addr.1   = 192.168.2.20   # path 1 の bind アドレス
 | 受信要件 | `encrypt_key` を設定した受信側は `POTR_FLAG_ENCRYPTED` 付きパケットのみ受理します。平文パケット、およびタグ検証失敗パケットは破棄します。 |
 | マルチキャスト | 受信者全員が同一の `encrypt_key` を持っていれば動作します。 |
 
+Table: 暗号化鍵の指定形式と仕様
+
 #### ノンス構成
 
 GCM ノンス (12 バイト) は以下の構成です。
@@ -273,6 +309,8 @@ GCM ノンス (12 バイト) は以下の構成です。
 | `seq_or_ack_num` | 4 | DATA/PING/FIN は `seq_num`、NACK/REJECT/FIN_ACK は `ack_num` (NBO) |
 | padding | 2 | 0x0000 固定 |
 
+Table: GCM ノンスのフィールド構成
+
 各パケット種別の flags 値 (例):
 
 | パケット種別 | flags (16 進) |
@@ -283,6 +321,8 @@ GCM ノンス (12 バイト) は以下の構成です。
 | REJECT (暗号化あり) | `0x0028` (REJECT \| ENCRYPTED) |
 | FIN (暗号化あり) | `0x0030` (FIN \| ENCRYPTED) |
 | FIN_ACK (暗号化あり) | `0x00A0` (FIN_ACK \| ENCRYPTED) |
+
+Table: パケット種別別の flags 値一覧
 
 `src_addr`・`dst_addr` には以下のいずれかを指定できます。
 
@@ -297,6 +337,8 @@ GCM ノンス (12 バイト) は以下の構成です。
 | 再解決 | プロセス生存中は再解決しません。DNS 更新後に接続できなくなった場合はプロセスを再起動します。 |
 | 複数アドレス返却時 | 仕様上未定義。実装上は先頭アドレスを採用します。 |
 | IPv6 | 非対応 |
+
+Table: DNS 解決のポリシー仕様
 
 ## 通信種別ごとのソケット動作
 
@@ -323,6 +365,8 @@ R -> S: sendto(src_addr, src_port)\nNACK (NACK 送信元は dst_addr:dst_port)
 | bind ポート | `src_port` (0 = OS 自動) | `dst_port` |
 | 送信先 | `dst_addr:dst_port` | — |
 | 送信元フィルター | — | `src_addr` |
+
+Table: unicast (1:1) のソケット動作仕様
 
 受信者は `dst_addr` でソケットを bind するため、`dst_addr` は当該ホストの NIC に割り当てられているアドレスでなければなりません。
 
@@ -353,6 +397,8 @@ B -> A: sendto(dst_addr=A, learned or configured port)\nDATA / PING 要求 / PIN
 | 送信先ポート | `dst_port` | `src_port` (`0` / 省略時は受信した送信元ポートを動的学習) |
 | 送信元フィルター | — | `src_addr` 指定時はアドレスを照合。省略時は動的学習後に学習済みアドレスを照合 |
 
+Table: unicast_bidir (1:1) のソケット動作仕様
+
 #### N:1 モード (unicast_bidir_n1)
 
 ```plantuml
@@ -381,6 +427,8 @@ S -> CB: sendto(recvfrom で学習した送信元)\nDATA / PING / NACK / REJECT
 | 送信先 | `recvfrom` で学習した各ピアの送信元 | `dst_addr:dst_port` |
 | 送信元フィルター | `src_port` 指定時のみポートで照合 | — |
 | 最大接続数 | `max_peers` | — |
+
+Table: unicast_bidir_n1 (N:1) のソケット動作仕様
 
 `encrypt_key` を設定した N:1 サーバーは、`POTR_FLAG_ENCRYPTED` の確認と GCM タグ検証を新規 peer 確保より前に行います。認証失敗パケットは `max_peers` を消費しません。
 
@@ -412,6 +460,8 @@ RA -> S: sendto(src_addr, src_port)\nNACK (全パスからユニキャスト)
 | 送信先 | `multicast_group:dst_port` | — |
 | 送信元フィルター | — | `src_addr` |
 
+Table: multicast (1:N) のソケット動作仕様
+
 ### broadcast (1:N 通信)
 
 | | 送信者 | 受信者 |
@@ -421,6 +471,8 @@ RA -> S: sendto(src_addr, src_port)\nNACK (全パスからユニキャスト)
 | ソケット オプション | `SO_BROADCAST` 有効 | `SO_BROADCAST` 有効 |
 | 送信先 | `broadcast_addr:dst_port` | — |
 | 送信元フィルター | — | `src_addr` |
+
+Table: broadcast (1:N) のソケット動作仕様
 
 ### tcp / tcp_bidir (TCP 接続)
 
@@ -445,6 +497,8 @@ note over R: accept() → 接続ソケット取得
 | listen ソケット | なし | あり (接続待機専用) |
 | 接続ソケット | `connect()` の fd | `accept()` の fd |
 
+Table: TCP および TCP_BIDIR のソケット動作仕様
+
 RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を呼び出して `listen()` に入っている必要があります。
 
 ## 送信元フィルタリング
@@ -465,6 +519,8 @@ RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を
 | 双方向 1:1 通信 (相手アドレス既知) | `unicast_bidir` (src_addr あり) |
 | RECEIVER が SENDER のアドレスを事前に知らない 1:1 | `unicast_bidir` (RECEIVER 側 src_addr 省略) |
 | 複数クライアントを同時に受け入れる N:1 サーバー | `unicast_bidir_n1` |
+
+Table: 用途別の推奨通信種別
 
 ## マルチパス設定
 

@@ -70,6 +70,8 @@ extern "C"
      *  | POTR_TYPE_BROADCAST   | 送信者   | src_addr          | src_port      |
      *  | POTR_TYPE_BROADCAST   | 受信者   | INADDR_ANY        | dst_port      |
      *
+     *  Table: 通信種別と役割ごとのソケット設定
+     *
      *  POTR_ROLE_RECEIVER の場合、内部で受信スレッドを起動します。
      *
      *  @par            使用例 (受信者)
@@ -188,6 +190,8 @@ extern "C"
      *  | POTR_TYPE_BROADCAST   | 送信者   | src_addr          | src_port      |
      *  | POTR_TYPE_BROADCAST   | 受信者   | INADDR_ANY        | dst_port      |
      *
+     *  Table: 設定ファイル指定時の通信種別と役割ごとのソケット設定
+     *
      *  POTR_ROLE_RECEIVER の場合、内部で受信スレッドを起動します。
      *
      *  @par            使用例 (受信者)
@@ -256,6 +260,9 @@ extern "C"
      *                              | --------------------- | ---------------------------------------- |
      *                              | `POTR_SEND_COMPRESS`  | メッセージを圧縮して送信します。         |
      *                              | `POTR_SEND_BLOCKING`  | ブロッキング送信を行います。             |
+     *
+     *  Table: 送信オプション フラグ
+     *
      *  @retval         POTR_OK                 メッセージを送信キューへ登録しました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  引数または N:1 モードの peer_id が不正です。
      *  @retval         POTR_ERR_DISCONNECTED   送信先が論理 CONNECTED 前または切断中です。
@@ -272,6 +279,8 @@ extern "C"
      *  | POTR_TYPE_MULTICAST   | multicast_group:dst_port へ送信            |
      *  | POTR_TYPE_BROADCAST   | broadcast_addr:dst_port へ送信             |
      *  | POTR_TYPE_UNICAST_BIDIR (N:1) | peer_id で指定したピアへ送信       |
+     *
+     *  Table: 通信種別ごとの UDP パケット送信先
      *
      *  flags に `POTR_SEND_COMPRESS` を指定した場合、内部で圧縮処理を行ってから送信します。\n
      *  圧縮後のサイズが元のサイズ以上になった場合は、自動的に非圧縮で送信します。\n

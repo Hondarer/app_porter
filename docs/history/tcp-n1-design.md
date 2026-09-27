@@ -16,6 +16,8 @@ porter ライブラリの TCP サポートは以下の 2 種別のみです。
 | `POTR_TYPE_TCP` | 単方向 (SENDER → RECEIVER) | 1:1 |
 | `POTR_TYPE_TCP_BIDIR` | 双方向 (SENDER ↔ RECEIVER) | 1:1 |
 
+Table: 既存の TCP サポート種別と接続形式
+
 RECEIVER は 1 台の SENDER との接続しか同時に維持できません。これは `receiver_accept_loop()` が `accept()` → `join_recv_thread()` (切断まで待機) → 次の `accept()` という逐次処理になっているためです。
 
 ### 解決したい課題
@@ -48,6 +50,8 @@ SENDER 側の変更は不要です。既存の `POTR_TYPE_TCP` または `POTR_T
 | ピア識別 | `POTR_PEER_NA` | `peer_id` で各 SENDER を識別 |
 | RECEIVER からの送信 (BIDIR) | 単一接続へ | `peer_id` 指定で特定 SENDER へ |
 | マルチパス | 最大 `POTR_MAX_PATH` パス/接続 | 各 SENDER が最大 `POTR_MAX_PATH` パスで接続可 |
+
+Table: TCP 1:1 と N:1 における RECEIVER 側の動作比較
 
 ---
 
@@ -821,6 +825,8 @@ if (potr_is_tcp_n1_type(ctx->service.type))
 | その他整数フィールド | 〜32 B |
 | **合計** | **約 730〜760 B 増加** |
 
+Table: TCP N:1 追加フィールドのサイズ概算
+
 `max_peers = 1024` の場合、ピア テーブル全体で約 750 KB 増加します。
 
 **推奨**: TCP N:1 向けのデフォルト `max_peers` を 32 程度に設定してください。
@@ -897,6 +903,8 @@ TCP と UDP のセッション識別をセッション層レベルで対称に�
    | `TCP_SESSION_SAME` | 既存セッションの同一セッション ID | 追加パスとして接続します。`reset_connection_state()` は呼ばない。 |
    | `TCP_SESSION_OLD` | 過去のセッション (期限切れ) | 接続を閉じてループを継続します。 |
 
+   Table: tcp_session_compare の比較結果と処置
+
 4. **先読みバッファーの引き渡し**  
    accept スレッドが読み取った最初のパケットを `tcp_first_pkt_buf[path_idx]` / `tcp_first_pkt_len[path_idx]` に格納します。recv スレッドはループ開始時にこのバッファーを先に処理し、通常の recv ループに入る。
 
@@ -940,6 +948,8 @@ TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 
 | `app/porter/prod/api/potr_service_close.c` | 変更 | TCP N:1 終了処理追加 |
 | `app/porter/prod/api/potr_send.c` | 変更 | BIDIR_N1 RECEIVER からの送信許可; peer_id ルーティング |
 | `app/porter/prod/api/potr_peer_disconnect.c` | 変更 | TCP N:1 ピア切断対応 |
+
+Table: TCP N:1 対応に伴う変更ファイル一覧
 
 ---
 

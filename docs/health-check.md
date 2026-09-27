@@ -23,6 +23,8 @@ porter フレームワークにおける potr_type ごとの PING 送出ロジ�
 | TCP | 9 | 両端 (tcp_health スレッド・パスごと) | 両端 (PING 受信タイムアウト) |
 | TCP_BIDIR | 10 | 両端 (tcp_health スレッド・パスごと) | 両端 (PING 受信タイムアウト) |
 
+Table: potr_type ごとの PING 送出とタイムアウト検出動作
+
 ## 設定パラメーター
 
 ```text
@@ -50,6 +52,8 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 | `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルスチェック信号を継続受信中) |
 | `2` | `POTR_PING_STATE_ABNORMAL` | 異常 (PING 途絶・タイムアウト) |
 
+Table: PING ペイロードにおけるパス受信状態の値と定義
+
 片方向通信 (type 1-6) では送信側が返送用 PING を持たないため、送出される PING ペイロードは全バイト `UNDEFINED` のままです。一方、受信側ローカルの `path_ping_state[]` は有効な `PING` または `DATA` を受けると `NORMAL` に更新されます。双方向通信 (type 7-10) は実際の PING 受信状態を格納します。
 
 受信側は PING 受信時にペイロードを `remote_path_ping_state[]` に保存します。これにより双方向通信の両端が相手の往復疎通状態を把握できます。
@@ -74,6 +78,8 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 | 片方向 (type 1-6) | いずれかの path logical が 0->1 になったとき |
 | 双方向 UDP (type 7, 8) | `path_ping_state[k] == NORMAL` かつ `remote_path_ping_state[k] == NORMAL` の path が 1 本以上になったとき |
 | TCP (type 9, 10) | `tcp_conn_fd[k]` 有効かつ `path_ping_state[k] == NORMAL` かつ `remote_path_ping_state[k] == NORMAL` の path が 1 本以上になったとき |
+
+Table: 通信形態ごとの CONNECTED イベント発火条件
 
 双方向 UDP では `remote_path_ping_state[k] == POTR_PING_STATE_NORMAL` が一つ以上存在するときに CONNECTED を発火します。これは「相手端が自端からの PING を正常受信済みである」ことを意味し、往復疎通が確認できた時点で CONNECTED となります。
 
@@ -111,6 +117,8 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 | CONNECTED 解除 | `health_timeout_ms` 超過、`FIN` 受信、`REJECT` 受信、RAW 系のギャップ検出で `health_alive == 0` に戻り、以後は再び CONNECTED 前と同じ扱いになります。 |
 | potr_event 順序 | 初回の有効 `DATA` を受理した場合も、先に `POTR_EVENT_CONNECTED` を発火してから `POTR_EVENT_DATA` を配送します。 |
 
+Table: 片方向通信 (type 1-6) の接続状態別の実装
+
 ### type 7: UNICAST_BIDIR
 
 | 状態 | 実装 |
@@ -119,6 +127,8 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 | CONNECTED 後 | `health_alive == 1` になり、`potr_send()` が成功します。受信側も `DATA` を配送します。 |
 | CONNECTED 解除 | `health_timeout_ms` 超過、`FIN` 受信、`REJECT` 受信で `health_alive == 0` に戻り、以後は再び CONNECTED 前と同じ扱いになります。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。 |
+
+Table: UNICAST_BIDIR (type 7) の接続状態別の実装
 
 ### type 8: UNICAST_BIDIR_N1
 
@@ -129,6 +139,8 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 | CONNECTED 解除 | ピア単位で `health_timeout_ms` 超過または `FIN` 受信時に `peer->health_alive == 0` となり、`potr_internal_peer_free()` でピアを削除します。以後はその peer を未接続として扱い、再接続は再度 `PING` 起点で行います。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。未知 peer の初回 `DATA` でも peer table は前進しません。 |
 
+Table: UNICAST_BIDIR_N1 (type 8) の接続状態別の実装
+
 ### type 9-10: TCP / TCP_BIDIR
 
 | 状態 | 実装 |
@@ -137,6 +149,8 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 | CONNECTED 後 | `health_alive == 1` になり、`potr_send()` が成功します。受信側も `DATA` を配送します。 |
 | CONNECTED 解除 | path ごとの PING タイムアウトや TCP 切断で `tcp_active_paths` が減少し、全 path が失われると connect スレッドが `health_alive == 0` に戻して `POTR_EVENT_DISCONNECTED` を発火します。加えて正常 close では、recv スレッドが protocol-level `FIN` を受信して最後の DATA 配送完了後に `FIN_ACK` を返信し、その直後に `POTR_EVENT_DISCONNECTED` を発火します。以後は再び CONNECTED 前と同じ扱いになり、再接続後に `PING` 交換で CONNECTED へ復帰します。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。 |
+
+Table: TCP / TCP_BIDIR (type 9-10) の接続状態別の実装
 
 ## potr_event 順序
 
@@ -247,3 +261,5 @@ TCP 系の処理は次のとおりです。
 | TCP タイムアウト検出 | `thread/potr_recv_thread.c` | `tcp_recv_thread_func()` 内 |
 | health スレッド起動/停止 | `thread/potr_health_thread.h` | `potr_internal_health_thread_start/stop()` |
 | tcp_health スレッド起動/停止 | `thread/potr_health_thread.h` | `potr_internal_tcp_health_thread_start/stop()` |
+
+Table: 死活監視機能の実装ファイルと関数一覧

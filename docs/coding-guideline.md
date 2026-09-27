@@ -48,6 +48,8 @@ porter には利用者が存在しないため、互換のための旧名の別�
 | `potrSend` | `potr_send` |
 | `potrDisconnectPeer` | `potr_peer_disconnect` |
 
+Table: 公開関数の旧名新名対応表
+
 `potr_send` はカテゴリ名詞を持たない横断的な API のため、動詞先行を許容します。
 
 ### 公開型の改名対応
@@ -64,6 +66,8 @@ porter には利用者が存在しないため、互換のための旧名の別�
 | `PotrPeerId` | `potr_peer_id` | 整数型の alias |
 | `PotrRecvCallback` | `potr_recv_fn` | 関数ポインター |
 
+Table: 公開型の旧名新名対応表
+
 ### 内部型の改名対応
 
 | 旧名 | 新名 | 種別 |
@@ -77,6 +81,8 @@ porter には利用者が存在しないため、互換のための旧名の別�
 | `PotrPacketSessionHdr` | `potr_internal_packet_session_hdr` | struct |
 | `PotrWindow` | `potr_internal_window` | struct |
 | `PotrConnectedThreadsOps` | `potr_internal_connected_threads_ops` | struct |
+
+Table: 内部型の旧名新名対応表
 
 > [!NOTE]
 > `PotrSocket`、`potr_socket_cause_t` はこの表から除外しています。
@@ -134,6 +140,8 @@ porter の公開 API および内部関数が戻り値として使用する共�
 | 通信・I/O | `POTR_ERR_PROTOCOL` | -24 | 受信データがプロトコル要件不適合 |
 | 制御 | `POTR_ERR_CANCELED` | -40 | シャットダウンによる待機または処理の中断 |
 
+Table: porter 共通結果コード一覧
+
 数値範囲は用途を識別しやすくするための区分であり、範囲だけを使った判定規約ではありません。  
 コード値を変更または追加する場合は、公開 API、内部処理、テスト、および porter 利用側の全箇所への影響を調査します。
 
@@ -183,6 +191,8 @@ if (ret != CPLAT_OK)
 | 値をそのまま返す関数 (`potr_internal_packet_wire_size`、`potr_raw_base_type` などの getter) | 値そのもの | 結果コードの概念が適用されない |
 | ハンドル・ポインター返却系 (`potr_tracer_get`、`potr_internal_peer_create`、`potr_internal_peer_find_by_*` など) | 成功時ポインター / 失敗・不在時 NULL | ポインター返却 API の慣用 |
 | 戻り値を持たない関数 | `void` | 同上 |
+
+Table: 共通結果コード適用対象外の関数と理由
 
 > [!NOTE]
 > ソケットに対する直接委譲ラッパー (`potr_sendto`、`potr_recvfrom`、`potr_poll_readable`、`potr_poll_writable`) と合成ラッパー (`potr_socket_open`、`potr_bind`、`potr_listen`、`potr_accept`、`potr_connect`、`potr_setsockopt`、`potr_socket_get_pending_error`) は、この表から除外しています。

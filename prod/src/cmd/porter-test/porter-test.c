@@ -26,6 +26,8 @@
  *  | ---------------- | ----------------------------------------------------------- |
  *  | -l \<level\>     | ログレベルを指定します。指定がない場合はログ出力なし。      |
  *
+ *  Table: porter-test のコマンドライン オプション
+ *
  *  role に指定可能な値: sender, receiver\n
  *  level に指定可能な値: VERBOSE, INFO, WARNING, ERROR, CRITICAL (大文字小文字不問)\n
  *  位置引数 (role/config_path/service_id) を省略した場合は対話コンソールで open を実行します。

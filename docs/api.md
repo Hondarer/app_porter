@@ -22,6 +22,8 @@
 | `data` | `const int[POTR_MAX_PATH]` の path 論理接続状態スナップショット |
 | `len` | 状態が変化した path index |
 
+Table: PATH イベント時のコールバック引数の意味
+
 `path_states` は常にイベント発火後の状態です。`PATH_DISCONNECTED` のときも対象 path は 0 です。  
 `CONNECTED` / `DISCONNECTED` は path 論理接続状態の OR が 0->1 / 1->0 に変化したときのみ発火します。
 
@@ -36,6 +38,8 @@
 | `POTR_ERR_OUT_OF_MEMORY` | `POTR_PEER_ALL` の送信先一覧のメモリ確保失敗 |
 | `POTR_ERR_CANCELED` | サービスの終了処理による送信中止 |
 | `POTR_ERR_UNKNOWN` | 圧縮など分類不能な内部処理の失敗 |
+
+Table: potr_send の戻り値一覧
 
 `POTR_ERR_DISCONNECTED` は「送信先が論理的に CONNECTED していない」ことを示します。  
 片方向 type 1-6 は受信側が有効な `PING` または `DATA` を契機に CONNECTED しますが、送信側はその状態を観測できないため、本戻り値の対象外です。
@@ -55,12 +59,16 @@
 | `potr_peer_disconnect()` | はい (条件付き) | コールバック内からは呼び出さないこと (デッドロック) |
 | `potr_service_get_type()` | はい | グローバル状態なし |
 
+Table: porter API のスレッド セーフ性一覧
+
 ### サービスを開く API の使い分け
 
 | API | 入力 | 用途 |
 |---|---|---|
 | `potr_service_open()` | `potr_global_config` + `potr_service_def` 構造体 | テストやプログラム的な設定構築。構成ファイル不要 |
 | `potr_service_open_from_config()` | 構成ファイル パス + service_id | 構成ファイル ベースの既存フロー。後方互換 |
+
+Table: サービス開始 API の入力と用途の使い分け
 
 `potr_service_open_from_config()` の実装は構成ファイルを解析して構造体を構築し、`potr_service_open()` に委譲します。
 

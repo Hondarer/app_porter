@@ -163,6 +163,8 @@ FIN_TARGET_VALID なし
 | TCP close wait 中に FIN_ACK 未着 | `tcp_close_timeout_ms` 超過で強制 close、`potr_service_close()` は `POTR_ERR_TIMEOUT` |
 | `send_window.next_seq` が wrap して 0 | `FIN_TARGET_VALID` の有無で no-data FIN と区別するため問題なし |
 
+Table: FIN 順序制御のエッジ ケースと解消パス
+
 ## 対象通信種別
 
 | 通信種別 | FIN 送受信 | FIN_ACK | 備考 |
@@ -172,6 +174,8 @@ FIN_TARGET_VALID なし
 | unicast_bidir_n1 | ○ | × | `potr_internal_peer_context` ごとに pending FIN を管理 |
 | tcp (type 9) | ○ | ○ | `potr_service_close()` が FIN_ACK を待機 |
 | tcp_bidir (type 10) | ○ | ○ | 同上 |
+
+Table: 通信種別別の FIN および FIN_ACK 対応状況
 
 ## 実装ファイル
 
@@ -183,3 +187,5 @@ FIN_TARGET_VALID なし
 | `prod/libsrc/porter/protocol/packet.c` | `potr_internal_packet_build_fin()` / `potr_internal_packet_build_fin_ack()` |
 | `prod/libsrc/porter/protocol/config.c` | `tcp_close_timeout_ms` の読込 |
 | `prod/libsrc/porter/potr_context.h` | close wait 状態、`pending_fin` / `fin_target_seq` などの保持 |
+
+Table: FIN 順序制御の実装ファイルと役割

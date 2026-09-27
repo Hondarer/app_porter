@@ -41,6 +41,8 @@ porter は通信に `cplat` の `net` カテゴリを使用し、OS のソケッ
 | `potr_socket_error_is()` | `cplat_error_is()` |
 | `potr_socket_lib_init()` / `potr_socket_lib_cleanup()` | 削除 (`cplat/net` が内部で初期化) |
 
+Table: porter から cplat への型および関数対応表
+
 ## コンパイラ依存の分岐
 
 pragma や属性の分岐が必要な場合は `COMPILER_*` を使用し、OS 分岐の `PLATFORM_*` と軸を混在させません。
