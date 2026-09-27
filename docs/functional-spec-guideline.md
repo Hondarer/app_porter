@@ -60,5 +60,5 @@ porter は下位の通信を他の app の抽象を通じて利用しますが�
 検査は、機能仕様が配置されているすべての app を対象とします。
 
 ```shell
-python3 bin/check_functional_spec.py
+python3 app/general/bin/check_functional_spec.py
 ```

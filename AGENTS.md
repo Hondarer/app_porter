@@ -65,5 +65,5 @@ make test
 機能仕様を変更した場合は、ワークスペース ルートで次のコマンドを実行してください。
 
 ```bash
-python3 bin/check_functional_spec.py
+python3 app/general/bin/check_functional_spec.py
 ```
