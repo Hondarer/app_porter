@@ -15,23 +15,17 @@
 
 using namespace testing;
 
-// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_IO を返すことの確認
-TEST(configLoadGlobalTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened)
+// 必須引数が NULL の場合に POTR_ERR_INVALID_ARGUMENT を返すことの確認
+TEST(configLoadGlobalTest, returnsInvalidArgumentWhenParameterIsNull)
 {
     // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_stdio> mock_stdio;
     potr_global_config global = {};
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
-        .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
 
     // Act
     int actual_ret_null_path = potr_internal_config_load_global(nullptr, &global);      // [手順] - config_path を NULL にして呼び出す。
     int actual_ret_null_out = potr_internal_config_load_global("config.conf", nullptr); // [手順] - 出力先を NULL にして呼び出す。
-    int actual_ret_open_fail =
-        potr_internal_config_load_global("missing.conf", &global); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -40,12 +34,30 @@ TEST(configLoadGlobalTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
         actual_ret_null_out); // [確認_異常系] - 出力先が NULL の場合に potr_internal_config_load_global の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+}
+
+// 設定ファイルの open に失敗した場合に POTR_ERR_IO を返すことの確認
+TEST(configLoadGlobalTest, returnsIoErrorWhenFileCannotBeOpened)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    potr_global_config global = {};
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
+        .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
+
+    // Act
+    int actual_ret_open_fail =
+        potr_internal_config_load_global("missing.conf", &global); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
+
+    // Assert
     EXPECT_EQ(
         POTR_ERR_IO,
         actual_ret_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に potr_internal_config_load_global の戻り値が POTR_ERR_IO であること。
 }
 
-// [global] の設定値が読み込まれ、他 section と未知キーが無視されることの確認
+// 設定ファイルから [global] セクションの設定値が正しく読み込まれ、他セクションや未知のキーが無視されることの確認
 TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
 {
     // Arrange
@@ -102,7 +114,7 @@ TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
     EXPECT_EQ(48U, global.send_queue_depth);        // [確認_正常系] - send_queue_depth を読み込むこと。
 }
 
-// [global] が存在しない場合に既定値が維持されることの確認
+// 設定ファイルに [global] セクションが存在しない場合に全項目で既定値が維持されることの確認
 TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
 {
     // Arrange

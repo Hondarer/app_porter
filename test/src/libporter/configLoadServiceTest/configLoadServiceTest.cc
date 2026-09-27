@@ -18,23 +18,17 @@
 
 using namespace testing;
 
-// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_IO を返すことの確認
-TEST(configLoadServiceTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened)
+// 必須引数が NULL の場合に POTR_ERR_INVALID_ARGUMENT を返すことの確認
+TEST(configLoadServiceTest, returnsInvalidArgumentWhenParameterIsNull)
 {
     // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_stdio> mock_stdio;
     potr_service_def def = {};
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
-        .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
 
     // Act
     int actual_ret_null_path = potr_internal_config_load_service(nullptr, 10, &def);         // [手順] - config_path を NULL にして呼び出す。
     int actual_ret_null_out = potr_internal_config_load_service("config.conf", 10, nullptr); // [手順] - 出力先を NULL にして呼び出す。
-    int actual_ret_open_fail =
-        potr_internal_config_load_service("missing.conf", 10, &def); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -43,12 +37,30 @@ TEST(configLoadServiceTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpene
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
         actual_ret_null_out); // [確認_異常系] - 出力先が NULL の場合に potr_internal_config_load_service の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+}
+
+// 設定ファイルの open に失敗した場合に POTR_ERR_IO を返すことの確認
+TEST(configLoadServiceTest, returnsIoErrorWhenFileCannotBeOpened)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    potr_service_def def = {};
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
+        .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
+
+    // Act
+    int actual_ret_open_fail =
+        potr_internal_config_load_service("missing.conf", 10, &def); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
+
+    // Assert
     EXPECT_EQ(
         POTR_ERR_IO,
         actual_ret_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に potr_internal_config_load_service の戻り値が POTR_ERR_IO であること。
 }
 
-// 指定 service の設定が読み込まれ、service 単位の既定値が維持されることの確認
+// 指定した service ID の設定項目が正しく読み込まれ、未指定項目では service 単位の既定値が維持されることの確認
 TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
 {
     // Arrange
@@ -124,7 +136,7 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
     EXPECT_EQ(0x33U, def.encrypt_key[3]); // [確認_正常系] - hex 文字列の 4 バイト目を正しく変換すること。
 }
 
-// encrypt_key が hex でない場合にパスフレーズとしてハッシュ化されることの確認
+// encrypt_key が hex 文字列でない場合にパスフレーズとして鍵導出 (ハッシュ化) されることの確認
 TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
 {
     // Arrange
@@ -172,7 +184,7 @@ TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
     EXPECT_EQ(0x5A, def.encrypt_key[31]); // [確認_正常系] - 導出した鍵を末尾まで保持すること。
 }
 
-// パスフレーズのハッシュ化に失敗した場合に鍵がクリアされることの確認
+// パスフレーズからの鍵導出に失敗した場合に暗号化が無効化され、鍵領域がゼロクリアされることの確認
 TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
 {
     // Arrange
@@ -213,7 +225,7 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
                         POTR_CRYPTO_KEY_SIZE)); // [確認_異常系] - hash 失敗時に鍵をゼロ クリアすること。
 }
 
-// 指定 service が存在しない場合に POTR_ERR_NOT_FOUND を返すことの確認
+// 設定ファイルに対象の service ID が存在しない場合に POTR_ERR_NOT_FOUND を返すことの確認
 TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
 {
     // Arrange

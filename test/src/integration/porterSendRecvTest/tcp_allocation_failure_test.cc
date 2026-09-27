@@ -194,7 +194,7 @@ class tcp_allocation_failure_test : public TestWithParam<allocation_case>
 #endif
 };
 
-// 受信バッファーの確保失敗後に、確保済み領域と全経路の listen ソケットを解放することを確認します。
+// 受信バッファーの確保失敗後に、確保済み領域と全経路の listen ソケットを解放することの確認
 TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
 {
     // Arrange

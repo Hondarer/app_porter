@@ -263,7 +263,7 @@ class tcpMultipathTest : public Test
     }
 };
 
-// 一方のヘッダー読み取り停止中に、他方の受信が内容を上書きしないことを確認します。
+// 一方のヘッダー読み取り停止中に、他方の受信が内容を上書きしないことの確認
 TEST_F(tcpMultipathTest, interleaved_headers_preserve_packets)
 {
     // Arrange
@@ -292,7 +292,7 @@ TEST_F(tcpMultipathTest, interleaved_headers_preserve_packets)
     EXPECT_EQ(second, s_received[2]); // [確認_正常系] - 第 2 パケットの内容が一致すること。
 }
 
-// 復号・展開したフラグメントを複数経路で順序どおりに結合することを確認します。
+// 復号・展開したフラグメントを複数経路で順序どおりに結合することの確認
 TEST_F(tcpMultipathTest, encrypted_compressed_fragments)
 {
     // Arrange
@@ -332,7 +332,7 @@ TEST_F(tcpMultipathTest, encrypted_compressed_fragments)
     EXPECT_EQ(expected, s_received[1]); // [確認_正常系] - 復号・展開した全バイトが一致すること。
 }
 
-// 他経路の読み取り待機が、到着済み DATA の処理を停止させないことを確認します。
+// 他経路の読み取り待機が、到着済み DATA の処理を停止させないことの確認
 TEST_F(tcpMultipathTest, blocked_path_does_not_stop_other_path)
 {
     // Arrange
@@ -363,7 +363,7 @@ TEST_F(tcpMultipathTest, blocked_path_does_not_stop_other_path)
     EXPECT_EQ(second, s_received[2]); // [確認_正常系] - 待機を解除した DATA が一致すること。
 }
 
-// 圧縮した返信が、コールバック中の展開済みデータを変更しないことを確認します。
+// 圧縮した返信が、コールバック中の展開済みデータを変更しないことの確認
 TEST_F(tcpMultipathTest, encrypted_compressed_reply_preserves_callback_data)
 {
     // Arrange
@@ -389,7 +389,7 @@ TEST_F(tcpMultipathTest, encrypted_compressed_reply_preserves_callback_data)
     EXPECT_EQ(expected, s_received[1]); // [確認_正常系] - 展開した全バイトが一致すること。
 }
 
-// 配信中に別経路から受信しても、展開済みデータの寿命と順序を維持することを確認します。
+// 配信中に別経路から受信しても、展開済みデータの寿命と順序を維持することの確認
 TEST_F(tcpMultipathTest, callback_lifetime_across_paths)
 {
     // Arrange
@@ -429,7 +429,7 @@ TEST_F(tcpMultipathTest, callback_lifetime_across_paths)
     EXPECT_EQ(second, s_received[2]); // [確認_正常系] - 後続 DATA が次に配信されること。
 }
 
-// DATA より先に両経路の暗号化 PING だけで同一セッションを採用できることを確認します。
+// DATA より先に両経路の暗号化 PING だけで同一セッションを採用できることの確認
 TEST_F(tcpMultipathTest, bootstrap_both_paths_before_data)
 {
     // Arrange
@@ -443,7 +443,7 @@ TEST_F(tcpMultipathTest, bootstrap_both_paths_before_data)
     EXPECT_EQ(0U, s_disconnects); // [確認_正常系] - 同一セッションの経路を切断しないこと。
 }
 
-// 部分再接続をまたいで DATA の順序と FIN の完了条件を維持することを確認します。
+// 部分再接続をまたいで DATA の順序と FIN の完了条件を維持することの確認
 TEST_F(tcpMultipathTest, reconnect_path_and_finish_in_order)
 {
     // Arrange

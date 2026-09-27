@@ -60,7 +60,8 @@ class potrPathEventTest : public Test
     potr_internal_peer_context peer;
 };
 
-// service 接続時に PATH_CONNECTED が CONNECTED より先に通知されることの確認
+// service 接続時に path 状態を同期してイベントを準備し、
+// callback 発行時に各 path の PATH_CONNECTED が CONNECTED より先に通知されることの確認
 TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
 {
     // Arrange
@@ -87,8 +88,10 @@ TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
     EXPECT_EQ(1, ctx.path_logical_alive[0]); // [確認_正常系] - path 0 の論理状態が接続になること。
     EXPECT_EQ(1, ctx.path_logical_alive[2]); // [確認_正常系] - path 2 の論理状態が接続になること。
 
+    // Act_2
     potr_internal_emit_service_path_events_locked(&ctx, &prepared); // [手順] - 準備済みイベントを callback へ発行する。
 
+    // Assert_2
     EXPECT_EQ(3, s_event_count); // [確認_正常系] - callback が 3 回呼び出されること。
     EXPECT_EQ(POTR_PEER_NA,
               s_events[0].peer_id); // [確認_正常系] - service イベントの peer_id が POTR_PEER_NA であること。
@@ -105,7 +108,8 @@ TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
     EXPECT_EQ(POTR_EVENT_CONNECTED, s_events[2].event); // [確認_正常系] - 最後に CONNECTED が通知されること。
 }
 
-// peer 切断時に全 path の PATH_DISCONNECTED が DISCONNECTED より先に通知されることの確認
+// peer 切断時に全 path 状態を同期して切断イベントを準備し、
+// callback 発行時に全 path の PATH_DISCONNECTED が DISCONNECTED より先に通知されることの確認
 TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
 {
     // Arrange
@@ -136,8 +140,10 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
     EXPECT_EQ(0, peer.path_logical_alive[1]); // [確認_正常系] - path 1 の論理状態が切断になること。
     EXPECT_EQ(0, peer.path_logical_alive[3]); // [確認_正常系] - path 3 の論理状態が切断になること。
 
+    // Act_2
     potr_internal_emit_peer_path_events_locked(&ctx, &peer, &prepared); // [手順] - 準備済みイベントを callback へ発行する。
 
+    // Assert_2
     EXPECT_EQ(3, s_event_count);                   // [確認_正常系] - callback が 3 回呼び出されること。
     EXPECT_EQ((potr_peer_id)7, s_events[0].peer_id); // [確認_正常系] - peer イベントの peer_id が 7 であること。
     EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED,

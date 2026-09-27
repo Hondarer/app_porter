@@ -233,25 +233,25 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret);                       // [確認_正常系] - potr_peer_disconnect の戻り値が POTR_OK であること。
     EXPECT_EQ(static_cast<size_t>(3), s_cb.count); // [確認_正常系] - PATH 2 件 + DISCONNECTED が呼び出されること。
-    EXPECT_EQ(42, s_cb.entries[0].service_id);
-    EXPECT_EQ((potr_peer_id)1, s_cb.entries[0].peer_id);
-    EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED, s_cb.entries[0].event);
-    EXPECT_EQ(0U, s_cb.entries[0].len);
-    EXPECT_EQ(0, s_cb.entries[0].path_states[0]);
-    EXPECT_EQ(0, s_cb.entries[0].path_states[2]);
-    EXPECT_EQ(42, s_cb.entries[1].service_id);
-    EXPECT_EQ((potr_peer_id)1, s_cb.entries[1].peer_id);
-    EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED, s_cb.entries[1].event);
-    EXPECT_EQ(2U, s_cb.entries[1].len);
-    EXPECT_EQ(0, s_cb.entries[1].path_states[0]);
-    EXPECT_EQ(0, s_cb.entries[1].path_states[2]);
-    EXPECT_EQ(42, s_cb.entries[2].service_id);
-    EXPECT_EQ((potr_peer_id)1, s_cb.entries[2].peer_id);
-    EXPECT_EQ(POTR_EVENT_DISCONNECTED, s_cb.entries[2].event);
-    EXPECT_EQ(0U, s_cb.entries[2].len);
+    EXPECT_EQ(42, s_cb.entries[0].service_id);             // [確認_正常系] - 1 番目のコールバックの service_id が 42 であること。
+    EXPECT_EQ((potr_peer_id)1, s_cb.entries[0].peer_id);   // [確認_正常系] - 1 番目のコールバックの peer_id が 1 であること。
+    EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED, s_cb.entries[0].event); // [確認_正常系] - 1 番目のイベントが PATH_DISCONNECTED であること。
+    EXPECT_EQ(0U, s_cb.entries[0].len);                    // [確認_正常系] - 1 番目のイベントの len が path 0 であること。
+    EXPECT_EQ(0, s_cb.entries[0].path_states[0]);          // [確認_正常系] - 1 番目の path 0 状態が切断であること。
+    EXPECT_EQ(0, s_cb.entries[0].path_states[2]);          // [確認_正常系] - 1 番目の path 2 状態が切断であること。
+    EXPECT_EQ(42, s_cb.entries[1].service_id);             // [確認_正常系] - 2 番目のコールバックの service_id が 42 であること。
+    EXPECT_EQ((potr_peer_id)1, s_cb.entries[1].peer_id);   // [確認_正常系] - 2 番目のコールバックの peer_id が 1 であること。
+    EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED, s_cb.entries[1].event); // [確認_正常系] - 2 番目のイベントが PATH_DISCONNECTED であること。
+    EXPECT_EQ(2U, s_cb.entries[1].len);                    // [確認_正常系] - 2 番目のイベントの len が path 2 であること。
+    EXPECT_EQ(0, s_cb.entries[1].path_states[0]);          // [確認_正常系] - 2 番目の path 0 状態が切断であること。
+    EXPECT_EQ(0, s_cb.entries[1].path_states[2]);          // [確認_正常系] - 2 番目の path 2 状態が切断であること。
+    EXPECT_EQ(42, s_cb.entries[2].service_id);             // [確認_正常系] - 3 番目のコールバックの service_id が 42 であること。
+    EXPECT_EQ((potr_peer_id)1, s_cb.entries[2].peer_id);   // [確認_正常系] - 3 番目のコールバックの peer_id が 1 であること。
+    EXPECT_EQ(POTR_EVENT_DISCONNECTED, s_cb.entries[2].event); // [確認_正常系] - 3 番目のイベントが DISCONNECTED であること。
+    EXPECT_EQ(0U, s_cb.entries[2].len);                    // [確認_正常系] - 3 番目のイベントの len が 0 であること。
     EXPECT_EQ(0, cplat_atomic_load_i32(&peer_ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - health_alive が 0 にクリアされること。
-    EXPECT_EQ(0, peer_ctx.path_logical_alive[0]);
-    EXPECT_EQ(0, peer_ctx.path_logical_alive[2]);
+    EXPECT_EQ(0, peer_ctx.path_logical_alive[0]);          // [確認_正常系] - peer の path 0 論理状態が切断であること。
+    EXPECT_EQ(0, peer_ctx.path_logical_alive[2]);          // [確認_正常系] - peer の path 2 論理状態が切断であること。
 }
 
 /* ---------- 正常系 (切断済みピア) ---------- */

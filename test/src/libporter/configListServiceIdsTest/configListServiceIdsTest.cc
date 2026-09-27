@@ -18,18 +18,14 @@
 
 using namespace testing;
 
-// 引数不正時に POTR_ERR_INVALID_ARGUMENT を、ファイル open 失敗時に POTR_ERR_IO を返すことの確認
-TEST(configListServiceIdsTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOpened)
+// 必須引数が NULL の場合に POTR_ERR_INVALID_ARGUMENT を返すことの確認
+TEST(configListServiceIdsTest, returnsInvalidArgumentWhenParameterIsNull)
 {
     // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_stdio> mock_stdio;
     int64_t *ids = nullptr;
     int count = 0;
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
-        .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
 
     // Act
     int actual_ret_null_path = potr_internal_config_list_service_ids(nullptr, &ids, &count); // [手順] - config_path を NULL にして呼び出す。
@@ -37,8 +33,6 @@ TEST(configListServiceIdsTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOp
         potr_internal_config_list_service_ids("config.conf", nullptr, &count); // [手順] - ids_out を NULL にして呼び出す。
     int actual_ret_null_count =
         potr_internal_config_list_service_ids("config.conf", &ids, nullptr); // [手順] - count_out を NULL にして呼び出す。
-    int actual_ret_open_fail = potr_internal_config_list_service_ids("missing.conf", &ids,
-                                                &count); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -50,12 +44,31 @@ TEST(configListServiceIdsTest, returnsErrorWhenArgumentIsInvalidOrFileCannotBeOp
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
         actual_ret_null_count); // [確認_異常系] - count_out が NULL の場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+}
+
+// 設定ファイルの open に失敗した場合に POTR_ERR_IO を返すことの確認
+TEST(configListServiceIdsTest, returnsIoErrorWhenFileCannotBeOpened)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    int64_t *ids = nullptr;
+    int count = 0;
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
+        .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
+
+    // Act
+    int actual_ret_open_fail = potr_internal_config_list_service_ids("missing.conf", &ids,
+                                                &count); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
+
+    // Assert
     EXPECT_EQ(
         POTR_ERR_IO,
         actual_ret_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_IO であること。
 }
 
-// service section だけが列挙され、既定容量 64 件を超えても拡張されることの確認
+// 設定ファイルから service セクションのみを列挙し、既定容量 (64 件) を超える場合も動的に領域を拡張して全 ID を取得できることの確認
 TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCapacity)
 {
     // Arrange

@@ -87,8 +87,8 @@ TEST_F(windowTest, initInitializesStateAndReusesBuffersOnSameSize)
     EXPECT_EQ(128U, win.max_payload);      // [確認_正常系] - max_payload が保持されること。
 }
 
-// - 送信ウィンドウが満杯のとき push で最古エントリが evict されること。
-// - evict された通番の send_get が POTR_ERR_NOT_FOUND を返すこと。
+// 送信ウィンドウが満杯のときに push すると最古エントリが evict され、
+// evict された通番の send_get が POTR_ERR_NOT_FOUND を返すことの確認
 TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
 {
     // Arrange
@@ -108,18 +108,20 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
         ASSERT_EQ(POTR_OK, potr_internal_window_send_push(&win, &pkt));
     }
     int full_after_4 = potr_internal_window_send_full(&win); // [手順] - 4 件 push した直後の満杯判定を取得する。
-    {
-        potr_packet pkt = make_send_packet(4U, payload, sizeof(payload));
-        int actual_ret_push = potr_internal_window_send_push(&win, &pkt); // [手順] - 満杯状態で 5 件目を push する。
-        ASSERT_EQ(
-            POTR_OK,
-            actual_ret_push); // [確認_正常系] - potr_internal_window_send_push の戻り値から、5 件目の push が成功したと判断できること。
-    }
-    int actual_ret_evicted = potr_internal_window_send_get(&win, 0U, &out); // [手順] - evict された通番 0 を取得する。
-    int actual_ret_latest = potr_internal_window_send_get(&win, 4U, &out);  // [手順] - 最新の通番 4 を取得する。
 
     // Assert
     EXPECT_EQ(1, full_after_4); // [確認_正常系] - window_size 件 push で満杯になること。
+
+    // Act_2
+    potr_packet pkt = make_send_packet(4U, payload, sizeof(payload));
+    int actual_ret_push = potr_internal_window_send_push(&win, &pkt);       // [手順] - 満杯状態で 5 件目を push する。
+    int actual_ret_evicted = potr_internal_window_send_get(&win, 0U, &out); // [手順] - evict された通番 0 を取得する。
+    int actual_ret_latest = potr_internal_window_send_get(&win, 4U, &out);  // [手順] - 最新の通番 4 を取得する。
+
+    // Assert_2
+    EXPECT_EQ(
+        POTR_OK,
+        actual_ret_push); // [確認_正常系] - potr_internal_window_send_push の戻り値から、5 件目の push が成功したと判断できること。
     EXPECT_EQ(
         POTR_ERR_NOT_FOUND,
         actual_ret_evicted); // [確認_異常系] - evict された通番 0 の potr_internal_window_send_get の戻り値が POTR_ERR_NOT_FOUND であること。
@@ -129,8 +131,8 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
     EXPECT_EQ(1U, win.base_seq); // [確認_正常系] - evict により base_seq が前進すること。
 }
 
-// - send_get がプール スロットへディープ コピーされたペイロードを返すこと。
-// - ウィンドウ範囲外の通番に POTR_ERR_NOT_FOUND を返すこと。
+// send_get がプール スロットへディープ コピーされたペイロードを返し、
+// ウィンドウ範囲外の通番に POTR_ERR_NOT_FOUND を返すことの確認
 TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
 {
     // Arrange
@@ -160,7 +162,7 @@ TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
         actual_ret_out_of_range); // [確認_異常系] - 範囲外の通番 99 の potr_internal_window_send_get の戻り値が POTR_ERR_NOT_FOUND であること。
 }
 
-// - 2 の累乗でないウィンドウでも、通番周回前後の送信パケットを別スロットで保持すること。
+// 2 の累乗でないウィンドウでも、通番周回前後の送信パケットを別スロットで保持することの確認
 TEST_F(windowTest, sendGetKeepsPacketsDistinctAcrossSequenceWrap)
 {
     // Arrange
@@ -197,8 +199,7 @@ TEST_F(windowTest, sendGetKeepsPacketsDistinctAcrossSequenceWrap)
     EXPECT_EQ(0U, out_after_wrap.seq_num);               // [確認_正常系] - 周回後の通番 0 が保持されること。
 }
 
-// - 順序どおりに push したパケットが pop で順に取り出せること。
-// - 空ウィンドウの pop が POTR_ERR_EMPTY を返すこと。
+// 順序どおりに push したパケットが pop で順に取り出せ、空ウィンドウの pop が POTR_ERR_EMPTY を返すことの確認
 TEST_F(windowTest, recvPushAndPopDeliversInOrder)
 {
     // Arrange
@@ -240,7 +241,7 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
               actual_ret_pop_empty); // [確認_異常系] - 空ウィンドウの potr_internal_window_recv_pop の戻り値が POTR_ERR_EMPTY であること。
 }
 
-// - 2 の累乗でないウィンドウでも、通番周回前後の受信パケットを順に取り出すこと。
+// 2 の累乗でないウィンドウでも、通番周回前後の受信パケットを順に取り出せることの確認
 TEST_F(windowTest, recvPushAndPopAcrossSequenceWrap)
 {
     // Arrange
@@ -275,8 +276,8 @@ TEST_F(windowTest, recvPushAndPopAcrossSequenceWrap)
     EXPECT_EQ(0U, actual_sequences[2]);              // [確認_正常系] - 周回後の通番 0 を最後に取り出すこと。
 }
 
-// - 先行パケットのみ到着した状態で欠番 (next_seq) が NACK 対象になること。
-// - 欠番が埋まったあと needs_nack が 0 を返し、順に pop できること。
+// 先行パケット到着時に欠番が NACK 対象となり pop が保留され、
+// 欠番補充後に NACK が解消して全パケットを順に取り出せることの確認
 TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
 {
     // Arrange
@@ -290,45 +291,44 @@ TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
     // Pre-Assert
 
     // Act
-    {
-        potr_packet pkt2 = make_recv_packet(2U, payload, sizeof(payload));
-        int actual_ret_push2 = potr_internal_window_recv_push(&win, &pkt2); // [手順] - seq=2 を先行して push する。
-        ASSERT_EQ(
-            POTR_OK,
-            actual_ret_push2); // [確認_正常系] - potr_internal_window_recv_push の戻り値から、seq=2 の push が成功したと判断できること。
-    }
+    potr_packet pkt2 = make_recv_packet(2U, payload, sizeof(payload));
+    int actual_ret_push2 = potr_internal_window_recv_push(&win, &pkt2); // [手順] - seq=2 を先行して push する。
     int actual_ret_gap = potr_internal_window_recv_needs_nack(&win, &nack_num); // [手順] - 欠番判定を行う。
     int actual_ret_pop_blocked = potr_internal_window_recv_pop(&win, &out);     // [手順] - 欠番未解消のまま pop する。
-    {
-        potr_packet pkt0 = make_recv_packet(0U, payload, sizeof(payload));
-        potr_packet pkt1 = make_recv_packet(1U, payload, sizeof(payload));
-        int actual_ret_push0 = potr_internal_window_recv_push(&win, &pkt0); // [手順] - 欠番 seq=0, 1 を埋める。
-        ASSERT_EQ(
-            POTR_OK,
-            actual_ret_push0); // [確認_正常系] - potr_internal_window_recv_push の戻り値から、seq=0 の push が成功したと判断できること。
-        int actual_ret_push1 = potr_internal_window_recv_push(&win, &pkt1);
-        ASSERT_EQ(
-            POTR_OK,
-            actual_ret_push1); // [確認_正常系] - potr_internal_window_recv_push の戻り値から、seq=1 の push が成功したと判断できること。
-    }
-    int actual_ret_no_gap = potr_internal_window_recv_needs_nack(&win, &nack_num);
+
+    // Assert
+    ASSERT_EQ(
+        POTR_OK,
+        actual_ret_push2); // [確認_正常系] - potr_internal_window_recv_push の戻り値から、seq=2 の push が成功したと判断できること。
+    EXPECT_EQ(1, actual_ret_gap);   // [確認_正常系] - 先行パケット到着時に欠番が検出されること。
+    EXPECT_EQ(0U, nack_num); // [確認_正常系] - NACK 対象が next_seq (0) であること。
+    EXPECT_EQ(POTR_ERR_EMPTY,
+              actual_ret_pop_blocked); // [確認_異常系] - 欠番未解消時の potr_internal_window_recv_pop の戻り値が POTR_ERR_EMPTY であること。
+
+    // Act_2
+    potr_packet pkt0 = make_recv_packet(0U, payload, sizeof(payload));
+    potr_packet pkt1 = make_recv_packet(1U, payload, sizeof(payload));
+    int actual_ret_push0 = potr_internal_window_recv_push(&win, &pkt0); // [手順] - 欠番 seq=0, 1 を埋める。
+    int actual_ret_push1 = potr_internal_window_recv_push(&win, &pkt1);
+    int actual_ret_no_gap = potr_internal_window_recv_needs_nack(&win, &nack_num); // [手順] - 欠番補充後の NACK 判定を行う。
     int pop_count = 0;
     while (potr_internal_window_recv_pop(&win, &out) == POTR_OK)
     {
         pop_count++;
     }
 
-    // Assert
-    EXPECT_EQ(1, actual_ret_gap);   // [確認_正常系] - 先行パケット到着時に欠番が検出されること。
-    EXPECT_EQ(0U, nack_num); // [確認_正常系] - NACK 対象が next_seq (0) であること。
-    EXPECT_EQ(POTR_ERR_EMPTY,
-              actual_ret_pop_blocked); // [確認_異常系] - 欠番未解消時の potr_internal_window_recv_pop の戻り値が POTR_ERR_EMPTY であること。
-    EXPECT_EQ(0, actual_ret_no_gap);   // [確認_正常系] - 欠番解消後は NACK 不要になること。
+    // Assert_2
+    ASSERT_EQ(
+        POTR_OK,
+        actual_ret_push0); // [確認_正常系] - potr_internal_window_recv_push の戻り値から、seq=0 の push が成功したと判断できること。
+    ASSERT_EQ(
+        POTR_OK,
+        actual_ret_push1); // [確認_正常系] - potr_internal_window_recv_push の戻り値から、seq=1 の push が成功したと判断できること。
+    EXPECT_EQ(0, actual_ret_no_gap); // [確認_正常系] - 欠番解消後は NACK 不要になること。
     EXPECT_EQ(3, pop_count);    // [確認_正常系] - 3 件すべて順に取り出せること。
 }
 
-// - ウィンドウ範囲外の通番の push が POTR_ERR_OUT_OF_WINDOW を返すこと。
-// - 同一通番の重複 push が成功扱い (べき等) になること。
+// ウィンドウ範囲外の通番の push が拒絶され、同一通番の重複 push が成功扱い (べき等) になることの確認
 TEST_F(windowTest, recvPushRejectsOutOfWindowAndAcceptsDuplicate)
 {
     // Arrange
@@ -354,7 +354,7 @@ TEST_F(windowTest, recvPushRejectsOutOfWindowAndAcceptsDuplicate)
     EXPECT_EQ(POTR_OK, actual_ret_dup); // [確認_正常系] - 重複 push が成功扱いになること。
 }
 
-// - 到着済み問い合わせが非ゼロ基点でも、格納時と同じ循環スロットを参照すること。
+// 到着済み問い合わせが非ゼロ基点でも、格納時と同じ循環スロットを参照することの確認
 TEST_F(windowTest, recvHasPacketUsesStableIndexWithNonzeroBase)
 {
     // Arrange
@@ -380,7 +380,7 @@ TEST_F(windowTest, recvHasPacketUsesStableIndexWithNonzeroBase)
     EXPECT_EQ(0, actual_has_outside); // [確認_正常系] - ウィンドウ外通番が未到着と判定されること。
 }
 
-// - 到着済み問い合わせが通番周回後も格納時と同じ循環スロットを参照すること。
+// 到着済み問い合わせが通番周回後も格納時と同じ循環スロットを参照することの確認
 TEST_F(windowTest, recvHasPacketUsesStableIndexAcrossSequenceWrap)
 {
     // Arrange
@@ -403,7 +403,7 @@ TEST_F(windowTest, recvHasPacketUsesStableIndexAcrossSequenceWrap)
     EXPECT_EQ(1, actual_has_wrapped); // [確認_正常系] - 周回後の通番 0 が到着済みと判定されること。
 }
 
-// - NULL と解放済みのウィンドウは未到着と判定すること。
+// NULL および解放済みのウィンドウに対して未到着と判定することの確認
 TEST_F(windowTest, recvHasPacketReturnsFalseForUnavailableWindow)
 {
     // Arrange
@@ -422,7 +422,7 @@ TEST_F(windowTest, recvHasPacketReturnsFalseForUnavailableWindow)
     EXPECT_EQ(0, actual_disposed); // [確認_異常系] - 解放済みウィンドウは未到着と判定されること。
 }
 
-// - skip が next_seq と一致する通番のときのみウィンドウを前進させること。
+// skip が next_seq と一致する通番のときのみウィンドウを前進させることの確認
 TEST_F(windowTest, recvSkipAdvancesOnlyOnNextSeq)
 {
     // Arrange
@@ -442,7 +442,7 @@ TEST_F(windowTest, recvSkipAdvancesOnlyOnNextSeq)
     EXPECT_EQ(11U, win.base_seq);        // [確認_正常系] - 一致した skip で base_seq が前進すること。
 }
 
-// - reset が全スロットを無効化し base_seq / next_seq を新基点に設定すること。
+// reset が全スロットを無効化し base_seq および next_seq を新基点に設定することの確認
 TEST_F(windowTest, recvResetClearsSlotsAndSetsNewBase)
 {
     // Arrange

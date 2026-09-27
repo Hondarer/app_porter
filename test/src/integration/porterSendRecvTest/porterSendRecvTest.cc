@@ -343,7 +343,7 @@ class porterSendRecvTest : public Test
     }
 };
 
-// 単一メッセージ送受信テスト
+// 単一メッセージの送信に対して受信側へ正しく配送されることの確認
 TEST_F(porterSendRecvTest, send_single_message)
 {
     // Arrange
@@ -371,7 +371,7 @@ TEST_F(porterSendRecvTest, send_single_message)
     // Pre-Assert
 
     // Act
-    ASSERT_TRUE(writeLineStdin(send_h_, "send Hello Porter"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send Hello Porter")); // [手順] - SENDER に "send Hello Porter" を送信する。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
 
     ASSERT_NO_THROW(
@@ -398,7 +398,7 @@ TEST_F(porterSendRecvTest, send_single_message)
             "受信 (12 バイト)")); // [確認_正常系] - RECIEVER の受信バイト数が 12 バイト ("Hello Porter" の文字数) であること。
 }
 
-// 複数メッセージ連続送信テスト
+// 複数メッセージを連続送信した場合に順序を維持してすべて配送されることの確認
 TEST_F(porterSendRecvTest, send_multiple_messages)
 {
     // Arrange
@@ -450,7 +450,7 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
     EXPECT_NE(string::npos, recv_out.find("msg3")); // [確認_正常系] - RECIEVER が "msg3" を受信していること。
 }
 
-// RECIEVER の正常終了テスト
+// SIGINT 受信時に受信プロセスがリソースを解放して正常終了することの確認
 TEST_F(porterSendRecvTest, recv_exits_cleanly_on_sigint)
 {
     // Arrange
@@ -480,7 +480,7 @@ TEST_F(porterSendRecvTest, recv_exits_cleanly_on_sigint)
         getStdout(recv_h_).find("終了しました")); // [確認_正常系] - RECIEVER が "終了しました" を出力していること。
 }
 
-// 片方向 unicast で PING 無効でも初回 DATA 受信で CONNECTED と DATA 配信が成立することを確認する
+// 片方向 unicast で PING 無効時も初回 DATA 受信により CONNECTED 遷移と DATA 配信が成立することの確認
 TEST_F(porterSendRecvTest, unicast_initial_data_establishes_connected_without_ping)
 {
     // Arrange
@@ -521,7 +521,7 @@ TEST_F(porterSendRecvTest, unicast_initial_data_establishes_connected_without_pi
     }
 }
 
-// 片方向 unicast 送信者 open 直後は immediate PING を送らず、receiver が即 CONNECTED しないことを確認する
+// 片方向 unicast 送信者 open 直後は immediate PING を送信せず、receiver が即時 CONNECTED にならないことの確認
 TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
 {
     // Arrange
@@ -564,7 +564,7 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
                   "接続確立")); // [確認_正常系] - 最後まで immediate PING による "接続確立" が発生しないこと。
 }
 
-// 片方向 unicast で PING 無効時も有効 DATA の継続受信で health timeout が延長されることを確認する
+// 片方向 unicast で PING 無効時も有効な DATA の継続受信により health timeout が延長されることの確認
 TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
 {
     // Arrange
@@ -622,7 +622,7 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
     }
 }
 
-// 単発送信の直後に close しても、最終 DATA が切断前に配信されることを確認する
+// 単発送信の直後に close しても、最終 DATA が切断前に配信されることの確認
 TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disconnect)
 {
     // Arrange
@@ -673,7 +673,7 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
     }
 }
 
-// no-data FIN は FIN target フラグなしで即時切断されることを確認する
+// no-data FIN は FIN target フラグなしで即時切断されることの確認
 TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
 {
     // Arrange
@@ -715,7 +715,7 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
     }
 }
 
-// FIN target が 0 に wrap する場合でも、flag により pending FIN が正しく解消されることを確認する
+// FIN target が 0 に wrap する場合でも、flag により pending FIN が正しく解消されることの確認
 TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
 {
     // Arrange
@@ -765,7 +765,7 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
     }
 }
 
-// N:1 で単発送信の直後に close しても、最終 DATA が peer 解放前に配信されることを確認する
+// N:1 で単発送信の直後に close しても、最終 DATA が peer 解放前に配信されることの確認
 TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect)
 {
     // Arrange
@@ -825,7 +825,7 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
     }
 }
 
-// N:1 の pending FIN 完了後に解放済み peer を再参照せず、受信処理を継続できることを確認する
+// N:1 の pending FIN 完了後に解放済み peer を再参照せず、受信処理を継続できることの確認
 TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
 {
     // Arrange
@@ -877,7 +877,7 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
         recv_out.find(recovery_payload)); // [確認_正常系] - peer 解放後に新しいセッションの DATA を受信できること。
 }
 
-// pending FIN のまま health timeout した後、新セッション受理で stale 状態が再発しないことを確認する
+// pending FIN のまま health timeout した後、新セッション受理で stale 状態が再発しないことの確認
 TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
 {
     // Arrange
@@ -934,7 +934,7 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
     }
 }
 
-// 片方向 unicast で recent DATA により periodic PING が抑止され、最後の DATA 基準で再開することを確認する
+// 片方向 unicast で recent DATA により periodic PING が抑止され、最後の DATA 基準で再開することの確認
 TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_interval)
 {
     // Arrange
@@ -1006,7 +1006,7 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
     }
 }
 
-// unicast_bidir 双方向通信テスト
+// unicast_bidir 双方向通信でメッセージを正常に送受信できることの確認
 TEST_F(porterSendRecvTest, bidir_echo)
 {
     // Arrange
@@ -1067,7 +1067,7 @@ TEST_F(porterSendRecvTest, bidir_echo)
               getStdout(recv_h_).find("bidir-test")); // [確認_正常系] - RECIEVER が "bidir-test" を受信していること。
 }
 
-// 暗号化有効時、平文の UDP DATA パケットが破棄されることを確認する
+// 暗号化有効時、平文の UDP DATA パケットが破棄され暗号化メッセージのみ配信されることの確認
 TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
 {
     // Arrange
@@ -1118,7 +1118,7 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
     }
 }
 
-// 暗号化有効 N:1 でタグ不正の初回パケットが peer slot を消費しないことを確認する
+// 暗号化有効 N:1 でタグ不正の初回パケットが peer slot を消費せず破棄されることの確認
 TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
 {
     // Arrange
@@ -1187,7 +1187,7 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
     }
 }
 
-// N:1 で未知 peer の初回 DATA が peer slot を消費せず破棄されることを確認する
+// N:1 で未知 peer の初回 DATA が peer slot を消費せず破棄されることの確認
 TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
 {
     // Arrange
@@ -1250,7 +1250,7 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
     }
 }
 
-// 暗号化有効 N:1 双方向通信でクライアント側も CONNECTED になってから送信できることを確認する
+// 暗号化有効 N:1 双方向通信でクライアント側も CONNECTED になってから送信できることの確認
 TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
 {
     // Arrange
@@ -1307,7 +1307,7 @@ TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
     }
 }
 
-// 暗号化 tcp_bidir で一定時間のヘルスチェック後も送受信できることを確認する
+// 暗号化 tcp_bidir でヘルスチェック経過後も接続を維持して送受信できることの確認
 TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
 {
     // Arrange
@@ -1363,7 +1363,7 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
     }
 }
 
-// tcp_bidir は定周期 health PING 無効でも bootstrap PING だけで接続確立できることを確認する
+// tcp_bidir は定周期 health PING 無効でも bootstrap PING だけで接続確立できることの確認
 TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
 {
     // Arrange
@@ -1414,7 +1414,7 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
               getStdout(recv_h_).find("tcp-before-connected")); // [確認_正常系] - メッセージが配信されること。
 }
 
-// tcp_bidir で定周期 health PING 無効時は tcp_health_timeout_ms を無視して接続維持できることを確認する
+// tcp_bidir で定周期 health PING 無効時は tcp_health_timeout_ms を無視して接続維持できることの確認
 TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeout)
 {
     // Arrange
@@ -1472,7 +1472,7 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
                   "tcp-timeout-ignored")); // [確認_正常系] - timeout 経過後も接続が維持され配信されること。
 }
 
-// バイナリ ファイル送信テスト: 受信側で一時ファイルに保存されることを確認する
+// バイナリ ファイル送信時、受信側で一時ファイルに正しく保存されることの確認
 TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
 {
     // Arrange
@@ -1507,7 +1507,7 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
     // Pre-Assert
 
     // Act
-    ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + bin_path));
+    ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + bin_path)); // [手順] - SENDER にバイナリ ファイル送信コマンドを入力する。
     ASSERT_NO_THROW(waitForOutput(send_h_, "ファイル送信完了",
                                   3000)); // [手順] - SENDER が "ファイル送信完了" を出力するまで待機する。
     // [確認_正常系] - SENDER が "ファイル送信完了" を出力すること。
@@ -1517,7 +1517,7 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
     ASSERT_NO_THROW(waitForOutput(recv_h_, "バイナリ データを保存しました",
                                   3000)); // [手順] - RECIEVER が保存メッセージを出力するまで待機する。
 
-    writeLineStdin(send_h_, "exit");
+    writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
@@ -1536,7 +1536,7 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
               recv_out.find("受信 (16 バイト)")); // [確認_正常系] - RECIEVER の受信バイト数が 16 バイトであること。
 }
 
-// テキスト メッセージ送信テスト: recv.c の変更後もテキストが正しく表示されることを確認する
+// テキスト メッセージ送信時、受信側でテキストとして正常に表示されることの確認
 TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
 {
     // Arrange
@@ -1563,13 +1563,13 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
     // Pre-Assert
 
     // Act
-    ASSERT_TRUE(writeLineStdin(send_h_, "send Hello Text"));
+    ASSERT_TRUE(writeLineStdin(send_h_, "send Hello Text")); // [手順] - SENDER からテキストメッセージ "Hello Text" を送信する。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "Hello Text", 3000)); // [手順] - RECIEVER が "Hello Text" を出力するまで待機する。
 
-    writeLineStdin(send_h_, "exit");
+    writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
@@ -1589,7 +1589,7 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
             "バイナリ データを保存しました")); // [確認_正常系] - RECIEVER がバイナリ保存メッセージを出力していないこと。
 }
 
-// サイズ超過ファイル送信テスト: 65535 バイトを超えるファイルの送信が拒否されることを確認する
+// 最大送信サイズ (65535 バイト) を超えるファイル送信が拒否されエラーになることの確認
 TEST_F(porterSendRecvTest, send_file_too_large_fails)
 {
     // Arrange
@@ -1614,11 +1614,11 @@ TEST_F(porterSendRecvTest, send_file_too_large_fails)
     // Pre-Assert
 
     // Act
-    ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + large_path));
+    ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + large_path)); // [手順] - サイズ超過ファイルの送信コマンドを入力する。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     // [確認_異常系] - SENDER がエラー後も対話を継続していること。
 
-    writeLineStdin(send_h_, "exit");
+    writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
