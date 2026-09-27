@@ -18,25 +18,23 @@
 # 以下は管理対象外
 
 ## Claude Code
-/.claude
+/.claude/
 ## Codex
-/.codex
-## GitHub Copilot
-/.copilot-artifacts
+/.codex/
 
 ## デバッグのために LLM に参照させるファイル群の一時置き場
-/prompt
+/prompt/
 
 ## 中間ファイル
-obj
-gen
-gcov
+obj/
+gen/
+gcov/
 *.gcda
 *.gcno
 *.gcov
-lcov
-coverage
-results
+lcov/
+coverage/
+results/
 core
 coverage.xml
 LastCoverageResults.log
@@ -59,7 +57,7 @@ test.stamp
 /xml_org/
 
 ## 中間ファイル (Coverity)
-idir
+idir/
 
 ## Python cache
 __pycache__/
@@ -70,11 +68,11 @@ __pycache__/
 /docs/doxybook2_internal/
 
 ## 成果物
-lib
-bin
-cbin
-!/bin
-!/prod/bin
+lib/
+bin/
+cbin/
+!/bin/
+!/prod/bin/
 *.exe
 *.pdb
 *.warn
