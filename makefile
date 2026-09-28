@@ -28,10 +28,22 @@ export MAKEFW_APP_PATHS_CACHE_APP
 export MAKEFW_APP_PATHS_CACHE
 
 # app/<name>.assured.stamp が HEAD と一致し、追加・削除・変更が無いとき 1。
-# サブモジュールでない app は警告して 0。子 make へは渡さず、署名コマンドの直前だけで渡す。
+# サブモジュールでない app は警告して 0。子 make へは export せず、署名コマンドの直前だけで渡す。
+# Windows では bash の起動が 1 回あたり 1 秒近くかかり、app 直下 makefile の parse ごとに積み上がる。
+# スタンプが無いときは bash を起動せず 0 とする。
+# test ターゲットの再帰 make では、同じ app について親が判定した結果を
+# MAKEFW_ASSURED_CACHE (<app ディレクトリ>|<0 または 1>) で引き継ぐ。
+ifeq ($(wildcard $(CURDIR).assured.stamp),)
+_MAKEFW_ASSURED_ACTIVE := 0
+else ifeq ($(MAKEFW_ASSURED_CACHE),$(CURDIR)|1)
+_MAKEFW_ASSURED_ACTIVE := 1
+else ifeq ($(MAKEFW_ASSURED_CACHE),$(CURDIR)|0)
+_MAKEFW_ASSURED_ACTIVE := 0
+else
 _MAKEFW_ASSURED_ACTIVE := $(strip $(shell bash "$(APPDEPS_RESOLVER)" --assured "$(CURDIR)"))
 ifneq ($(strip $(.SHELLSTATUS)),0)
     $(error Failed to evaluate assured.stamp for $(CURDIR))
+endif
 endif
 
 DOXY_SIGNATURE_GENERATOR = $(MAKEFW_HOME)/bin_internal/doxy_signature.py
@@ -216,7 +228,7 @@ endif
 
 .PHONY: test
 test :
-	@$(MAKE) $(MFLAGS)
+	@MAKEFW_ASSURED_CACHE="$(CURDIR)|$(_MAKEFW_ASSURED_ACTIVE)" $(MAKE) $(MFLAGS)
 	@if [ "$(_MAKEFW_ASSURED_ACTIVE)" = "1" ] && [ -f test/makefile ]; then \
 		echo "INFO: Skipping test/src (assured.stamp matches the commit and the tree is clean)"; \
 	elif [ -f test/makefile ]; then \
