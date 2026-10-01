@@ -6,14 +6,18 @@ SUBDIRS = \
 	prod \
 	test
 
-APP_NAME = $(notdir $(CURDIR))
-MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-WORKSPACE_DIR ?= $(abspath $(MAKEFILE_DIR)/../..)
 CONFIG ?= RelWithDebInfo
-MAKEFW_HOME := $(strip $(MAKEFW_HOME))
+_makefw_empty :=
+_makefw_space := $(_makefw_empty) $(_makefw_empty)
+_makefw_escape_path = $(subst $(_makefw_space),\$(_makefw_space),$(1))
+MAKEFW_HOME := $(subst \,/,$(strip $(MAKEFW_HOME)))
 ifeq ($(MAKEFW_HOME),)
     $(error MAKEFW_HOME is required. Export MAKEFW_HOME before running make)
 endif
+include $(call _makefw_escape_path,$(MAKEFW_HOME)/makefiles/_path_functions.mk)
+APP_NAME = $(call _makefw_path_notdir,$(CURDIR))
+MAKEFILE_DIR := $(CURDIR)
+WORKSPACE_DIR ?= $(call _makefw_path_abspath,$(MAKEFILE_DIR)/../..)
 TESTFW_HOME   ?= $(WORKSPACE_DIR)/framework/testfw
 TESTFW_BANNER = $(TESTFW_HOME)/bin_internal/banner.sh
 APPDEPS_RESOLVER = $(MAKEFW_HOME)/bin_internal/resolve_app_deps.sh
@@ -33,7 +37,7 @@ export MAKEFW_APP_PATHS_CACHE
 # スタンプが無いときは bash を起動せず 0 とする。
 # test ターゲットの再帰 make では、同じ app について親が判定した結果を
 # MAKEFW_ASSURED_CACHE (<app ディレクトリ>|<0 または 1>) で引き継ぐ。
-ifeq ($(wildcard $(CURDIR).assured.stamp),)
+ifeq ($(call _makefw_path_exists,$(CURDIR).assured.stamp),)
 _MAKEFW_ASSURED_ACTIVE := 0
 else ifeq ($(MAKEFW_ASSURED_CACHE),$(CURDIR)|1)
 _MAKEFW_ASSURED_ACTIVE := 1
@@ -55,8 +59,8 @@ TEST_STAMP = $(CURDIR)/make_test.stamp
 DOXY_STAMP  = $(CURDIR)/make_doxy.stamp
 SUBDIR_TARGETS = $(addprefix __subdir__,$(SUBDIRS))
 
-ifneq ($(wildcard $(COVERITY_CONFIG)),)
-include $(COVERITY_CONFIG)
+ifneq ($(call _makefw_path_exists,$(COVERITY_CONFIG)),)
+include $(call _makefw_escape_path,$(COVERITY_CONFIG))
 endif
 
 # Windows の場合、MSVC_CRT_SUBDIR が未設定なら計算する
@@ -186,7 +190,7 @@ _makefw_clean_for_coverity: __ensure-coverity
 # test (モックとテスト コード) のビルドと、make_build.stamp / make_test.stamp の更新は行わない。
 .PHONY: with-cov
 with-cov: __ensure-coverity
-ifneq ($(wildcard $(COVERITY_CONFIG)),)
+ifneq ($(call _makefw_path_exists,$(COVERITY_CONFIG)),)
 with-cov: _makefw_clean_for_coverity
 endif
 with-cov:
@@ -213,13 +217,13 @@ ifneq ($(_MAKEFW_ASSURED_ACTIVE),1)
 clean : SUBDIR_GOAL = clean
 clean : $(SUBDIR_TARGETS)
 	@rm -f "$(DOXY_WARN_FILE)" "$(BUILD_STAMP)" "$(TEST_STAMP)" "$(DOXY_STAMP)"
-	@rm -f $(CURDIR)/doxy_*.warn
+	@rm -f "$(CURDIR)"/doxy_*.warn
 	@find "$(CURDIR)" -type d -name log -prune -exec rm -rf {} +
-else ifeq ($(wildcard $(BUILD_STAMP)),)
+else ifeq ($(call _makefw_path_exists,$(BUILD_STAMP)),)
 clean : SUBDIR_GOAL = clean
 clean : $(SUBDIR_TARGETS)
 	@rm -f "$(DOXY_WARN_FILE)" "$(BUILD_STAMP)" "$(TEST_STAMP)" "$(DOXY_STAMP)"
-	@rm -f $(CURDIR)/doxy_*.warn
+	@rm -f "$(CURDIR)"/doxy_*.warn
 	@find "$(CURDIR)" -type d -name log -prune -exec rm -rf {} +
 else
 clean:
