@@ -18,14 +18,22 @@ TESTFW_HOME   ?= $(WORKSPACE_DIR)/framework/testfw
 TESTFW_BANNER = $(TESTFW_HOME)/bin_internal/banner.sh
 APPDEPS_RESOLVER = $(MAKEFW_HOME)/bin_internal/resolve_app_deps.sh
 
-# app 依存パスはアプリ単位で不変なので、test 用を含めて 1 回だけ解決して子 make へ渡す。
-MAKEFW_APP_PATHS_CACHE_APP := $(CURDIR)
-MAKEFW_APP_PATHS_CACHE := $(shell bash "$(APPDEPS_RESOLVER)" --paths-all "$(CURDIR)" test)
-ifneq ($(strip $(.SHELLSTATUS)),0)
-    $(error Failed to resolve app dependencies for $(CURDIR))
-endif
-export MAKEFW_APP_PATHS_CACHE_APP
-export MAKEFW_APP_PATHS_CACHE
+# 子 make が必要になった時点で依存パスを解決する。
+# make の export 変数で遅延評価すると、署名判定のレシピ起動時にも展開されるため、
+# レシピのシェル内で解決・export し、prod と test の双方へ同じ結果を渡す。
+# 同じ app の親から継承した結果だけ再利用し、別 app の結果は解決し直す。
+define _MAKEFW_RESOLVE_APP_PATHS
+if [ "$${MAKEFW_APP_PATHS_CACHE_APP:-}" != "$(CURDIR)" ] || [ "$${MAKEFW_APP_PATHS_CACHE+x}" != "x" ]; then \
+    MAKEFW_APP_PATHS_CACHE=$$(bash "$(APPDEPS_RESOLVER)" --paths-all "$(CURDIR)" test) || { \
+        makefw_paths_status=$$?; \
+        echo "ERROR: Failed to resolve app dependencies for $(CURDIR)" >&2; \
+        if [ -n "$${sig_file:-}" ]; then rm -f "$$sig_file"; fi; \
+        exit $$makefw_paths_status; \
+    }; \
+    MAKEFW_APP_PATHS_CACHE_APP="$(CURDIR)"; \
+fi; \
+export MAKEFW_APP_PATHS_CACHE_APP MAKEFW_APP_PATHS_CACHE;
+endef
 
 # app/<name>.assured.stamp が HEAD と一致し、追加・削除・変更が無いとき 1。
 # サブモジュールでない app は警告して 0。子 make へは export せず、署名コマンドの直前だけで渡す。
@@ -135,6 +143,7 @@ default:
 		make_exit=0; \
 		for dir in $(SUBDIRS); do \
 			if [ -f $$dir/makefile ]; then \
+				$(call _MAKEFW_RESOLVE_APP_PATHS) \
 				skip_src=""; \
 				if [ "$$dir" = "test" ] && [ "$(_MAKEFW_ASSURED_ACTIVE)" = "1" ]; then \
 					skip_src="MAKEFW_SKIP_TEST_SRC=1"; \
@@ -159,6 +168,7 @@ _makefw_with_cov_prod:
 		echo $(MAKE) with-cov; \
 		$(MAKE) with-cov; \
 	elif [ -f prod/makefile ]; then \
+		$(call _MAKEFW_RESOLVE_APP_PATHS) \
 		echo $(MAKE) -C prod; \
 		$(MAKE) -C prod || exit 1; \
 	fi
@@ -175,6 +185,7 @@ _makefw_clean_for_coverity: __ensure-coverity
 		fi; \
 	fi
 	@if [ -f prod/makefile ]; then \
+		$(call _MAKEFW_RESOLVE_APP_PATHS) \
 		echo $(MAKE) -C prod clean; \
 		$(MAKE) -C prod clean || exit 1; \
 	fi
@@ -191,6 +202,7 @@ with-cov: _makefw_clean_for_coverity
 endif
 with-cov:
 	@if [ -f prod/makefile ]; then \
+		$(call _MAKEFW_RESOLVE_APP_PATHS) \
 		echo "$(COVERITY_MAKE_WRAPPER)" "$(COVERITY_TOOLCHAIN)" $(MAKE) -C prod; \
 		"$(COVERITY_MAKE_WRAPPER)" "$(COVERITY_TOOLCHAIN)" $(MAKE) -C prod || exit 1; \
 	fi
@@ -256,6 +268,7 @@ test :
 			exit 0; \
 		fi; \
 		rm -f "$(TEST_STAMP)"; \
+		$(call _MAKEFW_RESOLVE_APP_PATHS) \
 		echo $(MAKE) -C test _test_run; \
 		$(MAKE) -C test _test_run; \
 		make_exit=$$?; \
@@ -334,6 +347,7 @@ doxy :
 $(SUBDIR_TARGETS) :
 	@dir=$(patsubst __subdir__%,%,$@); \
 	if [ -f $$dir/makefile ]; then \
+		$(call _MAKEFW_RESOLVE_APP_PATHS) \
 		if [ "$(SUBDIR_GOAL)" = "default" ]; then \
 			echo $(MAKE) -C $$dir; \
 			$(MAKE) -C $$dir || exit 1; \
