@@ -1,5 +1,6 @@
 # 実ファイルを使う設定読込の組み合わせテスト
-TEST_SRCS := \
+# カバレッジは各ソースの単体テストで集計する
+ADD_SRCS := \
 	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_load_global.c \
 	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_load_service.c \
 	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_list_service_ids.c
