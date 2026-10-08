@@ -38,6 +38,7 @@ class potrSendTest : public Test
         ctx.peers = peers;
 
         ASSERT_EQ(POTR_OK, potr_internal_send_queue_init(&ctx.send_queue, 8, 1400));
+        // [状態確認] - `potr_internal_send_queue_init(&ctx.send_queue, 8, 1400)` の戻り値が `POTR_OK` であること。
         cplat_local_lock_create(&ctx.peers_mutex);
     }
 
@@ -51,6 +52,7 @@ class potrSendTest : public Test
     {
         potr_internal_payload_elem elem = {};
         EXPECT_EQ(POTR_OK, potr_internal_send_queue_try_pop(&ctx.send_queue, &elem));
+        // [状態確認] - `potr_internal_send_queue_try_pop(&ctx.send_queue, &elem)` の戻り値が `POTR_OK` であること。
         return elem;
     }
 
@@ -249,19 +251,29 @@ TEST_F(potrSendTest, data_based_health_ping_suppression_applies_only_to_type_1_t
     int oneway_tcp_bidir = is_oneway_udp_type(POTR_TYPE_TCP_BIDIR);
 
     // Assert
-    // [確認_正常系] - 片方向 UDP 系の type 1〜6 が is_oneway_udp_type で真と判定されること。
+    // 片方向 UDP 系の type 1〜6 が is_oneway_udp_type で真と判定されること。
     EXPECT_TRUE(oneway_unicast_raw);
+    // [確認_正常系] - `oneway_unicast_raw` が true であること。
     EXPECT_TRUE(oneway_multicast_raw);
+    // [確認_正常系] - `oneway_multicast_raw` が true であること。
     EXPECT_TRUE(oneway_broadcast_raw);
+    // [確認_正常系] - `oneway_broadcast_raw` が true であること。
     EXPECT_TRUE(oneway_unicast);
+    // [確認_正常系] - `oneway_unicast` が true であること。
     EXPECT_TRUE(oneway_multicast);
+    // [確認_正常系] - `oneway_multicast` が true であること。
     EXPECT_TRUE(oneway_broadcast);
+    // [確認_正常系] - `oneway_broadcast` が true であること。
 
-    // [確認_正常系] - 双方向系と TCP 系が is_oneway_udp_type で偽と判定されること。
+    // 双方向系と TCP 系が is_oneway_udp_type で偽と判定されること。
     EXPECT_FALSE(oneway_unicast_bidir);
+    // [確認_正常系] - `oneway_unicast_bidir` が false であること。
     EXPECT_FALSE(oneway_unicast_bidir_n1);
+    // [確認_正常系] - `oneway_unicast_bidir_n1` が false であること。
     EXPECT_FALSE(oneway_tcp);
+    // [確認_正常系] - `oneway_tcp` が false であること。
     EXPECT_FALSE(oneway_tcp_bidir);
+    // [確認_正常系] - `oneway_tcp_bidir` が false であること。
 }
 
 // 接続直後の immediate health ping が type 1〜6 (片方向 UDP 系) だけで無効になることの確認
@@ -285,17 +297,27 @@ TEST_F(potrSendTest, immediate_health_ping_is_disabled_only_for_type_1_to_6)
     int immediate_tcp_bidir = type_uses_immediate_health_ping(POTR_TYPE_TCP_BIDIR);
 
     // Assert
-    // [確認_正常系] - 片方向 UDP 系の type 1〜6 が type_uses_immediate_health_ping で偽と判定されること。
+    // 片方向 UDP 系の type 1〜6 が type_uses_immediate_health_ping で偽と判定されること。
     EXPECT_FALSE(immediate_unicast_raw);
+    // [確認_正常系] - `immediate_unicast_raw` が false であること。
     EXPECT_FALSE(immediate_multicast_raw);
+    // [確認_正常系] - `immediate_multicast_raw` が false であること。
     EXPECT_FALSE(immediate_broadcast_raw);
+    // [確認_正常系] - `immediate_broadcast_raw` が false であること。
     EXPECT_FALSE(immediate_unicast);
+    // [確認_正常系] - `immediate_unicast` が false であること。
     EXPECT_FALSE(immediate_multicast);
+    // [確認_正常系] - `immediate_multicast` が false であること。
     EXPECT_FALSE(immediate_broadcast);
+    // [確認_正常系] - `immediate_broadcast` が false であること。
 
-    // [確認_正常系] - 双方向系と TCP 系が type_uses_immediate_health_ping で真と判定されること。
+    // 双方向系と TCP 系が type_uses_immediate_health_ping で真と判定されること。
     EXPECT_TRUE(immediate_unicast_bidir);
+    // [確認_正常系] - `immediate_unicast_bidir` が true であること。
     EXPECT_TRUE(immediate_unicast_bidir_n1);
+    // [確認_正常系] - `immediate_unicast_bidir_n1` が true であること。
     EXPECT_TRUE(immediate_tcp);
+    // [確認_正常系] - `immediate_tcp` が true であること。
     EXPECT_TRUE(immediate_tcp_bidir);
+    // [確認_正常系] - `immediate_tcp_bidir` が true であること。
 }

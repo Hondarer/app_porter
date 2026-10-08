@@ -164,7 +164,9 @@ TEST(configLoadGlobalTest, rejectsCommaWithoutPrecedingMember)
 
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("invalid.json"), StrEq("r"), nullptr))
         .WillOnce(Return(ConfigLineStream::handle()));
+    // [Pre-Assert確認_異常系] - mock_cplat の cplat_fopen(StrEq("invalid.json"), StrEq("r"), nullptr) が登録した呼び出し期待を満たすこと。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillOnce(Return(0));
+    // [Pre-Assert確認_異常系] - mock_stdio の fclose(_, _, _, ConfigLineStream::handle()) が登録した呼び出し期待を満たすこと。
 
     int actual_ret = potr_internal_config_load_global("invalid.json", &global); // [手順] - 不正なカンマを含む定義を読む。
 

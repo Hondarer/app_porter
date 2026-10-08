@@ -136,6 +136,7 @@ class tcp_allocation_failure_test : public TestWithParam<allocation_case>
     {
         // プロセス共通トレーサーの寿命は service_close を超えるため、追跡開始前に初期化します。
         ASSERT_NE(nullptr, potr_tracer_get());
+        // [状態確認] - `nullptr` と `potr_tracer_get()` が異なること。
         global.window_size = 16;
         global.max_payload = payload_size;
         global.max_message_size = message_size;
@@ -212,20 +213,20 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
     int baseline_ret = open(); // [手順] - 注入せず potr_service_open を呼び出す。
     auto baseline = snapshot();
     // Assert
-    ASSERT_EQ(POTR_OK, baseline_ret); // [確認_正常系] - 注入前の potr_service_open が成功すること。
-    ASSERT_NE(nullptr, handle);       // [確認_正常系] - 注入前のハンドルが有効であること。
+    ASSERT_EQ(POTR_OK, baseline_ret); // [確認_正常系 回数=PARAM] - 注入前の potr_service_open が成功すること。
+    ASSERT_NE(nullptr, handle);       // [確認_正常系 回数=PARAM] - 注入前のハンドルが有効であること。
     ASSERT_EQ(
         expected_calls,
-        baseline.matching_calls); // [確認_正常系] - 対象サイズの全バッファー確保を実 cplat_malloc で捕捉すること。
+        baseline.matching_calls); // [確認_正常系 回数=PARAM] - 対象サイズの全バッファー確保を実 cplat_malloc で捕捉すること。
 
     // Act_2
     int baseline_close_ret = close(); // [手順] - 注入前のサービスを potr_service_close で終了する。
     auto baseline_closed = snapshot();
     // Assert_2
-    ASSERT_EQ(POTR_OK, baseline_close_ret); // [確認_正常系] - 注入前の potr_service_close が成功すること。
-    ASSERT_FALSE(baseline_closed.overflow); // [確認_正常系] - 確保追跡の容量を超えないこと。
+    ASSERT_EQ(POTR_OK, baseline_close_ret); // [確認_正常系 回数=PARAM] - 注入前の potr_service_close が成功すること。
+    ASSERT_FALSE(baseline_closed.overflow); // [確認_正常系 回数=PARAM] - 確保追跡の容量を超えないこと。
     ASSERT_EQ(baseline_closed.allocated,
-              baseline_closed.freed); // [確認_正常系] - 正常終了でも追跡した全領域を解放すること。
+              baseline_closed.freed); // [確認_正常系 回数=PARAM] - 正常終了でも追跡した全領域を解放すること。
 
     // Arrange_3
     arm(target.size, target.occurrence);
@@ -236,15 +237,15 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
     auto failed = snapshot();
     arm(0, 0);
     // Assert_3
-    EXPECT_EQ(1U, failed.failures); // [確認_異常系] - 指定した確保で 1 回だけ失敗を注入すること。
+    EXPECT_EQ(1U, failed.failures); // [確認_異常系 回数=PARAM] - 指定した確保で 1 回だけ失敗を注入すること。
     EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY,
-              failure_ret);     // [確認_異常系] - 注入時の potr_service_open がメモリ不足を返すこと。
-    EXPECT_EQ(nullptr, handle); // [確認_異常系] - 失敗時にハンドルを公開しないこと。
+              failure_ret);     // [確認_異常系 回数=PARAM] - 注入時の potr_service_open がメモリ不足を返すこと。
+    EXPECT_EQ(nullptr, handle); // [確認_異常系 回数=PARAM] - 失敗時にハンドルを公開しないこと。
     EXPECT_GT(failed.allocated,
-              baseline_closed.allocated); // [確認_異常系] - 失敗より前に実際の確保が成功していること。
-    EXPECT_FALSE(failed.overflow);        // [確認_異常系] - 失敗経路でも全確保を追跡できること。
+              baseline_closed.allocated); // [確認_異常系 回数=PARAM] - 失敗より前に実際の確保が成功していること。
+    EXPECT_FALSE(failed.overflow);        // [確認_異常系 回数=PARAM] - 失敗経路でも全確保を追跡できること。
     EXPECT_EQ(failed.allocated,
-              failed.freed); // [確認_異常系] - 失敗時に成功した全 cplat_malloc のポインターを解放すること。
+              failed.freed); // [確認_異常系 回数=PARAM] - 失敗時に成功した全 cplat_malloc のポインターを解放すること。
     if (handle != nullptr)
     {
         close();
@@ -254,16 +255,16 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
     int reopen_ret = open(); // [手順] - 注入を解除して同じ 4 エンドポイントで potr_service_open を呼び出す。
     // Assert_4
     ASSERT_EQ(POTR_OK,
-              reopen_ret);      // [確認_正常系] - 失敗後の potr_service_open が全 listen ソケットを再利用できること。
-    ASSERT_NE(nullptr, handle); // [確認_正常系] - 再オープンしたハンドルが有効であること。
+              reopen_ret);      // [確認_正常系 回数=PARAM] - 失敗後の potr_service_open が全 listen ソケットを再利用できること。
+    ASSERT_NE(nullptr, handle); // [確認_正常系 回数=PARAM] - 再オープンしたハンドルが有効であること。
 
     // Act_5
     int close_ret = close(); // [手順] - 再オープンしたサービスを potr_service_close で終了する。
     auto closed = snapshot();
     // Assert_5
-    EXPECT_EQ(POTR_OK, close_ret);             // [確認_正常系] - 再オープン後の potr_service_close が成功すること。
-    EXPECT_FALSE(closed.overflow);             // [確認_正常系] - 再オープン後も全確保を追跡できること。
-    EXPECT_EQ(closed.allocated, closed.freed); // [確認_正常系] - 再オープン後も追跡した全領域を解放すること。
+    EXPECT_EQ(POTR_OK, close_ret);             // [確認_正常系 回数=PARAM] - 再オープン後の potr_service_close が成功すること。
+    EXPECT_FALSE(closed.overflow);             // [確認_正常系 回数=PARAM] - 再オープン後も全確保を追跡できること。
+    EXPECT_EQ(closed.allocated, closed.freed); // [確認_正常系 回数=PARAM] - 再オープン後も追跡した全領域を解放すること。
 #else
     // Pre-Assert
     // Act

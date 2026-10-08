@@ -21,6 +21,7 @@ class potrSendQueueTest : public Test
     {
         memset(&q, 0, sizeof(q));
         ASSERT_EQ(POTR_OK, potr_internal_send_queue_init(&q, 4, 16));
+        // [状態確認] - `potr_internal_send_queue_init(&q, 4, 16)` の戻り値が `POTR_OK` であること。
     }
 
     void TearDown() override

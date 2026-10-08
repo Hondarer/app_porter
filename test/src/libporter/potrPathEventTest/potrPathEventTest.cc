@@ -31,6 +31,7 @@ static void capture_callback(int64_t service_id, potr_peer_id peer_id, potr_even
     CapturedEvent *entry = &s_events[s_event_count++];
 
     EXPECT_EQ(42, service_id);
+    // [状態確認] - `service_id` の値が `42` であること。
     entry->peer_id = peer_id;
     entry->event = event;
     entry->len = len;

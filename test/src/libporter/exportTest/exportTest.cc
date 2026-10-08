@@ -53,6 +53,7 @@ class exportTest : public Test
     {
         workspace_root = findWorkspaceRoot();
         ASSERT_FALSE(workspace_root.empty()) << "ワークスペースルートが見つかりません";
+        // [状態確認] - `workspace_root.empty()` が false であること。
         dll_path = workspace_root + "/app/porter/prod/lib/libporter" TESTFW_SHARED_LIBRARY_EXTENSION;
     }
 };
@@ -80,7 +81,7 @@ TEST_F(exportTest, symbol_names_match)
     // Assert
     testing::expectExportNamesMatch(
         expected, actual,
-        kExpectedExportSignatures); // [確認_正常系] - 期待シンボルとの不足や想定外がないこと (Windows / Linux とも完全一致)。
+        kExpectedExportSignatures); // [確認_正常系 回数=2] - 期待シンボルとの不足や想定外がないこと (Windows / Linux とも完全一致)。
 }
 
 // 公開ヘッダーの変数宣言が dllexport マクロ (POTR_EXPORT) を

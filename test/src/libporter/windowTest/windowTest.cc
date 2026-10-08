@@ -106,6 +106,7 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
     {
         potr_packet pkt = make_send_packet(seq, payload, sizeof(payload));
         ASSERT_EQ(POTR_OK, potr_internal_window_send_push(&win, &pkt));
+        // [確認_正常系 回数=4] - `potr_internal_window_send_push(&win, &pkt)` の戻り値が `POTR_OK` であること。
     }
     int full_after_4 = potr_internal_window_send_full(&win); // [手順] - 4 件 push した直後の満杯判定を取得する。
 
@@ -148,6 +149,7 @@ TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
     {
         potr_packet pkt = make_send_packet(0U, payload, sizeof(payload));
         ASSERT_EQ(POTR_OK, potr_internal_window_send_push(&win, &pkt));
+        // [確認_正常系] - `potr_internal_window_send_push(&win, &pkt)` の戻り値が `POTR_OK` であること。
     }
     payload[0] = 0xFF; // [手順] - push 後に元バッファーを書き換え、ディープ コピーであることを確認する。
     int actual_ret_get = potr_internal_window_send_get(&win, 0U, &out);
@@ -184,8 +186,11 @@ TEST_F(windowTest, sendGetKeepsPacketsDistinctAcrossSequenceWrap)
     potr_packet packet_after_wrap = make_send_packet(0U, payload, sizeof(payload));
     ASSERT_EQ(POTR_OK,
               potr_internal_window_send_push(&win, &packet_before_wrap)); // [手順] - 周回前の 3 通番を順に格納する。
+    // [確認_正常系] - `potr_internal_window_send_push(&win, &packet_before_wrap)` の戻り値が `POTR_OK` であること。
     ASSERT_EQ(POTR_OK, potr_internal_window_send_push(&win, &packet_at_wrap));
+    // [確認_正常系] - `potr_internal_window_send_push(&win, &packet_at_wrap)` の戻り値が `POTR_OK` であること。
     ASSERT_EQ(POTR_OK, potr_internal_window_send_push(&win, &packet_after_wrap));
+    // [確認_正常系] - `potr_internal_window_send_push(&win, &packet_after_wrap)` の戻り値が `POTR_OK` であること。
     int actual_before_wrap = potr_internal_window_send_get(&win, UINT32_MAX - 1U, &out_before_wrap);
     int actual_at_wrap = potr_internal_window_send_get(&win, UINT32_MAX, &out_at_wrap);
     int actual_after_wrap = potr_internal_window_send_get(&win, 0U, &out_after_wrap);
@@ -262,11 +267,15 @@ TEST_F(windowTest, recvPushAndPopAcrossSequenceWrap)
     potr_packet packet_after_wrap = make_recv_packet(0U, payload, sizeof(payload));
     ASSERT_EQ(POTR_OK,
               potr_internal_window_recv_push(&win, &packet_before_wrap)); // [手順] - 周回前の 3 通番を順に格納する。
+    // [確認_正常系] - `potr_internal_window_recv_push(&win, &packet_before_wrap)` の戻り値が `POTR_OK` であること。
     ASSERT_EQ(POTR_OK, potr_internal_window_recv_push(&win, &packet_at_wrap));
+    // [確認_正常系] - `potr_internal_window_recv_push(&win, &packet_at_wrap)` の戻り値が `POTR_OK` であること。
     ASSERT_EQ(POTR_OK, potr_internal_window_recv_push(&win, &packet_after_wrap));
+    // [確認_正常系] - `potr_internal_window_recv_push(&win, &packet_after_wrap)` の戻り値が `POTR_OK` であること。
     for (size_t i = 0U; i < 3U; i++)
     {
         ASSERT_EQ(POTR_OK, potr_internal_window_recv_pop(&win, &out)); // [手順] - 格納した 3 パケットを順に取り出す。
+        // [確認_正常系 回数=3] - `potr_internal_window_recv_pop(&win, &out)` の戻り値が `POTR_OK` であること。
         actual_sequences[i] = out.seq_num;
     }
 

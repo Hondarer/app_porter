@@ -295,6 +295,7 @@ class porterSendRecvTest : public Test
     {
         string ws = findWorkspaceRoot();
         ASSERT_FALSE(ws.empty());
+        // [状態確認] - `ws.empty()` が false であること。
 #if defined(PLATFORM_LINUX)
         recv_path = ws + "/app/porter/prod/cbin/porter-test";
         send_path = ws + "/app/porter/prod/cbin/porter-test";
@@ -372,12 +373,16 @@ TEST_F(porterSendRecvTest, send_single_message)
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, "send Hello Porter")); // [手順] - SENDER に "send Hello Porter" を送信する。
+    // [確認_正常系] - `writeLineStdin(send_h_, "send Hello Porter")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "Hello Porter", 3000)); // [手順] - RECIEVER が "Hello Porter" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "Hello Porter", 3000)) の期待が成立すること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "受信 (12 バイト)", 3000)); // [手順] - RECIEVER が受信バイト数を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "受信 (12 バイト)", 3000)) の期待が成立すること。
 
     writeLineStdin(send_h_, "exit");
 
@@ -425,16 +430,21 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
     // msg1 / msg2 / msg3 を順次送り込む
     const vector<string> messages = {"msg1", "msg2", "msg3"};
     // [手順] - プロンプト待機、送信、受信待機を msg1、msg2、msg3 の 3 回繰り返す。
-    // [確認_正常系] - msg1、msg2、msg3 のそれぞれが送信のたびに RECIEVER で受信されること。
+    // msg1、msg2、msg3 のそれぞれが送信のたびに RECIEVER で受信されること。
     for (size_t i = 0; i < messages.size(); i++)
     {
         ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+        // [確認_正常系 回数=3] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
         ASSERT_TRUE(writeLineStdin(send_h_, string("send ") + messages[i]));
+        // [確認_正常系 回数=3] - `writeLineStdin(send_h_, string("send ") + messages[i])` が true であること。
         ASSERT_NO_THROW(waitForOutput(recv_h_, messages[i], 3000));
+        // [確認_正常系 回数=3] - ASSERT_NO_THROW(waitForOutput(recv_h_, messages[i], 3000)) の期待が成立すること。
     }
 
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
@@ -502,11 +512,14 @@ TEST_F(porterSendRecvTest, unicast_initial_data_establishes_connected_without_pi
     // Act
     ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(11, 0x4101U, 1200, 3400, 0U, "data-connect-ok"),
                                  19016)); // [手順] - 初回 DATA パケット "data-connect-ok" を UDP で直接送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_data_packet(11, 0x4101U, 1200, 3400, 0U, "data-connect-ok"), 19016)` の戻り値が `0` であること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, "data-connect-ok",
                                   3000)); // [手順] - RECIEVER が "data-connect-ok" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "data-connect-ok", 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -546,6 +559,7 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
     ASSERT_NE(nullptr, send_h_);             // [確認_正常系] - SENDER が起動すること。
     ASSERT_NO_THROW(
         waitForOutput(send_h_, "porter-test[sender:", 5000)); // [手順] - SENDER がプロンプトを出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000)) の期待が成立すること。
 
     sleep_ms(250); // [手順] - PING 周期 (1000 ms) より短い 250 ms だけ待機する。
     EXPECT_EQ(string::npos,
@@ -587,8 +601,10 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
     // Act
     ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(12, 0x4102U, 2200, 4500, 0U, "timeout-reset-1"),
                                  19017)); // [手順] - 1 通目の DATA "timeout-reset-1" を UDP で直接送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_data_packet(12, 0x4102U, 2200, 4500, 0U, "timeout-reset-1"), 19017)` の戻り値が `0` であること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "timeout-reset-1", 3000)); // [手順] - RECIEVER が 1 通目の受信を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "timeout-reset-1", 3000)) の期待が成立すること。
 
     sleep_ms(450); // [手順] - timeout (900 ms) の半分の 450 ms 待機する。
     EXPECT_EQ(string::npos,
@@ -596,8 +612,10 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
 
     ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(12, 0x4102U, 2200, 4500, 1U, "timeout-reset-2"),
                                  19017)); // [手順] - 2 通目の DATA "timeout-reset-2" を送信して timeout を延長させる。
+    // [確認_正常系] - `send_udp_packet(make_plain_data_packet(12, 0x4102U, 2200, 4500, 1U, "timeout-reset-2"), 19017)` の戻り値が `0` であること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "timeout-reset-2", 3000)); // [手順] - RECIEVER が 2 通目の受信を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "timeout-reset-2", 3000)) の期待が成立すること。
 
     sleep_ms(550); // [手順] - 1 通目基準なら timeout する 550 ms 待機する。
     EXPECT_EQ(string::npos,
@@ -605,6 +623,7 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
 
     ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知",
                                   2000)); // [手順] - 最終 DATA 基準の timeout で "切断検知" が出力されるまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知", 2000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -648,16 +667,21 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, string("send ") + payload)); // [手順] - 単発メッセージを送信する。
+    // [確認_正常系] - `writeLineStdin(send_h_, string("send ") + payload)` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
 
     /* sender 側は追加送信せず即 close する。 */
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - 送信直後に "exit" で SENDER を close する。
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)) の期待が成立すること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知", 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -693,13 +717,17 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
     // Act
     ASSERT_EQ(0, send_udp_packet(make_plain_ping_packet(56, 0x5601U, 4234, 8678, 0U, POTR_PING_STATE_UNDEFINED),
                                  19056)); // [手順] - PING パケットを送信して接続を確立させる。
+    // [確認_正常系] - `send_udp_packet(make_plain_ping_packet(56, 0x5601U, 4234, 8678, 0U, POTR_PING_STATE_UNDEFINED), 19056)` の戻り値が `0` であること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)) の期待が成立すること。
 
     ASSERT_EQ(0, send_udp_packet(make_plain_fin_packet(56, 0x5601U, 4234, 8678, 0U, false),
                                  19056)); // [手順] - target フラグなしの FIN パケットを送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_fin_packet(56, 0x5601U, 4234, 8678, 0U, false), 19056)` の戻り値が `0` であること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知", 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -736,20 +764,26 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
     // Act
     ASSERT_EQ(0, send_udp_packet(make_plain_ping_packet(57, 0x5701U, 5234, 9678, UINT32_MAX, POTR_PING_STATE_UNDEFINED),
                                  19057)); // [手順] - 通番 UINT32_MAX の PING を送信して接続を確立させる。
+    // [確認_正常系] - `send_udp_packet(make_plain_ping_packet(57, 0x5701U, 5234, 9678, UINT32_MAX, POTR_PING_STATE_UNDEFINED), 19057)` の戻り値が `0` であること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)) の期待が成立すること。
 
     ASSERT_EQ(0, send_udp_packet(make_plain_fin_packet(57, 0x5701U, 5234, 9678, 0U, true),
                                  19057)); // [手順] - target が 0 に wrap した FIN (target フラグ付き) を送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_fin_packet(57, 0x5701U, 5234, 9678, 0U, true), 19057)` の戻り値が `0` であること。
     sleep_ms(150);                        // [手順] - 150 ms 待機する。
     EXPECT_EQ(string::npos, getStdout(recv_h_).find(
                                 "切断検知")); // [確認_正常系] - 最終 DATA 到着前は切断されないこと (pending FIN)。
 
     ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(57, 0x5701U, 5234, 9678, UINT32_MAX, payload),
                                  19057));                   // [手順] - 通番 UINT32_MAX の最終 DATA を送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_data_packet(57, 0x5701U, 5234, 9678, UINT32_MAX, payload), 19057)` の戻り値が `0` であること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)) の期待が成立すること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知", 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -802,14 +836,19 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, string("send ") + payload)); // [手順] - 単発メッセージを送信する。
+    // [確認_正常系] - `writeLineStdin(send_h_, string("send ") + payload)` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
 
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - 送信直後に "exit" で SENDER を close する。
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)) の期待が成立すること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知", 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -846,23 +885,33 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
     // Act
     ASSERT_EQ(0, send_udp_packet(make_plain_ping_packet(58, 0x5801U, 6234, 10678, 0U, POTR_PING_STATE_NORMAL),
                                  19058));                      // [手順] - PING を送信して N:1 peer を作成する。
+    // [確認_正常系] - `send_udp_packet(make_plain_ping_packet(58, 0x5801U, 6234, 10678, 0U, POTR_PING_STATE_NORMAL), 19058)` の戻り値が `0` であること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - peer の接続確立を待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)) の期待が成立すること。
 
     ASSERT_EQ(0, send_udp_packet(make_plain_fin_packet(58, 0x5801U, 6234, 10678, 1U, true),
                                  19058)); // [手順] - 未到達の通番 1 を目標とする FIN を送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_fin_packet(58, 0x5801U, 6234, 10678, 1U, true), 19058)` の戻り値が `0` であること。
     ASSERT_TRUE(wait_for_stderr(recv_h_, "FIN pending",
                                 3000U)); // [手順] - FIN が pending 状態に登録されるまで待機する。
+    // [確認_正常系] - `wait_for_stderr(recv_h_, "FIN pending", 3000U)` が true であること。
     ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(58, 0x5801U, 6234, 10678, 0U, payload),
                                  19058)); // [手順] - 通番 0 の DATA で pending FIN の目標に到達させる。
+    // [確認_正常系] - `send_udp_packet(make_plain_data_packet(58, 0x5801U, 6234, 10678, 0U, payload), 19058)` の戻り値が `0` であること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000));    // [手順] - FIN 完了前に DATA が配信されるまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - pending FIN による peer 切断を待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知", 3000)) の期待が成立すること。
 
     ASSERT_EQ(0, send_udp_packet(make_plain_ping_packet(58, 0x5802U, 6235, 10679, 0U, POTR_PING_STATE_NORMAL),
                                  19058)); // [手順] - 切断後に別セッションの PING を送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_ping_packet(58, 0x5802U, 6235, 10679, 0U, POTR_PING_STATE_NORMAL), 19058)` の戻り値が `0` であること。
     ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(58, 0x5802U, 6235, 10679, 0U, recovery_payload),
                                  19058)); // [手順] - 新しい peer から DATA を送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_data_packet(58, 0x5802U, 6235, 10679, 0U, recovery_payload), 19058)` の戻り値が `0` であること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, recovery_payload,
                                   3000)); // [手順] - 新しい peer の DATA が配信されるまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, recovery_payload, 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);                      // [手順] - RECEIVER に SIGINT (Ctrl+C) を入力する。
     int receiver_exit = waitForExit(recv_h_, 3000); // [手順] - RECEIVER の終了を待機する。
@@ -900,21 +949,27 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
     // Act
     ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(55, 0x5501U, 3234, 7678, 0U, first_payload),
                                  19055));                         // [手順] - 1 つ目のセッションで DATA を送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_data_packet(55, 0x5501U, 3234, 7678, 0U, first_payload), 19055)` の戻り値が `0` であること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, first_payload, 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, first_payload, 3000)) の期待が成立すること。
 
     ASSERT_EQ(0,
               send_udp_packet(make_plain_fin_packet(55, 0x5501U, 3234, 7678, 2U, true),
                               19055)); // [手順] - 未到達の target (通番 2) を指す FIN を送信し pending FIN 状態にする。
+    // [確認_正常系] - `send_udp_packet(make_plain_fin_packet(55, 0x5501U, 3234, 7678, 2U, true), 19055)` の戻り値が `0` であること。
     sleep_ms(150);                     // [手順] - 150 ms 待機する。
     EXPECT_EQ(string::npos,
               getStdout(recv_h_).find("切断検知")); // [確認_正常系] - pending FIN の時点では切断されないこと。
     ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知",
                                   2000)); // [手順] - health timeout により "切断検知" が出力されるまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知", 2000)) の期待が成立すること。
 
     ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(55, 0x5502U, 3235, 7679, 0U, payload),
                                  19055)); // [手順] - 新しいセッション ID で DATA を送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_data_packet(55, 0x5502U, 3235, 7679, 0U, payload), 19055)` の戻り値が `0` であること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, payload, 3000)); // [手順] - RECIEVER が新セッションの受信を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)) の期待が成立すること。
     sleep_ms(150);                              // [手順] - stale な pending FIN による誤切断がないか 150 ms 観察する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
@@ -962,14 +1017,20 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, "send ping-delay-1")); // [手順] - 1 通目 "ping-delay-1" を送信する。
+    // [確認_正常系] - `writeLineStdin(send_h_, "send ping-delay-1")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, "ping-delay-1", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "ping-delay-1", 3000)) の期待が成立すること。
 
     sleep_ms(250); // [手順] - PING 周期の半分の 250 ms 待機する。
     ASSERT_TRUE(writeLineStdin(
         send_h_, "send ping-delay-2")); // [手順] - 2 通目 "ping-delay-2" を送信し recent DATA を更新する。
+    // [確認_正常系] - `writeLineStdin( send_h_, "send ping-delay-2")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, "ping-delay-2", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "ping-delay-2", 3000)) の期待が成立すること。
 
     sleep_ms(250); // [手順] - 1 通目基準では PING 周期を超える 250 ms 待機する。
     {
@@ -991,6 +1052,7 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
             "health[service_id=14]: PING seq=")); // [確認_正常系] - 最後の DATA 基準で periodic PING が再開されること。
 
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
@@ -1044,15 +1106,18 @@ TEST_F(porterSendRecvTest, bidir_echo)
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, "send bidir-test")); // [手順] - SENDER から "bidir-test" を送信する。
+    // [確認_正常系] - `writeLineStdin(send_h_, "send bidir-test")` が true であること。
     ASSERT_NO_THROW(
         waitForOutput(send_h_, "送信完了。", 3000)); // [手順] - SENDER が "送信完了。" を出力するまで待機する。
     // [確認_正常系] - SENDER が "送信完了。" を出力すること。
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "bidir-test", 3000)); // [手順] - RECIEVER が "bidir-test" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "bidir-test", 3000)) の期待が成立すること。
 
     // RECIEVER を停止して出力を回収する
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
@@ -1088,22 +1153,28 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
     // Act
     ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(30, 0x1001U, 1234, 5678, 0U, "plain-should-drop"),
                                  19030)); // [手順] - 平文の DATA パケット "plain-should-drop" を UDP で直接送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_data_packet(30, 0x1001U, 1234, 5678, 0U, "plain-should-drop"), 19030)` の戻り値が `0` であること。
     sleep_ms(300);                        // [手順] - 破棄処理のため 300 ms 待機する。
 
     send_h_ = startProcessAsync(send_path, {"sender", config_path, "30"},
                                 makeOpts()); // [手順] - 暗号化設定の SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);             // [確認_正常系] - SENDER が起動すること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000)) の期待が成立すること。
 
     ASSERT_TRUE(writeLineStdin(send_h_, "send encrypted-ok")); // [手順] - 暗号化経路で "encrypted-ok" を送信する。
+    // [確認_正常系] - `writeLineStdin(send_h_, "send encrypted-ok")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
 
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "encrypted-ok", 3000)); // [手順] - RECIEVER が暗号化経路の受信を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "encrypted-ok", 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -1147,6 +1218,7 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
     // Act
     ASSERT_EQ(0, send_udp_packet(make_invalid_encrypted_ping_packet(50, 0x2001U, 2234, 6678, 0U),
                                  19050)); // [手順] - 認証タグ不正の暗号化 PING パケットを UDP で直接送信する。
+    // [確認_正常系] - `send_udp_packet(make_invalid_encrypted_ping_packet(50, 0x2001U, 2234, 6678, 0U), 19050)` の戻り値が `0` であること。
     sleep_ms(300);                        // [手順] - 破棄処理のため 300 ms 待機する。
 
     EXPECT_EQ(string::npos,
@@ -1156,22 +1228,30 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
                                 makeOpts()); // [手順] - 正規のクライアントを起動する。
     ASSERT_NE(nullptr, send_h_);             // [確認_正常系] - SENDER が起動すること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
 
     /* 状態変化時の割り込み PING により、双方向 CONNECTED が 2 周期未満で成立することを確認する。 */
     /* TCP は接続確立の完了後に最初の PING 周期へ入るため、UDP より少し余裕を持たせる。 */
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800)); // [手順] - 双方が "接続確立" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800)) の期待が成立すること。
 
     ASSERT_TRUE(
         writeLineStdin(send_h_, "send n1-secure-ok")); // [手順] - 正規クライアントから "n1-secure-ok" を送信する。
+    // [確認_正常系] - `writeLineStdin(send_h_, "send n1-secure-ok")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
 
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(waitForOutput(recv_h_, "n1-secure-ok", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "n1-secure-ok", 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -1210,6 +1290,7 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
     // Act
     ASSERT_EQ(0, send_udp_packet(make_plain_data_packet(52, 0x3001U, 3234, 7678, 0U, "plain-n1-drop"),
                                  19052)); // [手順] - 未知 peer からの初回 DATA "plain-n1-drop" を UDP で直接送信する。
+    // [確認_正常系] - `send_udp_packet(make_plain_data_packet(52, 0x3001U, 3234, 7678, 0U, "plain-n1-drop"), 19052)` の戻り値が `0` であること。
     sleep_ms(300);                        // [手順] - 破棄処理のため 300 ms 待機する。
 
     EXPECT_EQ(string::npos,
@@ -1221,20 +1302,28 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
                                 makeOpts()); // [手順] - 正規のクライアントを起動する。
     ASSERT_NE(nullptr, send_h_);             // [確認_正常系] - SENDER が起動すること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 5000)); // [手順] - 双方が "接続確立" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 5000)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 5000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 5000)) の期待が成立すること。
 
     ASSERT_TRUE(writeLineStdin(
         send_h_, "send n1-after-ping-ok")); // [手順] - 正規クライアントから "n1-after-ping-ok" を送信する。
+    // [確認_正常系] - `writeLineStdin( send_h_, "send n1-after-ping-ok")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
 
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "n1-after-ping-ok", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "n1-after-ping-ok", 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -1282,18 +1371,24 @@ TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
 
     // Act
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800)); // [手順] - サーバー側の "接続確立" を待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800)); // [手順] - クライアント側の "接続確立" を待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800)) の期待が成立すること。
 
     ASSERT_TRUE(
         writeLineStdin(send_h_, "send n1-connected-ok")); // [手順] - CONNECTED 後に "n1-connected-ok" を送信する。
+    // [確認_正常系] - `writeLineStdin(send_h_, "send n1-connected-ok")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
 
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "n1-connected-ok", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "n1-connected-ok", 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -1334,18 +1429,24 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
 
     // Act
     ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800)); // [手順] - 双方が "接続確立" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800)) の期待が成立すること。
 
     ASSERT_TRUE(writeLineStdin(
         send_h_, "send tcp-encrypted-ok")); // [手順] - ヘルスチェック経過後に "tcp-encrypted-ok" を送信する。
+    // [確認_正常系] - `writeLineStdin( send_h_, "send tcp-encrypted-ok")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
     // send 側プロンプト復帰後でも recv 側 stdout への反映には遅延が出るため、
     // exit/interrupt の前に recv 側で受信文字列の出力を確認する。CPU 高負荷下
     // (テスト並列実行下) では recv 側の出力反映よりも interrupt が先行し、
     // recv_out に "tcp-encrypted-ok" が残らないことがある。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "tcp-encrypted-ok", 5000)); // [手順] - RECIEVER が受信を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "tcp-encrypted-ok", 5000)) の期待が成立すること。
     ASSERT_TRUE(writeLineStdin(send_h_, "exit"));          // [手順] - "exit" で SENDER を終了させる。
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
 
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
@@ -1388,19 +1489,26 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
                                 makeOpts()); // [手順] - SENDER を VERBOSE トレース付きで起動する。
     ASSERT_NE(nullptr, send_h_);             // [確認_正常系] - SENDER が起動すること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000)) の期待が成立すること。
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - bootstrap PING だけで双方の "接続確立" を待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)) の期待が成立すること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000)) の期待が成立すること。
 
     ASSERT_TRUE(writeLineStdin(send_h_, "send tcp-before-connected")); // [手順] - "tcp-before-connected" を送信する。
+    // [確認_正常系] - `writeLineStdin(send_h_, "send tcp-before-connected")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
 
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "tcp-before-connected", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "tcp-before-connected", 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -1450,14 +1558,18 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
 
     ASSERT_TRUE(writeLineStdin(
         send_h_, "send tcp-timeout-ignored")); // [手順] - timeout 経過後に "tcp-timeout-ignored" を送信する。
+    // [確認_正常系] - `writeLineStdin( send_h_, "send tcp-timeout-ignored")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
     ASSERT_TRUE(writeLineStdin(send_h_, "exit")); // [手順] - "exit" で SENDER を終了させる。
+    // [確認_正常系] - `writeLineStdin(send_h_, "exit")` が true であること。
 
     EXPECT_EQ(0, waitForExit(send_h_,
                              5000)); // [確認_正常系] - waitForExit の戻り値として、SENDER の終了コードが 0 であること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "tcp-timeout-ignored", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "tcp-timeout-ignored", 3000)) の期待が成立すること。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
@@ -1508,14 +1620,17 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + bin_path)); // [手順] - SENDER にバイナリ ファイル送信コマンドを入力する。
+    // [確認_正常系] - `writeLineStdin(send_h_, string("file ") + bin_path)` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "ファイル送信完了",
                                   3000)); // [手順] - SENDER が "ファイル送信完了" を出力するまで待機する。
     // [確認_正常系] - SENDER が "ファイル送信完了" を出力すること。
 
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
 
     ASSERT_NO_THROW(waitForOutput(recv_h_, "バイナリ データを保存しました",
                                   3000)); // [手順] - RECIEVER が保存メッセージを出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "バイナリ データを保存しました", 3000)) の期待が成立すること。
 
     writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
 
@@ -1564,10 +1679,13 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, "send Hello Text")); // [手順] - SENDER からテキストメッセージ "Hello Text" を送信する。
+    // [確認_正常系] - `writeLineStdin(send_h_, "send Hello Text")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
 
     ASSERT_NO_THROW(
         waitForOutput(recv_h_, "Hello Text", 3000)); // [手順] - RECIEVER が "Hello Text" を出力するまで待機する。
+    // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(recv_h_, "Hello Text", 3000)) の期待が成立すること。
 
     writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
 
@@ -1615,6 +1733,7 @@ TEST_F(porterSendRecvTest, send_file_too_large_fails)
 
     // Act
     ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + large_path)); // [手順] - サイズ超過ファイルの送信コマンドを入力する。
+    // [確認_異常系] - `writeLineStdin(send_h_, string("file ") + large_path)` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     // [確認_異常系] - SENDER がエラー後も対話を継続していること。
 
