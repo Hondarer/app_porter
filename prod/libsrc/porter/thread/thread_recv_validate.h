@@ -1,3 +1,16 @@
+/**
+ *******************************************************************************
+ *  @file           thread_recv_validate.h
+ *  @brief          受信パケットの検証と事前チェック処理の内部関数を定義します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
+ */
+
 #ifndef THREAD_RECV_VALIDATE_PRIVATE_H
 #define THREAD_RECV_VALIDATE_PRIVATE_H
 
@@ -5,15 +18,15 @@
 #include <cplat/net/endpoint.h>
 
 /**
- * @brief 暗号化要件と GCM 認証を検証します。
- * @param[in,out] ctx 復号バッファーを所有するコンテキスト。NULL は許可しません。
- * @param[in,out] pkt 解析済みパケット。復号した DATA/PING は ctx の復号バッファーを参照します。
- * @param[in] wire_hdr POTR_PACKET_HEADER_SIZE バイト以上の受信ヘッダー。
- * @param[in] log_prefix ログの接頭辞。
- * @param[in] path_idx TCP の経路番号。UDP は -1 を指定します。
- * @return 成功時は POTR_OK、認証失敗時は POTR_ERR_PROTOCOL を返します。
- * @note ポインター引数に NULL は許可しません。所有権は移動しません。
- *       同じ ctx の復号バッファーを並行して使用しないでください。
+ *  @brief          暗号化要件と GCM 認証を検証します。
+ *  @param[in,out]  ctx             復号バッファーを所有するコンテキスト。NULL は許可しません。
+ *  @param[in,out]  pkt             解析済みパケット。復号した DATA/PING は ctx の復号バッファーを参照します。
+ *  @param[in]      wire_hdr        POTR_PACKET_HEADER_SIZE バイト以上の受信ヘッダー。
+ *  @param[in]      log_prefix      ログの接頭辞。
+ *  @param[in]      path_idx        TCP の経路番号。UDP は -1 を指定します。
+ *  @return         成功時は POTR_OK、認証失敗時は POTR_ERR_PROTOCOL を返します。
+ *  @note           ポインター引数に NULL は許可しません。所有権は移動しません。
+ *                  同じ ctx の復号バッファーを並行して使用しないでください。
  */
 int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const uint8_t *wire_hdr,
                                     const char *log_prefix, int path_idx);

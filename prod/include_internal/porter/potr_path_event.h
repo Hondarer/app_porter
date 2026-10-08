@@ -43,7 +43,7 @@ extern "C"
         int changed_paths[POTR_MAX_PATH]; /**< 状態が変化した path のインデックス列。 */
         potr_event
             changed_events[POTR_MAX_PATH]; /**< changed_paths と対応する PATH イベント (CONNECTED / DISCONNECTED)。 */
-        int changed_count;       /**< 状態が変化した path 数 (changed_paths / changed_events の有効要素数)。 */
+        int changed_count;        /**< 状態が変化した path 数 (changed_paths / changed_events の有効要素数)。 */
         potr_event session_event; /**< セッション全体の接続状態変化イベント。変化なしの場合は 0。 */
     } potr_internal_prepared_path_events;
 
@@ -70,7 +70,8 @@ extern "C"
      *  callback_mutex を取得してからコールバックを呼び出し、呼び出し後に解放します。\n
      *  ctx または callback が NULL の場合は何もしません。
      */
-    extern void potr_internal_callback_emit(potr_context *ctx, potr_peer_id peer_id, potr_event event, const void *data, size_t len);
+    extern void potr_internal_callback_emit(potr_context *ctx, potr_peer_id peer_id, potr_event event, const void *data,
+                                            size_t len);
 
     /**
      *  @brief          受信コールバックを発火します (ロック取得なし)。
@@ -83,8 +84,8 @@ extern "C"
      *  呼び出し側で callback_mutex を保持している前提で、ロックを取得せずにコールバックを呼び出します。\n
      *  ctx または callback が NULL の場合は何もしません。
      */
-    extern void potr_internal_callback_emit_locked(potr_context *ctx, potr_peer_id peer_id, potr_event event, const void *data,
-                                          size_t len);
+    extern void potr_internal_callback_emit_locked(potr_context *ctx, potr_peer_id peer_id, potr_event event,
+                                                   const void *data, size_t len);
 
     /**
      *  @brief          path 論理接続状態配列を 0 で初期化します。
@@ -142,7 +143,7 @@ extern "C"
      *  状態で呼び出します (_locked サフィックス)。
      */
     extern void potr_internal_sync_service_path_state_locked(potr_context *ctx, const int *next_states,
-                                                    potr_internal_prepared_path_events *prepared);
+                                                             potr_internal_prepared_path_events *prepared);
 
     /**
      *  @brief          ピア単位の path 論理接続状態を更新し、発火すべきイベントを準備します。
@@ -155,7 +156,7 @@ extern "C"
      *  呼び出し側で callback_mutex を保持した状態で呼び出します (_locked サフィックス)。
      */
     extern void potr_internal_sync_peer_path_state_locked(potr_internal_peer_context *peer, const int *next_states,
-                                                 potr_internal_prepared_path_events *prepared);
+                                                          potr_internal_prepared_path_events *prepared);
 
     /**
      *  @brief          準備済みのサービス単位 PATH / セッション イベントを発火します。
@@ -165,7 +166,8 @@ extern "C"
      *  変化した各 path の PATH イベントを発火し、最後にセッション イベント (あれば) を発火します。\n
      *  呼び出し側で callback_mutex を保持した状態で呼び出します (_locked サフィックス)。
      */
-    extern void potr_internal_emit_service_path_events_locked(potr_context *ctx, const potr_internal_prepared_path_events *prepared);
+    extern void potr_internal_emit_service_path_events_locked(potr_context *ctx,
+                                                              const potr_internal_prepared_path_events *prepared);
 
     /**
      *  @brief          準備済みのピア単位 PATH / セッション イベントを発火します。
@@ -178,7 +180,7 @@ extern "C"
      *  呼び出し側で callback_mutex を保持した状態で呼び出します (_locked サフィックス)。
      */
     extern void potr_internal_emit_peer_path_events_locked(potr_context *ctx, const potr_internal_peer_context *peer,
-                                                  const potr_internal_prepared_path_events *prepared);
+                                                           const potr_internal_prepared_path_events *prepared);
 
 #ifdef __cplusplus
 }

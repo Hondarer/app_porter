@@ -139,7 +139,7 @@ RUDP -> RRT: DATA[seq=12] 受信
 
 RRT -> RRT: seq=11 の欠番を検出
 
-alt reorder_timeout_ms = 0 (即時・デフォルト)
+alt reorder_timeout_ms = 0 (即時・既定値)
   RRT -> SUDP: NACK[ack_num=11] 送信\n(全パスから送信者へユニキャスト)
 else reorder_timeout_ms > 0 (リオーダー待機)
   RRT -> RRT: タイマー開始\n(deadline = now + reorder_timeout_ms)\n→ 待機中に seq=11 が到着すれば NACK 不要
@@ -310,7 +310,7 @@ RUDP -> RRT: DATA[seq=12] 受信
 
 RRT -> RRT: seq=11 の欠番を検出\n(RAW: NACK は送信しない)
 
-alt reorder_timeout_ms = 0 (即時・デフォルト)
+alt reorder_timeout_ms = 0 (即時・既定値)
   RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
   RRT -> RRT: recv_window を seq=12 でリセット
   RRT -> RRT: DATA[seq=12] をウィンドウから取り出し
@@ -334,7 +334,7 @@ PING の `seq_num` から欠落パケットを検出した場合のシーケン�
 @startuml RAW モード - PING ギャップ検出
 caption RAW モード - PING ギャップ検出
 
-participant "ヘルスチェック\nスレッド (送信者)" as HT
+participant "ヘルス チェック\nスレッド (送信者)" as HT
 participant "UDP" as UDP
 participant "受信スレッド" as RRT
 participant "アプリ\n(受信側)" as RAPP
@@ -349,7 +349,7 @@ UDP -> RRT: PING[seq=13] 受信
 
 RRT -> RRT: pkt.seq_num(13) != next_seq(10)\n→ ギャップあり (window内)
 
-alt reorder_timeout_ms = 0 (即時・デフォルト)
+alt reorder_timeout_ms = 0 (即時・既定値)
   RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
   RRT -> RRT: recv_window を seq=13 でリセット
   RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)

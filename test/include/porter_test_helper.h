@@ -70,8 +70,7 @@ class PorterConfigBuilder
     }
 
     PorterConfigBuilder &addUnicastBidirN1Service(int64_t id, int port, int max_peers,
-                                                  const std::string &bind_addr = "0.0.0.0",
-                                                  const std::string &key = "")
+                                                  const std::string &bind_addr = "0.0.0.0", const std::string &key = "")
     {
         return addService(id, "unicast_bidir_n1", port, bind_addr, key, false, max_peers);
     }

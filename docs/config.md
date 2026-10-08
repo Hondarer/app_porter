@@ -35,7 +35,7 @@ porter は JSONC 形式のテキスト ファイルでサービスを定義し�
 
 すべてのサービスに適用されるグローバル設定です。
 
-| キー | 型 | デフォルト | 説明 |
+| キー | 型 | 既定値 | 説明 |
 |---|---|---|---|
 | `window_size` | uint16 | 16 | スライディング ウィンドウ サイズ (2〜256) |
 | `max_payload` | uint16 | 1,400 | DATA パケットのペイロード上限バイト数 (64〜65507) |
@@ -46,7 +46,7 @@ porter は JSONC 形式のテキスト ファイルでサービスを定義し�
 | `tcp_health_interval_ms` | uint32 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。接続直後の bootstrap PING とは別に、設定周期ごとに PING を送信します。0 の場合は定周期 PING を無効化するが、初回接続確立用の bootstrap PING は送信します。 |
 | `tcp_health_timeout_ms`  | uint32 | 31,000 | TCP 通信種別の PING 応答待機タイムアウト (ms)。`tcp_health_interval_ms > 0` のときだけ有効で、SENDER 側が PING 応答を本値以内に受信できなければ DISCONNECTED。0 でタイムアウト検知を無効化 |
 | `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potr_service_close()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送信し、本値以内に `FIN_ACK` が返信されなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む |
-| `reorder_timeout_ms` | uint32 | 0 | 受信ウィンドウで欠番を検出してから NACK 送出 (通常モード) または DISCONNECTED 発行 (RAW モード) を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 で即時 (デフォルト)。推奨値: LAN/マルチパス = 10〜30 ms、遠距離 WAN = 30〜100 ms |
+| `reorder_timeout_ms` | uint32 | 0 | 受信ウィンドウで欠番を検出してから NACK 送出 (通常モード) または DISCONNECTED 発行 (RAW モード) を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 で即時 (既定値)。推奨値: LAN/マルチパス = 10〜30 ms、遠距離 WAN = 30〜100 ms |
 
 Table: global オブジェクトの設定項目一覧
 
@@ -97,7 +97,7 @@ Table: 通信種別ごとの実効並べ替えタイムアウト
 
 ### health_interval_ms と health_timeout_ms の関係
 
-グローバル設定の `udp_*` / `tcp_*` は、コードの組み込みデフォルトに次ぐ「サービス定義へ適用する既定値」です。最終的な動作は、通信種別に応じて選ばれたグローバル既定値に対し、`services` 内にあるサービスの `health_interval_ms` / `health_timeout_ms` を重ねた実効値で決まります。実効 `health_interval_ms > 0` のとき、片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時だけ PING を送信し、双方向 UDP は設定周期で PING を送信します。TCP は実効 `health_interval_ms` にかかわらず接続直後に bootstrap PING を送信し、`health_interval_ms > 0` のときだけ定周期 PING と timeout 監視を有効にします。
+グローバル設定の `udp_*` / `tcp_*` は、コードの組み込み既定値に次ぐ「サービス定義へ適用する既定値」です。最終的な動作は、通信種別に応じて選ばれたグローバル既定値に対し、`services` 内にあるサービスの `health_interval_ms` / `health_timeout_ms` を重ねた実効値で決まります。実効 `health_interval_ms > 0` のとき、片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時だけ PING を送信し、双方向 UDP は設定周期で PING を送信します。TCP は実効 `health_interval_ms` にかかわらず接続直後に bootstrap PING を送信し、`health_interval_ms > 0` のときだけ定周期 PING と timeout 監視を有効にします。
 
 | 通信モデル / 種別 | PING 送信 | タイムアウト監視 |
 |---|---|---|
@@ -150,7 +150,7 @@ Table: unicast 専用の設定項目
 
 ### multicast 専用フィールド
 
-| キー | 型 | 必須 | デフォルト | 説明 |
+| キー | 型 | 必須 | 既定値 | 説明 |
 |---|---|---|---|---|
 | `multicast_group` | 文字列 | 必須 | — | マルチキャスト グループ IP アドレス (例: `224.0.0.1`) |
 | `ttl` | uint8 | 省略可 | 1 | マルチキャスト TTL |
@@ -213,14 +213,14 @@ Table: unicast_bidir_n1 専用の設定項目
 
 ### tcp / tcp_bidir 専用フィールド
 
-| キー | 型 | 必須 | デフォルト | 説明 |
+| キー | 型 | 必須 | 既定値 | 説明 |
 |---|---|---|---|---|
 | `dst_addr1` | 文字列 | 必須 | — | SENDER: 接続先アドレス (ホスト名可)。RECEIVER: bind アドレス |
 | `dst_port` | uint16 | 必須 | — | SENDER: 接続先ポート。RECEIVER: listen ポート |
 | `src_addr1` | 文字列 | 省略可 | — | SENDER: ローカル bind アドレス (省略で自動選択)。RECEIVER: 接続元 IP フィルター (省略でフィルターなし) |
 | `src_port` | uint16 | 省略可 | 0 | SENDER: ローカル bind ポート (`0` または省略でエフェメラル)。RECEIVER: 接続元ポート フィルター (`0` または省略でフィルターなし) |
 | `reconnect_interval_ms` | uint32 | 省略可 | 5,000 | SENDER の自動再接続間隔 (ms)。`0` で自動再接続なし。RECEIVER では無視 |
-| `connect_timeout_ms` | uint32 | 省略可 | 10,000 | SENDER の TCP 接続タイムアウト (ms)。`0` で OS デフォルト。RECEIVER では無視 |
+| `connect_timeout_ms` | uint32 | 省略可 | 10,000 | SENDER の TCP 接続タイムアウト (ms)。`0` で OS 既定値。RECEIVER では無視 |
 
 Table: tcp および tcp_bidir 専用の設定項目
 

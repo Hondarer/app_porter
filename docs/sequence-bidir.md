@@ -48,7 +48,7 @@ B -> A: NACK (ack_num=4)
 A -> B: DATA (session=S_A, seq=4)  [retransmit]
 note over B: POTR_EVENT_DATA (seq=4, 5 の順)
 
-== ヘルスチェック（対称） ==
+== ヘルス チェック（対称） ==
 
 A -> B: 定周期 PING (session=S_A, seq_num=N,\npayload=UNDEFINED)
 note over B: path_ping_state を NORMAL に更新
@@ -92,7 +92,7 @@ S -> CA: DATA (peer_id=1 向け送信)
 
 ## unicast_bidir N:1 サーバーでの切断
 
-サーバーは FIN 受信、`potr_peer_disconnect()`、またはヘルスチェック タイムアウトによりピア単位で切断を処理します。
+サーバーは FIN 受信、`potr_peer_disconnect()`、またはヘルス チェック タイムアウトによりピア単位で切断を処理します。
 
 ```plantuml
 @startuml unicast_bidir N1 切断
@@ -113,13 +113,13 @@ S -> S: peer table から peer_id=2 を削除
 @enduml
 ```
 
-## unicast_bidir ヘルスチェック タイムアウトによる切断検知
+## unicast_bidir ヘルス チェック タイムアウトによる切断検知
 
 `POTR_TYPE_UNICAST_BIDIR` において、相手側が停止した場合の切断検知シーケンスです。1:1 モードでは相手端単位、N:1 モードでは各 `peer_id` 単位で `last_recv_tv_sec` を監視し、`health_timeout_ms` 超過で切断を検知します。
 
 ```plantuml
 @startuml unicast_bidir タイムアウト
-title unicast_bidir ヘルスチェック タイムアウトによる切断検知
+title unicast_bidir ヘルス チェック タイムアウトによる切断検知
 
 participant "Side A" as A
 participant "Side B\n(停止)" as B

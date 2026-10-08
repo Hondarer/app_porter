@@ -1,5 +1,14 @@
-/** @file thread_recv_window.c
- * @brief 受信ウィンドウへの投入、再送要求、順序整列を行います。
+/**
+ *******************************************************************************
+ *  @file           thread_recv_window.c
+ *  @brief          受信ウィンドウへの投入、再送要求、順序整列を行います。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
  */
 
 #include <inttypes.h>
@@ -43,8 +52,8 @@ static int build_ctrl_pkt_wire(const potr_context *ctx, potr_packet *pkt, uint8_
         memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, pkt, POTR_PACKET_HEADER_SIZE);
-        if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce, wire_buf,
-                          POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+        if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
+                                 wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがありません。 */
             return POTR_ERR_UNKNOWN;

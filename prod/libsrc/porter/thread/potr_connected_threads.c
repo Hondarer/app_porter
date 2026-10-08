@@ -25,7 +25,8 @@
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, const potr_internal_connected_threads_ops *ops)
+int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
+                                          const potr_internal_connected_threads_ops *ops)
 {
     int is_bidir;
     int is_sender;

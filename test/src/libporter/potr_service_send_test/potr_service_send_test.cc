@@ -74,15 +74,18 @@ TEST_F(potrSendTest, close_requested_returns_canceled)
     NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
     const char payload[] = "closing"; // [状態] - 送信ペイロードを "closing" とする。
-    cplat_atomic_store_i32(&ctx.close_requested, 1, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - サービスの終了処理中とする。
+    cplat_atomic_store_i32(&ctx.close_requested, 1,
+                           CPLAT_MEMORY_ORDER_RELAXED); // [状態] - サービスの終了処理中とする。
 
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - 終了処理中に送信を試みる。
+    int actual_ret =
+        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - 終了処理中に送信を試みる。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_CANCELED, actual_ret);   // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_CANCELED であること。
+    EXPECT_EQ(POTR_ERR_CANCELED,
+              actual_ret);               // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_CANCELED であること。
     EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
@@ -101,11 +104,12 @@ TEST_F(potrSendTest, n1_peer_na_returns_invalid_argument)
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - POTR_PEER_NA 宛てに送信を試みる。
+    int actual_ret = potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+                                       0); // [手順] - POTR_PEER_NA 宛てに送信を試みる。
 
     // Assert
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT,
-              actual_ret);                      // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+              actual_ret); // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
@@ -124,10 +128,12 @@ TEST_F(potrSendTest, n1_unknown_peer_returns_not_found)
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, 123U, payload, strlen(payload), 0); // [手順] - 未登録のピア ID 宛てに送信を試みる。
+    int actual_ret =
+        potr_service_send(&ctx, 123U, payload, strlen(payload), 0); // [手順] - 未登録のピア ID 宛てに送信を試みる。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_NOT_FOUND, actual_ret);  // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_NOT_FOUND であること。
+    EXPECT_EQ(POTR_ERR_NOT_FOUND,
+              actual_ret);               // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_NOT_FOUND であること。
     EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
@@ -143,16 +149,20 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
 
     ctx.service.type = POTR_TYPE_TCP_BIDIR;
     cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELAXED);
-    cplat_atomic_store_i32(&ctx.health_alive, 0, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - TCP_BIDIR で物理パスは active、論理接続 (health_alive) は未成立とする。
+    cplat_atomic_store_i32(
+        &ctx.health_alive, 0,
+        CPLAT_MEMORY_ORDER_RELAXED); // [状態] - TCP_BIDIR で物理パスは active、論理接続 (health_alive) は未成立とする。
 
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potr_service_send で送信を試みる。
+    int actual_ret = potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+                                       0); // [手順] - potr_service_send で送信を試みる。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret); // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_DISCONNECTED であること。
-    EXPECT_EQ(0U, ctx.send_queue.count);   // [確認_異常系] - 送信キューに積まれないこと。
+    EXPECT_EQ(POTR_ERR_DISCONNECTED,
+              actual_ret); // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_DISCONNECTED であること。
+    EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
 
@@ -169,17 +179,20 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
     ctx.is_multi_peer = 1;
     peers[0].active = 1;
     peers[0].peer_id = 10;
-    cplat_atomic_store_i32(&peers[0].health_alive, 0, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - active だが未接続 (health_alive=0) の peer を 1 件だけ用意する。
+    cplat_atomic_store_i32(
+        &peers[0].health_alive, 0,
+        CPLAT_MEMORY_ORDER_RELAXED); // [状態] - active だが未接続 (health_alive=0) の peer を 1 件だけ用意する。
 
     // Pre-Assert
 
     // Act
     int actual_ret = potr_service_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
-                       0); // [手順] - POTR_PEER_ALL 宛てに potr_service_send で送信を試みる。
+                                       0); // [手順] - POTR_PEER_ALL 宛てに potr_service_send で送信を試みる。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret); // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_DISCONNECTED であること。
-    EXPECT_EQ(0U, ctx.send_queue.count);   // [確認_異常系] - 送信キューに格納されないこと。
+    EXPECT_EQ(POTR_ERR_DISCONNECTED,
+              actual_ret); // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_DISCONNECTED であること。
+    EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに格納されないこと。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
 
@@ -196,25 +209,27 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
     ctx.is_multi_peer = 1;
     peers[0].active = 1;
     peers[0].peer_id = 10;
-    cplat_atomic_store_i32(&peers[0].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 接続済み (health_alive=1) の peer 10 を用意する。
+    cplat_atomic_store_i32(&peers[0].health_alive, 1,
+                           CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 接続済み (health_alive=1) の peer 10 を用意する。
     peers[1].active = 1;
     peers[1].peer_id = 11;
-    cplat_atomic_store_i32(&peers[1].health_alive, 0, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 未接続の peer 11 を用意する。
+    cplat_atomic_store_i32(&peers[1].health_alive, 0,
+                           CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 未接続の peer 11 を用意する。
 
     // Pre-Assert
 
     // Act
     int actual_ret = potr_service_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
-                       0); // [手順] - POTR_PEER_ALL 宛てに potr_service_send で送信する。
+                                       0); // [手順] - POTR_PEER_ALL 宛てに potr_service_send で送信する。
 
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret);             // [確認_正常系] - potr_service_send の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, actual_ret);      // [確認_正常系] - potr_service_send の戻り値が POTR_OK であること。
     EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - 送信キューに 1 件だけ積まれること。
 
     {
         // [サブ手順参照 名前=potrSendTest.popQueuedElem]
         potr_internal_payload_elem elem = popQueuedElem();
-        EXPECT_EQ((potr_peer_id)10, elem.peer_id);              // [確認_正常系] - 宛先が接続済みの peer 10 であること。
+        EXPECT_EQ((potr_peer_id)10, elem.peer_id);            // [確認_正常系] - 宛先が接続済みの peer 10 であること。
         EXPECT_EQ(strlen(payload), (size_t)elem.payload_len); // [確認_正常系] - ペイロード長が一致すること。
         EXPECT_EQ(0, memcmp(elem.payload, payload, strlen(payload))); // [確認_正常系] - ペイロード内容が一致すること。
     }
@@ -231,15 +246,18 @@ TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
     const char payload[] = "one-way-still-sendable"; // [状態] - 送信ペイロードを "one-way-still-sendable" とする。
 
     ctx.service.type = POTR_TYPE_UNICAST;
-    cplat_atomic_store_i32(&ctx.health_alive, 0, CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 片方向 unicast で接続状態 (health_alive) は未成立とする。
+    cplat_atomic_store_i32(
+        &ctx.health_alive, 0,
+        CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 片方向 unicast で接続状態 (health_alive) は未成立とする。
 
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potr_service_send で送信する。
+    int actual_ret =
+        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potr_service_send で送信する。
 
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret);             // [確認_正常系] - potr_service_send の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, actual_ret);      // [確認_正常系] - potr_service_send の戻り値が POTR_OK であること。
     EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - 送信キューに 1 件積まれること。
 
     {

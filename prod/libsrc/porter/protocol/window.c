@@ -25,7 +25,8 @@
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, uint16_t window_size, uint16_t max_payload)
+int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, uint16_t window_size,
+                              uint16_t max_payload)
 {
     uint16_t i;
 

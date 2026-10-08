@@ -77,8 +77,9 @@ TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
     // Pre-Assert
 
     // Act
-    potr_internal_sync_service_path_state_locked(&ctx, next_states,
-                                        &prepared); // [手順] - service の path 状態を同期しイベントを準備する。
+    potr_internal_sync_service_path_state_locked(
+        &ctx, next_states,
+        &prepared); // [手順] - service の path 状態を同期しイベントを準備する。
 
     // Assert
     EXPECT_EQ(2, prepared.changed_count);    // [確認_正常系] - 変化した path が 2 件であること。
@@ -89,8 +90,9 @@ TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
     EXPECT_EQ(POTR_EVENT_PATH_CONNECTED,
               prepared.changed_events[1]); // [確認_正常系] - path 2 のイベントが PATH_CONNECTED であること。
     EXPECT_EQ(POTR_EVENT_CONNECTED,
-              prepared.session_event);       // [確認_正常系] - セッション イベントが CONNECTED であること。
-    EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - health_alive が 1 になること。
+              prepared.session_event); // [確認_正常系] - セッション イベントが CONNECTED であること。
+    EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.health_alive,
+                                       CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - health_alive が 1 になること。
     EXPECT_EQ(1, ctx.path_logical_alive[0]); // [確認_正常系] - path 0 の論理状態が接続になること。
     EXPECT_EQ(1, ctx.path_logical_alive[2]); // [確認_正常系] - path 2 の論理状態が接続になること。
 
@@ -131,7 +133,7 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
 
     // Act
     potr_internal_sync_peer_path_state_locked(&peer, next_states,
-                                     &prepared); // [手順] - peer の path 状態を同期しイベントを準備する。
+                                              &prepared); // [手順] - peer の path 状態を同期しイベントを準備する。
 
     // Assert
     EXPECT_EQ(2, prepared.changed_count);    // [確認_正常系] - 変化した path が 2 件であること。
@@ -142,17 +144,19 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
     EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED,
               prepared.changed_events[1]); // [確認_正常系] - path 3 のイベントが PATH_DISCONNECTED であること。
     EXPECT_EQ(POTR_EVENT_DISCONNECTED,
-              prepared.session_event);        // [確認_正常系] - セッション イベントが DISCONNECTED であること。
-    EXPECT_EQ(0, cplat_atomic_load_i32(&peer.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - health_alive が 0 になること。
+              prepared.session_event); // [確認_正常系] - セッション イベントが DISCONNECTED であること。
+    EXPECT_EQ(0, cplat_atomic_load_i32(&peer.health_alive,
+                                       CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - health_alive が 0 になること。
     EXPECT_EQ(0, peer.path_logical_alive[1]); // [確認_正常系] - path 1 の論理状態が切断になること。
     EXPECT_EQ(0, peer.path_logical_alive[3]); // [確認_正常系] - path 3 の論理状態が切断になること。
 
     // Act_2
     // [サブ手順参照 名前=potrPathEventTest.capture_callback 回数=3]
-    potr_internal_emit_peer_path_events_locked(&ctx, &peer, &prepared); // [手順] - 準備済みイベントを callback へ発行する。
+    potr_internal_emit_peer_path_events_locked(&ctx, &peer,
+                                               &prepared); // [手順] - 準備済みイベントを callback へ発行する。
 
     // Assert_2
-    EXPECT_EQ(3, s_event_count);                   // [確認_正常系] - callback が 3 回呼び出されること。
+    EXPECT_EQ(3, s_event_count);                     // [確認_正常系] - callback が 3 回呼び出されること。
     EXPECT_EQ((potr_peer_id)7, s_events[0].peer_id); // [確認_正常系] - peer イベントの peer_id が 7 であること。
     EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED,
               s_events[0].event);   // [確認_正常系] - 1 番目に path 1 の PATH_DISCONNECTED が通知されること。
@@ -161,5 +165,5 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
               s_events[1].event);   // [確認_正常系] - 2 番目に path 3 の PATH_DISCONNECTED が通知されること。
     EXPECT_EQ(3U, s_events[1].len); // [確認_正常系] - 2 番目の len が path 番号 3 であること。
     EXPECT_EQ(POTR_EVENT_DISCONNECTED, s_events[2].event); // [確認_正常系] - 最後に DISCONNECTED が通知されること。
-    EXPECT_EQ((potr_peer_id)7, s_events[2].peer_id);         // [確認_正常系] - DISCONNECTED の peer_id が 7 であること。
+    EXPECT_EQ((potr_peer_id)7, s_events[2].peer_id);       // [確認_正常系] - DISCONNECTED の peer_id が 7 であること。
 }

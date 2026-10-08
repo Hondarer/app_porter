@@ -1,5 +1,14 @@
-/** @file thread_recv_fin.c
- * @brief pending FIN の判定と FIN による切断を行います。
+/**
+ *******************************************************************************
+ *  @file           thread_recv_fin.c
+ *  @brief          pending FIN の判定と FIN による切断を行います。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
  */
 
 #include <inttypes.h>

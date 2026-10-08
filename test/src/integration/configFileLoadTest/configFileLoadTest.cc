@@ -39,11 +39,14 @@ TEST(configFileLoadTest, loadsGlobalServiceAndServiceIdsFromRealFile)
     // Pre-Assert
 
     // Act
-    int actual_ret_global = potr_internal_config_load_global(config_path.c_str(), &global); // [手順] - 実ファイルから global を読み込む。
-    int actual_ret_service = potr_internal_config_load_service(config_path.c_str(), 2002,
+    int actual_ret_global =
+        potr_internal_config_load_global(config_path.c_str(), &global); // [手順] - 実ファイルから global を読み込む。
+    int actual_ret_service =
+        potr_internal_config_load_service(config_path.c_str(), 2002,
                                           &service); // [手順] - 実ファイルから service_id 2002 を読み込む。
-    int actual_ret_ids = potr_internal_config_list_service_ids(config_path.c_str(), &ids,
-                                          &count); // [手順] - 実ファイルから service ID 一覧を列挙する。
+    int actual_ret_ids =
+        potr_internal_config_list_service_ids(config_path.c_str(), &ids,
+                                              &count); // [手順] - 実ファイルから service ID 一覧を列挙する。
 
     // Assert
     ASSERT_EQ(

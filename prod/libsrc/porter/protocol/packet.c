@@ -70,7 +70,8 @@ static void fill_session_hdr(potr_packet *packet, const potr_internal_packet_ses
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t nack_num)
+int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
+                                    uint32_t nack_num)
 {
     if (packet == NULL || shdr == NULL)
     {
@@ -94,7 +95,7 @@ int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_pac
  *  暗号化時はヘルスチェック スレッドが wire_buf にコピー後に cplat_crypto_encrypt を適用します。
  */
 int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
-                      const uint8_t *health_payload, uint16_t health_payload_len)
+                                    const uint8_t *health_payload, uint16_t health_payload_len)
 {
     if (packet == NULL || shdr == NULL)
     {
@@ -123,7 +124,8 @@ int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_pac
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_packet_build_reject(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num)
+int potr_internal_packet_build_reject(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
+                                      uint32_t seq_num)
 {
     if (packet == NULL || shdr == NULL)
     {
@@ -163,7 +165,8 @@ int potr_internal_packet_build_fin(potr_packet *packet, const potr_internal_pack
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_packet_build_fin_ack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t fin_target_seq)
+int potr_internal_packet_build_fin_ack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
+                                       uint32_t fin_target_seq)
 {
     if (packet == NULL || shdr == NULL)
     {
@@ -183,8 +186,8 @@ int potr_internal_packet_build_fin_ack(potr_packet *packet, const potr_internal_
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_packet_build_packed(potr_packet *out, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num, const void *packed_payload,
-                        size_t payload_len)
+int potr_internal_packet_build_packed(potr_packet *out, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
+                                      const void *packed_payload, size_t payload_len)
 {
     if (out == NULL || shdr == NULL || packed_payload == NULL || payload_len == 0 || payload_len > POTR_MAX_PAYLOAD)
     {

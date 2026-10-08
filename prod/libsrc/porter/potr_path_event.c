@@ -69,7 +69,8 @@ void potr_internal_callback_mutex_dispose(potr_context *ctx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void potr_internal_callback_emit_locked(potr_context *ctx, potr_peer_id peer_id, potr_event event, const void *data, size_t len)
+void potr_internal_callback_emit_locked(potr_context *ctx, potr_peer_id peer_id, potr_event event, const void *data,
+                                        size_t len)
 {
     if (ctx != NULL && ctx->callback != NULL)
     {
@@ -79,7 +80,8 @@ void potr_internal_callback_emit_locked(potr_context *ctx, potr_peer_id peer_id,
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void potr_internal_callback_emit(potr_context *ctx, potr_peer_id peer_id, potr_event event, const void *data, size_t len)
+void potr_internal_callback_emit(potr_context *ctx, potr_peer_id peer_id, potr_event event, const void *data,
+                                 size_t len)
 {
     if (ctx == NULL || ctx->callback == NULL)
     {
@@ -131,9 +133,8 @@ void potr_internal_copy_bidir_n1_path_states(const potr_internal_peer_context *p
 
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
-        states[k] =
-            path_state_is_normal(cplat_atomic_load_u8(&peer->path_ping_state[k], CPLAT_MEMORY_ORDER_RELAXED)) &&
-            path_state_is_normal(peer->remote_path_ping_state[k]);
+        states[k] = path_state_is_normal(cplat_atomic_load_u8(&peer->path_ping_state[k], CPLAT_MEMORY_ORDER_RELAXED)) &&
+                    path_state_is_normal(peer->remote_path_ping_state[k]);
     }
 }
 
@@ -153,7 +154,8 @@ void potr_internal_copy_tcp_path_states(const potr_context *ctx, int *states)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void potr_internal_sync_service_path_state_locked(potr_context *ctx, const int *next_states, potr_internal_prepared_path_events *prepared)
+void potr_internal_sync_service_path_state_locked(potr_context *ctx, const int *next_states,
+                                                  potr_internal_prepared_path_events *prepared)
 {
     int k;
     int old_alive;
@@ -209,7 +211,8 @@ void potr_internal_sync_service_path_state_locked(potr_context *ctx, const int *
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void potr_internal_sync_peer_path_state_locked(potr_internal_peer_context *peer, const int *next_states, potr_internal_prepared_path_events *prepared)
+void potr_internal_sync_peer_path_state_locked(potr_internal_peer_context *peer, const int *next_states,
+                                               potr_internal_prepared_path_events *prepared)
 {
     int k;
     int old_alive;
@@ -265,14 +268,15 @@ void potr_internal_sync_peer_path_state_locked(potr_internal_peer_context *peer,
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void potr_internal_emit_service_path_events_locked(potr_context *ctx, const potr_internal_prepared_path_events *prepared)
+void potr_internal_emit_service_path_events_locked(potr_context *ctx,
+                                                   const potr_internal_prepared_path_events *prepared)
 {
     int k;
 
     for (k = 0; k < prepared->changed_count; k++)
     {
         potr_internal_callback_emit_locked(ctx, POTR_PEER_NA, prepared->changed_events[k], prepared->final_states,
-                                  (size_t)prepared->changed_paths[k]);
+                                           (size_t)prepared->changed_paths[k]);
     }
 
     if (prepared->session_event != 0)
@@ -284,14 +288,14 @@ void potr_internal_emit_service_path_events_locked(potr_context *ctx, const potr
 /* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_internal_emit_peer_path_events_locked(potr_context *ctx, const potr_internal_peer_context *peer,
-                                       const potr_internal_prepared_path_events *prepared)
+                                                const potr_internal_prepared_path_events *prepared)
 {
     int k;
 
     for (k = 0; k < prepared->changed_count; k++)
     {
         potr_internal_callback_emit_locked(ctx, peer->peer_id, prepared->changed_events[k], prepared->final_states,
-                                  (size_t)prepared->changed_paths[k]);
+                                           (size_t)prepared->changed_paths[k]);
     }
 
     if (prepared->session_event != 0)

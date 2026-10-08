@@ -140,7 +140,7 @@ static void send_fin(potr_context *ctx)
 
         memcpy(wire_buf, &fin_pkt, POTR_PACKET_HEADER_SIZE);
         if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+                                 wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             return;
         }
@@ -166,7 +166,7 @@ static void send_fin(potr_context *ctx)
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
             (void)cplat_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &ctx->dest_addr[i], &sent,
-                                         NULL);
+                                      NULL);
         }
     }
 }
@@ -323,7 +323,8 @@ int potr_service_close(potr_context *handle)
                 if (close_result != POTR_OK)
                 {
                     POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
-                               "potr_service_close: service_id=%" PRId64 " TCP FIN send failed", ctx->service.service_id);
+                               "potr_service_close: service_id=%" PRId64 " TCP FIN send failed",
+                               ctx->service.service_id);
                     reset_tcp_close_wait(ctx);
                     ret = close_result;
                 }
@@ -462,8 +463,7 @@ int potr_service_close(potr_context *handle)
 
                 if (cplat_ipv4_parse(ctx->service.multicast_group, &group_addr) == CPLAT_OK)
                 {
-                    (void)cplat_socket_leave_multicast_group(ctx->sock[i], group_addr, ctx->src_addr_resolved[i],
-                                                                NULL);
+                    (void)cplat_socket_leave_multicast_group(ctx->sock[i], group_addr, ctx->src_addr_resolved[i], NULL);
                 }
             }
             cplat_socket_close(ctx->sock[i]);

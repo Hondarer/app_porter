@@ -335,7 +335,8 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
        TCP の部分再接続では共有キューを維持し、サービス終了時にだけ破棄する。 */
     if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
     {
-        result = potr_internal_send_queue_init(&ctx->send_queue, (size_t)ctx->global.send_queue_depth, ctx->global.max_payload);
+        result = potr_internal_send_queue_init(&ctx->send_queue, (size_t)ctx->global.send_queue_depth,
+                                               ctx->global.max_payload);
         if (result != POTR_OK)
         {
             destroy_tcp_sync_primitives(ctx);
@@ -380,7 +381,8 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
     if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR ||
         ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1)
     {
-        result = potr_internal_send_queue_init(&ctx->send_queue, (size_t)ctx->global.send_queue_depth, ctx->global.max_payload);
+        result = potr_internal_send_queue_init(&ctx->send_queue, (size_t)ctx->global.send_queue_depth,
+                                               ctx->global.max_payload);
         if (result != POTR_OK)
         {
             return result;
@@ -422,7 +424,7 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_service_open(const potr_global_config *global, const potr_service_def *service, potr_role role,
-                    potr_recv_fn callback, potr_context **handle)
+                      potr_recv_fn callback, potr_context **handle)
 {
     potr_context *ctx;
     int result;
@@ -441,8 +443,8 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
     /* role と callback の整合性チェック (設定読み込み前に確定できる部分のみ) */
     if (role == POTR_ROLE_RECEIVER && callback == NULL)
     {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_open: service_id=%" PRId64 " RECEIVER role requires callback", service->service_id);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " RECEIVER role requires callback",
+                   service->service_id);
         return POTR_ERR_INVALID_ARGUMENT;
     }
     /* SENDER + callback の完全チェックは設定読み込み後に行う

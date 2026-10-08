@@ -1,3 +1,16 @@
+/**
+ *******************************************************************************
+ *  @file           thread_recv_fin.h
+ *  @brief          受信スレッドにおける FIN パケット処理の内部関数を定義します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
+ */
+
 #ifndef THREAD_RECV_FIN_PRIVATE_H
 #define THREAD_RECV_FIN_PRIVATE_H
 
@@ -15,14 +28,14 @@
 #define THREAD_RECV_FIN_FIRE 2
 
 /**
- * @brief 受信した FIN を pending にするか、即時切断するかを判定します。
- * @param[in,out] slot 構成済みの受信状態ビュー。NULL は許可しません。
- * @param[in] pkt 判定するパケット。NULL は許可しません。
- * @param[out] fin_target_seq_out 即時切断または pending の目標通番。NULL は許可しません。
- * @return THREAD_RECV_FIN_IGNORED、THREAD_RECV_FIN_PENDING、THREAD_RECV_FIN_FIRE のいずれかです。
- * @note FIN の処理区分を返すため共通結果コードの適用対象外です。
- *       FIN でなければ状態を変更しません。
- *       目標付き FIN で受信ウィンドウが未到達の場合は pending とし、切断は発火しません。
+ *  @brief          受信した FIN を pending にするか、即時切断するかを判定します。
+ *  @param[in,out]  slot                構成済みの受信状態ビュー。NULL は許可しません。
+ *  @param[in]      pkt                 判定するパケット。NULL は許可しません。
+ *  @param[out]     fin_target_seq_out  即時切断または pending の目標通番。NULL は許可しません。
+ *  @return         THREAD_RECV_FIN_IGNORED、THREAD_RECV_FIN_PENDING、THREAD_RECV_FIN_FIRE のいずれかです。
+ *  @note           FIN の処理区分を返すため共通結果コードの適用対象外です。
+ *                  FIN でなければ状態を変更しません。
+ *                  目標付き FIN で受信ウィンドウが未到達の場合は pending とし、切断は発火しません。
  *       呼び出し側が recv_window_mutex を保持している場合は、発火の前に解放してください。
  */
 int thread_recv_fin_on_packet(thread_recv_slot *slot, const potr_packet *pkt, uint32_t *fin_target_seq_out);

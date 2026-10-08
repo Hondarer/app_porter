@@ -8,7 +8,7 @@ porter フレームワークにおける potr_type ごとの PING 送出ロジ�
 
 ## potr_type ごとの振る舞い
 
-以下の表は各 potr_type の概要をまとめたものです。
+次の表は各 potr_type の概要をまとめたものです。
 
 | potr_type | 値 | PING 送出 | タイムアウト検出 |
 |---|---|---|---|

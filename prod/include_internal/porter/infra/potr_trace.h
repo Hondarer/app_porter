@@ -59,7 +59,7 @@ extern "C"
      *  発生位置を呼び出し元のものとして記録するため、file と line を引数で受け取ります。
      */
     void potr_internal_trace_socket_failure_at(const char *file, int line, cplat_trace_level level,
-                                      const cplat_error *detail, const char *format, ...);
+                                               const cplat_error *detail, const char *format, ...);
 
 /**
  *  @brief          porter 内部ログ出力マクロ。

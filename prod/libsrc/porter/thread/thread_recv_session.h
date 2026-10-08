@@ -1,3 +1,16 @@
+/**
+ *******************************************************************************
+ *  @file           thread_recv_session.h
+ *  @brief          受信スレッドにおけるセッション管理とリセット処理の内部関数を定義します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
+ */
+
 #ifndef THREAD_RECV_SESSION_PRIVATE_H
 #define THREAD_RECV_SESSION_PRIVATE_H
 
@@ -12,15 +25,15 @@
 #include "thread_recv_slot.h"
 
 /**
- * @brief セッションの採用判定を行い、必要なら受信状態を初期化します。
- * @param[in,out] slot 構成済みの受信状態ビュー。NULL は許可しません。
- * @param[in] pkt 照合するパケット。NULL は許可しません。
- * @return 採用する場合は 1、旧セッションとして破棄する場合は 0 を返します。
- * @note 採用可否を返す述語のため共通結果コードの適用対象外です。
- *       未知セッションと新セッションでは pending FIN をクリアし、
- *       受信ウィンドウを pkt の通番で初期化します。
- *       同一セッションでは状態を変更しません。
- *       呼び出し側は同一スロットへの並行更新を避けてください。
+ *  @brief          セッションの採用判定を行い、必要なら受信状態を初期化します。
+ *  @param[in,out]  slot            構成済みの受信状態ビュー。NULL は許可しません。
+ *  @param[in]      pkt             照合するパケット。NULL は許可しません。
+ *  @return         採用する場合は 1、旧セッションとして破棄する場合は 0 を返します。
+ *  @note           採用可否を返す述語のため共通結果コードの適用対象外です。
+ *                  未知セッションと新セッションでは pending FIN をクリアし、
+ *                  受信ウィンドウを pkt の通番で初期化します。
+ *                  同一セッションでは状態を変更しません。
+ *                  呼び出し側は同一スロットへの並行更新を避けてください。
  */
 int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt);
 

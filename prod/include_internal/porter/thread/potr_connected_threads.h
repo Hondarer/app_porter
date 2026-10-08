@@ -53,7 +53,8 @@ extern "C"
      *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx または ops が NULL です。
      *  @return         依存する起動処理または PING 送信に失敗した場合は、その結果コードを返します。
      */
-    extern int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, const potr_internal_connected_threads_ops *ops);
+    extern int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
+                                                     const potr_internal_connected_threads_ops *ops);
 
 #ifdef __cplusplus
 }

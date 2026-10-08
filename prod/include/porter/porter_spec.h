@@ -143,7 +143,7 @@ extern "C"
      *  本関数はスレッド セーフです。
      */
     POTR_EXPORT extern int POTR_API potr_service_open(const potr_global_config *global, const potr_service_def *service,
-                                                    potr_role role, potr_recv_fn callback, potr_context **handle);
+                                                      potr_role role, potr_recv_fn callback, potr_context **handle);
 
     /**
      *  @brief          設定ファイルから指定サービスを開きます。
@@ -218,8 +218,8 @@ extern "C"
      *  本関数はスレッド セーフです。
      */
     POTR_EXPORT extern int POTR_API potr_service_open_from_config(const char *config_path, int64_t service_id,
-                                                              potr_role role, potr_recv_fn callback,
-                                                              potr_context **handle);
+                                                                  potr_role role, potr_recv_fn callback,
+                                                                  potr_context **handle);
 
     /**
      *  @brief          メッセージを送信します。
@@ -287,8 +287,8 @@ extern "C"
      *  異なる @p handle に対する操作は同時に実行できます。\n
      *  同一 @p handle に対する操作は、呼び出し側で直列化してください。
      */
-    POTR_EXPORT extern int POTR_API potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len,
-                                             int flags);
+    POTR_EXPORT extern int POTR_API potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *data,
+                                                      size_t len, int flags);
 
     /**
      *  @brief          指定ピアを切断します (N:1 モード専用)。

@@ -150,24 +150,24 @@ typedef struct potr_internal_nack_dedup_entry
 typedef struct potr_internal_peer_context
 {
     potr_peer_id peer_id; /**< 外部公開用ピア識別子 (単調増加カウンターから付与)。 */
-    int active;         /**< 1: 有効スロット, 0: 空き。 */
+    int active;           /**< 1: 有効スロット, 0: 空き。 */
 
     /* 自セッション (このピア宛の送信に使用) */
-    uint32_t session_id;          /**< 自セッション識別子 (乱数)。 */
-    uint32_t _pad_session;        /**< パディング (session_ts を 8 バイト境界に揃える)。 */
+    uint32_t session_id;       /**< 自セッション識別子 (乱数)。 */
+    uint32_t _pad_session;     /**< パディング (session_ts を 8 バイト境界に揃える)。 */
     cplat_timespec session_ts; /**< 自セッション開始時刻。 */
 
     /* ピア セッション追跡 */
-    uint32_t peer_session_id;          /**< 追跡中のピア セッション識別子。 */
-    int peer_session_known;            /**< ピア セッションが初期化済みか (0: 未初期化)。 */
+    uint32_t peer_session_id;       /**< 追跡中のピア セッション識別子。 */
+    int peer_session_known;         /**< ピア セッションが初期化済みか (0: 未初期化)。 */
     cplat_timespec peer_session_ts; /**< 追跡中のピア セッション開始時刻。 */
 
     /* 送受信ウィンドウ (ピアごと独立) */
-    potr_internal_window send_window;                 /**< 送信ウィンドウ (NACK 再送用)。 */
+    potr_internal_window send_window;    /**< 送信ウィンドウ (NACK 再送用)。 */
     cplat_local_lock *send_window_mutex; /**< send_window 保護 (送信・受信・ヘルスチェック スレッド競合)。 */
-    potr_internal_window recv_window;                 /**< 受信ウィンドウ (順序整列)。 */
-    int send_has_data;                      /**< 現セッションで DATA を 1 件以上送信済みか (1: 送信済み, 0: 未送信)。 */
-    uint32_t _pad_send_has_data;            /**< パディング。 */
+    potr_internal_window recv_window;    /**< 受信ウィンドウ (順序整列)。 */
+    int send_has_data;                   /**< 現セッションで DATA を 1 件以上送信済みか (1: 送信済み, 0: 未送信)。 */
+    uint32_t _pad_send_has_data;         /**< パディング。 */
 
     /* フラグメント結合 (ピアごと独立) */
     uint8_t *frag_buf;   /**< フラグメント結合バッファー (動的確保)。 */
@@ -180,18 +180,18 @@ typedef struct potr_internal_peer_context
     cplat_atomic_u8 path_ping_state
         [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。アトミックに読み書きします。 */
     uint8_t remote_path_ping_state
-        [POTR_MAX_PATH];            /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
+        [POTR_MAX_PATH];         /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     cplat_timespec last_recv_ts; /**< 最終受信時刻 (CLOCK_MONOTONIC)。tv_sec == 0 は未受信。 */
 
     /* NACK 重複抑制 */
     potr_internal_nack_dedup_entry nack_dedup_buf[POTR_NACK_DEDUP_SLOTS]; /**< NACK 重複抑制バッファー。 */
-    uint8_t nack_dedup_next;                                  /**< 次に書き込むスロット。 */
+    uint8_t nack_dedup_next;                                              /**< 次に書き込むスロット。 */
     uint8_t _pad_reorder[3]; /**< パディング (reorder_pending を 4 バイト境界に揃える)。 */
 
     /* リオーダー バッファー タイムアウト管理 */
-    int reorder_pending;                   /**< リオーダー待機中 (1: 待機中, 0: 待機なし)。 */
-    uint32_t reorder_nack_num;             /**< 待機中の欠番通番。 */
-    uint32_t _pad_reorder_dl;              /**< パディング (reorder_deadline_ts を 8 バイト境界に揃える)。 */
+    int reorder_pending;                /**< リオーダー待機中 (1: 待機中, 0: 待機なし)。 */
+    uint32_t reorder_nack_num;          /**< 待機中の欠番通番。 */
+    uint32_t _pad_reorder_dl;           /**< パディング (reorder_deadline_ts を 8 バイト境界に揃える)。 */
     cplat_timespec reorder_deadline_ts; /**< タイムアウト期限 (CLOCK_MONOTONIC)。 */
 
     /* pending FIN 管理 (FIN を先受信したが受信ウィンドウが未追い付きの場合) */
@@ -219,8 +219,8 @@ typedef struct potr_internal_peer_context
 typedef struct potr_internal_path_thread_arg
 {
     potr_context *ctx; /**< 所属するセッション コンテキスト。 */
-    int path_idx;     /**< パス インデックス。 */
-    int _pad;         /**< パディング。 */
+    int path_idx;      /**< パス インデックス。 */
+    int _pad;          /**< パディング。 */
 } potr_internal_path_thread_arg;
 
 /**
@@ -228,32 +228,33 @@ typedef struct potr_internal_path_thread_arg
  */
 struct potr_context
 {
-    potr_recv_fn callback;                     /**< 受信コールバック。 */
-    cplat_local_lock *callback_mutex;           /**< コールバック直列化用ミューテックス。 */
-    cplat_thread *recv_thread[POTR_MAX_PATH];   /**< 受信スレッド ハンドル (path ごと)。 */
-    cplat_thread *health_thread[POTR_MAX_PATH]; /**< ヘルスチェック スレッド ハンドル (path ごと、TCP: 全ロール)。 */
+    potr_recv_fn callback;                         /**< 受信コールバック。 */
+    cplat_local_lock *callback_mutex;              /**< コールバック直列化用ミューテックス。 */
+    cplat_thread *recv_thread[POTR_MAX_PATH];      /**< 受信スレッド ハンドル (path ごと)。 */
+    cplat_thread *health_thread[POTR_MAX_PATH];    /**< ヘルスチェック スレッド ハンドル (path ごと、TCP: 全ロール)。 */
     cplat_local_lock *health_mutex[POTR_MAX_PATH]; /**< ヘルスチェック スレッド停止用ミューテックス (path ごと)。 */
-    cplat_condvar
-        *health_wakeup[POTR_MAX_PATH]; /**< ヘルスチェック スレッドを即時起床させる条件変数 (path ごと)。 */
-    potr_service_def service;            /**< サービス定義。 */
-    potr_global_config global;           /**< プロトコル別のグローバル既定値。 */
-    uint32_t health_interval_ms;       /**< 通信種別とサービス上書きを解決した実効 PING 送信間隔。 */
-    potr_internal_window send_window;            /**< 送信バッファー (過去 N パケット保持。NACK 再送・REJECT 判定に使用)。 */
+    cplat_condvar *health_wakeup[POTR_MAX_PATH];   /**< ヘルスチェック スレッドを即時起床させる条件変数 (path ごと)。 */
+    potr_service_def service;                      /**< サービス定義。 */
+    potr_global_config global;                     /**< プロトコル別のグローバル既定値。 */
+    uint32_t health_interval_ms;                   /**< 通信種別とサービス上書きを解決した実効 PING 送信間隔。 */
+    potr_internal_window send_window; /**< 送信バッファー (過去 N パケット保持。NACK 再送・REJECT 判定に使用)。 */
     cplat_local_lock *
         send_window_mutex; /**< send_window 保護用ミューテックス (送信スレッド・ヘルスチェック スレッド・受信スレッドが競合するため)。 */
-    potr_internal_window recv_window;     /**< 受信ウィンドウ (順序整列・欠番検出)。 */
-    uint32_t health_timeout_ms; /**< 通信種別とサービス上書きを解決した実効受信タイムアウト。 */
+    potr_internal_window recv_window; /**< 受信ウィンドウ (順序整列・欠番検出)。 */
+    uint32_t health_timeout_ms;       /**< 通信種別とサービス上書きを解決した実効受信タイムアウト。 */
 
     /* マルチパス: ソケット配列 */
-    int n_path;                          /**< 有効パス数。 */
+    int n_path;                       /**< 有効パス数。 */
     cplat_socket sock[POTR_MAX_PATH]; /**< 各パスの UDP ソケット。 */
 
-    cplat_atomic_i32 running[POTR_MAX_PATH]; /**< 受信スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
-    cplat_atomic_i32
-        health_running[POTR_MAX_PATH]; /**< ヘルスチェック スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
+    cplat_atomic_i32 running
+        [POTR_MAX_PATH]; /**< 受信スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
+    cplat_atomic_i32 health_running
+        [POTR_MAX_PATH]; /**< ヘルスチェック スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
     cplat_atomic_i32 health_send_immediate
         [POTR_MAX_PATH]; /**< オープン時割り込み PING フラグ。health_sleep() 冒頭でチェック・クリア。アトミックに読み書きします。 */
-    cplat_atomic_i32 health_alive; /**< 疎通状態 (1: alive, 0: dead/未接続)。UDP 用。受信者が管理。アトミックに読み書きします。 */
+    cplat_atomic_i32
+        health_alive; /**< 疎通状態 (1: alive, 0: dead/未接続)。UDP 用。受信者が管理。アトミックに読み書きします。 */
     int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。 */
     cplat_atomic_u8 path_ping_state
         [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。アトミックに読み書きします。 */
@@ -263,7 +264,7 @@ struct potr_context
         last_valid_data_send_ms; /**< 送信側ヘルスチェック用有効 DATA 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。アトミックに読み書きします。 */
     uint8_t remote_path_ping_state
         [POTR_MAX_PATH]; /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
-    potr_role role;       /**< 役割 (POTR_ROLE_SENDER / POTR_ROLE_RECEIVER)。 */
+    potr_role role;      /**< 役割 (POTR_ROLE_SENDER / POTR_ROLE_RECEIVER)。 */
 
     /* 解決済みアドレス (各パス分)。ネットワーク バイト オーダー。 */
     uint32_t src_addr_resolved[POTR_MAX_PATH]; /**< 解決済み送信元 IPv4 アドレス。 */
@@ -273,58 +274,61 @@ struct potr_context
 
     /* 自セッション識別子 (potr_service_open 時に決定) */
     cplat_timespec session_ts; /**< 自セッション開始時刻。 */
-    uint32_t session_id;          /**< 自セッション識別子 (乱数)。 */
+    uint32_t session_id;       /**< 自セッション識別子 (乱数)。 */
 
     /* 相手セッション追跡 (受信者が使用) */
-    int peer_session_known;            /**< 相手セッションが初期化済みか (0: 未初期化)。 */
+    int peer_session_known;         /**< 相手セッションが初期化済みか (0: 未初期化)。 */
     cplat_timespec peer_session_ts; /**< 追跡中の相手セッション開始時刻。 */
-    uint32_t peer_session_id;          /**< 追跡中の相手セッション識別子。 */
+    uint32_t peer_session_id;       /**< 追跡中の相手セッション識別子。 */
 
     /* 受信者: パスごとの送信者ポート キャッシュ (src_port=0 対応) */
     uint16_t peer_port[POTR_MAX_PATH]; /**< 各パスで観測した送信者ポート (NBO)。0 = 未観測。 */
 
     /* ヘルスチェック: 最終受信時刻 (受信者が使用。CLOCK_MONOTONIC 基準)。 */
-    uint32_t _pad_last_recv;        /**< パディング (last_recv_ts を 8 バイト境界に揃える)。 */
+    uint32_t _pad_last_recv;     /**< パディング (last_recv_ts を 8 バイト境界に揃える)。 */
     cplat_timespec last_recv_ts; /**< 最終受信時刻。tv_sec == 0 は未受信。 */
 
     /* 受信者: パスごとの最終受信時刻 (パス単位の peer_port クリア用。CLOCK_MONOTONIC 基準)。 */
     cplat_timespec path_last_recv_ts[POTR_MAX_PATH]; /**< パスごとの最終受信時刻。tv_sec == 0 は未受信。 */
 
-    size_t frag_buf_len;      /**< フラグメント結合バッファーの現在のデータ長 (バイト)。 */
-    int frag_compressed;      /**< フラグメント受信中の圧縮フラグ (非 0: 圧縮あり)。 */
-    uint32_t _pad_frag;       /**< パディング (frag_buf を 8 バイト境界に揃える)。 */
-    uint8_t *frag_buf;        /**< フラグメント結合バッファー (動的確保。max_message_size バイト)。 */
-    uint8_t *compress_buf;    /**< 送信圧縮用一時バッファー (動的確保)。 */
-    size_t compress_buf_size; /**< compress_buf のサイズ (バイト)。 */
-    uint8_t *crypto_buf;      /**< 送信暗号化用一時バッファー (動的確保)。 */
-    size_t crypto_buf_size;   /**< crypto_buf のサイズ (バイト)。 */
+    size_t frag_buf_len;        /**< フラグメント結合バッファーの現在のデータ長 (バイト)。 */
+    int frag_compressed;        /**< フラグメント受信中の圧縮フラグ (非 0: 圧縮あり)。 */
+    uint32_t _pad_frag;         /**< パディング (frag_buf を 8 バイト境界に揃える)。 */
+    uint8_t *frag_buf;          /**< フラグメント結合バッファー (動的確保。max_message_size バイト)。 */
+    uint8_t *compress_buf;      /**< 送信圧縮用一時バッファー (動的確保)。 */
+    size_t compress_buf_size;   /**< compress_buf のサイズ (バイト)。 */
+    uint8_t *crypto_buf;        /**< 送信暗号化用一時バッファー (動的確保)。 */
+    size_t crypto_buf_size;     /**< crypto_buf のサイズ (バイト)。 */
     uint8_t *recv_compress_buf; /**< 受信展開用バッファー (動的確保、compress_buf_size バイト)。 */
-    uint8_t *recv_crypto_buf; /**< 受信復号用バッファー (動的確保、crypto_buf_size バイト)。 */
-    uint8_t *tcp_recv_buf[POTR_MAX_PATH]; /**< TCP 経路専用受信バッファー (動的確保、POTR_PACKET_HEADER_SIZE + max_payload バイト)。 */
+    uint8_t *recv_crypto_buf;   /**< 受信復号用バッファー (動的確保、crypto_buf_size バイト)。 */
+    uint8_t *tcp_recv_buf
+        [POTR_MAX_PATH]; /**< TCP 経路専用受信バッファー (動的確保、POTR_PACKET_HEADER_SIZE + max_payload バイト)。 */
     uint8_t *
         recv_buf; /**< 受信バッファー / 再送 wire 組立バッファー (動的確保。POTR_PACKET_HEADER_SIZE + max_payload バイト)。 */
     uint8_t *
         send_wire_buf; /**< 送信 wire 組立バッファー (動的確保。POTR_PACKET_HEADER_SIZE + max_payload バイト)。送信スレッドのみ使用。 */
 
     /* 非同期送信 (POTR_ROLE_SENDER のみ使用) */
-    cplat_thread *send_thread;     /**< 送信スレッド ハンドル。 */
-    cplat_atomic_i32 send_thread_running; /**< 送信スレッド実行フラグ (1: 実行中, 0: 停止)。アトミックに読み書きします。 */
-    uint32_t _pad_send_thread;        /**< パディング (nack_dedup_buf を 8 バイト境界に揃える)。 */
+    cplat_thread *send_thread; /**< 送信スレッド ハンドル。 */
+    cplat_atomic_i32
+        send_thread_running;   /**< 送信スレッド実行フラグ (1: 実行中, 0: 停止)。アトミックに読み書きします。 */
+    uint32_t _pad_send_thread; /**< パディング (nack_dedup_buf を 8 バイト境界に揃える)。 */
 
     /* 送信者: NACK 重複抑制リング バッファー */
     potr_internal_nack_dedup_entry nack_dedup_buf[POTR_NACK_DEDUP_SLOTS]; /**< NACK 重複抑制エントリ配列。 */
-    uint8_t nack_dedup_next;                                  /**< 次に書き込むスロット インデックス。 */
-    uint8_t _pad_nack_dedup[7];          /**< パディング (reorder フィールドを 4 バイト境界に揃える)。 */
-    int send_has_data;                   /**< 現セッションで DATA を 1 件以上送信済みか (1: 送信済み, 0: 未送信)。 */
-    cplat_atomic_i32 close_requested;    /**< potr_service_close 開始後の新規送信禁止フラグ。アトミックに読み書きします。 */
+    uint8_t nack_dedup_next;                                              /**< 次に書き込むスロット インデックス。 */
+    uint8_t _pad_nack_dedup[7]; /**< パディング (reorder フィールドを 4 バイト境界に揃える)。 */
+    int send_has_data;          /**< 現セッションで DATA を 1 件以上送信済みか (1: 送信済み, 0: 未送信)。 */
+    cplat_atomic_i32
+        close_requested;        /**< potr_service_close 開始後の新規送信禁止フラグ。アトミックに読み書きします。 */
     int tcp_close_waiting_ack;  /**< TCP close が FIN_ACK 待機中か。tcp_close_mutex の下でだけ読み書きします。 */
     int tcp_close_ack_received; /**< 期待する FIN_ACK を受信済みか。tcp_close_mutex の下でだけ読み書きします。 */
-    uint32_t tcp_close_wait_target_seq;  /**< 待機中の FIN target 通番。 */
-    uint32_t tcp_close_ack_seq;          /**< 受信済み FIN_ACK の ack_num。 */
+    uint32_t tcp_close_wait_target_seq; /**< 待機中の FIN target 通番。 */
+    uint32_t tcp_close_ack_seq;         /**< 受信済み FIN_ACK の ack_num。 */
 
     /* 受信者: リオーダー バッファー タイムアウト管理 (reorder_timeout_ms > 0 のときのみ使用) */
-    int reorder_pending;                   /**< リオーダー待機中か (1: 待機中、0: 待機なし)。 */
-    uint32_t reorder_nack_num;             /**< 待機中の欠番通番。 */
+    int reorder_pending;                /**< リオーダー待機中か (1: 待機中、0: 待機なし)。 */
+    uint32_t reorder_nack_num;          /**< 待機中の欠番通番。 */
     cplat_timespec reorder_deadline_ts; /**< タイムアウト期限 (CLOCK_MONOTONIC)。 */
 
     /* pending FIN 管理 (FIN を先受信したが受信ウィンドウが未追い付きの場合) */
@@ -334,18 +338,18 @@ struct potr_context
     potr_internal_send_queue send_queue; /**< 非同期送信キュー。 */
 
     /* N:1 マルチ ピア モード専用フィールド (is_multi_peer == 1 のときのみ有効) */
-    int is_multi_peer;                /**< 1: N:1 モード (src_addr/src_port 省略), 0: 1:1 モード。 */
-    uint32_t _pad_multi_peer;         /**< パディング (peers を 8 バイト境界に揃える)。 */
-    potr_internal_peer_context *peers;           /**< ピア テーブル (動的確保。max_peers エントリ)。 */
-    int max_peers;                    /**< ピア テーブル サイズ (service.max_peers から取得)。 */
-    int n_peers;                      /**< 現在の接続ピア数。 */
-    cplat_local_lock *peers_mutex; /**< ピア テーブル保護用ミューテックス。 */
-    uint32_t next_peer_id;            /**< 次に発行するピア ID (単調増加、初期値 1)。 */
+    int is_multi_peer;                 /**< 1: N:1 モード (src_addr/src_port 省略), 0: 1:1 モード。 */
+    uint32_t _pad_multi_peer;          /**< パディング (peers を 8 バイト境界に揃える)。 */
+    potr_internal_peer_context *peers; /**< ピア テーブル (動的確保。max_peers エントリ)。 */
+    int max_peers;                     /**< ピア テーブル サイズ (service.max_peers から取得)。 */
+    int n_peers;                       /**< 現在の接続ピア数。 */
+    cplat_local_lock *peers_mutex;     /**< ピア テーブル保護用ミューテックス。 */
+    uint32_t next_peer_id;             /**< 次に発行するピア ID (単調増加、初期値 1)。 */
 
     /* --- TCP 接続管理 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR のみ有効) ---
      * tcp_active_paths は tcp_listen_sock (8 バイト境界) の前に置き、next_peer_id 直後の
      * 暗黙パディングを埋める。この並びにより tcp_send_mutex 側の明示パディングは不要になった。 */
-    cplat_atomic_i32 tcp_active_paths;               /**< アクティブ TCP path 数 (0 = 全切断)。アトミックに読み書きします。 */
+    cplat_atomic_i32 tcp_active_paths; /**< アクティブ TCP path 数 (0 = 全切断)。アトミックに読み書きします。 */
     cplat_socket tcp_listen_sock[POTR_MAX_PATH]; /**< RECEIVER: listen ソケット (path ごと)。 */
     cplat_socket tcp_conn_fd[POTR_MAX_PATH];     /**< アクティブ TCP 接続 fd (path ごと)。 */
     cplat_local_lock *tcp_send_mutex
@@ -364,12 +368,12 @@ struct potr_context
     /* connect/accept スレッド */
     cplat_thread
         *connect_thread[POTR_MAX_PATH]; /**< SENDER: connect スレッド。RECEIVER: accept スレッド。path ごと。 */
-    cplat_atomic_i32
-        connect_thread_running[POTR_MAX_PATH]; /**< connect スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
+    cplat_atomic_i32 connect_thread_running
+        [POTR_MAX_PATH]; /**< connect スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
 
     /* 切断通知 (recv/health スレッド → connect スレッドへの通知) */
     cplat_local_lock
-        *tcp_state_mutex;           /**< tcp_state_cv 保護用ミューテックス。tcp_active_paths のカウンター更新も保護。 */
+        *tcp_state_mutex;        /**< tcp_state_cv 保護用ミューテックス。tcp_active_paths のカウンター更新も保護。 */
     cplat_condvar *tcp_state_cv; /**< 切断通知・reconnect sleep の中断用条件変数。 */
     cplat_local_lock *tcp_close_mutex; /**< tcp_close_cv 保護用ミューテックス。 */
     cplat_condvar *tcp_close_cv;       /**< FIN_ACK 待機解除用条件変数。 */

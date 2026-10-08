@@ -1,3 +1,16 @@
+/**
+ *******************************************************************************
+ *  @file           configLoadServiceTest.cc
+ *  @brief          サービス設定読み込み処理の単体テストを定義します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
+ */
+
 #include <cplat/base/platform.h>
 
 #if defined(PLATFORM_WINDOWS)
@@ -22,13 +35,15 @@ using namespace testing;
 TEST(configLoadServiceTest, returnsInvalidArgumentWhenParameterIsNull)
 {
     // Arrange
-    potr_service_def def = {};
+    potr_service_def def = {}; // [状態] - 出力用 service 定義構造体をゼロ初期化する。
 
     // Pre-Assert
 
     // Act
-    int actual_ret_null_path = potr_internal_config_load_service(nullptr, 10, &def);         // [手順] - config_path を NULL にして呼び出す。
-    int actual_ret_null_out = potr_internal_config_load_service("config.conf", 10, nullptr); // [手順] - 出力先を NULL にして呼び出す。
+    int actual_ret_null_path =
+        potr_internal_config_load_service(nullptr, 10, &def); // [手順] - config_path を NULL にして呼び出す。
+    int actual_ret_null_out =
+        potr_internal_config_load_service("config.conf", 10, nullptr); // [手順] - 出力先を NULL にして呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -43,16 +58,16 @@ TEST(configLoadServiceTest, returnsInvalidArgumentWhenParameterIsNull)
 TEST(configLoadServiceTest, returnsIoErrorWhenFileCannotBeOpened)
 {
     // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_service_def def = {};
+    NiceMock<Mock_cplat> mock_cplat; // [状態] - cplat モックを用意する。
+    potr_service_def def = {};       // [状態] - 出力用 service 定義構造体をゼロ初期化する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
 
     // Act
-    int actual_ret_open_fail =
-        potr_internal_config_load_service("missing.conf", 10, &def); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
+    int actual_ret_open_fail = potr_internal_config_load_service(
+        "missing.conf", 10, &def); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -66,9 +81,8 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
-    ConfigLineStream lines({
-        R"({/* JSONC block comment */"services":{"10":{"type":"unicast","dst_port":4000},"42":{"type":"tcp_bidir","dst_port":5001,"src_port":6001,"ttl":3,"pack_wait_ms":7,"src_addr1":"10.0.0.1","src_addr2":"10.0.0.2","dst_addr1":"10.0.1.1","dst_addr2":"10.0.1.2","broadcast_addr":"tcp://host,}","health_interval_ms":111,"health_timeout_ms":222,"reconnect_interval_ms":333,"connect_timeout_ms":-1,"max_peers":16,"encrypt_key":"00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF",},"77":{"dst_port":9000}}})"
-    });
+    ConfigLineStream lines(
+        {R"({/* JSONC block comment */"services":{"10":{"type":"unicast","dst_port":4000},"42":{"type":"tcp_bidir","dst_port":5001,"src_port":6001,"ttl":3,"pack_wait_ms":7,"src_addr1":"10.0.0.1","src_addr2":"10.0.0.2","dst_addr1":"10.0.1.1","dst_addr2":"10.0.1.2","broadcast_addr":"tcp://host,}","health_interval_ms":111,"health_timeout_ms":222,"reconnect_interval_ms":333,"connect_timeout_ms":-1,"max_peers":16,"encrypt_key":"00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF",},"77":{"dst_port":9000}}})"});
     potr_service_def def = {};
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
@@ -87,27 +101,28 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
         .Times(0); // [Pre-Assert確認_正常系] - 64 桁 hex の encrypt_key では passphrase 変換を呼び出さないこと。
 
     // Act
-    int actual_ret = potr_internal_config_load_service("config.conf", 42, &def); // [手順] - service_id 42 の構成を読み込む。
+    int actual_ret =
+        potr_internal_config_load_service("config.conf", 42, &def); // [手順] - service_id 42 の構成を読み込む。
 
     // Assert
     EXPECT_EQ(
         POTR_OK,
         actual_ret); // [確認_正常系] - potr_internal_config_load_service の戻り値から、対象 service の読み込みに成功したと判断できること。
-    EXPECT_EQ(42, def.service_id);              // [確認_正常系] - service_id を section 名から設定すること。
-    EXPECT_EQ(POTR_TYPE_TCP_BIDIR, def.type);   // [確認_正常系] - type を読み込むこと。
-    EXPECT_EQ(5001U, def.dst_port);             // [確認_正常系] - dst_port を読み込むこと。
-    EXPECT_EQ(6001U, def.src_port);             // [確認_正常系] - src_port を読み込むこと。
-    EXPECT_EQ(3U, def.ttl);                     // [確認_正常系] - ttl を読み込むこと。
-    EXPECT_EQ(7U, def.pack_wait_ms);            // [確認_正常系] - pack_wait_ms を読み込むこと。
-    EXPECT_STREQ("10.0.0.1", def.src_addr[0]);  // [確認_正常系] - src_addr1 を読み込むこと。
-    EXPECT_STREQ("10.0.0.2", def.src_addr[1]);  // [確認_正常系] - src_addr2 を読み込むこと。
-    EXPECT_STREQ("10.0.1.1", def.dst_addr[0]);  // [確認_正常系] - dst_addr1 を読み込むこと。
-    EXPECT_STREQ("10.0.1.2", def.dst_addr[1]);  // [確認_正常系] - dst_addr2 を読み込むこと。
+    EXPECT_EQ(42, def.service_id);                    // [確認_正常系] - service_id を section 名から設定すること。
+    EXPECT_EQ(POTR_TYPE_TCP_BIDIR, def.type);         // [確認_正常系] - type を読み込むこと。
+    EXPECT_EQ(5001U, def.dst_port);                   // [確認_正常系] - dst_port を読み込むこと。
+    EXPECT_EQ(6001U, def.src_port);                   // [確認_正常系] - src_port を読み込むこと。
+    EXPECT_EQ(3U, def.ttl);                           // [確認_正常系] - ttl を読み込むこと。
+    EXPECT_EQ(7U, def.pack_wait_ms);                  // [確認_正常系] - pack_wait_ms を読み込むこと。
+    EXPECT_STREQ("10.0.0.1", def.src_addr[0]);        // [確認_正常系] - src_addr1 を読み込むこと。
+    EXPECT_STREQ("10.0.0.2", def.src_addr[1]);        // [確認_正常系] - src_addr2 を読み込むこと。
+    EXPECT_STREQ("10.0.1.1", def.dst_addr[0]);        // [確認_正常系] - dst_addr1 を読み込むこと。
+    EXPECT_STREQ("10.0.1.2", def.dst_addr[1]);        // [確認_正常系] - dst_addr2 を読み込むこと。
     EXPECT_STREQ("tcp://host,}", def.broadcast_addr); // [確認_正常系] - 文字列内の // はコメントとして扱わないこと。
-    EXPECT_EQ(16U, def.max_peers);              // [確認_正常系] - max_peers を読み込むこと。
-    EXPECT_EQ(111U, def.health_interval_ms);    // [確認_正常系] - health_interval_ms を読み込むこと。
-    EXPECT_EQ(222U, def.health_timeout_ms);     // [確認_正常系] - health_timeout_ms を読み込むこと。
-    EXPECT_EQ(333U, def.reconnect_interval_ms); // [確認_正常系] - reconnect_interval_ms を読み込むこと。
+    EXPECT_EQ(16U, def.max_peers);                    // [確認_正常系] - max_peers を読み込むこと。
+    EXPECT_EQ(111U, def.health_interval_ms);          // [確認_正常系] - health_interval_ms を読み込むこと。
+    EXPECT_EQ(222U, def.health_timeout_ms);           // [確認_正常系] - health_timeout_ms を読み込むこと。
+    EXPECT_EQ(333U, def.reconnect_interval_ms);       // [確認_正常系] - reconnect_interval_ms を読み込むこと。
     EXPECT_EQ(POTR_DEFAULT_CONNECT_TIMEOUT_MS,
               def.connect_timeout_ms);    // [確認_正常系] - 負の connect_timeout_ms は既定値を維持すること。
     EXPECT_EQ(1, def.encrypt_enabled);    // [確認_正常系] - hex 形式の encrypt_key で暗号化を有効化すること。
@@ -123,9 +138,8 @@ TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
-    ConfigLineStream lines({
-        R"({"services":{"55":{"type":"unicast_bidir","dst_port":5001,"encrypt_key":"secret passphrase"}}})"
-    });
+    ConfigLineStream lines(
+        {R"({"services":{"55":{"type":"unicast_bidir","dst_port":5001,"encrypt_key":"secret passphrase"}}})"});
     potr_service_def def = {};
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
@@ -151,12 +165,14 @@ TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が 1 回呼び出されること。
 
     // Act
-    int actual_ret = potr_internal_config_load_service("config.conf", 55,
-                                  &def); // [手順] - passphrase 形式の encrypt_key を含む service を読み込む。
+    int actual_ret =
+        potr_internal_config_load_service("config.conf", 55,
+                                          &def); // [手順] - passphrase 形式の encrypt_key を含む service を読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_OK,
-              actual_ret); // [確認_正常系] - potr_internal_config_load_service の戻り値から、読み込みに成功したと判断できること。
+    EXPECT_EQ(
+        POTR_OK,
+        actual_ret); // [確認_正常系] - potr_internal_config_load_service の戻り値から、読み込みに成功したと判断できること。
     EXPECT_EQ(1, def.encrypt_enabled);    // [確認_正常系] - passphrase から鍵導出できた場合に暗号化を有効化すること。
     EXPECT_EQ(0x5A, def.encrypt_key[0]);  // [確認_正常系] - 導出した鍵を構造体へ格納すること。
     EXPECT_EQ(0x5A, def.encrypt_key[31]); // [確認_正常系] - 導出した鍵を末尾まで保持すること。
@@ -168,9 +184,7 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
-    ConfigLineStream lines({
-        R"({"services":{"56":{"type":"tcp","dst_port":5002,"encrypt_key":"not-a-hex-secret"}}})"
-    });
+    ConfigLineStream lines({R"({"services":{"56":{"type":"tcp","dst_port":5002,"encrypt_key":"not-a-hex-secret"}}})"});
     potr_service_def def = {};
     memset(&def, 0xA5, sizeof(def));
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
@@ -190,11 +204,13 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が 1 回呼び出されること。
 
     // Act
-    int actual_ret = potr_internal_config_load_service("config.conf", 56, &def); // [手順] - hash 失敗を起こす service を読み込む。
+    int actual_ret =
+        potr_internal_config_load_service("config.conf", 56, &def); // [手順] - hash 失敗を起こす service を読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_OK,
-              actual_ret); // [確認_正常系] - potr_internal_config_load_service の戻り値から、service の読込自体は成功したと判断できること。
+    EXPECT_EQ(
+        POTR_OK,
+        actual_ret); // [確認_正常系] - potr_internal_config_load_service の戻り値から、service の読込自体は成功したと判断できること。
     EXPECT_EQ(0, def.encrypt_enabled); // [確認_異常系] - hash 失敗時に暗号化を無効として扱うこと。
     EXPECT_EQ(0, memcmp(def.encrypt_key, std::array<uint8_t, POTR_CRYPTO_KEY_SIZE>{}.data(),
                         POTR_CRYPTO_KEY_SIZE)); // [確認_異常系] - hash 失敗時に鍵をゼロ クリアすること。
@@ -206,9 +222,7 @@ TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
-    ConfigLineStream lines({
-        R"({"services":{"10":{"dst_port":4000}}})"
-    });
+    ConfigLineStream lines({R"({"services":{"10":{"dst_port":4000}}})"});
     potr_service_def def = {};
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
@@ -225,7 +239,8 @@ TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が呼び出されること。
 
     // Act
-    int actual_ret = potr_internal_config_load_service("config.conf", 42, &def); // [手順] - 存在しない service_id を指定して読み込む。
+    int actual_ret = potr_internal_config_load_service("config.conf", 42,
+                                                       &def); // [手順] - 存在しない service_id を指定して読み込む。
 
     // Assert
     EXPECT_EQ(

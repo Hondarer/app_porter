@@ -1,5 +1,14 @@
-/** @file thread_recv_slot.c
- * @brief 受信状態を参照し、メッセージを結合・展開して配信します。
+/**
+ *******************************************************************************
+ *  @file           thread_recv_slot.c
+ *  @brief          受信状態を参照し、メッセージを結合・展開して配信します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
  */
 
 #include <string.h>

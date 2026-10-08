@@ -73,7 +73,7 @@ int potr_internal_tcp_send_control_packet(const potr_context *ctx, potr_packet *
 
         memcpy(wire_buf, pkt, POTR_PACKET_HEADER_SIZE);
         if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+                                 wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             /* 暗号化失敗は入力データ起因と断定できないため、分類不能として扱う。 */
             return POTR_ERR_UNKNOWN;

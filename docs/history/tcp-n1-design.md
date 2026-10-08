@@ -117,7 +117,7 @@ send スレッド         × 1               ← 全ピア共有 (BIDIR_N1 の�
 
 最大スレッド数: `n_path(4) × max_peers × 2 + n_path(4) + 1` (BIDIR_N1 の場合)
 
-> **注意**: `max_peers` が大きいとスレッド数が増加します。TCP N:1 向けのデフォルト `max_peers` は 32 程度を推奨します。大量接続が必要な場合は将来的に epoll/IOCP ベースへの移行を検討してください。
+> **注意**: `max_peers` が大きいとスレッド数が増加します。TCP N:1 向けの既定値 `max_peers` は 32 程度を推奨します。大量接続が必要な場合は将来的に epoll/IOCP ベースへの移行を検討してください。
 
 ---
 
@@ -174,7 +174,7 @@ typedef struct potr_internal_peer_context
     size_t   frag_buf_len;
     int      frag_compressed;
 
-    /* ヘルスチェック */
+    /* ヘルス チェック */
     volatile int health_alive;
     int64_t last_recv_tv_sec;
     int32_t last_recv_tv_nsec;
@@ -829,7 +829,7 @@ Table: TCP N:1 追加フィールドのサイズ概算
 
 `max_peers = 1024` の場合、ピア テーブル全体で約 750 KB 増加します。
 
-**推奨**: TCP N:1 向けのデフォルト `max_peers` を 32 程度に設定してください。
+**推奨**: TCP N:1 向けの既定値 `max_peers` を 32 程度に設定してください。
 
 ### デッドロック リスクと回避策
 

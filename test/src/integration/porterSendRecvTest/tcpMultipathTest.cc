@@ -79,8 +79,8 @@ bytes packet(uint32_t seq, uint16_t flags, const bytes &payload, bool encrypted)
         memcpy(nonce + 6, out.data() + 24, 4);
         bytes cipher(payload.size() + POTR_CRYPTO_TAG_SIZE);
         size_t len = cipher.size();
-        EXPECT_EQ(CPLAT_OK, cplat_crypto_encrypt(cipher.data(), &len, payload.data(), payload.size(), key, nonce, out.data(),
-                                          header_size));
+        EXPECT_EQ(CPLAT_OK, cplat_crypto_encrypt(cipher.data(), &len, payload.data(), payload.size(), key, nonce,
+                                                 out.data(), header_size));
         // [状態確認] - `cplat_crypto_encrypt(cipher.data(), &len, payload.data(), payload.size(), key, nonce, out.data(), header_size)` の戻り値が `CPLAT_OK` であること。
         out.insert(out.end(), cipher.begin(), cipher.end());
     }
@@ -111,7 +111,8 @@ void receive(int64_t, potr_peer_id, potr_event event, const void *data, size_t l
         if (s_reply_handle != nullptr && s_received.size() == 1)
         {
             bytes reply(400, 'R');
-            s_reply_result = potr_service_send(s_reply_handle, POTR_PEER_NA, reply.data(), reply.size(), POTR_SEND_COMPRESS);
+            s_reply_result =
+                potr_service_send(s_reply_handle, POTR_PEER_NA, reply.data(), reply.size(), POTR_SEND_COMPRESS);
             s_payload_stable = before == bytes(ptr, ptr + len);
         }
         if (s_hold_callback && s_received.size() == 1)

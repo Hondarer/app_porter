@@ -88,11 +88,11 @@ static int s_tracer_started = 0;
 typedef struct porter_test_session
 {
     potr_context *handle; /**< サービス ハンドル。未オープン時は NULL。 */
-    int64_t service_id;  /**< 開いているサービスの ID。 */
+    int64_t service_id;   /**< 開いているサービスの ID。 */
     potr_role role;       /**< 開いているサービスのロール。 */
-    int is_open;         /**< サービスを開いているかどうか。 */
-    int is_bidir;        /**< 双方向サービスかどうか。 */
-    int can_send;        /**< このロールで送信できるかどうか。 */
+    int is_open;          /**< サービスを開いているかどうか。 */
+    int is_bidir;         /**< 双方向サービスかどうか。 */
+    int can_send;         /**< このロールで送信できるかどうか。 */
 } porter_test_session;
 
 /**
@@ -148,7 +148,7 @@ static void porter_test_shutdown_request_callback(const cplat_shutdown_event *ev
 
 #if defined(PLATFORM_LINUX)
     cplat_close(STDIN_FILENO, NULL); /* readline (fgets) のブロックを解除する */
-#endif                                  /* PLATFORM_LINUX */
+#endif                               /* PLATFORM_LINUX */
 }
 
 /**
@@ -170,13 +170,13 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
     switch (event)
     {
     case POTR_EVENT_CONNECTED:
-        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "[サービス %" PRId64 "] 接続確立\n", service_id);
+        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "[サービス %" PRId64 "] 接続確立\n",
+                                   service_id);
         break;
 
     case POTR_EVENT_DISCONNECTED:
-        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "[サービス %" PRId64 "] 切断検知\n", service_id);
+        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "[サービス %" PRId64 "] 切断検知\n",
+                                   service_id);
         break;
 
     case POTR_EVENT_PATH_CONNECTED:
@@ -213,8 +213,8 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
             path_state3 = 0;
         }
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "[サービス %" PRId64 "] path[%d] %s states={%d,%d,%d,%d}\n", service_id, path_idx,
-                                      event_str, path_state0, path_state1, path_state2, path_state3);
+                                   "[サービス %" PRId64 "] path[%d] %s states={%d,%d,%d,%d}\n", service_id, path_idx,
+                                   event_str, path_state0, path_state1, path_state2, path_state3);
         break;
     }
 
@@ -233,7 +233,7 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
             memcpy(buf, data, copy_len);
             buf[copy_len] = '\0';
             cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                          "[サービス %" PRId64 "] 受信 (%zu バイト): %s\n", service_id, len, buf);
+                                       "[サービス %" PRId64 "] 受信 (%zu バイト): %s\n", service_id, len, buf);
         }
         else
         {
@@ -244,9 +244,9 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
             {
                 fclose(fp);
                 cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                              "[サービス %" PRId64
-                                              "] 受信 (%zu バイト): バイナリ データを保存しました: %s\n",
-                                              service_id, len, tmp_path);
+                                           "[サービス %" PRId64
+                                           "] 受信 (%zu バイト): バイナリ データを保存しました: %s\n",
+                                           service_id, len, tmp_path);
             }
             else
             {
@@ -255,9 +255,9 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
                     fclose(fp);
                 }
                 cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                              "[サービス %" PRId64
-                                              "] 受信 (%zu バイト): バイナリ データの保存に失敗しました。\n",
-                                              service_id, len);
+                                           "[サービス %" PRId64
+                                           "] 受信 (%zu バイト): バイナリ データの保存に失敗しました。\n",
+                                           service_id, len);
             }
         }
         break;
@@ -474,21 +474,21 @@ static void print_interactive_help(void)
 {
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "コマンド:\n");
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                  "  open <role> <config_path> <service_id>  サービスを開きます。\n");
+                               "  open <role> <config_path> <service_id>  サービスを開きます。\n");
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                  "                                          role: sender | receiver\n");
+                               "                                          role: sender | receiver\n");
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                  "  close                                   サービスを閉じます。\n");
+                               "  close                                   サービスを閉じます。\n");
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                  "  send [-c|--compress] <message>          テキストを送信します。\n");
+                               "  send [-c|--compress] <message>          テキストを送信します。\n");
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                  "  file [-c|--compress] <path>             ファイルを送信します。\n");
+                               "  file [-c|--compress] <path>             ファイルを送信します。\n");
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                  "  log <level>                             ログレベルを設定します。\n");
+                               "  log <level>                             ログレベルを設定します。\n");
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                  "  help                                    このヘルプを表示します。\n");
+                               "  help                                    このヘルプを表示します。\n");
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                  "  exit, quit                              終了します。\n");
+                               "  exit, quit                              終了します。\n");
 }
 
 /**
@@ -511,14 +511,14 @@ static int read_file_data(const char *path, unsigned char **data_out, size_t *le
     if (fp == NULL)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: ファイル \"%s\" を開けませんでした。\n", path);
+                                   "エラー: ファイル \"%s\" を開けませんでした。\n", path);
         return -1;
     }
 
     if (cplat_fseek(fp, 0, SEEK_END) != 0)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: ファイルの読み込みに失敗しました。\n");
+                                   "エラー: ファイルの読み込みに失敗しました。\n");
         fclose(fp);
         return -1;
     }
@@ -527,7 +527,7 @@ static int read_file_data(const char *path, unsigned char **data_out, size_t *le
     if (file_size < 0)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: ファイルの読み込みに失敗しました。\n");
+                                   "エラー: ファイルの読み込みに失敗しました。\n");
         fclose(fp);
         return -1;
     }
@@ -542,9 +542,9 @@ static int read_file_data(const char *path, unsigned char **data_out, size_t *le
     if ((uint64_t)file_size > POTR_MAX_MESSAGE_SIZE)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: ファイルサイズ (%" PRId64
-                                      " バイト) が最大送信サイズ (%u バイト) を超えています。\n",
-                                      file_size, (unsigned)POTR_MAX_MESSAGE_SIZE);
+                                   "エラー: ファイルサイズ (%" PRId64
+                                   " バイト) が最大送信サイズ (%u バイト) を超えています。\n",
+                                   file_size, (unsigned)POTR_MAX_MESSAGE_SIZE);
         fclose(fp);
         return -1;
     }
@@ -553,7 +553,7 @@ static int read_file_data(const char *path, unsigned char **data_out, size_t *le
     if (buf == NULL)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: メモリ確保に失敗しました。\n");
+                                   "エラー: メモリ確保に失敗しました。\n");
         fclose(fp);
         return -1;
     }
@@ -565,7 +565,7 @@ static int read_file_data(const char *path, unsigned char **data_out, size_t *le
     if (read_count != (size_t)file_size)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: ファイルの読み込みに失敗しました。\n");
+                                   "エラー: ファイルの読み込みに失敗しました。\n");
         cplat_free(buf);
         return -1;
     }
@@ -620,7 +620,7 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
     if (payload[0] == '\0')
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: 送信内容を指定してください。\n");
+                                   "エラー: 送信内容を指定してください。\n");
         return;
     }
 
@@ -650,12 +650,12 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
     if (is_file)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "ファイル送信中: \"%s\" (%zu バイト)%s\n", payload, send_len, compress_label);
+                                   "ファイル送信中: \"%s\" (%zu バイト)%s\n", payload, send_len, compress_label);
     }
     else
     {
-        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "送信中: \"%s\" (%zu バイト)%s\n", payload, send_len, compress_label);
+        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "送信中: \"%s\" (%zu バイト)%s\n",
+                                   payload, send_len, compress_label);
     }
 
     if (compress)
@@ -673,12 +673,11 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
         if (send_ret == POTR_ERR_DISCONNECTED)
         {
             cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                          "エラー: 未接続のため送信できません。\n");
+                                       "エラー: 未接続のため送信できません。\n");
         }
         else
         {
-            cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                          "エラー: 送信に失敗しました。\n");
+            cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR, "エラー: 送信に失敗しました。\n");
         }
         cplat_free(file_data);
         return;
@@ -687,7 +686,7 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
     if (is_file)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "ファイル送信完了: \"%s\" (%zu バイト)\n", payload, send_len);
+                                   "ファイル送信完了: \"%s\" (%zu バイト)\n", payload, send_len);
     }
     else
     {
@@ -732,12 +731,12 @@ static int do_open(porter_test_session *session, potr_role role, const char *con
     if (session->is_open)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: 既にサービスを開いています。先に close してください。\n");
+                                   "エラー: 既にサービスを開いています。先に close してください。\n");
         return -1;
     }
 
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                  "サービス %" PRId64 " を開いています... (設定: %s)\n", service_id, config_path);
+                               "サービス %" PRId64 " を開いています... (設定: %s)\n", service_id, config_path);
 
     /* サービス種別を取得して双方向サービスかどうか判定する。 */
     /* sender は unicast_bidir / tcp_bidir の双方を、receiver は unicast_bidir を双方向として扱う */
@@ -778,7 +777,7 @@ static int do_open(porter_test_session *session, potr_role role, const char *con
     if (potr_service_open_from_config(config_path, service_id, role, callback, &handle) != POTR_OK)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: サービス %" PRId64 " を開けませんでした。\n", service_id);
+                                   "エラー: サービス %" PRId64 " を開けませんでした。\n", service_id);
         return -1;
     }
 
@@ -792,24 +791,22 @@ static int do_open(porter_test_session *session, potr_role role, const char *con
     if (is_bidir)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "双方向モード。相手からの受信メッセージと接続状態も表示します。\n");
+                                   "双方向モード。相手からの受信メッセージと接続状態も表示します。\n");
     }
 
     if (role == POTR_ROLE_SENDER)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "送信準備完了。Ctrl+C または Ctrl+D で終了します。\n");
-        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "help でコマンド一覧を表示します。\n");
+                                   "送信準備完了。Ctrl+C または Ctrl+D で終了します。\n");
+        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "help でコマンド一覧を表示します。\n");
     }
     else
     {
-        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "受信待機中... (Ctrl+C で終了)\n");
+        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "受信待機中... (Ctrl+C で終了)\n");
         if (can_send)
         {
             cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                          "send / file で送信もできます。help でコマンド一覧を表示します。\n");
+                                       "send / file で送信もできます。help でコマンド一覧を表示します。\n");
         }
     }
     return 0;
@@ -824,7 +821,7 @@ static void do_close(porter_test_session *session)
     if (!session->is_open)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: サービスは開いていません。\n");
+                                   "エラー: サービスは開いていません。\n");
         return;
     }
 
@@ -856,21 +853,21 @@ static void handle_open_command(porter_test_session *session, char *cursor)
     if (role_token == NULL || config_token == NULL || id_token == NULL)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: open <role> <config_path> <service_id> を指定してください。\n");
+                                   "エラー: open <role> <config_path> <service_id> を指定してください。\n");
         return;
     }
     if (!parse_role(role_token, &role))
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: 不明なロール \"%s\"。sender または receiver を指定してください。\n",
-                                      role_token);
+                                   "エラー: 不明なロール \"%s\"。sender または receiver を指定してください。\n",
+                                   role_token);
         return;
     }
 
     if (cplat_parse_int64(&service_id, id_token, 10) != CPLAT_OK)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: service_id \"%s\" を整数として解釈できません。\n", id_token);
+                                   "エラー: service_id \"%s\" を整数として解釈できません。\n", id_token);
         return;
     }
     do_open(session, role, config_token, service_id);
@@ -889,22 +886,22 @@ static void handle_log_command(char *cursor)
     if (level_token == NULL)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: log <level> を指定してください。\n");
+                                   "エラー: log <level> を指定してください。\n");
         return;
     }
     if (!parse_trace_level(level_token, &level))
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: 不明なログレベル \"%s\"。"
-                                      "VERBOSE/INFO/WARNING/ERROR/CRITICAL のいずれかを指定してください。\n",
-                                      level_token);
+                                   "エラー: 不明なログレベル \"%s\"。"
+                                   "VERBOSE/INFO/WARNING/ERROR/CRITICAL のいずれかを指定してください。\n",
+                                   level_token);
         return;
     }
 
     s_trace_level = level;
     ensure_tracer_started();
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "ログレベルを %s に設定しました。\n",
-                                  level_token);
+                               level_token);
 }
 
 /**
@@ -956,14 +953,14 @@ static int process_line(porter_test_session *session, char *line)
         if (!session->is_open)
         {
             cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                          "エラー: サービスが開いていません。"
-                                          "open <role> <config_path> <service_id> で開いてください。\n");
+                                       "エラー: サービスが開いていません。"
+                                       "open <role> <config_path> <service_id> で開いてください。\n");
             return 1;
         }
         if (!session->can_send)
         {
             cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                          "エラー: 受信専用サービスのため送信できません。\n");
+                                       "エラー: 受信専用サービスのため送信できません。\n");
             return 1;
         }
         is_file = (strcmp(command, "file") == 0);
@@ -972,9 +969,8 @@ static int process_line(porter_test_session *session, char *line)
     }
 
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR, "エラー: 不明なコマンドです: %s\n",
-                                  command);
-    cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                  "help でコマンド一覧を表示します。\n");
+                               command);
+    cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR, "help でコマンド一覧を表示します。\n");
     return 1;
 }
 
@@ -1104,7 +1100,7 @@ int main(int argc, char *argv[])
     if (cplat_shutdown_request_register(porter_test_shutdown_request_callback, NULL) != CPLAT_OK)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                      "エラー: 終了要求 callback の登録に失敗しました。\n");
+                                   "エラー: 終了要求 callback の登録に失敗しました。\n");
         cplat_pinned_prompt_dispose(s_screen);
         return EXIT_FAILURE;
     }
@@ -1116,8 +1112,8 @@ int main(int argc, char *argv[])
         if (!parse_role(role_arg, &role))
         {
             cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                          "エラー: 不明なロール \"%s\"。sender または receiver を指定してください。\n",
-                                          role_arg);
+                                       "エラー: 不明なロール \"%s\"。sender または receiver を指定してください。\n",
+                                       role_arg);
         }
         else
         {
@@ -1126,8 +1122,7 @@ int main(int argc, char *argv[])
             if (cplat_parse_int64(&service_id, service_id_arg, 10) != CPLAT_OK)
             {
                 cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                              "エラー: service_id \"%s\" を整数として解釈できません。\n",
-                                              service_id_arg);
+                                           "エラー: service_id \"%s\" を整数として解釈できません。\n", service_id_arg);
             }
             else
             {
@@ -1138,8 +1133,8 @@ int main(int argc, char *argv[])
     else
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                      "open <role> <config_path> <service_id> でサービスを開きます。"
-                                      "help でコマンド一覧を表示します。\n");
+                                   "open <role> <config_path> <service_id> でサービスを開きます。"
+                                   "help でコマンド一覧を表示します。\n");
     }
 
     while (cplat_atomic_load_i32(&s_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
@@ -1150,8 +1145,8 @@ int main(int argc, char *argv[])
         {
             break;
         }
-        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "porter-test[%s]> %s\n",
-                                      prompt_state, line);
+        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "porter-test[%s]> %s\n", prompt_state,
+                                   line);
 
         if (process_line(&session, line) == 0)
         {

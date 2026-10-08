@@ -24,7 +24,7 @@
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_service_open_from_config(const char *config_path, int64_t service_id, potr_role role, potr_recv_fn callback,
-                              potr_context **handle)
+                                  potr_context **handle)
 {
     potr_global_config global;
     potr_service_def service;

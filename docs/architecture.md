@@ -64,7 +64,7 @@ rectangle "porter ライブラリ (送信者) " {
   queue "送信キュー\n(リングバッファ 1024 要素)" as Q
   [送信スレッド] as ST
   [受信スレッド] as RT
-  [ヘルスチェックスレッド] as HT
+  [ヘルス チェックスレッド] as HT
   [UDP ソケット] as SOCK
 }
 
@@ -81,14 +81,14 @@ HT --> SOCK : sendto (PING)\n片方向は最後の PING / DATA 基準\n双方向
 |---|---|
 | 送信スレッド | 送信キューからエレメントを取り出し、DATA パケットを構築して全パスへ sendto します。 |
 | 受信スレッド | NACK / REJECT / FIN / FIN_ACK などの制御パケットを処理し、再送・close 完了通知・DISCONNECTED 発火を行います。 |
-| ヘルスチェック スレッド | 非 TCP は 1 サービス 1 本。片方向 type 1-6 は最後の PING / 有効 DATA 送信時刻を監視して期限到達時だけ PING を送信し、双方向系は一定間隔で PING を送信します。 |
+| ヘルス チェック スレッド | 非 TCP は 1 サービス 1 本。片方向 type 1-6 は最後の PING / 有効 DATA 送信時刻を監視して期限到達時だけ PING を送信し、双方向系は一定間隔で PING を送信します。 |
 
 Table: 送信者 (SENDER) のスレッド構成と役割
 
 ### 受信者のスレッド
 
 受信者が起動するスレッドは **受信スレッド 1 本のみ** です。  
-ただし `POTR_TYPE_UNICAST_BIDIR` の RECEIVER は、SENDER と同等のスレッド構成 (送信スレッド・ヘルスチェック スレッドを含む 3 本) を起動します (後述「unicast_bidir のスレッド構成」参照)。
+ただし `POTR_TYPE_UNICAST_BIDIR` の RECEIVER は、SENDER と同等のスレッド構成 (送信スレッド・ヘルス チェック スレッドを含む 3 本) を起動します (後述「unicast_bidir のスレッド構成」参照)。
 
 受信スレッドが担う処理:
 
@@ -96,7 +96,7 @@ Table: 送信者 (SENDER) のスレッド構成と役割
 - 欠番検出と NACK 送出 (reorder_timeout_ms > 0 の場合は待機後に送出)
 - RAW モードのギャップ検出による `POTR_EVENT_DISCONNECTED` 発火 (reorder_timeout_ms > 0 の場合は待機後に発火)
 - FIN / REJECT パケット受信による `POTR_EVENT_DISCONNECTED` 発火
-- ヘルスチェック タイムアウト監視による `POTR_EVENT_DISCONNECTED` 発火
+- ヘルス チェック タイムアウト監視による `POTR_EVENT_DISCONNECTED` 発火
 - リオーダー バッファー タイムアウト監視 (reorder_timeout_ms > 0 の場合): 欠番待機中に期限超過したら NACK 送出または DISCONNECTED 発火
 
 ### unicast_bidir のスレッド構成
@@ -118,7 +118,7 @@ rectangle "porter ライブラリ (unicast_bidir 1:1)" {
   queue "送信キュー\n(リングバッファ 1024 要素)" as Q
   [送信スレッド] as ST
   [受信スレッド] as RT
-  [ヘルスチェックスレッド] as HT
+  [ヘルス チェックスレッド] as HT
   [UDP ソケット\n(bind 済み)] as SOCK
 }
 
@@ -151,7 +151,7 @@ rectangle "porter ライブラリ (unicast_bidir N:1 サーバ)" {
   database "peer table\n(max_peers)" as PT
   [送信スレッド] as ST
   [受信スレッド] as RT
-  [ヘルスチェックスレッド] as HT
+  [ヘルス チェックスレッド] as HT
   [UDP ソケット\n(dst_addr:dst_port で bind)] as SOCK
 }
 
@@ -171,7 +171,7 @@ HT --> SOCK : PING 要求送信 / タイムアウト監視
 |---|---|
 | 送信スレッド | 共有送信キューから `peer_id` 付きエレメントを取り出し、対応するピアの送信先へ `sendto` します。`POTR_PEER_ALL` は `potr_service_send()` 呼び出し時点で全ピア分に展開されます。 |
 | 受信スレッド | `recvfrom` 後に暗号化必須判定と GCM 認証を行い、成功したパケットだけを session triplet (`session_id` + `session_tv_sec` + `session_tv_nsec`) でピア特定します。未知セッションは DATA / PING のみ新規ピア作成対象とします。 |
-| ヘルスチェック スレッド | 非 TCP の共有 1 本が接続中の各ピアを巡回し、`health_interval_ms` に従って PING を送信し、`health_timeout_ms` 超過で個別に切断を検知します。双方向 UDP ではこの定周期 PING が接続確立の前提であり、実効 `health_interval_ms = 0` のままでは `CONNECTED` しません。 |
+| ヘルス チェック スレッド | 非 TCP の共有 1 本が接続中の各ピアを巡回し、`health_interval_ms` に従って PING を送信し、`health_timeout_ms` 超過で個別に切断を検知します。双方向 UDP ではこの定周期 PING が接続確立の前提であり、実効 `health_interval_ms = 0` のままでは `CONNECTED` しません。 |
 
 Table: N:1 サーバー モードのスレッド構成と役割
 
@@ -341,13 +341,13 @@ RECEIVER 側は、接続時の session triplet(`session_id + session_tv_sec + se
 受信処理は、パケットを受け入れる条件の検証を分離し、セッションや受信ウィンドウを更新する前に呼び出します。  
 セッション採用と FIN 制御は受信状態の更新として集約します。  
 再送と順序整列は受信状態ビュー経由で 1:1 と N:1 が共有します。  
-構成済みスロットへのパケット振り分けも共有し、受信ループはソケット I/O、ピア解決、ヘルスチェック タイムアウトの監視を担当します。
+構成済みスロットへのパケット振り分けも共有し、受信ループはソケット I/O、ピア解決、ヘルス チェック タイムアウトの監視を担当します。
 
 | 実装 | 責務 | 境界で守る条件 |
 |---|---|---|
 | `api/potr_service_open.c` | 設定検証、コンテキストの確保、スレッド起動、失敗時の資源解放 | 起動完了後にハンドルを呼び出し元へ返却 |
 | `api/api_open_paths.c` | 通信種別ごとのソケット作成、アドレス解決、送信先設定 | 確保したソケットはコンテキストが所有し、開始処理の失敗時に解放 |
-| `thread/potr_recv_thread.c` | ソケット受信、ピア解決、ヘルスチェック タイムアウトの監視 | 認証成功後に受信状態を更新する |
+| `thread/potr_recv_thread.c` | ソケット受信、ピア解決、ヘルス チェック タイムアウトの監視 | 認証成功後に受信状態を更新する |
 | `thread/thread_recv_validate.c` | 暗号化要件、GCM 認証、UDP 送信元の照合 | 認証失敗は `POTR_ERR_PROTOCOL`、送信元照合は採用可否を返す |
 | `thread/thread_recv_slot.c` | 1:1／N:1 の受信状態参照、フラグメント結合、展開、DATA 配信 | 順序整列済みのエレメントを受け取り、データの所有権は移動しない |
 | `thread/thread_recv_session.c` | セッション triplet の採用判定、経路切断、PING 受信状態の更新、送信元学習 | 旧セッションでは受信状態を変更しない |
@@ -463,7 +463,7 @@ porter の全状態は `potr_context` 構造体 (`potr_context *` の実体) に
 |---|---|
 | 設定 | サービス定義 (通信種別・アドレス・ポート・暗号化鍵)、グローバル設定 (ウィンドウ サイズ・ヘルスチェック間隔) |
 | ソケット | 最大 4 パス分の UDP ソケット (`cplat_socket` 型) |
-| スレッド | 受信・送信・ヘルスチェック スレッド ハンドル |
+| スレッド | 受信・送信・ヘルス チェック スレッド ハンドル |
 | ウィンドウ | 送信ウィンドウ・受信ウィンドウ (各パケットのコピーを保持) |
 | 送信キュー | ペイロード エレメントのリング バッファー (1024 要素) |
 | セッション状態 | 自セッション ID / 相手セッション ID・開始時刻 |
@@ -492,7 +492,7 @@ Table: potr_context が保持する情報カテゴリ
 > | `tcp_last_ping_recv_ms[POTR_MAX_PATH]` | PING 応答最終受信時刻 (ms, monotonic。path ごと。SENDER health スレッドが監視) |
 > | `buf_full_suppress_cnt[POTR_MAX_PATH]` | 送信バッファー満杯 ERROR ログの抑制カウンター (path ごと) |
 
-> **unicast_bidir について**: 1:1 モードの `POTR_ROLE_RECEIVER` は送信ウィンドウ・送信キュー・送信スレッド・ヘルスチェック スレッドも保持します。N:1 モードではさらに `is_multi_peer`、`peers`、`max_peers`、`peers_mutex` などの共有管理情報を持ち、各ピアの詳細状態は `potr_internal_peer_context` に分離されます。
+> **unicast_bidir について**: 1:1 モードの `POTR_ROLE_RECEIVER` は送信ウィンドウ・送信キュー・送信スレッド・ヘルス チェック スレッドも保持します。N:1 モードではさらに `is_multi_peer`、`peers`、`max_peers`、`peers_mutex` などの共有管理情報を持ち、各ピアの詳細状態は `potr_internal_peer_context` に分離されます。
 
 ## クロスプラットフォーム抽象化
 
@@ -607,7 +607,7 @@ typedef enum {
 potr_internal_send_queue        send_queue;    /* 送信キュー */
 potr_internal_window send_window;   /* 送信ウィンドウ */
 cplat_thread     *send_thread;   /* 送信スレッド */
-cplat_thread     *health_thread; /* ヘルスチェック スレッド */
+cplat_thread     *health_thread; /* ヘルス チェック スレッド */
 cplat_local_lock *health_mutex;
 cplat_condvar    *health_wakeup;
 ```
@@ -634,7 +634,7 @@ potr_service_open_from_config("porter-services.jsonc", 4020, POTR_ROLE_RECEIVER,
 | NACK / 再送 | ○ (RECEIVER → SENDER) | × | × | ○ (双方向) |
 | スライディング ウィンドウ | ○ | × | × | ○ (両端) |
 | PING 応答 | なし | ○ (`ack_num` で区別) | ○ (双方向、`ack_num`) | ○ (双方向、`ack_num`) |
-| ヘルスチェック タイムアウト | RECEIVER 監視 | SENDER 監視 | 両端監視 | 両端監視 |
+| ヘルス チェック タイムアウト | RECEIVER 監視 | SENDER 監視 | 両端監視 | 両端監視 |
 | 監視方法 | `last_recv_ts` | PING 応答タイムアウト | PING 応答タイムアウト | `last_recv_ts` |
 | src_port | 省略可 (SENDER)/ 必須 (RECEIVER) | 無視 | 無視 | 1:1 は省略可、N:1 では送信元ポート フィルターとして任意 |
 | 自動再接続 | なし | ○ (SENDER) | ○ (SENDER) | なし |

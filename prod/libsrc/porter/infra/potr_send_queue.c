@@ -74,8 +74,8 @@ void potr_internal_send_queue_dispose(potr_internal_send_queue *q)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
-                         uint16_t payload_len)
+int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags,
+                                  const void *payload, uint16_t payload_len)
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -100,8 +100,8 @@ int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
-                              uint16_t payload_len, cplat_atomic_i32 *running)
+int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags,
+                                       const void *payload, uint16_t payload_len, cplat_atomic_i32 *running)
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -132,7 +132,8 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out, cplat_atomic_i32 *running)
+int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out,
+                                 cplat_atomic_i32 *running)
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 

@@ -12,13 +12,13 @@
 - `prod/libsrc/` は、C の実装です。
 - `prod/src/cmd/porter-test/` は、動作確認用コマンドです。
 - `test/` は、単体テスト、モック、エクスポート確認です。
-- [docs/README.md](docs/README.md)は、発行文書の入口です。
-- [docs/functional-spec/README.md](docs/functional-spec/README.md)は、要件と機能を説明する機能仕様の入口です。
-- [docs/functional-spec-guideline.md](docs/functional-spec-guideline.md)は、porter 固有の要件 ID 接頭辞、参照コメント タグ、カテゴリごとの主語を定めます。記載範囲、構成、要件 ID と UUID の運用は [機能仕様の記載規範](../general/docs/functional-spec-guideline.md) が正本です。
-- [docs/api.md](docs/api.md)は、公開 API の戻り値とスレッド セーフ性を説明します。
-- [docs/coding-guideline.md](docs/coding-guideline.md)は、porter 固有の規範です。
+- [docs/README.md](docs/README.md) は、発行文書の入口です。
+- [docs/functional-spec/README.md](docs/functional-spec/README.md) は、要件と機能を説明する機能仕様の入口です。
+- [docs/functional-spec-guideline.md](docs/functional-spec-guideline.md) は、porter 固有の要件 ID 接頭辞、参照コメント タグ、カテゴリごとの主語を定めます。記載範囲、構成、要件 ID と UUID の運用は [機能仕様の記載規範](../general/docs/functional-spec-guideline.md) が正本です。
+- [docs/api.md](docs/api.md) は、公開 API の戻り値とスレッド セーフ性を説明します。
+- [docs/coding-guideline.md](docs/coding-guideline.md) は、porter 固有の規範です。
 
-## 公開 API の同期
+## 公開 API と文書の同期
 
 `prod/include/` の関数を追加、削除、名称変更、またはシグネチャ変更する場合は、同じ変更で `test/src/libporter/exportTest/exportTest.cc` の `POTR_EXPORT_FUNCTION_TABLE` を確認してください。  
 公開変数を変更する場合は、同ファイルの `POTR_EXPORT_VARIABLE_TABLE` も確認してください。  
@@ -43,7 +43,7 @@
 | 通信種別による振る舞いの差異の変更 | 該当する機能の節 |
 | 対向側と交換する形式の互換条件の変更 | 該当する機能の節と、互換性の要件 |
 
-Table: 変更内容に応じた機能仕様の見直し箇所
+Table: porter 機能変更内容と機能仕様の見直し箇所
 
 利用側から見て独立した目的を持つ機能カテゴリを追加または削除した場合は、`docs/functional-spec/` の Markdown、`docs/functional-spec/README.md` の文書一覧、`docs/functional-spec-guideline.md` の主語表も同じ変更で追加または削除してください。  
 実装ディレクトリの追加または削除だけを、機能仕様の追加または削除の根拠にしないでください。

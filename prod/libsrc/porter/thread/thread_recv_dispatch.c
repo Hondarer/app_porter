@@ -1,5 +1,14 @@
-/** @file thread_recv_dispatch.c
- * @brief 構成済み受信スロットへパケット種別を振り分けます。
+/**
+ *******************************************************************************
+ *  @file           thread_recv_dispatch.c
+ *  @brief          構成済み受信スロットへパケット種別を振り分けます。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
  */
 
 #include <inttypes.h>

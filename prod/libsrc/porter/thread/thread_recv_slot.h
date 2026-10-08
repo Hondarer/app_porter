@@ -1,3 +1,16 @@
+/**
+ *******************************************************************************
+ *  @file           thread_recv_slot.h
+ *  @brief          受信スロットの検索と割り当て処理の内部関数を定義します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
+ */
+
 #ifndef THREAD_RECV_SLOT_PRIVATE_H
 #define THREAD_RECV_SLOT_PRIVATE_H
 

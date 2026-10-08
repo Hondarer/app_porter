@@ -1,3 +1,16 @@
+/**
+ *******************************************************************************
+ *  @file           thread_recv_dispatch.h
+ *  @brief          構成済み受信スロットへパケット種別を振り分ける内部関数を定義します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
+ */
+
 #ifndef THREAD_RECV_DISPATCH_PRIVATE_H
 #define THREAD_RECV_DISPATCH_PRIVATE_H
 
@@ -10,17 +23,17 @@
 #include "thread_recv_slot.h"
 
 /**
- * @brief 構成済みスロットへ FIN / NACK / REJECT / DATA / PING を振り分けます。
- * @param[in,out] slot 構成済みの受信状態ビュー。NULL は許可しません。
- * @param[in,out] pkt 認証済みパケット。NULL は許可しません。
- * @param[in] path_idx 受信した経路番号。
- * @param[in] sender 受信した送信元アドレス。NULL は許可しません。
- * @return N:1 で PING 受信状態が変化した場合は 1、それ以外は 0 を返します。
- * @note 変化の有無を返す述語のため共通結果コードの適用対象外です。
- *       1:1 の FIN はセッション採用後に処理します。N:1 の FIN は採用せずに処理します。
- *       NACK 再送は N:1 のみ行います。1:1 の NACK は呼び出し側の送信者処理が担当します。
- *       戻り値 1 のときは、peers_mutex を解放してからヘルスチェック スレッドを起床してください。
- *       所有権は移動しません。N:1 では peers_mutex 保護下で呼び出してください。
+ *  @brief          構成済みスロットへ FIN / NACK / REJECT / DATA / PING を振り分けます。
+ *  @param[in,out]  slot            構成済みの受信状態ビュー。NULL は許可しません。
+ *  @param[in,out]  pkt             認証済みパケット。NULL は許可しません。
+ *  @param[in]      path_idx        受信した経路番号。
+ *  @param[in]      sender          受信した送信元アドレス。NULL は許可しません。
+ *  @return         N:1 で PING 受信状態が変化した場合は 1、それ以外は 0 を返します。
+ *  @note           変化の有無を返す述語のため共通結果コードの適用対象外です。
+ *                  1:1 の FIN はセッション採用後に処理します。N:1 の FIN は採用せずに処理します。
+ *                  NACK 再送は N:1 のみ行います。1:1 の NACK は呼び出し側の送信者処理が担当します。
+ *                  戻り値 1 のときは、peers_mutex を解放してからヘルス チェック スレッドを起床してください。
+ *                  所有権は移動しません。N:1 では peers_mutex 保護下で呼び出してください。
  */
 int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int path_idx,
                                 const cplat_ipv4_endpoint *sender);

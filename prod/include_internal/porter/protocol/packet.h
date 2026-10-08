@@ -84,7 +84,8 @@ extern "C"
      *  @param[in]      nack_num    再送要求する通番。
      *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      */
-    extern int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t nack_num);
+    extern int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
+                                               uint32_t nack_num);
 
     /**
      *  @brief          PING パケットを構築します。
@@ -102,8 +103,9 @@ extern "C"
      *  ack_num は常に 0。受信者は seq_num を上限として欠番を一括 NACK します。\n
      *  ペイロードには POTR_MAX_PATH バイトのパス受信状態 (POTR_PING_STATE_*) を格納します。
      */
-    extern int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
-                                 const uint8_t *health_payload, uint16_t health_payload_len);
+    extern int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
+                                               uint32_t seq_num, const uint8_t *health_payload,
+                                               uint16_t health_payload_len);
 
     /**
      *  @brief          再送不能通知 (REJECT) パケットを構築します。
@@ -116,7 +118,8 @@ extern "C"
      *  送信者が返すパケットです。受信者はこのパケットを受け取ると即時 DISCONNECTED を
      *  発火し、欠落通番をスキップして後続パケットの配信を継続します。
      */
-    extern int potr_internal_packet_build_reject(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num);
+    extern int potr_internal_packet_build_reject(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
+                                                 uint32_t seq_num);
 
     /**
      *  @brief          正常終了通知 (FIN) パケットを構築します。
@@ -138,7 +141,8 @@ extern "C"
      *  @param[in]      fin_target_seq  完了した FIN target 通番。
      *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      */
-    extern int potr_internal_packet_build_fin_ack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t fin_target_seq);
+    extern int potr_internal_packet_build_fin_ack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
+                                                  uint32_t fin_target_seq);
 
     /**
      *  @brief          データ パケット (パック コンテナー) を構築します。
@@ -156,8 +160,8 @@ extern "C"
      *  ペイロード エレメントの形式は flags(2) + payload_len(4) + payload(N) です。\n
      *  受信者は POTR_FLAG_DATA を検出後 potr_internal_packet_unpack_next() でペイロード エレメントを展開します。
      */
-    extern int potr_internal_packet_build_packed(potr_packet *out, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
-                                   const void *packed_payload, size_t payload_len);
+    extern int potr_internal_packet_build_packed(potr_packet *out, const potr_internal_packet_session_hdr *shdr,
+                                                 uint32_t seq_num, const void *packed_payload, size_t payload_len);
 
     /**
      *  @brief          データ パケットから次のペイロード エレメントを取り出します。

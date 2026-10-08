@@ -185,8 +185,9 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
         {
             copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-            if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, wire_buf + POTR_PACKET_HEADER_SIZE, POTR_MAX_PATH,
-                                 ctx->service.encrypt_key, nonce, wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+            if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, wire_buf + POTR_PACKET_HEADER_SIZE,
+                                     POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
+                                     POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
             {
                 encrypt_failed = 1;
             }
@@ -285,8 +286,8 @@ static void health_thread_func(void *arg)
 
             cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
-            for (i = 0; i < ctx->max_peers &&
-                 cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0;
+            for (i = 0;
+                 i < ctx->max_peers && cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0;
                  i++)
             {
                 potr_packet ping_pkt;
@@ -301,8 +302,7 @@ static void health_thread_func(void *arg)
 
                 peer_shdr.service_id = ctx->service.service_id;
                 peer_shdr.session_id = ctx->peers[i].session_id;
-                session_ts_to_hdr(&ctx->peers[i].session_ts, &peer_shdr.session_tv_sec,
-                                       &peer_shdr.session_tv_nsec);
+                session_ts_to_hdr(&ctx->peers[i].session_ts, &peer_shdr.session_tv_sec, &peer_shdr.session_tv_nsec);
 
                 cplat_local_lock_lock(ctx->peers[i].send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
                 seq = ctx->peers[i].send_window.next_seq;
@@ -327,9 +327,10 @@ static void health_thread_func(void *arg)
 
                     memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
                     memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                    if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, wire_buf + POTR_PACKET_HEADER_SIZE,
-                                         POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
-                                         POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+                    if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out,
+                                             wire_buf + POTR_PACKET_HEADER_SIZE, POTR_MAX_PATH,
+                                             ctx->service.encrypt_key, nonce, wire_buf,
+                                             POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
                     {
                         continue;
                     }
@@ -341,8 +342,8 @@ static void health_thread_func(void *arg)
 
                         if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                             continue;
-                        (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k],
-                                                     &sent, NULL);
+                        (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k], &sent,
+                                                  NULL);
                     }
                 }
                 else
@@ -358,8 +359,8 @@ static void health_thread_func(void *arg)
 
                         if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                             continue;
-                        (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k],
-                                                     &sent, NULL);
+                        (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k], &sent,
+                                                  NULL);
                     }
                 }
 
@@ -393,7 +394,8 @@ static void health_thread_func(void *arg)
 
             cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
             seq = ctx->send_window.next_seq;
-            build_result = potr_internal_packet_build_ping(&ping_pkt, &shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
+            build_result =
+                potr_internal_packet_build_ping(&ping_pkt, &shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
             cplat_local_lock_unlock(ctx->send_window_mutex);
 
             if (build_result != POTR_OK)
@@ -420,9 +422,9 @@ static void health_thread_func(void *arg)
 
                 memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
                 memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, wire_buf + POTR_PACKET_HEADER_SIZE,
-                                     POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
-                                     POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+                if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out,
+                                         wire_buf + POTR_PACKET_HEADER_SIZE, POTR_MAX_PATH, ctx->service.encrypt_key,
+                                         nonce, wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
                 {
                     continue;
                 }
@@ -433,8 +435,7 @@ static void health_thread_func(void *arg)
                     size_t sent = 0;
                     int send_ret;
 
-                    send_ret =
-                        cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
+                    send_ret = cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
                     if (send_ret == CPLAT_OK)
                     {
                         sent_any = 1;
@@ -453,8 +454,7 @@ static void health_thread_func(void *arg)
                     size_t sent = 0;
                     int send_ret;
 
-                    send_ret =
-                        cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
+                    send_ret = cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
                     if (send_ret == CPLAT_OK)
                     {
                         sent_any = 1;
@@ -464,7 +464,8 @@ static void health_thread_func(void *arg)
 
             if (is_oneway_udp && sent_any)
             {
-                cplat_atomic_store_u64(&ctx->last_ping_send_ms, cplat_clock_get_monotonic_ms(), CPLAT_MEMORY_ORDER_RELAXED);
+                cplat_atomic_store_u64(&ctx->last_ping_send_ms, cplat_clock_get_monotonic_ms(),
+                                       CPLAT_MEMORY_ORDER_RELAXED);
                 last_logged_data_ms = 0U;
             }
         }
@@ -495,8 +496,8 @@ static void tcp_health_thread_func(void *arg)
         (void)tcp_send_ping_packet(ctx, path_idx);
     }
 
-    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_health[service_id=%" PRId64 " path=%d]: exited",
-               ctx->service.service_id, path_idx);
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_health[service_id=%" PRId64 " path=%d]: exited", ctx->service.service_id,
+               path_idx);
 
     return;
 }
@@ -519,8 +520,8 @@ int potr_internal_health_thread_start(potr_context *ctx)
 
     if (ctx->health_interval_ms == 0)
     {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                   "health_thread[service_id=%" PRId64 "]: disabled (health_interval_ms=0)", ctx->service.service_id);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "health_thread[service_id=%" PRId64 "]: disabled (health_interval_ms=0)",
+                   ctx->service.service_id);
         return POTR_OK;
     }
 
@@ -603,9 +604,8 @@ int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx)
         CPLAT_OK)
     {
         cplat_atomic_store_i32(&ctx->health_running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "tcp_health_thread[service_id=%" PRId64 " path=%d]: thread create failed", ctx->service.service_id,
-                   path_idx);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "tcp_health_thread[service_id=%" PRId64 " path=%d]: thread create failed",
+                   ctx->service.service_id, path_idx);
         /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
         return POTR_ERR_UNKNOWN;
     }

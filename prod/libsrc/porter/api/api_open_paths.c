@@ -1,5 +1,14 @@
-/** @file api_open_paths.c
- *  @brief 通信種別ごとのソケットと送受信アドレスを準備します。
+/**
+ *******************************************************************************
+ *  @file           api_open_paths.c
+ *  @brief          通信種別ごとのソケットと送受信アドレスを準備します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
  */
 
 #include <inttypes.h>

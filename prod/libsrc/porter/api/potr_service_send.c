@@ -66,7 +66,7 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
         }
 
         result = potr_internal_send_queue_push_wait(&ctx->send_queue, peer_id, elem_flags, ptr, (uint16_t)chunk,
-                                           &ctx->send_thread_running);
+                                                    &ctx->send_thread_running);
         if (result != POTR_OK)
         {
             return result;
@@ -114,7 +114,8 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
     if (cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                   "potr_service_send: service_id=%" PRId64 " rejected because close is in progress", ctx->service.service_id);
+                   "potr_service_send: service_id=%" PRId64 " rejected because close is in progress",
+                   ctx->service.service_id);
         return POTR_ERR_CANCELED;
     }
 
@@ -156,7 +157,8 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
 
         if (cplat_compress(ctx->compress_buf, &cmp_len, (const uint8_t *)data, len) != CPLAT_OK)
         {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_send: service_id=%" PRId64 " compression failed (len=%zu)",
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                       "potr_service_send: service_id=%" PRId64 " compression failed (len=%zu)",
                        ctx->service.service_id, len);
             /* 圧縮失敗は入力データ起因と断定できないため、分類不能として扱う。 */
             return POTR_ERR_UNKNOWN;
@@ -222,8 +224,8 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
             if (n_ids == 0)
             {
                 cplat_free(ids);
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_send: service_id=%" PRId64 " PEER_ALL not connected",
-                           ctx->service.service_id);
+                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                           "potr_service_send: service_id=%" PRId64 " PEER_ALL not connected", ctx->service.service_id);
                 return POTR_ERR_DISCONNECTED;
             }
 
@@ -249,7 +251,8 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
                 if (peer == NULL)
                 {
                     cplat_local_lock_unlock(ctx->peers_mutex);
-                    POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_send: service_id=%" PRId64 " peer_id=%u not found",
+                    POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                               "potr_service_send: service_id=%" PRId64 " peer_id=%u not found",
                                ctx->service.service_id, (unsigned)peer_id);
                     return POTR_ERR_NOT_FOUND;
                 }
@@ -260,8 +263,8 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
             if (!peer_alive)
             {
                 POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                           "potr_service_send: service_id=%" PRId64 " peer_id=%u N:1 not connected", ctx->service.service_id,
-                           (unsigned)peer_id);
+                           "potr_service_send: service_id=%" PRId64 " peer_id=%u N:1 not connected",
+                           ctx->service.service_id, (unsigned)peer_id);
                 return POTR_ERR_DISCONNECTED;
             }
 

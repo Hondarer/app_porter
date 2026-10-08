@@ -137,7 +137,7 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
 
         memcpy(wire_buf, &fin_pkt, POTR_PACKET_HEADER_SIZE);
         if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                             wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+                                 wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             return;
         }
@@ -167,7 +167,7 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
             (void)cplat_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &peer->dest_addr[i], &sent,
-                                         NULL);
+                                      NULL);
         }
     }
 }
@@ -181,7 +181,8 @@ int potr_internal_peer_table_init(potr_context *ctx)
     ctx->peers = (potr_internal_peer_context *)cplat_calloc((size_t)ctx->max_peers, sizeof(potr_internal_peer_context));
     if (ctx->peers == NULL)
     {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_internal_peer_table_init: service_id=%" PRId64 " calloc failed (max_peers=%d)",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "potr_internal_peer_table_init: service_id=%" PRId64 " calloc failed (max_peers=%d)",
                    ctx->service.service_id, ctx->max_peers);
         return POTR_ERR_OUT_OF_MEMORY;
     }
@@ -257,7 +258,8 @@ void potr_internal_peer_table_send_fin(potr_context *ctx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-potr_internal_peer_context *potr_internal_peer_find_by_session(const potr_context *ctx, uint32_t session_id, const cplat_timespec *session_ts)
+potr_internal_peer_context *potr_internal_peer_find_by_session(const potr_context *ctx, uint32_t session_id,
+                                                               const cplat_timespec *session_ts)
 {
     int i;
 
@@ -294,7 +296,8 @@ potr_internal_peer_context *potr_internal_peer_find_by_id(const potr_context *ct
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const cplat_ipv4_endpoint *sender_addr, int path_idx)
+potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const cplat_ipv4_endpoint *sender_addr,
+                                                      int path_idx)
 {
     int i;
     potr_internal_peer_context *peer = NULL;
@@ -324,7 +327,8 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     if (peer == NULL)
     {
         /* n_peers < max_peers のはずなのにスロットが見つからない (内部整合性エラー) */
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " no free slot (internal error)",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "potr_internal_peer_create: service_id=%" PRId64 " no free slot (internal error)",
                    ctx->service.service_id);
         return NULL;
     }
@@ -339,7 +343,8 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     if (peer_generate_session(peer) != POTR_OK)
     {
         peer->active = 0;
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_internal_peer_create: service_id=%" PRId64 " session id generation failed",
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "potr_internal_peer_create: service_id=%" PRId64 " session id generation failed",
                    ctx->service.service_id);
         return NULL;
     }
@@ -387,7 +392,8 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
 
     ctx->n_peers++;
 
-    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_internal_peer_create: service_id=%" PRId64 " peer_id=%u created (n_peers=%d)",
+    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+               "potr_internal_peer_create: service_id=%" PRId64 " peer_id=%u created (n_peers=%d)",
                ctx->service.service_id, (unsigned)peer->peer_id, ctx->n_peers);
 
     return peer;
@@ -402,8 +408,9 @@ void potr_internal_peer_path_clear(const potr_context *ctx, potr_internal_peer_c
         return; /* すでに未使用スロット */
     }
 
-    POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING, "potr_internal_peer_path_clear: service_id=%" PRId64 " peer=%u path %d cleared",
-               ctx->service.service_id, (unsigned)peer->peer_id, path_idx);
+    POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+               "potr_internal_peer_path_clear: service_id=%" PRId64 " peer=%u path %d cleared", ctx->service.service_id,
+               (unsigned)peer->peer_id, path_idx);
 
     endpoint_clear(&peer->dest_addr[path_idx]);
     peer->path_last_recv_ts[path_idx].tv_sec = 0;
@@ -420,8 +427,8 @@ void potr_internal_peer_free(potr_context *ctx, potr_internal_peer_context *peer
         return;
     }
 
-    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_internal_peer_free: service_id=%" PRId64 " peer_id=%u freed", ctx->service.service_id,
-               (unsigned)peer->peer_id);
+    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_internal_peer_free: service_id=%" PRId64 " peer_id=%u freed",
+               ctx->service.service_id, (unsigned)peer->peer_id);
 
     potr_internal_window_dispose(&peer->send_window);
     potr_internal_window_dispose(&peer->recv_window);

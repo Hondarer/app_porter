@@ -1,3 +1,16 @@
+/**
+ *******************************************************************************
+ *  @file           configListServiceIdsTest.cc
+ *  @brief          サービス ID 列挙処理の単体テストを定義します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
+ */
+
 #include <cplat/base/platform.h>
 
 #if defined(PLATFORM_WINDOWS)
@@ -22,17 +35,18 @@ using namespace testing;
 TEST(configListServiceIdsTest, returnsInvalidArgumentWhenParameterIsNull)
 {
     // Arrange
-    int64_t *ids = nullptr;
-    int count = 0;
+    int64_t *ids = nullptr; // [状態] - 出力用 ids ポインターを nullptr で初期化する。
+    int count = 0;          // [状態] - 出力用 count を 0 で初期化する。
 
     // Pre-Assert
 
     // Act
-    int actual_ret_null_path = potr_internal_config_list_service_ids(nullptr, &ids, &count); // [手順] - config_path を NULL にして呼び出す。
-    int actual_ret_null_ids =
-        potr_internal_config_list_service_ids("config.conf", nullptr, &count); // [手順] - ids_out を NULL にして呼び出す。
-    int actual_ret_null_count =
-        potr_internal_config_list_service_ids("config.conf", &ids, nullptr); // [手順] - count_out を NULL にして呼び出す。
+    int actual_ret_null_path =
+        potr_internal_config_list_service_ids(nullptr, &ids, &count); // [手順] - config_path を NULL にして呼び出す。
+    int actual_ret_null_ids = potr_internal_config_list_service_ids(
+        "config.conf", nullptr, &count); // [手順] - ids_out を NULL にして呼び出す。
+    int actual_ret_null_count = potr_internal_config_list_service_ids(
+        "config.conf", &ids, nullptr); // [手順] - count_out を NULL にして呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -50,17 +64,18 @@ TEST(configListServiceIdsTest, returnsInvalidArgumentWhenParameterIsNull)
 TEST(configListServiceIdsTest, returnsIoErrorWhenFileCannotBeOpened)
 {
     // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    int64_t *ids = nullptr;
-    int count = 0;
+    NiceMock<Mock_cplat> mock_cplat; // [状態] - cplat モックを用意する。
+    int64_t *ids = nullptr;          // [状態] - 出力用 ids ポインターを nullptr で初期化する。
+    int count = 0;                   // [状態] - 出力用 count を 0 で初期化する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
 
     // Act
-    int actual_ret_open_fail = potr_internal_config_list_service_ids("missing.conf", &ids,
-                                                &count); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
+    int actual_ret_open_fail =
+        potr_internal_config_list_service_ids("missing.conf", &ids,
+                                              &count); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -81,8 +96,8 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
     config_lines.emplace_back("{\"global\":{\"window_size\":16},\"services\":{");
     for (int i = 0; i < 70; i++)
     {
-        config_lines.emplace_back((i == 0 ? "" : ",") + std::string("\"") +
-                                  std::to_string(1000 + i) + "\":{\"dst_port\":5001}");
+        config_lines.emplace_back((i == 0 ? "" : ",") + std::string("\"") + std::to_string(1000 + i) +
+                                  "\":{\"dst_port\":5001}");
     }
     config_lines.emplace_back("}}");
 
@@ -102,12 +117,14 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が呼び出されること。
 
     // Act
-    int actual_ret = potr_internal_config_list_service_ids("config.conf", &ids,
-                                      &count); // [手順] - 複数 service 定義を含む設定から ID を列挙する。
+    int actual_ret =
+        potr_internal_config_list_service_ids("config.conf", &ids,
+                                              &count); // [手順] - 複数 service 定義を含む設定から ID を列挙する。
 
     // Assert
-    ASSERT_EQ(POTR_OK,
-              actual_ret);           // [確認_正常系] - potr_internal_config_list_service_ids の戻り値から、列挙に成功したと判断できること。
+    ASSERT_EQ(
+        POTR_OK,
+        actual_ret); // [確認_正常系] - potr_internal_config_list_service_ids の戻り値から、列挙に成功したと判断できること。
     ASSERT_NE(nullptr, ids);  // [確認_正常系] - service ID 配列が確保されること。
     EXPECT_EQ(70, count);     // [確認_正常系] - 70 件の service ID が列挙されること。
     EXPECT_EQ(1000, ids[0]);  // [確認_正常系] - 先頭 service ID を保持すること。

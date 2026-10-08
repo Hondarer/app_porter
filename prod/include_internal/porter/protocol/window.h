@@ -33,7 +33,7 @@
  */
 typedef struct potr_internal_window
 {
-    potr_packet *packets;   /**< パケット バッファー (動的確保。window_size 要素)。 */
+    potr_packet *packets;  /**< パケット バッファー (動的確保。window_size 要素)。 */
     uint8_t *valid;        /**< バッファー有効フラグ配列 (動的確保。window_size バイト)。 */
     uint8_t *payload_pool; /**< ペイロード プール (動的確保。window_size × max_payload バイト)。 */
     uint32_t base_seq;     /**< ウィンドウ先頭の通番。 */
@@ -61,7 +61,8 @@ extern "C"
      *  サイズが既存と同一の場合は状態をリセットするのみで再確保は行いません。\n
      *  異なるサイズの場合は既存バッファーを解放して再確保します。
      */
-    extern int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, uint16_t window_size, uint16_t max_payload);
+    extern int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, uint16_t window_size,
+                                         uint16_t max_payload);
 
     /**
      *  @brief          ウィンドウが保持する動的確保バッファーを解放します。
@@ -96,7 +97,8 @@ extern "C"
      *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
      *                  通番が範囲外またはエントリが存在しない場合は POTR_ERR_NOT_FOUND を返します。
      */
-    extern int potr_internal_window_send_get(const potr_internal_window *win, uint32_t seq_num, potr_packet *packet_out);
+    extern int potr_internal_window_send_get(const potr_internal_window *win, uint32_t seq_num,
+                                             potr_packet *packet_out);
 
     /**
      *  @brief          受信ウィンドウにパケットを格納します。

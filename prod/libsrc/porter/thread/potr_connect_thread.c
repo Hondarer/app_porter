@@ -252,9 +252,13 @@ static int start_connected_threads(potr_context *ctx, int path_idx)
 {
     /* キューの shutdown は待機解除だけであり、再初期化は不要。
      * 共有送信スレッドと API が参照するキューを再接続時も維持する。 */
-    const potr_internal_connected_threads_ops ops = {potr_internal_send_thread_start,       potr_internal_send_thread_stop, potr_internal_tcp_recv_thread_start,
-                                         potr_internal_tcp_health_thread_start, close_tcp_conn,        join_recv_thread,
-                                         set_tcp_path_ping_state};
+    const potr_internal_connected_threads_ops ops = {potr_internal_send_thread_start,
+                                                     potr_internal_send_thread_stop,
+                                                     potr_internal_tcp_recv_thread_start,
+                                                     potr_internal_tcp_health_thread_start,
+                                                     close_tcp_conn,
+                                                     join_recv_thread,
+                                                     set_tcp_path_ping_state};
 
     return potr_internal_start_connected_threads(ctx, path_idx, &ops);
 }
@@ -627,8 +631,8 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
 
             cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
             if (pkt.service_id != ctx->service.service_id ||
-                thread_recv_authenticate_packet(ctx, &pkt, ctx->tcp_first_pkt_buf[path_idx],
-                                                "tcp_accept", path_idx) != POTR_OK)
+                thread_recv_authenticate_packet(ctx, &pkt, ctx->tcp_first_pkt_buf[path_idx], "tcp_accept", path_idx) !=
+                    POTR_OK)
             {
                 cplat_local_lock_unlock(ctx->tcp_recv_mutex);
                 cplat_local_lock_unlock(ctx->session_establish_mutex);
@@ -757,9 +761,8 @@ static void connect_thread_func(void *arg)
         type_str = "TCP";
     }
 
-    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-               "connect_thread[service_id=%" PRId64 " path=%d]: started (role=%s type=%s)", ctx->service.service_id,
-               path_idx, role_str, type_str);
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 " path=%d]: started (role=%s type=%s)",
+               ctx->service.service_id, path_idx, role_str, type_str);
 
     if (ctx->role == POTR_ROLE_SENDER)
     {
@@ -829,9 +832,8 @@ int potr_internal_connect_thread_start(potr_context *ctx)
         if (cplat_thread_create(&ctx->connect_thread[i], connect_thread_func, &ctx->connect_args[i]) != CPLAT_OK)
         {
             cplat_atomic_store_i32(&ctx->connect_thread_running[i], 0, CPLAT_MEMORY_ORDER_RELEASE);
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                       "connect_thread[service_id=%" PRId64 " path=%d]: thread create failed", ctx->service.service_id,
-                       i);
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "connect_thread[service_id=%" PRId64 " path=%d]: thread create failed",
+                       ctx->service.service_id, i);
             /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
             return POTR_ERR_UNKNOWN;
         }

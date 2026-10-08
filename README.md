@@ -2,6 +2,8 @@
 
 porter は、UDP/IP と TCP/IP に対応するクロスプラットフォーム通信ライブラリです。
 
+## 入口
+
 - [作業規則](AGENTS.md)
 - [公開 API の生成入口](prod/README.md)
 - [機能仕様](docs/functional-spec/README.md)

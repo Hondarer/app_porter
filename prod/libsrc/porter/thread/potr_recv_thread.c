@@ -75,7 +75,8 @@ static void n1_check_health_timeout(potr_context *ctx)
 
             if (path_elapsed >= (int64_t)ctx->health_timeout_ms)
             {
-                int state_changed = thread_recv_set_path_ping_state(&ctx->peers[i].path_ping_state[k], POTR_PING_STATE_ABNORMAL);
+                int state_changed =
+                    thread_recv_set_path_ping_state(&ctx->peers[i].path_ping_state[k], POTR_PING_STATE_ABNORMAL);
                 should_wake_health |= state_changed;
                 path_state_changed |= state_changed;
                 potr_internal_peer_path_clear(ctx, &ctx->peers[i], k);
@@ -100,9 +101,8 @@ static void n1_check_health_timeout(potr_context *ctx)
         {
             potr_peer_id dead_id = ctx->peers[i].peer_id;
 
-            POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
-                       "recv[service_id=%" PRId64 "]: peer=%u DISCONNECTED (timeout %lldms)", ctx->service.service_id,
-                       (unsigned)dead_id, (long long)elapsed_ms);
+            POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING, "recv[service_id=%" PRId64 "]: peer=%u DISCONNECTED (timeout %lldms)",
+                       ctx->service.service_id, (unsigned)dead_id, (long long)elapsed_ms);
 
             memset((void *)ctx->peers[i].remote_path_ping_state, 0, sizeof(ctx->peers[i].remote_path_ping_state));
             thread_recv_disconnect_peer_all_paths(ctx, &ctx->peers[i]);
@@ -206,9 +206,8 @@ static void check_health_timeout(thread_recv_slot *slot)
 
         if (elapsed_ms >= (int64_t)ctx->health_timeout_ms)
         {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
-                       "recv[service_id=%" PRId64 "]: DISCONNECTED (timeout %lldms >= %ums)", ctx->service.service_id,
-                       (long long)elapsed_ms, (unsigned)ctx->health_timeout_ms);
+            POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING, "recv[service_id=%" PRId64 "]: DISCONNECTED (timeout %lldms >= %ums)",
+                       ctx->service.service_id, (long long)elapsed_ms, (unsigned)ctx->health_timeout_ms);
             /* FIN と同様にセッション状態をリセットして次の接続を受け入れ可能にする。
                peer_session_known をクリアすることで、送信者が同一セッションのまま
                復帰した場合でも potr_internal_window_init を経由して受信ウィンドウを初期化し、
@@ -261,7 +260,8 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
                 peer->peer_session_id = pkt->session_id;
                 peer->peer_session_ts = pkt_session_ts;
                 peer->peer_session_known = 1;
-                potr_internal_window_init(&peer->recv_window, pkt->seq_num, ctx->global.window_size, ctx->global.max_payload);
+                potr_internal_window_init(&peer->recv_window, pkt->seq_num, ctx->global.window_size,
+                                          ctx->global.max_payload);
                 is_new_peer = 1;
             }
         }
@@ -290,8 +290,7 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
                    (unsigned)((cplat_ntoh32(sender_addr->address) >> 24) & 0xFF),
                    (unsigned)((cplat_ntoh32(sender_addr->address) >> 16) & 0xFF),
                    (unsigned)((cplat_ntoh32(sender_addr->address) >> 8) & 0xFF),
-                   (unsigned)(cplat_ntoh32(sender_addr->address) & 0xFF),
-                   (unsigned)cplat_ntoh16(sender_addr->port));
+                   (unsigned)(cplat_ntoh32(sender_addr->address) & 0xFF), (unsigned)cplat_ntoh16(sender_addr->port));
     }
 
     {
@@ -416,7 +415,7 @@ static void recv_thread_func(void *arg)
             memset(&sender_addr, 0, sizeof(sender_addr));
 
             recv_result = cplat_socket_recvfrom(ctx->sock[i], buf, POTR_PACKET_HEADER_SIZE + ctx->global.max_payload,
-                                                   &sender_addr, &recv_len, NULL);
+                                                &sender_addr, &recv_len, NULL);
             if (recv_result != CPLAT_OK || recv_len == 0U)
             {
                 if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
@@ -523,9 +522,8 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
     /* 6. service_id チェック */
     if (pkt.service_id != ctx->service.service_id)
     {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                   "tcp_recv[service_id=%" PRId64 "]: service_id mismatch (%" PRId64 ")", ctx->service.service_id,
-                   pkt.service_id);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 "]: service_id mismatch (%" PRId64 ")",
+                   ctx->service.service_id, pkt.service_id);
         return POTR_OK;
     }
 
@@ -570,8 +568,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
 
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                    "tcp_recv[service_id=%" PRId64 " path=%d]: FIN received (fin_target_seq=%u recv_next=%u)",
-                   ctx->service.service_id, path_idx, (unsigned)fin_target_seq,
-                   (unsigned)ctx->recv_window.next_seq);
+                   ctx->service.service_id, path_idx, (unsigned)fin_target_seq, (unsigned)ctx->recv_window.next_seq);
 
         fin_action = thread_recv_fin_on_packet(svc_slot, &pkt, &fin_target_seq);
         if (fin_action == THREAD_RECV_FIN_PENDING)
@@ -638,9 +635,8 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
                 return POTR_OK;
             }
 
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "tcp_recv[service_id=%" PRId64 " path=%d]: DATA seq=%u payload=%u", ctx->service.service_id,
-                       path_idx, (unsigned)pkt.seq_num, (unsigned)pkt.payload_len);
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: DATA seq=%u payload=%u",
+                       ctx->service.service_id, path_idx, (unsigned)pkt.seq_num, (unsigned)pkt.payload_len);
 
             /* 順序整列済みパケットをポップして配信 */
             cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
@@ -842,8 +838,8 @@ static void tcp_recv_thread_func(void *arg)
     /* 接続断処理: DISCONNECTED イベントは connect スレッドが tcp_active_paths == 0 時に発火する */
     cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
 
-    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: exited",
-               ctx->service.service_id, path_idx);
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: exited", ctx->service.service_id,
+               path_idx);
 
     return;
 }

@@ -1,3 +1,16 @@
+/**
+ *******************************************************************************
+ *  @file           thread_recv_window.h
+ *  @brief          受信ウィンドウへのパケット格納とシーケンス番号管理の内部関数を定義します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
+ */
+
 #ifndef THREAD_RECV_WINDOW_PRIVATE_H
 #define THREAD_RECV_WINDOW_PRIVATE_H
 
@@ -7,14 +20,14 @@
 #include "thread_recv_slot.h"
 
 /**
- * @brief 外側パケットを受信ウィンドウへ投入し、欠番なら再送要求し、整列済みデータを配信します。
- * @param[in,out] slot 構成済みの受信状態ビュー。NULL は許可しません。
- * @param[in] pkt 投入する DATA または PING の外側パケット。NULL は許可しません。
- * @param[in] path_idx 受信した経路番号。片方向 DATA のヘルスチェック状態の更新に使います。
- * @note 再送と順序整列の入口です。NACK 送出、RAW リセット、ウィンドウ取り出しを内部で完結します。
- *       呼び出し側は同一スロットへの並行更新を避けてください。
- *       N:1 では peers_mutex 保護下で呼び出してください。pending FIN の目標通番に到達すると
- *       peer とその受信ウィンドウを解放するため、関数からの復帰後は slot の peer 固有メンバーを参照できません。
+ *  @brief          外側パケットを受信ウィンドウへ投入し、欠番なら再送要求し、整列済みデータを配信します。
+ *  @param[in,out]  slot            構成済みの受信状態ビュー。NULL は許可しません。
+ *  @param[in]      pkt             投入する DATA または PING の外側パケット。NULL は許可しません。
+ *  @param[in]      path_idx        受信した経路番号。片方向 DATA のヘルス チェック状態の更新に使います。
+ *  @note           再送と順序整列の入口です。NACK 送出、RAW リセット、ウィンドウ取り出しを内部で完結します。
+ *                  呼び出し側は同一スロットへの並行更新を避けてください。
+ *                  N:1 では peers_mutex 保護下で呼び出してください。pending FIN の目標通番に到達すると
+ *                  peer とその受信ウィンドウを解放するため、関数からの復帰後は slot の peer 固有メンバーを参照できません。
  */
 void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *pkt, int path_idx);
 

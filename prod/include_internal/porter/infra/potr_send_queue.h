@@ -45,7 +45,7 @@
  */
 typedef struct potr_internal_payload_elem
 {
-    potr_peer_id peer_id;   /**< 送信先ピア識別子 (N:1 モード用。1:1 モードでは 0)。 */
+    potr_peer_id peer_id; /**< 送信先ピア識別子 (N:1 モード用。1:1 モードでは 0)。 */
     uint16_t flags;       /**< ペイロード エレメント フラグ (MORE_FRAG, COMPRESSED など)。 */
     uint16_t payload_len; /**< ペイロード長 (バイト)。 */
     uint8_t *payload;     /**< ペイロード データへのポインター (プール スロット内を指す)。 */
@@ -65,17 +65,17 @@ typedef struct potr_internal_payload_elem
  */
 typedef struct potr_internal_send_queue
 {
-    potr_internal_payload_elem *entries;    /**< ペイロード エレメント バッファー (動的確保。depth 要素)。 */
-    uint8_t *payload_pool;       /**< ペイロード プール (動的確保。depth × max_payload バイト)。 */
-    size_t depth;                /**< キュー容量 (エントリ数)。 */
-    size_t head;                 /**< 読み出し位置 (送信スレッドが使用)。 */
-    size_t tail;                 /**< 書き込み位置 (potr_service_send 呼び出し元が使用)。 */
-    size_t count;                /**< キュー内エントリ数。 */
-    size_t inflight;             /**< sendto 実行中エントリ数。 */
-    cplat_local_lock *mutex;  /**< 排他制御。 */
-    cplat_condvar *not_empty; /**< count > 0 になったことを通知する条件変数。 */
-    cplat_condvar *not_full;  /**< count + inflight < depth になったことを通知する条件変数。 */
-    cplat_condvar *drained;   /**< count == 0 && inflight == 0 を通知する条件変数。 */
+    potr_internal_payload_elem *entries; /**< ペイロード エレメント バッファー (動的確保。depth 要素)。 */
+    uint8_t *payload_pool;               /**< ペイロード プール (動的確保。depth × max_payload バイト)。 */
+    size_t depth;                        /**< キュー容量 (エントリ数)。 */
+    size_t head;                         /**< 読み出し位置 (送信スレッドが使用)。 */
+    size_t tail;                         /**< 書き込み位置 (potr_service_send 呼び出し元が使用)。 */
+    size_t count;                        /**< キュー内エントリ数。 */
+    size_t inflight;                     /**< sendto 実行中エントリ数。 */
+    cplat_local_lock *mutex;             /**< 排他制御。 */
+    cplat_condvar *not_empty;            /**< count > 0 になったことを通知する条件変数。 */
+    cplat_condvar *not_full;             /**< count + inflight < depth になったことを通知する条件変数。 */
+    cplat_condvar *drained;              /**< count == 0 && inflight == 0 を通知する条件変数。 */
 } potr_internal_send_queue;
 
 #ifdef __cplusplus
@@ -110,8 +110,8 @@ extern "C"
      *  @param[in]      payload_len 送信ペイロード長 (バイト)。
      *  @return         成功時は POTR_OK、満杯時は POTR_ERR_FULL。
      */
-    extern int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
-                                    uint16_t payload_len);
+    extern int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags,
+                                             const void *payload, uint16_t payload_len);
 
     /**
      *  @brief          ペイロード エレメントをキューに追加する (空き待機あり)。
@@ -126,8 +126,8 @@ extern "C"
      *  @param[in]      running     実行フラグへのポインター。取得順序で読み、0 になると待機を中断します。
      *  @return         成功時は POTR_OK、running が 0 になった場合は POTR_ERR_CANCELED。
      */
-    extern int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
-                                         uint16_t payload_len, cplat_atomic_i32 *running);
+    extern int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags,
+                                                  const void *payload, uint16_t payload_len, cplat_atomic_i32 *running);
 
     /**
      *  @brief          先頭エントリを取り出して inflight に移行する (ブロッキング)。
@@ -139,7 +139,8 @@ extern "C"
      *  @param[in]      running 実行フラグへのポインター。取得順序で読み、0 になると待機を中断します。
      *  @return         成功時は POTR_OK、running が 0 になった場合は POTR_ERR_CANCELED。
      */
-    extern int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out, cplat_atomic_i32 *running);
+    extern int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out,
+                                            cplat_atomic_i32 *running);
 
     /**
      *  @brief          先頭エントリを参照する (inflight へは移行しない)。
@@ -162,7 +163,8 @@ extern "C"
      *  @param[in]      timeout_ms  待機タイムアウト (ミリ秒)。
      *  @return         成功時は POTR_OK、timeout_ms 以内にエントリが到着しなかった場合は POTR_ERR_TIMEOUT。
      */
-    extern int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_internal_payload_elem *out, int timeout_ms);
+    extern int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_internal_payload_elem *out,
+                                                   int timeout_ms);
 
     /**
      *  @brief          先頭エントリを取り出して inflight に移行する (非ブロッキング)。

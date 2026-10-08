@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
     cplat_argparser_register_option_int(NULL, "--port", "port", "待ち受けポート番号。", 0, &port);
     cplat_argparser_register_option_int(NULL, "--workers", "count", "ワーカー数。", 0, &workers);
     cplat_argparser_register_option_int(NULL, "--conns-per-worker", "count", "ワーカーごとの接続数。", 0,
-                                           &conns_per_worker);
+                                        &conns_per_worker);
 
     if (cplat_argparser_get_register_error_count() > 0)
     {

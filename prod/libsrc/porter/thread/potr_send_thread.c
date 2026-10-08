@@ -124,7 +124,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
         memset(nonce + 10, 0, 2);
 
         if (cplat_crypto_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
-                             (const uint8_t *)&outer_pkt, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+                                 (const uint8_t *)&outer_pkt, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             cplat_local_lock_unlock(ctx->send_window_mutex);
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: encrypt failed seq=%u",
@@ -228,8 +228,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
             size_t sent = 0;
             int send_ret;
 
-            send_ret =
-                cplat_socket_sendto(ctx->sock[i], ctx->send_wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
+            send_ret = cplat_socket_sendto(ctx->sock[i], ctx->send_wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
             if (send_ret == CPLAT_OK)
             {
                 sent_any = 1;
@@ -284,7 +283,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         memset(nonce + 10, 0, 2);
 
         if (cplat_crypto_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
-                             (const uint8_t *)&outer_pkt, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+                                 (const uint8_t *)&outer_pkt, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             cplat_local_lock_unlock(peer->send_window_mutex);
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: peer=%u encrypt failed seq=%u",
@@ -302,9 +301,8 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         memcpy(ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE, ctx->crypto_buf, enc_len);
         wire_len = POTR_PACKET_HEADER_SIZE + enc_len;
 
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                   "sender[service_id=%" PRId64 "]: peer=%u DATA(enc) seq=%u packed_len=%zu", ctx->service.service_id,
-                   (unsigned)peer->peer_id, (unsigned)seq, packed_len);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: peer=%u DATA(enc) seq=%u packed_len=%zu",
+                   ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq, packed_len);
     }
     else
     {

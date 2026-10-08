@@ -1,5 +1,14 @@
-/** @file thread_recv_validate.c
- * @brief 受信パケットの暗号認証と UDP 送信元の照合を行います。
+/**
+ *******************************************************************************
+ *  @file           thread_recv_validate.c
+ *  @brief          受信パケットの暗号認証と UDP 送信元の照合を行います。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
  */
 
 #include <string.h>
@@ -53,8 +62,8 @@ int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const u
         memcpy(nonce + 6, &seq_nbo, 4);
         memset(nonce + 10, 0, 2);
 
-        if (cplat_crypto_decrypt(ctx->recv_crypto_buf, &dec_len, pkt->payload, pkt->payload_len, ctx->service.encrypt_key, nonce,
-                          wire_hdr, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+        if (cplat_crypto_decrypt(ctx->recv_crypto_buf, &dec_len, pkt->payload, pkt->payload_len,
+                                 ctx->service.encrypt_key, nonce, wire_hdr, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             if (path_idx >= 0)
             {
@@ -118,7 +127,7 @@ int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const u
         memset(nonce + 10, 0, 2);
 
         if (cplat_crypto_decrypt(dummy, &dummy_len, pkt->payload, POTR_CRYPTO_TAG_SIZE, ctx->service.encrypt_key, nonce,
-                          wire_hdr, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+                                 wire_hdr, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             if (path_idx >= 0)
             {

@@ -1,5 +1,14 @@
-/** @file thread_recv_session.c
- * @brief 受信セッションの採用判定と経路切断を行います。
+/**
+ *******************************************************************************
+ *  @file           thread_recv_session.c
+ *  @brief          受信セッションの採用判定と経路切断を行います。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
  */
 
 #include <inttypes.h>

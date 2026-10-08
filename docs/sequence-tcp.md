@@ -16,7 +16,7 @@ participant "potr_service_open" as OPEN
 participant "connect スレッド" as CT
 participant "送信スレッド" as ST
 participant "受信スレッド" as RT
-participant "ヘルスチェックスレッド" as HT
+participant "ヘルス チェックスレッド" as HT
 
 APP -> OPEN: potr_service_open(&global, &service, POTR_ROLE_SENDER, cb, &handle)
 activate OPEN
@@ -32,7 +32,7 @@ activate CT
 CT -> CT: connect(dst_addr, dst_port)\n（接続確立まで connect_timeout_ms 待機）
 CT -> ST**: 送信スレッド起動
 CT -> RT**: 受信スレッド起動
-CT -> HT**: ヘルスチェックスレッド起動
+CT -> HT**: ヘルス チェックスレッド起動
 
 note over CT: recv スレッドが切断を検知するまで待機
 
@@ -98,7 +98,7 @@ S -> R: DATA (seq_num=1)
 S -> R: DATA (seq_num=2)
 note over R: POTR_EVENT_DATA × 3
 
-== ヘルスチェック ==
+== ヘルス チェック ==
 
 S -> R: 定周期 PING (seq_num=3, payload=UNDEFINED)
 note over R: path_ping_state を NORMAL に更新

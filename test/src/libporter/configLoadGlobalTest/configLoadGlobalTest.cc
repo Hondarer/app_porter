@@ -1,3 +1,16 @@
+/**
+ *******************************************************************************
+ *  @file           configLoadGlobalTest.cc
+ *  @brief          グローバル設定読み込み処理の単体テストを定義します。
+ *  @author         Tetsuo Honda
+ *  @date           2026/03/04
+ *  @version        1.0.0
+ *
+ *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
+ *
+ *******************************************************************************
+ */
+
 #include <cplat/base/platform.h>
 
 #if defined(PLATFORM_WINDOWS)
@@ -19,13 +32,15 @@ using namespace testing;
 TEST(configLoadGlobalTest, returnsInvalidArgumentWhenParameterIsNull)
 {
     // Arrange
-    potr_global_config global = {};
+    potr_global_config global = {}; // [状態] - 出力用 global 設定構造体をゼロ初期化する。
 
     // Pre-Assert
 
     // Act
-    int actual_ret_null_path = potr_internal_config_load_global(nullptr, &global);      // [手順] - config_path を NULL にして呼び出す。
-    int actual_ret_null_out = potr_internal_config_load_global("config.conf", nullptr); // [手順] - 出力先を NULL にして呼び出す。
+    int actual_ret_null_path =
+        potr_internal_config_load_global(nullptr, &global); // [手順] - config_path を NULL にして呼び出す。
+    int actual_ret_null_out =
+        potr_internal_config_load_global("config.conf", nullptr); // [手順] - 出力先を NULL にして呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -40,16 +55,16 @@ TEST(configLoadGlobalTest, returnsInvalidArgumentWhenParameterIsNull)
 TEST(configLoadGlobalTest, returnsIoErrorWhenFileCannotBeOpened)
 {
     // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_global_config global = {};
+    NiceMock<Mock_cplat> mock_cplat; // [状態] - cplat モックを用意する。
+    potr_global_config global = {};  // [状態] - 出力用 global 設定構造体をゼロ初期化する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
 
     // Act
-    int actual_ret_open_fail =
-        potr_internal_config_load_global("missing.conf", &global); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
+    int actual_ret_open_fail = potr_internal_config_load_global(
+        "missing.conf", &global); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -63,9 +78,8 @@ TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
-    ConfigLineStream lines({
-        R"({"services":{"10":{"udp_health_interval_ms":999,},},"global":{"window_size":32,"max_payload":1200,"udp_health_interval_ms":111,"udp_health_timeout_ms":222,"tcp_health_interval_ms":333,"tcp_health_timeout_ms":444,"tcp_close_timeout_ms":555,"reorder_timeout_ms":12,"max_message_size":4096,"send_queue_depth":48,"unknown_key":999,},"unused":["a,b",],})"
-    });
+    ConfigLineStream lines(
+        {R"({"services":{"10":{"udp_health_interval_ms":999,},},"global":{"window_size":32,"max_payload":1200,"udp_health_interval_ms":111,"udp_health_timeout_ms":222,"tcp_health_interval_ms":333,"tcp_health_timeout_ms":444,"tcp_close_timeout_ms":555,"reorder_timeout_ms":12,"max_message_size":4096,"send_queue_depth":48,"unknown_key":999,},"unused":["a,b",],})"});
     potr_global_config global = {};
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
@@ -82,11 +96,13 @@ TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が 1 回呼び出されること。
 
     // Act
-    int actual_ret = potr_internal_config_load_global("config.conf", &global); // [手順] - global 定義を含む設定を読み込む。
+    int actual_ret =
+        potr_internal_config_load_global("config.conf", &global); // [手順] - global 定義を含む設定を読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_OK,
-              actual_ret); // [確認_正常系] - potr_internal_config_load_global の戻り値から、読み込みに成功したと判断できること。
+    EXPECT_EQ(
+        POTR_OK,
+        actual_ret); // [確認_正常系] - potr_internal_config_load_global の戻り値から、読み込みに成功したと判断できること。
     EXPECT_EQ(32U, global.window_size);             // [確認_正常系] - window_size を設定値で上書きすること。
     EXPECT_EQ(1200U, global.max_payload);           // [確認_正常系] - max_payload を設定値で上書きすること。
     EXPECT_EQ(111U, global.udp_health_interval_ms); // [確認_正常系] - global の UDP interval を読み込むこと。
@@ -105,9 +121,7 @@ TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
-    ConfigLineStream lines({
-        R"({"services":{"10":{"dst_port":5001,"type":"unicast"}}})"
-    });
+    ConfigLineStream lines({R"({"services":{"10":{"dst_port":5001,"type":"unicast"}}})"});
     potr_global_config global = {};
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
@@ -124,11 +138,13 @@ TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
         .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が呼び出されること。
 
     // Act
-    int actual_ret = potr_internal_config_load_global("service-only.conf", &global); // [手順] - global を含まない設定を読み込む。
+    int actual_ret =
+        potr_internal_config_load_global("service-only.conf", &global); // [手順] - global を含まない設定を読み込む。
 
     // Assert
-    EXPECT_EQ(POTR_OK,
-              actual_ret); // [確認_正常系] - potr_internal_config_load_global の戻り値から、[global] が無くても成功したと判断できること。
+    EXPECT_EQ(
+        POTR_OK,
+        actual_ret); // [確認_正常系] - potr_internal_config_load_global の戻り値から、[global] が無くても成功したと判断できること。
     EXPECT_EQ(POTR_DEFAULT_WINDOW_SIZE, global.window_size); // [確認_正常系] - window_size が既定値のままであること。
     EXPECT_EQ(POTR_DEFAULT_MAX_PAYLOAD, global.max_payload); // [確認_正常系] - max_payload が既定値のままであること。
     EXPECT_EQ(0U, global.reorder_timeout_ms); // [確認_正常系] - reorder_timeout_ms が既定値のままであること。
@@ -151,25 +167,30 @@ TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
 // 空のオブジェクトに置かれたカンマは末尾カンマとして受け付けないことの確認
 TEST(configLoadGlobalTest, rejectsCommaWithoutPrecedingMember)
 {
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_stdio> mock_stdio;
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat; // [状態] - cplat モックを用意する。
+    NiceMock<Mock_stdio> mock_stdio; // [状態] - stdio モックを用意する。
     ConfigLineStream lines({R"({"global":{,}})"});
-    potr_global_config global = {};
+    potr_global_config global = {}; // [状態] - 出力用 global 設定構造体をゼロ初期化する。
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
         .WillByDefault(Invoke(
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            }));
+            })); // [状態] - 不正なカンマ配置を含む JSONC を返すようにモックを設定する。
 
+    // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("invalid.json"), StrEq("r"), nullptr))
-        .WillOnce(Return(ConfigLineStream::handle()));
-    // [Pre-Assert確認_異常系] - mock_cplat の cplat_fopen(StrEq("invalid.json"), StrEq("r"), nullptr) が登録した呼び出し期待を満たすこと。
-    EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillOnce(Return(0));
-    // [Pre-Assert確認_異常系] - mock_stdio の fclose(_, _, _, ConfigLineStream::handle()) が登録した呼び出し期待を満たすこと。
+        .WillOnce(Return(
+            ConfigLineStream::handle())); // [Pre-Assert確認_異常系] - 設定ファイル open が 1 回呼び出されること。
+    EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
+        .WillOnce(Return(0)); // [Pre-Assert確認_異常系] - fclose が呼び出されること。
 
-    int actual_ret = potr_internal_config_load_global("invalid.json", &global); // [手順] - 不正なカンマを含む定義を読む。
+    // Act
+    int actual_ret =
+        potr_internal_config_load_global("invalid.json", &global); // [手順] - 不正なカンマを含む定義を読む。
 
+    // Assert
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT,
               actual_ret); // [確認_異常系] - 項目を伴わないカンマを構文エラーとして返すこと。
 }

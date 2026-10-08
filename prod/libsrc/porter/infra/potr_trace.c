@@ -62,7 +62,7 @@ cplat_tracer *potr_internal_trace_get(void)
 /* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_internal_trace_socket_failure_at(const char *file, const int line, const cplat_trace_level level,
-                                  const cplat_error *detail, const char *format, ...)
+                                           const cplat_error *detail, const char *format, ...)
 {
     char context[256];
     char message[256];
@@ -80,8 +80,7 @@ void potr_internal_trace_socket_failure_at(const char *file, const int line, con
     /* POTR_TRACE は展開位置の __FILE__ と __LINE__ を埋め込むため、本関数で使うと発生位置が
        potr_trace.c で固定される。呼び出し元の位置を残すため、下位 API へ直接書式を渡す。 */
     (void)cplat_tracer_writef_at(potr_internal_trace_get(), level, NULL, "[%s:%d] %s: domain=%d code=%lu: %s",
-                                  cplat_path_basename(file), line, context, (int)detail->domain, detail->code,
-                                  message);
+                                 cplat_path_basename(file), line, context, (int)detail->domain, detail->code, message);
 }
 
 /* ── 公開 API ─────────────────────────────────────────────────────────── */

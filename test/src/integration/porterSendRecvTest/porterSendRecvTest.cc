@@ -300,8 +300,8 @@ class porterSendRecvTest : public Test
 #if defined(PLATFORM_LINUX)
         recv_path = ws + "/app/porter/prod/cbin/porter-test";
         send_path = ws + "/app/porter/prod/cbin/porter-test";
-        lib_path = ws + "/app/porter/prod/lib" + ":" + ws + "/app/cplat/prod/lib" + ":" + ws +
-                   "/app/cjson/prod/lib" + ":" + ws + "/app/zlib/prod/lib";
+        lib_path = ws + "/app/porter/prod/lib" + ":" + ws + "/app/cplat/prod/lib" + ":" + ws + "/app/cjson/prod/lib" +
+                   ":" + ws + "/app/zlib/prod/lib";
 #elif defined(PLATFORM_WINDOWS)
         recv_path = ws + "\\app\\porter\\prod\\cbin\\porter-test.exe";
         send_path = ws + "\\app\\porter\\prod\\cbin\\porter-test.exe";
@@ -1666,7 +1666,8 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
     // Pre-Assert
 
     // Act
-    ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + bin_path)); // [手順] - SENDER にバイナリ ファイル送信コマンドを入力する。
+    ASSERT_TRUE(writeLineStdin(send_h_, string("file ") +
+                                            bin_path)); // [手順] - SENDER にバイナリ ファイル送信コマンドを入力する。
     // [確認_正常系] - `writeLineStdin(send_h_, string("file ") + bin_path)` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "ファイル送信完了",
                                   3000)); // [手順] - SENDER が "ファイル送信完了" を出力するまで待機する。
@@ -1727,7 +1728,8 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
     // Pre-Assert
 
     // Act
-    ASSERT_TRUE(writeLineStdin(send_h_, "send Hello Text")); // [手順] - SENDER からテキストメッセージ "Hello Text" を送信する。
+    ASSERT_TRUE(
+        writeLineStdin(send_h_, "send Hello Text")); // [手順] - SENDER からテキストメッセージ "Hello Text" を送信する。
     // [確認_正常系] - `writeLineStdin(send_h_, "send Hello Text")` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     // [確認_正常系] - ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000)) の期待が成立すること。
@@ -1783,7 +1785,8 @@ TEST_F(porterSendRecvTest, send_file_too_large_fails)
     // Pre-Assert
 
     // Act
-    ASSERT_TRUE(writeLineStdin(send_h_, string("file ") + large_path)); // [手順] - サイズ超過ファイルの送信コマンドを入力する。
+    ASSERT_TRUE(
+        writeLineStdin(send_h_, string("file ") + large_path)); // [手順] - サイズ超過ファイルの送信コマンドを入力する。
     // [確認_異常系] - `writeLineStdin(send_h_, string("file ") + large_path)` が true であること。
     ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
     // [確認_異常系] - SENDER がエラー後も対話を継続していること。

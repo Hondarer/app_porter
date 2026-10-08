@@ -118,7 +118,7 @@ typedef enum
 typedef struct potr_service_def
 {
     int64_t service_id; /**< サービス ID。 */
-    potr_type type;      /**< 通信種別。 */
+    potr_type type;     /**< 通信種別。 */
 
     /* POTR_TYPE_UNICAST */
     uint16_t
