@@ -19,9 +19,7 @@ potr_service_send() 完了
 
 という競合が起こりえます。
 
-そのため、TCP では protocol-level の `FIN` / `FIN_ACK` を用いて  
-「最後に送った DATA が receiver 側で処理され、同期 `POTR_EVENT_DATA` callback が return するまで」  
-を close 完了条件にしています。
+そのため、TCP では protocol-level の `FIN` / `FIN_ACK` を用いて「最後に送った DATA が receiver 側で処理され、同期 `POTR_EVENT_DATA` callback が return するまで」を close 完了条件にしています。
 
 ## 保証粒度
 
@@ -41,8 +39,7 @@ potr_service_send() 完了
 
 ### UDP: FIN target を使った遅延切断
 
-`potr_service_close()` の `send_fin()` / `potr_internal_peer_send_fin()` は、現セッションで DATA を 1 件以上送信している場合のみ  
-`POTR_FLAG_FIN_TARGET_VALID` を立てて `ack_num` に `send_window.next_seq` を設定します。
+`potr_service_close()` の `send_fin()` / `potr_internal_peer_send_fin()` は、現セッションで DATA を 1 件以上送信している場合のみ `POTR_FLAG_FIN_TARGET_VALID` を立てて `ack_num` に `send_window.next_seq` を設定します。
 
 ```text
 FIN.flags   = FIN | FIN_TARGET_VALID

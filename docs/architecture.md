@@ -320,20 +320,15 @@ Table: TCP 接続イベントの発火条件
 
 残存する path が存在する間は `session_id` / `session_tv_*` を保持し続けます。  
 再接続した path は既存セッションに合流するため、`POTR_EVENT_CONNECTED` は再発火しません。  
-全 path が切断した時点で `session_tv_*` をリセットし、  
-次回の接続は新セッションとして扱います (`POTR_EVENT_CONNECTED` が再発火します)。
+全 path が切断した時点で `session_tv_*` をリセットし、次回の接続は新セッションとして扱います (`POTR_EVENT_CONNECTED` が再発火します)。
 
-RECEIVER 側は、接続時の session triplet(`session_id + session_tv_sec + session_tv_nsec`) が  
-既知のセッションと一致した場合にセッション初期化をスキップして既存コンテキストに合流します。
+RECEIVER 側は、接続時の session triplet(`session_id + session_tv_sec + session_tv_nsec`) が既知のセッションと一致した場合にセッション初期化をスキップして既存コンテキストに合流します。
 
 **送信スレッドのバッファー満杯対策**
 
-単一の送信スレッドが全 path に逐次 `tcp_send_all()` を呼び出すため、  
-特定 path の TCP 送信バッファーが満杯になると他 path への送信も遅延します。  
-これを避けるため、各 path への送信前に `poll()` で書き込み可能かを確認し、  
-書き込み不可の path はその送信をスキップします (他 path への冗長送信で補完)。  
-バッファー満杯を初回検出した時点で ERROR ログを 1 回出力し、  
-書き込み可能が 10 回連続するまでログを抑制します (`buf_full_suppress_cnt[POTR_MAX_PATH]`)。
+単一の送信スレッドが全 path に逐次 `tcp_send_all()` を呼び出すため、特定 path の TCP 送信バッファーが満杯になると他 path への送信も遅延します。  
+これを避けるため、各 path への送信前に `poll()` で書き込み可能かを確認し、書き込み不可の path はその送信をスキップします (他 path への冗長送信で補完)。  
+バッファー満杯を初回検出した時点で ERROR ログを 1 回出力し、書き込み可能が 10 回連続するまでログを抑制します (`buf_full_suppress_cnt[POTR_MAX_PATH]`)。
 
 ## コンポーネント構成
 
@@ -733,15 +728,13 @@ tcp_recv_thread_func(path_idx)
 Table: UDP と TCP のスレッド起動タイミング比較
 
 UDP は `potr_service_open.c` が直接全スレッドを起動します。  
-TCP は ConnectThread が接続確立後に `start_connected_threads()` (`potr_connect_thread.c`) を呼び出して  
-recv/send/health の各スレッドを起動します。
+TCP は ConnectThread が接続確立後に `start_connected_threads()` (`potr_connect_thread.c`) を呼び出して recv/send/health の各スレッドを起動します。
 
 ---
 
 ## n_path 決定ロジック
 
-`potr_service_open.c` にて `dst_addr[i]` の非空エントリを先頭から順に確認し、  
-最初の空エントリで探索を終了します (最大 `POTR_MAX_PATH`)。  
+`potr_service_open.c` にて `dst_addr[i]` の非空エントリを先頭から順に確認し、最初の空エントリで探索を終了します (最大 `POTR_MAX_PATH`)。  
 N:1 モード (`max_peers > 1`) では `n_path = 1` に固定。
 
 ---

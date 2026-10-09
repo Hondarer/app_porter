@@ -15,13 +15,11 @@ porter はセッション全体の接続状態だけでなく、各 path の論�
 - `POTR_EVENT_DISCONNECTED`  
   service または peer の path 論理接続状態の OR が 1 から 0 へ変化したときに発火します。
 
-複数 path が 1 回の更新で同時に変化した場合は、path index 昇順で `PATH_*` を発火し、  
-その後に必要であれば `CONNECTED` / `DISCONNECTED` を発火します。
+複数 path が 1 回の更新で同時に変化した場合は、path index 昇順で `PATH_*` を発火し、その後に必要であれば `CONNECTED` / `DISCONNECTED` を発火します。
 
 ## コールバック契約
 
-`POTR_EVENT_PATH_CONNECTED` / `POTR_EVENT_PATH_DISCONNECTED` のとき、  
-`potr_recv_fn` の引数は次の意味を持ちます。
+`POTR_EVENT_PATH_CONNECTED` / `POTR_EVENT_PATH_DISCONNECTED` のとき、`potr_recv_fn` の引数は次の意味を持ちます。
 
 | 引数 | 意味 |
 |---|---|
@@ -68,8 +66,7 @@ path logical の定義は通信種別で異なります。
 - その path の受信タイムアウトで 0 になります。
 - service 全体が継続不能になった場合は、現在 1 の path をすべて 0 にします。
 
-片方向通信では path ごとの応答確認を持たないため、  
-「その path で有効な受信が継続していること」自体が path logical です。
+片方向通信では path ごとの応答確認を持たないため、「その path で有効な受信が継続していること」自体が path logical です。
 
 ### type 7-8
 
@@ -80,8 +77,7 @@ path logical の定義は通信種別で異なります。
 
 の両方を満たす path が logical connected です。
 
-ここでの意味は、ローカルでもその path が正常であり、  
-相手から返ってきた PING payload 上でも同じ path が正常と確認できている、ということです。  
+ここでの意味は、ローカルでもその path が正常であり、相手から返ってきた PING payload 上でも同じ path が正常と確認できている、ということです。  
 つまり双方向 UDP の `PATH_*` は往復確認済みの path を表します。
 
 type 8 ではこの判定を peer 単位で持ちます。

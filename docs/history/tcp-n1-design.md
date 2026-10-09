@@ -416,8 +416,7 @@ static void *tcp_peer_recv_thread_func(void *arg)
 #### health スレッド関数の処理フロー
 
 既存の `potr_tcp_health_thread_func()` を per-peer 版に移植します。  
-`ctx->tcp_conn_fd[path_idx]` / `ctx->tcp_last_ping_recv_ms` を  
-`peer->tcp_conn_fd[path_idx]` / `peer->tcp_last_ping_recv_ms` に置き換えます。
+`ctx->tcp_conn_fd[path_idx]` / `ctx->tcp_last_ping_recv_ms` を `peer->tcp_conn_fd[path_idx]` / `peer->tcp_last_ping_recv_ms` に置き換えます。
 
 ```c
 static void *tcp_peer_health_thread_func(void *arg)
@@ -567,8 +566,7 @@ static void *connect_thread_func(void *arg)
 
 **ファイル**: `app/porter/prod/libsrc/porter/thread/potr_send_thread.c`
 
-`potr_internal_payload_elem` にはすでに `peer_id` フィールドが存在するため、  
-送信先ルーティングの変更のみで対応できます。
+`potr_internal_payload_elem` にはすでに `peer_id` フィールドが存在するため、送信先ルーティングの変更のみで対応できます。
 
 ```c
 static void flush_packed_peer(potr_context *ctx,
