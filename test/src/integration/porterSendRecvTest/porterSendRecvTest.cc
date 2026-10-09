@@ -291,6 +291,7 @@ class porterSendRecvTest : public Test
     // TearDown でのクリーンアップ用。テスト失敗時もプロセス リークを防ぐ。
     AsyncProcessHandle recv_h_, send_h_;
 
+    // [サブ手順 名前=porterSendRecvTest.SetUp]
     void SetUp() override
     {
         string ws = findWorkspaceRoot();
@@ -310,7 +311,9 @@ class porterSendRecvTest : public Test
         resetTraceLevel();
         setTraceLevel("processController", TRACE_DETAIL);
     }
+    // [サブ手順終了]
 
+    // [サブ手順 名前=porterSendRecvTest.TearDown]
     void TearDown() override
     {
         // 以降の killProcess, waitForExit 呼び出しでトレースが出力されることを防ぐため、
@@ -329,6 +332,7 @@ class porterSendRecvTest : public Test
             waitForExit(recv_h_, 1000);
         }
     }
+    // [サブ手順終了]
 
     ProcessOptions makeOpts()
     {
@@ -345,6 +349,7 @@ class porterSendRecvTest : public Test
 };
 
 // 単一メッセージの送信に対して受信側へ正しく配送されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, send_single_message)
 {
     // Arrange
@@ -402,8 +407,10 @@ TEST_F(porterSendRecvTest, send_single_message)
         getStdout(recv_h_).find(
             "受信 (12 バイト)")); // [確認_正常系] - RECIEVER の受信バイト数が 12 バイト ("Hello Porter" の文字数) であること。
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // 複数メッセージを連続送信した場合に順序を維持してすべて配送されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, send_multiple_messages)
 {
     // Arrange
@@ -459,8 +466,10 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
     EXPECT_NE(string::npos, recv_out.find("msg2")); // [確認_正常系] - RECIEVER が "msg2" を受信していること。
     EXPECT_NE(string::npos, recv_out.find("msg3")); // [確認_正常系] - RECIEVER が "msg3" を受信していること。
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // SIGINT 受信時に受信プロセスがリソースを解放して正常終了することの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, recv_exits_cleanly_on_sigint)
 {
     // Arrange
@@ -489,8 +498,10 @@ TEST_F(porterSendRecvTest, recv_exits_cleanly_on_sigint)
         string::npos,
         getStdout(recv_h_).find("終了しました")); // [確認_正常系] - RECIEVER が "終了しました" を出力していること。
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // 片方向 unicast で PING 無効時も初回 DATA 受信により CONNECTED 遷移と DATA 配信が成立することの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, unicast_initial_data_establishes_connected_without_ping)
 {
     // Arrange
@@ -533,8 +544,10 @@ TEST_F(porterSendRecvTest, unicast_initial_data_establishes_connected_without_pi
                   recv_out.find("data-connect-ok")); // [確認_正常系] - 初回 DATA "data-connect-ok" が配信されること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // 片方向 unicast 送信者 open 直後は immediate PING を送信せず、receiver が即時 CONNECTED にならないことの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
 {
     // Arrange
@@ -577,8 +590,10 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
               getStdout(recv_h_).find(
                   "接続確立")); // [確認_正常系] - 最後まで immediate PING による "接続確立" が発生しないこと。
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // 片方向 unicast で PING 無効時も有効な DATA の継続受信により health timeout が延長されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
 {
     // Arrange
@@ -640,8 +655,10 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
                   recv_out.find("切断検知")); // [確認_正常系] - 最終的に timeout で "切断検知" が出力されること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // 単発送信の直後に close しても、最終 DATA が切断前に配信されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disconnect)
 {
     // Arrange
@@ -696,8 +713,10 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
         EXPECT_LT(data_pos, disc_pos);     // [確認_正常系] - 最終 DATA の配信が切断検知より先であること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // no-data FIN は FIN target フラグなしで即時切断されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
 {
     // Arrange
@@ -742,8 +761,10 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
                                     "切断検知")); // [確認_正常系] - FIN により "切断検知" が即時に 1 回出力されること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // FIN target が 0 に wrap する場合でも、flag により pending FIN が正しく解消されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
 {
     // Arrange
@@ -798,8 +819,10 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
         EXPECT_LT(data_pos, disc_pos);     // [確認_正常系] - 最終 DATA の配信が切断検知より先であること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // N:1 で単発送信の直後に close しても、最終 DATA が peer 解放前に配信されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect)
 {
     // Arrange
@@ -863,8 +886,10 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
         EXPECT_LT(data_pos, disc_pos);     // [確認_正常系] - 最終 DATA の配信が peer 解放より先であること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // N:1 の pending FIN 完了後に解放済み peer を再参照せず、受信処理を継続できることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
 {
     // Arrange
@@ -925,8 +950,10 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
         string::npos,
         recv_out.find(recovery_payload)); // [確認_正常系] - peer 解放後に新しいセッションの DATA を受信できること。
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // pending FIN のまま health timeout した後、新セッション受理で stale 状態が再発しないことの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
 {
     // Arrange
@@ -988,8 +1015,10 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
                 "切断検知")); // [確認_正常系] - "切断検知" が timeout の 1 回だけであること (stale FIN が再発しないこと)。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // 片方向 unicast で recent DATA により periodic PING が抑止され、最後の DATA 基準で再開することの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_interval)
 {
     // Arrange
@@ -1067,8 +1096,10 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
         EXPECT_NE(string::npos, recv_out.find("ping-delay-2")); // [確認_正常系] - 2 通目が配信されていること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // unicast_bidir 双方向通信でメッセージを正常に送受信できることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, bidir_echo)
 {
     // Arrange
@@ -1131,8 +1162,10 @@ TEST_F(porterSendRecvTest, bidir_echo)
     EXPECT_NE(string::npos,
               getStdout(recv_h_).find("bidir-test")); // [確認_正常系] - RECIEVER が "bidir-test" を受信していること。
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // 暗号化有効時、平文の UDP DATA パケットが破棄され暗号化メッセージのみ配信されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
 {
     // Arrange
@@ -1188,8 +1221,10 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
                   recv_out.find("encrypted-ok")); // [確認_正常系] - 暗号化経路のメッセージは配信されること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // 暗号化有効 N:1 でタグ不正の初回パケットが peer slot を消費せず破棄されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
 {
     // Arrange
@@ -1266,8 +1301,10 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
                   recv_out.find("n1-secure-ok")); // [確認_正常系] - 正規クライアントのメッセージが配信されること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // N:1 で未知 peer の初回 DATA が peer slot を消費せず破棄されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
 {
     // Arrange
@@ -1338,8 +1375,10 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
                       "n1-after-ping-ok")); // [確認_正常系] - peer slot が消費されず正規クライアントが通信できること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // 暗号化有効 N:1 双方向通信でクライアント側も CONNECTED になってから送信できることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
 {
     // Arrange
@@ -1401,8 +1440,10 @@ TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
                   recv_out.find("n1-connected-ok")); // [確認_正常系] - CONNECTED 後の送信が配信されること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // 暗号化 tcp_bidir でヘルスチェック経過後も接続を維持して送受信できることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
 {
     // Arrange
@@ -1463,8 +1504,10 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
             recv_out.find("tcp-encrypted-ok")); // [確認_正常系] - ヘルスチェック経過後も暗号化 TCP で受信できること。
     }
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // tcp_bidir は定周期 health PING 無効でも bootstrap PING だけで接続確立できることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
 {
     // Arrange
@@ -1521,8 +1564,10 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
     EXPECT_NE(string::npos,
               getStdout(recv_h_).find("tcp-before-connected")); // [確認_正常系] - メッセージが配信されること。
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // tcp_bidir で定周期 health PING 無効時は tcp_health_timeout_ms を無視して接続維持できることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeout)
 {
     // Arrange
@@ -1583,8 +1628,10 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
               getStdout(recv_h_).find(
                   "tcp-timeout-ignored")); // [確認_正常系] - timeout 経過後も接続が維持され配信されること。
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // バイナリ ファイル送信時、受信側で一時ファイルに正しく保存されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
 {
     // Arrange
@@ -1650,8 +1697,10 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
     EXPECT_NE(string::npos,
               recv_out.find("受信 (16 バイト)")); // [確認_正常系] - RECIEVER の受信バイト数が 16 バイトであること。
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // テキスト メッセージ送信時、受信側でテキストとして正常に表示されることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
 {
     // Arrange
@@ -1706,8 +1755,10 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
         recv_out.find(
             "バイナリ データを保存しました")); // [確認_正常系] - RECIEVER がバイナリ保存メッセージを出力していないこと。
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
 // 最大送信サイズ (65535 バイト) を超えるファイル送信が拒否されエラーになることの確認
+// [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, send_file_too_large_fails)
 {
     // Arrange
@@ -1750,3 +1801,4 @@ TEST_F(porterSendRecvTest, send_file_too_large_fails)
         string::npos,
         send_err.find("最大送信サイズ")); // [確認_異常系] - SENDER の stderr にサイズ超過エラーが出力されていること。
 }
+// [サブ手順参照 名前=porterSendRecvTest.TearDown]

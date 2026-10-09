@@ -105,9 +105,11 @@ class potrConnectedThreadsTest : public Test
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
 
+    // [サブ手順 名前=potrConnectedThreadsTest.SetUp]
     void SetUp() override
     {
         ON_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _)).WillByDefault(Return(0));
+        // [状態] - `cplat_tracer_writef_at` の既定動作を設定する。
 
         memset(&ctx, 0, sizeof(ctx));
         memset(&s_calls, 0, sizeof(s_calls));
@@ -122,6 +124,7 @@ class potrConnectedThreadsTest : public Test
         s_calls.tcp_send_ping_result = POTR_OK;
         s_calls.health_start_result = POTR_OK;
     }
+    // [サブ手順終了]
 
     potr_internal_connected_threads_ops make_ops()
     {
@@ -134,6 +137,7 @@ class potrConnectedThreadsTest : public Test
 };
 
 // recv 開始失敗時に、この呼び出しで開始した send スレッドが停止されることの確認
+// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, recv_failure_stops_send_started_by_this_call)
 {
     // Arrange
@@ -159,6 +163,7 @@ TEST_F(potrConnectedThreadsTest, recv_failure_stops_send_started_by_this_call)
 }
 
 // recv 開始失敗時に、既存の send スレッドが停止されないことの確認
+// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, recv_failure_keeps_preexisting_send_thread_running)
 {
     // Arrange
@@ -182,6 +187,7 @@ TEST_F(potrConnectedThreadsTest, recv_failure_keeps_preexisting_send_thread_runn
 }
 
 // bootstrap ping 失敗時に recv と新規 send スレッドがロールバックされることの確認
+// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, bootstrap_ping_failure_rolls_back_recv_and_new_send_thread)
 {
     // Arrange
@@ -209,6 +215,7 @@ TEST_F(potrConnectedThreadsTest, bootstrap_ping_failure_rolls_back_recv_and_new_
 }
 
 // health スレッド開始失敗時に recv と新規 send スレッドがロールバックされることの確認
+// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, health_failure_rolls_back_recv_and_new_send_thread)
 {
     // Arrange
@@ -236,6 +243,7 @@ TEST_F(potrConnectedThreadsTest, health_failure_rolls_back_recv_and_new_send_thr
 }
 
 // health スレッド開始失敗時に、既存の send スレッドが停止されないことの確認
+// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, health_failure_keeps_preexisting_send_thread_running)
 {
     // Arrange
@@ -262,6 +270,7 @@ TEST_F(potrConnectedThreadsTest, health_failure_keeps_preexisting_send_thread_ru
 }
 
 // 非 primary path では send スレッドが操作されないことの確認
+// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, non_primary_path_does_not_touch_send_thread)
 {
     // Arrange
@@ -286,6 +295,7 @@ TEST_F(potrConnectedThreadsTest, non_primary_path_does_not_touch_send_thread)
 }
 
 // 全段成功時に ping 状態が設定され、ロールバックが発生しないことの確認
+// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, success_sets_ping_state_without_rollback)
 {
     // Arrange
@@ -315,6 +325,7 @@ TEST_F(potrConnectedThreadsTest, success_sets_ping_state_without_rollback)
 }
 
 // recv スレッド起動前に ping 状態が初期化され、起動後の受信結果を上書きしないことの確認
+// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, ping_state_is_reset_before_recv_start)
 {
     // Arrange

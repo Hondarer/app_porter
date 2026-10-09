@@ -53,6 +53,7 @@ static void mock_callback(int64_t service_id, potr_peer_id peer_id, potr_event e
 class potrDisconnectPeerTest : public Test
 {
   protected:
+    // [サブ手順 名前=potrDisconnectPeerTest.SetUp]
     void SetUp() override
     {
         memset(&ctx, 0, sizeof(ctx));
@@ -68,12 +69,15 @@ class potrDisconnectPeerTest : public Test
         resetTraceLevel();
         setTraceLevel("cplat_tracer_writef_at", TRACE_INFO);
     }
+    // [サブ手順終了]
 
+    // [サブ手順 名前=potrDisconnectPeerTest.TearDown]
     void TearDown() override
     {
         cplat_local_lock_dispose(ctx.peers_mutex);
         cplat_local_lock_dispose(ctx.callback_mutex);
     }
+    // [サブ手順終了]
 
     potr_context ctx;
     potr_internal_peer_context peer_ctx; /* potr_internal_peer_find_by_id が返す実体 */
@@ -82,6 +86,7 @@ class potrDisconnectPeerTest : public Test
 /* ---------- 異常系 ---------- */
 
 // ハンドルが NULL の場合に POTR_ERR_INVALID_ARGUMENT を返すことの確認
+// [サブ手順参照 名前=potrDisconnectPeerTest.SetUp]
 TEST_F(potrDisconnectPeerTest, handle_null)
 {
     // Arrange
@@ -102,8 +107,10 @@ TEST_F(potrDisconnectPeerTest, handle_null)
         POTR_ERR_INVALID_ARGUMENT,
         actual_ret); // [確認_異常系] - handle が NULL の場合に potr_peer_disconnect の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
 }
+// [サブ手順参照 名前=potrDisconnectPeerTest.TearDown]
 
 // peer_id に POTR_PEER_NA を指定した場合に POTR_ERR_INVALID_ARGUMENT を返すことの確認
+// [サブ手順参照 名前=potrDisconnectPeerTest.SetUp]
 TEST_F(potrDisconnectPeerTest, peer_id_na)
 {
     // Arrange
@@ -125,8 +132,10 @@ TEST_F(potrDisconnectPeerTest, peer_id_na)
         POTR_ERR_INVALID_ARGUMENT,
         actual_ret); // [確認_異常系] - peer_id に POTR_PEER_NA を指定した場合に potr_peer_disconnect の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
 }
+// [サブ手順参照 名前=potrDisconnectPeerTest.TearDown]
 
 // peer_id に POTR_PEER_ALL を指定した場合に POTR_ERR_INVALID_ARGUMENT を返すことの確認
+// [サブ手順参照 名前=potrDisconnectPeerTest.SetUp]
 TEST_F(potrDisconnectPeerTest, peer_id_all)
 {
     // Arrange
@@ -148,8 +157,10 @@ TEST_F(potrDisconnectPeerTest, peer_id_all)
         POTR_ERR_INVALID_ARGUMENT,
         actual_ret); // [確認_異常系] - peer_id に POTR_PEER_ALL を指定した場合に potr_peer_disconnect の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
 }
+// [サブ手順参照 名前=potrDisconnectPeerTest.TearDown]
 
 // N:1 モードでない場合に POTR_ERR_UNSUPPORTED を返すことの確認
+// [サブ手順参照 名前=potrDisconnectPeerTest.SetUp]
 TEST_F(potrDisconnectPeerTest, not_multi_peer)
 {
     // Arrange
@@ -171,8 +182,10 @@ TEST_F(potrDisconnectPeerTest, not_multi_peer)
         POTR_ERR_UNSUPPORTED,
         actual_ret); // [確認_異常系] - N:1 モードでない場合に potr_peer_disconnect の戻り値が POTR_ERR_UNSUPPORTED であること。
 }
+// [サブ手順参照 名前=potrDisconnectPeerTest.TearDown]
 
 // 指定した peer_id のピアが存在しない場合に POTR_ERR_NOT_FOUND を返すことの確認
+// [サブ手順参照 名前=potrDisconnectPeerTest.SetUp]
 TEST_F(potrDisconnectPeerTest, peer_not_found)
 {
     // Arrange
@@ -197,10 +210,12 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
         POTR_ERR_NOT_FOUND,
         actual_ret); // [確認_異常系] - 指定した peer_id が存在しない場合に potr_peer_disconnect の戻り値が POTR_ERR_NOT_FOUND であること。
 }
+// [サブ手順参照 名前=potrDisconnectPeerTest.TearDown]
 
 /* ---------- 正常系 ---------- */
 
 // ピアが存在し health_alive=1 の場合に切断処理とコールバック発火が行われることの確認
+// [サブ手順参照 名前=potrDisconnectPeerTest.SetUp]
 TEST_F(potrDisconnectPeerTest, normal_with_callback)
 {
     // Arrange
@@ -253,10 +268,12 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     EXPECT_EQ(0, peer_ctx.path_logical_alive[0]);          // [確認_正常系] - peer の path 0 論理状態が切断であること。
     EXPECT_EQ(0, peer_ctx.path_logical_alive[2]);          // [確認_正常系] - peer の path 2 論理状態が切断であること。
 }
+// [サブ手順参照 名前=potrDisconnectPeerTest.TearDown]
 
 /* ---------- 正常系 (切断済みピア) ---------- */
 
 // ピアが存在し health_alive=0 の場合に切断処理のみ行われコールバックが発火しないことの確認
+// [サブ手順参照 名前=potrDisconnectPeerTest.SetUp]
 TEST_F(potrDisconnectPeerTest, normal_health_dead)
 {
     // Arrange
@@ -284,3 +301,4 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
     EXPECT_EQ(static_cast<size_t>(0),
               s_cb.count); // [確認_正常系] - health_alive=0 のためコールバックが呼び出されないこと。
 }
+// [サブ手順参照 名前=potrDisconnectPeerTest.TearDown]

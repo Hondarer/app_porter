@@ -17,22 +17,27 @@ using namespace testing;
 class potrSendQueueTest : public Test
 {
   protected:
+    // [サブ手順 名前=potrSendQueueTest.SetUp]
     void SetUp() override
     {
         memset(&q, 0, sizeof(q));
         ASSERT_EQ(POTR_OK, potr_internal_send_queue_init(&q, 4, 16));
         // [状態確認] - `potr_internal_send_queue_init(&q, 4, 16)` の戻り値が `POTR_OK` であること。
     }
+    // [サブ手順終了]
 
+    // [サブ手順 名前=potrSendQueueTest.TearDown]
     void TearDown() override
     {
         potr_internal_send_queue_dispose(&q);
     }
+    // [サブ手順終了]
 
     potr_internal_send_queue q;
 };
 
 // 空キューの参照系 API が空とタイムアウトを区別した結果コードを返すことの確認
+// [サブ手順参照 名前=potrSendQueueTest.SetUp]
 TEST_F(potrSendQueueTest, empty_queue_returns_empty_and_timeout)
 {
     // Arrange
@@ -54,8 +59,10 @@ TEST_F(potrSendQueueTest, empty_queue_returns_empty_and_timeout)
     EXPECT_EQ(POTR_ERR_TIMEOUT,
               actual_ret_timed); // [確認_異常系] - potr_internal_send_queue_peek_timed の戻り値が POTR_ERR_TIMEOUT であること。
 }
+// [サブ手順参照 名前=potrSendQueueTest.TearDown]
 
 // 満杯キューへの push が POTR_ERR_FULL を返すことの確認
+// [サブ手順参照 名前=potrSendQueueTest.SetUp]
 TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
 {
     // Arrange
@@ -81,8 +88,10 @@ TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
     EXPECT_EQ(POTR_ERR_FULL,
               actual_ret_full); // [確認_異常系] - 満杯時の potr_internal_send_queue_push の戻り値が POTR_ERR_FULL であること。
 }
+// [サブ手順参照 名前=potrSendQueueTest.TearDown]
 
 // 停止済み (running=0) の満杯キューへの push_wait が POTR_ERR_CANCELED を返すことの確認
+// [サブ手順参照 名前=potrSendQueueTest.SetUp]
 TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
 {
     // Arrange
@@ -108,8 +117,10 @@ TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
     EXPECT_EQ(POTR_ERR_CANCELED,
               actual_ret); // [確認_異常系] - potr_internal_send_queue_push_wait の戻り値が POTR_ERR_CANCELED であること。
 }
+// [サブ手順参照 名前=potrSendQueueTest.TearDown]
 
 // 停止済み (running=0) の空キューからの pop が POTR_ERR_CANCELED を返すことの確認
+// [サブ手順参照 名前=potrSendQueueTest.SetUp]
 TEST_F(potrSendQueueTest, pop_returns_canceled_when_stopped)
 {
     // Arrange
@@ -126,3 +137,4 @@ TEST_F(potrSendQueueTest, pop_returns_canceled_when_stopped)
     EXPECT_EQ(POTR_ERR_CANCELED,
               actual_ret); // [確認_異常系] - potr_internal_send_queue_pop の戻り値が POTR_ERR_CANCELED であること。
 }
+// [サブ手順参照 名前=potrSendQueueTest.TearDown]

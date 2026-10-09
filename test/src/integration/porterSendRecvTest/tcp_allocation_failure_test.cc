@@ -132,6 +132,7 @@ class tcp_allocation_failure_test : public TestWithParam<allocation_case>
     potr_context *handle = nullptr;
     allocation_probe probe;
 
+    // [サブ手順 名前=tcp_allocation_failure_test.SetUp]
     void SetUp() override
     {
         // プロセス共通トレーサーの寿命は service_close を超えるため、追跡開始前に初期化します。
@@ -154,6 +155,7 @@ class tcp_allocation_failure_test : public TestWithParam<allocation_case>
         std::lock_guard<std::mutex> lock(s_probe_mutex);
         s_probe = &probe;
     }
+    // [サブ手順終了]
 
     void arm(size_t size, size_t occurrence)
     {
@@ -182,6 +184,7 @@ class tcp_allocation_failure_test : public TestWithParam<allocation_case>
         return ret;
     }
 
+    // [サブ手順 名前=tcp_allocation_failure_test.TearDown]
     void TearDown() override
     {
         arm(0, 0);
@@ -192,10 +195,12 @@ class tcp_allocation_failure_test : public TestWithParam<allocation_case>
         std::lock_guard<std::mutex> lock(s_probe_mutex);
         s_probe = nullptr;
     }
+    // [サブ手順終了]
 #endif
 };
 
 // 受信バッファーの確保失敗後に、確保済み領域と全経路の listen ソケットを解放することの確認
+// [サブ手順参照 名前=tcp_allocation_failure_test.SetUp 回数=PARAM]
 TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
 {
     // Arrange
@@ -272,6 +277,7 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
     GTEST_SKIP() << "Linux の動的 cplat_malloc/cplat_free 差し替えを使用するため Windows では対象外";
 #endif
 }
+// [サブ手順参照 名前=tcp_allocation_failure_test.TearDown 回数=PARAM]
 
 #if defined(PLATFORM_LINUX)
 /* 送信用 compress/crypto の次が受信用。wire は recv_buf/send_wire_buf の次が経路別です。

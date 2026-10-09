@@ -25,6 +25,7 @@ using namespace testing;
 class potrSendTest : public Test
 {
   protected:
+    // [サブ手順 名前=potrSendTest.SetUp]
     void SetUp() override
     {
         memset(&ctx, 0, sizeof(ctx));
@@ -41,13 +42,17 @@ class potrSendTest : public Test
         // [状態確認] - `potr_internal_send_queue_init(&ctx.send_queue, 8, 1400)` の戻り値が `POTR_OK` であること。
         cplat_local_lock_create(&ctx.peers_mutex);
     }
+    // [サブ手順終了]
 
+    // [サブ手順 名前=potrSendTest.TearDown]
     void TearDown() override
     {
         cplat_local_lock_dispose(ctx.peers_mutex);
         potr_internal_send_queue_dispose(&ctx.send_queue);
     }
+    // [サブ手順終了]
 
+    // [サブ手順 名前=potrSendTest.popQueuedElem]
     potr_internal_payload_elem popQueuedElem()
     {
         potr_internal_payload_elem elem = {};
@@ -55,12 +60,14 @@ class potrSendTest : public Test
         // [状態確認] - `potr_internal_send_queue_try_pop(&ctx.send_queue, &elem)` の戻り値が `POTR_OK` であること。
         return elem;
     }
+    // [サブ手順終了]
 
     potr_context ctx;
     potr_internal_peer_context peers[2];
 };
 
 // 終了処理中の送信が中止コードで拒否されることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
 TEST_F(potrSendTest, close_requested_returns_canceled)
 {
     // Arrange
@@ -78,8 +85,10 @@ TEST_F(potrSendTest, close_requested_returns_canceled)
     EXPECT_EQ(POTR_ERR_CANCELED, actual_ret);   // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_CANCELED であること。
     EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
+// [サブ手順参照 名前=potrSendTest.TearDown]
 
 // N:1 モードで POTR_PEER_NA を指定すると引数不正になることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
 TEST_F(potrSendTest, n1_peer_na_returns_invalid_argument)
 {
     // Arrange
@@ -99,8 +108,10 @@ TEST_F(potrSendTest, n1_peer_na_returns_invalid_argument)
               actual_ret);                      // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
+// [サブ手順参照 名前=potrSendTest.TearDown]
 
 // N:1 モードで存在しないピアを指定すると未検出コードになることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
 TEST_F(potrSendTest, n1_unknown_peer_returns_not_found)
 {
     // Arrange
@@ -119,8 +130,10 @@ TEST_F(potrSendTest, n1_unknown_peer_returns_not_found)
     EXPECT_EQ(POTR_ERR_NOT_FOUND, actual_ret);  // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_NOT_FOUND であること。
     EXPECT_EQ(0U, ctx.send_queue.count); // [確認_異常系] - 送信キューに積まれないこと。
 }
+// [サブ手順参照 名前=potrSendTest.TearDown]
 
 // TCP は物理パスが active でも論理接続前の送信が拒否されることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
 TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
 {
     // Arrange
@@ -141,8 +154,10 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
     EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret); // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_DISCONNECTED であること。
     EXPECT_EQ(0U, ctx.send_queue.count);   // [確認_異常系] - 送信キューに積まれないこと。
 }
+// [サブ手順参照 名前=potrSendTest.TearDown]
 
 // N:1 の全 peer 送信で接続済み peer が 1 件もない場合に切断エラーとなることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
 TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
 {
     // Arrange
@@ -166,8 +181,10 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
     EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret); // [確認_異常系] - potr_service_send の戻り値が POTR_ERR_DISCONNECTED であること。
     EXPECT_EQ(0U, ctx.send_queue.count);   // [確認_異常系] - 送信キューに格納されないこと。
 }
+// [サブ手順参照 名前=potrSendTest.TearDown]
 
 // N:1 の全 peer 送信が接続済み peer だけへ送信されることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
 TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
 {
     // Arrange
@@ -195,14 +212,17 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
     EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - 送信キューに 1 件だけ積まれること。
 
     {
+        // [サブ手順参照 名前=potrSendTest.popQueuedElem]
         potr_internal_payload_elem elem = popQueuedElem();
         EXPECT_EQ((potr_peer_id)10, elem.peer_id);              // [確認_正常系] - 宛先が接続済みの peer 10 であること。
         EXPECT_EQ(strlen(payload), (size_t)elem.payload_len); // [確認_正常系] - ペイロード長が一致すること。
         EXPECT_EQ(0, memcmp(elem.payload, payload, strlen(payload))); // [確認_正常系] - ペイロード内容が一致すること。
     }
 }
+// [サブ手順参照 名前=potrSendTest.TearDown]
 
 // 片方向 unicast は接続状態がなくても送信できることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
 TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
 {
     // Arrange
@@ -223,14 +243,17 @@ TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
     EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - 送信キューに 1 件積まれること。
 
     {
+        // [サブ手順参照 名前=potrSendTest.popQueuedElem]
         potr_internal_payload_elem elem = popQueuedElem();
         EXPECT_EQ(POTR_PEER_NA, elem.peer_id);                // [確認_正常系] - 宛先が POTR_PEER_NA であること。
         EXPECT_EQ(strlen(payload), (size_t)elem.payload_len); // [確認_正常系] - ペイロード長が一致すること。
         EXPECT_EQ(0, memcmp(elem.payload, payload, strlen(payload))); // [確認_正常系] - ペイロード内容が一致すること。
     }
 }
+// [サブ手順参照 名前=potrSendTest.TearDown]
 
 // データ送信による health ping 抑止が type 1〜6 (片方向 UDP 系) だけに適用されることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
 TEST_F(potrSendTest, data_based_health_ping_suppression_applies_only_to_type_1_to_6)
 {
     // Arrange
@@ -275,8 +298,10 @@ TEST_F(potrSendTest, data_based_health_ping_suppression_applies_only_to_type_1_t
     EXPECT_FALSE(oneway_tcp_bidir);
     // [確認_正常系] - `oneway_tcp_bidir` が false であること。
 }
+// [サブ手順参照 名前=potrSendTest.TearDown]
 
 // 接続直後の immediate health ping が type 1〜6 (片方向 UDP 系) だけで無効になることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
 TEST_F(potrSendTest, immediate_health_ping_is_disabled_only_for_type_1_to_6)
 {
     // Arrange
@@ -321,3 +346,4 @@ TEST_F(potrSendTest, immediate_health_ping_is_disabled_only_for_type_1_to_6)
     EXPECT_TRUE(immediate_tcp_bidir);
     // [確認_正常系] - `immediate_tcp_bidir` が true であること。
 }
+// [サブ手順参照 名前=potrSendTest.TearDown]

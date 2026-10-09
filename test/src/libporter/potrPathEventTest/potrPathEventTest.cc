@@ -26,12 +26,13 @@ struct CapturedEvent
 static CapturedEvent s_events[8];
 static int s_event_count;
 
+// [サブ手順 名前=potrPathEventTest.capture_callback]
 static void capture_callback(int64_t service_id, potr_peer_id peer_id, potr_event event, const void *data, size_t len)
 {
     CapturedEvent *entry = &s_events[s_event_count++];
 
     EXPECT_EQ(42, service_id);
-    // [状態確認] - `service_id` の値が `42` であること。
+    // [確認_正常系] - callback に渡す service_id が 42 であること。
     entry->peer_id = peer_id;
     entry->event = event;
     entry->len = len;
@@ -41,10 +42,12 @@ static void capture_callback(int64_t service_id, potr_peer_id peer_id, potr_even
         memcpy(entry->path_states, data, sizeof(entry->path_states));
     }
 }
+// [サブ手順終了]
 
 class potrPathEventTest : public Test
 {
   protected:
+    // [サブ手順 名前=potrPathEventTest.SetUp]
     void SetUp() override
     {
         memset(&ctx, 0, sizeof(ctx));
@@ -56,6 +59,7 @@ class potrPathEventTest : public Test
         ctx.callback = capture_callback;
         peer.peer_id = 7;
     }
+    // [サブ手順終了]
 
     potr_context ctx;
     potr_internal_peer_context peer;
@@ -63,6 +67,7 @@ class potrPathEventTest : public Test
 
 // service 接続時に path 状態を同期してイベントを準備し、
 // callback 発行時に各 path の PATH_CONNECTED が CONNECTED より先に通知されることの確認
+// [サブ手順参照 名前=potrPathEventTest.SetUp]
 TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
 {
     // Arrange
@@ -111,6 +116,7 @@ TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
 
 // peer 切断時に全 path 状態を同期して切断イベントを準備し、
 // callback 発行時に全 path の PATH_DISCONNECTED が DISCONNECTED より先に通知されることの確認
+// [サブ手順参照 名前=potrPathEventTest.SetUp]
 TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
 {
     // Arrange
@@ -142,6 +148,7 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
     EXPECT_EQ(0, peer.path_logical_alive[3]); // [確認_正常系] - path 3 の論理状態が切断になること。
 
     // Act_2
+    // [サブ手順参照 名前=potrPathEventTest.capture_callback 回数=3]
     potr_internal_emit_peer_path_events_locked(&ctx, &peer, &prepared); // [手順] - 準備済みイベントを callback へ発行する。
 
     // Assert_2

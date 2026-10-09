@@ -49,6 +49,7 @@ class exportTest : public Test
     std::string workspace_root;
     std::string dll_path;
 
+    // [サブ手順 名前=exportTest.SetUp]
     void SetUp() override
     {
         workspace_root = findWorkspaceRoot();
@@ -56,9 +57,11 @@ class exportTest : public Test
         // [状態確認] - `workspace_root.empty()` が false であること。
         dll_path = workspace_root + "/app/porter/prod/lib/libporter" TESTFW_SHARED_LIBRARY_EXTENSION;
     }
+    // [サブ手順終了]
 };
 
 // libporter のエクスポート シンボル名に不足や想定外がないことの確認
+// [サブ手順参照 名前=exportTest.SetUp]
 TEST_F(exportTest, symbol_names_match)
 {
     // Arrange
@@ -79,13 +82,15 @@ TEST_F(exportTest, symbol_names_match)
         dll_path); // [手順] - dumpbin/nm で libporter の実際のエクスポート一覧を取得する。
 
     // Assert
+    // [サブ手順参照 名前=testing.expectExportNamesMatch]
     testing::expectExportNamesMatch(
         expected, actual,
-        kExpectedExportSignatures); // [確認_正常系 回数=2] - 期待シンボルとの不足や想定外がないこと (Windows / Linux とも完全一致)。
+        kExpectedExportSignatures); // 期待シンボルとの不足や想定外がないこと (Windows / Linux とも完全一致)。
 }
 
 // 公開ヘッダーの変数宣言が dllexport マクロ (POTR_EXPORT) を
 // 伴わずに追加されていないことの確認
+// [サブ手順参照 名前=exportTest.SetUp]
 TEST_F(exportTest, public_header_variables_declare_export_macro)
 {
     // Arrange

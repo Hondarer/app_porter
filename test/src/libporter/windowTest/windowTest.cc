@@ -26,15 +26,19 @@ class windowTest : public Test
   protected:
     potr_internal_window win;
 
+    // [サブ手順 名前=windowTest.SetUp]
     void SetUp() override
     {
         memset(&win, 0, sizeof(win));
     }
+    // [サブ手順終了]
 
+    // [サブ手順 名前=windowTest.TearDown]
     void TearDown() override
     {
         potr_internal_window_dispose(&win);
     }
+    // [サブ手順終了]
 
     /* 受信ウィンドウ用パケットを組み立てる (payload_len はホスト バイト オーダー) */
     static potr_packet make_recv_packet(uint32_t seq_num, const uint8_t *payload, uint16_t payload_len)
@@ -60,6 +64,7 @@ class windowTest : public Test
 };
 
 // 初期化と同一サイズ再初期化でバッファーが再確保されず状態がリセットされることの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, initInitializesStateAndReusesBuffersOnSameSize)
 {
     // Arrange
@@ -86,9 +91,11 @@ TEST_F(windowTest, initInitializesStateAndReusesBuffersOnSameSize)
     EXPECT_EQ(8U, win.window_size);        // [確認_正常系] - window_size が保持されること。
     EXPECT_EQ(128U, win.max_payload);      // [確認_正常系] - max_payload が保持されること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // 送信ウィンドウが満杯のときに push すると最古エントリが evict され、
 // evict された通番の send_get が POTR_ERR_NOT_FOUND を返すことの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
 {
     // Arrange
@@ -131,9 +138,11 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
         actual_ret_latest); // [確認_正常系] - potr_internal_window_send_get の戻り値から、最新エントリの取得が成功したと判断できること。
     EXPECT_EQ(1U, win.base_seq); // [確認_正常系] - evict により base_seq が前進すること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // send_get がプール スロットへディープ コピーされたペイロードを返し、
 // ウィンドウ範囲外の通番に POTR_ERR_NOT_FOUND を返すことの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
 {
     // Arrange
@@ -163,8 +172,10 @@ TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
         POTR_ERR_NOT_FOUND,
         actual_ret_out_of_range); // [確認_異常系] - 範囲外の通番 99 の potr_internal_window_send_get の戻り値が POTR_ERR_NOT_FOUND であること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // 2 の累乗でないウィンドウでも、通番周回前後の送信パケットを別スロットで保持することの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, sendGetKeepsPacketsDistinctAcrossSequenceWrap)
 {
     // Arrange
@@ -203,8 +214,10 @@ TEST_F(windowTest, sendGetKeepsPacketsDistinctAcrossSequenceWrap)
     EXPECT_EQ(UINT32_MAX, out_at_wrap.seq_num);          // [確認_正常系] - 通番上限が保持されること。
     EXPECT_EQ(0U, out_after_wrap.seq_num);               // [確認_正常系] - 周回後の通番 0 が保持されること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // 順序どおりに push したパケットが pop で順に取り出せ、空ウィンドウの pop が POTR_ERR_EMPTY を返すことの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, recvPushAndPopDeliversInOrder)
 {
     // Arrange
@@ -245,8 +258,10 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
     EXPECT_EQ(POTR_ERR_EMPTY,
               actual_ret_pop_empty); // [確認_異常系] - 空ウィンドウの potr_internal_window_recv_pop の戻り値が POTR_ERR_EMPTY であること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // 2 の累乗でないウィンドウでも、通番周回前後の受信パケットを順に取り出せることの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, recvPushAndPopAcrossSequenceWrap)
 {
     // Arrange
@@ -284,9 +299,11 @@ TEST_F(windowTest, recvPushAndPopAcrossSequenceWrap)
     EXPECT_EQ(UINT32_MAX, actual_sequences[1]);      // [確認_正常系] - 通番上限を 2 番目に取り出すこと。
     EXPECT_EQ(0U, actual_sequences[2]);              // [確認_正常系] - 周回後の通番 0 を最後に取り出すこと。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // 先行パケット到着時に欠番が NACK 対象となり pop が保留され、
 // 欠番補充後に NACK が解消して全パケットを順に取り出せることの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
 {
     // Arrange
@@ -336,8 +353,10 @@ TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
     EXPECT_EQ(0, actual_ret_no_gap); // [確認_正常系] - 欠番解消後は NACK 不要になること。
     EXPECT_EQ(3, pop_count);    // [確認_正常系] - 3 件すべて順に取り出せること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // ウィンドウ範囲外の通番の push が拒絶され、同一通番の重複 push が成功扱い (べき等) になることの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, recvPushRejectsOutOfWindowAndAcceptsDuplicate)
 {
     // Arrange
@@ -362,8 +381,10 @@ TEST_F(windowTest, recvPushRejectsOutOfWindowAndAcceptsDuplicate)
               actual_ret_first); // [確認_正常系] - potr_internal_window_recv_push の戻り値から、範囲内の push が成功したと判断できること。
     EXPECT_EQ(POTR_OK, actual_ret_dup); // [確認_正常系] - 重複 push が成功扱いになること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // 到着済み問い合わせが非ゼロ基点でも、格納時と同じ循環スロットを参照することの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, recvHasPacketUsesStableIndexWithNonzeroBase)
 {
     // Arrange
@@ -388,8 +409,10 @@ TEST_F(windowTest, recvHasPacketUsesStableIndexWithNonzeroBase)
     EXPECT_EQ(0, actual_has_11);      // [確認_正常系] - 未着通番 11 が未到着と判定されること。
     EXPECT_EQ(0, actual_has_outside); // [確認_正常系] - ウィンドウ外通番が未到着と判定されること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // 到着済み問い合わせが通番周回後も格納時と同じ循環スロットを参照することの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, recvHasPacketUsesStableIndexAcrossSequenceWrap)
 {
     // Arrange
@@ -411,8 +434,10 @@ TEST_F(windowTest, recvHasPacketUsesStableIndexAcrossSequenceWrap)
     // Assert
     EXPECT_EQ(1, actual_has_wrapped); // [確認_正常系] - 周回後の通番 0 が到着済みと判定されること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // NULL および解放済みのウィンドウに対して未到着と判定することの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, recvHasPacketReturnsFalseForUnavailableWindow)
 {
     // Arrange
@@ -430,8 +455,10 @@ TEST_F(windowTest, recvHasPacketReturnsFalseForUnavailableWindow)
     EXPECT_EQ(0, actual_null);     // [確認_異常系] - NULL は未到着と判定されること。
     EXPECT_EQ(0, actual_disposed); // [確認_異常系] - 解放済みウィンドウは未到着と判定されること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // skip が next_seq と一致する通番のときのみウィンドウを前進させることの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, recvSkipAdvancesOnlyOnNextSeq)
 {
     // Arrange
@@ -450,8 +477,10 @@ TEST_F(windowTest, recvSkipAdvancesOnlyOnNextSeq)
     EXPECT_EQ(11U, win.next_seq);        // [確認_正常系] - 一致した skip で next_seq が前進すること。
     EXPECT_EQ(11U, win.base_seq);        // [確認_正常系] - 一致した skip で base_seq が前進すること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
 
 // reset が全スロットを無効化し base_seq および next_seq を新基点に設定することの確認
+// [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, recvResetClearsSlotsAndSetsNewBase)
 {
     // Arrange
@@ -479,3 +508,4 @@ TEST_F(windowTest, recvResetClearsSlotsAndSetsNewBase)
         POTR_ERR_EMPTY,
         actual_ret_pop); // [確認_正常系] - リセット後の potr_internal_window_recv_pop の戻り値が POTR_ERR_EMPTY となり、格納済みスロットが無効化されること。
 }
+// [サブ手順参照 名前=windowTest.TearDown]
