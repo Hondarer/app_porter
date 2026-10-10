@@ -14,8 +14,8 @@
  *
  *  @par            スレッド セーフ
  *  トレース書き込みは trace-cplat が内部で排他制御を行います。\n
- *  potr_internal_trace_get() の lazy create はプロセス起動直後の単一スレッド期間に
- *  完了することを前提とします。
+ *  potr_internal_trace_get() の lazy create は cplat_call_once() で 1 回だけ行うため、
+ *  複数スレッドから同時に初回アクセスしても安全です。
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
  *
@@ -26,6 +26,7 @@
 #include <cplat/base/error_message.h>
 #include <cplat/crt/path.h>
 #include <cplat/crt/stdio.h>
+#include <cplat/sync/sync.h>
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -35,8 +36,30 @@
 
 /* ── グローバル トレーサー状態 ──────────────────────────────────────────────── */
 
-/** トレース プロバイダー ハンドル。potr_internal_trace_get() で一度だけ初期化する。 */
+/** トレース プロバイダー ハンドル。`create_trace` で一度だけ初期化する。 */
 static cplat_tracer *s_trace = NULL;
+
+/** `s_trace` の初期化を 1 回に限定するフラグ。 */
+static cplat_once_flag s_trace_once = {0};
+
+/**
+ *  @brief          porter のトレーサーを生成します。
+ *
+ *  @par            スレッド セーフ
+ *  本関数は cplat_call_once() から 1 回だけ呼びます。
+ */
+static void create_trace(void)
+{
+    s_trace = cplat_tracer_create(CPLAT_TRACER_CONCURRENCY_TRACER_MANAGED);
+    if (s_trace != NULL)
+    {
+        cplat_tracer_set_name(s_trace, "porter", 0);
+        /* set_name は OS トレースの識別名のみに作用する。出力先はデフォルト設定に従い、
+         * デフォルトはすべての出力先が CPLAT_TRACE_LEVEL_NONE で、porter 自身は
+         * 出力先を設定しない。出力先の詳細度の設定と start は、potr_tracer_get() 経由で
+         * 利用者が明示的に呼び出す。 */
+    }
+}
 
 /* ── 内部 API ─────────────────────────────────────────────────────────── */
 
@@ -44,18 +67,7 @@ static cplat_tracer *s_trace = NULL;
 
 cplat_tracer *potr_internal_trace_get(void)
 {
-    if (s_trace == NULL)
-    {
-        s_trace = cplat_tracer_create(CPLAT_TRACER_CONCURRENCY_TRACER_MANAGED);
-        if (s_trace != NULL)
-        {
-            cplat_tracer_set_name(s_trace, "porter", 0);
-            /* set_name は OS トレースの識別名のみに作用する。出力先はデフォルト設定に従い、
-             * デフォルトはすべての出力先が CPLAT_TRACE_LEVEL_NONE で、porter 自身は
-             * 出力先を設定しない。出力先の詳細度の設定と start は、potr_tracer_get() 経由で
-             * 利用者が明示的に呼び出す。 */
-        }
-    }
+    cplat_call_once(&s_trace_once, create_trace);
     return s_trace;
 }
 

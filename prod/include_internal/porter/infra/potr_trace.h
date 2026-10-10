@@ -43,6 +43,9 @@ extern "C"
      *  @return         cplat_tracer ハンドル。NULL を返すことはありません。
      *
      *  本関数を直接呼び出さず、POTR_TRACE マクロを使用してください。
+     *
+     *  @par            スレッド セーフ
+     *  本関数はスレッド セーフです。
      */
     cplat_tracer *potr_internal_trace_get(void);
 
