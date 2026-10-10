@@ -140,7 +140,11 @@ extern "C"
         @endcode
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。
+     *  本関数は条件付きスレッド セーフです。\n
+     *  porter が内部で使用するトレーサーは、最初の使用時に同期せずに生成します。\n
+     *  複数スレッドから porter の API を呼び出す前に、
+     *  シングル スレッド フェーズで potr_tracer_get() を呼び出してください。\n
+     *  この条件を満たす場合は、同時に実行できます。
      */
     POTR_EXPORT extern int POTR_API potr_service_open(const potr_global_config *global, const potr_service_def *service,
                                                       potr_role role, potr_recv_fn callback, potr_context **handle);
@@ -215,7 +219,11 @@ extern "C"
         @endcode
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。
+     *  本関数は条件付きスレッド セーフです。\n
+     *  porter が内部で使用するトレーサーは、最初の使用時に同期せずに生成します。\n
+     *  複数スレッドから porter の API を呼び出す前に、
+     *  シングル スレッド フェーズで potr_tracer_get() を呼び出してください。\n
+     *  この条件を満たす場合は、同時に実行できます。
      */
     POTR_EXPORT extern int POTR_API potr_service_open_from_config(const char *config_path, int64_t service_id,
                                                                   potr_role role, potr_recv_fn callback,
@@ -285,7 +293,10 @@ extern "C"
      *  @par            スレッド セーフ
      *  本関数は条件付きスレッド セーフです。\n
      *  異なる @p handle に対する操作は同時に実行できます。\n
-     *  同一 @p handle に対する操作は、呼び出し側で直列化してください。
+     *  同一 @p handle に対する操作は、呼び出し側で直列化してください。\n
+     *  porter が内部で使用するトレーサーは、最初の使用時に同期せずに生成します。\n
+     *  複数スレッドから porter の API を呼び出す前に、
+     *  シングル スレッド フェーズで potr_tracer_get() を呼び出してください。
      */
     POTR_EXPORT extern int POTR_API potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *data,
                                                       size_t len, int flags);
@@ -305,7 +316,11 @@ extern "C"
      *  1:1 モードおよびその他の通信種別では POTR_ERR_UNSUPPORTED を返します。
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。
+     *  本関数は条件付きスレッド セーフです。\n
+     *  porter が内部で使用するトレーサーは、最初の使用時に同期せずに生成します。\n
+     *  複数スレッドから porter の API を呼び出す前に、
+     *  シングル スレッド フェーズで potr_tracer_get() を呼び出してください。\n
+     *  この条件を満たす場合は、同時に実行できます。
      *
      *  @warning        受信コールバック (potr_recv_fn) の内部から同一サービスに対して本関数を呼び出さないでください。\n
      *                  内部排他制御の競合によりデッドロックが発生します。\n
@@ -345,7 +360,10 @@ extern "C"
      *  @par            スレッド セーフ
      *  本関数は条件付きスレッド セーフです。\n
      *  異なる @p handle に対する操作は同時に実行できます。\n
-     *  同一 @p handle に対する操作は、呼び出し側で直列化してください。
+     *  同一 @p handle に対する操作は、呼び出し側で直列化してください。\n
+     *  porter が内部で使用するトレーサーは、最初の使用時に同期せずに生成します。\n
+     *  複数スレッドから porter の API を呼び出す前に、
+     *  シングル スレッド フェーズで potr_tracer_get() を呼び出してください。
      */
     POTR_EXPORT extern int POTR_API potr_service_close(potr_context *handle);
 
@@ -380,7 +398,11 @@ extern "C"
      *  タイムスタンプは UTC。L はレベル文字 (C/E/W/I/V)。
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。
+     *  本関数は条件付きスレッド セーフです。\n
+     *  porter が内部で使用するトレーサーは、最初の使用時に同期せずに生成します。\n
+     *  そのため、複数スレッドから porter の API を呼び出す前に、
+     *  シングル スレッド フェーズで本関数を呼び出してください。\n
+     *  トレーサーを生成した後は、同時に実行できます。
      */
     POTR_EXPORT cplat_tracer *POTR_API potr_tracer_get(void);
 
@@ -412,7 +434,11 @@ extern "C"
         @endcode
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。
+     *  本関数は条件付きスレッド セーフです。\n
+     *  porter が内部で使用するトレーサーは、最初の使用時に同期せずに生成します。\n
+     *  複数スレッドから porter の API を呼び出す前に、
+     *  シングル スレッド フェーズで potr_tracer_get() を呼び出してください。\n
+     *  この条件を満たす場合は、同時に実行できます。
      */
     POTR_EXPORT extern int POTR_API potr_service_get_type(const char *config_path, int64_t service_id, potr_type *type);
 
