@@ -34,7 +34,7 @@ TEST(configFileLoadTest, loadsGlobalServiceAndServiceIdsFromRealFile)
                                   .build();
 
     ASSERT_FALSE(config_path.empty()); // [状態] - 実ファイルへ global と 3 つの service オブジェクトを書き出す。
-                                       // [状態確認] - config_path が空でないこと。
+                                       // [状態確認] - config_path.empty() の戻り値が false であること。
 
     // Pre-Assert
 
@@ -49,34 +49,60 @@ TEST(configFileLoadTest, loadsGlobalServiceAndServiceIdsFromRealFile)
                                               &count); // [手順] - 実ファイルから service ID 一覧を列挙する。
 
     // Assert
+    ASSERT_EQ(POTR_OK,
+              actual_ret_global); // [確認_正常系] - potr_internal_config_load_global() の戻り値が POTR_OK であること。
     ASSERT_EQ(
         POTR_OK,
-        actual_ret_global); // [確認_正常系] - potr_internal_config_load_global の戻り値から、global の読込に成功したと判断できること。
+        actual_ret_service); // [確認_正常系] - potr_internal_config_load_service() の戻り値が POTR_OK であること。
     ASSERT_EQ(
         POTR_OK,
-        actual_ret_service); // [確認_正常系] - potr_internal_config_load_service の戻り値から、service の読込に成功したと判断できること。
-    ASSERT_EQ(
-        POTR_OK,
-        actual_ret_ids); // [確認_正常系] - potr_internal_config_list_service_ids の戻り値から、service ID 列挙に成功したと判断できること。
-    EXPECT_EQ(16U, global.window_size);   // [確認_正常系] - Builder が出力した window_size を読み込むこと。
-    EXPECT_EQ(1400U, global.max_payload); // [確認_正常系] - Builder が出力した max_payload を読み込むこと。
-    EXPECT_EQ(111U,
-              global.udp_health_interval_ms); // [確認_正常系] - udp_health_interval_ms を実ファイルから読み込むこと。
-    EXPECT_EQ(222U,
-              global.udp_health_timeout_ms); // [確認_正常系] - udp_health_timeout_ms を実ファイルから読み込むこと。
-    EXPECT_EQ(333U,
-              global.tcp_health_interval_ms); // [確認_正常系] - tcp_health_interval_ms を実ファイルから読み込むこと。
-    EXPECT_EQ(444U,
-              global.tcp_health_timeout_ms); // [確認_正常系] - tcp_health_timeout_ms を実ファイルから読み込むこと。
-    EXPECT_EQ(555U, global.tcp_close_timeout_ms); // [確認_正常系] - tcp_close_timeout_ms を実ファイルから読み込むこと。
-    EXPECT_EQ(2002, service.service_id);          // [確認_正常系] - 指定 service_id の service を読み込むこと。
-    EXPECT_EQ(POTR_TYPE_TCP_BIDIR, service.type); // [確認_正常系] - type を実ファイルから読み込むこと。
-    EXPECT_EQ(6002U, service.dst_port);           // [確認_正常系] - dst_port を実ファイルから読み込むこと。
-    ASSERT_NE(nullptr, ids);                      // [確認_正常系] - service ID 配列が確保されること。
-    ASSERT_EQ(3, count);                          // [確認_正常系] - 3 件の service ID を列挙すること。
-    EXPECT_EQ(1001, ids[0]);                      // [確認_正常系] - 1 件目の service ID を保持すること。
-    EXPECT_EQ(INT64_MAX, ids[1]);                 // [確認_正常系] - 64 ビット最大値の ID を保持すること。
-    EXPECT_EQ(2002, ids[2]);                      // [確認_正常系] - 3 件目の service ID を保持すること。
+        actual_ret_ids); // [確認_正常系] - potr_internal_config_list_service_ids() の戻り値が POTR_OK であること。
+    EXPECT_EQ(
+        16U,
+        global
+            .window_size); // [確認_正常系] - global.window_size が 16U であること。(Builder が出力した window_size を読み込んだことの確認)
+    EXPECT_EQ(
+        1400U,
+        global
+            .max_payload); // [確認_正常系] - global.max_payload が 1400U であること。(Builder が出力した max_payload を読み込んだことの確認)
+    EXPECT_EQ(
+        111U,
+        global
+            .udp_health_interval_ms); // [確認_正常系] - global.udp_health_interval_ms が 111U であること。(実ファイルへ書いた udp_health_interval_ms を読み込んだことの確認)
+    EXPECT_EQ(
+        222U,
+        global
+            .udp_health_timeout_ms); // [確認_正常系] - global.udp_health_timeout_ms が 222U であること。(実ファイルへ書いた udp_health_timeout_ms を読み込んだことの確認)
+    EXPECT_EQ(
+        333U,
+        global
+            .tcp_health_interval_ms); // [確認_正常系] - global.tcp_health_interval_ms が 333U であること。(実ファイルへ書いた tcp_health_interval_ms を読み込んだことの確認)
+    EXPECT_EQ(
+        444U,
+        global
+            .tcp_health_timeout_ms); // [確認_正常系] - global.tcp_health_timeout_ms が 444U であること。(実ファイルへ書いた tcp_health_timeout_ms を読み込んだことの確認)
+    EXPECT_EQ(
+        555U,
+        global
+            .tcp_close_timeout_ms); // [確認_正常系] - global.tcp_close_timeout_ms が 555U であること。(実ファイルへ書いた tcp_close_timeout_ms を読み込んだことの確認)
+    EXPECT_EQ(
+        2002,
+        service
+            .service_id); // [確認_正常系] - service.service_id が 2002 であること。(指定した service_id の service を読み込んだことの確認)
+    EXPECT_EQ(POTR_TYPE_TCP_BIDIR, service.type); // [確認_正常系] - service.type が POTR_TYPE_TCP_BIDIR であること。
+    EXPECT_EQ(
+        6002U,
+        service
+            .dst_port); // [確認_正常系] - service.dst_port が 6002U であること。(実ファイルへ書いた dst_port を読み込んだことの確認)
+    ASSERT_NE(nullptr, ids); // [確認_正常系] - ids が nullptr 以外であること。(service ID 配列が確保されたことの確認)
+    ASSERT_EQ(3, count);     // [確認_正常系] - count が 3 であること。(3 件の service ID を列挙したことの確認)
+    EXPECT_EQ(1001,
+              ids[0]); // [確認_正常系] - ids[0] が 1001 であること。(1 件目の service ID を保持していることの確認)
+    EXPECT_EQ(
+        INT64_MAX,
+        ids[1]); // [確認_正常系] - ids[1] が INT64_MAX であること。(64 ビット最大値の ID を保持していることの確認)
+    EXPECT_EQ(2002,
+              ids[2]); // [確認_正常系] - ids[2] が 2002 であること。(3 件目の service ID を保持していることの確認)
 
     // Cleanup
     free(ids);

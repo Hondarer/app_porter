@@ -85,9 +85,12 @@ TEST_F(packetTest, potr_internal_packet_build_packed_sets_protocol_version)
         sizeof(payload)); // [手順] - potr_internal_packet_build_packed でパケットを構築する。
 
     // Assert
-    ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_packet_build_packed の戻り値が POTR_OK であること。
-    EXPECT_EQ(POTR_PROTOCOL_VERSION,
-              ntohl(pkt.protocol_version)); // [確認_正常系] - protocol_version に現行バージョンが設定されること。
+    ASSERT_EQ(POTR_OK,
+              actual_ret); // [確認_正常系] - potr_internal_packet_build_packed() の戻り値が POTR_OK であること。
+    EXPECT_EQ(
+        POTR_PROTOCOL_VERSION,
+        ntohl(
+            pkt.protocol_version)); // [確認_正常系] - pkt.protocol_version に対する ntohl() の戻り値が POTR_PROTOCOL_VERSION であること。(ワイヤー上の protocol_version が現行バージョンであることの確認)
 }
 
 // potr_internal_packet_parse が現行プロトコル バージョンのパケットを受理することの確認
@@ -106,10 +109,13 @@ TEST_F(packetTest, potr_internal_packet_parse_accepts_current_protocol_version)
         &pkt, wire, sizeof(wire)); // [手順] - potr_internal_packet_parse で wire パケットを解析する。
 
     // Assert
-    ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_packet_parse の戻り値が POTR_OK であること。
-    EXPECT_EQ(42, pkt.service_id);  // [確認_正常系] - service_id 42 が復元されること。
+    ASSERT_EQ(
+        POTR_OK,
+        actual_ret); // [確認_正常系] - 現行プロトコル バージョンに対する potr_internal_packet_parse() の戻り値が POTR_OK であること。
+    EXPECT_EQ(
+        42, pkt.service_id); // [確認_正常系] - pkt.service_id が 42 であること。(service_id 42 が復元されたことの確認)
     EXPECT_EQ(POTR_PROTOCOL_VERSION,
-              pkt.protocol_version); // [確認_正常系] - protocol_version が現行バージョンであること。
+              pkt.protocol_version); // [確認_正常系] - pkt.protocol_version が POTR_PROTOCOL_VERSION であること。
 }
 
 // potr_internal_packet_parse が異なるプロトコル バージョンのパケットを拒否することの確認
@@ -128,8 +134,9 @@ TEST_F(packetTest, potr_internal_packet_parse_rejects_different_protocol_version
         &pkt, wire, sizeof(wire)); // [手順] - potr_internal_packet_parse で wire パケットを解析する。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_PROTOCOL,
-              actual_ret); // [確認_異常系] - potr_internal_packet_parse の戻り値が POTR_ERR_PROTOCOL であること。
+    EXPECT_EQ(
+        POTR_ERR_PROTOCOL,
+        actual_ret); // [確認_異常系] - 現行と異なるプロトコル バージョンに対する potr_internal_packet_parse() の戻り値が POTR_ERR_PROTOCOL であること。
 }
 
 // potr_internal_packet_parse がバージョン 0 (旧 reserved 領域) のパケットを拒否することの確認
@@ -148,6 +155,7 @@ TEST_F(packetTest, potr_internal_packet_parse_rejects_legacy_reserved_zero)
         &pkt, wire, sizeof(wire)); // [手順] - potr_internal_packet_parse で wire パケットを解析する。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_PROTOCOL,
-              actual_ret); // [確認_異常系] - potr_internal_packet_parse の戻り値が POTR_ERR_PROTOCOL であること。
+    EXPECT_EQ(
+        POTR_ERR_PROTOCOL,
+        actual_ret); // [確認_異常系] - プロトコル バージョン 0 に対する potr_internal_packet_parse() の戻り値が POTR_ERR_PROTOCOL であること。
 }

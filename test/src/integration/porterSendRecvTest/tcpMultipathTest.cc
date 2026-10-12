@@ -81,7 +81,7 @@ bytes packet(uint32_t seq, uint16_t flags, const bytes &payload, bool encrypted)
         size_t len = cipher.size();
         EXPECT_EQ(CPLAT_OK, cplat_crypto_encrypt(cipher.data(), &len, payload.data(), payload.size(), key, nonce,
                                                  out.data(), header_size));
-        // [状態確認] - `cplat_crypto_encrypt(cipher.data(), &len, payload.data(), payload.size(), key, nonce, out.data(), header_size)` の戻り値が `CPLAT_OK` であること。
+        // [状態確認] - cplat_crypto_encrypt() の戻り値が CPLAT_OK であること。
         out.insert(out.end(), cipher.begin(), cipher.end());
     }
     else
@@ -218,17 +218,17 @@ class tcpMultipathTest : public Test
         strcpy(service.dst_addr[0], "127.0.0.1");
         strcpy(service.dst_addr[1], "127.0.0.2");
         ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_RECEIVER, receive, &handle));
-        // [状態確認] - `potr_service_open(&global, &service, POTR_ROLE_RECEIVER, receive, &handle)` の戻り値が `POTR_OK` であること。
+        // [状態確認] - potr_service_open() の戻り値が POTR_OK であること。
         for (int i = 0; i < 2; ++i)
         {
             cplat_ipv4_endpoint endpoint = {};
             ASSERT_EQ(CPLAT_OK, cplat_ipv4_parse(service.dst_addr[i], &endpoint.address));
-            // [状態確認] - `cplat_ipv4_parse(service.dst_addr[i], &endpoint.address)` の戻り値が `CPLAT_OK` であること。
+            // [状態確認] - cplat_ipv4_parse() の戻り値が CPLAT_OK であること。
             endpoint.port = cplat_hton16(service.dst_port);
             ASSERT_EQ(CPLAT_OK, cplat_socket_open(CPLAT_SOCKET_TCP, &sockets[i], nullptr));
-            // [状態確認] - `cplat_socket_open(CPLAT_SOCKET_TCP, &sockets[i], nullptr)` の戻り値が `CPLAT_OK` であること。
+            // [状態確認] - cplat_socket_open() の戻り値が CPLAT_OK であること。
             ASSERT_EQ(CPLAT_OK, cplat_socket_connect(sockets[i], &endpoint, nullptr));
-            // [状態確認] - `cplat_socket_connect(sockets[i], &endpoint, nullptr)` の戻り値が `CPLAT_OK` であること。
+            // [状態確認] - cplat_socket_connect() の戻り値が CPLAT_OK であること。
             // [サブ手順参照 名前=tcpMultipathTest.send_packet]
             // [サブ手順参照 名前=tcpMultipathTest.packet]
             send_packet(i, packet(0, POTR_FLAG_PING, bytes(POTR_MAX_PATH, 1), crypto));
@@ -237,26 +237,26 @@ class tcpMultipathTest : public Test
                 // [サブ手順参照 名前=tcpMultipathTest.send_packet]
                 send_packet(0, data_packet(0, bytes{'s'}, crypto));
                 ASSERT_TRUE(wait_for([] { return s_received.size() == 1; }));
-                // [状態確認] - `wait_for([] { return s_received.size() == 1; })` が true であること。
+                // [状態確認] - s_received.size() の戻り値が 1 になるまで待つ wait_for() の戻り値が true であること。
             }
         }
         // PING に対する応答の受信で、両経路の開始を待ちます。
         int ready = 0;
         ASSERT_EQ(CPLAT_OK, cplat_socket_wait_readable(sockets[1], 5000, &ready, nullptr));
-        // [状態確認] - `cplat_socket_wait_readable(sockets[1], 5000, &ready, nullptr)` の戻り値が `CPLAT_OK` であること。
+        // [状態確認] - cplat_socket_wait_readable() の戻り値が CPLAT_OK であること。
         ASSERT_EQ(1, ready);
-        // [状態確認] - `ready` の値が `1` であること。
+        // [状態確認] - ready が 1 であること。
         // 応答 PING は accept スレッドの bootstrap 送信でも発生するため、読み取り可能なだけでは
         // 受信スレッドが先読み PING を処理し終えた証拠になりません。両経路の PATH_CONNECTED を
         // 待ち、各経路の受信スレッドが次のヘッダー読み取りへ進んだことを確認します。
         ASSERT_TRUE(wait_for([] { return s_live_paths == 3; }));
-        // [状態確認] - `wait_for([] { return s_live_paths == 3; })` が true であること。
+        // [状態確認] - s_live_paths が 3 になるまで待つ wait_for() の戻り値が true であること。
         if (!seed_first_path)
         {
             // [サブ手順参照 名前=tcpMultipathTest.send_packet]
             send_packet(0, data_packet(0, bytes{'s'}, crypto));
             ASSERT_TRUE(wait_for([] { return s_received.size() == 1; }));
-            // [状態確認] - `wait_for([] { return s_received.size() == 1; })` が true であること。
+            // [状態確認] - s_received.size() の戻り値が 1 になるまで待つ wait_for() の戻り値が true であること。
         }
     }
     // [サブ手順終了]
@@ -265,7 +265,7 @@ class tcpMultipathTest : public Test
     void send_packet(int path, const bytes &wire)
     {
         ASSERT_EQ(CPLAT_OK, cplat_socket_send_all(sockets[path], wire.data(), wire.size(), nullptr));
-        // [状態確認] - `cplat_socket_send_all(sockets[path], wire.data(), wire.size(), nullptr)` の戻り値が `CPLAT_OK` であること。
+        // [状態確認] - cplat_socket_send_all() の戻り値が CPLAT_OK であること。
     }
     // [サブ手順終了]
 
@@ -280,7 +280,7 @@ class tcpMultipathTest : public Test
         if (handle != nullptr)
         {
             EXPECT_EQ(POTR_OK, potr_service_close(handle));
-            // [状態確認] - `potr_service_close(handle)` の戻り値が `POTR_OK` であること。
+            // [状態確認] - potr_service_close() の戻り値が POTR_OK であること。
         }
         for (auto socket : sockets)
         {
@@ -297,7 +297,7 @@ TEST_F(tcpMultipathTest, interleaved_headers_preserve_packets)
     // Arrange
     // [サブ手順参照 名前=tcpMultipathTest.open_receiver]
     ASSERT_NO_FATAL_FAILURE(open_receiver());
-    // [状態確認] - ASSERT_NO_FATAL_FAILURE(open_receiver()) の期待が成立すること。
+    // [状態確認] - open_receiver() の中で致命的な失敗が起きないこと。
     bytes first(50, 'A');
     bytes second(90, 'B');
     // Pre-Assert
@@ -308,22 +308,28 @@ TEST_F(tcpMultipathTest, interleaved_headers_preserve_packets)
     // Act
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(0, data_packet(1, first, false)); // [手順] - 第 1 経路をヘッダー読み取り直後に停止する。
-    ASSERT_TRUE(wait_for([] { return s_header_held; }));
-    // [確認_正常系] - `wait_for([] { return s_header_held; })` が true であること。
+    bool actual_ret_header = wait_for([] { return s_header_held; }); // [手順] - ヘッダー読み取りの停止まで待機する。
+    ASSERT_TRUE(actual_ret_header);
+    // [状態確認] - s_header_held が true になるまで待つ wait_for() の戻り値が true であること。
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(1, data_packet(2, second, false)); // [手順] - 第 2 経路へ異なる長さのパケットを送信する。
-    ASSERT_TRUE(wait_for([] { return s_headers >= 3; }));
-    // [確認_正常系] - `wait_for([] { return s_headers >= 3; })` が true であること。
+    bool actual_ret_headers = wait_for([] { return s_headers >= 3; }); // [手順] - 後続のヘッダー読み取りまで待機する。
+    ASSERT_TRUE(actual_ret_headers);
+    // [状態確認] - s_headers が 3 以上になるまで待つ wait_for() の戻り値が true であること。
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         s_release = true;
         s_cv.notify_all();
     }
     // Assert
-    ASSERT_TRUE(wait_for([] { return s_received.size() == 3; })); // [確認_正常系] - 両パケットを配信すること。
+    ASSERT_TRUE(wait_for(
+        []
+        {
+            return s_received.size() == 3;
+        })); // [確認_正常系] - s_received.size() の戻り値が 3 になるまで待つ wait_for() の戻り値が true であること。
     std::lock_guard<std::mutex> lock(s_mutex);
-    EXPECT_EQ(first, s_received[1]);  // [確認_正常系] - 第 1 パケットの内容が一致すること。
-    EXPECT_EQ(second, s_received[2]); // [確認_正常系] - 第 2 パケットの内容が一致すること。
+    EXPECT_EQ(first, s_received[1]);  // [確認_正常系] - s_received[1] が first と一致すること。
+    EXPECT_EQ(second, s_received[2]); // [確認_正常系] - s_received[2] が second と一致すること。
 }
 // [サブ手順参照 名前=tcpMultipathTest.TearDown]
 
@@ -334,7 +340,7 @@ TEST_F(tcpMultipathTest, encrypted_compressed_fragments)
     // Arrange
     // [サブ手順参照 名前=tcpMultipathTest.open_receiver]
     ASSERT_NO_FATAL_FAILURE(open_receiver(true));
-    // [状態確認] - ASSERT_NO_FATAL_FAILURE(open_receiver(true)) の期待が成立すること。
+    // [状態確認] - open_receiver() の中で致命的な失敗が起きないこと。
     bytes expected(4096);
     uint32_t seed = 42;
     for (size_t i = 0; i < 2048; ++i)
@@ -346,13 +352,13 @@ TEST_F(tcpMultipathTest, encrypted_compressed_fragments)
     bytes compressed(8192);
     size_t length = compressed.size();
     ASSERT_EQ(CPLAT_OK, cplat_compress(compressed.data(), &length, expected.data(), expected.size()));
-    // [状態確認] - `cplat_compress(compressed.data(), &length, expected.data(), expected.size())` の戻り値が `CPLAT_OK` であること。
+    // [状態確認] - cplat_compress() の戻り値が CPLAT_OK であること。
     compressed.resize(length);
-    // Pre-Assert
     ASSERT_GT(length, 400U);
-    // [確認_正常系] - `length` が `400U` より大きいこと。
+    // [状態確認] - length が 400U より大きいこと。
     ASSERT_LT(length, expected.size());
-    // [確認_正常系] - `length` が `expected.size()` より小さいこと。
+    // [状態確認] - length が expected.size() の戻り値より小さいこと。
+    // Pre-Assert
     // Act
     uint32_t seq = 1;
     for (size_t offset = 0; offset < length; offset += 400)
@@ -369,9 +375,13 @@ TEST_F(tcpMultipathTest, encrypted_compressed_fragments)
         ++seq;
     }
     // Assert
-    ASSERT_TRUE(wait_for([] { return s_received.size() == 2; })); // [確認_正常系] - 結合したメッセージを配信すること。
+    ASSERT_TRUE(wait_for(
+        []
+        {
+            return s_received.size() == 2;
+        })); // [確認_正常系] - s_received.size() の戻り値が 2 になるまで待つ wait_for() の戻り値が true であること。
     std::lock_guard<std::mutex> lock(s_mutex);
-    EXPECT_EQ(expected, s_received[1]); // [確認_正常系] - 復号・展開した全バイトが一致すること。
+    EXPECT_EQ(expected, s_received[1]); // [確認_正常系] - s_received[1] が expected と一致すること。
 }
 // [サブ手順参照 名前=tcpMultipathTest.TearDown]
 
@@ -382,7 +392,7 @@ TEST_F(tcpMultipathTest, blocked_path_does_not_stop_other_path)
     // Arrange
     // [サブ手順参照 名前=tcpMultipathTest.open_receiver]
     ASSERT_NO_FATAL_FAILURE(open_receiver());
-    // [状態確認] - ASSERT_NO_FATAL_FAILURE(open_receiver()) の期待が成立すること。
+    // [状態確認] - open_receiver() の中で致命的な失敗が起きないこと。
     bytes first(40, 'A');
     bytes second(60, 'B');
     // Pre-Assert
@@ -394,23 +404,27 @@ TEST_F(tcpMultipathTest, blocked_path_does_not_stop_other_path)
     // Act
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(0, data_packet(2, second, false));
-    ASSERT_TRUE(wait_for([] { return s_header_held; }));
-    // [確認_正常系] - `wait_for([] { return s_header_held; })` が true であること。
+    bool actual_ret_header = wait_for([] { return s_header_held; }); // [手順] - ヘッダー読み取りの停止まで待機する。
+    ASSERT_TRUE(actual_ret_header);
+    // [状態確認] - s_header_held が true になるまで待つ wait_for() の戻り値が true であること。
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(1, data_packet(1, first, false)); // [手順] - 他経路のヘッダー待機中に先行 DATA を送信する。
     // Assert
-    ASSERT_TRUE(
-        wait_for([] { return s_received.size() == 2; })); // [確認_正常系] - 待機経路を解除する前に配信できること。
+    ASSERT_TRUE(wait_for(
+        []
+        {
+            return s_received.size() == 2;
+        })); // [確認_正常系] - 待機経路を解除する前の wait_for() の戻り値が true であること。(先行 DATA が配信されたことの確認)
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         s_release = true;
         s_cv.notify_all();
     }
     ASSERT_TRUE(wait_for([] { return s_received.size() == 3; }));
-    // [確認_正常系] - `wait_for([] { return s_received.size() == 3; })` が true であること。
+    // [確認_正常系] - s_received.size() の戻り値が 3 になるまで待つ wait_for() の戻り値が true であること。
     std::lock_guard<std::mutex> lock(s_mutex);
-    EXPECT_EQ(first, s_received[1]);  // [確認_正常系] - 先行 DATA が一致すること。
-    EXPECT_EQ(second, s_received[2]); // [確認_正常系] - 待機を解除した DATA が一致すること。
+    EXPECT_EQ(first, s_received[1]);  // [確認_正常系] - s_received[1] が first と一致すること。
+    EXPECT_EQ(second, s_received[2]); // [確認_正常系] - s_received[2] が second と一致すること。
 }
 // [サブ手順参照 名前=tcpMultipathTest.TearDown]
 
@@ -421,12 +435,12 @@ TEST_F(tcpMultipathTest, encrypted_compressed_reply_preserves_callback_data)
     // Arrange
     // [サブ手順参照 名前=tcpMultipathTest.open_receiver]
     ASSERT_NO_FATAL_FAILURE(open_receiver(true, true));
-    // [状態確認] - ASSERT_NO_FATAL_FAILURE(open_receiver(true, true)) の期待が成立すること。
+    // [状態確認] - open_receiver() の中で致命的な失敗が起きないこと。
     bytes expected(400, 'Q');
     bytes compressed(1024);
     size_t length = compressed.size();
     ASSERT_EQ(CPLAT_OK, cplat_compress(compressed.data(), &length, expected.data(), expected.size()));
-    // [状態確認] - `cplat_compress(compressed.data(), &length, expected.data(), expected.size())` の戻り値が `CPLAT_OK` であること。
+    // [状態確認] - cplat_compress() の戻り値が CPLAT_OK であること。
     compressed.resize(length);
     // Pre-Assert
     {
@@ -439,11 +453,12 @@ TEST_F(tcpMultipathTest, encrypted_compressed_reply_preserves_callback_data)
                                POTR_FLAG_COMPRESSED)); // [手順] - 復号・展開後のコールバックから圧縮返信する。
     // Assert
     ASSERT_TRUE(wait_for([] { return s_received.size() == 2; }));
-    // [確認_正常系] - `wait_for([] { return s_received.size() == 2; })` が true であること。
+    // [確認_正常系] - s_received.size() の戻り値が 2 になるまで待つ wait_for() の戻り値が true であること。
     std::lock_guard<std::mutex> lock(s_mutex);
-    EXPECT_EQ(POTR_OK, s_reply_result); // [確認_正常系] - 返信を受け付けること。
-    EXPECT_TRUE(s_payload_stable);      // [確認_正常系] - 返信の前後で受信データが変化しないこと。
-    EXPECT_EQ(expected, s_received[1]); // [確認_正常系] - 展開した全バイトが一致すること。
+    EXPECT_EQ(POTR_OK, s_reply_result); // [確認_正常系] - potr_service_send() の戻り値が POTR_OK であること。
+    EXPECT_TRUE(
+        s_payload_stable); // [確認_正常系] - s_payload_stable が true であること。(返信の前後で受信データが変化しないことの確認)
+    EXPECT_EQ(expected, s_received[1]); // [確認_正常系] - s_received[1] が expected と一致すること。
 }
 // [サブ手順参照 名前=tcpMultipathTest.TearDown]
 
@@ -454,7 +469,7 @@ TEST_F(tcpMultipathTest, callback_lifetime_across_paths)
     // Arrange
     // [サブ手順参照 名前=tcpMultipathTest.open_receiver]
     ASSERT_NO_FATAL_FAILURE(open_receiver(true));
-    // [状態確認] - ASSERT_NO_FATAL_FAILURE(open_receiver(true)) の期待が成立すること。
+    // [状態確認] - open_receiver() の中で致命的な失敗が起きないこと。
     bytes first(400, 'A');
     bytes second(400, 'B');
     bytes first_compressed(1024);
@@ -462,9 +477,9 @@ TEST_F(tcpMultipathTest, callback_lifetime_across_paths)
     size_t first_size = first_compressed.size();
     size_t second_size = second_compressed.size();
     ASSERT_EQ(CPLAT_OK, cplat_compress(first_compressed.data(), &first_size, first.data(), first.size()));
-    // [状態確認] - `cplat_compress(first_compressed.data(), &first_size, first.data(), first.size())` の戻り値が `CPLAT_OK` であること。
+    // [状態確認] - first を圧縮する cplat_compress() の戻り値が CPLAT_OK であること。
     ASSERT_EQ(CPLAT_OK, cplat_compress(second_compressed.data(), &second_size, second.data(), second.size()));
-    // [状態確認] - `cplat_compress(second_compressed.data(), &second_size, second.data(), second.size())` の戻り値が `CPLAT_OK` であること。
+    // [状態確認] - second を圧縮する cplat_compress() の戻り値が CPLAT_OK であること。
     first_compressed.resize(first_size);
     second_compressed.resize(second_size);
     // Pre-Assert
@@ -475,12 +490,16 @@ TEST_F(tcpMultipathTest, callback_lifetime_across_paths)
     // Act
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(0, data_packet(1, first_compressed, true, POTR_FLAG_COMPRESSED));
-    ASSERT_TRUE(wait_for([] { return s_callback_held; })); // [手順] - 最初の DATA コールバックを停止する。
-    // [確認_正常系] - `wait_for([] { return s_callback_held; })` が true であること。
+    bool actual_ret_callback =
+        wait_for([] { return s_callback_held; }); // [手順] - 最初の DATA コールバックを停止する。
+    ASSERT_TRUE(actual_ret_callback);
+    // [状態確認] - s_callback_held が true になるまで待つ wait_for() の戻り値が true であること。
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(1, data_packet(2, second_compressed, true, POTR_FLAG_COMPRESSED));
-    ASSERT_TRUE(wait_for([] { return s_headers >= 3; })); // [手順] - 別経路が後続ヘッダーを読み取るまで待機する。
-    // [確認_正常系] - `wait_for([] { return s_headers >= 3; })` が true であること。
+    bool actual_ret_headers =
+        wait_for([] { return s_headers >= 3; }); // [手順] - 別経路が後続ヘッダーを読み取るまで待機する。
+    ASSERT_TRUE(actual_ret_headers);
+    // [状態確認] - s_headers が 3 以上になるまで待つ wait_for() の戻り値が true であること。
     {
         std::unique_lock<std::mutex> lock(s_mutex);
         // 修正前は後続の展開が先行し、修正後はコールバック復帰まで待機します。
@@ -490,11 +509,12 @@ TEST_F(tcpMultipathTest, callback_lifetime_across_paths)
     }
     // Assert
     ASSERT_TRUE(wait_for([] { return s_received.size() == 3; }));
-    // [確認_正常系] - `wait_for([] { return s_received.size() == 3; })` が true であること。
+    // [確認_正常系] - s_received.size() の戻り値が 3 になるまで待つ wait_for() の戻り値が true であること。
     std::lock_guard<std::mutex> lock(s_mutex);
-    EXPECT_TRUE(s_payload_stable);    // [確認_正常系] - コールバック中の受信内容を維持すること。
-    EXPECT_EQ(first, s_received[1]);  // [確認_正常系] - 先行 DATA が最初に配信されること。
-    EXPECT_EQ(second, s_received[2]); // [確認_正常系] - 後続 DATA が次に配信されること。
+    EXPECT_TRUE(
+        s_payload_stable); // [確認_正常系] - s_payload_stable が true であること。(コールバック中の受信内容を維持したことの確認)
+    EXPECT_EQ(first, s_received[1]);  // [確認_正常系] - s_received[1] が first と一致すること。
+    EXPECT_EQ(second, s_received[2]); // [確認_正常系] - s_received[2] が second と一致すること。
 }
 // [サブ手順参照 名前=tcpMultipathTest.TearDown]
 
@@ -508,11 +528,13 @@ TEST_F(tcpMultipathTest, bootstrap_both_paths_before_data)
     ASSERT_NO_FATAL_FAILURE(
         // [サブ手順参照 名前=tcpMultipathTest.open_receiver]
         open_receiver(true, true, false)); // [手順] - 両経路を PING で確立した後に DATA を送信する。
-    // [確認_正常系] - ASSERT_NO_FATAL_FAILURE(open_receiver(true, true, false)) の期待が成立すること。
+    // [確認_正常系] - open_receiver() の中で致命的な失敗が起きないこと。
     // Assert
     std::lock_guard<std::mutex> lock(s_mutex);
-    EXPECT_EQ(3U, s_live_paths);  // [確認_正常系] - 両経路の接続を維持すること。
-    EXPECT_EQ(0U, s_disconnects); // [確認_正常系] - 同一セッションの経路を切断しないこと。
+    EXPECT_EQ(3U, s_live_paths); // [確認_正常系] - s_live_paths が 3U であること。(両経路の接続を維持したことの確認)
+    EXPECT_EQ(
+        0U,
+        s_disconnects); // [確認_正常系] - s_disconnects が 0U であること。(同一セッションの経路を切断しないことの確認)
 }
 // [サブ手順参照 名前=tcpMultipathTest.TearDown]
 
@@ -523,34 +545,45 @@ TEST_F(tcpMultipathTest, reconnect_path_and_finish_in_order)
     // Arrange
     // [サブ手順参照 名前=tcpMultipathTest.open_receiver]
     ASSERT_NO_FATAL_FAILURE(open_receiver(false, true));
-    // [状態確認] - ASSERT_NO_FATAL_FAILURE(open_receiver(false, true)) の期待が成立すること。
+    // [状態確認] - open_receiver() の中で致命的な失敗が起きないこと。
     bytes first(40, 'A');
     bytes second(60, 'B');
-    // Pre-Assert
     ASSERT_TRUE(wait_for([] { return s_live_paths == 3; }));
-    // [確認_正常系] - `wait_for([] { return s_live_paths == 3; })` が true であること。
+    // [状態確認] - s_live_paths が 3 になるまで待つ wait_for() の戻り値が true であること。
+    // Pre-Assert
     // Act
     cplat_socket_close(sockets[0]);
     sockets[0] = CPLAT_INVALID_SOCKET;
-    ASSERT_TRUE(wait_for([] { return s_live_paths == 2; }));
-    // [確認_正常系] - `wait_for([] { return s_live_paths == 2; })` が true であること。
+    bool actual_ret_disconnected =
+        wait_for([] { return s_live_paths == 2; }); // [手順] - 一方の経路の切断まで待機する。
+    ASSERT_TRUE(actual_ret_disconnected);
+    // [確認_正常系] - s_live_paths が 2 になるまで待つ wait_for() の戻り値が true であること。
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(1, data_packet(1, first, false)); // [手順] - 一方の経路を切断した状態で送受信を継続する。
-    ASSERT_TRUE(wait_for([] { return s_received.size() == 2; }));
-    // [確認_正常系] - `wait_for([] { return s_received.size() == 2; })` が true であること。
+    bool actual_ret_received =
+        wait_for([] { return s_received.size() == 2; }); // [手順] - 残存経路の DATA の配信まで待機する。
+    ASSERT_TRUE(actual_ret_received);
+    // [確認_正常系] - s_received.size() の戻り値が 2 になるまで待つ wait_for() の戻り値が true であること。
     cplat_ipv4_endpoint endpoint = {};
-    ASSERT_EQ(CPLAT_OK, cplat_ipv4_parse("127.0.0.1", &endpoint.address));
-    // [確認_正常系] - `cplat_ipv4_parse("127.0.0.1", &endpoint.address)` の戻り値が `CPLAT_OK` であること。
+    int actual_ret_parse =
+        cplat_ipv4_parse("127.0.0.1", &endpoint.address); // [手順] - 再接続先の IPv4 アドレスを解析する。
+    ASSERT_EQ(CPLAT_OK, actual_ret_parse);
+    // [状態確認] - cplat_ipv4_parse() の戻り値が CPLAT_OK であること。
     endpoint.port = cplat_hton16(19723);
-    ASSERT_EQ(CPLAT_OK, cplat_socket_open(CPLAT_SOCKET_TCP, &sockets[0], nullptr));
-    // [確認_正常系] - `cplat_socket_open(CPLAT_SOCKET_TCP, &sockets[0], nullptr)` の戻り値が `CPLAT_OK` であること。
-    ASSERT_EQ(CPLAT_OK, cplat_socket_connect(sockets[0], &endpoint, nullptr));
-    // [確認_正常系] - `cplat_socket_connect(sockets[0], &endpoint, nullptr)` の戻り値が `CPLAT_OK` であること。
+    int actual_ret_open =
+        cplat_socket_open(CPLAT_SOCKET_TCP, &sockets[0], nullptr); // [手順] - 再接続用の TCP ソケットを開く。
+    ASSERT_EQ(CPLAT_OK, actual_ret_open);
+    // [状態確認] - cplat_socket_open() の戻り値が CPLAT_OK であること。
+    int actual_ret_connect =
+        cplat_socket_connect(sockets[0], &endpoint, nullptr); // [手順] - TCP ソケットを再接続する。
+    ASSERT_EQ(CPLAT_OK, actual_ret_connect);
+    // [状態確認] - cplat_socket_connect() の戻り値が CPLAT_OK であること。
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     // [サブ手順参照 名前=tcpMultipathTest.packet]
     send_packet(0, packet(2, POTR_FLAG_PING, bytes(POTR_MAX_PATH, 1), false));
-    ASSERT_TRUE(wait_for([] { return s_live_paths == 3; }));
-    // [確認_正常系] - `wait_for([] { return s_live_paths == 3; })` が true であること。
+    bool actual_ret_reconnected = wait_for([] { return s_live_paths == 3; }); // [手順] - 両経路の再接続まで待機する。
+    ASSERT_TRUE(actual_ret_reconnected);
+    // [確認_正常系] - 再接続後の wait_for() の戻り値が true であること。
     // [サブ手順参照 名前=tcpMultipathTest.packet]
     bytes fin = packet(0, POTR_FLAG_FIN | POTR_FLAG_FIN_TARGET_VALID, {}, false);
     put(fin, 28, 3, 4);
@@ -563,10 +596,10 @@ TEST_F(tcpMultipathTest, reconnect_path_and_finish_in_order)
         []
         {
             return s_received.size() == 3 && s_disconnects == 1;
-        })); // [確認_正常系] - 最終 DATA の配信後に切断すること。
+        })); // [確認_正常系] - s_received.size() の戻り値が 3 かつ s_disconnects が 1 になるまで待つ wait_for() の戻り値が true であること。(最終 DATA の配信後に切断したことの確認)
     std::lock_guard<std::mutex> lock(s_mutex);
-    EXPECT_EQ(first, s_received[1]);  // [確認_正常系] - 残存経路の DATA が一致すること。
-    EXPECT_EQ(second, s_received[2]); // [確認_正常系] - 再接続経路の DATA が一致すること。
+    EXPECT_EQ(first, s_received[1]);  // [確認_正常系] - s_received[1] が first と一致すること。
+    EXPECT_EQ(second, s_received[2]); // [確認_正常系] - s_received[2] が second と一致すること。
 }
 // [サブ手順参照 名前=tcpMultipathTest.TearDown]
 #endif

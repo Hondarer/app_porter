@@ -54,7 +54,7 @@ class exportTest : public Test
     {
         workspace_root = findWorkspaceRoot();
         ASSERT_FALSE(workspace_root.empty()) << "ワークスペースルートが見つかりません";
-        // [状態確認] - `workspace_root.empty()` が false であること。
+        // [状態確認] - workspace_root.empty() の戻り値が false であること。
         dll_path = workspace_root + "/app/porter/prod/lib/libporter" TESTFW_SHARED_LIBRARY_EXTENSION;
     }
     // [サブ手順終了]
@@ -106,7 +106,7 @@ TEST_F(exportTest, public_header_variables_declare_export_macro)
         "POTR_EXPORT"); // [手順] - prod/include 配下を走査し、POTR_EXPORT を伴わない extern 変数宣言を集める。
 
     // Assert
-    EXPECT_TRUE(undecorated.empty()) << "POTR_EXPORT を伴わない変数宣言: "
-                                     << testing::joinNames(
-                                            undecorated); // [確認_正常系] - 該当する宣言が 1 件もないこと。
+    EXPECT_TRUE(undecorated.empty())
+        << "POTR_EXPORT を伴わない変数宣言: "
+        << testing::joinNames(undecorated); // [確認_正常系] - undecorated.empty() の戻り値が true であること。
 }

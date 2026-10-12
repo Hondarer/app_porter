@@ -51,13 +51,13 @@ TEST(configListServiceIdsTest, returnsInvalidArgumentWhenParameterIsNull)
     // Assert
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        actual_ret_null_path); // [確認_異常系] - config_path が NULL の場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_path); // [確認_異常系] - config_path が NULL の場合に potr_internal_config_list_service_ids() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        actual_ret_null_ids); // [確認_異常系] - ids_out が NULL の場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_ids); // [確認_異常系] - ids_out が NULL の場合に potr_internal_config_list_service_ids() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        actual_ret_null_count); // [確認_異常系] - count_out が NULL の場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_count); // [確認_異常系] - count_out が NULL の場合に potr_internal_config_list_service_ids() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
 }
 
 // 設定ファイルの open に失敗した場合に POTR_ERR_IO を返すことの確認
@@ -70,7 +70,8 @@ TEST(configListServiceIdsTest, returnsIoErrorWhenFileCannotBeOpened)
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
-        .WillOnce(Return(nullptr)); // [Pre-Assert確認_異常系] - 存在しない設定ファイルの open が 1 回試行されること。
+        .WillOnce(Return(
+            nullptr)); // [Pre-Assert確認_異常系] - cplat_fopen() が "missing.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
 
     // Act
     int actual_ret_open_fail =
@@ -80,7 +81,7 @@ TEST(configListServiceIdsTest, returnsIoErrorWhenFileCannotBeOpened)
     // Assert
     EXPECT_EQ(
         POTR_ERR_IO,
-        actual_ret_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に potr_internal_config_list_service_ids の戻り値が POTR_ERR_IO であること。
+        actual_ret_open_fail); // [確認_異常系] - open に失敗する設定ファイルを指定した場合に potr_internal_config_list_service_ids() の戻り値が POTR_ERR_IO であること。
 }
 
 // 設定ファイルから services のサービス ID のみを列挙し、既定容量 (64 件) を超える場合も動的に領域を拡張して全 ID を取得できることの確認
@@ -112,9 +113,11 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
-            ConfigLineStream::handle())); // [Pre-Assert確認_正常系] - 設定ファイル open が 1 回呼び出されること。
+            ConfigLineStream::
+                handle())); // [Pre-Assert確認_正常系] - cplat_fopen() が "config.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
-        .WillOnce(Return(0)); // [Pre-Assert確認_正常系] - 読み込み完了時に fclose が呼び出されること。
+        .WillOnce(Return(
+            0)); // [Pre-Assert確認_正常系] - fclose() が ConfigLineStream::handle() の戻り値を指定して 1 回呼び出されること。
 
     // Act
     int actual_ret =
@@ -122,13 +125,12 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
                                               &count); // [手順] - 複数 service 定義を含む設定から ID を列挙する。
 
     // Assert
-    ASSERT_EQ(
-        POTR_OK,
-        actual_ret); // [確認_正常系] - potr_internal_config_list_service_ids の戻り値から、列挙に成功したと判断できること。
-    ASSERT_NE(nullptr, ids);  // [確認_正常系] - service ID 配列が確保されること。
-    EXPECT_EQ(70, count);     // [確認_正常系] - 70 件の service ID が列挙されること。
-    EXPECT_EQ(1000, ids[0]);  // [確認_正常系] - 先頭 service ID を保持すること。
-    EXPECT_EQ(1069, ids[69]); // [確認_正常系] - 64 件超でも末尾 service ID を保持すること。
+    ASSERT_EQ(POTR_OK,
+              actual_ret);    // [確認_正常系] - potr_internal_config_list_service_ids() の戻り値が POTR_OK であること。
+    ASSERT_NE(nullptr, ids);  // [確認_正常系] - ids が nullptr 以外であること。
+    EXPECT_EQ(70, count);     // [確認_正常系] - count が 70 であること。
+    EXPECT_EQ(1000, ids[0]);  // [確認_正常系] - ids[0] が 1000 であること。
+    EXPECT_EQ(1069, ids[69]); // [確認_正常系] - ids[69] が 1069 であること。
 
     // Cleanup
     free(ids);

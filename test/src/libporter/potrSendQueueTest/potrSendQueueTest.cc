@@ -22,7 +22,7 @@ class potrSendQueueTest : public Test
     {
         memset(&q, 0, sizeof(q));
         ASSERT_EQ(POTR_OK, potr_internal_send_queue_init(&q, 4, 16));
-        // [状態確認] - `potr_internal_send_queue_init(&q, 4, 16)` の戻り値が `POTR_OK` であること。
+        // [状態確認] - potr_internal_send_queue_init() の戻り値が POTR_OK であること。
     }
     // [サブ手順終了]
 
@@ -53,14 +53,15 @@ TEST_F(potrSendQueueTest, empty_queue_returns_empty_and_timeout)
         potr_internal_send_queue_peek_timed(&q, &elem, 10); // [手順] - timeout_ms=10 の peek_timed で待機する。
 
     // Assert
-    EXPECT_EQ(POTR_ERR_EMPTY,
-              actual_ret_peek); // [確認_異常系] - potr_internal_send_queue_peek の戻り値が POTR_ERR_EMPTY であること。
     EXPECT_EQ(
         POTR_ERR_EMPTY,
-        actual_ret_try_pop); // [確認_異常系] - potr_internal_send_queue_try_pop の戻り値が POTR_ERR_EMPTY であること。
+        actual_ret_peek); // [確認_異常系] - potr_internal_send_queue_peek() の戻り値が POTR_ERR_EMPTY であること。
+    EXPECT_EQ(
+        POTR_ERR_EMPTY,
+        actual_ret_try_pop); // [確認_異常系] - potr_internal_send_queue_try_pop() の戻り値が POTR_ERR_EMPTY であること。
     EXPECT_EQ(
         POTR_ERR_TIMEOUT,
-        actual_ret_timed); // [確認_異常系] - potr_internal_send_queue_peek_timed の戻り値が POTR_ERR_TIMEOUT であること。
+        actual_ret_timed); // [確認_異常系] - potr_internal_send_queue_peek_timed() の戻り値が POTR_ERR_TIMEOUT であること。
 }
 // [サブ手順参照 名前=potrSendQueueTest.TearDown]
 
@@ -78,7 +79,7 @@ TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
         ASSERT_EQ(POTR_OK, potr_internal_send_queue_push(
                                &q, 0, 0, payload,
                                sizeof(payload))); // [状態] - depth=4 のキューを 4 件の push で満杯にする。
-        // [状態確認] - potr_internal_send_queue_push の戻り値が POTR_OK であること。
+        // [状態確認] - potr_internal_send_queue_push() の戻り値が POTR_OK であること。
     }
 
     // Pre-Assert
@@ -90,7 +91,7 @@ TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
     // Assert
     EXPECT_EQ(
         POTR_ERR_FULL,
-        actual_ret_full); // [確認_異常系] - 満杯時の potr_internal_send_queue_push の戻り値が POTR_ERR_FULL であること。
+        actual_ret_full); // [確認_異常系] - 満杯時の potr_internal_send_queue_push() の戻り値が POTR_ERR_FULL であること。
 }
 // [サブ手順参照 名前=potrSendQueueTest.TearDown]
 
@@ -108,7 +109,7 @@ TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
     {
         ASSERT_EQ(POTR_OK, potr_internal_send_queue_push(&q, 0, 0, payload,
                                                          sizeof(payload))); // [状態] - キューを満杯にしておく。
-        // [状態確認] - potr_internal_send_queue_push の戻り値が POTR_OK であること。
+        // [状態確認] - potr_internal_send_queue_push() の戻り値が POTR_OK であること。
     }
 
     // Pre-Assert
@@ -120,7 +121,7 @@ TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
     // Assert
     EXPECT_EQ(
         POTR_ERR_CANCELED,
-        actual_ret); // [確認_異常系] - potr_internal_send_queue_push_wait の戻り値が POTR_ERR_CANCELED であること。
+        actual_ret); // [確認_異常系] - potr_internal_send_queue_push_wait() の戻り値が POTR_ERR_CANCELED であること。
 }
 // [サブ手順参照 名前=potrSendQueueTest.TearDown]
 
@@ -142,6 +143,6 @@ TEST_F(potrSendQueueTest, pop_returns_canceled_when_stopped)
 
     // Assert
     EXPECT_EQ(POTR_ERR_CANCELED,
-              actual_ret); // [確認_異常系] - potr_internal_send_queue_pop の戻り値が POTR_ERR_CANCELED であること。
+              actual_ret); // [確認_異常系] - potr_internal_send_queue_pop() の戻り値が POTR_ERR_CANCELED であること。
 }
 // [サブ手順参照 名前=potrSendQueueTest.TearDown]

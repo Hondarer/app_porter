@@ -56,8 +56,10 @@ TEST_F(resultTest, all_codes_are_distinct)
     unique_codes.insert(codes.begin(), codes.end()); // [手順] - 全コードを集合へ挿入して重複を排除する。
 
     // Assert
-    EXPECT_EQ(codes.size(),
-              unique_codes.size()); // [確認_正常系] - 重複がなく、集合の要素数が列挙したコード数と一致すること。
+    EXPECT_EQ(
+        codes.size(),
+        unique_codes
+            .size()); // [確認_正常系] - unique_codes.size() の戻り値が codes.size() の戻り値と一致すること。(列挙した結果コードに重複がないことの確認)
 }
 
 // POTR_OK のみが 0 で、エラー コードがすべて負値であることの確認
@@ -80,6 +82,8 @@ TEST_F(resultTest, only_ok_is_zero_and_all_errors_are_negative)
 
     // Assert
     EXPECT_EQ(0, POTR_OK);             // [確認_正常系] - POTR_OK の値が 0 であること。
-    EXPECT_EQ(0U, non_negative_count); // [確認_正常系] - 0 以上の値を持つエラー コードが存在しないこと。
-    EXPECT_FALSE(error_codes.empty()); // [確認_正常系] - 検証対象のエラー コードが 1 つ以上列挙されていること。
+    EXPECT_EQ(
+        0U,
+        non_negative_count); // [確認_正常系] - non_negative_count が 0U であること。(0 以上の値を持つエラー コードが存在しないことの確認)
+    EXPECT_FALSE(error_codes.empty()); // [確認_正常系] - error_codes.empty() の戻り値が false であること。
 }
