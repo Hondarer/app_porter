@@ -13,6 +13,7 @@
 
 #include <cplat/base/platform.h>
 #include <cplat/crt/stdlib.h>
+#include <cplat/runtime/abort.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
@@ -326,11 +327,9 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
 
     if (peer == NULL)
     {
-        /* n_peers < max_peers のはずなのにスロットが見つからない (内部整合性エラー) */
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_internal_peer_create: service_id=%" PRId64 " no free slot (internal error)",
-                   ctx->service.service_id);
-        return NULL;
+        /* n_peers < max_peers なのに空きスロットがない。ピア表の件数と使用状態が食い違っており、
+           続行するとピアの取り違えや二重使用につながる */
+        CPLAT_ABORT("ピア表の件数と使用中のスロットが一致しません");
     }
 
     /* スロットを初期化 */

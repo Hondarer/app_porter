@@ -117,6 +117,9 @@ extern "C"
      *  @param[in]      sender_addr ピアの送信元アドレス (recvfrom で取得したアドレス)。
      *  @param[in]      path_idx    パケットを受信したサーバー ソケットのインデックス (ctx->sock[] のインデックス)。
      *  @return         成功時はピア コンテキストへのポインター、失敗時は NULL。
+     *
+     *  @attention      ピア数が上限未満なのに空きスロットがない場合は、ピア表の件数と使用状態が
+     *                  食い違っているため、プロセスを異常終了させます。
      */
     extern potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx,
                                                                  const cplat_ipv4_endpoint *sender_addr, int path_idx);
