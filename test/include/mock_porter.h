@@ -28,7 +28,7 @@ class Mock_porter
     MOCK_METHOD(cplat_tracer *, potr_tracer_get, ());
 
     Mock_porter();
-    ~Mock_porter();
+    virtual ~Mock_porter();
 };
 
 extern Mock_porter *_mock_porter;
