@@ -8,7 +8,7 @@
  *
  *  SENDER: TCP connect/reconnect ループを管理するスレッドです。\n
  *  RECEIVER: TCP accept ループを管理するスレッドです。\n
- *  接続確立後、送受信・ヘルスチェック スレッドを起動し、\n
+ *  接続確立後、送受信・ヘルス チェック スレッドを起動し、\n
  *  recv スレッドが切断を検知して終了するまで待機してから再接続サイクルへ移行します。
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
@@ -533,7 +533,7 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
  * 先読みパケットは tcp_first_pkt_buf/len に保存し、recv スレッドが起動直後に処理する。 */
 static void receiver_accept_loop(potr_context *ctx, int path_idx)
 {
-    /* 先読みタイムアウト: TCP ヘルスチェック タイムアウトの POTR_TCP_FIRST_PKT_TIMEOUT_SCALE 倍、未設定時は既定値 */
+    /* 先読みタイムアウト: TCP ヘルス チェック タイムアウトの POTR_TCP_FIRST_PKT_TIMEOUT_SCALE 倍、未設定時は既定値 */
     uint32_t first_pkt_timeout_ms = POTR_DEFAULT_TCP_FIRST_PKT_TIMEOUT_MS;
     if (ctx->global.tcp_health_timeout_ms > 0U)
     {

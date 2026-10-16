@@ -21,17 +21,17 @@ API の契約は [API ガイド](api.md)、処理を担当する実装は [ア�
 - [RAW モード: ギャップ検出による切断と復帰 (DATA)](sequence-data.md#raw-モード-ギャップ検出による切断と復帰-data)
 - [RAW モード: ギャップ検出による切断と復帰 (PING)](sequence-data.md#raw-モード-ギャップ検出による切断と復帰-ping)
 
-## UDP のヘルスチェック
+## UDP のヘルス チェック
 
-- [ヘルスチェック (正常疎通)](sequence-health.md#ヘルスチェック-正常疎通)
-- [ヘルス チェック タイムアウト](sequence-health.md#ヘルスチェック-タイムアウト)
+- [ヘルス チェック (正常疎通)](sequence-health.md#ヘルス チェック-正常疎通)
+- [ヘルス チェック タイムアウト](sequence-health.md#ヘルス チェック-タイムアウト)
 
 ## UDP 双方向通信
 
 - [unicast_bidir 1:1 双方向通信](sequence-bidir.md#unicast_bidir-11-双方向通信)
 - [unicast_bidir N:1 サーバーでの接続と送受信](sequence-bidir.md#unicast_bidir-n1-サーバーでの接続と送受信)
 - [unicast_bidir N:1 サーバーでの切断](sequence-bidir.md#unicast_bidir-n1-サーバーでの切断)
-- [unicast_bidir ヘルス チェック タイムアウトによる切断検知](sequence-bidir.md#unicast_bidir-ヘルスチェック-タイムアウトによる切断検知)
+- [unicast_bidir ヘルス チェック タイムアウトによる切断検知](sequence-bidir.md#unicast_bidir-ヘルス チェック-タイムアウトによる切断検知)
 
 ## TCP 通信
 

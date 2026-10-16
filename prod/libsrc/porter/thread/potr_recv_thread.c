@@ -36,7 +36,7 @@
 #include "thread_recv_window.h"
 #include "thread_recv_dispatch.h"
 
-/* N:1: poll タイムアウト時にヘルスチェック タイムアウトを確認する */
+/* N:1: poll タイムアウト時にヘルス チェック タイムアウトを確認する */
 static void n1_check_health_timeout(potr_context *ctx)
 {
     cplat_timespec now_ts;

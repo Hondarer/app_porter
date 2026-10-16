@@ -59,7 +59,7 @@ void thread_recv_window_on_nack(thread_recv_slot *slot, const potr_packet *pkt);
  * @brief PING が示す前方通番までの欠番を走査し、NACK または RAW リセットを行います。
  * @param[in,out] slot 構成済みの受信状態ビュー。NULL は許可しません。
  * @param[in] pkt 受信した PING。NULL は許可しません。
- * @note ヘルスチェック状態の更新や経路イベント発行は呼び出し側が行います。
+ * @note ヘルス チェック状態の更新や経路イベント発行は呼び出し側が行います。
  *       N:1 は先頭欠番だけを即時 NACK します。所有権は移動しません。
  */
 void thread_recv_window_scan_ping_gap(thread_recv_slot *slot, const potr_packet *pkt);

@@ -1,7 +1,7 @@
 /**
  *******************************************************************************
  *  @file           potr_health_thread.h
- *  @brief          ヘルスチェックを行うスレッドの内部インターフェイスを宣言します。
+ *  @brief          ヘルス チェックを行うスレッドの内部インターフェイスを宣言します。
  *  @author         Tetsuo Honda
  *  @date           2026/03/08
  *  @version        1.0.0
@@ -30,7 +30,7 @@ extern "C"
 #endif /* __cplusplus */
 
     /**
-     *  @brief          非 TCP ヘルスチェック スレッドを起動します。
+     *  @brief          非 TCP ヘルス チェック スレッドを起動します。
      *
      *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_OK を返す)。
      *
@@ -42,7 +42,7 @@ extern "C"
     extern int potr_internal_health_thread_start(potr_context *ctx);
 
     /**
-     *  @brief          非 TCP ヘルスチェック スレッドを停止します。
+     *  @brief          非 TCP ヘルス チェック スレッドを停止します。
      *  @param[in,out]  ctx セッション コンテキスト。
      *  @retval         POTR_OK                    停止に成功したか、停止済みです。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
@@ -50,7 +50,7 @@ extern "C"
     extern int potr_internal_health_thread_stop(potr_context *ctx);
 
     /**
-     *  @brief          非 TCP ヘルスチェック スレッドを即時起床させます。
+     *  @brief          非 TCP ヘルス チェック スレッドを即時起床させます。
      *  @param[in,out]  ctx セッション コンテキスト。
      */
     extern void potr_internal_health_thread_wake(potr_context *ctx);
@@ -69,7 +69,7 @@ extern "C"
     extern int potr_internal_tcp_send_ping_now(potr_context *ctx, int path_idx);
 
     /**
-     *  @brief          TCP ヘルスチェック スレッドを path ごとに起動します。
+     *  @brief          TCP ヘルス チェック スレッドを path ごとに起動します。
      *
      *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_OK を返す)。
      *
@@ -82,7 +82,7 @@ extern "C"
     extern int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx);
 
     /**
-     *  @brief          TCP ヘルスチェック スレッドを停止します。
+     *  @brief          TCP ヘルス チェック スレッドを停止します。
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
      *  @retval         POTR_OK                    停止に成功したか、停止済みです。
@@ -91,14 +91,14 @@ extern "C"
     extern int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx);
 
     /**
-     *  @brief          指定パスの TCP ヘルスチェック スレッドを即時起床させます。
+     *  @brief          指定パスの TCP ヘルス チェック スレッドを即時起床させます。
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス。
      */
     extern void potr_internal_tcp_health_thread_wake(potr_context *ctx, int path_idx);
 
     /**
-     *  @brief          全パスの TCP ヘルスチェック スレッドを即時起床させます。
+     *  @brief          全パスの TCP ヘルス チェック スレッドを即時起床させます。
      *  @param[in,out]  ctx セッション コンテキスト。
      */
     extern void potr_internal_tcp_health_thread_wake_all(potr_context *ctx);

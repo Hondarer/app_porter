@@ -47,7 +47,7 @@
 #define POTR_FLAG_DATA 0x0001U /**< データ パケット (パック コンテナー) であることを示すフラグ。常に設定される。 */
 #define POTR_FLAG_NACK 0x0002U /**< 再送要求パケットであることを示すフラグ。ack_num に要求通番を格納します。 */
 #define POTR_FLAG_PING \
-    0x0004U /**< ヘルスチェック パケットであることを示すフラグ。ペイロードには POTR_MAX_PATH バイトのパス受信状態 (POTR_PING_STATE_*) を格納します。 */
+    0x0004U /**< ヘルス チェック パケットであることを示すフラグ。ペイロードには POTR_MAX_PATH バイトのパス受信状態 (POTR_PING_STATE_*) を格納します。 */
 #define POTR_FLAG_REJECT \
     0x0008U /**< 再送不能通知パケットであることを示すフラグ。ack_num に再送不能な通番を格納します。 */
 #define POTR_FLAG_FIN \
@@ -112,13 +112,13 @@
 #define POTR_DEFAULT_CONNECT_TIMEOUT_MS \
     10000U /**< SENDER TCP 接続タイムアウトのデフォルト (ミリ秒)。0 = OS デフォルト。TCP 通信種別のみ有効。 */
 #define POTR_DEFAULT_UDP_HEALTH_INTERVAL_MS \
-    3000U /**< UDP 通信種別に適用する既定ヘルスチェック送信間隔 (ミリ秒)。0 = 無効。 */
+    3000U /**< UDP 通信種別に適用する既定ヘルス チェック送信間隔 (ミリ秒)。0 = 無効。 */
 #define POTR_DEFAULT_UDP_HEALTH_TIMEOUT_MS \
-    10000U /**< UDP 通信種別に適用する既定ヘルスチェック タイムアウト (ミリ秒)。0 = 無効。 */
+    10000U /**< UDP 通信種別に適用する既定ヘルス チェック タイムアウト (ミリ秒)。0 = 無効。 */
 #define POTR_DEFAULT_TCP_HEALTH_INTERVAL_MS \
-    10000U /**< TCP 通信種別に適用する既定ヘルスチェック送信間隔 (ミリ秒)。0 = 無効。 */
+    10000U /**< TCP 通信種別に適用する既定ヘルス チェック送信間隔 (ミリ秒)。0 = 無効。 */
 #define POTR_DEFAULT_TCP_HEALTH_TIMEOUT_MS \
-    31000U /**< TCP 通信種別に適用する既定ヘルスチェック タイムアウト (ミリ秒)。0 = 無効。 */
+    31000U /**< TCP 通信種別に適用する既定ヘルス チェック タイムアウト (ミリ秒)。0 = 無効。 */
 #define POTR_DEFAULT_TCP_CLOSE_TIMEOUT_MS \
     5000U /**< TCP 通信種別に適用する close 完了待機タイムアウト (ミリ秒)。0 = 待機なし。 */
 #define POTR_TCP_FIRST_PKT_TIMEOUT_SCALE \

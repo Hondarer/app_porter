@@ -1668,7 +1668,7 @@ TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
 }
 // [サブ手順参照 名前=porterSendRecvTest.TearDown]
 
-// 暗号化 tcp_bidir でヘルスチェック経過後も接続を維持して送受信できることの確認
+// 暗号化 tcp_bidir でヘルス チェック経過後も接続を維持して送受信できることの確認
 // [サブ手順参照 名前=porterSendRecvTest.SetUp]
 TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
 {
@@ -1705,7 +1705,7 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
         actual_ret_wait_90); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
 
     bool actual_ret_write_message = writeLineStdin(
-        send_h_, "send tcp-encrypted-ok"); // [手順] - ヘルスチェック経過後に "tcp-encrypted-ok" を送信する。
+        send_h_, "send tcp-encrypted-ok"); // [手順] - ヘルス チェック経過後に "tcp-encrypted-ok" を送信する。
     ASSERT_TRUE(actual_ret_write_message);
     // [状態確認] - "send tcp-encrypted-ok" を入力する writeLineStdin() の戻り値が true であること。
     bool actual_ret_wait_91 = tryWaitForOutput(
@@ -1740,7 +1740,7 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
         EXPECT_NE(
             string::npos,
             recv_out.find(
-                "tcp-encrypted-ok")); // [確認_正常系] - "tcp-encrypted-ok" を探した recv_out.find() の戻り値が string::npos 以外であること。(ヘルスチェック経過後も暗号化 TCP で受信できることの確認)
+                "tcp-encrypted-ok")); // [確認_正常系] - "tcp-encrypted-ok" を探した recv_out.find() の戻り値が string::npos 以外であること。(ヘルス チェック経過後も暗号化 TCP で受信できることの確認)
     }
 }
 // [サブ手順参照 名前=porterSendRecvTest.TearDown]
@@ -2002,7 +2002,7 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
 
     // Act
     bool actual_ret_write_message =
-        writeLineStdin(send_h_, "send Hello Text"); // [手順] - SENDER からテキストメッセージ "Hello Text" を送信する。
+        writeLineStdin(send_h_, "send Hello Text"); // [手順] - SENDER からテキスト メッセージ "Hello Text" を送信する。
     ASSERT_TRUE(actual_ret_write_message);
     // [状態確認] - "send Hello Text" を入力する writeLineStdin() の戻り値が true であること。
     bool actual_ret_wait_112 = tryWaitForOutput(

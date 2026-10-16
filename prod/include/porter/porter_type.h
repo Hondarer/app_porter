@@ -40,7 +40,7 @@
  *    ギャップ検出時は NACK の代わりに POTR_EVENT_DISCONNECTED を発行します。\n
  *    通番は AES ノンス用にインクリメントするが、再送制御には使用しない。\n
  *    potr_service_send は常にブロッキング送信。マルチパス対応。\n
- *    PING ヘルスチェックは health_interval_ms / health_timeout_ms の設定に従う。
+ *    PING ヘルス チェックは health_interval_ms / health_timeout_ms の設定に従う。
  * 
  *  - POTR_TYPE_UNICAST, POTR_TYPE_MULTICAST, POTR_TYPE_BROADCAST\n
  *    再送制御あり UDP モード。\n
@@ -51,7 +51,7 @@
  * 
  *  - POTR_TYPE_UNICAST_BIDIR\n
  *    双方向 1:1 通信 (UDP ユニキャスト)。\n
- *    SENDER / RECEIVER ともに送受信・NACK・ヘルスチェックを独立して行います。\n
+ *    SENDER / RECEIVER ともに送受信・NACK・ヘルス チェックを独立して行います。\n
  *    両端それぞれが src_addr:src_port で bind し、相手の dst_addr:dst_port へ送信します。\n
  *    src_port = 0 を指定すると SENDER はエフェメラル ポートで bind し、\n
  *    RECEIVER は最初のパケット受信時に SENDER のポートを動的学習して返信します。\n
@@ -140,7 +140,7 @@ typedef struct potr_service_def
     /* マルチパス対応 (src_addr は全通信種別、dst_addr は unicast のみ有効) */
     char src_addr
         [POTR_MAX_PATH]
-        [POTR_MAX_ADDR_LEN]; /**< 送信元アドレス [0]=src_addr1 〜 [3]=src_addr4。送信者は bind / 送信インターフェース、受信者は送信元フィルター。(全通信種別で必須) */
+        [POTR_MAX_ADDR_LEN]; /**< 送信元アドレス [0]=src_addr1 〜 [3]=src_addr4。送信者は bind / 送信インターフェイス、受信者は送信元フィルター。(全通信種別で必須) */
     char dst_addr
         [POTR_MAX_PATH]
         [POTR_MAX_ADDR_LEN]; /**< 宛先アドレス [0]=dst_addr1 〜 [3]=dst_addr4。送信者は送信先、受信者は bind アドレス。(unicast のみ) */
@@ -153,7 +153,7 @@ typedef struct potr_service_def
     /* N:1 モード設定 */
     uint32_t max_peers; /**< N:1 モード時の最大同時接続ピア数。省略時: 1024。1:1 モードでは無視される。 */
 
-    /* サービス単位のヘルスチェック上書き (0 = グローバル値を使用) */
+    /* サービス単位のヘルス チェック上書き (0 = グローバル値を使用) */
     uint32_t
         health_interval_ms; /**< グローバルの udp/tcp_health_interval_ms をサービス単位で上書きします。0 = グローバル値を使用。 */
     uint32_t
@@ -296,8 +296,8 @@ typedef uint32_t potr_peer_id;
  *    `POTR_PING_STATE_NORMAL` \n
  *  未接続中に受信した `DATA` は破棄され、`POTR_EVENT_DATA` は発火しません。\n
  *  DISCONNECTED の発火条件:\n
- *  - ヘルスチェック有効時 (health_timeout_ms > 0): タイムアウト / FIN 受信 / REJECT 受信\n
- *  - ヘルスチェック無効時 (health_timeout_ms = 0): FIN 受信 / REJECT 受信\n
+ *  - ヘルス チェック有効時 (health_timeout_ms > 0): タイムアウト / FIN 受信 / REJECT 受信\n
+ *  - ヘルス チェック無効時 (health_timeout_ms = 0): FIN 受信 / REJECT 受信\n
  *  REJECT 受信後は DISCONNECTED の直後に、次のパケット受信で CONNECTED が発火します。
  */
 typedef enum
@@ -312,7 +312,7 @@ typedef enum
 /**
  *  @brief          受信コールバック関数型 (全通信種別共通)。
  *
- *  データ受信またはヘルスチェック状態変化時に、受信スレッドから呼び出されます。\n
+ *  データ受信またはヘルス チェック状態変化時に、受信スレッドから呼び出されます。\n
  *  コールバック内でブロッキング処理を行わないようにしてください。\n
  *  すべてのイベントは受信スレッドから直列に呼び出されるため、順序性が保証されます。
  *

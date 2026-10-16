@@ -87,7 +87,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
     shdr.session_id = ctx->session_id;
     session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    /* send_window へのアクセスを排他制御する (送信スレッド・ヘルスチェック スレッド・受信スレッドが競合) */
+    /* send_window へのアクセスを排他制御する (送信スレッド・ヘルス チェック スレッド・受信スレッドが競合) */
     cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     seq = ctx->send_window.next_seq;

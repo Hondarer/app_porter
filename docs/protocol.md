@@ -68,7 +68,7 @@ Table: 外側パケット (potr_packet) ヘッダーのフィールド構成
 |---|---|---|
 | `POTR_FLAG_DATA` | 0x0001 | データ パケット。ペイロードにエレメントを含みます。 |
 | `POTR_FLAG_NACK` | 0x0002 | 再送要求。`ack_num` に要求する通番を格納 |
-| `POTR_FLAG_PING` | 0x0004 | ヘルスチェック要求。ペイロードにパス受信状態 (`POTR_MAX_PATH` バイト) を格納します。 |
+| `POTR_FLAG_PING` | 0x0004 | ヘルス チェック要求。ペイロードにパス受信状態 (`POTR_MAX_PATH` バイト) を格納します。 |
 | `POTR_FLAG_REJECT` | 0x0008 | 再送不能通知。`ack_num` に再送不能な通番を格納 |
 | `POTR_FLAG_FIN` | 0x0010 | 正常終了通知。ペイロードなし (payload_len=0) |
 | `POTR_FLAG_FIN_TARGET_VALID` | 0x0040 | FIN の `ack_num` が有効な受信完了目標 `next_seq` を表すことを示します。 |
@@ -122,7 +122,7 @@ DATA パケットでは `ack_num` は 0 固定とし、受信時は無視しま�
 |---|---|---|
 | `POTR_FLAG_DATA` | ○ | データ送信に使用 |
 | `POTR_FLAG_NACK` | × | TCP が配送を保証するため不要 |
-| `POTR_FLAG_PING` | ○ | ヘルスチェック。`ack_num=0` で要求、`ack_num=N` で応答 |
+| `POTR_FLAG_PING` | ○ | ヘルス チェック。`ack_num=0` で要求、`ack_num=N` で応答 |
 | `POTR_FLAG_REJECT` | × | 再送不能は発生しないため不要 |
 | `POTR_FLAG_FIN` | ○ | `potr_service_close()` 時にプロトコル レベルの FIN を送信 |
 | `POTR_FLAG_FIN_ACK` | ○ | receiver が最後の DATA コールバック完了後に返却する close 完了通知 |
@@ -248,7 +248,7 @@ OS クロックが手動設定や NTP スラムで過去に戻った場合、新
 
 `peer_session_known` がクリアされる契機がなく、旧セッションが追跡中のまま残ります。  
 タイムスタンプが逆転した新セッションのパケットは永続的に破棄されます。  
-これはヘルスチェック無効環境における既知の制限です。
+これはヘルス チェック無効環境における既知の制限です。
 
 ### unicast_bidir N:1 モードのピア識別
 
@@ -268,7 +268,7 @@ N:1 モードの各ピアは、以下の状態を独立して持ちます。
 - `seq_num` 系列
 - 送信ウィンドウ / 受信ウィンドウ
 - フラグメント結合状態
-- ヘルスチェック状態 (`health_alive`、最終受信時刻)
+- ヘルス チェック状態 (`health_alive`、最終受信時刻)
 - 学習済み返信先パス
 
 未知の session triplet を受信したとき、空きスロットがあれば新規ピアを作成して `POTR_EVENT_CONNECTED` を発火します。`max_peers` に達している場合はエラー ログを残して当該パケットを破棄します。
@@ -472,7 +472,7 @@ FIN をペンディング中に期待する DATA が届かない場合、以下�
 | 欠番 DATA が後着した | 正常に `drain_recv_window()` → `pending_fin` 解消 |
 | 送信者が NACK に REJECT で応答 | `potr_internal_window_recv_skip()` → `drain_recv_window()` → `pending_fin` 解消 |
 | `reorder_timeout_ms` タイムアウト後 | `potr_internal_window_recv_skip()` → 同上 |
-| `health_timeout_ms` タイムアウト | ヘルスチェックが `DISCONNECTED` を発火 (既存フォールバック) |
+| `health_timeout_ms` タイムアウト | ヘルス チェックが `DISCONNECTED` を発火 (既存フォールバック) |
 
 Table: FIN ペンディング中のエッジ ケースと解消パス
 
@@ -519,9 +519,9 @@ Table: プラットフォームごとの圧縮ライブラリ実装
 
 ### 概要
 
-ヘルスチェック送信は通信種別を問わず設定周期で実行されます。  
-`unicast` / `multicast` / `broadcast` ではヘルスチェックは **一方向** (送信者 → 受信者のみ) です。  
-`unicast_bidir` / `unicast_bidir_n1` では、各エンドポイントまたは各ピアが独立して PING 送信・応答を行います (後述「双方向 UDP のヘルスチェック動作」参照)。UDP 双方向ではこの定周期 PING 送信自体が接続確立の前提であり、PING を送信しないと `CONNECTED` は成立しません。
+ヘルス チェック送信は通信種別を問わず設定周期で実行されます。  
+`unicast` / `multicast` / `broadcast` ではヘルス チェックは **一方向** (送信者 → 受信者のみ) です。  
+`unicast_bidir` / `unicast_bidir_n1` では、各エンドポイントまたは各ピアが独立して PING 送信・応答を行います (後述「双方向 UDP のヘルス チェック動作」参照)。UDP 双方向ではこの定周期 PING 送信自体が接続確立の前提であり、PING を送信しないと `CONNECTED` は成立しません。
 
 ### 送信者の動作
 
@@ -563,7 +563,7 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 | 値 | 定数 | 意味 |
 |---|---|---|
 | `0` | `POTR_PING_STATE_UNDEFINED` | 不定 (片方向 / まだ有効な PING / DATA 未受信) |
-| `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルスチェック信号を継続受信中) |
+| `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルス チェック信号を継続受信中) |
 | `2` | `POTR_PING_STATE_ABNORMAL` | 異常 (PING 途絶) |
 
 Table: PING ペイロードにおける各パス受信状態の値と意味
@@ -585,7 +585,7 @@ Table: PING ペイロードにおける各パス受信状態の値と意味
 - 通常モード: 受信者は `seq_num` を上限として受信ウィンドウをスキャンし、欠番を一括 NACK します
 - RAW モード: 欠番スキャンは行わず、PING の `seq_num` が `recv_window.next_seq` より前方にある場合は `POTR_EVENT_DISCONNECTED` を発行してウィンドウをリセットします
 
-### 双方向 UDP のヘルスチェック動作
+### 双方向 UDP のヘルス チェック動作
 
 #### PING パケット フォーマット (unicast_bidir / unicast_bidir_n1)
 
@@ -622,7 +622,7 @@ UDP には接続概念がありません。相手のアプリケーションが�
 
 Table: 通信モードごとのタイムアウト検知方法と選定理由
 
-### TCP 通信種別のヘルスチェック動作
+### TCP 通信種別のヘルス チェック動作
 
 #### PING 送信のタイミング
 

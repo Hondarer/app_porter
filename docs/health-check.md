@@ -1,10 +1,10 @@
-# PING ヘルスチェック設計まとめ
+# PING ヘルス チェック設計まとめ
 
-porter フレームワークにおける potr_type ごとの PING 送出ロジック、マルチパスごとの振る舞い、タイムアウト検出方式を整理します。PONG (PING 応答) は存在しません。片方向 type 1-6 は有効な `PING` / `DATA` 受信をヘルスチェック信号として扱い、送信側は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送信します。双方向 type 7-10 は PING 応答ベースで path logical を判定し、service / peer の `CONNECTED` はその OR で決まります。
+porter フレームワークにおける potr_type ごとの PING 送出ロジック、マルチパスごとの振る舞い、タイムアウト検出方式を整理します。PONG (PING 応答) は存在しません。片方向 type 1-6 は有効な `PING` / `DATA` 受信をヘルス チェック信号として扱い、送信側は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送信します。双方向 type 7-10 は PING 応答ベースで path logical を判定し、service / peer の `CONNECTED` はその OR で決まります。
 
 ## 概要
 
-ヘルスチェックは PING パケット (`POTR_FLAG_PING`) の送出、双方向系における通信経路オープン時の割り込み送出、双方向系におけるパス受信状態変化時の割り込み送出、およびタイムアウト超過時の切断検出から成ります。非 TCP は 1 サービスにつき 1 本の health スレッドを使い、type 8 はその 1 本が全 peer を順に処理します。TCP は path ごとに 1 本の tcp_health スレッドを使います。potr_type によって送出側と検出側の担当が異なります。
+ヘルス チェックは PING パケット (`POTR_FLAG_PING`) の送出、双方向系における通信経路オープン時の割り込み送出、双方向系におけるパス受信状態変化時の割り込み送出、およびタイムアウト超過時の切断検出から成ります。非 TCP は 1 サービスにつき 1 本の health スレッドを使い、type 8 はその 1 本が全 peer を順に処理します。TCP は path ごとに 1 本の tcp_health スレッドを使います。potr_type によって送出側と検出側の担当が異なります。
 
 ## potr_type ごとの振る舞い
 
@@ -49,7 +49,7 @@ PING パケットのペイロードには自端の各パス PING 受信状態を
 | 値 | 定数 | 意味 |
 |---|---|---|
 | `0` | `POTR_PING_STATE_UNDEFINED` | 不定 (片方向通信 / まだ有効な PING / DATA 未受信) |
-| `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルスチェック信号を継続受信中) |
+| `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルス チェック信号を継続受信中) |
 | `2` | `POTR_PING_STATE_ABNORMAL` | 異常 (PING 途絶・タイムアウト) |
 
 Table: PING ペイロードにおけるパス受信状態の値と定義
@@ -85,7 +85,7 @@ Table: 通信形態ごとの CONNECTED イベント発火条件
 
 TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED を発火しません。接続直後に送る bootstrap PING に対する応答 PING を受信し、そのペイロード中の `remote_path_ping_state[]` に `POTR_PING_STATE_NORMAL` を確認した時点で CONNECTED となります。つまり TCP 双方向でも「自端が PING を送信し、相手端がその受信結果を返信し、それを受信する」往復完了が初回 CONNECTED の条件です。
 
-片方向 type 1-6 では、PING ヘルスチェックが無効 (最終的な `health_interval_ms = 0`) でも有効な `DATA` を受信すれば CONNECTED が発火します。open 直後の即時 PING は送信しないため、初回 CONNECTED は「最初の有効 DATA」または「最初の通常 PING」受信時に成立します。双方向 UDP (type 7, 8) は PING が送出されないと CONNECTED が発火しません。
+片方向 type 1-6 では、PING ヘルス チェックが無効 (最終的な `health_interval_ms = 0`) でも有効な `DATA` を受信すれば CONNECTED が発火します。open 直後の即時 PING は送信しないため、初回 CONNECTED は「最初の有効 DATA」または「最初の通常 PING」受信時に成立します。双方向 UDP (type 7, 8) は PING が送出されないと CONNECTED が発火しません。
 
 双方向 UDP では、以下の順序でハンドシェイクが完了して CONNECTED が発火します。
 
@@ -162,7 +162,7 @@ Table: TCP / TCP_BIDIR (type 9-10) の接続状態別の実装
 
 双方向 UDP (type 7, 8) では、通信種別とサービス上書きを解決した最終的な `health_interval_ms = 0` の場合は CONNECTED が成立しないため、`POTR_EVENT_DATA` も発火しません。
 
-## UDP 系ヘルスチェック
+## UDP 系ヘルス チェック
 
 ### PING 送出 (health スレッド)
 
@@ -211,7 +211,7 @@ N:1 モードの判定は次のとおりです。
 1. ピアごとにパス タイムアウトを確認します。
 2. ピア全体がタイムアウトしたら `POTR_EVENT_DISCONNECTED` を発火し、`potr_internal_peer_free()` でピアを削除します。
 
-## TCP 系ヘルスチェック
+## TCP 系ヘルス チェック
 
 ### PING 送出 (tcp_health スレッド)
 

@@ -48,7 +48,7 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
 void thread_recv_apply_remote_path_ping_state(uint8_t *dst, const uint8_t *src, size_t count);
 
 /**
- * @brief UDP 双方向で、経路受信状態の変化に応じてヘルスチェック スレッドを起床します。
+ * @brief UDP 双方向で、経路受信状態の変化に応じてヘルス チェック スレッドを起床します。
  * @param[in,out] ctx セッション コンテキスト。NULL は許可しません。
  * @param[in] state_changed 受信状態が変化した場合は 0 以外。
  * @note unicast_bidir 以外では何もしません。所有権は移動しません。

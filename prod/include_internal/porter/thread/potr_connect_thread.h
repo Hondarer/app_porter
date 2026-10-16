@@ -8,7 +8,7 @@
  *
  *  SENDER: TCP connect / 自動再接続ループを管理するスレッドです。\n
  *  RECEIVER: TCP accept ループを管理するスレッドです。\n
- *  接続確立後、送受信・ヘルスチェック スレッドを起動します。
+ *  接続確立後、送受信・ヘルス チェック スレッドを起動します。
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
  *

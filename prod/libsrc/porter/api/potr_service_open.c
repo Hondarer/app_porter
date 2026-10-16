@@ -159,7 +159,7 @@ static int open_validate_callback(const potr_context *ctx, potr_role role, potr_
     return POTR_OK;
 }
 
-/* 設定値を検証し、実効ヘルスチェック間隔・タイムアウトを解決する */
+/* 設定値を検証し、実効ヘルス チェック間隔・タイムアウトを解決する */
 static int open_validate_config(potr_context *ctx)
 {
     if (ctx->global.max_payload < 64U || ctx->global.max_payload > POTR_MAX_PAYLOAD)
@@ -358,7 +358,7 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
     return POTR_OK;
 }
 
-/* 非 TCP: 役割と通信種別に応じて受信・送信・ヘルスチェック スレッドを起動する */
+/* 非 TCP: 役割と通信種別に応じて受信・送信・ヘルス チェック スレッドを起動する */
 static int start_threads_udp(potr_context *ctx, potr_role role)
 {
     int result;
@@ -377,7 +377,7 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
     }
 
     /* 非 TCP 送信者 / UNICAST_BIDIR / UNICAST_BIDIR_N1 受信者:
-       送信キュー・送信スレッド・ヘルスチェック スレッド・受信スレッドを起動 */
+       送信キュー・送信スレッド・ヘルス チェック スレッド・受信スレッドを起動 */
     if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR ||
         ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1)
     {

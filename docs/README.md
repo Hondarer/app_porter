@@ -2,7 +2,7 @@
 
 porter は UDP/IP および TCP/IP をサポートするクロスプラットフォーム (Linux / Windows) 通信ライブラリです。  
 1:1 (ユニキャスト) ・1:N (マルチキャスト・ブロードキャスト) の UDP 通信に加え、TCP による信頼性の高い接続型通信 (1:1 および双方向) もサポートします。  
-スライディング ウィンドウによる NACK ベース再送制御、ヘルスチェック、データ圧縮を提供します。
+スライディング ウィンドウによる NACK ベース再送制御、ヘルス チェック、データ圧縮を提供します。
 
 > [!NOTE]
 > このリポジトリは他のサブモジュールと組み合わせて利用することを想定しています。  
@@ -31,7 +31,7 @@ porter は UDP/IP および TCP/IP をサポートするクロスプラットフ
 | リオーダー吸収 | `reorder_timeout_ms` でギャップ検出後の待機時間を設定。待機中に追い越しパケットが到着すれば NACK / DISCONNECT を発行しない (通常・RAW モード共通)。マルチキャスト/ブロードキャスト通常モードでは NACK 送出タイミングを 100%〜200% の範囲で自動ジッタ分散し NACK implosion を抑制 |
 | データ圧縮 | raw DEFLATE (両 OS 共通の app/zlib) |
 | フラグメント化 | 最大 65,535 バイトのメッセージを自動分割・結合 |
-| ヘルスチェック | 片方向 type 1-6 は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送信し、有効な PING / DATA 受信で疎通を維持します。双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は定周期 PING の送受信で接続を確立するため、実効 `health_interval_ms` が 0 のままでは `CONNECTED` 状態へ遷移しません。各パスの PING 受信状態変化時には割り込み PING も送信します。 |
+| ヘルス チェック | 片方向 type 1-6 は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送信し、有効な PING / DATA 受信で疎通を維持します。双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は定周期 PING の送受信で接続を確立するため、実効 `health_interval_ms` が 0 のままでは `CONNECTED` 状態へ遷移しません。各パスの PING 受信状態変化時には割り込み PING も送信します。 |
 | マルチパス | 最大 4 経路の並列送信 |
 | プラットフォーム | Linux、Windows 両プラットフォーム対応 |
 

@@ -2,8 +2,8 @@
 
 ## 概要
 
-porter は、アプリケーションと UDP ソケット層の間に抽象レイヤーを置き、非同期送受信・再送制御・ヘルスチェックを透過的に提供します。  
-アプリケーションは `potr_service_open()` または `potr_service_open_from_config()` でサービスを開き、送信側は `potr_service_send(handle, peer_id, ...)` を呼び出すだけで、内部スレッドが送受信・再送・ヘルスチェックをすべて担います。1:1 モードおよび他通信種別では `peer_id` に `POTR_PEER_NA` を指定し、`unicast_bidir` の N:1 モードでは接続中ピアの `peer_id` を指定します。
+porter は、アプリケーションと UDP ソケット層の間に抽象レイヤーを置き、非同期送受信・再送制御・ヘルス チェックを透過的に提供します。  
+アプリケーションは `potr_service_open()` または `potr_service_open_from_config()` でサービスを開き、送信側は `potr_service_send(handle, peer_id, ...)` を呼び出すだけで、内部スレッドが送受信・再送・ヘルス チェックをすべて担います。1:1 モードおよび他通信種別では `peer_id` に `POTR_PEER_NA` を指定し、`unicast_bidir` の N:1 モードでは接続中ピアの `peer_id` を指定します。
 
 ## 役割モデル
 
@@ -11,7 +11,7 @@ porter は通信の参加者を **送信者 (SENDER)** と **受信者 (RECEIVER
 
 | 役割 | 説明 |
 |---|---|
-| SENDER | `potr_service_send()` でデータを送出します。ヘルスチェック PING を送信します。 |
+| SENDER | `potr_service_send()` でデータを送出します。ヘルス チェック PING を送信します。 |
 | RECEIVER | 到着したパケットをコールバックで上位層へ渡します。NACK で再送を要求します。 |
 
 Table: porter 通信参加者の役割定義
@@ -23,7 +23,7 @@ Table: porter 通信参加者の役割定義
 
 `POTR_TYPE_UNICAST_BIDIR` には **1:1 モード** と **N:1 モード** があります。
 
-- 1:1 モードでは、両端が送受信・NACK・ヘルスチェックを独立して行います。`POTR_ROLE_SENDER` / `POTR_ROLE_RECEIVER` は設定上のラベルであり、データ方向そのものを制約しません
+- 1:1 モードでは、両端が送受信・NACK・ヘルス チェックを独立して行います。`POTR_ROLE_SENDER` / `POTR_ROLE_RECEIVER` は設定上のラベルであり、データ方向そのものを制約しません
 - N:1 モードでは、サーバー側は `src_addr` を省略した `POTR_ROLE_RECEIVER` として開かれ、クライアントごとの状態はピア テーブルで管理されます
 
 | モード | Role / 設定の意味 |
@@ -64,7 +64,7 @@ rectangle "porter ライブラリ (送信者) " {
   queue "送信キュー\n(リングバッファ 1024 要素)" as Q
   [送信スレッド] as ST
   [受信スレッド] as RT
-  [ヘルス チェックスレッド] as HT
+  [ヘルス チェック スレッド] as HT
   [UDP ソケット] as SOCK
 }
 
@@ -118,7 +118,7 @@ rectangle "porter ライブラリ (unicast_bidir 1:1)" {
   queue "送信キュー\n(リングバッファ 1024 要素)" as Q
   [送信スレッド] as ST
   [受信スレッド] as RT
-  [ヘルス チェックスレッド] as HT
+  [ヘルス チェック スレッド] as HT
   [UDP ソケット\n(bind 済み)] as SOCK
 }
 
@@ -151,7 +151,7 @@ rectangle "porter ライブラリ (unicast_bidir N:1 サーバ)" {
   database "peer table\n(max_peers)" as PT
   [送信スレッド] as ST
   [受信スレッド] as RT
-  [ヘルス チェックスレッド] as HT
+  [ヘルス チェック スレッド] as HT
   [UDP ソケット\n(dst_addr:dst_port で bind)] as SOCK
 }
 
@@ -289,7 +289,7 @@ Table: TCP RECEIVER のスレッド構成と役割
 
 #### TCP_BIDIR のスレッド構成
 
-両端が対称なスレッド構成 (connect スレッド × N + 送信 + 受信 × N + ヘルスチェック × N) を持ちます。
+両端が対称なスレッド構成 (connect スレッド × N + 送信 + 受信 × N + ヘルス チェック × N) を持ちます。
 
 | 通信種別 | Role | connect スレッド | 送信スレッド | recv スレッド | health スレッド |
 |---|---|---|---|---|---|
@@ -456,14 +456,14 @@ porter の全状態は `potr_context` 構造体 (`potr_context *` の実体) に
 
 | カテゴリ | 保持する情報 |
 |---|---|
-| 設定 | サービス定義 (通信種別・アドレス・ポート・暗号化鍵)、グローバル設定 (ウィンドウ サイズ・ヘルスチェック間隔) |
+| 設定 | サービス定義 (通信種別・アドレス・ポート・暗号化鍵)、グローバル設定 (ウィンドウ サイズ・ヘルス チェック間隔) |
 | ソケット | 最大 4 パス分の UDP ソケット (`cplat_socket` 型) |
 | スレッド | 受信・送信・ヘルス チェック スレッド ハンドル |
 | ウィンドウ | 送信ウィンドウ・受信ウィンドウ (各パケットのコピーを保持) |
 | 送信キュー | ペイロード エレメントのリング バッファー (1024 要素) |
 | セッション状態 | 自セッション ID / 相手セッション ID・開始時刻 |
 | 接続状態 | `health_alive` (1: 疎通中、0: 未接続または切断) |
-| ヘルスチェック | 最終送信時刻・最終受信時刻 (パス別) |
+| ヘルス チェック | 最終送信時刻・最終受信時刻 (パス別) |
 | フラグメント バッファー | フラグメント結合用バッファー (最大 65,535 バイト) |
 | 圧縮バッファー | 圧縮・展開作業バッファー (約 65 KB) |
 | 暗号バッファー | 暗号化・復号作業バッファー (max_payload + 16 バイト) |
@@ -505,7 +505,7 @@ porter はソケット型・無効値・初期化・クローズのいずれに�
 | スレッド型 | `cplat_thread *` | `cplat_thread *` |
 | ミューテックス型 | `cplat_local_lock *` | `cplat_local_lock *` |
 | 条件変数型 | `cplat_condvar *` | `cplat_condvar *` |
-| 単調時間 (ヘルスチェック用) | cplat 経由 `clock_gettime(CLOCK_MONOTONIC, ...)` | cplat 経由 `GetTickCount64()` |
+| 単調時間 (ヘルス チェック用) | cplat 経由 `clock_gettime(CLOCK_MONOTONIC, ...)` | cplat 経由 `GetTickCount64()` |
 | カレンダー時刻 (セッション ID 用) | cplat 経由 `clock_gettime(CLOCK_REALTIME, ...)` | cplat 経由 `GetSystemTimeAsFileTime()` |
 | 呼び出し規約 (`POTRAPI`) | (なし) | `__stdcall` |
 | 暗号化 (`crypto` モジュール) | OpenSSL EVP AES-256-GCM | Windows CNG (BCrypt) AES-256-GCM |

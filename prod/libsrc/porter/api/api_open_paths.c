@@ -91,7 +91,7 @@ static cplat_socket open_socket_unicast(uint32_t bind_addr, uint16_t port)
 }
 
 /* マルチキャスト ソケットを作成して bind・グループ参加する。
-   src_if: 使用するローカル インターフェース (INADDR_ANY = OS 自動選択)。
+   src_if: 使用するローカル インターフェイス (INADDR_ANY = OS 自動選択)。
    is_receiver: 1 = 受信者、0 = 送信者。 */
 static cplat_socket open_socket_multicast(const potr_service_def *def, uint32_t src_if, int is_receiver)
 {
@@ -143,7 +143,7 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, uint32_t 
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* 送信者: マルチキャスト送信インターフェースを設定する */
+    /* 送信者: マルチキャスト送信インターフェイスを設定する */
     if (!is_receiver)
     {
         (void)cplat_socket_set_multicast_interface(sock, src_if, NULL);
@@ -155,7 +155,7 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, uint32_t 
 /* ブロードキャスト ソケットを作成して bind する。
    src_port: 送信者の送信元 bind ポート (0 = OS 自動選定)。
    dst_port: 受信者の listen ポート / 送信者の送信先ポート (省略不可)。
-   src_if: 送信者が使用するローカル インターフェース (INADDR_ANY = OS 自動選択)。
+   src_if: 送信者が使用するローカル インターフェイス (INADDR_ANY = OS 自動選択)。
    is_receiver: 1 = 受信者 (INADDR_ANY で bind)、0 = 送信者 (src_if で bind)。 */
 static cplat_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, uint32_t src_if, int is_receiver)
 {
@@ -188,7 +188,7 @@ static cplat_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, 
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* 送信者: src_addr で bind してインターフェースを選択する。受信者: INADDR_ANY で bind する。 */
+    /* 送信者: src_addr で bind してインターフェイスを選択する。受信者: INADDR_ANY で bind する。 */
     if (!is_receiver)
     {
         addr.address = src_if;

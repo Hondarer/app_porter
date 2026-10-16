@@ -399,7 +399,7 @@ int potr_service_close(potr_context *handle)
         return ret;
     }
 
-    /* 非 TCP: ヘルスチェック スレッドを停止 (送信者のみ) */
+    /* 非 TCP: ヘルス チェック スレッドを停止 (送信者のみ) */
     if (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping health thread",

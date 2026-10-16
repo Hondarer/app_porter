@@ -97,7 +97,7 @@ extern "C"
      *  @param[in]      health_payload_len ペイロード長 (バイト)。通常 POTR_MAX_PATH。health_payload が NULL の場合は無視。
      *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      *
-     *  ヘルスチェック パケットです。\n
+     *  ヘルス チェック パケットです。\n
      *  通番には送信側の next_seq (次に送出する DATA に割り当てる通番) を格納します。\n
      *  PING はウィンドウに登録されません (NACK・再送の対象外)。\n
      *  ack_num は常に 0。受信者は seq_num を上限として欠番を一括 NACK します。\n

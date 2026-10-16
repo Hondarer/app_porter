@@ -14,7 +14,7 @@ participant "アプリ" as APP
 participant "potr_service_open" as OPEN
 participant "受信スレッド" as RT
 participant "送信スレッド" as ST
-participant "ヘルス チェックスレッド" as HT
+participant "ヘルス チェック スレッド" as HT
 
 APP -> OPEN: potr_service_open(&global, &service,\nPOTR_ROLE_SENDER, NULL, &handle)
 
@@ -27,7 +27,7 @@ OPEN -> OPEN: 送信ウィンドウ初期化
 
 OPEN -> RT**: 受信スレッド起動
 OPEN -> ST**: 送信スレッド起動
-OPEN -> HT**: ヘルス チェックスレッド起動\n(health_interval_ms > 0 のみ)
+OPEN -> HT**: ヘルス チェック スレッド起動\n(health_interval_ms > 0 のみ)
 
 OPEN --> APP: POTR_OK, *handle
 deactivate OPEN
@@ -69,7 +69,7 @@ OPEN --> APP: POTR_OK, *handle
 deactivate OPEN
 
 activate RT
-note over RT: DATA/PING/FIN を\n待機するポーリングループ\nヘルス チェックタイムアウト監視
+note over RT: DATA/PING/FIN を\n待機するポーリングループ\nヘルス チェック タイムアウト監視
 
 @enduml
 ```

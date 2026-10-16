@@ -16,7 +16,7 @@ participant "potr_service_open" as OPEN
 participant "connect スレッド" as CT
 participant "送信スレッド" as ST
 participant "受信スレッド" as RT
-participant "ヘルス チェックスレッド" as HT
+participant "ヘルス チェック スレッド" as HT
 
 APP -> OPEN: potr_service_open(&global, &service, POTR_ROLE_SENDER, cb, &handle)
 activate OPEN
@@ -32,7 +32,7 @@ activate CT
 CT -> CT: connect(dst_addr, dst_port)\n（接続確立まで connect_timeout_ms 待機）
 CT -> ST**: 送信スレッド起動
 CT -> RT**: 受信スレッド起動
-CT -> HT**: ヘルス チェックスレッド起動
+CT -> HT**: ヘルス チェック スレッド起動
 
 note over CT: recv スレッドが切断を検知するまで待機
 

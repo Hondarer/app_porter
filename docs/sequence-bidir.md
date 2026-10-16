@@ -5,7 +5,7 @@
 ## unicast_bidir 1:1 双方向通信
 
 `POTR_TYPE_UNICAST_BIDIR` における双方向データ通信のシーケンスです。  
-両端が独立したセッションを持ち、それぞれがデータ送受信・NACK・ヘルスチェックを行います。
+両端が独立したセッションを持ち、それぞれがデータ送受信・NACK・ヘルス チェックを行います。
 
 ```plantuml
 @startuml unicast_bidir 通信シーケンス

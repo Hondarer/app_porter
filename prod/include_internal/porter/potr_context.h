@@ -164,7 +164,7 @@ typedef struct potr_internal_peer_context
 
     /* 送受信ウィンドウ (ピアごと独立) */
     potr_internal_window send_window;    /**< 送信ウィンドウ (NACK 再送用)。 */
-    cplat_local_lock *send_window_mutex; /**< send_window 保護 (送信・受信・ヘルスチェック スレッド競合)。 */
+    cplat_local_lock *send_window_mutex; /**< send_window 保護 (送信・受信・ヘルス チェック スレッド競合)。 */
     potr_internal_window recv_window;    /**< 受信ウィンドウ (順序整列)。 */
     int send_has_data;                   /**< 現セッションで DATA を 1 件以上送信済みか (1: 送信済み, 0: 未送信)。 */
     uint32_t _pad_send_has_data;         /**< パディング。 */
@@ -174,11 +174,11 @@ typedef struct potr_internal_peer_context
     size_t frag_buf_len; /**< 現在のデータ長。 */
     int frag_compressed; /**< 圧縮フラグ (非 0: 圧縮あり)。 */
 
-    /* ヘルスチェック */
+    /* ヘルス チェック */
     cplat_atomic_i32 health_alive;         /**< 疎通状態 (1: alive, 0: dead/未接続)。アトミックに読み書きします。 */
     int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。 */
     cplat_atomic_u8 path_ping_state
-        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。アトミックに読み書きします。 */
+        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルス チェック スレッドが読み取ります。アトミックに読み書きします。 */
     uint8_t remote_path_ping_state
         [POTR_MAX_PATH];         /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     cplat_timespec last_recv_ts; /**< 最終受信時刻 (CLOCK_MONOTONIC)。tv_sec == 0 は未受信。 */
@@ -210,7 +210,7 @@ typedef struct potr_internal_peer_context
 } potr_internal_peer_context;
 
 /**
- *  @brief  path 単位スレッド (connect/accept、TCP 受信、TCP ヘルスチェック) に渡す引数。
+ *  @brief  path 単位スレッド (connect/accept、TCP 受信、TCP ヘルス チェック) に渡す引数。
  *
  *  potr_context のメンバー配列として保持し、スレッド生存中は不変です。\n
  *  ファイル スコープの static 配列に置くと複数コンテキストの並行 open で上書きされるため、
@@ -231,15 +231,15 @@ struct potr_context
     potr_recv_fn callback;                         /**< 受信コールバック。 */
     cplat_local_lock *callback_mutex;              /**< コールバック直列化用ミューテックス。 */
     cplat_thread *recv_thread[POTR_MAX_PATH];      /**< 受信スレッド ハンドル (path ごと)。 */
-    cplat_thread *health_thread[POTR_MAX_PATH];    /**< ヘルスチェック スレッド ハンドル (path ごと、TCP: 全ロール)。 */
-    cplat_local_lock *health_mutex[POTR_MAX_PATH]; /**< ヘルスチェック スレッド停止用ミューテックス (path ごと)。 */
-    cplat_condvar *health_wakeup[POTR_MAX_PATH];   /**< ヘルスチェック スレッドを即時起床させる条件変数 (path ごと)。 */
+    cplat_thread *health_thread[POTR_MAX_PATH];    /**< ヘルス チェック スレッド ハンドル (path ごと、TCP: 全ロール)。 */
+    cplat_local_lock *health_mutex[POTR_MAX_PATH]; /**< ヘルス チェック スレッド停止用ミューテックス (path ごと)。 */
+    cplat_condvar *health_wakeup[POTR_MAX_PATH];   /**< ヘルス チェック スレッドを即時起床させる条件変数 (path ごと)。 */
     potr_service_def service;                      /**< サービス定義。 */
     potr_global_config global;                     /**< プロトコル別のグローバル既定値。 */
     uint32_t health_interval_ms;                   /**< 通信種別とサービス上書きを解決した実効 PING 送信間隔。 */
     potr_internal_window send_window; /**< 送信バッファー (過去 N パケット保持。NACK 再送・REJECT 判定に使用)。 */
     cplat_local_lock *
-        send_window_mutex; /**< send_window 保護用ミューテックス (送信スレッド・ヘルスチェック スレッド・受信スレッドが競合するため)。 */
+        send_window_mutex; /**< send_window 保護用ミューテックス (送信スレッド・ヘルス チェック スレッド・受信スレッドが競合するため)。 */
     potr_internal_window recv_window; /**< 受信ウィンドウ (順序整列・欠番検出)。 */
     uint32_t health_timeout_ms;       /**< 通信種別とサービス上書きを解決した実効受信タイムアウト。 */
 
@@ -250,18 +250,18 @@ struct potr_context
     cplat_atomic_i32 running
         [POTR_MAX_PATH]; /**< 受信スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
     cplat_atomic_i32 health_running
-        [POTR_MAX_PATH]; /**< ヘルスチェック スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
+        [POTR_MAX_PATH]; /**< ヘルス チェック スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
     cplat_atomic_i32 health_send_immediate
         [POTR_MAX_PATH]; /**< オープン時割り込み PING フラグ。health_sleep() 冒頭でチェック・クリア。アトミックに読み書きします。 */
     cplat_atomic_i32
         health_alive; /**< 疎通状態 (1: alive, 0: dead/未接続)。UDP 用。受信者が管理。アトミックに読み書きします。 */
     int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。 */
     cplat_atomic_u8 path_ping_state
-        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルスチェック スレッドが読み取ります。アトミックに読み書きします。 */
+        [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルス チェック スレッドが読み取ります。アトミックに読み書きします。 */
     cplat_atomic_u64
-        last_ping_send_ms; /**< 送信側ヘルスチェック用 PING 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。アトミックに読み書きします。 */
+        last_ping_send_ms; /**< 送信側ヘルス チェック用 PING 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。アトミックに読み書きします。 */
     cplat_atomic_u64
-        last_valid_data_send_ms; /**< 送信側ヘルスチェック用有効 DATA 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。アトミックに読み書きします。 */
+        last_valid_data_send_ms; /**< 送信側ヘルス チェック用有効 DATA 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。アトミックに読み書きします。 */
     uint8_t remote_path_ping_state
         [POTR_MAX_PATH]; /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     potr_role role;      /**< 役割 (POTR_ROLE_SENDER / POTR_ROLE_RECEIVER)。 */
@@ -284,7 +284,7 @@ struct potr_context
     /* 受信者: パスごとの送信者ポート キャッシュ (src_port=0 対応) */
     uint16_t peer_port[POTR_MAX_PATH]; /**< 各パスで観測した送信者ポート (NBO)。0 = 未観測。 */
 
-    /* ヘルスチェック: 最終受信時刻 (受信者が使用。CLOCK_MONOTONIC 基準)。 */
+    /* ヘルス チェック: 最終受信時刻 (受信者が使用。CLOCK_MONOTONIC 基準)。 */
     uint32_t _pad_last_recv;     /**< パディング (last_recv_ts を 8 バイト境界に揃える)。 */
     cplat_timespec last_recv_ts; /**< 最終受信時刻。tv_sec == 0 は未受信。 */
 
@@ -353,7 +353,7 @@ struct potr_context
     cplat_socket tcp_listen_sock[POTR_MAX_PATH]; /**< RECEIVER: listen ソケット (path ごと)。 */
     cplat_socket tcp_conn_fd[POTR_MAX_PATH];     /**< アクティブ TCP 接続 fd (path ごと)。 */
     cplat_local_lock *tcp_send_mutex
-        [POTR_MAX_PATH]; /**< TCP send() 排他制御 (path ごと)。送信スレッド・ヘルスチェック スレッド・recv スレッド競合防止。 */
+        [POTR_MAX_PATH]; /**< TCP send() 排他制御 (path ごと)。送信スレッド・ヘルス チェック スレッド・recv スレッド競合防止。 */
 
     /* recv_window 保護 (TCP v2: 複数 recv スレッドが同一 recv_window にアクセスするため) */
     cplat_local_lock *recv_window_mutex; /**< recv_window 保護用ミューテックス。 */
@@ -409,7 +409,7 @@ struct potr_context
     /* path 単位スレッドの引数 (スレッド起動前に書き込み、スレッド生存中は不変) */
     potr_internal_path_thread_arg connect_args[POTR_MAX_PATH];  /**< connect/accept スレッド引数 (path ごと)。 */
     potr_internal_path_thread_arg tcp_recv_args[POTR_MAX_PATH]; /**< TCP 受信スレッド引数 (path ごと)。 */
-    potr_internal_path_thread_arg health_args[POTR_MAX_PATH];   /**< TCP ヘルスチェック スレッド引数 (path ごと)。 */
+    potr_internal_path_thread_arg health_args[POTR_MAX_PATH];   /**< TCP ヘルス チェック スレッド引数 (path ごと)。 */
 };
 
 #endif /* POTR_CONTEXT_H */
