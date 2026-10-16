@@ -110,7 +110,7 @@ class potrConnectedThreadsTest : public Test
     void SetUp() override
     {
         ON_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _)).WillByDefault(Return(0));
-        // [状態] - `cplat_tracer_writef_at` の既定動作を設定する。
+        // [状態] - cplat_tracer_writef_at() の既定動作を設定する。
 
         memset(&ctx, 0, sizeof(ctx));
         memset(&s_calls, 0, sizeof(s_calls));
@@ -350,7 +350,7 @@ TEST_F(potrConnectedThreadsTest, success_sets_ping_state_without_rollback)
     EXPECT_EQ(
         (int)POTR_PING_STATE_UNDEFINED,
         s_calls
-            .last_set_ping_state); // [確認_正常系] - s_calls.last_set_ping_state が (int)POTR_PING_STATE_UNDEFINED であること。
+            .last_set_ping_state); // [確認_正常系] - s_calls.last_set_ping_state が POTR_PING_STATE_UNDEFINED であること。
     EXPECT_EQ(
         POTR_PING_STATE_UNDEFINED,
         cplat_atomic_load_u8(
@@ -382,5 +382,5 @@ TEST_F(potrConnectedThreadsTest, ping_state_is_reset_before_recv_start)
     EXPECT_EQ(
         (int)POTR_PING_STATE_UNDEFINED,
         s_calls
-            .ping_state_at_recv_start); // [確認_正常系] - s_calls.ping_state_at_recv_start が (int)POTR_PING_STATE_UNDEFINED であること。
+            .ping_state_at_recv_start); // [確認_正常系] - s_calls.ping_state_at_recv_start が POTR_PING_STATE_UNDEFINED であること。
 }

@@ -45,10 +45,10 @@ TEST(configLoadGlobalTest, returnsInvalidArgumentWhenParameterIsNull)
     // Assert
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        actual_ret_null_path); // [確認_異常系] - config_path が NULL の場合に potr_internal_config_load_global() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_path); // [確認_異常系] - config_path が nullptr の場合に potr_internal_config_load_global() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        actual_ret_null_out); // [確認_異常系] - 出力先が NULL の場合に potr_internal_config_load_global() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_out); // [確認_異常系] - 出力先が nullptr の場合に potr_internal_config_load_global() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
 }
 
 // 設定ファイルの open に失敗した場合に POTR_ERR_IO を返すことの確認
@@ -62,6 +62,7 @@ TEST(configLoadGlobalTest, returnsIoErrorWhenFileCannotBeOpened)
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             nullptr)); // [Pre-Assert確認_異常系] - cplat_fopen() が "missing.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_fopen() にて nullptr を返す。
 
     // Act
     int actual_ret_open_fail = potr_internal_config_load_global(
@@ -87,16 +88,18 @@ TEST(configLoadGlobalTest, loadsGlobalOverridesAndIgnoresOtherSections)
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [状態] - fgets が呼び出された際に global 定義を含む JSONC を返すようにモックを設定する。
+            })); // [状態] - fgets() が呼び出された際に global 定義を含む JSONC を返すようにモックを設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::
                 handle())); // [Pre-Assert確認_正常系] - cplat_fopen() が "config.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_fopen() にて ConfigLineStream::handle() を返す。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(
             0)); // [Pre-Assert確認_正常系] - fclose() が ConfigLineStream::handle() の戻り値を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - fclose() にて 0 を返す。
 
     // Act
     int actual_ret =
@@ -132,16 +135,18 @@ TEST(configLoadGlobalTest, keepsDefaultsWhenGlobalSectionIsMissing)
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [状態] - fgets が呼び出された際に services のみを含む JSONC を返すようにモックを設定する。
+            })); // [状態] - fgets() が呼び出された際に services のみを含む JSONC を返すようにモックを設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("service-only.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::
                 handle())); // [Pre-Assert確認_正常系] - cplat_fopen() が "service-only.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_fopen() にて ConfigLineStream::handle() を返す。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(
             0)); // [Pre-Assert確認_正常系] - fclose() が ConfigLineStream::handle() の戻り値を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - fclose() にて 0 を返す。
 
     // Act
     int actual_ret =
@@ -202,9 +207,11 @@ TEST(configLoadGlobalTest, rejectsCommaWithoutPrecedingMember)
         .WillOnce(Return(
             ConfigLineStream::
                 handle())); // [Pre-Assert確認_異常系] - cplat_fopen() が "invalid.json" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_fopen() にて ConfigLineStream::handle() を返す。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(
             0)); // [Pre-Assert確認_異常系] - fclose() が ConfigLineStream::handle() の戻り値を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - fclose() にて 0 を返す。
 
     // Act
     int actual_ret =

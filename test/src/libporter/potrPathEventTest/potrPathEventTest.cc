@@ -171,7 +171,7 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
     // Assert_2
     EXPECT_EQ(3, s_event_count); // [確認_正常系] - s_event_count が 3 であること。
     EXPECT_EQ((potr_peer_id)7,
-              s_events[0].peer_id); // [確認_正常系] - s_events[0].peer_id が (potr_peer_id)7 であること。
+              s_events[0].peer_id); // [確認_正常系] - s_events[0].peer_id が 7 であること。
     EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED,
               s_events[0].event);   // [確認_正常系] - s_events[0].event が POTR_EVENT_PATH_DISCONNECTED であること。
     EXPECT_EQ(1U, s_events[0].len); // [確認_正常系] - s_events[0].len が 1U であること。
@@ -181,5 +181,5 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
     EXPECT_EQ(POTR_EVENT_DISCONNECTED,
               s_events[2].event); // [確認_正常系] - s_events[2].event が POTR_EVENT_DISCONNECTED であること。
     EXPECT_EQ((potr_peer_id)7,
-              s_events[2].peer_id); // [確認_正常系] - s_events[2].peer_id が (potr_peer_id)7 であること。
+              s_events[2].peer_id); // [確認_正常系] - s_events[2].peer_id が 7 であること。
 }

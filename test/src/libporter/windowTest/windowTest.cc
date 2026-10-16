@@ -73,7 +73,7 @@ TEST_F(windowTest, initInitializesStateAndReusesBuffersOnSameSize)
     // Pre-Assert
 
     // Act
-    int actual_ret_null = potr_internal_window_init(NULL, 0U, 8U, 128U);    // [手順] - win に NULL を与えて呼び出す。
+    int actual_ret_null = potr_internal_window_init(nullptr, 0U, 8U, 128U); // [手順] - win に NULL を与えて呼び出す。
     int actual_ret_first = potr_internal_window_init(&win, 100U, 8U, 128U); // [手順] - initial_seq=100 で初期化する。
     first_packets = win.packets;
     int actual_ret_second =
@@ -82,7 +82,7 @@ TEST_F(windowTest, initInitializesStateAndReusesBuffersOnSameSize)
     // Assert
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        actual_ret_null); // [確認_異常系] - win が NULL の場合に potr_internal_window_init() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null); // [確認_異常系] - win が nullptr の場合に potr_internal_window_init() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
         POTR_OK,
         actual_ret_first); // [確認_正常系] - initial_seq が 100 の場合に potr_internal_window_init() の戻り値が POTR_OK であること。
@@ -132,7 +132,7 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
             POTR_OK,
             actual_ret_push_fill); // [確認_正常系 回数=4] - potr_internal_window_send_push() の戻り値が POTR_OK であること。
     }
-    int full_after_4 = potr_internal_window_send_full(&win); // [手順] - 4 件 push した直後の満杯判定を取得する。
+    int full_after_4 = potr_internal_window_send_full(&win); // [手順] - 4 件 push() した直後の満杯判定を取得する。
 
     // Assert
     EXPECT_EQ(
@@ -141,7 +141,7 @@ TEST_F(windowTest, sendPushEvictsOldestEntryWhenFull)
 
     // Act_2
     potr_packet pkt = make_send_packet(4U, payload, sizeof(payload));
-    int actual_ret_push = potr_internal_window_send_push(&win, &pkt);       // [手順] - 満杯状態で 5 件目を push する。
+    int actual_ret_push = potr_internal_window_send_push(&win, &pkt); // [手順] - 満杯状態で 5 件目を push() する。
     int actual_ret_evicted = potr_internal_window_send_get(&win, 0U, &out); // [手順] - evict された通番 0 を取得する。
     int actual_ret_latest = potr_internal_window_send_get(&win, 4U, &out);  // [手順] - 最新の通番 4 を取得する。
 
@@ -183,7 +183,7 @@ TEST_F(windowTest, sendGetReturnsDeepCopiedPayload)
         ASSERT_EQ(POTR_OK,
                   actual_ret_push); // [状態確認] - potr_internal_window_send_push() の戻り値が POTR_OK であること。
     }
-    payload[0] = 0xFF; // [手順] - push 後に元バッファーを書き換え、ディープ コピーであることを確認する。
+    payload[0] = 0xFF; // [手順] - push() 後に元バッファーを書き換え、ディープ コピーであることを確認する。
     int actual_ret_get = potr_internal_window_send_get(&win, 0U, &out);
     int actual_ret_out_of_range = potr_internal_window_send_get(&win, 99U, &out); // [手順] - 範囲外の通番で取得する。
 
@@ -283,7 +283,7 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
     {
         potr_packet pkt0 = make_recv_packet(0U, payload, sizeof(payload));
         potr_packet pkt1 = make_recv_packet(1U, payload, sizeof(payload));
-        int actual_ret_push0 = potr_internal_window_recv_push(&win, &pkt0); // [手順] - seq=0, 1 を順に push する。
+        int actual_ret_push0 = potr_internal_window_recv_push(&win, &pkt0); // [手順] - seq=0, 1 を順に push() する。
         ASSERT_EQ(
             POTR_OK,
             actual_ret_push0); // [確認_正常系] - seq が 0 の場合に potr_internal_window_recv_push() の戻り値が POTR_OK であること。
@@ -297,7 +297,7 @@ TEST_F(windowTest, recvPushAndPopDeliversInOrder)
     int actual_ret_pop1 = potr_internal_window_recv_pop(&win, &out);
     uint32_t seq1 = out.seq_num;
     int actual_ret_pop_empty =
-        potr_internal_window_recv_pop(&win, &out); // [手順] - 空になったウィンドウから pop する。
+        potr_internal_window_recv_pop(&win, &out); // [手順] - 空になったウィンドウから pop() する。
 
     // Assert
     EXPECT_EQ(
@@ -392,9 +392,9 @@ TEST_F(windowTest, recvOutOfOrderDetectsGapAndRecovers)
 
     // Act
     potr_packet pkt2 = make_recv_packet(2U, payload, sizeof(payload));
-    int actual_ret_push2 = potr_internal_window_recv_push(&win, &pkt2);         // [手順] - seq=2 を先行して push する。
+    int actual_ret_push2 = potr_internal_window_recv_push(&win, &pkt2); // [手順] - seq=2 を先行して push() する。
     int actual_ret_gap = potr_internal_window_recv_needs_nack(&win, &nack_num); // [手順] - 欠番判定を行う。
-    int actual_ret_pop_blocked = potr_internal_window_recv_pop(&win, &out);     // [手順] - 欠番未解消のまま pop する。
+    int actual_ret_pop_blocked = potr_internal_window_recv_pop(&win, &out); // [手順] - 欠番未解消のまま pop() する。
 
     // Assert
     ASSERT_EQ(
@@ -450,10 +450,10 @@ TEST_F(windowTest, recvPushRejectsOutOfWindowAndAcceptsDuplicate)
     // Act
     potr_packet pkt_out = make_recv_packet(4U, payload, sizeof(payload));
     int actual_ret_out =
-        potr_internal_window_recv_push(&win, &pkt_out); // [手順] - base_seq + window_size の通番を push する。
+        potr_internal_window_recv_push(&win, &pkt_out); // [手順] - base_seq + window_size の通番を push() する。
     potr_packet pkt0 = make_recv_packet(0U, payload, sizeof(payload));
     int actual_ret_first = potr_internal_window_recv_push(&win, &pkt0);
-    int actual_ret_dup = potr_internal_window_recv_push(&win, &pkt0); // [手順] - 同一通番を重複 push する。
+    int actual_ret_dup = potr_internal_window_recv_push(&win, &pkt0); // [手順] - 同一通番を重複 push() する。
 
     // Assert
     EXPECT_EQ(
@@ -541,13 +541,13 @@ TEST_F(windowTest, recvHasPacketReturnsFalseForUnavailableWindow)
     // Pre-Assert
 
     // Act
-    int actual_null = potr_internal_window_recv_has_packet(NULL, 0U);     // [手順] - NULL を問い合わせる。
+    int actual_null = potr_internal_window_recv_has_packet(nullptr, 0U);  // [手順] - NULL を問い合わせる。
     int actual_disposed = potr_internal_window_recv_has_packet(&win, 0U); // [手順] - 解放済みウィンドウを問い合わせる。
 
     // Assert
     EXPECT_EQ(
         0,
-        actual_null); // [確認_異常系] - win が NULL の場合に potr_internal_window_recv_has_packet() の戻り値が 0 であること。(未到着と判定されることの確認)
+        actual_null); // [確認_異常系] - win が nullptr の場合に potr_internal_window_recv_has_packet() の戻り値が 0 であること。(未到着と判定されることの確認)
     EXPECT_EQ(
         0,
         actual_disposed); // [確認_異常系] - 解放済みウィンドウの場合に potr_internal_window_recv_has_packet() の戻り値が 0 であること。(未到着と判定されることの確認)

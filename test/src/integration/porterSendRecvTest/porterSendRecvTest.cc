@@ -51,7 +51,7 @@ class TempBinaryFile
         path_ = tmp_file;
         FILE *fp = nullptr;
         fopen_s(&fp, path_.c_str(), "wb");
-        if (!fp)
+        if (fp == nullptr)
         {
             return "";
         }
@@ -363,16 +363,16 @@ TEST_F(porterSendRecvTest, send_single_message)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // SENDER を起動して最初のプロンプトを待つ
     send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [状態] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
-                                                              // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -380,15 +380,17 @@ TEST_F(porterSendRecvTest, send_single_message)
     bool actual_ret_write_hello =
         writeLineStdin(send_h_, "send Hello Porter"); // [手順] - SENDER に "send Hello Porter" を送信する。
     ASSERT_TRUE(actual_ret_write_hello);              // [状態確認] - writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_3 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_3); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
 
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "Hello Porter", 3000)); // [手順] - RECIEVER が "Hello Porter" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "Hello Porter" を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信 (12 バイト)", 3000)); // [手順] - RECIEVER が受信バイト数を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "受信 (12 バイト)" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_4 =
+        tryWaitForOutput(recv_h_, "Hello Porter", 3000); // [手順] - RECIEVER が "Hello Porter" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_4); // [確認_正常系] - "Hello Porter" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_5 =
+        tryWaitForOutput(recv_h_, "受信 (12 バイト)", 3000); // [手順] - RECIEVER が受信バイト数を出力するまで待機する。
 
     writeLineStdin(send_h_, "exit");
 
@@ -399,6 +401,8 @@ TEST_F(porterSendRecvTest, send_single_message)
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_5); // [確認_正常系] - "受信 (12 バイト)" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(
         0,
         send_exit); // [確認_正常系] - waitForExit() の戻り値が 0 であること。(SENDER の終了コードが 0 であることの確認)
@@ -427,9 +431,9 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // SENDER を起動して最初のプロンプトを待つ
     send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [状態] - SENDER を起動する。
@@ -444,16 +448,20 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
     // msg1、msg2、msg3 のそれぞれが送信のたびに RECIEVER で受信されること。
     for (size_t i = 0; i < messages.size(); i++)
     {
-        ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-        // [確認_正常系 回数=3] - 各送信前の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+        bool actual_ret_wait_7 = tryWaitForOutput(
+            send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+        ASSERT_TRUE(
+            actual_ret_wait_7); // [確認_正常系 回数=3] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
         bool actual_ret_write_msg = writeLineStdin(send_h_, string("send ") + messages[i]);
         ASSERT_TRUE(actual_ret_write_msg); // [状態確認] - writeLineStdin() の戻り値が true であること。
-        ASSERT_NO_THROW(waitForOutput(recv_h_, messages[i], 3000));
-        // [確認_正常系 回数=3] - RECIEVER の messages[i] を待つ waitForOutput() が例外を送出しないこと。
+        bool actual_ret_wait_8 =
+            tryWaitForOutput(recv_h_, messages[i], 3000); // [手順] - RECIEVER が messages[i] を出力するまで待機する。
+        ASSERT_TRUE(
+            actual_ret_wait_8); // [確認_正常系 回数=3] - messages[i] を待つ tryWaitForOutput() の戻り値が true であること。
     }
 
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 最終送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_9 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
     bool actual_ret_write_exit = writeLineStdin(send_h_, "exit");
     ASSERT_TRUE(actual_ret_write_exit); // [状態確認] - writeLineStdin() の戻り値が true であること。
 
@@ -464,6 +472,8 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_9); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
     string recv_out = getStdout(recv_h_);
     EXPECT_EQ(
         0,
@@ -494,9 +504,9 @@ TEST_F(porterSendRecvTest, recv_exits_cleanly_on_sigint)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -529,9 +539,9 @@ TEST_F(porterSendRecvTest, unicast_initial_data_establishes_connected_without_pi
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "11"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -541,17 +551,19 @@ TEST_F(porterSendRecvTest, unicast_initial_data_establishes_connected_without_pi
                         19016);         // [手順] - 初回 DATA パケット "data-connect-ok" を UDP で直接送信する。
     ASSERT_EQ(0, actual_ret_send_data); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
 
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
-    // [確認_正常系] - 初回 DATA 後の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "data-connect-ok",
-                                  3000)); // [手順] - RECIEVER が "data-connect-ok" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "data-connect-ok" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_12 =
+        tryWaitForOutput(recv_h_, "接続確立", 3000); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_12); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_13 = tryWaitForOutput(recv_h_, "data-connect-ok",
+                                               3000); // [手順] - RECIEVER が "data-connect-ok" を出力するまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_13); // [確認_正常系] - "data-connect-ok" を待つ tryWaitForOutput() の戻り値が true であること。
     {
         string recv_out = getStdout(recv_h_);
         EXPECT_NE(
@@ -580,9 +592,9 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "13"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -590,9 +602,10 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
     send_h_ = startProcessAsync(send_path, {"sender", config_path, "13"},
                                 makeOpts()); // [手順] - SENDER を起動する (open 直後の状態を作る)。
     ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [手順] - SENDER がプロンプトを出力するまで待機する。
-    // [状態確認] - SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_15 =
+        tryWaitForOutput(send_h_, "porter-test[sender:", 5000); // [手順] - SENDER がプロンプトを出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_15); // [状態確認] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
 
     sleep_ms(250); // [手順] - PING 周期 (1000 ms) より短い 250 ms だけ待機する。
     size_t actual_ret_find_conn_early = getStdout(recv_h_).find("接続確立");
@@ -632,9 +645,9 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "12"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -643,9 +656,10 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
         send_udp_packet(make_plain_data_packet(12, 0x4102U, 2200, 4500, 0U, "timeout-reset-1"),
                         19017);          // [手順] - 1 通目の DATA "timeout-reset-1" を UDP で直接送信する。
     ASSERT_EQ(0, actual_ret_send_data1); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "timeout-reset-1", 3000)); // [手順] - RECIEVER が 1 通目の受信を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "timeout-reset-1" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_17 =
+        tryWaitForOutput(recv_h_, "timeout-reset-1", 3000); // [手順] - RECIEVER が 1 通目の受信を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_17); // [確認_正常系] - "timeout-reset-1" を待つ tryWaitForOutput() の戻り値が true であること。
 
     sleep_ms(450); // [手順] - timeout (900 ms) の半分の 450 ms 待機する。
     size_t actual_ret_find_disc_mid1 = getStdout(recv_h_).find("切断検知");
@@ -654,21 +668,23 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
         send_udp_packet(make_plain_data_packet(12, 0x4102U, 2200, 4500, 1U, "timeout-reset-2"),
                         19017);          // [手順] - 2 通目の DATA "timeout-reset-2" を送信して timeout を延長させる。
     ASSERT_EQ(0, actual_ret_send_data2); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "timeout-reset-2", 3000)); // [手順] - RECIEVER が 2 通目の受信を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "timeout-reset-2" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_18 =
+        tryWaitForOutput(recv_h_, "timeout-reset-2", 3000); // [手順] - RECIEVER が 2 通目の受信を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_18); // [確認_正常系] - "timeout-reset-2" を待つ tryWaitForOutput() の戻り値が true であること。
 
     sleep_ms(550); // [手順] - 1 通目基準なら timeout する 550 ms 待機する。
     size_t actual_ret_find_disc_mid2 = getStdout(recv_h_).find("切断検知");
 
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知",
-                                  2000)); // [手順] - 最終 DATA 基準の timeout で "切断検知" が出力されるまで待機する。
-    // [確認_正常系] - 最終 DATA 後の "切断検知" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_19 = tryWaitForOutput(
+        recv_h_, "切断検知", 2000); // [手順] - 最終 DATA 基準の timeout で "切断検知" が出力されるまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_19); // [確認_正常系] - "切断検知" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(
         string::npos,
         actual_ret_find_disc_mid1); // [確認_正常系] - "切断検知" を探した getStdout().find() の戻り値が string::npos であること。(timeout 前は切断検知が出力されないことの確認)
@@ -710,15 +726,15 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "53"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     send_h_ = startProcessAsync(send_path, {"sender", config_path, "53"}, makeOpts()); // [状態] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
-                                                              // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -726,8 +742,10 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
     bool actual_ret_write_payload =
         writeLineStdin(send_h_, string("send ") + payload); // [手順] - 単発メッセージを送信する。
     ASSERT_TRUE(actual_ret_write_payload); // [状態確認] - writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_22 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_22); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
 
     /* sender 側は追加送信せず即 close する。 */
     bool actual_ret_write_exit =
@@ -735,16 +753,18 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
     ASSERT_TRUE(actual_ret_write_exit);  // [状態確認] - writeLineStdin() の戻り値が true であること。
     int actual_ret_send_exit = waitForExit(send_h_, 5000);
 
-    ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の payload を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "切断検知" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_23 =
+        tryWaitForOutput(recv_h_, payload, 3000); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
+    ASSERT_TRUE(actual_ret_wait_23); // [確認_正常系] - payload を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_24 =
+        tryWaitForOutput(recv_h_, "切断検知", 3000); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_24); // [確認_正常系] - "切断検知" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(
         0,
         actual_ret_send_exit); // [確認_正常系] - waitForExit() の戻り値が 0 であること。(SENDER の終了コードが 0 であることの確認)
@@ -777,9 +797,9 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "56"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -788,33 +808,35 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
         send_udp_packet(make_plain_ping_packet(56, 0x5601U, 4234, 8678, 0U, POTR_PING_STATE_UNDEFINED),
                         19056);         // [手順] - PING パケットを送信して接続を確立させる。
     ASSERT_EQ(0, actual_ret_send_ping); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_26 =
+        tryWaitForOutput(recv_h_, "接続確立", 3000); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_26); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
 
     int actual_ret_send_fin = send_udp_packet(make_plain_fin_packet(56, 0x5601U, 4234, 8678, 0U, false),
                                               19056); // [手順] - target フラグなしの FIN パケットを送信する。
     ASSERT_EQ(0, actual_ret_send_fin);                // [状態確認] - send_udp_packet() の戻り値が 0 であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "切断検知" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_27 =
+        tryWaitForOutput(recv_h_, "切断検知", 3000); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_27); // [確認_正常系] - "切断検知" を待つ tryWaitForOutput() の戻り値が true であること。
     {
         string recv_out = getStdout(recv_h_);
         EXPECT_EQ(
             (size_t)1,
             count_occurrences(
                 recv_out,
-                "接続確立")); // [確認_正常系] - "接続確立" を数えた count_occurrences() の戻り値が (size_t)1 であること。(接続確立が 1 回だけ出力されることの確認)
+                "接続確立")); // [確認_正常系] - "接続確立" を数えた count_occurrences() の戻り値が 1 であること。(接続確立が 1 回だけ出力されることの確認)
         EXPECT_EQ(
             (size_t)1,
             count_occurrences(
                 recv_out,
-                "切断検知")); // [確認_正常系] - "切断検知" を数えた count_occurrences() の戻り値が (size_t)1 であること。(FIN により切断検知が即時に 1 回出力されることの確認)
+                "切断検知")); // [確認_正常系] - "切断検知" を数えた count_occurrences() の戻り値が 1 であること。(FIN により切断検知が即時に 1 回出力されることの確認)
     }
 }
 // [サブ手順参照 名前=porterSendRecvTest.TearDown]
@@ -832,9 +854,9 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "57"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -843,9 +865,10 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
         send_udp_packet(make_plain_ping_packet(57, 0x5701U, 5234, 9678, UINT32_MAX, POTR_PING_STATE_UNDEFINED),
                         19057);         // [手順] - 通番 UINT32_MAX の PING を送信して接続を確立させる。
     ASSERT_EQ(0, actual_ret_send_ping); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_29 =
+        tryWaitForOutput(recv_h_, "接続確立", 3000); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_29); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
 
     int actual_ret_send_fin =
         send_udp_packet(make_plain_fin_packet(57, 0x5701U, 5234, 9678, 0U, true),
@@ -857,16 +880,18 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
     int actual_ret_send_data = send_udp_packet(make_plain_data_packet(57, 0x5701U, 5234, 9678, UINT32_MAX, payload),
                                                19057);      // [手順] - 通番 UINT32_MAX の最終 DATA を送信する。
     ASSERT_EQ(0, actual_ret_send_data);                     // [状態確認] - send_udp_packet() の戻り値が 0 であること。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の payload を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "切断検知" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_30 =
+        tryWaitForOutput(recv_h_, payload, 3000); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
+    ASSERT_TRUE(actual_ret_wait_30); // [確認_正常系] - payload を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_31 =
+        tryWaitForOutput(recv_h_, "切断検知", 3000); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_31); // [確認_正常系] - "切断検知" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(
         string::npos,
         actual_ret_find_disc_early); // [確認_正常系] - "切断検知" を探した getStdout().find() の戻り値が string::npos であること。(最終 DATA 到着前は pending FIN のまま切断されないことの確認)
@@ -903,23 +928,23 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "54"},
                                 makeOpts()); // [状態] - RECIEVER (N:1 サーバー) を起動する。
     ASSERT_NE(nullptr, recv_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     send_h_ = startProcessAsync(send_path, {"sender", client_config_path, "54"},
                                 makeOpts()); // [状態] - SENDER (クライアント) を起動する。
     ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "双方向モード", 5000)); // [状態] - SENDER が "双方向モード" を出力するまで待機する。
-                                                       // [状態確認] - waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-test[sender:", 3000));  // [状態] - SENDER がプロンプトを出力するまで待機する。
-                                                               // [状態確認] - waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)); // [状態] - 双方が "接続確立" を出力するまで待機する。
-                                                               // [状態確認] - waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000)); // [状態] - SENDER が "接続確立" を出力するまで待機する。
-                                                               // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(send_h_, "双方向モード", 5000)); // [状態] - SENDER が "双方向モード" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
+    ASSERT_TRUE(
+        tryWaitForOutput(send_h_, "porter-test[sender:", 3000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
+    ASSERT_TRUE(tryWaitForOutput(recv_h_, "接続確立", 3000)); // [状態] - 双方が "接続確立" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
+    ASSERT_TRUE(tryWaitForOutput(send_h_, "接続確立", 3000)); // [状態] - SENDER が "接続確立" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -927,23 +952,27 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
     bool actual_ret_write_payload =
         writeLineStdin(send_h_, string("send ") + payload); // [手順] - 単発メッセージを送信する。
     ASSERT_TRUE(actual_ret_write_payload); // [状態確認] - writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_37 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_37); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
 
     bool actual_ret_write_exit =
         writeLineStdin(send_h_, "exit"); // [手順] - 送信直後に "exit" で SENDER を close する。
     ASSERT_TRUE(actual_ret_write_exit);  // [状態確認] - writeLineStdin() の戻り値が true であること。
     int actual_ret_send_exit = waitForExit(send_h_, 5000);
-    ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の payload を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "切断検知" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_38 =
+        tryWaitForOutput(recv_h_, payload, 3000); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
+    ASSERT_TRUE(actual_ret_wait_38); // [確認_正常系] - payload を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_39 =
+        tryWaitForOutput(recv_h_, "切断検知", 3000); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_39); // [確認_正常系] - "切断検知" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(
         0,
         actual_ret_send_exit); // [確認_正常系] - waitForExit() の戻り値が 0 であること。(SENDER の終了コードが 0 であることの確認)
@@ -978,8 +1007,8 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
     recv_h_ = startProcessAsync(recv_path, {"receiver", "-l", "INFO", config_path, "58"},
                                 makeOpts());                     // [状態] - INFO トレース付きで RECEIVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECEIVER が受信待機状態になるまで待機する。
-    // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECEIVER が受信待機状態になるまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -988,8 +1017,9 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
         send_udp_packet(make_plain_ping_packet(58, 0x5801U, 6234, 10678, 0U, POTR_PING_STATE_NORMAL),
                         19058);          // [手順] - PING を送信して N:1 peer を作成する。
     ASSERT_EQ(0, actual_ret_send_ping1); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - peer の接続確立を待機する。
-    // [確認_正常系] - peer の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_41 = tryWaitForOutput(recv_h_, "接続確立", 3000); // [手順] - peer の接続確立を待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_41); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
 
     int actual_ret_send_fin = send_udp_packet(make_plain_fin_packet(58, 0x5801U, 6234, 10678, 1U, true),
                                               19058); // [手順] - 未到達の通番 1 を目標とする FIN を送信する。
@@ -1001,10 +1031,13 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
     int actual_ret_send_data = send_udp_packet(make_plain_data_packet(58, 0x5801U, 6234, 10678, 0U, payload),
                                                19058); // [手順] - 通番 0 の DATA で pending FIN の目標に到達させる。
     ASSERT_EQ(0, actual_ret_send_data);                // [状態確認] - send_udp_packet() の戻り値が 0 であること。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, payload, 3000)); // [手順] - FIN 完了前に DATA が配信されるまで待機する。
-    // [確認_正常系] - FIN 完了前の payload を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知", 3000)); // [手順] - pending FIN による peer 切断を待機する。
-    // [確認_正常系] - pending FIN の "切断検知" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_42 =
+        tryWaitForOutput(recv_h_, payload, 3000); // [手順] - FIN 完了前に DATA が配信されるまで待機する。
+    ASSERT_TRUE(actual_ret_wait_42); // [確認_正常系] - payload を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_43 =
+        tryWaitForOutput(recv_h_, "切断検知", 3000); // [手順] - pending FIN による peer 切断を待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_43); // [確認_正常系] - "切断検知" を待つ tryWaitForOutput() の戻り値が true であること。
 
     int actual_ret_send_ping2 =
         send_udp_packet(make_plain_ping_packet(58, 0x5802U, 6235, 10679, 0U, POTR_PING_STATE_NORMAL),
@@ -1014,14 +1047,15 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
         send_udp_packet(make_plain_data_packet(58, 0x5802U, 6235, 10679, 0U, recovery_payload),
                         19058);             // [手順] - 新しい peer から DATA を送信する。
     ASSERT_EQ(0, actual_ret_send_recovery); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, recovery_payload, 3000)); // [手順] - 新しい peer の DATA が配信されるまで待機する。
-    // [確認_正常系] - 新しい peer の recovery_payload を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_44 =
+        tryWaitForOutput(recv_h_, recovery_payload, 3000); // [手順] - 新しい peer の DATA が配信されるまで待機する。
 
     interruptProcess(recv_h_);                      // [手順] - RECEIVER に SIGINT (Ctrl+C) を入力する。
     int receiver_exit = waitForExit(recv_h_, 3000); // [手順] - RECEIVER の終了を待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_44); // [確認_正常系] - recovery_payload を待つ tryWaitForOutput() の戻り値が true であること。
     string recv_out = getStdout(recv_h_);
     EXPECT_EQ(
         0,
@@ -1052,9 +1086,9 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "55"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -1062,8 +1096,10 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
     int actual_ret_send_first = send_udp_packet(make_plain_data_packet(55, 0x5501U, 3234, 7678, 0U, first_payload),
                                                 19055); // [手順] - 1 つ目のセッションで DATA を送信する。
     ASSERT_EQ(0, actual_ret_send_first);                // [状態確認] - send_udp_packet() の戻り値が 0 であること。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, first_payload, 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の first_payload を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_46 =
+        tryWaitForOutput(recv_h_, first_payload, 3000); // [手順] - RECIEVER が受信を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_46); // [確認_正常系] - first_payload を待つ tryWaitForOutput() の戻り値が true であること。
 
     int actual_ret_send_fin =
         send_udp_packet(make_plain_fin_packet(55, 0x5501U, 3234, 7678, 2U, true),
@@ -1071,22 +1107,23 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
     ASSERT_EQ(0, actual_ret_send_fin); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     sleep_ms(150);                     // [手順] - 150 ms 待機する。
     size_t actual_ret_find_disc_early = getStdout(recv_h_).find("切断検知");
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "切断検知",
-                                  2000)); // [手順] - health timeout により "切断検知" が出力されるまで待機する。
-    // [確認_正常系] - health timeout 後の "切断検知" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_47 = tryWaitForOutput(
+        recv_h_, "切断検知", 2000); // [手順] - health timeout により "切断検知" が出力されるまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_47); // [確認_正常系] - "切断検知" を待つ tryWaitForOutput() の戻り値が true であること。
 
     int actual_ret_send_payload = send_udp_packet(make_plain_data_packet(55, 0x5502U, 3235, 7679, 0U, payload),
                                                   19055); // [手順] - 新しいセッション ID で DATA を送信する。
     ASSERT_EQ(0, actual_ret_send_payload);                // [状態確認] - send_udp_packet() の戻り値が 0 であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, payload, 3000)); // [手順] - RECIEVER が新セッションの受信を出力するまで待機する。
-    // [確認_正常系] - 新セッションの payload を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_48 =
+        tryWaitForOutput(recv_h_, payload, 3000); // [手順] - RECIEVER が新セッションの受信を出力するまで待機する。
     sleep_ms(150); // [手順] - stale な pending FIN による誤切断がないか 150 ms 観察する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(actual_ret_wait_48); // [確認_正常系] - payload を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(
         string::npos,
         actual_ret_find_disc_early); // [確認_正常系] - "切断検知" を探した getStdout().find() の戻り値が string::npos であること。(pending FIN の時点では切断されないことの確認)
@@ -1104,7 +1141,7 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
             (size_t)1,
             count_occurrences(
                 recv_out,
-                "切断検知")); // [確認_正常系] - "切断検知" を数えた count_occurrences() の戻り値が (size_t)1 であること。(切断検知が timeout の 1 回だけで stale FIN が再発しないことの確認)
+                "切断検知")); // [確認_正常系] - "切断検知" を数えた count_occurrences() の戻り値が 1 であること。(切断検知が timeout の 1 回だけで stale FIN が再発しないことの確認)
     }
 }
 // [サブ手順参照 名前=porterSendRecvTest.TearDown]
@@ -1123,16 +1160,16 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "14"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     send_h_ = startProcessAsync(send_path, {"sender", "-l", "VERBOSE", config_path, "14"},
                                 makeOpts()); // [状態] - SENDER を VERBOSE トレース付きで起動する。
     ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
-                                                              // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -1140,19 +1177,25 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
     bool actual_ret_write_delay1 =
         writeLineStdin(send_h_, "send ping-delay-1"); // [手順] - 1 通目 "ping-delay-1" を送信する。
     ASSERT_TRUE(actual_ret_write_delay1);             // [状態確認] - writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 1 通目の送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "ping-delay-1", 3000));
-    // [確認_正常系] - RECIEVER の "ping-delay-1" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_51 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_51); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_52 =
+        tryWaitForOutput(recv_h_, "ping-delay-1", 3000); // [手順] - RECIEVER が "ping-delay-1" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_52); // [確認_正常系] - "ping-delay-1" を待つ tryWaitForOutput() の戻り値が true であること。
 
     sleep_ms(250); // [手順] - PING 周期の半分の 250 ms 待機する。
     bool actual_ret_write_delay2 = writeLineStdin(
         send_h_, "send ping-delay-2");    // [手順] - 2 通目 "ping-delay-2" を送信し recent DATA を更新する。
     ASSERT_TRUE(actual_ret_write_delay2); // [状態確認] - writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 2 通目の送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "ping-delay-2", 3000));
-    // [確認_正常系] - RECIEVER の "ping-delay-2" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_53 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_53); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_54 =
+        tryWaitForOutput(recv_h_, "ping-delay-2", 3000); // [手順] - RECIEVER が "ping-delay-2" を出力するまで待機する。
 
     sleep_ms(250); // [手順] - 1 通目基準では PING 周期を超える 250 ms 待機する。
     string send_err_mid = getStderr(send_h_);
@@ -1170,6 +1213,8 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_54); // [確認_正常系] - "ping-delay-2" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_NE(
         string::npos,
         actual_ret_find_suppress); // [確認_正常系] - "suppress PING due to recent DATA" を探した send_err_mid.find() の戻り値が string::npos 以外であること。(recent DATA による PING 抑止トレースが出力されることの確認)
@@ -1214,26 +1259,26 @@ TEST_F(porterSendRecvTest, bidir_echo)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "20"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // SENDER を起動して最初のプロンプトを待つ
     send_h_ = startProcessAsync(send_path, {"sender", config_path, "20"}, makeOpts()); // [状態] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "双方向モード", 5000)); // [状態] - SENDER が "双方向モード" を出力するまで待機する。
-                                                       // [状態確認] - waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(
+    ASSERT_TRUE(
+        tryWaitForOutput(send_h_, "双方向モード", 5000)); // [状態] - SENDER が "双方向モード" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
+    ASSERT_TRUE(tryWaitForOutput(
         send_h_, "porter-test[sender:", 3000)); // [状態] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-                                                // [状態確認] - waitForOutput() が例外を送出しないこと。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
     /* UDP 双方向通信は各プロセスが PING を受信した時点で個別に接続確立となるため、
        RECIEVER と SENDER の両方の接続確立を待つ。 */
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "接続確立", 3000)); // [状態] - RECIEVER が "接続確立" を出力するまで待機する。
-                                                   // [状態確認] - waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000)); // [状態] - SENDER が "接続確立" を出力するまで待機する。
-                                                               // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "接続確立", 3000)); // [状態] - RECIEVER が "接続確立" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
+    ASSERT_TRUE(tryWaitForOutput(send_h_, "接続確立", 3000)); // [状態] - SENDER が "接続確立" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -1242,24 +1287,26 @@ TEST_F(porterSendRecvTest, bidir_echo)
         writeLineStdin(send_h_, "send bidir-test"); // [手順] - SENDER から "bidir-test" を送信する。
     ASSERT_TRUE(actual_ret_write_message);
     // [状態確認] - "send bidir-test" を入力する writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "送信完了。", 3000)); // [手順] - SENDER が "送信完了。" を出力するまで待機する。
-    // [確認_正常系] - SENDER の "送信完了。" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_60 =
+        tryWaitForOutput(send_h_, "送信完了。", 3000); // [手順] - SENDER が "送信完了。" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_60); // [確認_正常系] - "送信完了。" を待つ tryWaitForOutput() の戻り値が true であること。
     bool actual_ret_write_exit = writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
     ASSERT_TRUE(actual_ret_write_exit);
     // [状態確認] - "exit" を入力する writeLineStdin() の戻り値が true であること。
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "bidir-test", 3000)); // [手順] - RECIEVER が "bidir-test" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "bidir-test" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_61 =
+        tryWaitForOutput(recv_h_, "bidir-test", 3000); // [手順] - RECIEVER が "bidir-test" を出力するまで待機する。
 
     // RECIEVER を停止して出力を回収する
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_61); // [確認_正常系] - "bidir-test" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(0, send_exit); // [確認_正常系] - SENDER の waitForExit() の戻り値が 0 であること。
     EXPECT_EQ(
         string::npos,
@@ -1285,9 +1332,9 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "30"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -1302,29 +1349,34 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
     send_h_ = startProcessAsync(send_path, {"sender", config_path, "30"},
                                 makeOpts()); // [手順] - 暗号化設定の SENDER を起動する。
     ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
-    // [状態確認] - SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_63 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 5000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_63); // [状態確認] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
 
     bool actual_ret_write_message =
         writeLineStdin(send_h_, "send encrypted-ok"); // [手順] - 暗号化経路で "encrypted-ok" を送信する。
     ASSERT_TRUE(actual_ret_write_message);
     // [状態確認] - "send encrypted-ok" を入力する writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_64 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_64); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
     bool actual_ret_write_exit = writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
     ASSERT_TRUE(actual_ret_write_exit);
     // [状態確認] - "exit" を入力する writeLineStdin() の戻り値が true であること。
 
     int actual_ret_send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "encrypted-ok", 3000)); // [手順] - RECIEVER が暗号化経路の受信を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "encrypted-ok" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_65 =
+        tryWaitForOutput(recv_h_, "encrypted-ok", 3000); // [手順] - RECIEVER が暗号化経路の受信を出力するまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_65); // [確認_正常系] - "encrypted-ok" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(0, actual_ret_send_exit); // [確認_正常系] - SENDER の waitForExit() の戻り値が 0 であること。
     {
         string recv_out = getStdout(recv_h_);
@@ -1361,9 +1413,9 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "50"},
                                 makeOpts()); // [状態] - RECIEVER (N:1 サーバー) を起動する。
     ASSERT_NE(nullptr, recv_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -1380,37 +1432,49 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
     send_h_ = startProcessAsync(send_path, {"sender", client_config_path, "50"},
                                 makeOpts()); // [手順] - 正規のクライアントを起動する。
     ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    // [状態確認] - SENDER の "双方向モード" を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [状態確認] - SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_67 =
+        tryWaitForOutput(send_h_, "双方向モード", 5000); // [手順] - SENDER が "双方向モード" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_67); // [状態確認] - "双方向モード" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_68 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_68); // [状態確認] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
 
     /* 状態変化時の割り込み PING により、双方向 CONNECTED が 2 周期未満で成立することを確認する。 */
     /* TCP は接続確立の完了後に最初の PING 周期へ入るため、UDP より少し余裕を持たせる。 */
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800)); // [手順] - 双方が "接続確立" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800));
-    // [確認_正常系] - SENDER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_69 =
+        tryWaitForOutput(recv_h_, "接続確立", 2800); // [手順] - 双方が "接続確立" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_69); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_70 =
+        tryWaitForOutput(send_h_, "接続確立", 2800); // [手順] - SENDER が "接続確立" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_70); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
 
     bool actual_ret_write_message =
         writeLineStdin(send_h_, "send n1-secure-ok"); // [手順] - 正規クライアントから "n1-secure-ok" を送信する。
     ASSERT_TRUE(actual_ret_write_message);
     // [状態確認] - "send n1-secure-ok" を入力する writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_71 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_71); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
     bool actual_ret_write_exit = writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
     ASSERT_TRUE(actual_ret_write_exit);
     // [状態確認] - "exit" を入力する writeLineStdin() の戻り値が true であること。
 
     int actual_ret_send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "n1-secure-ok", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "n1-secure-ok" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_72 =
+        tryWaitForOutput(recv_h_, "n1-secure-ok", 3000); // [手順] - RECIEVER が受信を出力するまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_72); // [確認_正常系] - "n1-secure-ok" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(
         string::npos,
         actual_ret_find_connection); // [確認_異常系] - タグ不正パケットの送信後に "接続確立" を探した getStdout().find() の戻り値が string::npos であること。
@@ -1444,9 +1508,9 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "52"},
                                 makeOpts()); // [状態] - RECIEVER (N:1 サーバー) を起動する。
     ASSERT_NE(nullptr, recv_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -1464,35 +1528,46 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
     send_h_ = startProcessAsync(send_path, {"sender", client_config_path, "52"},
                                 makeOpts()); // [手順] - 正規のクライアントを起動する。
     ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "双方向モード", 5000));
-    // [状態確認] - SENDER の "双方向モード" を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [状態確認] - SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 5000)); // [手順] - 双方が "接続確立" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 5000));
-    // [確認_正常系] - SENDER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_74 =
+        tryWaitForOutput(send_h_, "双方向モード", 5000); // [手順] - SENDER が "双方向モード" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_74); // [状態確認] - "双方向モード" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_75 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_75); // [状態確認] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_76 =
+        tryWaitForOutput(recv_h_, "接続確立", 5000); // [手順] - 双方が "接続確立" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_76); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_77 =
+        tryWaitForOutput(send_h_, "接続確立", 5000); // [手順] - SENDER が "接続確立" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_77); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
 
     bool actual_ret_write_message = writeLineStdin(
         send_h_, "send n1-after-ping-ok"); // [手順] - 正規クライアントから "n1-after-ping-ok" を送信する。
     ASSERT_TRUE(actual_ret_write_message);
     // [状態確認] - "send n1-after-ping-ok" を入力する writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_78 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_78); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
     bool actual_ret_write_exit = writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
     ASSERT_TRUE(actual_ret_write_exit);
     // [状態確認] - "exit" を入力する writeLineStdin() の戻り値が true であること。
 
     int actual_ret_send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "n1-after-ping-ok", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "n1-after-ping-ok" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_79 =
+        tryWaitForOutput(recv_h_, "n1-after-ping-ok", 3000); // [手順] - RECIEVER が受信を出力するまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_79); // [確認_正常系] - "n1-after-ping-ok" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(
         string::npos,
         actual_ret_find_connection); // [確認_異常系] - 初回 DATA の送信後に "接続確立" を探した getStdout().find() の戻り値が string::npos であること。
@@ -1529,48 +1604,55 @@ TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "51"},
                                 makeOpts()); // [状態] - RECIEVER (N:1 サーバー) を起動する。
     ASSERT_NE(nullptr, recv_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     send_h_ = startProcessAsync(send_path, {"sender", client_config_path, "51"},
                                 makeOpts()); // [状態] - SENDER (クライアント) を起動する。
     ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "双方向モード", 5000)); // [状態] - SENDER が "双方向モード" を出力するまで待機する。
-                                                       // [状態確認] - waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-test[sender:", 3000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
-                                                              // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(send_h_, "双方向モード", 5000)); // [状態] - SENDER が "双方向モード" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
+    ASSERT_TRUE(
+        tryWaitForOutput(send_h_, "porter-test[sender:", 3000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
     // Act
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800)); // [手順] - サーバー側の "接続確立" を待機する。
-    // [確認_正常系] - サーバーの "接続確立" を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800)); // [手順] - クライアント側の "接続確立" を待機する。
-    // [確認_正常系] - クライアントの "接続確立" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_83 =
+        tryWaitForOutput(recv_h_, "接続確立", 2800); // [手順] - サーバー側の "接続確立" を待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_83); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_84 =
+        tryWaitForOutput(send_h_, "接続確立", 2800); // [手順] - クライアント側の "接続確立" を待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_84); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
 
     bool actual_ret_write_message =
         writeLineStdin(send_h_, "send n1-connected-ok"); // [手順] - CONNECTED 後に "n1-connected-ok" を送信する。
     ASSERT_TRUE(actual_ret_write_message);
     // [状態確認] - "send n1-connected-ok" を入力する writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_85 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_85); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
     bool actual_ret_write_exit = writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
     ASSERT_TRUE(actual_ret_write_exit);
     // [状態確認] - "exit" を入力する writeLineStdin() の戻り値が true であること。
 
     int actual_ret_send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "n1-connected-ok", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "n1-connected-ok" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_86 =
+        tryWaitForOutput(recv_h_, "n1-connected-ok", 3000); // [手順] - RECIEVER が受信を出力するまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_86); // [確認_正常系] - "n1-connected-ok" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(0, actual_ret_send_exit); // [確認_正常系] - SENDER の waitForExit() の戻り値が 0 であること。
     {
         string recv_out = getStdout(recv_h_);
@@ -1599,38 +1681,43 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "60"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     send_h_ = startProcessAsync(send_path, {"sender", "-l", "VERBOSE", config_path, "60"},
                                 makeOpts()); // [状態] - SENDER を VERBOSE トレース付きで起動する。
     ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
-                                                              // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
     // Act
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 2800)); // [手順] - 双方が "接続確立" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 2800));
-    // [確認_正常系] - SENDER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_89 =
+        tryWaitForOutput(recv_h_, "接続確立", 2800); // [手順] - 双方が "接続確立" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_89); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_90 =
+        tryWaitForOutput(send_h_, "接続確立", 2800); // [手順] - SENDER が "接続確立" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_90); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
 
     bool actual_ret_write_message = writeLineStdin(
         send_h_, "send tcp-encrypted-ok"); // [手順] - ヘルスチェック経過後に "tcp-encrypted-ok" を送信する。
     ASSERT_TRUE(actual_ret_write_message);
     // [状態確認] - "send tcp-encrypted-ok" を入力する writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_91 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_91); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
     // send 側プロンプト復帰後でも recv 側 stdout への反映には遅延が出るため、
     // exit/interrupt の前に recv 側で受信文字列の出力を確認する。CPU 高負荷下
     // (テスト並列実行下) では recv 側の出力反映よりも interrupt が先行し、
     // recv_out に "tcp-encrypted-ok" が残らないことがある。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "tcp-encrypted-ok", 5000)); // [手順] - RECIEVER が受信を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "tcp-encrypted-ok" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_92 =
+        tryWaitForOutput(recv_h_, "tcp-encrypted-ok", 5000);      // [手順] - RECIEVER が受信を出力するまで待機する。
     bool actual_ret_write_exit = writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
     ASSERT_TRUE(actual_ret_write_exit);
     // [状態確認] - "exit" を入力する writeLineStdin() の戻り値が true であること。
@@ -1641,6 +1728,8 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_92); // [確認_正常系] - "tcp-encrypted-ok" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(0, actual_ret_send_exit); // [確認_正常系] - SENDER の waitForExit() の戻り値が 0 であること。
     {
         string recv_out = getStdout(recv_h_);
@@ -1671,9 +1760,9 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "61"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -1681,34 +1770,42 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
     send_h_ = startProcessAsync(send_path, {"sender", "-l", "VERBOSE", config_path, "61"},
                                 makeOpts()); // [手順] - SENDER を VERBOSE トレース付きで起動する。
     ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 5000));
-    // [状態確認] - SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "接続確立", 3000)); // [手順] - bootstrap PING だけで双方の "接続確立" を待機する。
-    // [確認_正常系] - RECIEVER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000));
-    // [確認_正常系] - SENDER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_94 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 5000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_94); // [状態確認] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_95 =
+        tryWaitForOutput(recv_h_, "接続確立", 3000); // [手順] - bootstrap PING だけで双方の "接続確立" を待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_95); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
+    bool actual_ret_wait_96 =
+        tryWaitForOutput(send_h_, "接続確立", 3000); // [手順] - SENDER が "接続確立" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_96); // [確認_正常系] - "接続確立" を待つ tryWaitForOutput() の戻り値が true であること。
 
     bool actual_ret_write_message =
         writeLineStdin(send_h_, "send tcp-before-connected"); // [手順] - "tcp-before-connected" を送信する。
     ASSERT_TRUE(actual_ret_write_message);
     // [状態確認] - "send tcp-before-connected" を入力する writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_97 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_97); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
     bool actual_ret_write_exit = writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
     ASSERT_TRUE(actual_ret_write_exit);
     // [状態確認] - "exit" を入力する writeLineStdin() の戻り値が true であること。
 
     int actual_ret_send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "tcp-before-connected", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "tcp-before-connected" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_98 =
+        tryWaitForOutput(recv_h_, "tcp-before-connected", 3000); // [手順] - RECIEVER が受信を出力するまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_98); // [確認_正常系] - "tcp-before-connected" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(0, actual_ret_send_exit); // [確認_正常系] - SENDER の waitForExit() の戻り値が 0 であること。
     EXPECT_EQ(
         string::npos,
@@ -1740,20 +1837,20 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "62"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     send_h_ = startProcessAsync(send_path, {"sender", "-l", "VERBOSE", config_path, "62"},
                                 makeOpts()); // [状態] - SENDER を VERBOSE トレース付きで起動する。
     ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(send_h_, "porter-test[sender:", 5000));  // [状態] - SENDER がプロンプトを出力するまで待機する。
-                                                               // [状態確認] - waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "接続確立", 3000)); // [状態] - 双方が "接続確立" を出力するまで待機する。
-    // [状態確認] - RECIEVER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "接続確立", 3000)); // [状態] - SENDER が "接続確立" を出力するまで待機する。
-    // [状態確認] - SENDER の "接続確立" を待つ waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER がプロンプトを出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
+    ASSERT_TRUE(tryWaitForOutput(recv_h_, "接続確立", 3000)); // [状態] - 双方が "接続確立" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
+    ASSERT_TRUE(tryWaitForOutput(send_h_, "接続確立", 3000)); // [状態] - SENDER が "接続確立" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -1764,22 +1861,25 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
         send_h_, "send tcp-timeout-ignored"); // [手順] - timeout 経過後に "tcp-timeout-ignored" を送信する。
     ASSERT_TRUE(actual_ret_write_message);
     // [状態確認] - "send tcp-timeout-ignored" を入力する writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_103 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_103); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
     bool actual_ret_write_exit = writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
     ASSERT_TRUE(actual_ret_write_exit);
     // [状態確認] - "exit" を入力する writeLineStdin() の戻り値が true であること。
 
     int actual_ret_send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "tcp-timeout-ignored", 3000)); // [手順] - RECIEVER が受信を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "tcp-timeout-ignored" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_104 =
+        tryWaitForOutput(recv_h_, "tcp-timeout-ignored", 3000); // [手順] - RECIEVER が受信を出力するまで待機する。
 
     interruptProcess(recv_h_);  // [手順] - RECIEVER に SIGINT (Ctrl + C) を入力する。
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_104); // [確認_正常系] - "tcp-timeout-ignored" を待つ tryWaitForOutput() の戻り値が true であること。
     EXPECT_EQ(0, actual_ret_send_exit); // [確認_正常系] - SENDER の waitForExit() の戻り値が 0 であること。
     EXPECT_EQ(
         string::npos,
@@ -1818,16 +1918,16 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // SENDER を起動してプロンプトを待つ
     send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [状態] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(waitForOutput(
+    ASSERT_TRUE(tryWaitForOutput(
         send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-                                                // [状態確認] - waitForOutput() が例外を送出しないこと。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -1836,16 +1936,18 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
         send_h_, string("file ") + bin_path); // [手順] - SENDER にバイナリ ファイル送信コマンドを入力する。
     ASSERT_TRUE(actual_ret_write_file);
     // [状態確認] - バイナリ ファイル送信コマンドを入力する writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "ファイル送信完了",
-                                  3000)); // [手順] - SENDER が "ファイル送信完了" を出力するまで待機する。
-    // [確認_正常系] - SENDER の "ファイル送信完了" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_107 = tryWaitForOutput(send_h_, "ファイル送信完了",
+                                                3000); // [手順] - SENDER が "ファイル送信完了" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_107); // [確認_正常系] - "ファイル送信完了" を待つ tryWaitForOutput() の戻り値が true であること。
 
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_108 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_108); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
 
-    ASSERT_NO_THROW(waitForOutput(recv_h_, "バイナリ データを保存しました",
-                                  3000)); // [手順] - RECIEVER が保存メッセージを出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "バイナリ データを保存しました" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_109 = tryWaitForOutput(recv_h_, "バイナリ データを保存しました",
+                                                3000); // [手順] - RECIEVER が保存メッセージを出力するまで待機する。
 
     writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
 
@@ -1856,6 +1958,8 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_109); // [確認_正常系] - "バイナリ データを保存しました" を待つ tryWaitForOutput() の戻り値が true であること。
     string recv_out = getStdout(recv_h_);
     EXPECT_EQ(0, send_exit); // [確認_正常系] - SENDER の waitForExit() の戻り値が 0 であること。
     EXPECT_NE(
@@ -1883,16 +1987,16 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "10"}, makeOpts()); // [状態] - RECIEVER を起動する。
     ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
-                                                     // [状態確認] - waitForOutput() が例外を送出しないこと。
+    ASSERT_TRUE(
+        tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECIEVER が "受信待機中" を出力するまで待機する。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // SENDER を起動してプロンプトを待つ
     send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [状態] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(waitForOutput(
+    ASSERT_TRUE(tryWaitForOutput(
         send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-                                                // [状態確認] - waitForOutput() が例外を送出しないこと。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -1901,12 +2005,13 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
         writeLineStdin(send_h_, "send Hello Text"); // [手順] - SENDER からテキストメッセージ "Hello Text" を送信する。
     ASSERT_TRUE(actual_ret_write_message);
     // [状態確認] - "send Hello Text" を入力する writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_正常系] - 送信後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_112 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
+    ASSERT_TRUE(
+        actual_ret_wait_112); // [確認_正常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
 
-    ASSERT_NO_THROW(
-        waitForOutput(recv_h_, "Hello Text", 3000)); // [手順] - RECIEVER が "Hello Text" を出力するまで待機する。
-    // [確認_正常系] - RECIEVER の "Hello Text" を待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_113 =
+        tryWaitForOutput(recv_h_, "Hello Text", 3000); // [手順] - RECIEVER が "Hello Text" を出力するまで待機する。
 
     writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
 
@@ -1917,6 +2022,8 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
     waitForExit(recv_h_, 3000); // [手順] - RECIEVER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_113); // [確認_正常系] - "Hello Text" を待つ tryWaitForOutput() の戻り値が true であること。
     string recv_out = getStdout(recv_h_);
     EXPECT_EQ(0, send_exit); // [確認_正常系] - SENDER の waitForExit() の戻り値が 0 であること。
     EXPECT_NE(
@@ -1949,9 +2056,9 @@ TEST_F(porterSendRecvTest, send_file_too_large_fails)
     // SENDER を起動してプロンプトを待つ (RECIEVER は不要: 送信されないため)
     send_h_ = startProcessAsync(send_path, {"sender", config_path, "10"}, makeOpts()); // [状態] - SENDER を起動する。
     ASSERT_NE(nullptr, send_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
-    ASSERT_NO_THROW(waitForOutput(
+    ASSERT_TRUE(tryWaitForOutput(
         send_h_, "porter-test[sender:", 5000)); // [状態] - SENDER が送信方法選択プロンプトを出力するまで待機する。
-                                                // [状態確認] - waitForOutput() が例外を送出しないこと。
+    // [状態確認] - tryWaitForOutput() の戻り値が true であること。
 
     // Pre-Assert
 
@@ -1960,14 +2067,16 @@ TEST_F(porterSendRecvTest, send_file_too_large_fails)
         writeLineStdin(send_h_, string("file ") + large_path); // [手順] - サイズ超過ファイルの送信コマンドを入力する。
     ASSERT_TRUE(actual_ret_write_file);
     // [状態確認] - サイズ超過ファイルの送信コマンドを入力する writeLineStdin() の戻り値が true であること。
-    ASSERT_NO_THROW(waitForOutput(send_h_, "porter-test[sender:", 3000));
-    // [確認_異常系] - エラー後の SENDER のプロンプトを待つ waitForOutput() が例外を送出しないこと。
+    bool actual_ret_wait_115 = tryWaitForOutput(
+        send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
 
     writeLineStdin(send_h_, "exit"); // [手順] - "exit" で SENDER を終了させる。
 
     int send_exit = waitForExit(send_h_, 5000); // [手順] - SENDER が終了するまで待機する。
 
     // Assert
+    ASSERT_TRUE(
+        actual_ret_wait_115); // [確認_異常系] - "porter-test[sender:" を待つ tryWaitForOutput() の戻り値が true であること。
     string send_err = getStderr(send_h_);
     EXPECT_EQ(
         0,

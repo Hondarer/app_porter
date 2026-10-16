@@ -48,10 +48,10 @@ TEST(configLoadServiceTest, returnsInvalidArgumentWhenParameterIsNull)
     // Assert
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        actual_ret_null_path); // [確認_異常系] - config_path が NULL の場合に potr_internal_config_load_service() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_path); // [確認_異常系] - config_path が nullptr の場合に potr_internal_config_load_service() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(
         POTR_ERR_INVALID_ARGUMENT,
-        actual_ret_null_out); // [確認_異常系] - 出力先が NULL の場合に potr_internal_config_load_service() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        actual_ret_null_out); // [確認_異常系] - 出力先が nullptr の場合に potr_internal_config_load_service() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
 }
 
 // 設定ファイルの open に失敗した場合に POTR_ERR_IO を返すことの確認
@@ -65,6 +65,7 @@ TEST(configLoadServiceTest, returnsIoErrorWhenFileCannotBeOpened)
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             nullptr)); // [Pre-Assert確認_異常系] - cplat_fopen() が "missing.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_fopen() にて nullptr を返す。
 
     // Act
     int actual_ret_open_fail = potr_internal_config_load_service(
@@ -90,16 +91,18 @@ TEST(configLoadServiceTest, loadsRequestedServiceAndKeepsPerServiceDefaults)
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [状態] - fgets が呼び出された際に複数 service 定義を含む JSONC を返すようにモックを設定する。
+            })); // [状態] - fgets() が呼び出された際に複数 service 定義を含む JSONC を返すようにモックを設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::
                 handle())); // [Pre-Assert確認_正常系] - cplat_fopen() が "config.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_fopen() にて ConfigLineStream::handle() を返す。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(
             0)); // [Pre-Assert確認_正常系] - fclose() が ConfigLineStream::handle() の戻り値を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - fclose() にて 0 を返す。
     EXPECT_CALL(mock_cplat, cplat_passphrase_to_key(_, _, _))
         .Times(
             0); // [Pre-Assert確認_正常系] - cplat_passphrase_to_key() が呼び出されないこと。(64 桁 hex の encrypt_key では passphrase 変換をしないことの確認)
@@ -168,13 +171,14 @@ TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [状態] - fgets が呼び出された際に passphrase 形式の encrypt_key を含む行列を返すようにモックを設定する。
+            })); // [状態] - fgets() が呼び出された際に passphrase 形式の encrypt_key を含む行列を返すようにモックを設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::
                 handle())); // [Pre-Assert確認_正常系] - cplat_fopen() が "config.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_fopen() にて ConfigLineStream::handle() を返す。
     EXPECT_CALL(mock_cplat, cplat_passphrase_to_key(_, _, strlen("secret passphrase")))
         .WillOnce(
             [](uint8_t *key, const uint8_t *passphrase, size_t len)
@@ -184,9 +188,11 @@ TEST(configLoadServiceTest, hashesPassphraseWhenEncryptKeyIsNotHex)
                 memset(key, 0x5A, POTR_CRYPTO_KEY_SIZE);
                 return 0;
             }); // [Pre-Assert確認_正常系] - cplat_passphrase_to_key() が "secret passphrase" に対する strlen() の戻り値を指定して 1 回呼び出されること。(非 hex の encrypt_key では passphrase 変換を行うことの確認)
+    // [Pre-Assert手順] - cplat_passphrase_to_key() にて key に 0x5A を POTR_CRYPTO_KEY_SIZE バイト設定し、0 を返す。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(
             0)); // [Pre-Assert確認_正常系] - fclose() が ConfigLineStream::handle() の戻り値を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - fclose() にて 0 を返す。
 
     // Act
     int actual_ret =
@@ -223,13 +229,14 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [状態] - fgets が呼び出された際に hash 失敗を確認する service 行列を返すようにモックを設定する。
+            })); // [状態] - fgets() が呼び出された際に hash 失敗を確認する service 行列を返すようにモックを設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::
                 handle())); // [Pre-Assert確認_正常系] - cplat_fopen() が "config.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_fopen() にて ConfigLineStream::handle() を返す。
     EXPECT_CALL(mock_cplat, cplat_passphrase_to_key(_, _, strlen("not-a-hex-secret")))
         .WillOnce(Return(
             -1)); // [Pre-Assert確認_異常系] - cplat_passphrase_to_key() が "not-a-hex-secret" に対する strlen() の戻り値を指定して 1 回呼び出されること。
@@ -237,6 +244,7 @@ TEST(configLoadServiceTest, clearsKeyWhenPassphraseHashingFails)
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(
             0)); // [Pre-Assert確認_正常系] - fclose() が ConfigLineStream::handle() の戻り値を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - fclose() にて 0 を返す。
 
     // Act
     int actual_ret =
@@ -269,16 +277,18 @@ TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [状態] - fgets が呼び出された際に対象外 service のみを含む JSONC を返すようにモックを設定する。
+            })); // [状態] - fgets() が呼び出された際に対象外 service のみを含む JSONC を返すようにモックを設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::
                 handle())); // [Pre-Assert確認_正常系] - cplat_fopen() が "config.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_fopen() にて ConfigLineStream::handle() を返す。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(
             0)); // [Pre-Assert確認_正常系] - fclose() が ConfigLineStream::handle() の戻り値を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - fclose() にて 0 を返す。
 
     // Act
     int actual_ret = potr_internal_config_load_service("config.conf", 42,

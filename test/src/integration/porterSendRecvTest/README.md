@@ -16,14 +16,15 @@
 
 ### 対処
 
-`interruptProcess(recv_h_)` を呼び出す直前に、後段でアサーションする文字列を `ASSERT_NO_THROW(waitForOutput(recv_h_, "<期待文字列>", <timeout>));` で明示的に待機してください。送信側の終了待ち (`waitForExit(send_h_, ...)`) だけでは、受信側の出力タイミングを保証しません。
+`interruptProcess(recv_h_)` を呼び出す直前に、後段でアサーションする文字列を `tryWaitForOutput(recv_h_, "<期待文字列>", <timeout>)` で明示的に待機し、戻り値を判定してください。送信側の終了待ち (`waitForExit(send_h_, ...)`) だけでは、受信側の出力タイミングを保証しません。
 
 ```cpp
 // 送信側の終了を待っただけでは受信側の出力完了は保証されない
 EXPECT_EQ(0, waitForExit(send_h_, 5000));
 
 // 受信側が実際にペイロードを出力するまで待ってから割り込む
-ASSERT_NO_THROW(waitForOutput(recv_h_, "<期待文字列>", 3000));
+bool actual_ret_wait = tryWaitForOutput(recv_h_, "<期待文字列>", 3000);
+ASSERT_TRUE(actual_ret_wait);
 
 interruptProcess(recv_h_);
 waitForExit(recv_h_, 3000);

@@ -47,10 +47,11 @@ TEST_F(potrSendQueueTest, empty_queue_returns_empty_and_timeout)
     // Pre-Assert
 
     // Act
-    int actual_ret_peek = potr_internal_send_queue_peek(&q, &elem);       // [手順] - 空キューを peek で参照する。
-    int actual_ret_try_pop = potr_internal_send_queue_try_pop(&q, &elem); // [手順] - 空キューから try_pop で取り出す。
+    int actual_ret_peek = potr_internal_send_queue_peek(&q, &elem); // [手順] - 空キューを peek() で参照する。
+    int actual_ret_try_pop =
+        potr_internal_send_queue_try_pop(&q, &elem); // [手順] - 空キューから try_pop() で取り出す。
     int actual_ret_timed =
-        potr_internal_send_queue_peek_timed(&q, &elem, 10); // [手順] - timeout_ms=10 の peek_timed で待機する。
+        potr_internal_send_queue_peek_timed(&q, &elem, 10); // [手順] - timeout_ms=10 の peek_timed() で待機する。
 
     // Assert
     EXPECT_EQ(
@@ -78,7 +79,7 @@ TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
     {
         ASSERT_EQ(POTR_OK, potr_internal_send_queue_push(
                                &q, 0, 0, payload,
-                               sizeof(payload))); // [状態] - depth=4 のキューを 4 件の push で満杯にする。
+                               sizeof(payload))); // [状態] - depth=4 のキューを 4 件の push() で満杯にする。
         // [状態確認] - potr_internal_send_queue_push() の戻り値が POTR_OK であること。
     }
 
@@ -86,7 +87,7 @@ TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
 
     // Act
     int actual_ret_full = potr_internal_send_queue_push(
-        &q, 0, 0, payload, sizeof(payload)); // [手順] - 満杯のキューへ 5 件目を push する。
+        &q, 0, 0, payload, sizeof(payload)); // [手順] - 満杯のキューへ 5 件目を push() する。
 
     // Assert
     EXPECT_EQ(
@@ -115,8 +116,9 @@ TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_internal_send_queue_push_wait(&q, 0, 0, payload, sizeof(payload),
-                                                        &running); // [手順] - 満杯のキューへ push_wait で追加を試みる。
+    int actual_ret =
+        potr_internal_send_queue_push_wait(&q, 0, 0, payload, sizeof(payload),
+                                           &running); // [手順] - 満杯のキューへ push_wait() で追加を試みる。
 
     // Assert
     EXPECT_EQ(
@@ -139,7 +141,7 @@ TEST_F(potrSendQueueTest, pop_returns_canceled_when_stopped)
 
     // Act
     int actual_ret =
-        potr_internal_send_queue_pop(&q, &elem, &running); // [手順] - 空のキューから pop で取り出しを試みる。
+        potr_internal_send_queue_pop(&q, &elem, &running); // [手順] - 空のキューから pop() で取り出しを試みる。
 
     // Assert
     EXPECT_EQ(POTR_ERR_CANCELED,

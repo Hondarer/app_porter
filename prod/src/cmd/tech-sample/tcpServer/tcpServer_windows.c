@@ -192,7 +192,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
     {
         /* --- PeekNamedPipe + select による多重接続処理 --- */
         SOCKET *active = (SOCKET *)cplat_malloc((size_t)conns_per_worker * sizeof(SOCKET));
-        if (!active)
+        if (active == NULL)
         {
             CloseHandle(pipe);
             return;
@@ -353,7 +353,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
 
     /* 監視スレッド引数はプロセス終了まで有効である必要があるため heap 確保 */
     WorkerMonitorArg *args = (WorkerMonitorArg *)cplat_malloc((size_t)n * sizeof(WorkerMonitorArg));
-    if (!args)
+    if (args == NULL)
     {
         fprintf(stderr, "malloc 失敗\n");
         cplat_exit(1);

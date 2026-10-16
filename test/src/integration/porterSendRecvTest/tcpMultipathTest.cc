@@ -415,11 +415,15 @@ TEST_F(tcpMultipathTest, blocked_path_does_not_stop_other_path)
         {
             return s_received.size() == 2;
         })); // [確認_正常系] - 待機経路を解除する前の wait_for() の戻り値が true であること。(先行 DATA が配信されたことの確認)
+
+    // Act_2
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         s_release = true;
         s_cv.notify_all();
     }
+
+    // Assert_2
     ASSERT_TRUE(wait_for([] { return s_received.size() == 3; }));
     // [確認_正常系] - s_received.size() の戻り値が 3 になるまで待つ wait_for() の戻り値が true であること。
     std::lock_guard<std::mutex> lock(s_mutex);

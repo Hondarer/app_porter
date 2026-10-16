@@ -386,7 +386,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
            conns_per_worker);
 
     pid_t *worker_pids = cplat_malloc((size_t)num_workers * sizeof(pid_t));
-    if (!worker_pids)
+    if (worker_pids == NULL)
     {
         perror("malloc");
         cplat_exit(1);

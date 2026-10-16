@@ -168,7 +168,7 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
 
     // Act
     int actual_ret = potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
-                                       0); // [手順] - potr_service_send で送信を試みる。
+                                       0); // [手順] - potr_service_send() で送信を試みる。
 
     // Assert
     EXPECT_EQ(
@@ -202,7 +202,7 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
 
     // Act
     int actual_ret = potr_service_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
-                                       0); // [手順] - POTR_PEER_ALL 宛てに potr_service_send で送信を試みる。
+                                       0); // [手順] - POTR_PEER_ALL 宛てに potr_service_send() で送信を試みる。
 
     // Assert
     EXPECT_EQ(
@@ -239,7 +239,7 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
 
     // Act
     int actual_ret = potr_service_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
-                                       0); // [手順] - POTR_PEER_ALL 宛てに potr_service_send で送信する。
+                                       0); // [手順] - POTR_PEER_ALL 宛てに potr_service_send() で送信する。
 
     // Assert
     EXPECT_EQ(
@@ -250,23 +250,24 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
         ctx.send_queue
             .count); // [確認_正常系] - ctx.send_queue.count が 1U であること。(接続済み peer への送信だけが 1 件キューに積まれたことの確認)
 
-    {
-        // [サブ手順参照 名前=potrSendTest.popQueuedElem]
-        potr_internal_payload_elem elem = popQueuedElem();
-        EXPECT_EQ(
-            (potr_peer_id)10,
-            elem.peer_id); // [確認_正常系] - elem.peer_id が (potr_peer_id)10 と一致すること。(接続済みの peer 10 だけが宛先であることの確認)
-        EXPECT_EQ(
-            strlen(payload),
-            (size_t)elem
-                .payload_len); // [確認_正常系] - (size_t)elem.payload_len が payload に対する strlen() の戻り値と一致すること。
-        EXPECT_EQ(
-            0,
-            memcmp(
-                elem.payload, payload,
-                strlen(
-                    payload))); // [確認_正常系] - memcmp() の戻り値が 0 であること。(キューに積んだ内容が送信ペイロードと一致することの確認)
-    }
+    // Act_2
+    // [サブ手順参照 名前=potrSendTest.popQueuedElem]
+    potr_internal_payload_elem elem = popQueuedElem();
+
+    // Assert_2
+    EXPECT_EQ(
+        (potr_peer_id)10,
+        elem.peer_id); // [確認_正常系] - elem.peer_id が 10 と一致すること。(接続済みの peer 10 だけが宛先であることの確認)
+    EXPECT_EQ(
+        strlen(payload),
+        (size_t)
+            elem.payload_len); // [確認_正常系] - elem.payload_len が payload に対する strlen() の戻り値と一致すること。
+    EXPECT_EQ(
+        0,
+        memcmp(
+            elem.payload, payload,
+            strlen(
+                payload))); // [確認_正常系] - memcmp() の戻り値が 0 であること。(キューに積んだ内容が送信ペイロードと一致することの確認)
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
 
@@ -288,7 +289,7 @@ TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
 
     // Act
     int actual_ret =
-        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potr_service_send で送信する。
+        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potr_service_send() で送信する。
 
     // Assert
     EXPECT_EQ(
@@ -299,21 +300,22 @@ TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
         ctx.send_queue
             .count); // [確認_正常系] - ctx.send_queue.count が 1U であること。(接続状態がなくても送信が 1 件キューに積まれたことの確認)
 
-    {
-        // [サブ手順参照 名前=potrSendTest.popQueuedElem]
-        potr_internal_payload_elem elem = popQueuedElem();
-        EXPECT_EQ(POTR_PEER_NA, elem.peer_id); // [確認_正常系] - elem.peer_id が POTR_PEER_NA であること。
-        EXPECT_EQ(
-            strlen(payload),
-            (size_t)elem
-                .payload_len); // [確認_正常系] - (size_t)elem.payload_len が payload に対する strlen() の戻り値と一致すること。
-        EXPECT_EQ(
-            0,
-            memcmp(
-                elem.payload, payload,
-                strlen(
-                    payload))); // [確認_正常系] - memcmp() の戻り値が 0 であること。(キューに積んだ内容が送信ペイロードと一致することの確認)
-    }
+    // Act_2
+    // [サブ手順参照 名前=potrSendTest.popQueuedElem]
+    potr_internal_payload_elem elem = popQueuedElem();
+
+    // Assert_2
+    EXPECT_EQ(POTR_PEER_NA, elem.peer_id); // [確認_正常系] - elem.peer_id が POTR_PEER_NA であること。
+    EXPECT_EQ(
+        strlen(payload),
+        (size_t)
+            elem.payload_len); // [確認_正常系] - elem.payload_len が payload に対する strlen() の戻り値と一致すること。
+    EXPECT_EQ(
+        0,
+        memcmp(
+            elem.payload, payload,
+            strlen(
+                payload))); // [確認_正常系] - memcmp() の戻り値が 0 であること。(キューに積んだ内容が送信ペイロードと一致することの確認)
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
 
@@ -326,7 +328,7 @@ TEST_F(potrSendTest, data_based_health_ping_suppression_applies_only_to_type_1_t
     // Pre-Assert
 
     // Act
-    // [手順] - 各 type を is_oneway_udp_type で判定する。
+    // [手順] - 各 type を is_oneway_udp_type() で判定する。
     int oneway_unicast_raw = is_oneway_udp_type(POTR_TYPE_UNICAST_RAW);
     int oneway_multicast_raw = is_oneway_udp_type(POTR_TYPE_MULTICAST_RAW);
     int oneway_broadcast_raw = is_oneway_udp_type(POTR_TYPE_BROADCAST_RAW);
@@ -374,7 +376,7 @@ TEST_F(potrSendTest, immediate_health_ping_is_disabled_only_for_type_1_to_6)
     // Pre-Assert
 
     // Act
-    // [手順] - 各 type を type_uses_immediate_health_ping で判定する。
+    // [手順] - 各 type を type_uses_immediate_health_ping() で判定する。
     int immediate_unicast_raw = type_uses_immediate_health_ping(POTR_TYPE_UNICAST_RAW);
     int immediate_multicast_raw = type_uses_immediate_health_ping(POTR_TYPE_MULTICAST_RAW);
     int immediate_broadcast_raw = type_uses_immediate_health_ping(POTR_TYPE_BROADCAST_RAW);
