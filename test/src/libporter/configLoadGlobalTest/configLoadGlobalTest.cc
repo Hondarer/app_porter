@@ -222,3 +222,99 @@ TEST(configLoadGlobalTest, rejectsCommaWithoutPrecedingMember)
         POTR_ERR_INVALID_ARGUMENT,
         actual_ret); // [確認_異常系] - 項目を伴わないカンマに対する potr_internal_config_load_global() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
 }
+
+// 負号付き文字列を採用せず既定値を維持することの確認
+TEST(configLoadGlobalTest, negative_zero_strings_preserve_defaults)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines(
+        {R"({"global":{"window_size":"-0","udp_health_interval_ms":"-0","tcp_close_timeout_ms":"-x","send_queue_depth":-0}})"}); // [状態] - 整数設定の境界値または不正値を用意する。
+    potr_global_config global = {};
+    ON_CALL(mock_cplat, cplat_fopen(StrEq("integer-values.jsonc"), StrEq("r"), nullptr))
+        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - 設定用ストリームを返す。
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke([&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+                              { return lines.read(buf, size, stream); })); // [状態] - 設定の内容を順に返す。
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Return(0)); // [状態] - ストリームのクローズを成功させる。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_global("integer-values.jsonc", &global); // [手順] - 整数設定を読み込む。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 設定の読み込みが成功すること。
+    EXPECT_EQ(POTR_DEFAULT_WINDOW_SIZE,
+              global.window_size); // [確認_正常系] - global.window_size が POTR_DEFAULT_WINDOW_SIZE であること。
+    EXPECT_EQ(
+        POTR_DEFAULT_UDP_HEALTH_INTERVAL_MS,
+        global
+            .udp_health_interval_ms); // [確認_正常系] - global.udp_health_interval_ms が POTR_DEFAULT_UDP_HEALTH_INTERVAL_MS であること。
+    EXPECT_EQ(
+        POTR_DEFAULT_TCP_CLOSE_TIMEOUT_MS,
+        global
+            .tcp_close_timeout_ms); // [確認_正常系] - global.tcp_close_timeout_ms が POTR_DEFAULT_TCP_CLOSE_TIMEOUT_MS であること。
+    EXPECT_EQ(0U, global.send_queue_depth); // [確認_正常系] - global.send_queue_depth が 0U であること。
+}
+
+// 整数型の上限値を採用することの確認
+TEST(configLoadGlobalTest, accepts_integer_type_upper_bounds)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines(
+        {R"({"global":{"window_size":"65535","send_queue_depth":"4294967295"}})"}); // [状態] - 整数設定の境界値または不正値を用意する。
+    potr_global_config global = {};
+    ON_CALL(mock_cplat, cplat_fopen(StrEq("integer-values.jsonc"), StrEq("r"), nullptr))
+        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - 設定用ストリームを返す。
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke([&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+                              { return lines.read(buf, size, stream); })); // [状態] - 設定の内容を順に返す。
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Return(0)); // [状態] - ストリームのクローズを成功させる。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_global("integer-values.jsonc", &global); // [手順] - 整数設定を読み込む。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);            // [確認_正常系] - 設定の読み込みが成功すること。
+    EXPECT_EQ(UINT16_MAX, global.window_size); // [確認_正常系] - global.window_size が UINT16_MAX であること。
+    EXPECT_EQ(UINT32_MAX,
+              global.send_queue_depth); // [確認_正常系] - global.send_queue_depth が UINT32_MAX であること。
+}
+
+// 値域外の整数を採用せず既定値を維持することの確認
+TEST(configLoadGlobalTest, out_of_range_values_preserve_defaults)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines(
+        {R"({"global":{"window_size":"65536","send_queue_depth":"4294967296"}})"}); // [状態] - 整数設定の境界値または不正値を用意する。
+    potr_global_config global = {};
+    ON_CALL(mock_cplat, cplat_fopen(StrEq("integer-values.jsonc"), StrEq("r"), nullptr))
+        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - 設定用ストリームを返す。
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke([&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+                              { return lines.read(buf, size, stream); })); // [状態] - 設定の内容を順に返す。
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Return(0)); // [状態] - ストリームのクローズを成功させる。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_global("integer-values.jsonc", &global); // [手順] - 整数設定を読み込む。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 設定の読み込みが成功すること。
+    EXPECT_EQ(POTR_DEFAULT_WINDOW_SIZE,
+              global.window_size); // [確認_正常系] - global.window_size が POTR_DEFAULT_WINDOW_SIZE であること。
+    EXPECT_EQ(POTR_SEND_QUEUE_DEPTH,
+              global.send_queue_depth); // [確認_正常系] - global.send_queue_depth が POTR_SEND_QUEUE_DEPTH であること。
+}

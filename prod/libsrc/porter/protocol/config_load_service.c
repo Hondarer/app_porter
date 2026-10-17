@@ -28,60 +28,6 @@
 #include <porter/protocol/config.h>
 #include <porter/protocol/config_parse_common.h>
 
-static int parse_u32_field(const char *text, uint32_t *value_out)
-{
-    int64_t parsed;
-    int ret;
-
-    ret = cplat_parse_int64(&parsed, text, 10);
-    if (ret != CPLAT_OK)
-    {
-        return ret;
-    }
-    if ((parsed < 0) || (parsed > (int64_t)UINT32_MAX))
-    {
-        return CPLAT_ERR_OUT_OF_RANGE;
-    }
-    *value_out = (uint32_t)parsed;
-    return CPLAT_OK;
-}
-
-static int parse_u16_field(const char *text, uint16_t *value_out)
-{
-    uint32_t parsed;
-    int ret;
-
-    ret = parse_u32_field(text, &parsed);
-    if (ret != CPLAT_OK)
-    {
-        return ret;
-    }
-    if (parsed > (uint32_t)UINT16_MAX)
-    {
-        return CPLAT_ERR_OUT_OF_RANGE;
-    }
-    *value_out = (uint16_t)parsed;
-    return CPLAT_OK;
-}
-
-static int parse_u8_field(const char *text, uint8_t *value_out)
-{
-    uint32_t parsed;
-    int ret;
-
-    ret = parse_u32_field(text, &parsed);
-    if (ret != CPLAT_OK)
-    {
-        return ret;
-    }
-    if (parsed > (uint32_t)UINT8_MAX)
-    {
-        return CPLAT_ERR_OUT_OF_RANGE;
-    }
-    *value_out = (uint8_t)parsed;
-    return CPLAT_OK;
-}
-
 /**
  *  @brief          src を dst に終端 NUL 付きで切り詰めコピーします。
  *  @param[out]     dst      コピー先バッファーへのポインター。
@@ -166,11 +112,11 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     }
     else if (strcmp(key, "dst_port") == 0)
     {
-        (void)parse_u16_field(val, &current->dst_port);
+        (void)cplat_parse_uint16(&current->dst_port, val, 10);
     }
     else if (strcmp(key, "src_port") == 0)
     {
-        (void)parse_u16_field(val, &current->src_port);
+        (void)cplat_parse_uint16(&current->src_port, val, 10);
     }
     else if (strcmp(key, "multicast_group") == 0)
     {
@@ -178,7 +124,7 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     }
     else if (strcmp(key, "ttl") == 0)
     {
-        (void)parse_u8_field(val, &current->ttl);
+        (void)cplat_parse_uint8(&current->ttl, val, 10);
     }
     else if (strcmp(key, "broadcast_addr") == 0)
     {
@@ -210,34 +156,34 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     }
     else if (strcmp(key, "pack_wait_ms") == 0)
     {
-        (void)parse_u32_field(val, &current->pack_wait_ms);
+        (void)cplat_parse_uint32(&current->pack_wait_ms, val, 10);
     }
     else if (strcmp(key, "max_peers") == 0)
     {
         uint32_t parsed;
 
-        if ((parse_u32_field(val, &parsed) == CPLAT_OK) && (parsed > 0U))
+        if ((cplat_parse_uint32(&parsed, val, 10) == CPLAT_OK) && (parsed > 0U))
         {
             current->max_peers = parsed;
         }
     }
     else if (strcmp(key, "health_interval_ms") == 0)
     {
-        (void)parse_u32_field(val, &current->health_interval_ms);
+        (void)cplat_parse_uint32(&current->health_interval_ms, val, 10);
     }
     else if (strcmp(key, "health_timeout_ms") == 0)
     {
-        (void)parse_u32_field(val, &current->health_timeout_ms);
+        (void)cplat_parse_uint32(&current->health_timeout_ms, val, 10);
     }
     else if (strcmp(key, "reconnect_interval_ms") == 0)
     {
-        (void)parse_u32_field(val, &current->reconnect_interval_ms);
+        (void)cplat_parse_uint32(&current->reconnect_interval_ms, val, 10);
     }
     else if (strcmp(key, "connect_timeout_ms") == 0)
     {
         uint32_t parsed;
 
-        if (parse_u32_field(val, &parsed) == CPLAT_OK)
+        if (cplat_parse_uint32(&parsed, val, 10) == CPLAT_OK)
         {
             current->connect_timeout_ms = parsed;
         }

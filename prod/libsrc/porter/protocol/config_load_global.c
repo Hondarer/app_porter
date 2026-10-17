@@ -24,42 +24,6 @@
 #include <porter/protocol/config.h>
 #include <porter/protocol/config_parse_common.h>
 
-static int parse_u32_field(const char *text, uint32_t *value_out)
-{
-    int64_t parsed;
-    int ret;
-
-    ret = cplat_parse_int64(&parsed, text, 10);
-    if (ret != CPLAT_OK)
-    {
-        return ret;
-    }
-    if ((parsed < 0) || (parsed > (int64_t)UINT32_MAX))
-    {
-        return CPLAT_ERR_OUT_OF_RANGE;
-    }
-    *value_out = (uint32_t)parsed;
-    return CPLAT_OK;
-}
-
-static int parse_u16_field(const char *text, uint16_t *value_out)
-{
-    uint32_t parsed;
-    int ret;
-
-    ret = parse_u32_field(text, &parsed);
-    if (ret != CPLAT_OK)
-    {
-        return ret;
-    }
-    if (parsed > (uint32_t)UINT16_MAX)
-    {
-        return CPLAT_ERR_OUT_OF_RANGE;
-    }
-    *value_out = (uint16_t)parsed;
-    return CPLAT_OK;
-}
-
 /**
  *  @brief          global 設定構造体へデフォルト値を設定します。
  *  @param[out]     global  デフォルト値を設定する構造体へのポインター。
@@ -115,43 +79,43 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
         }
         if (strcmp(key, "window_size") == 0)
         {
-            (void)parse_u16_field(val, &global->window_size);
+            (void)cplat_parse_uint16(&global->window_size, val, 10);
         }
         else if (strcmp(key, "max_payload") == 0)
         {
-            (void)parse_u16_field(val, &global->max_payload);
+            (void)cplat_parse_uint16(&global->max_payload, val, 10);
         }
         else if (strcmp(key, "udp_health_interval_ms") == 0)
         {
-            (void)parse_u32_field(val, &global->udp_health_interval_ms);
+            (void)cplat_parse_uint32(&global->udp_health_interval_ms, val, 10);
         }
         else if (strcmp(key, "udp_health_timeout_ms") == 0)
         {
-            (void)parse_u32_field(val, &global->udp_health_timeout_ms);
+            (void)cplat_parse_uint32(&global->udp_health_timeout_ms, val, 10);
         }
         else if (strcmp(key, "tcp_health_interval_ms") == 0)
         {
-            (void)parse_u32_field(val, &global->tcp_health_interval_ms);
+            (void)cplat_parse_uint32(&global->tcp_health_interval_ms, val, 10);
         }
         else if (strcmp(key, "tcp_health_timeout_ms") == 0)
         {
-            (void)parse_u32_field(val, &global->tcp_health_timeout_ms);
+            (void)cplat_parse_uint32(&global->tcp_health_timeout_ms, val, 10);
         }
         else if (strcmp(key, "tcp_close_timeout_ms") == 0)
         {
-            (void)parse_u32_field(val, &global->tcp_close_timeout_ms);
+            (void)cplat_parse_uint32(&global->tcp_close_timeout_ms, val, 10);
         }
         else if (strcmp(key, "reorder_timeout_ms") == 0)
         {
-            (void)parse_u32_field(val, &global->reorder_timeout_ms);
+            (void)cplat_parse_uint32(&global->reorder_timeout_ms, val, 10);
         }
         else if (strcmp(key, "max_message_size") == 0)
         {
-            (void)parse_u32_field(val, &global->max_message_size);
+            (void)cplat_parse_uint32(&global->max_message_size, val, 10);
         }
         else if (strcmp(key, "send_queue_depth") == 0)
         {
-            (void)parse_u32_field(val, &global->send_queue_depth);
+            (void)cplat_parse_uint32(&global->send_queue_depth, val, 10);
         }
     }
     cJSON_Delete(root);

@@ -299,3 +299,127 @@ TEST(configLoadServiceTest, returnsErrorWhenRequestedServiceDoesNotExist)
         POTR_ERR_NOT_FOUND,
         actual_ret); // [確認_異常系] - 対象 service が存在しない場合に potr_internal_config_load_service() の戻り値が POTR_ERR_NOT_FOUND であること。
 }
+
+// 負号付き文字列を採用せず既定値を維持することの確認
+TEST(configLoadServiceTest, negative_zero_strings_preserve_defaults)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines(
+        {R"({"services":{"10":{"ttl":"-0","connect_timeout_ms":"-0","dst_port":"-x","src_port":-0}}})"}); // [状態] - 整数設定の境界値または不正値を用意する。
+    potr_service_def def = {};
+    ON_CALL(mock_cplat, cplat_fopen(StrEq("integer-values.jsonc"), StrEq("r"), nullptr))
+        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - 設定用ストリームを返す。
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke([&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+                              { return lines.read(buf, size, stream); })); // [状態] - 設定の内容を順に返す。
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Return(0)); // [状態] - ストリームのクローズを成功させる。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret =
+        potr_internal_config_load_service("integer-values.jsonc", 10, &def); // [手順] - 整数設定を読み込む。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - 設定の読み込みが成功すること。
+    EXPECT_EQ(POTR_DEFAULT_TTL, def.ttl); // [確認_正常系] - def.ttl が POTR_DEFAULT_TTL であること。
+    EXPECT_EQ(
+        POTR_DEFAULT_CONNECT_TIMEOUT_MS,
+        def.connect_timeout_ms); // [確認_正常系] - def.connect_timeout_ms が POTR_DEFAULT_CONNECT_TIMEOUT_MS であること。
+    EXPECT_EQ(0U, def.dst_port); // [確認_正常系] - def.dst_port が 0U であること。
+    EXPECT_EQ(0U, def.src_port); // [確認_正常系] - def.src_port が 0U であること。
+}
+
+// 整数型の上限値を採用することの確認
+TEST(configLoadServiceTest, accepts_integer_type_upper_bounds)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines(
+        {R"({"services":{"10":{"ttl":"255","dst_port":"65535","pack_wait_ms":"4294967295"}}})"}); // [状態] - 整数設定の境界値または不正値を用意する。
+    potr_service_def def = {};
+    ON_CALL(mock_cplat, cplat_fopen(StrEq("integer-values.jsonc"), StrEq("r"), nullptr))
+        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - 設定用ストリームを返す。
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke([&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+                              { return lines.read(buf, size, stream); })); // [状態] - 設定の内容を順に返す。
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Return(0)); // [状態] - ストリームのクローズを成功させる。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret =
+        potr_internal_config_load_service("integer-values.jsonc", 10, &def); // [手順] - 整数設定を読み込む。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);          // [確認_正常系] - 設定の読み込みが成功すること。
+    EXPECT_EQ(UINT8_MAX, def.ttl);           // [確認_正常系] - def.ttl が UINT8_MAX であること。
+    EXPECT_EQ(UINT16_MAX, def.dst_port);     // [確認_正常系] - def.dst_port が UINT16_MAX であること。
+    EXPECT_EQ(UINT32_MAX, def.pack_wait_ms); // [確認_正常系] - def.pack_wait_ms が UINT32_MAX であること。
+}
+
+// 値域外の整数を採用せず既定値を維持することの確認
+TEST(configLoadServiceTest, out_of_range_values_preserve_defaults)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines(
+        {R"({"services":{"10":{"ttl":"256","dst_port":"65536","connect_timeout_ms":"4294967296"}}})"}); // [状態] - 整数設定の境界値または不正値を用意する。
+    potr_service_def def = {};
+    ON_CALL(mock_cplat, cplat_fopen(StrEq("integer-values.jsonc"), StrEq("r"), nullptr))
+        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - 設定用ストリームを返す。
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke([&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+                              { return lines.read(buf, size, stream); })); // [状態] - 設定の内容を順に返す。
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Return(0)); // [状態] - ストリームのクローズを成功させる。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret =
+        potr_internal_config_load_service("integer-values.jsonc", 10, &def); // [手順] - 整数設定を読み込む。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - 設定の読み込みが成功すること。
+    EXPECT_EQ(POTR_DEFAULT_TTL, def.ttl); // [確認_正常系] - def.ttl が POTR_DEFAULT_TTL であること。
+    EXPECT_EQ(0U, def.dst_port);          // [確認_正常系] - def.dst_port が 0U であること。
+    EXPECT_EQ(
+        POTR_DEFAULT_CONNECT_TIMEOUT_MS,
+        def.connect_timeout_ms); // [確認_正常系] - def.connect_timeout_ms が POTR_DEFAULT_CONNECT_TIMEOUT_MS であること。
+}
+
+// JSON 数値の負のゼロを 0 として採用することの確認
+TEST(configLoadServiceTest, numeric_negative_zero_is_zero)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines(
+        {R"({"services":{"10":{"ttl":-0,"connect_timeout_ms":-0}}})"}); // [状態] - 整数設定の境界値または不正値を用意する。
+    potr_service_def def = {};
+    ON_CALL(mock_cplat, cplat_fopen(StrEq("integer-values.jsonc"), StrEq("r"), nullptr))
+        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - 設定用ストリームを返す。
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke([&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+                              { return lines.read(buf, size, stream); })); // [状態] - 設定の内容を順に返す。
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Return(0)); // [状態] - ストリームのクローズを成功させる。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret =
+        potr_internal_config_load_service("integer-values.jsonc", 10, &def); // [手順] - 整数設定を読み込む。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);        // [確認_正常系] - 設定の読み込みが成功すること。
+    EXPECT_EQ(0U, def.ttl);                // [確認_正常系] - def.ttl が 0U であること。
+    EXPECT_EQ(0U, def.connect_timeout_ms); // [確認_正常系] - def.connect_timeout_ms が 0U であること。
+}
