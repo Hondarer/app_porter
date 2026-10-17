@@ -34,9 +34,12 @@ TEST(seqnumTest, includesFirstAndLastSequenceNumbers)
     // Pre-Assert
 
     // Act
-    int first_result = potr_internal_seqnum_in_window(base, base, window_size); // [手順] - ウィンドウ先頭を判定する。
-    int last_result =
-        potr_internal_seqnum_in_window(base + 3U, base, window_size); // [手順] - ウィンドウ末尾を判定する。
+    int first_result = potr_internal_seqnum_in_window(
+        base, base,
+        window_size); // [手順] - ウィンドウ先頭の通番を指定して potr_internal_seqnum_in_window() を呼び出す。
+    int last_result = potr_internal_seqnum_in_window(
+        base + 3U, base,
+        window_size); // [手順] - ウィンドウ末尾の通番を指定して potr_internal_seqnum_in_window() を呼び出す。
 
     // Assert
     EXPECT_EQ(1,
@@ -55,10 +58,12 @@ TEST(seqnumTest, excludesSequenceNumbersImmediatelyOutsideWindow)
     // Pre-Assert
 
     // Act
-    int after_result =
-        potr_internal_seqnum_in_window(base + 4U, base, window_size); // [手順] - ウィンドウ直後を判定する。
-    int before_result =
-        potr_internal_seqnum_in_window(base - 1U, base, window_size); // [手順] - ウィンドウ直前を判定する。
+    int after_result = potr_internal_seqnum_in_window(
+        base + 4U, base,
+        window_size); // [手順] - ウィンドウ直後の通番を指定して potr_internal_seqnum_in_window() を呼び出す。
+    int before_result = potr_internal_seqnum_in_window(
+        base - 1U, base,
+        window_size); // [手順] - ウィンドウ直前の通番を指定して potr_internal_seqnum_in_window() を呼び出す。
 
     // Assert
     EXPECT_EQ(0,
@@ -76,7 +81,9 @@ TEST(seqnumTest, excludesBaseFromEmptyWindow)
     // Pre-Assert
 
     // Act
-    int result = potr_internal_seqnum_in_window(base, base, 0U); // [手順] - サイズ 0 のウィンドウ先頭を判定する。
+    int result = potr_internal_seqnum_in_window(
+        base, base,
+        0U); // [手順] - サイズ 0 のウィンドウと先頭の通番を指定して potr_internal_seqnum_in_window() を呼び出す。
 
     // Assert
     EXPECT_EQ(0,
@@ -93,15 +100,24 @@ TEST(seqnumTest, handlesWindowAcrossUint32Wraparound)
     // Pre-Assert
 
     // Act
-    int max_minus_one_result =
-        potr_internal_seqnum_in_window(UINT32_MAX - 1U, base, window_size); // [手順] - 折り返し前の先頭を判定する。
-    int max_result =
-        potr_internal_seqnum_in_window(UINT32_MAX, base, window_size);       // [手順] - uint32_t の上限を判定する。
-    int zero_result = potr_internal_seqnum_in_window(0U, base, window_size); // [手順] - 折り返し後の 0 を判定する。
-    int one_result = potr_internal_seqnum_in_window(1U, base, window_size);  // [手順] - 折り返し後の末尾を判定する。
-    int two_result = potr_internal_seqnum_in_window(2U, base, window_size);  // [手順] - 折り返し後の直後を判定する。
-    int before_result =
-        potr_internal_seqnum_in_window(base - 1U, base, window_size); // [手順] - 折り返し前の直前を判定する。
+    int max_minus_one_result = potr_internal_seqnum_in_window(
+        UINT32_MAX - 1U, base,
+        window_size); // [手順] - 折り返し前の先頭の通番を指定して potr_internal_seqnum_in_window() を呼び出す。
+    int max_result = potr_internal_seqnum_in_window(
+        UINT32_MAX, base,
+        window_size); // [手順] - uint32_t の上限の通番を指定して potr_internal_seqnum_in_window() を呼び出す。
+    int zero_result = potr_internal_seqnum_in_window(
+        0U, base,
+        window_size); // [手順] - 折り返し後の 0 の通番を指定して potr_internal_seqnum_in_window() を呼び出す。
+    int one_result = potr_internal_seqnum_in_window(
+        1U, base,
+        window_size); // [手順] - 折り返し後の末尾の通番を指定して potr_internal_seqnum_in_window() を呼び出す。
+    int two_result = potr_internal_seqnum_in_window(
+        2U, base,
+        window_size); // [手順] - 折り返し後の直後の通番を指定して potr_internal_seqnum_in_window() を呼び出す。
+    int before_result = potr_internal_seqnum_in_window(
+        base - 1U, base,
+        window_size); // [手順] - 折り返し前の直前の通番を指定して potr_internal_seqnum_in_window() を呼び出す。
 
     // Assert
     EXPECT_EQ(

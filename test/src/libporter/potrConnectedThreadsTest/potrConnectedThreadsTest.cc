@@ -110,7 +110,7 @@ class potrConnectedThreadsTest : public Test
     void SetUp() override
     {
         ON_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _)).WillByDefault(Return(0));
-        // [状態] - cplat_tracer_writef_at() の既定動作を設定する。
+        // [状態] - cplat_tracer_writef_at() から 0 を返すように既定動作を設定する。
 
         memset(&ctx, 0, sizeof(ctx));
         memset(&s_calls, 0, sizeof(s_calls));
@@ -146,11 +146,11 @@ TEST_F(potrConnectedThreadsTest, recv_failure_stops_send_started_by_this_call)
     potr_internal_connected_threads_ops ops = make_ops(); // [状態] - fake ops 一式を用意する (send スレッドは未起動)。
 
     // Pre-Assert
-    s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - recv 開始 fake から POTR_ERR_IO を返却する。
+    s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - fake_recv_start() から POTR_ERR_IO を返す。
 
     // Act
     int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -177,11 +177,11 @@ TEST_F(potrConnectedThreadsTest, recv_failure_keeps_preexisting_send_thread_runn
                            CPLAT_MEMORY_ORDER_RELAXED); // [状態] - send スレッドがすでに起動済みの状態とする。
 
     // Pre-Assert
-    s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - recv 開始 fake から POTR_ERR_IO を返却する。
+    s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - fake_recv_start() から POTR_ERR_IO を返す。
 
     // Act
     int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -203,11 +203,11 @@ TEST_F(potrConnectedThreadsTest, bootstrap_ping_failure_rolls_back_recv_and_new_
 
     // Pre-Assert
     s_calls.tcp_send_ping_result =
-        POTR_ERR_DISCONNECTED; // [Pre-Assert手順] - bootstrap ping から POTR_ERR_DISCONNECTED を返却する。
+        POTR_ERR_DISCONNECTED; // [Pre-Assert手順] - potr_internal_tcp_send_ping_now() から POTR_ERR_DISCONNECTED を返す。
 
     // Act
     int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -238,11 +238,11 @@ TEST_F(potrConnectedThreadsTest, health_failure_rolls_back_recv_and_new_send_thr
 
     // Pre-Assert
     s_calls.health_start_result =
-        POTR_ERR_OUT_OF_MEMORY; // [Pre-Assert手順] - health 開始 fake から POTR_ERR_OUT_OF_MEMORY を返却する。
+        POTR_ERR_OUT_OF_MEMORY; // [Pre-Assert手順] - fake_health_start() から POTR_ERR_OUT_OF_MEMORY を返す。
 
     // Act
     int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -275,11 +275,11 @@ TEST_F(potrConnectedThreadsTest, health_failure_keeps_preexisting_send_thread_ru
 
     // Pre-Assert
     s_calls.health_start_result =
-        POTR_ERR_OUT_OF_MEMORY; // [Pre-Assert手順] - health 開始 fake から POTR_ERR_OUT_OF_MEMORY を返却する。
+        POTR_ERR_OUT_OF_MEMORY; // [Pre-Assert手順] - fake_health_start() から POTR_ERR_OUT_OF_MEMORY を返す。
 
     // Act
     int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -302,11 +302,11 @@ TEST_F(potrConnectedThreadsTest, non_primary_path_does_not_touch_send_thread)
     potr_internal_connected_threads_ops ops = make_ops(); // [状態] - fake ops 一式を用意する。
 
     // Pre-Assert
-    s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - recv 開始 fake から POTR_ERR_IO を返却する。
+    s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - fake_recv_start() から POTR_ERR_IO を返す。
 
     // Act
     int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 1, &ops); // [手順] - 非 primary path (1) で接続時スレッド群を開始する。
+        &ctx, 1, &ops); // [手順] - 非 primary path (1) を指定して potr_internal_start_connected_threads() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -332,7 +332,7 @@ TEST_F(potrConnectedThreadsTest, success_sets_ping_state_without_rollback)
 
     // Act
     int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) で接続時スレッド群を開始する。
+        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_OK,
@@ -364,16 +364,15 @@ TEST_F(potrConnectedThreadsTest, ping_state_is_reset_before_recv_start)
 {
     // Arrange
     potr_internal_connected_threads_ops ops = make_ops();
-    cplat_atomic_store_u8(
-        &ctx.path_ping_state[1], POTR_PING_STATE_NORMAL,
-        CPLAT_MEMORY_ORDER_RELAXED); // [状態] - path 1 の ping 状態が前回接続の NORMAL のまま残っている。
+    cplat_atomic_store_u8(&ctx.path_ping_state[1], POTR_PING_STATE_NORMAL,
+                          CPLAT_MEMORY_ORDER_RELAXED); // [状態] - path 1 の ping 状態を前回接続の NORMAL のままにする。
     s_calls.ping_state_at_recv_start = -1;
 
     // Pre-Assert
 
     // Act
     int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 1, &ops); // [手順] - 非 primary path (1) で接続時スレッド群を開始する。
+        &ctx, 1, &ops); // [手順] - 非 primary path (1) を指定して potr_internal_start_connected_threads() を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_OK,

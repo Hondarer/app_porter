@@ -307,13 +307,28 @@ TEST_F(tcpMultipathTest, interleaved_headers_preserve_packets)
     }
     // Act
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
-    send_packet(0, data_packet(1, first, false)); // [手順] - 第 1 経路をヘッダー読み取り直後に停止する。
-    bool actual_ret_header = wait_for([] { return s_header_held; }); // [手順] - ヘッダー読み取りの停止まで待機する。
+    send_packet(
+        0,
+        data_packet(
+            1, first,
+            false)); // [手順] - 第 1 経路をヘッダー読み取り直後に停止させるパケットを指定して send_packet() を呼び出す。
+    bool actual_ret_header = wait_for(
+        []
+        {
+            return s_header_held;
+        }); // [手順] - ヘッダー読み取りが停止したことを判定する条件を指定して wait_for() を呼び出す。
     ASSERT_TRUE(actual_ret_header);
     // [状態確認] - s_header_held が true になるまで待つ wait_for() の戻り値が true であること。
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
-    send_packet(1, data_packet(2, second, false)); // [手順] - 第 2 経路へ異なる長さのパケットを送信する。
-    bool actual_ret_headers = wait_for([] { return s_headers >= 3; }); // [手順] - 後続のヘッダー読み取りまで待機する。
+    send_packet(
+        1, data_packet(
+               2, second,
+               false)); // [手順] - 第 1 経路とは異なる長さのパケットと第 2 経路を指定して send_packet() を呼び出す。
+    bool actual_ret_headers = wait_for(
+        []
+        {
+            return s_headers >= 3;
+        }); // [手順] - 後続のヘッダーが読み取られたことを判定する条件を指定して wait_for() を呼び出す。
     ASSERT_TRUE(actual_ret_headers);
     // [状態確認] - s_headers が 3 以上になるまで待つ wait_for() の戻り値が true であること。
     {
@@ -404,11 +419,17 @@ TEST_F(tcpMultipathTest, blocked_path_does_not_stop_other_path)
     // Act
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(0, data_packet(2, second, false));
-    bool actual_ret_header = wait_for([] { return s_header_held; }); // [手順] - ヘッダー読み取りの停止まで待機する。
+    bool actual_ret_header = wait_for(
+        []
+        {
+            return s_header_held;
+        }); // [手順] - ヘッダー読み取りが停止したことを判定する条件を指定して wait_for() を呼び出す。
     ASSERT_TRUE(actual_ret_header);
     // [状態確認] - s_header_held が true になるまで待つ wait_for() の戻り値が true であること。
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
-    send_packet(1, data_packet(1, first, false)); // [手順] - 他経路のヘッダー待機中に先行 DATA を送信する。
+    send_packet(1,
+                data_packet(1, first,
+                            false)); // [手順] - 他経路のヘッダー待機中に先行 DATA を指定して send_packet() を呼び出す。
     // Assert
     ASSERT_TRUE(wait_for(
         []
@@ -453,8 +474,11 @@ TEST_F(tcpMultipathTest, encrypted_compressed_reply_preserves_callback_data)
     }
     // Act
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
-    send_packet(0, data_packet(1, compressed, true,
-                               POTR_FLAG_COMPRESSED)); // [手順] - 復号・展開後のコールバックから圧縮返信する。
+    send_packet(
+        0,
+        data_packet(
+            1, compressed, true,
+            POTR_FLAG_COMPRESSED)); // [手順] - 復号・展開後のコールバックから圧縮返信させるパケットを指定して send_packet() を呼び出す。
     // Assert
     ASSERT_TRUE(wait_for([] { return s_received.size() == 2; }));
     // [確認_正常系] - s_received.size() の戻り値が 2 になるまで待つ wait_for() の戻り値が true であること。
@@ -494,14 +518,20 @@ TEST_F(tcpMultipathTest, callback_lifetime_across_paths)
     // Act
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(0, data_packet(1, first_compressed, true, POTR_FLAG_COMPRESSED));
-    bool actual_ret_callback =
-        wait_for([] { return s_callback_held; }); // [手順] - 最初の DATA コールバックを停止する。
+    bool actual_ret_callback = wait_for(
+        []
+        {
+            return s_callback_held;
+        }); // [手順] - 最初の DATA コールバックが停止したことを判定する条件を指定して wait_for() を呼び出す。
     ASSERT_TRUE(actual_ret_callback);
     // [状態確認] - s_callback_held が true になるまで待つ wait_for() の戻り値が true であること。
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(1, data_packet(2, second_compressed, true, POTR_FLAG_COMPRESSED));
-    bool actual_ret_headers =
-        wait_for([] { return s_headers >= 3; }); // [手順] - 別経路が後続ヘッダーを読み取るまで待機する。
+    bool actual_ret_headers = wait_for(
+        []
+        {
+            return s_headers >= 3;
+        }); // [手順] - 別経路が後続ヘッダーを読み取ったことを判定する条件を指定して wait_for() を呼び出す。
     ASSERT_TRUE(actual_ret_headers);
     // [状態確認] - s_headers が 3 以上になるまで待つ wait_for() の戻り値が true であること。
     {
@@ -531,7 +561,9 @@ TEST_F(tcpMultipathTest, bootstrap_both_paths_before_data)
     // Act
     ASSERT_NO_FATAL_FAILURE(
         // [サブ手順参照 名前=tcpMultipathTest.open_receiver]
-        open_receiver(true, true, false)); // [手順] - 両経路を PING で確立した後に DATA を送信する。
+        open_receiver(
+            true, true,
+            false)); // [手順] - 両経路を PING で確立した後に DATA を送信する設定を指定して open_receiver() を呼び出す。
     // [確認_正常系] - open_receiver() の中で致命的な失敗が起きないこと。
     // Assert
     std::lock_guard<std::mutex> lock(s_mutex);
@@ -558,41 +590,56 @@ TEST_F(tcpMultipathTest, reconnect_path_and_finish_in_order)
     // Act
     cplat_socket_close(sockets[0]);
     sockets[0] = CPLAT_INVALID_SOCKET;
-    bool actual_ret_disconnected =
-        wait_for([] { return s_live_paths == 2; }); // [手順] - 一方の経路の切断まで待機する。
+    bool actual_ret_disconnected = wait_for(
+        []
+        {
+            return s_live_paths == 2;
+        }); // [手順] - 一方の経路が切断したことを判定する条件を指定して wait_for() を呼び出す。
     ASSERT_TRUE(actual_ret_disconnected);
     // [確認_正常系] - s_live_paths が 2 になるまで待つ wait_for() の戻り値が true であること。
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
-    send_packet(1, data_packet(1, first, false)); // [手順] - 一方の経路を切断した状態で送受信を継続する。
-    bool actual_ret_received =
-        wait_for([] { return s_received.size() == 2; }); // [手順] - 残存経路の DATA の配信まで待機する。
+    send_packet(
+        1,
+        data_packet(1, first,
+                    false)); // [手順] - 一方の経路を切断した状態で残存経路の DATA を指定して send_packet() を呼び出す。
+    bool actual_ret_received = wait_for(
+        []
+        {
+            return s_received.size() == 2;
+        }); // [手順] - 残存経路の DATA が配信されたことを判定する条件を指定して wait_for() を呼び出す。
     ASSERT_TRUE(actual_ret_received);
     // [確認_正常系] - s_received.size() の戻り値が 2 になるまで待つ wait_for() の戻り値が true であること。
     cplat_ipv4_endpoint endpoint = {};
-    int actual_ret_parse =
-        cplat_ipv4_parse("127.0.0.1", &endpoint.address); // [手順] - 再接続先の IPv4 アドレスを解析する。
+    int actual_ret_parse = cplat_ipv4_parse(
+        "127.0.0.1", &endpoint.address); // [手順] - 再接続先の IPv4 アドレスを指定して cplat_ipv4_parse() を呼び出す。
     ASSERT_EQ(CPLAT_OK, actual_ret_parse);
     // [状態確認] - cplat_ipv4_parse() の戻り値が CPLAT_OK であること。
     endpoint.port = cplat_hton16(19723);
-    int actual_ret_open =
-        cplat_socket_open(CPLAT_SOCKET_TCP, &sockets[0], nullptr); // [手順] - 再接続用の TCP ソケットを開く。
+    int actual_ret_open = cplat_socket_open(
+        CPLAT_SOCKET_TCP, &sockets[0],
+        nullptr); // [手順] - 再接続用の TCP ソケットを作成するため、CPLAT_SOCKET_TCP を指定して cplat_socket_open() を呼び出す。
     ASSERT_EQ(CPLAT_OK, actual_ret_open);
     // [状態確認] - cplat_socket_open() の戻り値が CPLAT_OK であること。
-    int actual_ret_connect =
-        cplat_socket_connect(sockets[0], &endpoint, nullptr); // [手順] - TCP ソケットを再接続する。
+    int actual_ret_connect = cplat_socket_connect(
+        sockets[0], &endpoint, nullptr); // [手順] - 再接続先を指定して cplat_socket_connect() を呼び出す。
     ASSERT_EQ(CPLAT_OK, actual_ret_connect);
     // [状態確認] - cplat_socket_connect() の戻り値が CPLAT_OK であること。
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     // [サブ手順参照 名前=tcpMultipathTest.packet]
     send_packet(0, packet(2, POTR_FLAG_PING, bytes(POTR_MAX_PATH, 1), false));
-    bool actual_ret_reconnected = wait_for([] { return s_live_paths == 3; }); // [手順] - 両経路の再接続まで待機する。
+    bool actual_ret_reconnected = wait_for(
+        []
+        {
+            return s_live_paths == 3;
+        }); // [手順] - 両経路が再接続したことを判定する条件を指定して wait_for() を呼び出す。
     ASSERT_TRUE(actual_ret_reconnected);
     // [確認_正常系] - 再接続後の wait_for() の戻り値が true であること。
     // [サブ手順参照 名前=tcpMultipathTest.packet]
     bytes fin = packet(0, POTR_FLAG_FIN | POTR_FLAG_FIN_TARGET_VALID, {}, false);
     put(fin, 28, 3, 4);
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
-    send_packet(1, fin); // [手順] - 最後の DATA より先に FIN を受信させる。
+    send_packet(1,
+                fin); // [手順] - 最後の DATA より先に FIN を受信させるため、FIN を指定して send_packet() を呼び出す。
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(0, data_packet(2, second, false));
     // Assert

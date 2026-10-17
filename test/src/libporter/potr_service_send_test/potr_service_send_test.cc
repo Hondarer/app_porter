@@ -80,8 +80,8 @@ TEST_F(potrSendTest, close_requested_returns_canceled)
     // Pre-Assert
 
     // Act
-    int actual_ret =
-        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - 終了処理中に送信を試みる。
+    int actual_ret = potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+                                       0); // [手順] - 終了処理中のサービスを指定して potr_service_send() を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_ERR_CANCELED,
@@ -107,8 +107,9 @@ TEST_F(potrSendTest, n1_peer_na_returns_invalid_argument)
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
-                                       0); // [手順] - POTR_PEER_NA 宛てに送信を試みる。
+    int actual_ret =
+        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+                          0); // [手順] - peer_id に POTR_PEER_NA を指定して potr_service_send() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -135,8 +136,8 @@ TEST_F(potrSendTest, n1_unknown_peer_returns_not_found)
     // Pre-Assert
 
     // Act
-    int actual_ret =
-        potr_service_send(&ctx, 123U, payload, strlen(payload), 0); // [手順] - 未登録のピア ID 宛てに送信を試みる。
+    int actual_ret = potr_service_send(&ctx, 123U, payload, strlen(payload),
+                                       0); // [手順] - 未登録のピア ID を指定して potr_service_send() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -167,8 +168,9 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
-                                       0); // [手順] - potr_service_send() で送信を試みる。
+    int actual_ret =
+        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+                          0); // [手順] - 論理接続が未成立のサービスを指定して potr_service_send() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -201,8 +203,9 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
-                                       0); // [手順] - POTR_PEER_ALL 宛てに potr_service_send() で送信を試みる。
+    int actual_ret =
+        potr_service_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
+                          0); // [手順] - peer_id に POTR_PEER_ALL を指定して potr_service_send() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -238,8 +241,9 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
-                                       0); // [手順] - POTR_PEER_ALL 宛てに potr_service_send() で送信する。
+    int actual_ret =
+        potr_service_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
+                          0); // [手順] - peer_id に POTR_PEER_ALL を指定して potr_service_send() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -289,7 +293,8 @@ TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
 
     // Act
     int actual_ret =
-        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload), 0); // [手順] - potr_service_send() で送信する。
+        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+                          0); // [手順] - 片方向 unicast のサービスを指定して potr_service_send() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -328,7 +333,7 @@ TEST_F(potrSendTest, data_based_health_ping_suppression_applies_only_to_type_1_t
     // Pre-Assert
 
     // Act
-    // [手順] - 各 type を is_oneway_udp_type() で判定する。
+    // [手順] - 各 type を指定して is_oneway_udp_type() を呼び出す。
     int oneway_unicast_raw = is_oneway_udp_type(POTR_TYPE_UNICAST_RAW);
     int oneway_multicast_raw = is_oneway_udp_type(POTR_TYPE_MULTICAST_RAW);
     int oneway_broadcast_raw = is_oneway_udp_type(POTR_TYPE_BROADCAST_RAW);
@@ -376,7 +381,7 @@ TEST_F(potrSendTest, immediate_health_ping_is_disabled_only_for_type_1_to_6)
     // Pre-Assert
 
     // Act
-    // [手順] - 各 type を type_uses_immediate_health_ping() で判定する。
+    // [手順] - 各 type を指定して type_uses_immediate_health_ping() を呼び出す。
     int immediate_unicast_raw = type_uses_immediate_health_ping(POTR_TYPE_UNICAST_RAW);
     int immediate_multicast_raw = type_uses_immediate_health_ping(POTR_TYPE_MULTICAST_RAW);
     int immediate_broadcast_raw = type_uses_immediate_health_ping(POTR_TYPE_BROADCAST_RAW);

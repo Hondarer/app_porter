@@ -79,7 +79,7 @@ TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
     // Act
     potr_internal_sync_service_path_state_locked(
         &ctx, next_states,
-        &prepared); // [手順] - service の path 状態を同期しイベントを準備する。
+        &prepared); // [手順] - 接続へ遷移する次状態を指定して potr_internal_sync_service_path_state_locked() を呼び出す。
 
     // Assert
     EXPECT_EQ(2, prepared.changed_count);    // [確認_正常系] - prepared.changed_count が 2 であること。
@@ -104,7 +104,9 @@ TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
     EXPECT_EQ(1, ctx.path_logical_alive[2]); // [確認_正常系] - ctx.path_logical_alive[2] が 1 であること。
 
     // Act_2
-    potr_internal_emit_service_path_events_locked(&ctx, &prepared); // [手順] - 準備済みイベントを callback へ発行する。
+    potr_internal_emit_service_path_events_locked(
+        &ctx,
+        &prepared); // [手順] - 準備済みイベントを指定して potr_internal_emit_service_path_events_locked() を呼び出す。
 
     // Assert_2
     EXPECT_EQ(3, s_event_count); // [確認_正常系] - s_event_count が 3 であること。
@@ -140,8 +142,9 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
     // Pre-Assert
 
     // Act
-    potr_internal_sync_peer_path_state_locked(&peer, next_states,
-                                              &prepared); // [手順] - peer の path 状態を同期しイベントを準備する。
+    potr_internal_sync_peer_path_state_locked(
+        &peer, next_states,
+        &prepared); // [手順] - 切断へ遷移する次状態を指定して potr_internal_sync_peer_path_state_locked() を呼び出す。
 
     // Assert
     EXPECT_EQ(2, prepared.changed_count);    // [確認_正常系] - prepared.changed_count が 2 であること。
@@ -165,8 +168,9 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
 
     // Act_2
     // [サブ手順参照 名前=potrPathEventTest.capture_callback 回数=3]
-    potr_internal_emit_peer_path_events_locked(&ctx, &peer,
-                                               &prepared); // [手順] - 準備済みイベントを callback へ発行する。
+    potr_internal_emit_peer_path_events_locked(
+        &ctx, &peer,
+        &prepared); // [手順] - 準備済みイベントを指定して potr_internal_emit_peer_path_events_locked() を呼び出す。
 
     // Assert_2
     EXPECT_EQ(3, s_event_count); // [確認_正常系] - s_event_count が 3 であること。

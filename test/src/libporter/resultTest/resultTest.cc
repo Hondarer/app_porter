@@ -53,7 +53,9 @@ TEST_F(resultTest, all_codes_are_distinct)
     // Pre-Assert
 
     // Act
-    unique_codes.insert(codes.begin(), codes.end()); // [手順] - 全コードを集合へ挿入して重複を排除する。
+    unique_codes.insert(
+        codes.begin(),
+        codes.end()); // [手順] - 重複を排除するため、全コードを指定して unique_codes.insert() を呼び出す。
 
     // Assert
     EXPECT_EQ(

@@ -82,7 +82,7 @@ TEST_F(packetTest, potr_internal_packet_build_packed_sets_protocol_version)
     // Act
     int actual_ret = potr_internal_packet_build_packed(
         &pkt, &shdr, 9U, payload,
-        sizeof(payload)); // [手順] - potr_internal_packet_build_packed() でパケットを構築する。
+        sizeof(payload)); // [手順] - 1 バイトのペイロードを指定して potr_internal_packet_build_packed() を呼び出す。
 
     // Assert
     ASSERT_EQ(POTR_OK,
@@ -106,7 +106,7 @@ TEST_F(packetTest, potr_internal_packet_parse_accepts_current_protocol_version)
 
     // Act
     int actual_ret = potr_internal_packet_parse(
-        &pkt, wire, sizeof(wire)); // [手順] - potr_internal_packet_parse() で wire パケットを解析する。
+        &pkt, wire, sizeof(wire)); // [手順] - wire パケットを指定して potr_internal_packet_parse() を呼び出す。
 
     // Assert
     ASSERT_EQ(
@@ -131,7 +131,7 @@ TEST_F(packetTest, potr_internal_packet_parse_rejects_different_protocol_version
 
     // Act
     int actual_ret = potr_internal_packet_parse(
-        &pkt, wire, sizeof(wire)); // [手順] - potr_internal_packet_parse() で wire パケットを解析する。
+        &pkt, wire, sizeof(wire)); // [手順] - wire パケットを指定して potr_internal_packet_parse() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -152,7 +152,7 @@ TEST_F(packetTest, potr_internal_packet_parse_rejects_legacy_reserved_zero)
 
     // Act
     int actual_ret = potr_internal_packet_parse(
-        &pkt, wire, sizeof(wire)); // [手順] - potr_internal_packet_parse() で wire パケットを解析する。
+        &pkt, wire, sizeof(wire)); // [手順] - wire パケットを指定して potr_internal_packet_parse() を呼び出す。
 
     // Assert
     EXPECT_EQ(

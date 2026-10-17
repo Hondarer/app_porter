@@ -101,7 +101,8 @@ TEST_F(potrDisconnectPeerTest, handle_null)
             1); // [Pre-Assert確認_異常系] - cplat_tracer_writef_at() が CPLAT_TRACE_LEVEL_ERROR、nullptr、"potr_peer_disconnect.c" を含み "handle is NULL" を含む文字列を指定して 1 回呼び出されること。
 
     // Act
-    int actual_ret = potr_peer_disconnect(nullptr, 1); // [手順] - handle=NULL で potr_peer_disconnect() を呼び出す。
+    int actual_ret =
+        potr_peer_disconnect(nullptr, 1); // [手順] - handle に nullptr を指定して potr_peer_disconnect() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -127,7 +128,7 @@ TEST_F(potrDisconnectPeerTest, peer_id_na)
 
     // Act
     int actual_ret = potr_peer_disconnect(
-        &ctx, POTR_PEER_NA); // [手順] - peer_id=POTR_PEER_NA で potr_peer_disconnect() を呼び出す。
+        &ctx, POTR_PEER_NA); // [手順] - peer_id に POTR_PEER_NA を指定して potr_peer_disconnect() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -153,7 +154,7 @@ TEST_F(potrDisconnectPeerTest, peer_id_all)
 
     // Act
     int actual_ret = potr_peer_disconnect(
-        &ctx, POTR_PEER_ALL); // [手順] - peer_id=POTR_PEER_ALL で potr_peer_disconnect() を呼び出す。
+        &ctx, POTR_PEER_ALL); // [手順] - peer_id に POTR_PEER_ALL を指定して potr_peer_disconnect() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -202,7 +203,7 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
     EXPECT_CALL(mock_peer_table, potr_internal_peer_find_by_id(&ctx, (potr_peer_id)99))
         .WillOnce(Return(
             nullptr)); // [Pre-Assert確認_異常系] - potr_internal_peer_find_by_id() が &ctx、99 を指定して 1 回呼び出されること。
-    // [Pre-Assert手順] - nullptr を返す。
+    // [Pre-Assert手順] - potr_internal_peer_find_by_id() から nullptr を返す。
 
     EXPECT_CALL(mock_log, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_ERROR, nullptr,
                                                  AllOf(HasSubstr("potr_peer_disconnect.c"),
@@ -211,8 +212,8 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
             1); // [Pre-Assert確認_異常系] - cplat_tracer_writef_at() が CPLAT_TRACE_LEVEL_ERROR、nullptr、"potr_peer_disconnect.c" を含み "not found" を含む文字列を指定して 1 回呼び出されること。
 
     // Act
-    int actual_ret =
-        potr_peer_disconnect(&ctx, 99); // [手順] - 存在しない peer_id=99 で potr_peer_disconnect() を呼び出す。
+    int actual_ret = potr_peer_disconnect(
+        &ctx, 99); // [手順] - 存在しない peer_id に 99 を指定して potr_peer_disconnect() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -241,7 +242,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
     EXPECT_CALL(mock_peer_table, potr_internal_peer_find_by_id(&ctx, (potr_peer_id)1))
         .WillOnce(Return(
             &peer_ctx)); // [Pre-Assert確認_正常系] - potr_internal_peer_find_by_id() が &ctx、1 を指定して 1 回呼び出されること。
-    // [Pre-Assert手順] - ピア コンテキストを返す。
+    // [Pre-Assert手順] - potr_internal_peer_find_by_id() から、ピア コンテキストを返す。
 
     EXPECT_CALL(mock_log, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_INFO, nullptr,
                                                  AllOf(HasSubstr("potr_peer_disconnect.c"),
@@ -344,7 +345,7 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
     EXPECT_CALL(mock_peer_table, potr_internal_peer_find_by_id(&ctx, (potr_peer_id)1))
         .WillOnce(Return(
             &peer_ctx)); // [Pre-Assert確認_正常系] - potr_internal_peer_find_by_id() が &ctx、1 を指定して 1 回呼び出されること。
-    // [Pre-Assert手順] - ピア コンテキストを返す。
+    // [Pre-Assert手順] - potr_internal_peer_find_by_id() から、ピア コンテキストを返す。
 
     EXPECT_CALL(mock_peer_table, potr_internal_peer_send_fin(&ctx, &peer_ctx))
         .Times(

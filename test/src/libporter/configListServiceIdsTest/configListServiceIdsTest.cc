@@ -41,12 +41,15 @@ TEST(configListServiceIdsTest, returnsInvalidArgumentWhenParameterIsNull)
     // Pre-Assert
 
     // Act
-    int actual_ret_null_path =
-        potr_internal_config_list_service_ids(nullptr, &ids, &count); // [手順] - config_path を NULL にして呼び出す。
+    int actual_ret_null_path = potr_internal_config_list_service_ids(
+        nullptr, &ids,
+        &count); // [手順] - config_path に nullptr を指定して potr_internal_config_list_service_ids() を呼び出す。
     int actual_ret_null_ids = potr_internal_config_list_service_ids(
-        "config.conf", nullptr, &count); // [手順] - ids_out を NULL にして呼び出す。
+        "config.conf", nullptr,
+        &count); // [手順] - ids_out に nullptr を指定して potr_internal_config_list_service_ids() を呼び出す。
     int actual_ret_null_count = potr_internal_config_list_service_ids(
-        "config.conf", &ids, nullptr); // [手順] - count_out を NULL にして呼び出す。
+        "config.conf", &ids,
+        nullptr); // [手順] - count_out に nullptr を指定して potr_internal_config_list_service_ids() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -72,12 +75,12 @@ TEST(configListServiceIdsTest, returnsIoErrorWhenFileCannotBeOpened)
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("missing.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             nullptr)); // [Pre-Assert確認_異常系] - cplat_fopen() が "missing.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
-    // [Pre-Assert手順] - cplat_fopen() にて nullptr を返す。
+    // [Pre-Assert手順] - cplat_fopen() から nullptr を返す。
 
     // Act
-    int actual_ret_open_fail =
-        potr_internal_config_list_service_ids("missing.conf", &ids,
-                                              &count); // [手順] - open に失敗する設定ファイルを指定して呼び出す。
+    int actual_ret_open_fail = potr_internal_config_list_service_ids(
+        "missing.conf", &ids,
+        &count); // [手順] - open に失敗する設定ファイルを指定して potr_internal_config_list_service_ids() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -109,23 +112,23 @@ TEST(configListServiceIdsTest, listsOnlyServiceSectionsAndExpandsBeyondDefaultCa
             [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
             {
                 return lines.read(buf, size, stream);
-            })); // [状態] - fgets() が呼び出された際に 70 個の service 定義を含む JSONC を返すようにモックを設定する。
+            })); // [状態] - fgets() から、70 個の service 定義を含む JSONC を出力バッファーに設定してそのポインターを返すように既定動作を設定する。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_fopen(StrEq("config.conf"), StrEq("r"), nullptr))
         .WillOnce(Return(
             ConfigLineStream::
                 handle())); // [Pre-Assert確認_正常系] - cplat_fopen() が "config.conf" と等しい文字列、"r" と等しい文字列、nullptr を指定して 1 回呼び出されること。
-    // [Pre-Assert手順] - cplat_fopen() にて ConfigLineStream::handle() を返す。
+    // [Pre-Assert手順] - cplat_fopen() から ConfigLineStream::handle() を返す。
     EXPECT_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
         .WillOnce(Return(
             0)); // [Pre-Assert確認_正常系] - fclose() が ConfigLineStream::handle() の戻り値を指定して 1 回呼び出されること。
-    // [Pre-Assert手順] - fclose() にて 0 を返す。
+    // [Pre-Assert手順] - fclose() から 0 を返す。
 
     // Act
-    int actual_ret =
-        potr_internal_config_list_service_ids("config.conf", &ids,
-                                              &count); // [手順] - 複数 service 定義を含む設定から ID を列挙する。
+    int actual_ret = potr_internal_config_list_service_ids(
+        "config.conf", &ids,
+        &count); // [手順] - 複数 service 定義を含む設定ファイルを指定して potr_internal_config_list_service_ids() を呼び出す。
 
     // Assert
     ASSERT_EQ(POTR_OK,

@@ -215,7 +215,7 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
     arm(target.size, 0); // [状態] - 全 4 経路の TCP 受信者で、対象サイズの確保回数を記録する。
     // Pre-Assert
     // Act
-    int baseline_ret = open(); // [手順] - 注入せず potr_service_open() を呼び出す。
+    int baseline_ret = open(); // [手順] - 注入せずに open() を呼び出す。
     auto baseline = snapshot();
     // Assert
     ASSERT_EQ(POTR_OK, baseline_ret); // [確認_正常系 回数=PARAM] - 注入前の open() の戻り値が POTR_OK であること。
@@ -226,7 +226,7 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
             .matching_calls); // [確認_正常系 回数=PARAM] - baseline.matching_calls が expected_calls と一致すること。(対象サイズの全バッファー確保を捕捉したことの確認)
 
     // Act_2
-    int baseline_close_ret = close(); // [手順] - 注入前のサービスを potr_service_close() で終了する。
+    int baseline_close_ret = close(); // [手順] - 注入前のサービスに対して close() を呼び出す。
     auto baseline_closed = snapshot();
     // Assert_2
     ASSERT_EQ(POTR_OK,
@@ -243,8 +243,7 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
     arm(target.size, target.occurrence);
     // Pre-Assert_3
     // Act_3
-    int failure_ret =
-        open(); // [手順] - 指定受信バッファーの cplat_malloc() だけを失敗させて potr_service_open() を呼び出す。
+    int failure_ret = open(); // [手順] - 指定受信バッファーの cplat_malloc() だけが失敗する状態で open() を呼び出す。
     auto failed = snapshot();
     arm(0, 0);
     // Assert_3
@@ -273,7 +272,7 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
     }
 
     // Act_4
-    int reopen_ret = open(); // [手順] - 注入を解除して同じ 4 エンドポイントで potr_service_open() を呼び出す。
+    int reopen_ret = open(); // [手順] - 注入を解除し、同じ 4 エンドポイントを指定して open() を呼び出す。
     // Assert_4
     ASSERT_EQ(
         POTR_OK,
@@ -281,7 +280,7 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
     ASSERT_NE(nullptr, handle); // [確認_正常系 回数=PARAM] - 再オープン後の handle が nullptr 以外であること。
 
     // Act_5
-    int close_ret = close(); // [手順] - 再オープンしたサービスを potr_service_close() で終了する。
+    int close_ret = close(); // [手順] - 再オープンしたサービスに対して close() を呼び出す。
     auto closed = snapshot();
     // Assert_5
     EXPECT_EQ(POTR_OK, close_ret); // [確認_正常系 回数=PARAM] - 再オープン後の close() の戻り値が POTR_OK であること。

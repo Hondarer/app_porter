@@ -79,7 +79,7 @@ TEST_F(exportTest, symbol_names_match)
 
     // Act
     std::set<std::string> actual = testing::getActualExportNames(
-        dll_path); // [手順] - dumpbin/nm で libporter の実際のエクスポート一覧を取得する。
+        dll_path); // [手順] - libporter の共有ライブラリのパスを指定して testing::getActualExportNames() を呼び出す。
 
     // Assert
     // [サブ手順参照 名前=testing.expectExportNamesMatch]
@@ -103,7 +103,7 @@ TEST_F(exportTest, public_header_variables_declare_export_macro)
     // Act
     std::vector<std::string> undecorated = testing::findUndecoratedExternVariables(
         include_dir,
-        "POTR_EXPORT"); // [手順] - prod/include 配下を走査し、POTR_EXPORT を伴わない extern 変数宣言を集める。
+        "POTR_EXPORT"); // [手順] - 公開ヘッダーのディレクトリと POTR_EXPORT を指定して testing::findUndecoratedExternVariables() を呼び出す。
 
     // Assert
     EXPECT_TRUE(undecorated.empty())

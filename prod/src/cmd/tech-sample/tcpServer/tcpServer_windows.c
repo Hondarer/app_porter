@@ -532,7 +532,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
     WorkerInfo *workers = (WorkerInfo *)cplat_malloc((size_t)num_workers * sizeof(WorkerInfo));
     HANDLE *events = (HANDLE *)cplat_malloc((size_t)num_workers * sizeof(HANDLE));
 
-    if (!workers || !events)
+    if (workers == NULL || events == NULL)
     {
         fprintf(stderr, "malloc 失敗\n");
         cplat_exit(1);
