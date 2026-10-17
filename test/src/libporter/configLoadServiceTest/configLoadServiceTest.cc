@@ -315,18 +315,23 @@ TEST(configLoadServiceTest, negative_zero_strings_preserve_defaults)
         {R"({"services":{"10":{"ttl":"-0","connect_timeout_ms":"-0","dst_port":"-x","src_port":-0}}})"}); // [状態] - 整数設定の境界値または不正値を用意する。
     potr_service_def def = {};
     ON_CALL(mock_cplat, cplat_fopen(StrEq("integer-values.jsonc"), StrEq("r"), nullptr))
-        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - 設定用ストリームを返す。
+        .WillByDefault(Return(
+            ConfigLineStream::handle())); // [状態] - cplat_fopen() から設定用ストリームを返すように既定動作を設定する。
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
-        .WillByDefault(Invoke([&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
-                              { return lines.read(buf, size, stream); })); // [状態] - 設定の内容を順に返す。
+        .WillByDefault(Invoke(
+            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+            {
+                return lines.read(buf, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
     ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
-        .WillByDefault(Return(0)); // [状態] - ストリームのクローズを成功させる。
+        .WillByDefault(Return(0)); // [状態] - fclose() から 0 を返すように既定動作を設定する。
 
     // Pre-Assert
 
     // Act
-    int actual_ret =
-        potr_internal_config_load_service("integer-values.jsonc", 10, &def); // [手順] - 整数設定を読み込む。
+    int actual_ret = potr_internal_config_load_service(
+        "integer-values.jsonc", 10,
+        &def); // [手順] - 整数設定を含む設定ファイルを指定して potr_internal_config_load_service() を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - 設定の読み込みが成功すること。
@@ -348,18 +353,23 @@ TEST(configLoadServiceTest, accepts_integer_type_upper_bounds)
         {R"({"services":{"10":{"ttl":"255","dst_port":"65535","pack_wait_ms":"4294967295"}}})"}); // [状態] - 整数設定の境界値または不正値を用意する。
     potr_service_def def = {};
     ON_CALL(mock_cplat, cplat_fopen(StrEq("integer-values.jsonc"), StrEq("r"), nullptr))
-        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - 設定用ストリームを返す。
+        .WillByDefault(Return(
+            ConfigLineStream::handle())); // [状態] - cplat_fopen() から設定用ストリームを返すように既定動作を設定する。
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
-        .WillByDefault(Invoke([&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
-                              { return lines.read(buf, size, stream); })); // [状態] - 設定の内容を順に返す。
+        .WillByDefault(Invoke(
+            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+            {
+                return lines.read(buf, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
     ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
-        .WillByDefault(Return(0)); // [状態] - ストリームのクローズを成功させる。
+        .WillByDefault(Return(0)); // [状態] - fclose() から 0 を返すように既定動作を設定する。
 
     // Pre-Assert
 
     // Act
-    int actual_ret =
-        potr_internal_config_load_service("integer-values.jsonc", 10, &def); // [手順] - 整数設定を読み込む。
+    int actual_ret = potr_internal_config_load_service(
+        "integer-values.jsonc", 10,
+        &def); // [手順] - 整数設定を含む設定ファイルを指定して potr_internal_config_load_service() を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret);          // [確認_正常系] - 設定の読み込みが成功すること。
@@ -378,18 +388,23 @@ TEST(configLoadServiceTest, out_of_range_values_preserve_defaults)
         {R"({"services":{"10":{"ttl":"256","dst_port":"65536","connect_timeout_ms":"4294967296"}}})"}); // [状態] - 整数設定の境界値または不正値を用意する。
     potr_service_def def = {};
     ON_CALL(mock_cplat, cplat_fopen(StrEq("integer-values.jsonc"), StrEq("r"), nullptr))
-        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - 設定用ストリームを返す。
+        .WillByDefault(Return(
+            ConfigLineStream::handle())); // [状態] - cplat_fopen() から設定用ストリームを返すように既定動作を設定する。
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
-        .WillByDefault(Invoke([&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
-                              { return lines.read(buf, size, stream); })); // [状態] - 設定の内容を順に返す。
+        .WillByDefault(Invoke(
+            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+            {
+                return lines.read(buf, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
     ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
-        .WillByDefault(Return(0)); // [状態] - ストリームのクローズを成功させる。
+        .WillByDefault(Return(0)); // [状態] - fclose() から 0 を返すように既定動作を設定する。
 
     // Pre-Assert
 
     // Act
-    int actual_ret =
-        potr_internal_config_load_service("integer-values.jsonc", 10, &def); // [手順] - 整数設定を読み込む。
+    int actual_ret = potr_internal_config_load_service(
+        "integer-values.jsonc", 10,
+        &def); // [手順] - 整数設定を含む設定ファイルを指定して potr_internal_config_load_service() を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - 設定の読み込みが成功すること。
@@ -410,18 +425,23 @@ TEST(configLoadServiceTest, numeric_negative_zero_is_zero)
         {R"({"services":{"10":{"ttl":-0,"connect_timeout_ms":-0}}})"}); // [状態] - 整数設定の境界値または不正値を用意する。
     potr_service_def def = {};
     ON_CALL(mock_cplat, cplat_fopen(StrEq("integer-values.jsonc"), StrEq("r"), nullptr))
-        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - 設定用ストリームを返す。
+        .WillByDefault(Return(
+            ConfigLineStream::handle())); // [状態] - cplat_fopen() から設定用ストリームを返すように既定動作を設定する。
     ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
-        .WillByDefault(Invoke([&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
-                              { return lines.read(buf, size, stream); })); // [状態] - 設定の内容を順に返す。
+        .WillByDefault(Invoke(
+            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+            {
+                return lines.read(buf, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
     ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
-        .WillByDefault(Return(0)); // [状態] - ストリームのクローズを成功させる。
+        .WillByDefault(Return(0)); // [状態] - fclose() から 0 を返すように既定動作を設定する。
 
     // Pre-Assert
 
     // Act
-    int actual_ret =
-        potr_internal_config_load_service("integer-values.jsonc", 10, &def); // [手順] - 整数設定を読み込む。
+    int actual_ret = potr_internal_config_load_service(
+        "integer-values.jsonc", 10,
+        &def); // [手順] - 整数設定を含む設定ファイルを指定して potr_internal_config_load_service() を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret);        // [確認_正常系] - 設定の読み込みが成功すること。
