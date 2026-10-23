@@ -122,6 +122,12 @@ struct allocation_case
     size_t occurrence;
 };
 
+void PrintTo(const allocation_case &, std::ostream *);
+void PrintTo(const allocation_case &c, std::ostream *os)
+{
+    *os << "name: \"" << c.name << "\", size: " << c.size << ", occurrence: " << c.occurrence;
+}
+
 class tcp_allocation_failure_test : public TestWithParam<allocation_case>
 {
 #if defined(PLATFORM_LINUX)
