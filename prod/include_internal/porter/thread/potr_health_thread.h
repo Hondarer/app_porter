@@ -31,18 +31,22 @@ extern "C"
 
     /**
      *  @brief          非 TCP ヘルス チェック スレッドを起動します。
+     *  @note           UDP 同期資源を所有し、途中失敗時は生成済み分を回収します。
      *
      *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_OK を返す)。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
      *  @retval         POTR_OK                    起動に成功したか、起動が不要です。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
-     *  @retval         POTR_ERR_UNKNOWN           スレッド生成に失敗しました。
+     *  @retval         POTR_ERR_UNKNOWN           同期資源またはスレッドの生成に失敗しました。
      */
     extern int potr_internal_health_thread_start(potr_context *ctx);
 
     /**
      *  @brief          非 TCP ヘルス チェック スレッドを停止します。
+     *  @note           生成済みハンドルの終了待ち後、ハンドルと UDP 同期資源を NULL へ戻します。
+     *                  待機失敗時は資源を保持します。
+     *  @retval         POTR_ERR_UNKNOWN           終了待ちに失敗しました。
      *  @param[in,out]  ctx セッション コンテキスト。
      *  @retval         POTR_OK                    停止に成功したか、停止済みです。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
@@ -77,12 +81,14 @@ extern "C"
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
      *  @retval         POTR_OK                    起動に成功したか、起動が不要です。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx または path_idx が不正です。
-     *  @retval         POTR_ERR_UNKNOWN           スレッド生成に失敗しました。
+     *  @retval         POTR_ERR_UNKNOWN           同期資源またはスレッドの生成に失敗しました。
      */
     extern int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx);
 
     /**
      *  @brief          TCP ヘルス チェック スレッドを停止します。
+     *  @note           終了待ち成功後にハンドルを NULL へ戻します。同期資源の所有権はサービスに残ります。
+     *  @retval         POTR_ERR_UNKNOWN           終了待ちに失敗しました。
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
      *  @retval         POTR_OK                    停止に成功したか、停止済みです。

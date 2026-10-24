@@ -193,7 +193,13 @@ int potr_internal_peer_table_init(potr_context *ctx)
         ctx->peers[i].active = 0;
     }
 
-    cplat_local_lock_create(&ctx->peers_mutex);
+    if (cplat_local_lock_create(&ctx->peers_mutex) != CPLAT_OK)
+    {
+        cplat_free(ctx->peers);
+        ctx->peers = NULL;
+        /* 同期資源生成 API は詳細原因を提供しない。 */
+        return POTR_ERR_UNKNOWN;
+    }
     ctx->n_peers = 0;
     ctx->next_peer_id = 1U;
 
@@ -228,12 +234,14 @@ void potr_internal_peer_table_dispose(potr_context *ctx)
         potr_internal_window_dispose(&ctx->peers[i].send_window);
         potr_internal_window_dispose(&ctx->peers[i].recv_window);
         cplat_local_lock_dispose(ctx->peers[i].send_window_mutex);
+        ctx->peers[i].send_window_mutex = NULL;
         cplat_free(ctx->peers[i].frag_buf);
         ctx->peers[i].frag_buf = NULL;
         ctx->peers[i].active = 0;
     }
 
     cplat_local_lock_dispose(ctx->peers_mutex);
+    ctx->peers_mutex = NULL;
 
     cplat_free(ctx->peers);
     ctx->peers = NULL;

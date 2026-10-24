@@ -55,16 +55,25 @@ static int any_path_alive(const int *states)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void potr_internal_callback_mutex_init(potr_context *ctx)
+int potr_internal_callback_mutex_init(potr_context *ctx)
 {
-    cplat_local_lock_create(&ctx->callback_mutex);
+    /* cplat の同期資源生成 API は詳細原因を提供しないため UNKNOWN へ変換する。 */
+    if (cplat_local_lock_create(&ctx->callback_mutex) != CPLAT_OK)
+    {
+        return POTR_ERR_UNKNOWN;
+    }
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_internal_callback_mutex_dispose(potr_context *ctx)
 {
-    cplat_local_lock_dispose(ctx->callback_mutex);
+    if (ctx->callback_mutex != NULL)
+    {
+        cplat_local_lock_dispose(ctx->callback_mutex);
+        ctx->callback_mutex = NULL;
+    }
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

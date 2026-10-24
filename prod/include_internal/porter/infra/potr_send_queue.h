@@ -88,12 +88,15 @@ extern "C"
      *  @param[in,out]  q           送信キュー。entries・payload_pool を動的確保して設定します。
      *  @param[in]      depth       キュー容量 (エントリ数)。
      *  @param[in]      max_payload ペイロード最大長 (バイト)。
-     *  @return         成功時は POTR_OK、メモリ確保に失敗した場合は POTR_ERR_OUT_OF_MEMORY。
+     *  @return         成功時は POTR_OK、メモリ確保失敗時は POTR_ERR_OUT_OF_MEMORY、
+     *                  同期資源生成失敗時は POTR_ERR_UNKNOWN を返します。
+     *  @note           失敗時は生成済み資源を回収します。成功時の資源はキューが所有します。
      */
     extern int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uint16_t max_payload);
 
     /**
      *  @brief          送信キューのリソースを解放します。
+     *  @note           使用する全スレッドの終了待ち後に呼びます。部分初期化を許可し、所有ポインターを NULL へ戻します。
      *  @param[in,out]  q   解放する送信キュー。
      */
     extern void potr_internal_send_queue_dispose(potr_internal_send_queue *q);

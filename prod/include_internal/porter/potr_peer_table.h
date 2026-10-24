@@ -63,6 +63,8 @@ extern "C"
      *  @param[in,out]  ctx         セッション コンテキスト。
      *  @retval         POTR_OK                 初期化に成功しました。
      *  @retval         POTR_ERR_OUT_OF_MEMORY  ピア テーブルを確保できません。
+     *  @retval         POTR_ERR_UNKNOWN        同期資源を生成できません。
+     *  @note           失敗時は生成済みテーブルを回収します。成功時の資源はコンテキストが所有します。
      */
     extern int potr_internal_peer_table_init(potr_context *ctx);
 

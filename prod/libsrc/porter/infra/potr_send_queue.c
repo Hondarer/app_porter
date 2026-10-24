@@ -51,10 +51,13 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
         q->entries[i].payload = q->payload_pool + i * (size_t)max_payload;
     }
 
-    cplat_local_lock_create(&q->mutex);
-    cplat_condvar_create(&q->not_empty);
-    cplat_condvar_create(&q->not_full);
-    cplat_condvar_create(&q->drained);
+    /* 同期資源生成 API に詳細原因がないため UNKNOWN として回収する。 */
+    if (cplat_local_lock_create(&q->mutex) != CPLAT_OK || cplat_condvar_create(&q->not_empty) != CPLAT_OK ||
+        cplat_condvar_create(&q->not_full) != CPLAT_OK || cplat_condvar_create(&q->drained) != CPLAT_OK)
+    {
+        potr_internal_send_queue_dispose(q);
+        return POTR_ERR_UNKNOWN;
+    }
     return POTR_OK;
 }
 
@@ -62,10 +65,26 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
 
 void potr_internal_send_queue_dispose(potr_internal_send_queue *q)
 {
-    cplat_condvar_dispose(q->drained);
-    cplat_condvar_dispose(q->not_full);
-    cplat_condvar_dispose(q->not_empty);
-    cplat_local_lock_dispose(q->mutex);
+    if (q->drained != NULL)
+    {
+        cplat_condvar_dispose(q->drained);
+        q->drained = NULL;
+    }
+    if (q->not_full != NULL)
+    {
+        cplat_condvar_dispose(q->not_full);
+        q->not_full = NULL;
+    }
+    if (q->not_empty != NULL)
+    {
+        cplat_condvar_dispose(q->not_empty);
+        q->not_empty = NULL;
+    }
+    if (q->mutex != NULL)
+    {
+        cplat_local_lock_dispose(q->mutex);
+        q->mutex = NULL;
+    }
     cplat_free(q->entries);
     cplat_free(q->payload_pool);
     q->entries = NULL;

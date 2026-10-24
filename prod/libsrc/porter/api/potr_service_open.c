@@ -37,6 +37,7 @@
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_result.h>
 #include "api_open_paths.h"
+#include "api_context_cleanup.h"
 
 #include <cplat/net/byteorder.h>
 #include <cplat/net/endpoint.h>
@@ -61,76 +62,15 @@ static int generate_session(potr_context *ctx)
     return CPLAT_OK;
 }
 
-/* 生成済みソケットをすべてクローズする */
-static void cleanup_sockets(potr_context *ctx)
-{
-    int i;
-    for (i = 0; i < (int)POTR_MAX_PATH; i++)
-    {
-        if (ctx->sock[i] != CPLAT_INVALID_SOCKET)
-        {
-            cplat_socket_close(ctx->sock[i]);
-            ctx->sock[i] = CPLAT_INVALID_SOCKET;
-        }
-    }
-}
-
-/* コンテキストが保持するすべてのリソースを解放して ctx 本体を free する。
-   memset(ctx, 0, ...) 後であれば、未初期化ポインター (NULL) に対しても安全に呼び出せる。 */
+/* 呼び出し前に、起動済みスレッドの終了待ちを完了する。 */
 static void ctx_cleanup(potr_context *ctx)
 {
-    potr_internal_callback_mutex_dispose(ctx);
-    potr_internal_window_dispose(&ctx->send_window);
-    potr_internal_window_dispose(&ctx->recv_window);
-    cplat_free(ctx->frag_buf);
-    cplat_free(ctx->compress_buf);
-    cplat_free(ctx->crypto_buf);
-    if (ctx->recv_compress_buf != NULL)
+    if (api_context_has_threads(ctx))
     {
-        cplat_secure_zero(ctx->recv_compress_buf, ctx->compress_buf_size);
-        cplat_free(ctx->recv_compress_buf);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: thread join incomplete; retaining context");
+        return;
     }
-    if (ctx->recv_crypto_buf != NULL)
-    {
-        cplat_secure_zero(ctx->recv_crypto_buf, ctx->crypto_buf_size);
-        cplat_free(ctx->recv_crypto_buf);
-    }
-    for (int i = 0; i < (int)POTR_MAX_PATH; i++)
-    {
-        if (ctx->tcp_recv_buf[i] != NULL)
-        {
-            cplat_secure_zero(ctx->tcp_recv_buf[i], POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
-            cplat_free(ctx->tcp_recv_buf[i]);
-        }
-    }
-    cplat_free(ctx->recv_buf);
-    cplat_free(ctx->send_wire_buf);
-    if (ctx->is_multi_peer && ctx->peers != NULL)
-    {
-        potr_internal_peer_table_dispose(ctx);
-    }
-    /* TCP listen ソケットをクローズ (path ごと) */
-    {
-        int i;
-        for (i = 0; i < (int)POTR_MAX_PATH; i++)
-        {
-            if (ctx->tcp_listen_sock[i] != CPLAT_INVALID_SOCKET)
-            {
-                cplat_socket_close(ctx->tcp_listen_sock[i]);
-            }
-        }
-    }
-    {
-        int i;
-        for (i = 0; i < (int)POTR_MAX_PATH; i++)
-        {
-            if (ctx->tcp_conn_fd[i] != CPLAT_INVALID_SOCKET)
-            {
-                cplat_socket_close(ctx->tcp_conn_fd[i]);
-            }
-        }
-    }
-    cleanup_sockets(ctx);
+    api_context_dispose_resources(ctx);
     cplat_free(ctx);
 }
 
@@ -285,77 +225,63 @@ static int alloc_context_buffers(potr_context *ctx)
     return POTR_OK;
 }
 
-/* TCP 用同期プリミティブ群を破棄する (start_threads_tcp のエラー巻き戻し用) */
-static void destroy_tcp_sync_primitives(potr_context *ctx)
-{
-    int i;
-
-    cplat_local_lock_dispose(ctx->tcp_state_mutex);
-    cplat_condvar_dispose(ctx->tcp_state_cv);
-    cplat_local_lock_dispose(ctx->tcp_close_mutex);
-    cplat_condvar_dispose(ctx->tcp_close_cv);
-    for (i = 0; i < (int)POTR_MAX_PATH; i++)
-    {
-        cplat_local_lock_dispose(ctx->tcp_send_mutex[i]);
-    }
-    cplat_local_lock_dispose(ctx->recv_window_mutex);
-    cplat_local_lock_dispose(ctx->tcp_recv_mutex);
-}
-
-/* TCP: 同期プリミティブと送信キューを初期化し、接続管理スレッドを起動する。
-   send/recv/health スレッドは接続確立後に connect スレッドが管理する。 */
+/* TCP 同期資源は、全スレッドの停止後に共通処理で破棄する。 */
 static int start_threads_tcp(potr_context *ctx, potr_role role)
 {
     int result;
+    int i;
 
-    if (cplat_local_lock_create(&ctx->tcp_recv_mutex) != CPLAT_OK)
+    /* cplat の同期資源生成 API は詳細原因を提供しないため UNKNOWN へ変換する。 */
+    if (cplat_local_lock_create(&ctx->tcp_recv_mutex) != CPLAT_OK ||
+        cplat_local_lock_create(&ctx->tcp_state_mutex) != CPLAT_OK ||
+        cplat_condvar_create(&ctx->tcp_state_cv) != CPLAT_OK ||
+        cplat_local_lock_create(&ctx->tcp_close_mutex) != CPLAT_OK ||
+        cplat_condvar_create(&ctx->tcp_close_cv) != CPLAT_OK)
     {
+        api_context_dispose_tcp_sync(ctx);
+        return POTR_ERR_UNKNOWN;
+    }
+    for (i = 0; i < (int)POTR_MAX_PATH; i++)
+    {
+        if (cplat_local_lock_create(&ctx->tcp_send_mutex[i]) != CPLAT_OK ||
+            cplat_local_lock_create(&ctx->health_mutex[i]) != CPLAT_OK ||
+            cplat_condvar_create(&ctx->health_wakeup[i]) != CPLAT_OK)
+        {
+            api_context_dispose_tcp_sync(ctx);
+            return POTR_ERR_UNKNOWN;
+        }
+    }
+    if (cplat_local_lock_create(&ctx->recv_window_mutex) != CPLAT_OK)
+    {
+        api_context_dispose_tcp_sync(ctx);
         return POTR_ERR_UNKNOWN;
     }
 
-    /* tcp_state_mutex / tcp_state_cv / tcp_close_mutex / tcp_close_cv /
-       tcp_send_mutex[] / recv_window_mutex /
-       health_mutex[] / health_wakeup[] を初期化 */
-    {
-        int i;
-        cplat_local_lock_create(&ctx->tcp_state_mutex);
-        cplat_condvar_create(&ctx->tcp_state_cv);
-        cplat_local_lock_create(&ctx->tcp_close_mutex);
-        cplat_condvar_create(&ctx->tcp_close_cv);
-        for (i = 0; i < (int)POTR_MAX_PATH; i++)
-        {
-            cplat_local_lock_create(&ctx->tcp_send_mutex[i]);
-            cplat_local_lock_create(&ctx->health_mutex[i]);
-            cplat_condvar_create(&ctx->health_wakeup[i]);
-        }
-        cplat_local_lock_create(&ctx->recv_window_mutex);
-    }
-
-    /* SENDER または TCP_BIDIR: 送信キューを初期化。
-       TCP の部分再接続では共有キューを維持し、サービス終了時にだけ破棄する。 */
     if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
     {
         result = potr_internal_send_queue_init(&ctx->send_queue, (size_t)ctx->global.send_queue_depth,
                                                ctx->global.max_payload);
         if (result != POTR_OK)
         {
-            destroy_tcp_sync_primitives(ctx);
+            api_context_dispose_tcp_sync(ctx);
             return result;
         }
     }
-
     result = potr_internal_connect_thread_start(ctx);
     if (result != POTR_OK)
     {
+        /* 待機失敗でハンドルが残る場合は、使用中のキューと同期資源を保持する。 */
+        if (api_context_has_threads(ctx))
+        {
+            return result;
+        }
         if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
         {
             potr_internal_send_queue_dispose(&ctx->send_queue);
         }
-        destroy_tcp_sync_primitives(ctx);
-        return result;
+        api_context_dispose_tcp_sync(ctx);
     }
-
-    return POTR_OK;
+    return result;
 }
 
 /* 非 TCP: 役割と通信種別に応じて受信・送信・ヘルス チェック スレッドを起動する */
@@ -404,6 +330,10 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
         if (result != POTR_OK)
         {
             potr_internal_send_thread_stop(ctx);
+            if (api_context_has_threads(ctx))
+            {
+                return result;
+            }
             potr_internal_send_queue_dispose(&ctx->send_queue);
             return result;
         }
@@ -411,8 +341,15 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
         result = potr_internal_comm_recv_thread_start(ctx);
         if (result != POTR_OK)
         {
-            potr_internal_health_thread_stop(ctx);
+            if (potr_internal_health_thread_stop(ctx) != POTR_OK)
+            {
+                return result;
+            }
             potr_internal_send_thread_stop(ctx);
+            if (api_context_has_threads(ctx))
+            {
+                return result;
+            }
             potr_internal_send_queue_dispose(&ctx->send_queue);
             return result;
         }
@@ -462,7 +399,12 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         return POTR_ERR_OUT_OF_MEMORY;
     }
     memset(ctx, 0, sizeof(*ctx));
-    potr_internal_callback_mutex_init(ctx);
+    result = potr_internal_callback_mutex_init(ctx);
+    if (result != POTR_OK)
+    {
+        cplat_free(ctx);
+        return result;
+    }
 
     /* 全ソケットを INVALID で初期化 */
     {

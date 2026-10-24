@@ -11,6 +11,7 @@
  *******************************************************************************
  */
 
+#include "api_context_cleanup.h"
 #include <inttypes.h>
 #include <cplat/crt/stdlib.h>
 #include <stdlib.h>
@@ -38,60 +39,6 @@
 #include <porter/thread/potr_health_thread.h>
 #include <porter/thread/potr_recv_thread.h>
 #include <porter/thread/potr_send_thread.h>
-
-/* 平文と鍵を保持する動的バッファーを消去して解放する。
- * crypto_buf は復号済み平文、compress_buf と frag_buf と recv_buf は
- * 展開後または結合後の平文を保持しうるため、解放前に消去する。 */
-static void dispose_secret_buffers(potr_context *ctx)
-{
-    for (int i = 0; i < (int)POTR_MAX_PATH; i++)
-    {
-        if (ctx->tcp_recv_buf[i] != NULL)
-        {
-            cplat_secure_zero(ctx->tcp_recv_buf[i], POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
-            cplat_free(ctx->tcp_recv_buf[i]);
-            ctx->tcp_recv_buf[i] = NULL;
-        }
-    }
-    if (ctx->recv_crypto_buf != NULL)
-    {
-        cplat_secure_zero(ctx->recv_crypto_buf, ctx->crypto_buf_size);
-        cplat_free(ctx->recv_crypto_buf);
-        ctx->recv_crypto_buf = NULL;
-    }
-    if (ctx->recv_compress_buf != NULL)
-    {
-        cplat_secure_zero(ctx->recv_compress_buf, ctx->compress_buf_size);
-        cplat_free(ctx->recv_compress_buf);
-        ctx->recv_compress_buf = NULL;
-    }
-    if (ctx->frag_buf != NULL)
-    {
-        cplat_secure_zero(ctx->frag_buf, ctx->global.max_message_size);
-        cplat_free(ctx->frag_buf);
-        ctx->frag_buf = NULL;
-    }
-    if (ctx->compress_buf != NULL)
-    {
-        cplat_secure_zero(ctx->compress_buf, ctx->compress_buf_size);
-        cplat_free(ctx->compress_buf);
-        ctx->compress_buf = NULL;
-    }
-    if (ctx->crypto_buf != NULL)
-    {
-        cplat_secure_zero(ctx->crypto_buf, ctx->crypto_buf_size);
-        cplat_free(ctx->crypto_buf);
-        ctx->crypto_buf = NULL;
-    }
-    if (ctx->recv_buf != NULL)
-    {
-        cplat_secure_zero(ctx->recv_buf, POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
-        cplat_free(ctx->recv_buf);
-        ctx->recv_buf = NULL;
-    }
-
-    cplat_secure_zero(ctx->service.encrypt_key, sizeof(ctx->service.encrypt_key));
-}
 
 /* FIN パケットを全パスへ送信する */
 static void send_fin(potr_context *ctx)
@@ -276,7 +223,7 @@ static void stop_tcp_health_threads(potr_context *ctx)
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        if (cplat_atomic_load_i32(&ctx->health_running[i], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+        if (ctx->health_thread[i] != NULL)
         {
             (void)potr_internal_tcp_health_thread_stop(ctx, i);
         }
@@ -363,6 +310,10 @@ int potr_service_close(potr_context *handle)
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "potr_service_close: service_id=%" PRId64 " stopping connect thread (TCP)", ctx->service.service_id);
         potr_internal_connect_thread_stop(ctx);
+        if (api_context_has_threads(ctx))
+        {
+            return POTR_ERR_UNKNOWN;
+        }
 
         /* 送信キューを破棄 (SENDER / TCP_BIDIR のみ) */
         if (ctx->role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
@@ -370,48 +321,30 @@ int potr_service_close(potr_context *handle)
             potr_internal_send_queue_dispose(&ctx->send_queue);
         }
 
-        /* TCP mutex / condvar を解放 */
-        {
-            int i;
-            cplat_local_lock_dispose(ctx->tcp_state_mutex);
-            cplat_condvar_dispose(ctx->tcp_state_cv);
-            cplat_local_lock_dispose(ctx->tcp_close_mutex);
-            cplat_condvar_dispose(ctx->tcp_close_cv);
-            for (i = 0; i < (int)POTR_MAX_PATH; i++)
-            {
-                cplat_local_lock_dispose(ctx->tcp_send_mutex[i]);
-                cplat_local_lock_dispose(ctx->health_mutex[i]);
-                cplat_condvar_dispose(ctx->health_wakeup[i]);
-            }
-            cplat_local_lock_dispose(ctx->recv_window_mutex);
-            cplat_local_lock_dispose(ctx->tcp_recv_mutex);
-        }
-
-        /* 送受信ウィンドウと動的バッファーを解放 */
-        potr_internal_window_dispose(&ctx->send_window);
-        potr_internal_window_dispose(&ctx->recv_window);
-        dispose_secret_buffers(ctx);
-        cplat_free(ctx->send_wire_buf);
+        api_context_dispose_tcp_sync(ctx);
+        api_context_dispose_resources(ctx);
 
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service closed (TCP)");
-        potr_internal_callback_mutex_dispose(ctx);
         cplat_free(ctx);
         return ret;
     }
 
     /* 非 TCP: ヘルス チェック スレッドを停止 (送信者のみ) */
-    if (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    if (ctx->health_thread[0] != NULL)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping health thread",
                    ctx->service.service_id);
-        potr_internal_health_thread_stop(ctx);
+        if (potr_internal_health_thread_stop(ctx) != POTR_OK)
+        {
+            return POTR_ERR_UNKNOWN;
+        }
     }
 
     cplat_atomic_store_u64(&ctx->last_ping_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
     cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
 
     /* 送信スレッドを停止してキューを破棄 (送信者のみ) */
-    if (cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    if (ctx->send_thread != NULL)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "potr_service_close: service_id=%" PRId64 " flushing send queue and sending FIN",
@@ -429,22 +362,32 @@ int potr_service_close(potr_context *handle)
         }
         /* recv_thread は NACK 処理で send_window_mutex を参照する。
          * send_thread_stop() が send_window_mutex を破棄する前に停止する必要がある。 */
-        if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+        if (ctx->recv_thread[0] != NULL)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
                        ctx->service.service_id);
-            potr_internal_comm_recv_thread_stop(ctx);
+            if (potr_internal_comm_recv_thread_stop(ctx) != POTR_OK)
+            {
+                return POTR_ERR_UNKNOWN;
+            }
         }
         potr_internal_send_thread_stop(ctx);
+        if (ctx->send_thread != NULL)
+        {
+            return POTR_ERR_UNKNOWN;
+        }
         potr_internal_send_queue_dispose(&ctx->send_queue);
     }
 
     /* 送信スレッド未起動の受信専用サービスではここで受信スレッドを停止する */
-    if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    if (ctx->recv_thread[0] != NULL)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
                    ctx->service.service_id);
-        potr_internal_comm_recv_thread_stop(ctx);
+        if (potr_internal_comm_recv_thread_stop(ctx) != POTR_OK)
+        {
+            return POTR_ERR_UNKNOWN;
+        }
     }
 
     /* ソケットをクローズ (recv スレッドの有無によらず実施)。
@@ -471,23 +414,9 @@ int potr_service_close(potr_context *handle)
         }
     }
 
-    /* 送受信ウィンドウと動的バッファーを解放 */
-    if (!ctx->is_multi_peer)
-    {
-        /* 1:1 モード: コンテキスト レベルのウィンドウを解放する */
-        potr_internal_window_dispose(&ctx->send_window);
-        potr_internal_window_dispose(&ctx->recv_window);
-    }
-    else if (ctx->peers != NULL)
-    {
-        /* N:1 モード: 参照する全スレッドの停止後にピア テーブルを解放する */
-        potr_internal_peer_table_dispose(ctx);
-    }
-    dispose_secret_buffers(ctx);
-    cplat_free(ctx->send_wire_buf);
+    api_context_dispose_resources(ctx);
     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service closed");
 
-    potr_internal_callback_mutex_dispose(ctx);
     cplat_free(ctx);
     return POTR_OK;
 }

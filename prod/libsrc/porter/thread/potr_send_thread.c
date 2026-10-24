@@ -568,7 +568,12 @@ int potr_internal_send_thread_start(potr_context *ctx)
 
     cplat_atomic_store_i32(&ctx->send_thread_running, 1, CPLAT_MEMORY_ORDER_RELEASE);
 
-    cplat_local_lock_create(&ctx->send_window_mutex);
+    if (cplat_local_lock_create(&ctx->send_window_mutex) != CPLAT_OK)
+    {
+        cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
+        /* 同期資源生成 API は詳細原因を提供しない。 */
+        return POTR_ERR_UNKNOWN;
+    }
     if (cplat_thread_create(&ctx->send_thread, send_thread_func, ctx) != CPLAT_OK)
     {
         cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
@@ -585,10 +590,18 @@ int potr_internal_send_thread_start(potr_context *ctx)
 
 void potr_internal_send_thread_stop(potr_context *ctx)
 {
+    if (ctx->send_thread == NULL)
+    {
+        return;
+    }
     cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
     potr_internal_send_queue_shutdown(&ctx->send_queue);
 
-    cplat_thread_join(ctx->send_thread, CPLAT_SYNC_WAIT_FOREVER);
+    if (cplat_thread_join(ctx->send_thread, CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
+    {
+        return;
+    }
+    ctx->send_thread = NULL;
     cplat_local_lock_dispose(ctx->send_window_mutex);
     ctx->send_window_mutex = NULL;
 }

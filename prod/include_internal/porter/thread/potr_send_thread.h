@@ -35,12 +35,12 @@ extern "C"
     /**
      *  @brief          非同期送信スレッドを起動します。
      *
-     *  send_window_mutex を生成し、送信スレッドを起動します。
+     *  send_window_mutex を生成し、送信スレッドを起動します。失敗時は生成済みロックを回収します。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
      *  @retval         POTR_OK                    起動に成功しました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
-     *  @retval         POTR_ERR_UNKNOWN           スレッド生成に失敗しました。
+     *  @retval         POTR_ERR_UNKNOWN           同期資源またはスレッドの生成に失敗しました。
      */
     extern int potr_internal_send_thread_start(potr_context *ctx);
 
@@ -48,6 +48,8 @@ extern "C"
      *  @brief          非同期送信スレッドを停止します。
      *
      *  send_thread_running フラグをクリアして送信キューをシャットダウンし、スレッド終了を待機します。
+     *  生成済みハンドルを基準に終了待ちし、成功後にハンドルとロックを NULL へ戻します。
+     *  待機失敗時はハンドルとロックを保持します。呼び出し側は残存ハンドルを確認してください。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
      */

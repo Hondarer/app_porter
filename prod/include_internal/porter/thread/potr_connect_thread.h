@@ -43,7 +43,9 @@ extern "C"
      *  @retval         POTR_OK                    起動に成功しました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
      *  @retval         POTR_ERR_OUT_OF_MEMORY     先読みバッファーを確保できません。
-     *  @retval         POTR_ERR_UNKNOWN           スレッド生成に失敗しました。
+     *  @retval         POTR_ERR_UNKNOWN           同期資源またはスレッドの生成に失敗しました。
+     *  @note           途中失敗時は起動成功分を停止・終了待ちし、受信者用準備資源を回収します。
+     *                  終了待ちに失敗した場合は使用中の資源とハンドルを保持します。
      */
     extern int potr_internal_connect_thread_start(potr_context *ctx);
 
@@ -52,6 +54,8 @@ extern "C"
      *
      *  connect_thread_running フラグをクリアし、tcp_state_cv を broadcast して\n
      *  reconnect sleep を中断します。全 path のソケットをクローズしてスレッド終了を待機します。
+     *  稼働フラグが 0 でも生成済みハンドルを終了待ちし、成功後に NULL へ戻します。
+     *  起動数が 0 の場合も受信者用準備資源を回収します。待機失敗時は共有資源を保持します。
      *
      *  @param[in,out]  ctx セッション コンテキスト。
      */

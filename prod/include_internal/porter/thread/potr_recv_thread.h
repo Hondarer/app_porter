@@ -38,6 +38,9 @@ extern "C"
 
     /**
      *  @brief          非 TCP 受信スレッドを停止します。
+     *  @note           生成済みハンドルを終了待ちし、成功後に NULL へ戻します。
+     *                  待機失敗時はハンドルを保持します。
+     *  @retval         POTR_ERR_UNKNOWN           終了待ちに失敗しました。
      *  @param[in,out]  ctx セッション コンテキスト。
      *  @retval         POTR_OK                    停止に成功しました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
@@ -56,6 +59,9 @@ extern "C"
 
     /**
      *  @brief          TCP 受信スレッドの終了を待機します。
+     *  @note           生成済みハンドルだけを終了待ちし、成功後に NULL へ戻します。
+     *                  待機失敗時はハンドルを保持します。
+     *  @retval         POTR_ERR_UNKNOWN           終了待ちに失敗しました。
      *
      *  スレッドの停止はソケット クローズ (connect スレッド側) で行います。本関数は join のみを担当します。
      *

@@ -225,6 +225,10 @@ typedef struct potr_internal_path_thread_arg
 
 /**
  *  @brief  セッション コンテキスト構造体。potr_context の実体。
+ *
+ *  所有するポインターの NULL とソケットの INVALID は未生成・解放済みを表します。
+ *  running フラグは停止要求と稼働状態であり、生成済みハンドルの終了待ち完了とは区別します。
+ *  共通バッファー、ウィンドウとピア資源は、参照する全スレッドの終了待ち後に解放します。
  */
 struct potr_context
 {

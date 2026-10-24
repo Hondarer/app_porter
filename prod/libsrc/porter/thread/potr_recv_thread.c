@@ -891,7 +891,14 @@ int potr_internal_comm_recv_thread_stop(potr_context *ctx)
         }
     }
 
-    cplat_thread_join(ctx->recv_thread[0], CPLAT_SYNC_WAIT_FOREVER);
+    if (ctx->recv_thread[0] != NULL)
+    {
+        if (cplat_thread_join(ctx->recv_thread[0], CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
+        {
+            return POTR_ERR_UNKNOWN;
+        }
+        ctx->recv_thread[0] = NULL;
+    }
 
     return POTR_OK;
 }
@@ -937,7 +944,14 @@ int potr_internal_tcp_recv_thread_stop(potr_context *ctx, int path_idx)
 
     cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
 
-    cplat_thread_join(ctx->recv_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    if (ctx->recv_thread[path_idx] != NULL)
+    {
+        if (cplat_thread_join(ctx->recv_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
+        {
+            return POTR_ERR_UNKNOWN;
+        }
+        ctx->recv_thread[path_idx] = NULL;
+    }
 
     return POTR_OK;
 }

@@ -528,14 +528,27 @@ int potr_internal_health_thread_start(potr_context *ctx)
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "health_thread[service_id=%" PRId64 "]: starting (interval=%ums)",
                ctx->service.service_id, (unsigned)ctx->health_interval_ms);
 
-    cplat_local_lock_create(&ctx->health_mutex[0]);
-    cplat_condvar_create(&ctx->health_wakeup[0]);
+    if (cplat_local_lock_create(&ctx->health_mutex[0]) != CPLAT_OK)
+    {
+        /* 同期資源生成 API は詳細原因を提供しない。 */
+        return POTR_ERR_UNKNOWN;
+    }
+    if (cplat_condvar_create(&ctx->health_wakeup[0]) != CPLAT_OK)
+    {
+        cplat_local_lock_dispose(ctx->health_mutex[0]);
+        ctx->health_mutex[0] = NULL;
+        return POTR_ERR_UNKNOWN;
+    }
 
     cplat_atomic_store_i32(&ctx->health_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
 
     if (cplat_thread_create(&ctx->health_thread[0], health_thread_func, ctx) != CPLAT_OK)
     {
         cplat_atomic_store_i32(&ctx->health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+        cplat_condvar_dispose(ctx->health_wakeup[0]);
+        ctx->health_wakeup[0] = NULL;
+        cplat_local_lock_dispose(ctx->health_mutex[0]);
+        ctx->health_mutex[0] = NULL;
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "health_thread[service_id=%" PRId64 "]: thread create failed",
                    ctx->service.service_id);
         /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
@@ -553,7 +566,7 @@ int potr_internal_health_thread_stop(potr_context *ctx)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
-    if (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+    if (ctx->health_thread[0] == NULL)
     {
         return POTR_OK;
     }
@@ -564,10 +577,16 @@ int potr_internal_health_thread_stop(potr_context *ctx)
     cplat_condvar_signal(ctx->health_wakeup[0]);
     cplat_local_lock_unlock(ctx->health_mutex[0]);
 
-    cplat_thread_join(ctx->health_thread[0], CPLAT_SYNC_WAIT_FOREVER);
+    if (cplat_thread_join(ctx->health_thread[0], CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
+    {
+        return POTR_ERR_UNKNOWN;
+    }
+    ctx->health_thread[0] = NULL;
 
     cplat_condvar_dispose(ctx->health_wakeup[0]);
+    ctx->health_wakeup[0] = NULL;
     cplat_local_lock_dispose(ctx->health_mutex[0]);
+    ctx->health_mutex[0] = NULL;
 
     return POTR_OK;
 }
@@ -621,7 +640,7 @@ int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
-    if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+    if (ctx->health_thread[path_idx] == NULL)
     {
         return POTR_OK;
     }
@@ -632,7 +651,11 @@ int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
     cplat_condvar_signal(ctx->health_wakeup[path_idx]);
     cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
 
-    cplat_thread_join(ctx->health_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    if (cplat_thread_join(ctx->health_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
+    {
+        return POTR_ERR_UNKNOWN;
+    }
+    ctx->health_thread[path_idx] = NULL;
 
     return POTR_OK;
 }

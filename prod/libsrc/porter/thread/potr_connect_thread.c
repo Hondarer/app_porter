@@ -18,6 +18,7 @@
 
 #include <cplat/base/platform.h>
 #include <cplat/crt/stdlib.h>
+#include <cplat/runtime/memory_lock.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
@@ -182,7 +183,11 @@ static int tcp_session_compare(const potr_context *ctx, const potr_packet *pkt)
    TCP 接続断後 recv スレッドが自然終了する設計のため、ソケットはクローズしない。 */
 static void join_recv_thread(potr_context *ctx, int path_idx)
 {
-    cplat_thread_join(ctx->recv_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    if (ctx->recv_thread[path_idx] != NULL &&
+        cplat_thread_join(ctx->recv_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER) == CPLAT_OK)
+    {
+        ctx->recv_thread[path_idx] = NULL;
+    }
 }
 
 /* 接続確立前のコンテキスト状態をリセットする。
@@ -781,6 +786,28 @@ static void connect_thread_func(void *arg)
     return;
 }
 
+/* 全 connect スレッドが使用を終えた受信者用準備資源を回収する。 */
+static void dispose_connect_resources(potr_context *ctx)
+{
+    int i;
+
+    for (i = 0; i < (int)POTR_MAX_PATH; i++)
+    {
+        ctx->tcp_first_pkt_len[i] = 0;
+        if (ctx->tcp_first_pkt_buf[i] != NULL)
+        {
+            cplat_secure_zero(ctx->tcp_first_pkt_buf[i], POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
+            cplat_free(ctx->tcp_first_pkt_buf[i]);
+            ctx->tcp_first_pkt_buf[i] = NULL;
+        }
+    }
+    if (ctx->session_establish_mutex != NULL)
+    {
+        cplat_local_lock_dispose(ctx->session_establish_mutex);
+        ctx->session_establish_mutex = NULL;
+    }
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_internal_connect_thread_start(potr_context *ctx)
@@ -791,54 +818,38 @@ int potr_internal_connect_thread_start(potr_context *ctx)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
-
-    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: starting %d path(s)",
-               ctx->service.service_id, ctx->n_path);
-
-    /* RECEIVER: session_establish_mutex と先読みバッファーを初期化する */
     if (ctx->role == POTR_ROLE_RECEIVER)
     {
-        cplat_local_lock_create(&ctx->session_establish_mutex);
-
+        if (cplat_local_lock_create(&ctx->session_establish_mutex) != CPLAT_OK)
+        {
+            /* 同期資源生成 API は詳細原因を提供しない。 */
+            return POTR_ERR_UNKNOWN;
+        }
         for (i = 0; i < ctx->n_path; i++)
         {
             ctx->tcp_first_pkt_len[i] = 0;
             ctx->tcp_first_pkt_buf[i] = (uint8_t *)cplat_malloc(POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
             if (ctx->tcp_first_pkt_buf[i] == NULL)
             {
-                int j;
-                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                           "connect_thread[service_id=%" PRId64 "]: "
-                           "tcp_first_pkt_buf[%d] malloc failed",
-                           ctx->service.service_id, i);
-                /* 確保済み分を解放 */
-                for (j = 0; j < i; j++)
-                {
-                    cplat_free(ctx->tcp_first_pkt_buf[j]);
-                    ctx->tcp_first_pkt_buf[j] = NULL;
-                }
-                cplat_local_lock_dispose(ctx->session_establish_mutex);
+                dispose_connect_resources(ctx);
                 return POTR_ERR_OUT_OF_MEMORY;
             }
         }
     }
-
     for (i = 0; i < ctx->n_path; i++)
     {
         cplat_atomic_store_i32(&ctx->connect_thread_running[i], 1, CPLAT_MEMORY_ORDER_RELEASE);
         ctx->connect_args[i].ctx = ctx;
         ctx->connect_args[i].path_idx = i;
-
         if (cplat_thread_create(&ctx->connect_thread[i], connect_thread_func, &ctx->connect_args[i]) != CPLAT_OK)
         {
             cplat_atomic_store_i32(&ctx->connect_thread_running[i], 0, CPLAT_MEMORY_ORDER_RELEASE);
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "connect_thread[service_id=%" PRId64 " path=%d]: thread create failed",
-                       ctx->service.service_id, i);
-            /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
+            /* FIN 手順を実行せず、起動成功分の終了待ち後に準備資源を回収する。 */
+            potr_internal_connect_thread_stop(ctx);
+            /* スレッド生成 API は詳細原因を提供しない。 */
             return POTR_ERR_UNKNOWN;
         }
     }
-
     return POTR_OK;
 }
 
@@ -847,80 +858,67 @@ int potr_internal_connect_thread_start(potr_context *ctx)
 void potr_internal_connect_thread_stop(potr_context *ctx)
 {
     int i;
-    int any_running = 0;
+    int has_threads = 0;
 
     if (ctx == NULL)
     {
         return;
     }
-
     for (i = 0; i < ctx->n_path; i++)
     {
-        if (cplat_atomic_load_i32(&ctx->connect_thread_running[i], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+        if (ctx->connect_thread[i] != NULL)
         {
-            any_running = 1;
-            break;
+            has_threads = 1;
+        }
+        cplat_atomic_store_i32(&ctx->connect_thread_running[i], 0, CPLAT_MEMORY_ORDER_RELEASE);
+    }
+    if (has_threads)
+    {
+        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_condvar_broadcast(ctx->tcp_state_cv);
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
+
+        if (ctx->role == POTR_ROLE_RECEIVER)
+        {
+            for (i = 0; i < ctx->n_path; i++)
+            {
+                if (ctx->tcp_listen_sock[i] != CPLAT_INVALID_SOCKET)
+                {
+                    cplat_socket_shutdown(ctx->tcp_listen_sock[i]);
+                    cplat_socket_close(ctx->tcp_listen_sock[i]);
+                    ctx->tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
+                }
+            }
+        }
+        for (i = 0; i < ctx->n_path; i++)
+        {
+            close_tcp_conn(ctx, i);
+        }
+        for (i = 0; i < ctx->n_path; i++)
+        {
+            if (ctx->connect_thread[i] != NULL)
+            {
+                if (cplat_thread_join(ctx->connect_thread[i], CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
+                {
+                    return;
+                }
+                ctx->connect_thread[i] = NULL;
+            }
         }
     }
-    if (!any_running)
+    /* connect が生成した従属スレッドも、所有ハンドルが残っていれば回収する。 */
+    for (i = 0; i < ctx->n_path; i++)
+    {
+        if (potr_internal_tcp_recv_thread_stop(ctx, i) != POTR_OK ||
+            potr_internal_tcp_health_thread_stop(ctx, i) != POTR_OK)
+        {
+            return;
+        }
+    }
+    potr_internal_send_thread_stop(ctx);
+    if (ctx->send_thread != NULL)
     {
         return;
     }
-
-    /* 1. 全 path の停止フラグをクリア */
-    for (i = 0; i < ctx->n_path; i++)
-    {
-        cplat_atomic_store_i32(&ctx->connect_thread_running[i], 0, CPLAT_MEMORY_ORDER_RELEASE);
-    }
-
-    /* 2. reconnect_wait 中の全スレッドを起床させる */
-    cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-    cplat_condvar_broadcast(ctx->tcp_state_cv);
-    cplat_local_lock_unlock(ctx->tcp_state_mutex);
-
-    /* 3. RECEIVER: 全 path の listen ソケットをクローズして accept のブロックを解除 */
-    if (ctx->role == POTR_ROLE_RECEIVER)
-    {
-        for (i = 0; i < ctx->n_path; i++)
-        {
-            if (ctx->tcp_listen_sock[i] == CPLAT_INVALID_SOCKET)
-                continue;
-            cplat_socket_shutdown(ctx->tcp_listen_sock[i]);
-            cplat_socket_close(ctx->tcp_listen_sock[i]);
-            ctx->tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
-        }
-    }
-
-    /* 4. 全 path の接続ソケットをクローズして recv ループのブロックを解除 */
-    for (i = 0; i < ctx->n_path; i++)
-    {
-        close_tcp_conn(ctx, i);
-    }
-
-    /* 5. 全 connect スレッドの終了を待機する */
-    for (i = 0; i < ctx->n_path; i++)
-    {
-        cplat_thread_join(ctx->connect_thread[i], CPLAT_SYNC_WAIT_FOREVER);
-    }
-
-    /* 6. 送信スレッドを停止する (全 path join 後) */
-    potr_internal_send_thread_stop(ctx);
-
-    /* 7. RECEIVER: session_establish_mutex と先読みバッファーを破棄する */
-    if (ctx->role == POTR_ROLE_RECEIVER)
-    {
-        for (i = 0; i < ctx->n_path; i++)
-        {
-            ctx->tcp_first_pkt_len[i] = 0;
-            if (ctx->tcp_first_pkt_buf[i] != NULL)
-            {
-                cplat_free(ctx->tcp_first_pkt_buf[i]);
-                ctx->tcp_first_pkt_buf[i] = NULL;
-            }
-        }
-        cplat_local_lock_dispose(ctx->session_establish_mutex);
-    }
-
-    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: all paths stopped",
-               ctx->service.service_id);
+    dispose_connect_resources(ctx);
 }
