@@ -10,6 +10,21 @@ Mock_porter *_mock_porter = nullptr;
 
 Mock_porter::Mock_porter()
 {
+    ON_CALL(*this, api_open_paths_unicast(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, api_open_paths_multicast(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, api_open_paths_broadcast(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, api_open_paths_unicast_bidir(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, api_open_paths_unicast_bidir_n1(_)).WillByDefault(Return(0));
+    ON_CALL(*this, api_open_paths_tcp(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, api_paths_resolve_ipv4(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, api_paths_parse_ipv4(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, thread_connect_read_first_packet(_, _, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(*this, thread_connect_session_compare(_, _)).WillByDefault(Return(TCP_SESSION_NEW));
+    ON_CALL(*this, thread_connect_with_timeout(_, _)).WillByDefault(Return(CPLAT_INVALID_SOCKET));
+    ON_CALL(*this, thread_connect_peer_allowed(_, _, _)).WillByDefault(Return(1));
+    ON_CALL(*this, thread_recv_health_check_peers(_)).WillByDefault(Return());
+    ON_CALL(*this, thread_recv_health_check_service(_)).WillByDefault(Return());
+    ON_CALL(*this, thread_recv_health_wake_tcp(_, _, _)).WillByDefault(Return());
     // peer table
     ON_CALL(*this, potr_internal_peer_find_by_id(_, _)).WillByDefault(Return(nullptr));
     ON_CALL(*this, potr_internal_peer_send_fin(_, _)).WillByDefault(Return());

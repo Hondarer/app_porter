@@ -441,3 +441,44 @@ TEST(potrConnectThreadTest, stop_joins_finished_thread_and_disposes_preparation)
     delegate_real_cplat_condvar_dispose(ctx.tcp_state_cv);
     delegate_real_cplat_local_lock_dispose(ctx.tcp_state_mutex);
 }
+
+TEST(potrConnectThreadTest, sender_calls_preparation_without_publishing_failed_socket)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 1;
+    ctx.tcp_conn_fd[0] = CPLAT_INVALID_SOCKET;
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - 管理スレッド本体を実スレッドを生成せずに捕捉する。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, thread_connect_with_timeout(&ctx, 0))
+        .WillOnce(
+            [&](potr_context *, int)
+            {
+                cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_INVALID_SOCKET;
+            }); // [Pre-Assert確認_正常系] - 接続準備を 1 回呼ぶこと。
+    // [Pre-Assert手順] - 失敗と停止要求を返す。
+    // Act
+    int actual_ret = potr_internal_connect_thread_start(&ctx); // [手順] - 管理処理を準備する。
+    ASSERT_NE(nullptr, entry);                                 // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);                                          // [手順] - 管理ループを同期実行する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);                      // [確認_正常系] - 管理処理の準備に成功すること。
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - 接続失敗ソケットを登録しないこと。
+}

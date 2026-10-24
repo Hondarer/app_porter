@@ -336,13 +336,19 @@ RECEIVER 側は、接続時の session triplet(`session_id + session_tv_sec + se
 受信処理は、パケットを受け入れる条件の検証を分離し、セッションや受信ウィンドウを更新する前に呼び出します。  
 セッション採用と FIN 制御は受信状態の更新として集約します。  
 再送と順序整列は受信状態ビュー経由で 1:1 と N:1 が共有します。  
-構成済みスロットへのパケット振り分けも共有し、受信ループはソケット I/O、ピア解決、ヘルス チェック タイムアウトの監視を担当します。
+構成済みスロットへのパケット振り分けも共有し、受信ループはソケット I/O とピア解決を担当し、タイムアウト時と TCP の受信状態変化時に監視処理を呼びます。
 
 | 実装 | 責務 | 境界で守る条件 |
 |---|---|---|
 | `api/potr_service_open.c` | 設定検証、コンテキストの確保、スレッド起動、失敗時の資源解放 | 起動完了後にハンドルを呼び出し元へ返却 |
-| `api/api_open_paths.c` | 通信種別ごとのソケット作成、アドレス解決、送信先設定 | 確保したソケットはコンテキストが所有し、開始処理の失敗時に解放 |
-| `thread/potr_recv_thread.c` | ソケット受信、ピア解決、ヘルス チェック タイムアウトの監視 | 認証成功後に受信状態を更新する |
+| `api/api_open_paths.c` | 通信方式の選択、送信先設定 | 方式別の準備結果を呼び出し側へ伝達 |
+| `api/api_open_paths_udp.c` | UDP 各方式のソケットと経路の準備 | 登録済みソケットは途中失敗時もコンテキストが所有 |
+| `api/api_open_paths_tcp.c` | TCP の listen 準備と送信側アドレスの解決 | 送信側の接続ソケットは接続管理が生成 |
+| `api/api_open_paths_common.c` | IPv4 の解決・解析と結果コードの変換 | 方式間で同じエラー分類を使用 |
+| `thread/potr_connect_thread.c` | TCP 接続・再接続の管理、接続の登録、通知、接続後スレッド管理 | 受信側はセッション確立ロック、受信ロックの順で取得 |
+| `thread/thread_connect_prepare.c` | 接続待機、接続元照合、先読み、セッション比較 | 新規接続ソケットは成功時に所有権を返し、比較は共有状態を更新しない |
+| `thread/potr_recv_thread.c` | ソケット受信、ピア解決、監視処理の呼び出し | 認証成功後に受信状態を更新する |
+| `thread/thread_recv_health.c` | N:1・1:1 の受信期限監視、TCP の PING 起床判断 | 既存の受信スレッドから呼び、N:1 の health 起床はピアのロック解放後に行う |
 | `thread/thread_recv_validate.c` | 暗号化要件、GCM 認証、UDP 送信元の照合 | 認証失敗は `POTR_ERR_PROTOCOL`、送信元照合は採用可否を返す |
 | `thread/thread_recv_slot.c` | 1:1／N:1 の受信状態参照、フラグメント結合、展開、DATA 配信 | 順序整列済みのエレメントを受け取り、データの所有権は移動しない |
 | `thread/thread_recv_session.c` | セッション triplet の採用判定、経路切断、PING 受信状態の更新、送信元学習 | 旧セッションでは受信状態を変更しない |
@@ -362,6 +368,9 @@ title porter コンポーネント構成
 package "api" {
   [potr_service_open]
   [api_open_paths]
+  [api_open_paths_udp]
+  [api_open_paths_tcp]
+  [api_open_paths_common]
   [potr_service_open_from_config]
   [potr_service_send]
   [potr_service_close]
@@ -375,9 +384,11 @@ package "thread" {
   [thread_recv_fin]
   [thread_recv_window]
   [thread_recv_dispatch]
+  [thread_recv_health]
   [potr_send_thread]
   [potr_health_thread]
   [potr_connect_thread]
+  [thread_connect_prepare]
 }
 
 package "protocol" {
@@ -406,7 +417,14 @@ database "potr_context\n(セッション全状態)" as CTX
 
 [potr_service_open] --> CTX : 生成・初期化
 [potr_service_open] --> [api_open_paths] : 経路準備
-[api_open_paths] --> [net\n(socket・endpoint・byteorder)]
+[api_open_paths] --> [api_open_paths_udp] : UDP 方式別準備
+[api_open_paths] --> [api_open_paths_tcp] : TCP 準備
+[api_open_paths] --> [api_open_paths_common] : 宛先解析
+[api_open_paths_udp] --> [api_open_paths_common]
+[api_open_paths_tcp] --> [api_open_paths_common]
+[api_open_paths_udp] --> [net\n(socket・endpoint・byteorder)]
+[api_open_paths_tcp] --> [net\n(socket・endpoint・byteorder)]
+[api_open_paths_common] --> [net\n(socket・endpoint・byteorder)]
 [potr_service_open_from_config] --> [potr_service_open] : 委譲
 [potr_service_send] --> [potr_send_queue] : エレメント push
 [potr_service_close] --> CTX : スレッド停止・解放
@@ -418,6 +436,9 @@ database "potr_context\n(セッション全状態)" as CTX
 [potr_send_thread] --> [potr_send_queue]
 [potr_send_thread] --> [net\n(socket・endpoint・byteorder)] : 送信
 
+[potr_connect_thread] --> [thread_connect_prepare] : 接続・先読み・比較
+[potr_connect_thread] --> [packet] : 先読みパケットの解析
+[thread_connect_prepare] --> [net\n(socket・endpoint・byteorder)]
 [potr_recv_thread] --> [packet]
 [potr_recv_thread] --> [thread_recv_slot] : 受信状態参照・DATA 配信
 [thread_recv_slot] --> [compress]
@@ -429,6 +450,9 @@ database "potr_context\n(セッション全状態)" as CTX
 [thread_recv_dispatch] --> [thread_recv_session] : セッション採用・経路学習
 [potr_recv_thread] --> [thread_recv_fin] : TCP の FIN 判定・切断発火
 [potr_recv_thread] --> [thread_recv_window] : リオーダー期限切れ
+[potr_recv_thread] --> [thread_recv_health] : 受信期限・TCP 状態変化
+[thread_recv_health] --> [thread_recv_session] : 切断・パス状態同期
+[thread_recv_health] --> [window] : 切断時の初期化
 [thread_recv_window] --> [window]
 [thread_recv_window] --> [seqnum]
 [thread_recv_window] --> [packet]

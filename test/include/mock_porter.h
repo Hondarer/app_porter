@@ -22,12 +22,18 @@ extern "C"
 #include <porter/thread/potr_send_thread.h>
 #include "../../prod/libsrc/porter/api/api_context_cleanup.h"
 #include "../../prod/libsrc/porter/api/api_open_paths.h"
+#include "../../prod/libsrc/porter/api/api_open_paths_common.h"
+#include "../../prod/libsrc/porter/api/api_open_paths_udp.h"
+#include "../../prod/libsrc/porter/api/api_open_paths_tcp.h"
+
 #include "../../prod/libsrc/porter/thread/thread_recv_dispatch.h"
 #include "../../prod/libsrc/porter/thread/thread_recv_fin.h"
 #include "../../prod/libsrc/porter/thread/thread_recv_session.h"
 #include "../../prod/libsrc/porter/thread/thread_recv_slot.h"
 #include "../../prod/libsrc/porter/thread/thread_recv_validate.h"
+#include "../../prod/libsrc/porter/thread/thread_connect_prepare.h"
 #include "../../prod/libsrc/porter/thread/thread_recv_window.h"
+#include "../../prod/libsrc/porter/thread/thread_recv_health.h"
 }
 
 #if defined(COMPILER_MSVC)
@@ -113,6 +119,21 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_window_check_reorder_timeout")
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_window_on_nack")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_trace_socket_failure_at")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_api_open_paths_unicast")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_api_open_paths_multicast")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_api_open_paths_broadcast")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_api_open_paths_unicast_bidir")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_api_open_paths_unicast_bidir_n1")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_api_open_paths_tcp")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_api_paths_resolve_ipv4")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_api_paths_parse_ipv4")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_thread_connect_read_first_packet")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_thread_connect_session_compare")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_thread_connect_with_timeout")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_thread_connect_peer_allowed")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_health_check_peers")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_health_check_service")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_health_wake_tcp")
 #endif /* COMPILER_MSVC */
 
 class Mock_porter
@@ -227,6 +248,36 @@ class Mock_porter
 
     MOCK_METHOD(void, potr_internal_trace_socket_failure_at,
                 (const char *, int, cplat_trace_level, const cplat_error *, const char *));
+
+    MOCK_METHOD(int, api_open_paths_unicast, (potr_context * ctx, potr_role role));
+
+    MOCK_METHOD(int, api_open_paths_multicast, (potr_context * ctx, potr_role role));
+
+    MOCK_METHOD(int, api_open_paths_broadcast, (potr_context * ctx, potr_role role));
+
+    MOCK_METHOD(int, api_open_paths_unicast_bidir, (potr_context * ctx, potr_role role));
+
+    MOCK_METHOD(int, api_open_paths_unicast_bidir_n1, (potr_context * ctx));
+
+    MOCK_METHOD(int, api_open_paths_tcp, (potr_context * ctx, potr_role role));
+
+    MOCK_METHOD(int, api_paths_resolve_ipv4, (const char * host, uint32_t * address_out));
+
+    MOCK_METHOD(int, api_paths_parse_ipv4, (const char * text, uint32_t * address_out));
+
+    MOCK_METHOD(int, thread_connect_read_first_packet, (cplat_socket fd, uint8_t * buf, size_t max_buf, size_t * len_out, int timeout_ms));
+
+    MOCK_METHOD(int, thread_connect_session_compare, (const potr_context * ctx, const potr_packet * pkt));
+
+    MOCK_METHOD(cplat_socket, thread_connect_with_timeout, (potr_context * ctx, int path_idx));
+
+    MOCK_METHOD(int, thread_connect_peer_allowed, (const potr_context * ctx, int path_idx, const cplat_ipv4_endpoint * peer_addr));
+
+    MOCK_METHOD(void, thread_recv_health_check_peers, (potr_context * ctx));
+
+    MOCK_METHOD(void, thread_recv_health_check_service, (thread_recv_slot * slot));
+
+    MOCK_METHOD(void, thread_recv_health_wake_tcp, (potr_context * ctx, int path_idx, int state_changed));
 
     Mock_porter();
     virtual ~Mock_porter();
