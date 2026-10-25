@@ -173,7 +173,7 @@ TEST(apiOpenPathsTest, unsupported_type)
 {
     // Arrange
     potr_context ctx = {};
-    ctx.service.type = static_cast<potr_type>(999); // [状態] - 未対応の方式を指定する。
+    ctx.service.type = static_cast<potr_type>(0); // [状態] - 列挙型の表現範囲内で未定義の方式を指定する。
     // Act
     int actual_ret = api_open_paths_by_type(&ctx, POTR_ROLE_SENDER); // [手順] - 未対応方式を準備する。
     // Assert
