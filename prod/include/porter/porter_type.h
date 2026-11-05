@@ -314,7 +314,14 @@ typedef enum
  *
  *  データ受信またはヘルス チェック状態変化時に、受信スレッドから呼び出されます。\n
  *  コールバック内でブロッキング処理を行わないようにしてください。\n
- *  すべてのイベントは受信スレッドから直列に呼び出されるため、順序性が保証されます。
+ *  すべてのイベントは受信スレッドから直列に呼び出されるため、順序性が保証されます。\n
+ *  コールバック内から同一サービスに対して次の API を呼び出すと、停止を避けるため処理を行わずに
+ *  POTR_ERR_UNSUPPORTED を返します。
+ *  - potr_service_close()
+ *  - potr_peer_disconnect()
+ *  - N:1 モードの potr_service_send()
+ *
+ *  N:1 モード以外の potr_service_send() は、コールバック内から呼び出せます。
  *
  *  @param[in]      service_id  サービスの ID。
  *  @param[in]      peer_id     ピア識別子。N:1 モード時は接続ピアの ID (`POTR_PEER_NA` / `POTR_PEER_ALL` 以外)。\n

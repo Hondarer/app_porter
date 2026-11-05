@@ -84,10 +84,23 @@ extern "C"
      *  @param[in]      len     data の長さ、または PATH イベントの対象 path index。
      *
      *  呼び出し側で callback_mutex を保持している前提で、ロックを取得せずにコールバックを呼び出します。\n
+     *  呼び出しの間、実行中のスレッドを ctx の callback_active と callback_tid に記録します。\n
      *  ctx または callback が NULL の場合は何もしません。
      */
     extern void potr_internal_callback_emit_locked(potr_context *ctx, potr_peer_id peer_id, potr_event event,
                                                    const void *data, size_t len);
+
+    /**
+     *  @brief          呼び出し元スレッドが ctx のコールバックを実行中かを判定します。
+     *  @param[in]      ctx     対象のセッション コンテキストへのポインター。
+     *  @return         ctx のコールバック内から呼ばれている場合は 1、それ以外は 0 を返します。
+     *
+     *  コールバック内から呼ぶと停止する API (N:1 の送信、close、ピア切断) が、
+     *  停止する前に POTR_ERR_UNSUPPORTED を返すために使います。\n
+     *  別のハンドルのコールバック内から呼ばれた場合は 0 を返します。\n
+     *  ctx が NULL の場合は 0 を返します。失敗モードのない述語のため共通結果コードの適用対象外。
+     */
+    extern int potr_internal_in_own_callback(const potr_context *ctx);
 
     /**
      *  @brief          path 論理接続状態配列を 0 で初期化します。

@@ -234,6 +234,13 @@ struct potr_context
 {
     potr_recv_fn callback;                         /**< 受信コールバック。 */
     cplat_local_lock *callback_mutex;              /**< コールバック直列化用ミューテックス。 */
+    /* コールバック実行中のスレッドの記録。
+     * コールバック内からの API 呼び出しのうち、停止 (自スレッドの join や非再帰ロックの二重取得) を
+     * 招くものを検出してエラーを返すために使います。
+     * コールバックは callback_mutex の下で 1 つずつ呼ばれるため、記録する場所は 1 つで足ります。
+     * potr_internal_callback_emit_locked が callback_mutex 保持中に設定・解除します。 */
+    cplat_atomic_i32 callback_active; /**< コールバック実行中か (1: 実行中, 0: なし)。アトミックに読み書きします。 */
+    cplat_atomic_u32 callback_tid; /**< コールバックを実行中のスレッドの ID (cplat_process_get_tid)。アトミックに読み書きします。 */
     cplat_thread *recv_thread[POTR_MAX_PATH];      /**< 受信スレッド ハンドル (path ごと)。 */
     cplat_thread *health_thread[POTR_MAX_PATH];    /**< ヘルス チェック スレッド ハンドル (path ごと、TCP: 全ロール)。 */
     cplat_local_lock *health_mutex[POTR_MAX_PATH]; /**< ヘルス チェック スレッド停止用ミューテックス (path ごと)。 */
@@ -299,8 +306,7 @@ struct potr_context
     int frag_compressed;        /**< フラグメント受信中の圧縮フラグ (非 0: 圧縮あり)。 */
     uint32_t _pad_frag;         /**< パディング (frag_buf を 8 バイト境界に揃える)。 */
     uint8_t *frag_buf;          /**< フラグメント結合バッファー (動的確保。max_message_size バイト)。 */
-    uint8_t *compress_buf;      /**< 送信圧縮用一時バッファー (動的確保)。 */
-    size_t compress_buf_size;   /**< compress_buf のサイズ (バイト)。 */
+    size_t compress_buf_size;   /**< 圧縮・展開用バッファーのサイズ (バイト)。送信時の圧縮先は呼び出しごとに確保します。 */
     uint8_t *crypto_buf;        /**< 送信暗号化用一時バッファー (動的確保)。 */
     size_t crypto_buf_size;     /**< crypto_buf のサイズ (バイト)。 */
     uint8_t *recv_compress_buf; /**< 受信展開用バッファー (動的確保、compress_buf_size バイト)。 */

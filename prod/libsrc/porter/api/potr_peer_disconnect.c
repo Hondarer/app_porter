@@ -60,6 +60,16 @@ int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
         return POTR_ERR_UNSUPPORTED;
     }
 
+    /* N:1 の受信スレッドは peers_mutex を保持したままコールバックを呼ぶ。
+     * 同じスレッドから peers_mutex を取得すると停止するため、停止前に拒否する。 */
+    if (potr_internal_in_own_callback(ctx))
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "potr_peer_disconnect: service_id=%" PRId64 " called from its own callback",
+                   ctx->service.service_id);
+        return POTR_ERR_UNSUPPORTED;
+    }
+
     cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     {

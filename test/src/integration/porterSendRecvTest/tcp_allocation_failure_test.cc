@@ -307,11 +307,12 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
 // [サブ手順参照 名前=tcp_allocation_failure_test.TearDown 回数=PARAM]
 
 #if defined(PLATFORM_LINUX)
-/* 送信用 compress/crypto の次が受信用。wire は recv_buf/send_wire_buf の次が経路別です。
+/* 圧縮用の領域は送信時に呼び出しごとに確保するため、open 時の compress サイズは受信用だけです。
+ * crypto は送信用の次が受信用。wire は recv_buf/send_wire_buf の次が経路別です。
  * 総 malloc 回数には依存せず、公開設定から決まるサイズの出現順で指定します。 */
 INSTANTIATE_TEST_SUITE_P(
     receive_buffers, tcp_allocation_failure_test,
-    Values(allocation_case{"recv_compress_buf", compress_size, 2}, allocation_case{"recv_crypto_buf", crypto_size, 2},
+    Values(allocation_case{"recv_compress_buf", compress_size, 1}, allocation_case{"recv_crypto_buf", crypto_size, 2},
            allocation_case{"tcp_recv_buf_0", wire_size, 3}, allocation_case{"tcp_recv_buf_1", wire_size, 4},
            allocation_case{"tcp_recv_buf_2", wire_size, 5}, allocation_case{"tcp_recv_buf_3", wire_size, 6}),
     [](const TestParamInfo<allocation_case> &case_info) { return case_info.param.name; });

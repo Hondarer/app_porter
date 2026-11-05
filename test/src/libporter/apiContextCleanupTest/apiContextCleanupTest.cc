@@ -29,12 +29,11 @@ TEST(apiContextCleanupTest, clears_owned_buffers_and_key_before_free)
     memset(ctx.service.encrypt_key, 0x5a, sizeof(ctx.service.encrypt_key));
     std::vector<void *> owned;
     ctx.frag_buf = (uint8_t *)malloc(64);
-    ctx.compress_buf = (uint8_t *)malloc(64);
     ctx.crypto_buf = (uint8_t *)malloc(64);
     ctx.recv_buf = (uint8_t *)malloc(POTR_PACKET_HEADER_SIZE + 64);
     ctx.recv_compress_buf = (uint8_t *)malloc(64);
     ctx.recv_crypto_buf = (uint8_t *)malloc(64);
-    owned = {ctx.frag_buf, ctx.compress_buf, ctx.crypto_buf, ctx.recv_buf, ctx.recv_compress_buf, ctx.recv_crypto_buf};
+    owned = {ctx.frag_buf, ctx.crypto_buf, ctx.recv_buf, ctx.recv_compress_buf, ctx.recv_crypto_buf};
     for (int i = 0; i < (int)POTR_MAX_PATH; i++)
     {
         ctx.sock[i] = CPLAT_INVALID_SOCKET;

@@ -52,8 +52,9 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
     }
 
     /* 同期資源生成 API に詳細原因がないため UNKNOWN として回収する。 */
-    if (cplat_local_lock_create(&q->mutex) != CPLAT_OK || cplat_condvar_create(&q->not_empty) != CPLAT_OK ||
-        cplat_condvar_create(&q->not_full) != CPLAT_OK || cplat_condvar_create(&q->drained) != CPLAT_OK)
+    if (cplat_local_lock_create(&q->mutex) != CPLAT_OK || cplat_local_lock_create(&q->push_mutex) != CPLAT_OK ||
+        cplat_condvar_create(&q->not_empty) != CPLAT_OK || cplat_condvar_create(&q->not_full) != CPLAT_OK ||
+        cplat_condvar_create(&q->drained) != CPLAT_OK || cplat_condvar_create(&q->progress) != CPLAT_OK)
     {
         potr_internal_send_queue_dispose(q);
         return POTR_ERR_UNKNOWN;
@@ -65,6 +66,11 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
 
 void potr_internal_send_queue_dispose(potr_internal_send_queue *q)
 {
+    if (q->progress != NULL)
+    {
+        cplat_condvar_dispose(q->progress);
+        q->progress = NULL;
+    }
     if (q->drained != NULL)
     {
         cplat_condvar_dispose(q->drained);
@@ -80,6 +86,11 @@ void potr_internal_send_queue_dispose(potr_internal_send_queue *q)
         cplat_condvar_dispose(q->not_empty);
         q->not_empty = NULL;
     }
+    if (q->push_mutex != NULL)
+    {
+        cplat_local_lock_dispose(q->push_mutex);
+        q->push_mutex = NULL;
+    }
     if (q->mutex != NULL)
     {
         cplat_local_lock_dispose(q->mutex);
@@ -93,8 +104,29 @@ void potr_internal_send_queue_dispose(potr_internal_send_queue *q)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
+/* 空きがあることを確認済みのキューへエントリを書き込む。呼び出し元は q->mutex を保持する。 */
+static void push_locked(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
+                        uint16_t payload_len, uint64_t *ticket)
+{
+    q->entries[q->tail].peer_id = peer_id;
+    q->entries[q->tail].flags = flags;
+    q->entries[q->tail].payload_len = payload_len;
+    memcpy(q->entries[q->tail].payload, payload, payload_len);
+    q->tail = (q->tail + 1U) % q->depth;
+    q->count++;
+    q->pushed_seq++;
+    if (ticket != NULL)
+    {
+        *ticket = q->pushed_seq;
+    }
+
+    cplat_condvar_signal(q->not_empty);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags,
-                                  const void *payload, uint16_t payload_len)
+                                  const void *payload, uint16_t payload_len, uint64_t *ticket)
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -104,14 +136,7 @@ int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer
         return POTR_ERR_FULL;
     }
 
-    q->entries[q->tail].peer_id = peer_id;
-    q->entries[q->tail].flags = flags;
-    q->entries[q->tail].payload_len = payload_len;
-    memcpy(q->entries[q->tail].payload, payload, payload_len);
-    q->tail = (q->tail + 1U) % q->depth;
-    q->count++;
-
-    cplat_condvar_signal(q->not_empty);
+    push_locked(q, peer_id, flags, payload, payload_len, ticket);
     cplat_local_lock_unlock(q->mutex);
 
     return POTR_OK;
@@ -120,7 +145,8 @@ int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags,
-                                       const void *payload, uint16_t payload_len, cplat_atomic_i32 *running)
+                                       const void *payload, uint16_t payload_len, cplat_atomic_i32 *running,
+                                       uint64_t *ticket)
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -136,14 +162,7 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
         cplat_condvar_wait(q->not_full, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
     }
 
-    q->entries[q->tail].peer_id = peer_id;
-    q->entries[q->tail].flags = flags;
-    q->entries[q->tail].payload_len = payload_len;
-    memcpy(q->entries[q->tail].payload, payload, payload_len);
-    q->tail = (q->tail + 1U) % q->depth;
-    q->count++;
-
-    cplat_condvar_signal(q->not_empty);
+    push_locked(q, peer_id, flags, payload, payload_len, ticket);
     cplat_local_lock_unlock(q->mutex);
 
     return POTR_OK;
@@ -250,6 +269,10 @@ void potr_internal_send_queue_complete(potr_internal_send_queue *q)
         q->inflight--;
     }
 
+    /* 送信スレッドは取り出した順に完了させるため、completed_seq 以下の番号はすべて送信済みである。 */
+    q->completed_seq++;
+    cplat_condvar_broadcast(q->progress);
+
     if (q->count == 0U && q->inflight == 0U)
     {
         cplat_condvar_broadcast(q->drained);
@@ -274,6 +297,34 @@ void potr_internal_send_queue_wait_drained(potr_internal_send_queue *q)
     }
 
     cplat_local_lock_unlock(q->mutex);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_send_queue_wait_ticket(potr_internal_send_queue *q, uint64_t ticket)
+{
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+
+    while (q->completed_seq < ticket)
+    {
+        cplat_condvar_wait(q->progress, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    }
+
+    cplat_local_lock_unlock(q->mutex);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_send_queue_lock_push(potr_internal_send_queue *q)
+{
+    cplat_local_lock_lock(q->push_mutex, CPLAT_SYNC_WAIT_FOREVER);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_send_queue_unlock_push(potr_internal_send_queue *q)
+{
+    cplat_local_lock_unlock(q->push_mutex);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

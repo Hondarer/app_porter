@@ -245,7 +245,8 @@ extern "C"
      *  @retval         POTR_ERR_INVALID_ARGUMENT  引数または N:1 モードの peer_id が不正です。
      *  @retval         POTR_ERR_DISCONNECTED   送信先が論理 CONNECTED 前または切断中です。
      *  @retval         POTR_ERR_NOT_FOUND       N:1 モードで指定したピアが存在しません。
-     *  @retval         POTR_ERR_OUT_OF_MEMORY   全ピア送信用の一時領域を確保できません。
+     *  @retval         POTR_ERR_OUT_OF_MEMORY   全ピア送信用または圧縮用の一時領域を確保できません。
+     *  @retval         POTR_ERR_UNSUPPORTED     N:1 モードで、同一サービスの受信コールバック内から呼び出しました。
      *  @retval         POTR_ERR_CANCELED        終了処理によって送信を中止しました。
      *  @retval         POTR_ERR_UNKNOWN         圧縮などの分類不能な内部処理に失敗しました。
      *
@@ -271,10 +272,10 @@ extern "C"
      *  キューが満杯の場合は空きが生じるまで待機してからメッセージを登録し、登録後に返ります。
      *
      *  @par            ブロッキング送信 (flags に POTR_SEND_BLOCKING を指定した場合)
-     *  呼び出し前に滞留している非ブロッキング送信のメッセージが
-     *  すべて sendto 完了するまで待機します。\n
-     *  その後、本呼び出しのメッセージをキューを通じて sendto して返ります。\n
-     *  本関数が返った時点で、自身のメッセージの sendto は完了しています。
+     *  本呼び出しのメッセージをキューへ登録し、その最後のフラグメントの sendto が完了するまで待機します。\n
+     *  送信スレッドは登録順に sendto するため、本関数が返った時点で、自身のメッセージと、
+     *  それ以前に登録されたメッセージの sendto は完了しています。\n
+     *  自身のメッセージは、直前に登録された他のメッセージと同じパケットにまとめて送信される場合があります。
      *
      *  @note           圧縮フォーマットには raw DEFLATE (RFC 1951) を使用します。\n
      *                  Linux と Windows はともに cplat を通じて app/zlib を使用し、
@@ -284,8 +285,12 @@ extern "C"
      *
      *  @par            スレッド セーフ
      *  本関数は条件付きスレッド セーフです。\n
-     *  異なる @p handle に対する操作は同時に実行できます。\n
-     *  同一 @p handle に対する操作は、呼び出し側で直列化してください。
+     *  同一 @p handle に対して、複数のスレッドから同時に呼び出せます。
+     *  1 つのメッセージのフラグメントは、他のメッセージのフラグメントと交互に並ばずに送信されます。\n
+     *  各スレッド内の送信順序は保たれ、スレッド間の順序はキューへの登録順になります。\n
+     *  potr_service_close() とは同時に呼び出さないでください。\n
+     *  N:1 モードでは、同一サービスの受信コールバック (potr_recv_fn) の内部から呼び出すと
+     *  POTR_ERR_UNSUPPORTED を返します。N:1 モード以外では、コールバック内から呼び出せます。
      */
     POTR_EXPORT extern int POTR_API potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *data,
                                                       size_t len, int flags);
@@ -297,7 +302,7 @@ extern "C"
      *  @retval         POTR_OK                    指定ピアを切断しました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  handle が NULL、または peer_id に POTR_PEER_NA / POTR_PEER_ALL を指定しました。
      *  @retval         POTR_ERR_NOT_FOUND         指定した peer_id のピアが存在しません。
-     *  @retval         POTR_ERR_UNSUPPORTED       N:1 モード以外のサービスで呼び出しました。
+     *  @retval         POTR_ERR_UNSUPPORTED       N:1 モード以外のサービスで呼び出したか、同一サービスの受信コールバック内から呼び出しました。
      *
      *  指定したピアへ FIN パケットを送信し、ピアのリソースを解放します。\n
      *  切断完了後に POTR_EVENT_DISCONNECTED コールバックが発火します。\n
@@ -305,10 +310,12 @@ extern "C"
      *  1:1 モードおよびその他の通信種別では POTR_ERR_UNSUPPORTED を返します。
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。
+     *  本関数は条件付きスレッド セーフです。\n
+     *  同一 @p handle に対して、他のスレッドから potr_service_send() と本関数を同時に呼び出せます。\n
+     *  potr_service_close() とは同時に呼び出さないでください。
      *
-     *  @warning        受信コールバック (potr_recv_fn) の内部から同一サービスに対して本関数を呼び出さないでください。\n
-     *                  内部排他制御の競合によりデッドロックが発生します。\n
+     *  @warning        受信コールバック (potr_recv_fn) の内部から同一サービスに対して本関数を呼び出すと、
+     *                  切断せずに POTR_ERR_UNSUPPORTED を返します。\n
      *                  切断要求はコールバックの外 (別スレッドまたはコールバック復帰後) で実行してください。
      */
     POTR_EXPORT extern int POTR_API potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id);
@@ -321,6 +328,7 @@ extern "C"
      *  @retval         POTR_ERR_DISCONNECTED      データ送信後に全 TCP パスが切断されています。
      *  @retval         POTR_ERR_TIMEOUT           TCP close 待機が tcp_close_timeout_ms を超過しました。
      *  @retval         POTR_ERR_IO                TCP FIN の送信に失敗しました。
+     *  @retval         POTR_ERR_UNSUPPORTED       同一サービスの受信コールバック内から呼び出しました。handle は有効なままです。
      *  @retval         POTR_ERR_UNKNOWN           暗号化または同期などの分類不能な内部処理に失敗しました。
      *
      *  受信スレッドを停止し、ソケットをクローズしてリソースを解放します。\n
@@ -340,12 +348,14 @@ extern "C"
      *
      *  @attention      本関数を呼び出すと、指定したハンドルは直ちに無効化されます。\n
      *                  本関数を呼び出す前に、同一ハンドルに対するすべての送信 (potr_service_send) が完了していることを呼び出し側で保証してください。\n
-     *                  無効化後のハンドルに対するアクセスや、他の porter API との並行呼び出しは未定義動作を引き起こします。
+     *                  無効化後のハンドルに対するアクセスや、他の porter API との並行呼び出しは未定義動作を引き起こします。\n
+     *                  受信コールバック (potr_recv_fn) の内部から同一サービスに対して呼び出すと、
+     *                  サービスを閉じずに POTR_ERR_UNSUPPORTED を返します。
      *
      *  @par            スレッド セーフ
      *  本関数は条件付きスレッド セーフです。\n
      *  異なる @p handle に対する操作は同時に実行できます。\n
-     *  同一 @p handle に対する操作は、呼び出し側で直列化してください。
+     *  同一 @p handle に対する他の porter API と同時に呼び出さないでください。
      */
     POTR_EXPORT extern int POTR_API potr_service_close(potr_context *handle);
 

@@ -16,6 +16,7 @@
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
+#include <cplat/runtime/process.h>
 #include <cplat/sync/sync.h>
 #include <porter/potr_path_event.h>
 
@@ -83,8 +84,30 @@ void potr_internal_callback_emit_locked(potr_context *ctx, potr_peer_id peer_id,
 {
     if (ctx != NULL && ctx->callback != NULL)
     {
+        /* コールバック内からの API 呼び出しを potr_internal_in_own_callback で判定できるよう、
+         * 実行中のスレッドを記録する。callback_mutex により記録は 1 件だけ有効になる。 */
+        cplat_atomic_store_u32(&ctx->callback_tid, cplat_process_get_tid(), CPLAT_MEMORY_ORDER_RELAXED);
+        cplat_atomic_store_i32(&ctx->callback_active, 1, CPLAT_MEMORY_ORDER_RELEASE);
         ctx->callback(ctx->service.service_id, peer_id, event, data, len);
+        cplat_atomic_store_i32(&ctx->callback_active, 0, CPLAT_MEMORY_ORDER_RELEASE);
     }
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_in_own_callback(const potr_context *ctx)
+{
+    if (ctx == NULL || cplat_atomic_load_i32(&ctx->callback_active, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+    {
+        return 0;
+    }
+    /* スレッド ID は終了したスレッドへ再割り当てされる場合があるが、
+     * 記録したスレッドはコールバック実行中で生存しているため、一致は同一スレッドを意味する。 */
+    if (cplat_atomic_load_u32(&ctx->callback_tid, CPLAT_MEMORY_ORDER_RELAXED) == cplat_process_get_tid())
+    {
+        return 1;
+    }
+    return 0;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

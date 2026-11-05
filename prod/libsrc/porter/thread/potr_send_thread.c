@@ -244,7 +244,8 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
     }
 }
 
-/* N:1 モード専用: ピアの send_window を使ってパック コンテナーを構築して sendto する */
+/* N:1 モード専用: ピアの send_window を使ってパック コンテナーを構築して sendto する。
+   呼び出し元は peers_mutex を保持し、peer が解放されないことを保証する。 */
 static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *peer, size_t packed_len)
 {
     potr_packet outer_pkt;
@@ -340,13 +341,16 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
     uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
     size_t packed_len = 0;
     int n_dequeued = 1;
+    int peer_exists;
 
-    /* ピアを検索 (peers_mutex は lookup だけ保護、送信中は解放する) */
+    /* 宛先の存在だけを先に判定する。ここで得たピアのポインターは、ロック解放後に使わない。
+     * 受信スレッド、ヘルス チェック スレッド、potr_peer_disconnect がピアを解放すると、
+     * 同じスロットのウィンドウと mutex は破棄または別ピアへ再利用されるためである。 */
     cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
-    peer = potr_internal_peer_find_by_id(ctx, target_peer_id);
+    peer_exists = (potr_internal_peer_find_by_id(ctx, target_peer_id) != NULL);
     cplat_local_lock_unlock(ctx->peers_mutex);
 
-    if (peer == NULL)
+    if (!peer_exists)
     {
         /* 切断済みピア宛エントリ: 破棄 */
         potr_internal_send_queue_complete(&ctx->send_queue);
@@ -396,7 +400,22 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
         }
     }
 
-    flush_packed_peer(ctx, peer, packed_len);
+    /* ピアを ID で再検索し、sendto の完了まで peers_mutex を保持する。
+     * ヘルス チェック スレッドの N:1 PING 送信と同じく、ロック順は
+     * peers_mutex -> peer->send_window_mutex とする。 */
+    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    peer = potr_internal_peer_find_by_id(ctx, target_peer_id);
+    if (peer != NULL)
+    {
+        flush_packed_peer(ctx, peer, packed_len);
+    }
+    else
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                   "sender[service_id=%" PRId64 "]: peer=%u disconnected before flush, %d elem(s) dropped",
+                   ctx->service.service_id, (unsigned)target_peer_id, n_dequeued);
+    }
+    cplat_local_lock_unlock(ctx->peers_mutex);
 
     {
         int i;

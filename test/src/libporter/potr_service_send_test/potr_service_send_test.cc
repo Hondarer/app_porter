@@ -122,6 +122,66 @@ TEST_F(potrSendTest, n1_peer_na_returns_invalid_argument)
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
 
+// N:1 モードで自サービスのコールバック内から呼ぶと、停止せずに未サポート コードになることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, n1_call_from_own_callback_returns_unsupported)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_porter;
+    const char payload[] = "n1-in-callback"; // [状態] - 送信ペイロードを "n1-in-callback" とする。
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1; // [状態] - N:1 モードとする。
+    peers[0].active = 1;
+    peers[0].peer_id = 10;
+    cplat_atomic_store_i32(&peers[0].health_alive, 1,
+                           CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 接続済みの peer 10 を用意する。
+    ON_CALL(mock_porter, potr_internal_in_own_callback(&ctx))
+        .WillByDefault(Return(1)); // [状態] - 自サービスのコールバック内からの呼び出しとする。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_service_send(&ctx, 10U, payload, strlen(payload),
+                                       0); // [手順] - 接続済みの peer 10 を指定して potr_service_send() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(
+        POTR_ERR_UNSUPPORTED,
+        actual_ret); // [確認_異常系] - コールバック内からの potr_service_send() の戻り値が POTR_ERR_UNSUPPORTED であること。
+    EXPECT_EQ(
+        0U,
+        ctx.send_queue
+            .count); // [確認_異常系] - ctx.send_queue.count が 0U であること。(コールバック内からの送信がキューに積まれないことの確認)
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// N:1 以外では自サービスのコールバック内からでも送信できることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, non_n1_call_from_own_callback_is_accepted)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_porter;
+    const char payload[] = "reply-in-callback"; // [状態] - 送信ペイロードを "reply-in-callback" とする。
+    ctx.service.type = POTR_TYPE_UNICAST; // [状態] - 片方向 unicast とする。
+    ON_CALL(mock_porter, potr_internal_in_own_callback(&ctx))
+        .WillByDefault(Return(1)); // [状態] - 自サービスのコールバック内からの呼び出しとする。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret =
+        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+                          0); // [手順] - 片方向 unicast のサービスを指定して potr_service_send() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(POTR_OK,
+              actual_ret); // [確認_正常系] - N:1 以外のコールバック内からの potr_service_send() の戻り値が POTR_OK であること。
+    EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - ctx.send_queue.count が 1U であること。
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
 // N:1 モードで存在しないピアを指定すると未検出コードになることの確認
 // [サブ手順参照 名前=potrSendTest.SetUp]
 TEST_F(potrSendTest, n1_unknown_peer_returns_not_found)

@@ -243,6 +243,15 @@ int potr_service_close(potr_context *handle)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
+    /* コールバックを呼んだスレッドは close が停止・join する対象のため、自身の終了を待って停止する。
+     * 停止前に拒否し、ハンドルは有効なまま残す。 */
+    if (potr_internal_in_own_callback(ctx))
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_close: service_id=%" PRId64 " called from its own callback",
+                   ctx->service.service_id);
+        return POTR_ERR_UNSUPPORTED;
+    }
+
     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service_id=%" PRId64 " closing", ctx->service.service_id);
     cplat_atomic_store_i32(&ctx->close_requested, 1, CPLAT_MEMORY_ORDER_RELEASE);
 
@@ -252,6 +261,7 @@ int potr_service_close(potr_context *handle)
         if (cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             uint32_t fin_target_seq;
+            int has_data = 0;
 
             stop_tcp_health_threads(ctx);
 
@@ -259,7 +269,8 @@ int potr_service_close(potr_context *handle)
                        "potr_service_close: service_id=%" PRId64 " flushing send queue and sending TCP FIN",
                        ctx->service.service_id);
             potr_internal_send_queue_wait_drained(&ctx->send_queue);
-            fin_target_seq = get_fin_target_seq(ctx, NULL);
+            /* send_has_data は送信スレッドが send_window_mutex の下で更新するため、同じロックの下で読む。 */
+            fin_target_seq = get_fin_target_seq(ctx, &has_data);
 
             if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) > 0)
             {
@@ -294,7 +305,7 @@ int potr_service_close(potr_context *handle)
                     }
                 }
             }
-            else if (ctx->send_has_data)
+            else if (has_data)
             {
                 POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
                            "potr_service_close: service_id=%" PRId64 " TCP close without active path",

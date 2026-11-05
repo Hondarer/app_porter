@@ -12,6 +12,7 @@
 #include <porter/potr_path_event.h>
 
 #include <string.h>
+#include <thread>
 
 using namespace testing;
 
@@ -124,6 +125,56 @@ TEST_F(potrPathEventTest, service_connect_emits_paths_before_connected)
     EXPECT_EQ(1, s_events[1].path_states[2]); // [確認_正常系] - s_events[1].path_states[2] が 1 であること。
     EXPECT_EQ(POTR_EVENT_CONNECTED,
               s_events[2].event); // [確認_正常系] - s_events[2].event が POTR_EVENT_CONNECTED であること。
+}
+
+static const potr_context *s_probe_ctx;
+static int s_probe_same_thread;
+static int s_probe_other_thread;
+
+// [サブ手順 名前=potrPathEventTest.probe_callback]
+static void probe_callback(int64_t service_id, potr_peer_id peer_id, potr_event event, const void *data, size_t len)
+{
+    (void)service_id;
+    (void)peer_id;
+    (void)event;
+    (void)data;
+    (void)len;
+    s_probe_same_thread = potr_internal_in_own_callback(s_probe_ctx);
+    // [手順] - コールバックを実行中のスレッドで potr_internal_in_own_callback() を呼び出す。
+    std::thread other([] { s_probe_other_thread = potr_internal_in_own_callback(s_probe_ctx); });
+    // [手順] - 別のスレッドで potr_internal_in_own_callback() を呼び出す。
+    other.join();
+}
+// [サブ手順終了]
+
+// コールバック実行中のスレッドだけが、そのコンテキストのコールバック内と判定されることの確認
+// [サブ手順参照 名前=potrPathEventTest.SetUp]
+TEST_F(potrPathEventTest, in_own_callback_is_true_only_on_callback_thread)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    potr_context other_ctx;
+    memset(&other_ctx, 0, sizeof(other_ctx));
+    ctx.callback = probe_callback; // [状態] - 判定結果を記録するコールバックを設定する。
+    s_probe_ctx = &ctx;
+    s_probe_same_thread = -1;
+    s_probe_other_thread = -1;
+
+    // Pre-Assert
+
+    // Act
+    // [サブ手順参照 名前=potrPathEventTest.probe_callback]
+    potr_internal_callback_emit_locked(&ctx, POTR_PEER_NA, POTR_EVENT_CONNECTED, nullptr,
+                                       0); // [手順] - potr_internal_callback_emit_locked() でコールバックを発火する。
+
+    // Assert
+    EXPECT_EQ(1, s_probe_same_thread);  // [確認_正常系] - コールバック実行中のスレッドでは 1 であること。
+    EXPECT_EQ(0, s_probe_other_thread); // [確認_正常系] - 別のスレッドでは 0 であること。
+    EXPECT_EQ(0, potr_internal_in_own_callback(&ctx));
+    // [確認_正常系] - コールバック復帰後は 0 であること。
+    EXPECT_EQ(0, potr_internal_in_own_callback(&other_ctx));
+    // [確認_正常系] - コールバックを発火していないコンテキストでは 0 であること。
+    EXPECT_EQ(0, potr_internal_in_own_callback(nullptr)); // [確認_異常系] - NULL では 0 であること。
 }
 
 // peer 切断時に全 path 状態を同期して切断イベントを準備し、

@@ -35,7 +35,8 @@ Table: PATH イベント時のコールバック引数の意味
 | `POTR_ERR_INVALID_ARGUMENT` | ハンドル、データ、サイズ、または N:1 モードの `peer_id` が不正 |
 | `POTR_ERR_DISCONNECTED` | 論理 CONNECTED 前または切断中。`unicast_bidir`、`unicast_bidir_n1` の未接続 peer、`POTR_PEER_ALL` で接続済み peer 0 件、`tcp` / `tcp_bidir` の CONNECTED 前または全 path 切断中が該当 |
 | `POTR_ERR_NOT_FOUND` | N:1 モードで指定した peer が存在しない |
-| `POTR_ERR_OUT_OF_MEMORY` | `POTR_PEER_ALL` の送信先一覧のメモリ確保失敗 |
+| `POTR_ERR_OUT_OF_MEMORY` | `POTR_PEER_ALL` の送信先一覧、または圧縮用の一時領域のメモリ確保失敗 |
+| `POTR_ERR_UNSUPPORTED` | N:1 モードで、同一サービスの受信コールバック内から呼び出した |
 | `POTR_ERR_CANCELED` | サービスの終了処理による送信中止 |
 | `POTR_ERR_UNKNOWN` | 圧縮など分類不能な内部処理の失敗 |
 
@@ -54,12 +55,23 @@ Table: potr_service_send の戻り値一覧
 |---|---|---|
 | `potr_service_open()` | はい | 複数スレッドから並行してハンドルを取得可 (低レベル API) |
 | `potr_service_open_from_config()` | はい | 複数スレッドから並行してハンドルを取得可 (高レベル API) |
-| `potr_service_send()` | **いいえ** | 同一ハンドルへの並行呼び出し不可 |
+| `potr_service_send()` | はい (条件付き) | 同一ハンドルへの並行呼び出し可。`potr_service_close()` とは並行不可 |
 | `potr_service_close()` | **いいえ** | 他の API と同一ハンドルへ並行して呼び出さないこと |
-| `potr_peer_disconnect()` | はい (条件付き) | コールバック内からは呼び出さないこと (デッドロック) |
+| `potr_peer_disconnect()` | はい (条件付き) | `potr_service_close()` とは並行不可 |
 | `potr_service_get_type()` | はい | グローバル状態なし |
 
 Table: porter API のスレッド セーフ性一覧
+
+受信コールバック (`potr_recv_fn`) の内部から同一サービスに対して次の API を呼び出すと、停止を避けるため処理を行わずに `POTR_ERR_UNSUPPORTED` を返します。  
+N:1 モードの受信処理はピア表のロックを保持したままコールバックを呼び、`potr_service_close()` はコールバックを呼んだスレッドの終了を待つためです。
+
+| API | コールバック内から呼び出した場合 |
+|---|---|
+| `potr_service_send()` | N:1 モードでは `POTR_ERR_UNSUPPORTED`。それ以外の通信種別では送信できる |
+| `potr_service_close()` | `POTR_ERR_UNSUPPORTED`。ハンドルは有効なまま残る |
+| `potr_peer_disconnect()` | `POTR_ERR_UNSUPPORTED` |
+
+Table: 受信コールバック内から呼び出した場合の動作
 
 ### サービスを開く API の使い分け
 
@@ -74,6 +86,11 @@ Table: サービス開始 API の入力と用途の使い分け
 
 ### ハンドルとスレッドの対応
 
-- **ハンドルはスレッド セーフではありません。** 同一ハンドルへの操作 (`potr_service_send` / `potr_service_close` など) は 1 スレッドから行ってください。
+- **同一ハンドルの `potr_service_send()` は、複数スレッドから同時に呼び出せます。** 1 メッセージの断片は他のメッセージと交互に並ばずに送られます。各スレッド内の送信順序は保たれ、スレッド間の順序は送信キューへの登録順になります。
+- **`potr_service_close()` は、同一ハンドルへの他の API 呼び出しがすべて終わってから呼び出してください。** close はハンドルを解放するため、並行して呼び出すと解放後のメモリを使います。
 - **ハンドルが異なれば、別スレッドから独立して使用できます。** スレッド A でサービス 1001 を、スレッド B でサービス 1002 を同時に運用することは問題ありません。
-- `potr_service_open()` / `potr_service_open_from_config()` でのハンドル作成スレッドと、その後 `potr_service_send()` を呼び出すスレッドが異なっていても構いません。ハンドル生成後はそのハンドルを操作するスレッドを 1 つに固定してください。
+- `potr_service_open()` / `potr_service_open_from_config()` でのハンドル作成スレッドと、その後 `potr_service_send()` を呼び出すスレッドが異なっていても構いません。
+
+`POTR_SEND_BLOCKING` を指定した送信は、自分が登録した最後の断片の送信が終わるまで待ちます。  
+送信スレッドは登録順に送信するため、復帰した時点で、それ以前に登録された送信も送信済みです。  
+自分の送信は、直前に登録された他の送信と同じ UDP パケットにまとめられる場合があります。

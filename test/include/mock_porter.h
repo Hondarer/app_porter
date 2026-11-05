@@ -55,6 +55,7 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_connect_thread_stop")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_copy_tcp_path_states")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_emit_service_path_events_locked")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_in_own_callback")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_health_thread_start")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_health_thread_stop")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_health_thread_wake")
@@ -81,6 +82,9 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_shutdown")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_try_pop")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_wait_drained")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_wait_ticket")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_lock_push")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_unlock_push")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_thread_start")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_thread_stop")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_start_connected_threads")
@@ -162,6 +166,7 @@ class Mock_porter
     MOCK_METHOD(void, potr_internal_copy_tcp_path_states, (const potr_context *ctx, int *states));
     MOCK_METHOD(void, potr_internal_emit_service_path_events_locked,
                 (potr_context * ctx, const potr_internal_prepared_path_events *prepared));
+    MOCK_METHOD(int, potr_internal_in_own_callback, (const potr_context *ctx));
     MOCK_METHOD(int, potr_internal_health_thread_start, (potr_context * ctx));
     MOCK_METHOD(int, potr_internal_health_thread_stop, (potr_context * ctx));
     MOCK_METHOD(void, potr_internal_health_thread_wake, (potr_context * ctx));
@@ -199,6 +204,9 @@ class Mock_porter
     MOCK_METHOD(void, potr_internal_send_queue_shutdown, (potr_internal_send_queue * q));
     MOCK_METHOD(int, potr_internal_send_queue_try_pop, (potr_internal_send_queue * q, potr_internal_payload_elem *out));
     MOCK_METHOD(void, potr_internal_send_queue_wait_drained, (potr_internal_send_queue * q));
+    MOCK_METHOD(void, potr_internal_send_queue_wait_ticket, (potr_internal_send_queue * q, uint64_t ticket));
+    MOCK_METHOD(void, potr_internal_send_queue_lock_push, (potr_internal_send_queue * q));
+    MOCK_METHOD(void, potr_internal_send_queue_unlock_push, (potr_internal_send_queue * q));
     MOCK_METHOD(int, potr_internal_send_thread_start, (potr_context * ctx));
     MOCK_METHOD(void, potr_internal_send_thread_stop, (potr_context * ctx));
     MOCK_METHOD(int, potr_internal_start_connected_threads,

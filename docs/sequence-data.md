@@ -55,16 +55,15 @@ participant "UDP" as UDP
 SAPP -> Q: potr_service_send(handle, POTR_PEER_NA, data, len, POTR_SEND_BLOCKING)
 activate SAPP
 
-Q -> Q: (1) 既存キューが drained になるまで待機\n count == 0 && inflight == 0
-note right of Q: 前の送信が完了するまで待つ
-
-Q -> Q: (2) エレメントを push\n inflight をインクリメント
+Q -> Q: (1) 登録用ロックを取得し、全エレメントを push\n 最後のエレメントの番号 (チケット) を保持
+note right of Q: 1 メッセージの断片を連続して格納する
 
 Q -> ST: pop → パケット構築 → sendto
 ST -> UDP: sendto (全パス)
-ST -> Q: complete() (inflight デクリメント)
+ST -> Q: complete() (completed_seq をインクリメント)
 
-Q -> Q: (3) drained 待機\n count == 0 && inflight == 0
+Q -> Q: (2) completed_seq >= チケット になるまで待機
+note right of Q: 送信スレッドは登録順に完了させるため\n先行の送信も送信済みになる
 
 Q --> SAPP: POTR_OK
 deactivate SAPP

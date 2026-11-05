@@ -99,8 +99,6 @@ void api_context_dispose_resources(potr_context *ctx)
     }
     dispose_secret_buffer(ctx->frag_buf, ctx->global.max_message_size);
     ctx->frag_buf = NULL;
-    dispose_secret_buffer(ctx->compress_buf, ctx->compress_buf_size);
-    ctx->compress_buf = NULL;
     dispose_secret_buffer(ctx->crypto_buf, ctx->crypto_buf_size);
     ctx->crypto_buf = NULL;
     dispose_secret_buffer(ctx->recv_buf, POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
