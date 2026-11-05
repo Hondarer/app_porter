@@ -19,7 +19,7 @@ porter は UDP/IP および TCP/IP をサポートするクロスプラットフ
 - [実装の保守と未解決事項](maintenance.md)
 - [porter コーディング規範](coding-guideline.md)
 - [porter 機能仕様の記載規範](functional-spec-guideline.md)
-- [TCP N:1 の設計記録](history/tcp-n1-design.md)
+- [TCP N:1 の設計記録](prompts/past/tcp-n1-design.md)
 
 ## 特徴
 
