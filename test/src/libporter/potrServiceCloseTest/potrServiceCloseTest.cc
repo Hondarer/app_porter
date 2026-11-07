@@ -28,7 +28,7 @@ TEST(potrServiceCloseTest, udp_stop_precedes_shared_cleanup)
     int token = 0;
     std::vector<int> order;
     ctx.send_thread = reinterpret_cast<cplat_thread *>(&token);
-    ON_CALL(mock_cplat, cplat_free(_)).WillByDefault([&](void *) { order.push_back(5); });
+    ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault([&](void *) { order.push_back(5); });
     ON_CALL(mock_porter, api_context_dispose_resources(_)).WillByDefault([&](potr_context *) { order.push_back(4); });
     ON_CALL(mock_porter, api_context_dispose_tcp_sync(_)).WillByDefault([&](potr_context *) { order.push_back(3); });
     ON_CALL(mock_porter, potr_internal_send_queue_dispose(_))
@@ -64,7 +64,7 @@ TEST(potrServiceCloseTest, tcp_stop_precedes_shared_cleanup)
     int token = 0;
     std::vector<int> order;
     ctx.send_thread = reinterpret_cast<cplat_thread *>(&token);
-    ON_CALL(mock_cplat, cplat_free(_)).WillByDefault([&](void *) { order.push_back(5); });
+    ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault([&](void *) { order.push_back(5); });
     ON_CALL(mock_porter, api_context_dispose_resources(_)).WillByDefault([&](potr_context *) { order.push_back(4); });
     ON_CALL(mock_porter, api_context_dispose_tcp_sync(_)).WillByDefault([&](potr_context *) { order.push_back(3); });
     ON_CALL(mock_porter, potr_internal_send_queue_dispose(_))

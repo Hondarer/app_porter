@@ -280,17 +280,17 @@ TEST_F(handleConcurrencyTest, concurrent_fragmented_compressed_sends_arrive_inta
     for (int t = 0; t < send_threads; ++t)
     {
         threads.emplace_back(
-            [client, t, &failures]()
+            [client, &failures, t]()
             {
                 for (int i = 0; i < messages_per_thread; ++i)
                 {
                     bytes msg = make_message(t, i);
-                    int flags = POTR_SEND_BLOCKING;
+                    unsigned int flags = POTR_SEND_BLOCKING;
                     if ((i % 2) == 1)
                     {
                         flags |= POTR_SEND_COMPRESS;
                     }
-                    if (potr_service_send(client, POTR_PEER_NA, msg.data(), msg.size(), flags) != POTR_OK)
+                    if (potr_service_send(client, POTR_PEER_NA, msg.data(), msg.size(), static_cast<int>(flags)) != POTR_OK)
                     {
                         failures.fetch_add(1);
                     }
@@ -533,6 +533,7 @@ TEST_F(handleConcurrencyTest, concurrent_close_and_send_preserve_handle_lifetime
     EXPECT_EQ(POTR_ERR_INVALID_HANDLE, stale_close);      // [確認_異常系] - close 完了後の再 close を拒否すること。
 }
 // [サブ手順参照 名前=handleConcurrencyTest.TearDown]
+
 // [サブ手順参照 名前=handleConcurrencyTest.SetUp]
 TEST_F(handleConcurrencyTest, close_waits_for_running_callback_and_rejects_callback_send)
 {
