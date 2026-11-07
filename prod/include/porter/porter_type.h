@@ -310,31 +310,30 @@ typedef enum
     POTR_EVENT_DISCONNECTED = 2,      /**< 論理接続中の path が 0 本になった。data=NULL, len=0。 */
     POTR_EVENT_PATH_CONNECTED = 3,    /**< path 論理接続が 0->1。data=path_states, len=path_idx。 */
     POTR_EVENT_PATH_DISCONNECTED = 4, /**< path 論理接続が 1->0。data=path_states, len=path_idx。 */
+    POTR_EVENT_ERROR =
+        5, /**< 通知継続不能。data は const int * の原因コード、len は sizeof(int)。サービス単位で 1 回通知します。 */
 } potr_event;
 
 /**
  *  @brief          受信コールバック関数型 (全通信種別共通)。
  *
- *  データ受信またはヘルス チェック状態変化時に、受信スレッドから呼び出されます。\n
- *  コールバック内でブロッキング処理を行わないようにしてください。\n
- *  すべてのイベントは受信スレッドから直列に呼び出されるため、順序性が保証されます。\n
- *  コールバック内から同一サービスに対して次の API を呼び出すと、停止を避けるため処理を行わずに
- *  POTR_ERR_UNSUPPORTED を返します。
- *  - potr_service_close()
- *  - potr_peer_disconnect()
- *  - N:1 モードの potr_service_send()
- *
- *  N:1 モード以外の potr_service_send() は、コールバック内から呼び出せます。
+ *  ハンドルごとの通知専用スレッドから、登録順に直列実行されます。\n
+ *  コールバック内から同一ハンドルの potr_service_send() をブロッキング指定を含めて呼び出せます。\n
+ *  N:1 の potr_peer_disconnect() も呼び出せます。切断通知は現在の通知の後に実行します。\n
+ *  同一ハンドルの potr_service_close() は POTR_ERR_UNSUPPORTED を返し、終了要求を設定しません。\n
+ *  長時間の処理中も I/O は進みますが、後続通知の保持メモリが増えます。\n
+ *  通知領域の確保失敗時は通常操作を停止し、登録済み通知の後に POTR_EVENT_ERROR を一度通知します。
  *
  *  @param[in]      service_id  サービスの ID。
  *  @param[in]      peer_id     ピア識別子。N:1 モード時は接続ピアの ID (`POTR_PEER_NA` / `POTR_PEER_ALL` 以外)。\n
- *                              1:1 モードおよびその他の通信種別では常に POTR_PEER_NA。
+ *                              1:1 モード、その他の通信種別、および POTR_EVENT_ERROR では POTR_PEER_NA。
  *  @param[in]      event       イベント種別 (potr_event)。
  *  @param[in]      data        `POTR_EVENT_DATA` 時は受信データ、`POTR_EVENT_PATH_*` 時は
  *                              path 論理接続状態配列 (`const int[POTR_MAX_PATH]`) を指します。
- *                              それ以外のイベントでは NULL です。コールバック復帰後は無効になります。
+ *                              POTR_EVENT_ERROR では const int * の原因コードです。それ以外は NULL です。\n
+ *                              コールバック復帰後は無効になります。
  *  @param[in]      len         `POTR_EVENT_DATA` 時は受信データ長、`POTR_EVENT_PATH_*` 時は
- *                              対象 path index です。それ以外のイベントでは 0 です。
+ *                              対象 path index です。POTR_EVENT_ERROR では sizeof(int)、それ以外では 0 です。
  */
 typedef void (*potr_recv_fn)(int64_t service_id, potr_peer_id peer_id, potr_event event, const void *data, size_t len);
 

@@ -11,6 +11,7 @@
 #include <porter/porter_const.h>
 #include <porter/porter_spec.h>
 #include <porter/potr_context.h>
+#include <porter/potr_handle.h>
 #include <porter/infra/potr_send_queue.h>
 
 #if defined(PLATFORM_LINUX)
@@ -29,6 +30,9 @@ class potrSendTest : public Test
     void SetUp() override
     {
         memset(&ctx, 0, sizeof(ctx));
+        ASSERT_EQ(POTR_OK, potr_internal_handle_prepare(&ctx));
+        // [状態確認] - potr_internal_handle_prepare() が成功すること。
+        handle = potr_internal_handle_public(&ctx);
         memset(peers, 0, sizeof(peers));
 
         ctx.service.service_id = 42;
@@ -47,6 +51,7 @@ class potrSendTest : public Test
     // [サブ手順 名前=potrSendTest.TearDown]
     void TearDown() override
     {
+        potr_internal_handle_discard(&ctx);
         cplat_local_lock_dispose(ctx.peers_mutex);
         potr_internal_send_queue_dispose(&ctx.send_queue);
     }
@@ -62,6 +67,7 @@ class potrSendTest : public Test
     }
     // [サブ手順終了]
 
+    potr_context *handle = nullptr;
     potr_context ctx;
     potr_internal_peer_context peers[2];
 };
@@ -80,7 +86,7 @@ TEST_F(potrSendTest, close_requested_returns_canceled)
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+    int actual_ret = potr_service_send(handle, POTR_PEER_NA, payload, strlen(payload),
                                        0); // [手順] - 終了処理中のサービスを指定して potr_service_send() を呼び出す。
 
     // Assert
@@ -108,7 +114,7 @@ TEST_F(potrSendTest, n1_peer_na_returns_invalid_argument)
 
     // Act
     int actual_ret =
-        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+        potr_service_send(handle, POTR_PEER_NA, payload, strlen(payload),
                           0); // [手順] - peer_id に POTR_PEER_NA を指定して potr_service_send() を呼び出す。
 
     // Assert
@@ -122,9 +128,9 @@ TEST_F(potrSendTest, n1_peer_na_returns_invalid_argument)
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
 
-// N:1 モードで自サービスのコールバック内から呼ぶと、停止せずに未サポート コードになることの確認
+// N:1 モードで自サービスのコールバック内から送信を受け付けることの確認
 // [サブ手順参照 名前=potrSendTest.SetUp]
-TEST_F(potrSendTest, n1_call_from_own_callback_returns_unsupported)
+TEST_F(potrSendTest, n1_call_from_own_callback_is_accepted)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_log;
@@ -139,20 +145,22 @@ TEST_F(potrSendTest, n1_call_from_own_callback_returns_unsupported)
     ON_CALL(mock_porter, potr_internal_in_own_callback(&ctx))
         .WillByDefault(Return(1)); // [状態] - 自サービスのコールバック内からの呼び出しとする。
 
+    ON_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 10U)).WillByDefault(Return(&peers[0]));
+    // [状態] - 接続済みピアを検索できるようにする。
+
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, 10U, payload, strlen(payload),
+    int actual_ret = potr_service_send(handle, 10U, payload, strlen(payload),
                                        0); // [手順] - 接続済みの peer 10 を指定して potr_service_send() を呼び出す。
 
     // Assert
+    EXPECT_EQ(POTR_OK,
+              actual_ret); // [確認_正常系] - コールバック内からの potr_service_send() の戻り値が POTR_OK であること。
     EXPECT_EQ(
-        POTR_ERR_UNSUPPORTED,
-        actual_ret); // [確認_異常系] - コールバック内からの potr_service_send() の戻り値が POTR_ERR_UNSUPPORTED であること。
-    EXPECT_EQ(
-        0U,
+        1U,
         ctx.send_queue
-            .count); // [確認_異常系] - ctx.send_queue.count が 0U であること。(コールバック内からの送信がキューに積まれないことの確認)
+            .count); // [確認_正常系] - ctx.send_queue.count が 1U であること。(コールバック内からの送信がキューに積まれることの確認)
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
 
@@ -172,7 +180,7 @@ TEST_F(potrSendTest, non_n1_call_from_own_callback_is_accepted)
 
     // Act
     int actual_ret =
-        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+        potr_service_send(handle, POTR_PEER_NA, payload, strlen(payload),
                           0); // [手順] - 片方向 unicast のサービスを指定して potr_service_send() を呼び出す。
 
     // Assert
@@ -196,7 +204,7 @@ TEST_F(potrSendTest, n1_unknown_peer_returns_not_found)
     // Pre-Assert
 
     // Act
-    int actual_ret = potr_service_send(&ctx, 123U, payload, strlen(payload),
+    int actual_ret = potr_service_send(handle, 123U, payload, strlen(payload),
                                        0); // [手順] - 未登録のピア ID を指定して potr_service_send() を呼び出す。
 
     // Assert
@@ -229,7 +237,7 @@ TEST_F(potrSendTest, tcp_requires_logical_connected_even_with_active_path)
 
     // Act
     int actual_ret =
-        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+        potr_service_send(handle, POTR_PEER_NA, payload, strlen(payload),
                           0); // [手順] - 論理接続が未成立のサービスを指定して potr_service_send() を呼び出す。
 
     // Assert
@@ -264,7 +272,7 @@ TEST_F(potrSendTest, peer_all_returns_disconnected_when_no_connected_peers)
 
     // Act
     int actual_ret =
-        potr_service_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
+        potr_service_send(handle, POTR_PEER_ALL, payload, strlen(payload),
                           0); // [手順] - peer_id に POTR_PEER_ALL を指定して potr_service_send() を呼び出す。
 
     // Assert
@@ -302,7 +310,7 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
 
     // Act
     int actual_ret =
-        potr_service_send(&ctx, POTR_PEER_ALL, payload, strlen(payload),
+        potr_service_send(handle, POTR_PEER_ALL, payload, strlen(payload),
                           0); // [手順] - peer_id に POTR_PEER_ALL を指定して potr_service_send() を呼び出す。
 
     // Assert
@@ -353,7 +361,7 @@ TEST_F(potrSendTest, unicast_sender_path_still_sends_without_connected_state)
 
     // Act
     int actual_ret =
-        potr_service_send(&ctx, POTR_PEER_NA, payload, strlen(payload),
+        potr_service_send(handle, POTR_PEER_NA, payload, strlen(payload),
                           0); // [手順] - 片方向 unicast のサービスを指定して potr_service_send() を呼び出す。
 
     // Assert
@@ -477,5 +485,24 @@ TEST_F(potrSendTest, immediate_health_ping_is_disabled_only_for_type_1_to_6)
     // [確認_正常系] - POTR_TYPE_TCP に対する type_uses_immediate_health_ping() の戻り値が true であること。
     EXPECT_TRUE(immediate_tcp_bidir);
     // [確認_正常系] - POTR_TYPE_TCP_BIDIR に対する type_uses_immediate_health_ping() の戻り値が true であること。
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// 片方向の受信専用サービスからの送信を拒否することの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, receive_only_service_rejects_send)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    char data = 'r';
+    // Pre-Assert
+    // Act
+    int actual_ret = potr_service_send(handle, POTR_PEER_NA, &data, sizeof(data), 0);
+    // [手順] - 受信専用ハンドルから送信する。
+    // Assert
+    EXPECT_EQ(POTR_ERR_UNSUPPORTED, actual_ret);
+    // [確認_異常系] - 送信キューを使う前に未対応の操作を拒否すること。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]

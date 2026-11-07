@@ -21,6 +21,7 @@
 #include <porter/porter_spec.h>
 
 #include <porter/potr_context.h>
+#include <porter/potr_handle.h>
 #include <porter/potr_path_event.h>
 #include <porter/potr_peer_table.h>
 #include <porter/infra/potr_send_queue.h>
@@ -94,6 +95,7 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
     if (((unsigned)flags & POTR_SEND_BLOCKING) != 0U)
     {
         potr_internal_send_queue_wait_ticket(&ctx->send_queue, last_ticket);
+        return (int)cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE);
     }
 
     return POTR_OK;
@@ -102,9 +104,7 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
 static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, int flags,
                           uint16_t base_flags);
 
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len, int flags)
+static int send_impl(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len, int flags)
 {
     potr_context *ctx = (potr_context *)handle;
     const uint8_t *ptr = (const uint8_t *)data;
@@ -132,18 +132,6 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_send: service_id=%" PRId64 " peer_id=%u len=%zu flags=0x%x",
                ctx->service.service_id, (unsigned)peer_id, len, (unsigned)flags);
 
-    /*
-     * N:1 の受信スレッドは peers_mutex を保持したままコールバックを呼ぶ。
-     * 同じスレッドから送信すると非再帰の peers_mutex を二重に取得して停止するため、停止前に拒否する。
-     */
-    if (ctx->is_multi_peer && potr_internal_in_own_callback(ctx))
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_send: service_id=%" PRId64 " called from its own callback in N:1 mode",
-                   ctx->service.service_id);
-        return POTR_ERR_UNSUPPORTED;
-    }
-
     if (cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
@@ -152,8 +140,15 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
         return POTR_ERR_CANCELED;
     }
 
+    /* 片方向の受信専用サービスは送信キューを持たない。 */
+    if (ctx->role == POTR_ROLE_RECEIVER && ctx->service.type != POTR_TYPE_UNICAST_BIDIR &&
+        ctx->service.type != POTR_TYPE_UNICAST_BIDIR_N1 && ctx->service.type != POTR_TYPE_TCP_BIDIR)
+    {
+        return POTR_ERR_UNSUPPORTED;
+    }
+
     /*
-     * TCP では、物理 path が未接続のとき、または PING 交換による論理 CONNECTED の前は、
+     * TCP: 物理 path 未接続、または PING 交換による論理 CONNECTED 前は
      * POTR_ERR_DISCONNECTED を返す。
      */
     if (is_tcp_type(ctx->service.type) &&
@@ -346,4 +341,28 @@ static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t
 
     /* 1:1 モードでは、peer_id を無視する。 */
     return send_to_peer(ctx, POTR_PEER_NA, ptr, len, flags, base_flags);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len, int flags)
+{
+    potr_context *ctx = NULL;
+    int ret;
+
+    if (handle == NULL)
+    {
+        return send_impl(NULL, peer_id, data, len, flags);
+    }
+
+    ret = potr_internal_handle_acquire(handle, &ctx);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+
+    ret = send_impl(ctx, peer_id, data, len, flags);
+    potr_internal_handle_release(ctx);
+
+    return ret;
 }

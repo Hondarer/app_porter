@@ -1,2 +1,5 @@
+/potr_handle.c
+/potr_notify.c
 /potr_send_queue.c
+/potr_send_queue_abort.c
 /potr_service_send.c

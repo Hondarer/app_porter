@@ -230,6 +230,11 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
         break;
     }
 
+    case POTR_EVENT_ERROR:
+        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                   "[サービス %" PRId64 "] 通知継続不能: %d\n", service_id, *(const int *)data);
+        break;
+
     case POTR_EVENT_DATA:
     default:
         if (is_text_data(data, len))

@@ -65,6 +65,8 @@
 #define POTR_ERR_UNSUPPORTED      (-3) /**< 現在の通信種別または状態では操作がサポートされていません。 */
 #define POTR_ERR_NOT_FOUND        (-4) /**< 対象のサービス、ピア、またはエントリが存在しません。 */
 
+#define POTR_ERR_INVALID_HANDLE (-5) /**< 未登録または終了済みのハンドルです。 */
+
 /* リソース・コンテナー: -10 〜 -19 */
 #define POTR_ERR_OUT_OF_MEMORY (-10) /**< メモリを確保できません。 */
 #define POTR_ERR_FULL          (-11) /**< キューまたはウィンドウが満杯です。 */

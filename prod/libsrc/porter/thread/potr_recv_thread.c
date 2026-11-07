@@ -173,7 +173,8 @@ static void recv_thread_func(void *arg)
         }
     }
 
-    while (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    while (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
+           cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
         unsigned char ready[POTR_MAX_PATH];
         cplat_error detail;
@@ -570,7 +571,8 @@ static void tcp_recv_thread_func(void *arg)
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: starting (recv_timeout=%s)",
                ctx->service.service_id, path_idx, recv_timeout_label);
 
-    while (cplat_atomic_load_i32(&ctx->running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    while (cplat_atomic_load_i32(&ctx->running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
+           cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
         uint16_t wire_payload_len;
         int r;

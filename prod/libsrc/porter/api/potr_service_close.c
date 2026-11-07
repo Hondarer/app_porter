@@ -31,6 +31,8 @@
 #include <porter/infra/potr_send_queue.h>
 #include <porter/infra/potr_tcp_control.h>
 #include <porter/potr_context.h>
+#include <porter/potr_handle.h>
+#include <porter/potr_notify.h>
 #include <porter/potr_path_event.h>
 #include <porter/potr_peer_table.h>
 #include <porter/protocol/packet.h>
@@ -240,9 +242,7 @@ static void stop_tcp_health_threads(potr_context *ctx)
     }
 }
 
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_service_close(potr_context *handle)
+static int close_impl(potr_context *handle)
 {
     potr_context *ctx = (potr_context *)handle;
     int ret = POTR_OK;
@@ -347,10 +347,9 @@ int potr_service_close(potr_context *handle)
         }
 
         api_context_dispose_tcp_sync(ctx);
-        api_context_dispose_resources(ctx);
 
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service closed (TCP)");
-        cplat_free(ctx);
+
         return ret;
     }
 
@@ -454,10 +453,46 @@ int potr_service_close(potr_context *handle)
         }
     }
 
-    api_context_dispose_resources(ctx);
     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service closed");
 
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_service_close(potr_context *handle)
+{
+    potr_context *ctx = NULL;
+    int ret;
+
+    if (handle == NULL)
+    {
+        return close_impl(NULL);
+    }
+
+    ret = potr_internal_handle_begin_close(handle, &ctx);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+
+    ret = close_impl(ctx);
+
+    if (api_context_has_threads(ctx))
+    {
+        potr_internal_handle_end_close(ctx, 0);
+        return ret;
+    }
+
+    if (potr_internal_notify_stop(ctx) != POTR_OK)
+    {
+        potr_internal_handle_end_close(ctx, 0);
+        return POTR_ERR_UNKNOWN;
+    }
+
+    api_context_dispose_resources(ctx);
+    potr_internal_handle_end_close(ctx, 1);
     cplat_free(ctx);
 
-    return POTR_OK;
+    return ret;
 }

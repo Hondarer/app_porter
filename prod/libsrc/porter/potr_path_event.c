@@ -19,6 +19,7 @@
 #include <cplat/runtime/process.h>
 #include <cplat/sync/sync.h>
 #include <porter/potr_path_event.h>
+#include <porter/potr_notify.h>
 
 /**
  *  @brief          PING 受信状態が NORMAL かどうかを判定します。
@@ -86,6 +87,12 @@ void potr_internal_callback_emit_locked(potr_context *ctx, potr_peer_id peer_id,
 {
     if (ctx != NULL && ctx->callback != NULL)
     {
+        if (ctx->notifications != NULL)
+        {
+            potr_internal_notify_enqueue(ctx, peer_id, event, data, len);
+            return;
+        }
+
         /*
          * コールバック内からの API 呼び出しを potr_internal_in_own_callback で判定できるよう、
          * 実行中のスレッドを記録する。callback_mutex により記録は 1 件だけ有効になる。

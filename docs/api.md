@@ -35,8 +35,9 @@ Table: PATH イベント時のコールバック引数の意味
 | `POTR_ERR_INVALID_ARGUMENT` | ハンドル、データ、サイズ、または N:1 モードの `peer_id` が不正 |
 | `POTR_ERR_DISCONNECTED` | 論理 CONNECTED 前または切断中。`unicast_bidir`、`unicast_bidir_n1` の未接続 peer、`POTR_PEER_ALL` で接続済み peer 0 件、`tcp` / `tcp_bidir` の CONNECTED 前または全 path 切断中が該当 |
 | `POTR_ERR_NOT_FOUND` | N:1 モードで指定した peer が存在しない |
-| `POTR_ERR_OUT_OF_MEMORY` | `POTR_PEER_ALL` の送信先一覧、または圧縮用の一時領域のメモリ確保失敗 |
-| `POTR_ERR_UNSUPPORTED` | N:1 モードで、同一サービスの受信コールバック内から呼び出した |
+| `POTR_ERR_OUT_OF_MEMORY` | `POTR_PEER_ALL` の送信先一覧・圧縮用の一時領域の確保失敗、または通知継続不能 |
+| `POTR_ERR_INVALID_HANDLE` | ハンドルが未登録または終了済み |
+| `POTR_ERR_UNSUPPORTED` | 片方向の受信専用サービスに送信を要求した |
 | `POTR_ERR_CANCELED` | サービスの終了処理による送信中止 |
 | `POTR_ERR_UNKNOWN` | 圧縮など分類不能な内部処理の失敗 |
 
@@ -55,21 +56,21 @@ Table: potr_service_send の戻り値一覧
 |---|---|---|
 | `potr_service_open()` | はい | 複数スレッドから並行してハンドルを取得可 (低レベル API) |
 | `potr_service_open_from_config()` | はい | 複数スレッドから並行してハンドルを取得可 (高レベル API) |
-| `potr_service_send()` | はい (条件付き) | 同一ハンドルへの並行呼び出し可。`potr_service_close()` とは並行不可 |
-| `potr_service_close()` | **いいえ** | 他の API と同一ハンドルへ並行して呼び出さないこと |
-| `potr_peer_disconnect()` | はい (条件付き) | `potr_service_close()` とは並行不可 |
+| `potr_service_send()` | はい (条件付き) | 同一ハンドルへの並行送信、close との並行呼び出し可 |
+| `potr_service_close()` | はい (条件付き) | 受付済み操作と通知の完了を待つ。同一コールバック内からは拒否 |
+| `potr_peer_disconnect()` | はい (条件付き) | close との並行呼び出しと、コールバック内からの呼び出し可 |
 | `potr_service_get_type()` | はい | グローバル状態なし |
 
 Table: porter API のスレッド セーフ性一覧
 
-受信コールバック (`potr_recv_fn`) の内部から同一サービスに対して次の API を呼び出すと、停止を避けるため処理を行わずに `POTR_ERR_UNSUPPORTED` を返します。  
-N:1 モードの受信処理はピア表のロックを保持したままコールバックを呼び、`potr_service_close()` はコールバックを呼んだスレッドの終了を待つためです。
+通知はハンドルごとの専用スレッドで、登録順に直列実行します。  
+I/O を保護するロックを保持して利用者のコールバックを呼び出しません。
 
-| API | コールバック内から呼び出した場合 |
-|---|---|
-| `potr_service_send()` | N:1 モードでは `POTR_ERR_UNSUPPORTED`。それ以外の通信種別では送信できる |
-| `potr_service_close()` | `POTR_ERR_UNSUPPORTED`。ハンドルは有効なまま残る |
-| `potr_peer_disconnect()` | `POTR_ERR_UNSUPPORTED` |
+| API | 同一ハンドルのコールバック内から呼び出した場合 |
+| --- | --- |
+| `potr_service_send()` | N:1 を含め、通常の送信動作に対応。ブロッキング指定も可 |
+| `potr_service_close()` | `POTR_ERR_UNSUPPORTED`。終了要求を設定しない |
+| `potr_peer_disconnect()` | N:1 で切断可能。切断通知は現在のコールバックの後に実行 |
 
 Table: 受信コールバック内から呼び出した場合の動作
 
@@ -87,10 +88,33 @@ Table: サービス開始 API の入力と用途の使い分け
 ### ハンドルとスレッドの対応
 
 - **同一ハンドルの `potr_service_send()` は、複数スレッドから同時に呼び出せます。** 1 メッセージの断片は他のメッセージと交互に並ばずに送られます。各スレッド内の送信順序は保たれ、スレッド間の順序は送信キューへの登録順になります。
-- **`potr_service_close()` は、同一ハンドルへの他の API 呼び出しがすべて終わってから呼び出してください。** close はハンドルを解放するため、並行して呼び出すと解放後のメモリを使います。
+- `potr_service_close()` と他 API は同一ハンドルへ並行して呼び出せます。受付停止前に受け付けた操作は完了を待ち、以後の新しい操作は `POTR_ERR_CANCELED` を返します。
 - **ハンドルが異なれば、別スレッドから独立して使用できます。** スレッド A でサービス 1001 を、スレッド B でサービス 1002 を同時に運用することは問題ありません。
 - `potr_service_open()` / `potr_service_open_from_config()` でのハンドル作成スレッドと、その後 `potr_service_send()` を呼び出すスレッドが異なっていても構いません。
 
 `POTR_SEND_BLOCKING` を指定した送信は、自分が登録した最後の断片の送信が終わるまで待ちます。  
 送信スレッドは登録順に送信するため、復帰した時点で、それ以前に登録された送信も送信済みです。  
 自分の送信は、直前に登録された他の送信と同じ UDP パケットにまとめられる場合があります。
+
+### close と無効ハンドル
+
+正常 close は受付済み操作、送信キュー、登録済み通知の完了を待って資源を回収します。  
+進行中に別スレッドが同じハンドルを close すると `POTR_ERR_CANCELED` を返します。  
+回収後の send、disconnect、close は `POTR_ERR_INVALID_HANDLE` を返し、その値を新しい接続へ再利用しません。  
+スレッド停止が失敗した場合は通常操作を拒否したまま、close による回収を再試行できます。  
+TCP の FIN 待機失敗で資源回収を完了した場合は、ハンドルは終了済みです。
+
+通知領域と通信資源は close で回収します。  
+古いハンドルを識別する軽量な制御情報はライブラリの存続中保持するため、その保持量は累計 open 数に比例します。
+
+### 通知継続不能のエラー イベント
+
+`POTR_EVENT_ERROR` は通知領域を確保できず、通常の通知を継続できなくなったことを表します。  
+`peer_id` は `POTR_PEER_NA`、`data` は `const int *` の原因コード、`len` は `sizeof(int)` です。  
+現在の原因コードは `POTR_ERR_OUT_OF_MEMORY` です。  
+先に登録できた通知の後に 1 回だけ通知し、以後の通常通知は登録しません。  
+通知領域の確保失敗後は通常操作と送信待機が `POTR_ERR_OUT_OF_MEMORY` で失敗し、外部スレッドの close で回収できます。
+
+コールバックに時間がかかる間も I/O は進み、未処理通知を保持する領域が動的に増えます。  
+コールバックへ渡した領域は復帰まで有効であり、復帰後に参照する内容は利用側で複製します。  
+close の成功復帰後には、当該ハンドルのコールバックは実行されません。

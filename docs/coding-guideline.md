@@ -129,6 +129,7 @@ porter の公開 API および内部関数が戻り値として使用する共�
 | 契約・探索 | `POTR_ERR_INVALID_ARGUMENT` | -2 | 引数または設定値が不正 |
 | 契約・探索 | `POTR_ERR_UNSUPPORTED` | -3 | 現在の通信種別または状態では操作が未対応 |
 | 契約・探索 | `POTR_ERR_NOT_FOUND` | -4 | 対象エントリが存在しない |
+| 契約・探索 | `POTR_ERR_INVALID_HANDLE` | -5 | 未登録または終了済みのハンドル |
 | 資源・状態 | `POTR_ERR_OUT_OF_MEMORY` | -10 | メモリ確保不可 |
 | 資源・状態 | `POTR_ERR_FULL` | -11 | キューまたはウィンドウが満杯 |
 | 資源・状態 | `POTR_ERR_EMPTY` | -12 | キューが空、または順序整列済みパケットが未着 |

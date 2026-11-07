@@ -236,25 +236,30 @@ typedef struct potr_internal_path_thread_arg
  */
 struct potr_context
 {
-    potr_recv_fn callback;                         /**< 受信コールバック。 */
-    cplat_local_lock *callback_mutex;              /**< コールバック直列化用ミューテックス。 */
+    struct potr_internal_handle *handle_owner;         /**< 公開ハンドルの制御情報。 */
+    struct potr_internal_notifications *notifications; /**< 通知専用スレッドとキュー。 */
+    cplat_atomic_i32 fatal_error;                      /**< 通知継続不能の原因。 */
+    int lifecycle_padding;                             /**< ポインター境界の明示パディング。 */
+    potr_recv_fn callback;                             /**< 受信コールバック。 */
+    cplat_local_lock *callback_mutex;                  /**< 通知登録と状態変更の順序保護用ミューテックス。 */
 
     /*
      * コールバック実行中のスレッドの記録。
      * コールバック内からの API 呼び出しのうち、停止 (自スレッドの join や非再帰ロックの二重取得) を
      * 招くものを検出してエラーを返すために使う。
-     * コールバックは callback_mutex の下で 1 つずつ呼ばれるため、記録する場所は 1 つで足りる。
-     * potr_internal_callback_emit_locked が callback_mutex 保持中に設定・解除する。
+     * 通知専用スレッドがコールバックを 1 つずつ実行する。
+     * 通知専用スレッドが呼び出し前後に設定・解除する。
      */
     cplat_atomic_i32 callback_active; /**< コールバック実行中か (1: 実行中, 0: なし)。アトミックに読み書きします。 */
-    cplat_atomic_u32 callback_tid; /**< コールバックを実行中のスレッドの ID (cplat_process_get_tid)。アトミックに読み書きします。 */
-    cplat_thread *recv_thread[POTR_MAX_PATH];      /**< 受信スレッド ハンドル (path ごと)。 */
-    cplat_thread *health_thread[POTR_MAX_PATH];    /**< ヘルス チェック スレッド ハンドル (path ごと、TCP: 全ロール)。 */
+    cplat_atomic_u32
+        callback_tid; /**< コールバックを実行中のスレッドの ID (cplat_process_get_tid)。アトミックに読み書きします。 */
+    cplat_thread *recv_thread[POTR_MAX_PATH];   /**< 受信スレッド ハンドル (path ごと)。 */
+    cplat_thread *health_thread[POTR_MAX_PATH]; /**< ヘルス チェック スレッド ハンドル (path ごと、TCP: 全ロール)。 */
     cplat_local_lock *health_mutex[POTR_MAX_PATH]; /**< ヘルス チェック スレッド停止用ミューテックス (path ごと)。 */
-    cplat_condvar *health_wakeup[POTR_MAX_PATH];   /**< ヘルス チェック スレッドを即時起床させる条件変数 (path ごと)。 */
-    potr_service_def service;                      /**< サービス定義。 */
-    potr_global_config global;                     /**< プロトコル別のグローバル既定値。 */
-    uint32_t health_interval_ms;                   /**< 通信種別とサービス上書きを解決した実効 PING 送信間隔。 */
+    cplat_condvar *health_wakeup[POTR_MAX_PATH]; /**< ヘルス チェック スレッドを即時起床させる条件変数 (path ごと)。 */
+    potr_service_def service;                    /**< サービス定義。 */
+    potr_global_config global;                   /**< プロトコル別のグローバル既定値。 */
+    uint32_t health_interval_ms;                 /**< 通信種別とサービス上書きを解決した実効 PING 送信間隔。 */
     potr_internal_window send_window; /**< 送信バッファー (過去 N パケット保持。NACK 再送・REJECT 判定に使用)。 */
     cplat_local_lock *
         send_window_mutex; /**< send_window 保護用ミューテックス (送信スレッド・ヘルス チェック スレッド・受信スレッドが競合するため)。 */
@@ -309,13 +314,13 @@ struct potr_context
     /* 受信者: パスごとの最終受信時刻 (パス単位の peer_port クリア用。CLOCK_MONOTONIC 基準) */
     cplat_timespec path_last_recv_ts[POTR_MAX_PATH]; /**< パスごとの最終受信時刻。tv_sec == 0 は未受信。 */
 
-    size_t frag_buf_len;        /**< フラグメント結合バッファーの現在のデータ長 [byte]。 */
-    int frag_compressed;        /**< フラグメント受信中の圧縮フラグ (非 0: 圧縮あり)。 */
-    uint32_t _pad_frag;         /**< パディング (frag_buf を 8 [byte] 境界に揃える)。 */
-    uint8_t *frag_buf;          /**< フラグメント結合バッファー (動的確保。max_message_size バイト)。 */
-    size_t compress_buf_size;   /**< 圧縮・展開用バッファーのサイズ [byte]。送信時の圧縮先は呼び出しごとに確保します。 */
-    uint8_t *crypto_buf;        /**< 送信暗号化用一時バッファー (動的確保)。 */
-    size_t crypto_buf_size;     /**< crypto_buf のサイズ [byte]。 */
+    size_t frag_buf_len;      /**< フラグメント結合バッファーの現在のデータ長 [byte]。 */
+    int frag_compressed;      /**< フラグメント受信中の圧縮フラグ (非 0: 圧縮あり)。 */
+    uint32_t _pad_frag;       /**< パディング (frag_buf を 8 [byte] 境界に揃える)。 */
+    uint8_t *frag_buf;        /**< フラグメント結合バッファー (動的確保。max_message_size バイト)。 */
+    size_t compress_buf_size; /**< 圧縮・展開用バッファーのサイズ [byte]。送信時の圧縮先は呼び出しごとに確保します。 */
+    uint8_t *crypto_buf;      /**< 送信暗号化用一時バッファー (動的確保)。 */
+    size_t crypto_buf_size;   /**< crypto_buf のサイズ [byte]。 */
     uint8_t *recv_compress_buf; /**< 受信展開用バッファー (動的確保、compress_buf_size バイト)。 */
     uint8_t *recv_crypto_buf;   /**< 受信復号用バッファー (動的確保、crypto_buf_size バイト)。 */
     uint8_t *tcp_recv_buf
