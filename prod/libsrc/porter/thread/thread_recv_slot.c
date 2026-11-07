@@ -89,7 +89,7 @@ void thread_recv_slot_init_peer(thread_recv_slot *slot, potr_context *ctx, potr_
     slot->remote_path_ping_state = peer->remote_path_ping_state;
 }
 
-/* 受信データを展開してコールバックに渡す */
+/* 受信データを必要に応じて展開し、コールバックへ渡す。 */
 static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, size_t payload_len, int compressed)
 {
     potr_context *ctx = slot->ctx;
@@ -122,8 +122,10 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
 {
     potr_context *ctx = slot->ctx;
 
-    /* 未接続状態では DATA を破棄する。接続確立前/DISCONNECTED 後の DATA が
-       アプリに到着しないようにする。CONNECTED 発火は health_alive=1 への遷移で行う。 */
+    /*
+     * 未接続状態では DATA を破棄する。接続確立前/DISCONNECTED 後の DATA が
+     * アプリに到着しないようにする。CONNECTED 発火は health_alive=1 への遷移で行う。
+     */
     if (cplat_atomic_load_i32(slot->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: drop DATA elem while health_alive=0",
@@ -133,7 +135,7 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
 
     if (elem->flags & POTR_FLAG_MORE_FRAG)
     {
-        /* 中間フラグメント: バッファーに追記 */
+        /* 中間フラグメントをバッファーに追記する。 */
         if (*slot->frag_buf_len + elem->payload_len <= ctx->global.max_message_size)
         {
             if (*slot->frag_buf_len == 0)
@@ -147,6 +149,7 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
                     *slot->frag_compressed = 0;
                 }
             }
+
             memcpy(slot->frag_buf + *slot->frag_buf_len, elem->payload, elem->payload_len);
             *slot->frag_buf_len += elem->payload_len;
         }
@@ -158,7 +161,7 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
     }
     else if (*slot->frag_buf_len > 0)
     {
-        /* 最終フラグメント: バッファーに追記してコールバック */
+        /* 最終フラグメントをバッファーに追記し、受信完了データをコールバックへ渡す。 */
         if (*slot->frag_buf_len + elem->payload_len <= ctx->global.max_message_size)
         {
             memcpy(slot->frag_buf + *slot->frag_buf_len, elem->payload, elem->payload_len);
@@ -169,15 +172,17 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
                 slot_recv_deliver(slot, slot->frag_buf, *slot->frag_buf_len, *slot->frag_compressed);
             }
         }
+
         *slot->frag_buf_len = 0;
         *slot->frag_compressed = 0;
     }
     else
     {
-        /* フラグメントなし: 直接コールバック */
+        /* 単一パケットのデータを直接コールバックへ渡す。 */
         if (ctx->callback != NULL)
         {
             int is_compressed;
+
             if (elem->flags & POTR_FLAG_COMPRESSED)
             {
                 is_compressed = 1;
@@ -186,6 +191,7 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
             {
                 is_compressed = 0;
             }
+
             slot_recv_deliver(slot, elem->payload, (size_t)elem->payload_len, is_compressed);
         }
     }

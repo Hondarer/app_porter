@@ -51,6 +51,10 @@ void thread_recv_wake_udp_interrupt_ping(potr_context *ctx, int state_changed)
     }
 }
 
+/*
+ * FIN パケットを受信した際のセッション採用判定、pending 判定、切断発火を行う。
+ * PING 受信状態は変化しないため常に 0 を返す。
+ */
 static int dispatch_fin(thread_recv_slot *slot, const potr_packet *pkt)
 {
     potr_context *ctx = slot->ctx;
@@ -86,6 +90,10 @@ static int dispatch_fin(thread_recv_slot *slot, const potr_packet *pkt)
     return 0;
 }
 
+/*
+ * PING パケットを受信した際の経路ヘルス状態更新、相手端経路状態の反映、PING 欠落スキャンを行う。
+ * N:1 で PING 受信状態が変化した場合は 1、それ以外は 0 を返す。
+ */
 static int dispatch_ping(thread_recv_slot *slot, const potr_packet *pkt, int path_idx)
 {
     potr_context *ctx = slot->ctx;
@@ -107,6 +115,7 @@ static int dispatch_ping(thread_recv_slot *slot, const potr_packet *pkt, int pat
     {
         thread_recv_wake_udp_interrupt_ping(ctx, ping_state_changed);
     }
+
     thread_recv_sync_path_state(slot);
     thread_recv_window_scan_ping_gap(slot, pkt);
 
@@ -136,6 +145,7 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
         {
             thread_recv_window_on_nack(slot, pkt);
         }
+
         return 0;
     }
 
@@ -159,6 +169,7 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
 
     {
         const char *pkt_kind_str;
+
         if ((pkt->flags & POTR_FLAG_PING) != 0)
         {
             pkt_kind_str = "PING";
@@ -167,6 +178,7 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
         {
             pkt_kind_str = "DATA";
         }
+
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: peer=%u %s seq=%u path=%d",
                    ctx->service.service_id, (unsigned)slot->peer_id, pkt_kind_str, (unsigned)pkt->seq_num, path_idx);
     }
@@ -177,5 +189,6 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
     }
 
     thread_recv_window_accept_outer(slot, pkt, path_idx);
+
     return 0;
 }

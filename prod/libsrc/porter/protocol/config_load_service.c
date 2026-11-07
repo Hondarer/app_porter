@@ -31,7 +31,7 @@
 /**
  *  @brief          src を dst に終端 NUL 付きで切り詰めコピーします。
  *  @param[out]     dst      コピー先バッファーへのポインター。
- *  @param[in]      dst_size コピー先バッファーのサイズ (バイト)。
+ *  @param[in]      dst_size コピー先バッファーのサイズ [byte]。
  *  @param[in]      src      コピー元文字列へのポインター。NULL の場合は空文字列を設定します。
  */
 static void copy_cstr_trunc(char *dst, size_t dst_size, const char *src)
@@ -194,6 +194,7 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
         int i;
         int is_hex = 1;
 
+        /* 16 進数表記の鍵文字列であるか判定する。 */
         if (hex_len == POTR_CRYPTO_KEY_SIZE * 2U)
         {
             for (i = 0; i < (int)(POTR_CRYPTO_KEY_SIZE * 2U); i++)
@@ -210,6 +211,10 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
             is_hex = 0;
         }
 
+        /*
+         * 16 進数表記の場合はバイナリ鍵へ直接変換し、それ以外の非空文字列は
+         * パスフレーズとして SHA-256 でハッシュ化して鍵を導出する。
+         */
         if (is_hex)
         {
             for (i = 0; i < (int)POTR_CRYPTO_KEY_SIZE; i++)
@@ -226,6 +231,7 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
                     current->encrypt_key[i] = (uint8_t)byte_val;
                 }
             }
+
             current->encrypt_enabled = 1;
             POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "config: encrypt_key loaded as hex key (service_id=%" PRId64 ")",
                        current->service_id);
@@ -273,17 +279,20 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     ret = config_read_jsonc(config_path, &root);
     if (ret != POTR_OK)
     {
         return ret;
     }
+
     services = cJSON_GetObjectItemCaseSensitive(root, "services");
     if (services != NULL && !cJSON_IsObject(services))
     {
         cJSON_Delete(root);
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     (void)snprintf(id_text, sizeof(id_text), "%" PRId64, service_id);
     service = cJSON_GetObjectItemCaseSensitive(services, id_text);
     if (service == NULL)
@@ -291,11 +300,13 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
         cJSON_Delete(root);
         return POTR_ERR_NOT_FOUND;
     }
+
     if (!cJSON_IsObject(service))
     {
         cJSON_Delete(root);
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     memset(def, 0, sizeof(*def));
     def->ttl = (uint8_t)POTR_DEFAULT_TTL;
     def->pack_wait_ms = (uint32_t)POTR_DEFAULT_PACK_WAIT_MS;
@@ -303,6 +314,8 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
     def->service_id = service_id;
     def->reconnect_interval_ms = (uint32_t)POTR_DEFAULT_RECONNECT_INTERVAL_MS;
     def->connect_timeout_ms = (uint32_t)POTR_DEFAULT_CONNECT_TIMEOUT_MS;
+
+    /* サービス定義オブジェクトの各キーを走査し、設定項目へ反映する。 */
     cJSON_ArrayForEach(item, service)
     {
         char value_buffer[32];
@@ -310,6 +323,8 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
         if (val != NULL)
         {
             apply_service_kv(item->string, val, def);
+
+            /* メモリ上に平文の鍵文字列が残らないようゼロクリアする。 */
             if (strcmp(item->string, "encrypt_key") == 0 && item->valuestring != NULL)
             {
                 cplat_secure_zero(item->valuestring, strlen(item->valuestring));
@@ -323,5 +338,6 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
                "src_addr1=%s dst_addr1=%s dst_port=%u src_port=%u",
                def->service_id, (int)def->type, def->src_addr[0], def->dst_addr[0], (unsigned)def->dst_port,
                (unsigned)def->src_port);
+
     return POTR_OK;
 }

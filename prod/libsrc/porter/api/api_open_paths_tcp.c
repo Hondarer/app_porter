@@ -25,10 +25,12 @@
 #include "api_open_paths_tcp.h"
 #include "api_open_paths_common.h"
 
-/* TCP RECEIVER: path_idx 番目の listen ソケットを作成して bind・listen する。
-   dst_addr[path_idx] が指定されていれば dst_addr_resolved[path_idx] に解決する。
-   src_addr[path_idx] が指定されていれば src_addr_resolved[path_idx] にも解決する (接続元フィルター用)。
-   成功時は ctx->tcp_listen_sock[path_idx] に格納して POTR_OK を返す。 */
+/*
+ * TCP RECEIVER: path_idx 番目の listen ソケットを作成して bind・listen する。
+ * dst_addr[path_idx] が指定されていれば dst_addr_resolved[path_idx] に解決する。
+ * src_addr[path_idx] が指定されていれば src_addr_resolved[path_idx] にも解決する (接続元フィルター用)。
+ * 成功時は ctx->tcp_listen_sock[path_idx] に格納して POTR_OK を返す。
+ */
 static int open_socket_tcp_receiver(potr_context *ctx, const int path_idx)
 {
     cplat_socket sock;
@@ -44,6 +46,7 @@ static int open_socket_tcp_receiver(potr_context *ctx, const int path_idx)
         {
             return result;
         }
+
         ctx->dst_addr_resolved[path_idx] = bind_ip;
     }
     else
@@ -67,7 +70,7 @@ static int open_socket_tcp_receiver(potr_context *ctx, const int path_idx)
         return potr_internal_result_from_error(&detail);
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行する。 */
     (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
     addr.address = bind_ip;
@@ -90,12 +93,15 @@ static int open_socket_tcp_receiver(potr_context *ctx, const int path_idx)
     }
 
     ctx->tcp_listen_sock[path_idx] = sock;
+
     return POTR_OK;
 }
 
-/* TCP SENDER: path_idx 番目の接続先 dst_addr を解決して dst_addr_resolved[path_idx] に格納する。
-   src_addr[path_idx] が指定されていれば src_addr_resolved[path_idx] にも解決する。
-   実際の TCP 接続は connect スレッドが行う。 */
+/*
+ * TCP SENDER: path_idx 番目の接続先 dst_addr を解決して dst_addr_resolved[path_idx] に格納する。
+ * src_addr[path_idx] が指定されていれば src_addr_resolved[path_idx] にも解決する。
+ * 実際の TCP 接続は connect スレッドが行う。
+ */
 static int open_socket_tcp_sender(potr_context *ctx, const int path_idx)
 {
     int result;
@@ -124,7 +130,7 @@ static int open_socket_tcp_sender(potr_context *ctx, const int path_idx)
     return POTR_OK;
 }
 
-/* TCP / TCP_BIDIR: RECEIVER は listen ソケット作成、SENDER はアドレス解決のみ行う */
+/* TCP / TCP_BIDIR: RECEIVER は listen ソケット作成、SENDER はアドレス解決のみ行う。 */
 /* Doxygen コメントは、ヘッダーに記載 */
 int api_open_paths_tcp(potr_context *ctx, const potr_role role)
 {
@@ -140,7 +146,7 @@ int api_open_paths_tcp(potr_context *ctx, const potr_role role)
 
     if (role == POTR_ROLE_RECEIVER)
     {
-        /* 非空の dst_addr[i] ごとに listen ソケットを作成する */
+        /* 非空の dst_addr[i] ごとに listen ソケットを作成する。 */
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
             if (ctx->service.dst_addr[i][0] == '\0')
@@ -155,12 +161,14 @@ int api_open_paths_tcp(potr_context *ctx, const potr_role role)
                            ctx->service.service_id, i, ctx->service.dst_addr[i], (unsigned)ctx->service.dst_port);
                 return result;
             }
+
             POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                        "potr_service_open: service_id=%" PRId64 " TCP path[%d] listening"
                        " on %s:%u",
                        ctx->service.service_id, i, ctx->service.dst_addr[i], (unsigned)ctx->service.dst_port);
             ctx->n_path = i + 1;
         }
+
         if (ctx->n_path == 0)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
@@ -172,7 +180,7 @@ int api_open_paths_tcp(potr_context *ctx, const potr_role role)
     }
     else
     {
-        /* 非空の dst_addr[i] ごとにアドレスを解決する */
+        /* 非空の dst_addr[i] ごとにアドレスを解決する。 */
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
             if (ctx->service.dst_addr[i][0] == '\0')
@@ -187,8 +195,10 @@ int api_open_paths_tcp(potr_context *ctx, const potr_role role)
                            ctx->service.service_id, i, ctx->service.dst_addr[i]);
                 return result;
             }
+
             ctx->n_path = i + 1;
         }
+
         if (ctx->n_path == 0)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,

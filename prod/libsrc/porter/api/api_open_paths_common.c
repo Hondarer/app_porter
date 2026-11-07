@@ -24,20 +24,24 @@
 
 #include "api_open_paths_common.h"
 
-/* cplat のアドレス解決/変換結果コードを porter の結果コードへ変換する。
+/*
+ * cplat のアドレス解決/変換結果コードを porter の結果コードへ変換する。
  * cplat_ipv4_resolve() / cplat_ipv4_parse() は CPLAT_ERR_INVALID_ARGUMENT または
  * CPLAT_ERR_UNKNOWN のみを返し、失敗時の詳細エラーはソケット由来ではない (GAI ドメイン等) ため
- * potr_internal_result_from_error() の要因ベース変換は適用しない。 */
+ * potr_internal_result_from_error() の要因ベース変換は適用しない。
+ */
 static int result_from_ipv4_result(int cplat_result)
 {
     if (cplat_result == CPLAT_OK)
     {
         return POTR_OK;
     }
+
     if (cplat_result == CPLAT_ERR_INVALID_ARGUMENT)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     return POTR_ERR_IO;
 }
 
@@ -51,6 +55,7 @@ int api_paths_resolve_ipv4(const char *host, uint32_t *address_out)
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "resolve_ipv4(%s) failed", host);
     }
+
     return result_from_ipv4_result(result);
 }
 

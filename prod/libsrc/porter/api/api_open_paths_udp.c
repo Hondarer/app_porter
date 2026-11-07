@@ -25,8 +25,10 @@
 #include "api_open_paths_udp.h"
 #include "api_open_paths_common.h"
 
-/* ソケットを作成して bind する。成功時はソケットを返す。失敗時は CPLAT_INVALID_SOCKET。
-   bind_addr: bind する IPv4 アドレス (ネットワーク バイト オーダー)。port: bind するポート番号 (0 = OS 自動選定)。 */
+/*
+ * ソケットを作成して bind する。成功時はソケットを返す。失敗時は CPLAT_INVALID_SOCKET。
+ * bind_addr: bind する IPv4 アドレス (ネットワーク バイト オーダー)。port: bind するポート番号 (0 = OS 自動選定)。
+ */
 static cplat_socket open_socket_unicast(const uint32_t bind_addr, const uint16_t port)
 {
     cplat_socket sock;
@@ -39,7 +41,7 @@ static cplat_socket open_socket_unicast(const uint32_t bind_addr, const uint16_t
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行する。 */
     (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
     addr.address = bind_addr;
@@ -55,17 +57,21 @@ static cplat_socket open_socket_unicast(const uint32_t bind_addr, const uint16_t
     return sock;
 }
 
-/* マルチキャスト ソケットを作成して bind・グループ参加する。
-   src_if: 使用するローカル インターフェイス (INADDR_ANY = OS 自動選択)。
-   is_receiver: 1 = 受信者、0 = 送信者。 */
+/*
+ * マルチキャスト ソケットを作成して bind・グループ参加する。
+ * src_if: 使用するローカル インターフェイス (INADDR_ANY = OS 自動選択)。
+ * is_receiver: 1 = 受信者、0 = 送信者。
+ */
 static cplat_socket open_socket_multicast(const potr_service_def *def, const uint32_t src_if, const int is_receiver)
 {
     cplat_socket sock;
     cplat_ipv4_endpoint addr = {0};
     uint32_t group_addr;
     cplat_error detail;
+
     /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
     uint16_t bind_port;
+
     if (is_receiver)
     {
         bind_port = def->dst_port;
@@ -81,7 +87,7 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, const uin
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行する。 */
     (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
     addr.address = CPLAT_IPV4_ADDR_ANY;
@@ -94,7 +100,7 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, const uin
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* マルチキャスト グループへ参加 (送受信ともに参加する) */
+    /* マルチキャスト グループへ参加する (送受信ともに参加する)。 */
     if (api_paths_parse_ipv4(def->multicast_group, &group_addr) != POTR_OK)
     {
         cplat_socket_close(sock);
@@ -108,7 +114,7 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, const uin
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* 送信者: マルチキャスト送信インターフェイスを設定する */
+    /* 送信者: マルチキャスト送信インターフェイスを設定する。 */
     if (!is_receiver)
     {
         (void)cplat_socket_set_multicast_interface(sock, src_if, NULL);
@@ -117,19 +123,23 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, const uin
     return sock;
 }
 
-/* ブロードキャスト ソケットを作成して bind する。
-   src_port: 送信者の送信元 bind ポート (0 = OS 自動選定)。
-   dst_port: 受信者の listen ポート / 送信者の送信先ポート (省略不可)。
-   src_if: 送信者が使用するローカル インターフェイス (INADDR_ANY = OS 自動選択)。
-   is_receiver: 1 = 受信者 (INADDR_ANY で bind)、0 = 送信者 (src_if で bind)。 */
+/*
+ * ブロードキャスト ソケットを作成して bind する。
+ * src_port: 送信者の送信元 bind ポート (0 = OS 自動選定)。
+ * dst_port: 受信者の listen ポート / 送信者の送信先ポート (省略不可)。
+ * src_if: 送信者が使用するローカル インターフェイス (INADDR_ANY = OS 自動選択)。
+ * is_receiver: 1 = 受信者 (INADDR_ANY で bind)、0 = 送信者 (src_if で bind)。
+ */
 static cplat_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, const uint32_t src_if,
                                           const int is_receiver)
 {
     cplat_socket sock;
     cplat_ipv4_endpoint addr = {0};
     cplat_error detail;
+
     /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
     uint16_t bind_port;
+
     if (is_receiver)
     {
         bind_port = dst_port;
@@ -145,8 +155,9 @@ static cplat_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, 
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行します。 */
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行する。 */
     (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+
     if (cplat_socket_set_broadcast(sock, 1, &detail) != CPLAT_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "set_broadcast failed");
@@ -163,6 +174,7 @@ static cplat_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, 
     {
         addr.address = CPLAT_IPV4_ADDR_ANY;
     }
+
     addr.port = cplat_hton16(bind_port);
 
     if (cplat_socket_bind(sock, &addr, &detail) != CPLAT_OK)
@@ -175,7 +187,7 @@ static cplat_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, 
     return sock;
 }
 
-/* UNICAST: src_addr/dst_addr ペアごとにソケットを作成する */
+/* UNICAST: src_addr/dst_addr ペアごとにソケットを作成する。 */
 /* Doxygen コメントは、ヘッダーに記載 */
 int api_open_paths_unicast(potr_context *ctx, const potr_role role)
 {
@@ -202,6 +214,7 @@ int api_open_paths_unicast(potr_context *ctx, const potr_role role)
         {
             return result;
         }
+
         result = api_paths_resolve_ipv4(ctx->service.dst_addr[i], &ctx->dst_addr_resolved[i]);
         if (result != POTR_OK)
         {
@@ -236,7 +249,7 @@ int api_open_paths_unicast(potr_context *ctx, const potr_role role)
     return POTR_OK;
 }
 
-/* MULTICAST: src_addr ごとにグループ参加済みソケットを作成する */
+/* MULTICAST: src_addr ごとにグループ参加済みソケットを作成する。 */
 /* Doxygen コメントは、ヘッダーに記載 */
 int api_open_paths_multicast(potr_context *ctx, const potr_role role)
 {
@@ -276,7 +289,7 @@ int api_open_paths_multicast(potr_context *ctx, const potr_role role)
     return POTR_OK;
 }
 
-/* BROADCAST: src_addr ごとにブロードキャスト許可ソケットを作成する */
+/* BROADCAST: src_addr ごとにブロードキャスト許可ソケットを作成する。 */
 /* Doxygen コメントは、ヘッダーに記載 */
 int api_open_paths_broadcast(potr_context *ctx, const potr_role role)
 {
@@ -288,7 +301,7 @@ int api_open_paths_broadcast(potr_context *ctx, const potr_role role)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* broadcast_addr 省略時は限定ブロードキャスト (255.255.255.255) を使用する */
+    /* broadcast_addr 省略時は限定ブロードキャスト (255.255.255.255) を使用する。 */
     if (ctx->service.broadcast_addr[0] == '\0')
     {
         const char *dflt = "255.255.255.255";
@@ -325,7 +338,7 @@ int api_open_paths_broadcast(potr_context *ctx, const potr_role role)
     return POTR_OK;
 }
 
-/* UNICAST_BIDIR (1:1): 動的 RECEIVER または src/dst ペア ループでソケットを作成する */
+/* UNICAST_BIDIR (1:1): 動的 RECEIVER または src/dst ペア ループでソケットを作成する。 */
 /* Doxygen コメントは、ヘッダーに記載 */
 int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
 {
@@ -345,8 +358,10 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
 
     if (role == POTR_ROLE_RECEIVER && ctx->service.src_addr[0][0] == '\0')
     {
-        /* 動的 1:1 RECEIVER: src_addr 省略 → dst_addr:dst_port に bind し、
-           最初の受信パケットから SENDER のアドレスを動的学習する。 */
+        /*
+         * 動的 1:1 RECEIVER: src_addr 省略 → dst_addr:dst_port に bind し、
+         * 最初の受信パケットから SENDER のアドレスを動的学習する。
+         */
         uint32_t bind_addr;
 
         if (ctx->service.dst_addr[0][0] == '\0')
@@ -360,13 +375,16 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
             {
                 return result;
             }
+
             ctx->dst_addr_resolved[0] = bind_addr;
         }
+
         ctx->sock[0] = open_socket_unicast(bind_addr, ctx->service.dst_port);
         if (ctx->sock[0] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
         }
+
         ctx->n_path = 1;
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                    "potr_service_open: service_id=%" PRId64 " UNICAST_BIDIR 1:1 dynamic RECEIVER"
@@ -375,9 +393,11 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
         return POTR_OK;
     }
 
-    /* 1:1 モード: src_addr/dst_addr ペア ループ。
-       SENDER は src_addr 省略時に INADDR_ANY で bind する (OS がアダプターを自動選択)。
-       RECEIVER はここには src_addr がある場合のみ到達する。 */
+    /*
+     * 1:1 モード: src_addr/dst_addr ペア ループ。
+     * SENDER は src_addr 省略時に INADDR_ANY で bind する (OS がアダプターを自動選択)。
+     * RECEIVER はここには src_addr がある場合のみ到達する。
+     */
     {
         int i;
 
@@ -385,8 +405,10 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
         {
             uint32_t bind_addr;
 
-            /* dst_addr が空 → パス終端。
-               RECEIVER は src_addr も必要 (src_addr なし RECEIVER は上で処理済み)。 */
+            /*
+             * dst_addr が空 → パス終端。
+             * RECEIVER は src_addr も必要 (src_addr なし RECEIVER は上で処理済み)。
+             */
             if (ctx->service.dst_addr[i][0] == '\0')
                 break;
             if (role == POTR_ROLE_RECEIVER && ctx->service.src_addr[i][0] == '\0')
@@ -409,7 +431,7 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
 
             if (role == POTR_ROLE_SENDER)
             {
-                /* src_addr 省略時は INADDR_ANY で bind し OS がアダプターを自動選択 */
+                /* src_addr 省略時は INADDR_ANY で bind し、OS がアダプターを自動選択する。 */
                 if (ctx->service.src_addr[i][0] != '\0')
                 {
                     bind_addr = ctx->src_addr_resolved[i];
@@ -418,13 +440,15 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
                 {
                     bind_addr = CPLAT_IPV4_ADDR_ANY;
                 }
+
                 ctx->sock[i] = open_socket_unicast(bind_addr, ctx->service.src_port);
             }
             else
             {
-                /* RECEIVER: dst_addr:dst_port で bind */
+                /* RECEIVER: dst_addr:dst_port で bind する。 */
                 ctx->sock[i] = open_socket_unicast(ctx->dst_addr_resolved[i], ctx->service.dst_port);
             }
+
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
             {
                 return POTR_ERR_IO;
@@ -442,9 +466,11 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
     return POTR_OK;
 }
 
-/* UNICAST_BIDIR_N1 (N:1 サーバー): dst_addr[i]:dst_port ごとにソケットを bind し、
-   ピア テーブルを初期化する。dst_addr がすべて省略されている場合は INADDR_ANY で
-   1 ソケットのみ作成する。 */
+/*
+ * UNICAST_BIDIR_N1 (N:1 サーバー): dst_addr[i]:dst_port ごとにソケットを bind し、
+ * ピア テーブルを初期化する。dst_addr がすべて省略されている場合は INADDR_ANY で
+ * 1 ソケットのみ作成する。
+ */
 /* Doxygen コメントは、ヘッダーに記載 */
 int api_open_paths_unicast_bidir_n1(potr_context *ctx)
 {
@@ -465,7 +491,7 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
 
     if (ctx->service.dst_addr[0][0] == '\0')
     {
-        /* dst_addr すべて省略: INADDR_ANY で 1 ソケット */
+        /* dst_addr すべて省略: INADDR_ANY で 1 ソケットを作成する。 */
         uint32_t any_addr;
         any_addr = CPLAT_IPV4_ADDR_ANY;
         ctx->sock[0] = open_socket_unicast(any_addr, ctx->service.dst_port);
@@ -473,11 +499,12 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
         {
             return POTR_ERR_IO;
         }
+
         ctx->n_path = 1;
     }
     else
     {
-        /* dst_addr[i] を列挙してパスごとにソケットを作成する */
+        /* dst_addr[i] を列挙してパスごとにソケットを作成する。 */
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
             uint32_t bind_addr;
@@ -490,22 +517,25 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
             {
                 return result;
             }
+
             ctx->dst_addr_resolved[i] = bind_addr;
             ctx->sock[i] = open_socket_unicast(bind_addr, ctx->service.dst_port);
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
             {
                 return POTR_ERR_IO;
             }
+
             ctx->n_path = i + 1;
         }
     }
 
-    /* ピア テーブル初期化 */
+    /* ピア テーブルを初期化する。 */
     ctx->max_peers = (int)ctx->service.max_peers;
     if (ctx->max_peers <= 0)
     {
         ctx->max_peers = 1024;
     }
+
     result = potr_internal_peer_table_init(ctx);
     if (result != POTR_OK)
     {

@@ -40,7 +40,7 @@
 #include <porter/thread/potr_recv_thread.h>
 #include <porter/thread/potr_send_thread.h>
 
-/* FIN パケットを全パスへ送信する */
+/* FIN パケットを全パスへ送信する。 */
 static void send_fin(potr_context *ctx)
 {
     potr_packet fin_pkt;
@@ -57,8 +57,10 @@ static void send_fin(potr_context *ctx)
     if (potr_internal_packet_build_fin(&fin_pkt, &shdr) != POTR_OK)
         return;
 
-    /* 現セッションで DATA を送っている場合のみ FIN target を有効化する。
-     * ack_num は send_window.next_seq をそのまま運び、0 も通常値として扱う。 */
+    /*
+     * 現セッションで DATA を送っている場合のみ FIN target を有効化する。
+     * ack_num は send_window.next_seq をそのまま運び、0 も通常値として扱う。
+     */
     cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
     wire_target_seq = ctx->send_window.next_seq;
     has_data = ctx->send_has_data;
@@ -79,18 +81,20 @@ static void send_fin(potr_context *ctx)
         fin_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
         fin_pkt.payload_len = cplat_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
-        /* ノンス: session_id(4B) + flags(2B, FIN|ENCRYPTED NBO) + 0(4B) + padding(2B) */
+        /* ノンス: session_id (4 [byte]) + flags (2 [byte], FIN|ENCRYPTED NBO) + 0 (4 [byte]) + padding (2 [byte])。 */
         memcpy(nonce, &fin_pkt.session_id, 4);
         memcpy(nonce + 4, &fin_pkt.flags, 2);
         memset(nonce + 6, 0, 4);
         memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, &fin_pkt, POTR_PACKET_HEADER_SIZE);
+
         if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
                                  wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             return;
         }
+
         wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
 
         for (i = 0; i < ctx->n_path; i++)
@@ -124,10 +128,12 @@ static uint32_t get_fin_target_seq(potr_context *ctx, int *has_data)
 
     cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
     wire_target_seq = ctx->send_window.next_seq;
+
     if (has_data != NULL)
     {
         *has_data = ctx->send_has_data;
     }
+
     cplat_local_lock_unlock(ctx->send_window_mutex);
 
     return wire_target_seq;
@@ -187,6 +193,7 @@ static int wait_for_tcp_close_ack(potr_context *ctx, int timeout_ms)
     }
 
     cplat_local_lock_lock(ctx->tcp_close_mutex, CPLAT_SYNC_WAIT_FOREVER);
+
     while (ctx->tcp_close_waiting_ack && !ctx->tcp_close_ack_received)
     {
         wait_result = cplat_condvar_wait(ctx->tcp_close_cv, ctx->tcp_close_mutex, timeout_ms);
@@ -198,16 +205,19 @@ static int wait_for_tcp_close_ack(potr_context *ctx, int timeout_ms)
             }
             else
             {
-                /* cplat の同期失敗には、porter の分類へ変換できる詳細コードがありません。 */
+                /* cplat の同期失敗には、porter の分類へ変換できる詳細コードがない。 */
                 result = POTR_ERR_UNKNOWN;
             }
+
             break;
         }
     }
+
     if (ctx->tcp_close_waiting_ack && !ctx->tcp_close_ack_received)
     {
         result = POTR_ERR_TIMEOUT;
     }
+
     ctx->tcp_close_waiting_ack = 0;
     ctx->tcp_close_ack_received = 0;
     ctx->tcp_close_wait_target_seq = 0U;
@@ -243,8 +253,10 @@ int potr_service_close(potr_context *handle)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* コールバックを呼んだスレッドは close が停止・join する対象のため、自身の終了を待って停止する。
-     * 停止前に拒否し、ハンドルは有効なまま残す。 */
+    /*
+     * コールバックを呼んだスレッドは close が停止・join する対象のため、自身の終了を待って停止する。
+     * 停止前に拒否し、ハンドルは有効なまま残す。
+     */
     if (potr_internal_in_own_callback(ctx))
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_close: service_id=%" PRId64 " called from its own callback",
@@ -255,7 +267,7 @@ int potr_service_close(potr_context *handle)
     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service_id=%" PRId64 " closing", ctx->service.service_id);
     cplat_atomic_store_i32(&ctx->close_requested, 1, CPLAT_MEMORY_ORDER_RELEASE);
 
-    /* TCP: 接続管理スレッドを停止する (send/recv/health スレッドは connect スレッド内で停止) */
+    /* TCP: 接続管理スレッドを停止する (send/recv/health スレッドは connect スレッド内で停止)。 */
     if (is_tcp_type(ctx->service.type))
     {
         if (cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
@@ -269,6 +281,7 @@ int potr_service_close(potr_context *handle)
                        "potr_service_close: service_id=%" PRId64 " flushing send queue and sending TCP FIN",
                        ctx->service.service_id);
             potr_internal_send_queue_wait_drained(&ctx->send_queue);
+
             /* send_has_data は送信スレッドが send_window_mutex の下で更新するため、同じロックの下で読む。 */
             fin_target_seq = get_fin_target_seq(ctx, &has_data);
 
@@ -288,7 +301,7 @@ int potr_service_close(potr_context *handle)
                 }
                 else
                 {
-                    /* タイムアウト ms は設定値。実用範囲は INT_MAX 以下 */
+                    /* タイムアウト [ms] は設定値。実用範囲は INT_MAX 以下である。 */
                     close_result = wait_for_tcp_close_ack(ctx, (int)ctx->global.tcp_close_timeout_ms);
                     if (close_result != POTR_OK)
                     {
@@ -321,12 +334,13 @@ int potr_service_close(potr_context *handle)
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "potr_service_close: service_id=%" PRId64 " stopping connect thread (TCP)", ctx->service.service_id);
         potr_internal_connect_thread_stop(ctx);
+
         if (api_context_has_threads(ctx))
         {
             return POTR_ERR_UNKNOWN;
         }
 
-        /* 送信キューを破棄 (SENDER / TCP_BIDIR のみ) */
+        /* 送信キューを破棄する (SENDER / TCP_BIDIR のみ)。 */
         if (ctx->role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
         {
             potr_internal_send_queue_dispose(&ctx->send_queue);
@@ -340,11 +354,12 @@ int potr_service_close(potr_context *handle)
         return ret;
     }
 
-    /* 非 TCP: ヘルス チェック スレッドを停止 (送信者のみ) */
+    /* 非 TCP: ヘルス チェック スレッドを停止する (送信者のみ)。 */
     if (ctx->health_thread[0] != NULL)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping health thread",
                    ctx->service.service_id);
+
         if (potr_internal_health_thread_stop(ctx) != POTR_OK)
         {
             return POTR_ERR_UNKNOWN;
@@ -354,63 +369,76 @@ int potr_service_close(potr_context *handle)
     cplat_atomic_store_u64(&ctx->last_ping_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
     cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
 
-    /* 送信スレッドを停止してキューを破棄 (送信者のみ) */
+    /* 送信スレッドを停止してキューを破棄する (送信者のみ)。 */
     if (ctx->send_thread != NULL)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "potr_service_close: service_id=%" PRId64 " flushing send queue and sending FIN",
                    ctx->service.service_id);
         potr_internal_send_queue_wait_drained(&ctx->send_queue);
+
         if (ctx->is_multi_peer)
         {
-            /* N:1: 受信スレッドが参照するピア テーブルを保持したまま全アクティブ ピアへ FIN を送信する */
+            /* N:1: 受信スレッドが参照するピア テーブルを保持したまま全アクティブ ピアへ FIN を送信する。 */
             potr_internal_peer_table_send_fin(ctx);
         }
         else
         {
-            /* 1:1: 単一宛先へ FIN を送信 */
+            /* 1:1: 単一宛先へ FIN を送信する。 */
             send_fin(ctx);
         }
-        /* recv_thread は NACK 処理で send_window_mutex を参照する。
-         * send_thread_stop() が send_window_mutex を破棄する前に停止する必要がある。 */
+
+        /*
+         * recv_thread は NACK 処理で send_window_mutex を参照する。
+         * send_thread_stop() が send_window_mutex を破棄する前に停止する必要がある。
+         */
         if (ctx->recv_thread[0] != NULL)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
                        ctx->service.service_id);
+
             if (potr_internal_comm_recv_thread_stop(ctx) != POTR_OK)
             {
                 return POTR_ERR_UNKNOWN;
             }
         }
+
         potr_internal_send_thread_stop(ctx);
+
         if (ctx->send_thread != NULL)
         {
             return POTR_ERR_UNKNOWN;
         }
+
         potr_internal_send_queue_dispose(&ctx->send_queue);
     }
 
-    /* 送信スレッド未起動の受信専用サービスではここで受信スレッドを停止する */
+    /* 送信スレッド未起動の受信専用サービスではここで受信スレッドを停止する。 */
     if (ctx->recv_thread[0] != NULL)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
                    ctx->service.service_id);
+
         if (potr_internal_comm_recv_thread_stop(ctx) != POTR_OK)
         {
             return POTR_ERR_UNKNOWN;
         }
     }
 
-    /* ソケットをクローズ (recv スレッドの有無によらず実施)。
-       Windows: potr_internal_comm_recv_thread_stop 内で closesocket 済みの場合は INVALID_SOCKET になっているため
-                guard により二重 close を回避する。
-       Linux: potr_internal_comm_recv_thread_stop は shutdown のみで close しないため、ここで必ず close する。 */
+    /*
+     * ソケットをクローズ (recv スレッドの有無によらず実施)。
+     * Windows: potr_internal_comm_recv_thread_stop 内で closesocket 済みの場合は INVALID_SOCKET になっているため
+     *          guard により二重 close を回避する。
+     * Linux: potr_internal_comm_recv_thread_stop は shutdown のみで close しないため、ここで必ず close する。
+     */
     {
         int i;
+
         for (i = 0; i < ctx->n_path; i++)
         {
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
                 continue;
+
             if (raw_base_type(ctx->service.type) == POTR_TYPE_MULTICAST)
             {
                 uint32_t group_addr;
@@ -420,6 +448,7 @@ int potr_service_close(potr_context *handle)
                     (void)cplat_socket_leave_multicast_group(ctx->sock[i], group_addr, ctx->src_addr_resolved[i], NULL);
                 }
             }
+
             cplat_socket_close(ctx->sock[i]);
             ctx->sock[i] = CPLAT_INVALID_SOCKET;
         }
@@ -429,5 +458,6 @@ int potr_service_close(potr_context *handle)
     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service closed");
 
     cplat_free(ctx);
+
     return POTR_OK;
 }

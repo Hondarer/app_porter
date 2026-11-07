@@ -17,7 +17,7 @@
 #include <porter/potr_context.h>
 #include <porter/protocol/packet.h>
 
-/* 成否ではなくセッションの新旧を分類する比較結果。共通結果コードの適用対象外。 */
+/* 成否ではなくセッションの新旧を分類する比較結果。共通結果コードの適用対象外である。 */
 #define TCP_SESSION_NEW  (1)
 #define TCP_SESSION_SAME (0)
 #define TCP_SESSION_OLD  (-1)

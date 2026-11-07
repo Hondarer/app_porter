@@ -36,5 +36,6 @@ int potr_service_get_type(const char *config_path, int64_t service_id, potr_type
     }
 
     *type = def.type;
+
     return POTR_OK;
 }

@@ -27,17 +27,20 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     ret = config_read_jsonc(config_path, &root);
     if (ret != POTR_OK)
     {
         return ret;
     }
+
     services = cJSON_GetObjectItemCaseSensitive(root, "services");
     if (services != NULL && !cJSON_IsObject(services))
     {
         cJSON_Delete(root);
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     capacity = (int)POTR_MAX_SERVICES;
     count = 0;
     ids = (int64_t *)cplat_calloc((size_t)capacity, sizeof(*ids));
@@ -46,14 +49,19 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
         cJSON_Delete(root);
         return POTR_ERR_OUT_OF_MEMORY;
     }
+
+    /* services 配下の各サービス定義から ID を読み取り、配列へ格納する。 */
     cJSON_ArrayForEach(service, services)
     {
         int64_t parsed_id;
+
         if (service->string == NULL || cplat_parse_int64(&parsed_id, service->string, 10) != CPLAT_OK ||
             !cJSON_IsObject(service))
         {
             continue;
         }
+
+        /* 配列が満杯になった場合は容量を 2 倍に拡張する。 */
         if (count >= capacity)
         {
             int new_capacity = capacity * 2;
@@ -64,13 +72,16 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
                 cJSON_Delete(root);
                 return POTR_ERR_OUT_OF_MEMORY;
             }
+
             ids = new_ids;
             capacity = new_capacity;
         }
+
         ids[count++] = parsed_id;
     }
     cJSON_Delete(root);
     *ids_out = ids;
     *count_out = count;
+
     return POTR_OK;
 }

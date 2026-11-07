@@ -71,8 +71,7 @@ int potr_service_open_from_config(const char *config_path, int64_t service_id, p
 
     result = potr_service_open(&global, &service, role, callback, handle);
 
-    /* service は AES 鍵を平文で保持するため、復帰前に消去する */
-    cplat_secure_zero(&service, sizeof(service));
+    cplat_secure_zero(&service, sizeof(service)); /* service は AES 鍵を平文で保持するため、復帰前に消去する */
 
     return result;
 }

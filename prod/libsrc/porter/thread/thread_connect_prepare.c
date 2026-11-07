@@ -48,31 +48,31 @@ int thread_connect_read_first_packet(const cplat_socket fd, uint8_t *buf, const 
     uint16_t wire_payload_len;
     cplat_error detail;
 
-    /* タイムアウト付き待機 */
+    /* 読み取り可能になるまでタイムアウト付きで待機する。 */
     if (cplat_socket_wait_readable(fd, timeout_ms, &ready, &detail) != CPLAT_OK)
         return potr_internal_result_from_error(&detail);
     if (!ready)
         return POTR_ERR_TIMEOUT;
 
-    /* 固定長ヘッダー読み取り */
+    /* 固定長ヘッダーを読み取る。 */
     {
         int recv_result = cplat_socket_recv_all(fd, buf, POTR_PACKET_HEADER_SIZE, &detail);
         if (recv_result != CPLAT_OK)
             return potr_internal_result_from_socket_result(recv_result, &detail);
     }
 
-    /* payload_len は固定長ヘッダー末尾の offset 34 に格納される */
+    /* payload_len は固定長ヘッダー末尾の offset 34 に格納される。 */
     {
         uint16_t wpl;
         memcpy(&wpl, buf + 34, sizeof(wpl));
         wire_payload_len = cplat_ntoh16(wpl);
     }
 
-    /* ペイロード長バリデーション */
+    /* 受信したペイロード長がバッファー容量を超えていないか検証する。 */
     if (POTR_PACKET_HEADER_SIZE + (size_t)wire_payload_len > max_buf)
         return POTR_ERR_PROTOCOL;
 
-    /* ペイロード読み取り */
+    /* ペイロードを読み取る。 */
     if (wire_payload_len > 0)
     {
         int recv_result = cplat_socket_recv_all(fd, buf + POTR_PACKET_HEADER_SIZE, (size_t)wire_payload_len, &detail);
@@ -81,6 +81,7 @@ int thread_connect_read_first_packet(const cplat_socket fd, uint8_t *buf, const 
     }
 
     *len_out = POTR_PACKET_HEADER_SIZE + (size_t)wire_payload_len;
+
     return POTR_OK;
 }
 
@@ -104,6 +105,7 @@ int thread_connect_session_compare(const potr_context *ctx, const potr_packet *p
         return TCP_SESSION_NEW;
     else if (pkt->session_id < ctx->tcp_accepted_session_id)
         return TCP_SESSION_OLD;
+
     return TCP_SESSION_SAME;
 }
 
@@ -137,6 +139,7 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
         {
             bind_addr.address = CPLAT_IPV4_ADDR_ANY;
         }
+
         bind_addr.port = cplat_hton16(ctx->service.src_port); /* 0 = エフェメラル */
 
         if (cplat_socket_bind(sock, &bind_addr, &detail) != CPLAT_OK)
@@ -154,7 +157,7 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
 
     if (timeout_ms == 0U)
     {
-        /* ブロッキング接続 */
+        /* タイムアウト未指定時はブロッキング接続を行う。 */
         if (cplat_socket_connect(sock, &addr, &detail) != CPLAT_OK)
         {
             POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_VERBOSE, &detail,
@@ -163,20 +166,25 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
             cplat_socket_close(sock);
             return CPLAT_INVALID_SOCKET;
         }
+
         return sock;
     }
 
-    /* タイムアウト付き接続: 非ブロッキング モードで writable ポーリングを使う。
-       停止シグナルに素早く応答するため 100ms 単位でポーリングする。 */
+    /*
+     * タイムアウト付き接続: 非ブロッキング モードで writable ポーリングを使う。
+     * 停止シグナルに素早く応答するため 100 [ms] 単位でポーリングする。
+     */
     (void)cplat_socket_set_nonblocking(sock, 1, NULL);
+
     {
         const int connect_result = cplat_socket_connect(sock, &addr, &detail);
         if (connect_result == CPLAT_OK)
         {
-            /* 即座に接続成功 */
+            /* 即座に接続成功した場合は非ブロッキングを解除してソケットを返す。 */
             (void)cplat_socket_set_nonblocking(sock, 0, NULL);
             return sock;
         }
+
         if (connect_result != CPLAT_ERR_IN_PROGRESS)
         {
             POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_VERBOSE, &detail,
@@ -187,7 +195,7 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
         }
     }
 
-    /* writable ポーリング ループ (共通) */
+    /* 接続完了またはタイムアウトまで writable ポーリングを繰り返す。 */
     {
         uint32_t elapsed_ms = 0U;
         int ready = 0;
@@ -203,11 +211,13 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
             wait_result = cplat_socket_wait_writable(sock, (int)poll_ms, &wait_ready, NULL);
             if (wait_result != CPLAT_OK)
                 break;
+
             if (wait_ready)
             {
                 ready = 1;
                 break;
             }
+
             elapsed_ms += poll_ms;
         }
 
@@ -230,6 +240,7 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
     }
 
     (void)cplat_socket_set_nonblocking(sock, 0, NULL);
+
     return sock;
 }
 
@@ -240,9 +251,11 @@ int thread_connect_peer_allowed(const potr_context *ctx, const int path_idx, con
     {
         return 0;
     }
+
     if (ctx->service.src_port != 0 && cplat_ntoh16(peer_addr->port) != ctx->service.src_port)
     {
         return 0;
     }
+
     return 1;
 }

@@ -39,6 +39,7 @@ void handle_client_session(ClientFd fd)
 
     printf("[PID %lu] クライアント処理開始\n", (unsigned long)get_pid());
 
+    /* クライアントからデータを受信し、受信した内容をそのままエコーバックする。 */
     while ((n = (int)client_recv(fd, buffer, sizeof(buffer) - 1)) > 0)
     {
         buffer[n] = '\0';
@@ -64,10 +65,12 @@ void handle_client_session(ClientFd fd)
  *     `--conns-per-worker <num>` を解析します。
  *  4. 指定されたモードでサーバーを起動します。
  */
-/* C4702: Windows 版 run_fork_server / run_prefork_server は while(1) 不脱出ループのため
+/*
+ * C4702: Windows 版 run_fork_server / run_prefork_server は while(1) 不脱出ループのため
  * LTCG が関数を noreturn と推論し、後続の platform_cleanup() / return EXIT_SUCCESS を到達不能と判定する。
- * Linux 版は SIGINT/SIGTERM で正常脱出して以下に到達するため、コード自体は仕様上必要。
- * プラットフォーム差異による副次警告のため main 関数全体に push/pop で局所抑制をかける。 */
+ * Linux 版は SIGINT/SIGTERM で正常脱出して以下に到達するため、コード自体は仕様上必要である。
+ * プラットフォーム差異による副次警告のため main 関数全体に push/pop で局所抑制をかける。
+ */
 #if defined(COMPILER_MSVC)
     #pragma warning(push)
     #pragma warning(disable : 4702)
@@ -77,6 +80,7 @@ int main(int argc, char *argv[])
     cplat_console_init();
     platform_init(handle_client_session);
 
+    /* 子プロセスやワーカーとして起動された場合の内部起動引数を処理する。 */
     if (dispatch_internal_args(argc, argv))
     {
         platform_cleanup();
@@ -122,6 +126,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    /* 指定されたサーバー動作モードを検証して設定する。 */
     if (mode_str != NULL)
     {
         if (strcmp(mode_str, "fork") == 0)
@@ -141,6 +146,7 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* 決定した動作モードに従ってサーバーを起動する。 */
     if (mode == MODE_FORK)
     {
         run_fork_server(port);

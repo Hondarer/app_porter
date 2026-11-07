@@ -23,8 +23,10 @@
  *******************************************************************************
  */
 
-/* NOTE: このヘッダーは多数のソース ファイルから参照されるため、            */
-/*       @hideincludedbygraph によって "Included by" グラフを無効にします。 */
+/*
+ * このヘッダーは多数のソース ファイルから参照されるため、
+ * @hideincludedbygraph によって "Included by" グラフを無効にする。
+ */
 
 #ifndef POTR_SEND_QUEUE_H
 #define POTR_SEND_QUEUE_H
@@ -50,7 +52,7 @@ typedef struct potr_internal_payload_elem
 {
     potr_peer_id peer_id; /**< 送信先ピア識別子 (N:1 モード用。1:1 モードでは 0)。 */
     uint16_t flags;       /**< ペイロード エレメント フラグ (MORE_FRAG, COMPRESSED など)。 */
-    uint16_t payload_len; /**< ペイロード長 (バイト)。 */
+    uint16_t payload_len; /**< ペイロード長 [byte]。 */
     uint8_t *payload;     /**< ペイロード データへのポインター (プール スロット内を指す)。 */
 } potr_internal_payload_elem;
 
@@ -95,7 +97,7 @@ extern "C"
      *  @brief          送信キューを初期化します。
      *  @param[in,out]  q           送信キュー。entries・payload_pool を動的確保して設定します。
      *  @param[in]      depth       キュー容量 (エントリ数)。
-     *  @param[in]      max_payload ペイロード最大長 (バイト)。
+     *  @param[in]      max_payload ペイロード最大長 [byte]。
      *  @return         成功時は POTR_OK、メモリ確保失敗時は POTR_ERR_OUT_OF_MEMORY、
      *                  同期資源生成失敗時は POTR_ERR_UNKNOWN を返します。
      *  @note           失敗時は生成済み資源を回収します。成功時の資源はキューが所有します。
@@ -118,7 +120,7 @@ extern "C"
      *  @param[in]      peer_id     送信先ピア識別子 (1:1 モードでは POTR_PEER_NA を指定)。
      *  @param[in]      flags       ペイロード エレメント フラグ。
      *  @param[in]      payload     送信ペイロード データへのポインター。
-     *  @param[in]      payload_len 送信ペイロード長 (バイト)。
+     *  @param[in]      payload_len 送信ペイロード長 [byte]。
      *  @param[out]     ticket      登録したエントリの番号の格納先。NULL の場合は格納しません。
      *  @return         成功時は POTR_OK、満杯時は POTR_ERR_FULL。
      */
@@ -134,7 +136,7 @@ extern "C"
      *  @param[in]      peer_id     送信先ピア識別子 (1:1 モードでは POTR_PEER_NA を指定)。
      *  @param[in]      flags       ペイロード エレメント フラグ。
      *  @param[in]      payload     送信ペイロード データへのポインター。
-     *  @param[in]      payload_len 送信ペイロード長 (バイト)。
+     *  @param[in]      payload_len 送信ペイロード長 [byte]。
      *  @param[in]      running     実行フラグへのポインター。取得順序で読み、0 になると待機を中断します。
      *  @param[out]     ticket      登録したエントリの番号の格納先。NULL の場合は格納しません。
      *  @return         成功時は POTR_OK、running が 0 になった場合は POTR_ERR_CANCELED。
@@ -174,7 +176,7 @@ extern "C"
      *
      *  @param[in,out]  q           送信キュー。
      *  @param[out]     out         先頭エントリの書き戻し先。
-     *  @param[in]      timeout_ms  待機タイムアウト (ミリ秒)。
+     *  @param[in]      timeout_ms  待機タイムアウト [ms]。
      *  @return         成功時は POTR_OK、timeout_ms 以内にエントリが到着しなかった場合は POTR_ERR_TIMEOUT。
      */
     extern int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_internal_payload_elem *out,

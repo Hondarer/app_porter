@@ -34,9 +34,12 @@
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
 
-/* ピアのセッション識別子・開始時刻を生成して peer に格納する
+/*
+ * ピアのセッション識別子と開始時刻を生成して peer に格納する。
+ * 成功時は POTR_OK、乱数生成失敗時はエラー コードを返す。
  * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は
- * (key, nonce) の再利用を招く。暗号論的乱数源から取得する。 */
+ * (key, nonce) の再利用を招くため、暗号論的乱数源から取得する。
+ */
 static int peer_generate_session(potr_internal_peer_context *peer)
 {
     int ret;
@@ -46,12 +49,16 @@ static int peer_generate_session(potr_internal_peer_context *peer)
     {
         return potr_internal_result_from_socket_result(ret, NULL);
     }
+
     cplat_clock_get_realtime(&peer->session_ts);
 
     return POTR_OK;
 }
 
-/* 使用中でない peer_id を単調増加カウンターから生成する (peers_mutex 取得済みの文脈で呼び出す) */
+/*
+ * 使用中でない peer_id を単調増加カウンターから生成して返す。
+ * 呼び出し元は peers_mutex を取得している必要がある。
+ */
 static potr_peer_id allocate_peer_id(potr_context *ctx)
 {
     potr_peer_id candidate = ctx->next_peer_id;
@@ -60,15 +67,16 @@ static potr_peer_id allocate_peer_id(potr_context *ctx)
 
     for (;;)
     {
-        /* 予約値をスキップ */
+        /* 予約値である 0 と POTR_PEER_ALL をスキップする。 */
         if (candidate == 0 || candidate == POTR_PEER_ALL)
         {
             candidate++;
             continue;
         }
 
-        /* 現在接続中ピアとの衝突チェック */
+        /* 現在接続中のピアとの衝突を確認する。 */
         in_use = 0;
+
         for (i = 0; i < ctx->max_peers; i++)
         {
             if (ctx->peers[i].active && ctx->peers[i].peer_id == candidate)
@@ -82,10 +90,12 @@ static potr_peer_id allocate_peer_id(potr_context *ctx)
         {
             break;
         }
+
         candidate++;
     }
 
     ctx->next_peer_id = candidate + 1;
+
     return candidate;
 }
 
@@ -130,20 +140,26 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
         fin_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
         fin_pkt.payload_len = cplat_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
 
-        /* ノンス: session_id(4B) + flags(2B, FIN|ENCRYPTED NBO) + 0(4B) + padding(2B) */
+        /*
+         * ノンスを構成する: session_id (4 [byte]) + flags (2 [byte], FIN | ENCRYPTED NBO) +
+         * 0 (4 [byte]) + パディング (2 [byte])。
+         */
         memcpy(nonce, &fin_pkt.session_id, 4);
         memcpy(nonce + 4, &fin_pkt.flags, 2);
         memset(nonce + 6, 0, 4);
         memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, &fin_pkt, POTR_PACKET_HEADER_SIZE);
+
         if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
                                  wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             return;
         }
+
         wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
 
+        /* すべての有効なパスに対して FIN パケットを送信する。 */
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
             size_t sent = 0;
@@ -159,6 +175,7 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
     {
         wire_len = potr_internal_packet_wire_size(&fin_pkt);
 
+        /* すべての有効なパスに対して FIN パケットを送信する。 */
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
             size_t sent = 0;
@@ -197,9 +214,11 @@ int potr_internal_peer_table_init(potr_context *ctx)
     {
         cplat_free(ctx->peers);
         ctx->peers = NULL;
+
         /* 同期資源生成 API は詳細原因を提供しない。 */
         return POTR_ERR_UNKNOWN;
     }
+
     ctx->n_peers = 0;
     ctx->next_peer_id = 1U;
 
@@ -230,7 +249,7 @@ void potr_internal_peer_table_dispose(potr_context *ctx)
             continue;
         }
 
-        /* リソース解放 */
+        /* ピアの資源を解放する。 */
         potr_internal_window_dispose(&ctx->peers[i].send_window);
         potr_internal_window_dispose(&ctx->peers[i].recv_window);
         cplat_local_lock_dispose(ctx->peers[i].send_window_mutex);
@@ -255,6 +274,7 @@ void potr_internal_peer_table_send_fin(potr_context *ctx)
     int i;
 
     cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+
     for (i = 0; i < ctx->max_peers; i++)
     {
         if (ctx->peers[i].active)
@@ -262,6 +282,7 @@ void potr_internal_peer_table_send_fin(potr_context *ctx)
             potr_internal_peer_send_fin(ctx, &ctx->peers[i]);
         }
     }
+
     cplat_local_lock_unlock(ctx->peers_mutex);
 }
 
@@ -278,12 +299,14 @@ potr_internal_peer_context *potr_internal_peer_find_by_session(const potr_contex
         {
             continue;
         }
+
         if (ctx->peers[i].peer_session_id == session_id &&
             cplat_timespec_cmp(&ctx->peers[i].peer_session_ts, session_ts) == 0)
         {
             return (potr_internal_peer_context *)&ctx->peers[i];
         }
     }
+
     return NULL;
 }
 
@@ -300,6 +323,7 @@ potr_internal_peer_context *potr_internal_peer_find_by_id(const potr_context *ct
             return (potr_internal_peer_context *)&ctx->peers[i];
         }
     }
+
     return NULL;
 }
 
@@ -311,7 +335,7 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     int i;
     potr_internal_peer_context *peer = NULL;
 
-    /* max_peers 超過チェック */
+    /* 最大ピア数の超過を確認する。 */
     if (ctx->n_peers >= ctx->max_peers)
     {
         char ip_str[CPLAT_IPV4_ADDR_STRLEN];
@@ -323,7 +347,7 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
         return NULL;
     }
 
-    /* 空きスロットを確保 */
+    /* 未使用の空きスロットを探索する。 */
     for (i = 0; i < ctx->max_peers; i++)
     {
         if (!ctx->peers[i].active)
@@ -335,18 +359,20 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
 
     if (peer == NULL)
     {
-        /* n_peers < max_peers なのに空きスロットがない。ピア表の件数と使用状態が食い違っており、
-           続行するとピアの取り違えや二重使用につながる */
+        /*
+         * n_peers < max_peers なのに空きスロットがない。ピア表の件数と使用状態が食い違っており、
+         * 続行するとピアの取り違えや二重使用につながるため、プロセスを異常終了する。
+         */
         CPLAT_ABORT("ピア表の件数と使用中のスロットが一致しません");
     }
 
-    /* スロットを初期化 */
+    /* スロットを初期化する。 */
     memset(peer, 0, sizeof(*peer));
 
     peer->peer_id = allocate_peer_id(ctx);
     peer->active = 1;
 
-    /* 自セッション生成 */
+    /* ピア向けの自セッション識別子と開始時刻を生成する。 */
     if (peer_generate_session(peer) != POTR_OK)
     {
         peer->active = 0;
@@ -355,9 +381,10 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
                    ctx->service.service_id);
         return NULL;
     }
+
     peer->send_has_data = 0;
 
-    /* ウィンドウ初期化 */
+    /* 送受信ウィンドウを初期化する。 */
     if (potr_internal_window_init(&peer->send_window, 0, ctx->global.window_size, ctx->global.max_payload) != POTR_OK)
     {
         peer->active = 0;
@@ -377,7 +404,7 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
 
     cplat_local_lock_create(&peer->send_window_mutex);
 
-    /* フラグメント結合バッファー確保 */
+    /* フラグメント結合バッファーを確保する。 */
     peer->frag_buf = (uint8_t *)cplat_malloc(ctx->global.max_message_size);
     if (peer->frag_buf == NULL)
     {
@@ -389,10 +416,14 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
                    ctx->service.service_id);
         return NULL;
     }
+
     peer->frag_buf_len = 0;
     peer->frag_compressed = 0;
 
-    /* 送信元アドレスを最初のパスとして記録 (インデックス = path_idx = ctx->sock[] のインデックス) */
+    /*
+     * 送信元アドレスを最初のパスとして記録する。
+     * インデックス path_idx は ctx->sock[] のインデックスに対応する。
+     */
     peer->dest_addr[path_idx] = *sender_addr;
     peer->path_last_recv_ts[path_idx].tv_sec = 0; /* n1_update_path_recv() で更新される */
     peer->n_paths = 1;
@@ -412,7 +443,7 @@ void potr_internal_peer_path_clear(const potr_context *ctx, potr_internal_peer_c
 {
     if (endpoint_is_unset(&peer->dest_addr[path_idx]))
     {
-        return; /* すでに未使用スロット */
+        return; /* すでに未使用のスロットである */
     }
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,

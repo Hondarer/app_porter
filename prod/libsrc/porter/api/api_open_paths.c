@@ -50,7 +50,7 @@ int api_open_paths_by_type(potr_context *ctx, potr_role role)
     case POTR_TYPE_UNICAST_RAW:
     case POTR_TYPE_MULTICAST_RAW:
     case POTR_TYPE_BROADCAST_RAW:
-        /* raw_base_type() は RAW 型をベース型に変換するため、ここには到達しない */
+        /* raw_base_type() は RAW 型をベース型に変換するため、ここには到達しない。 */
         /* fall through */
     default:
         return POTR_ERR_UNSUPPORTED;
@@ -75,15 +75,16 @@ int api_setup_dest_addr(potr_context *ctx, potr_role role)
         for (i = 0; i < ctx->n_path; i++)
         {
             endpoint_clear(&ctx->dest_addr[i]);
+
             if (role == POTR_ROLE_SENDER)
             {
-                /* SENDER: dst_addr:dst_port (RECEIVER の bind アドレス) へ送信 */
+                /* SENDER: dst_addr:dst_port (RECEIVER の bind アドレス) へ送信する。 */
                 ctx->dest_addr[i].address = ctx->dst_addr_resolved[i];
                 ctx->dest_addr[i].port = cplat_hton16(ctx->service.dst_port);
             }
             else
             {
-                /* RECEIVER: src_addr:src_port (SENDER の bind アドレス) へ送信 */
+                /* RECEIVER: src_addr:src_port (SENDER の bind アドレス) へ送信する。 */
                 ctx->dest_addr[i].address = ctx->src_addr_resolved[i];
                 ctx->dest_addr[i].port = cplat_hton16(ctx->service.src_port);
             }
@@ -102,43 +103,49 @@ int api_setup_dest_addr(potr_context *ctx, potr_role role)
     case POTR_TYPE_MULTICAST:
     {
         uint32_t mcast_ip;
+
         if (api_paths_parse_ipv4(ctx->service.multicast_group, &mcast_ip) != POTR_OK)
         {
             return POTR_ERR_INVALID_ARGUMENT;
         }
+
         for (i = 0; i < ctx->n_path; i++)
         {
             endpoint_clear(&ctx->dest_addr[i]);
             ctx->dest_addr[i].address = mcast_ip;
             ctx->dest_addr[i].port = cplat_hton16(ctx->service.dst_port);
         }
+
         break;
     }
 
     case POTR_TYPE_BROADCAST:
     {
         uint32_t bcast_ip;
+
         if (api_paths_parse_ipv4(ctx->service.broadcast_addr, &bcast_ip) != POTR_OK)
         {
             return POTR_ERR_INVALID_ARGUMENT;
         }
+
         for (i = 0; i < ctx->n_path; i++)
         {
             endpoint_clear(&ctx->dest_addr[i]);
             ctx->dest_addr[i].address = bcast_ip;
             ctx->dest_addr[i].port = cplat_hton16(ctx->service.dst_port);
         }
+
         break;
     }
 
     case POTR_TYPE_TCP:
     case POTR_TYPE_TCP_BIDIR:
-        /* TCP 接続ソケットは connect スレッドが管理するため dest_addr 設定不要 */
+        /* TCP 接続ソケットは connect スレッドが管理するため、dest_addr の設定は不要である。 */
         break;
     case POTR_TYPE_UNICAST_RAW:
     case POTR_TYPE_MULTICAST_RAW:
     case POTR_TYPE_BROADCAST_RAW:
-        /* raw_base_type() は RAW 型をベース型に変換するため、ここには到達しない */
+        /* raw_base_type() は RAW 型をベース型に変換するため、ここには到達しない。 */
         /* fall through */
     default:
         break;

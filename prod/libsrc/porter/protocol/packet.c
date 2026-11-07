@@ -22,7 +22,7 @@
 #include <porter/protocol/packet.h>
 #include <cplat/net/byteorder.h>
 
-/* packet.h で公開した POTR_PACKET_HEADER_SIZE をそのまま使用する */
+/* packet.h で公開した POTR_PACKET_HEADER_SIZE をそのまま使用する。 */
 
 /**
  *  @brief          64 ビット値をホスト バイト オーダーからネットワーク バイト オーダーへ変換します。
@@ -35,6 +35,7 @@ static uint64_t hton64(uint64_t v)
 {
     uint32_t hi = cplat_hton32((uint32_t)(v >> 32));
     uint32_t lo = cplat_hton32((uint32_t)(v & 0xFFFFFFFFUL));
+
     return ((uint64_t)lo << 32) | (uint64_t)hi;
 }
 
@@ -63,7 +64,8 @@ static void fill_session_hdr(potr_packet *packet, const potr_internal_packet_ses
     packet->service_id = (int64_t)hton64((uint64_t)shdr->service_id);
     packet->session_tv_sec = (int64_t)hton64((uint64_t)shdr->session_tv_sec);
     packet->session_id = cplat_hton32(shdr->session_id);
-    /* session_tv_nsec は正規化済みナノ秒部 (0..999999999)。ワイヤのビット列を int32_t へ格納する */
+
+    /* session_tv_nsec は正規化済みナノ秒部 (0..999999999)。ワイヤのビット列を int32_t へ格納する。 */
     packet->session_tv_nsec = (int32_t)cplat_hton32((uint32_t)shdr->session_tv_nsec);
     packet->protocol_version = cplat_hton32(POTR_PROTOCOL_VERSION);
 }
@@ -200,7 +202,8 @@ int potr_internal_packet_build_packed(potr_packet *out, const potr_internal_pack
     out->ack_num = 0;
     out->flags = cplat_hton16(POTR_FLAG_DATA);
     out->payload_len = cplat_hton16((uint16_t)payload_len);
-    /* ゼロ コピー: 呼び出し元バッファーを直接指す */
+
+    /* ゼロ コピー: 呼び出し元バッファーを直接指す。 */
     out->payload = (const uint8_t *)packed_payload;
 
     return POTR_OK;
@@ -220,7 +223,7 @@ int potr_internal_packet_unpack_next(const potr_packet *container, size_t *offse
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* 末尾チェック (container->payload_len はホスト バイト オーダー) */
+    /* 末尾チェック (container->payload_len はホスト バイト オーダー)。 */
     if (*offset + POTR_PAYLOAD_ELEM_HDR_SIZE > (size_t)container->payload_len)
     {
         return POTR_ERR_EOF;
@@ -249,11 +252,15 @@ int potr_internal_packet_unpack_next(const potr_packet *container, size_t *offse
     elem_out->ack_num = 0;
     elem_out->flags = cplat_ntoh16(flags_nbo);
     elem_out->payload_len = (uint16_t)payload_len;
-    /* ゼロ コピー: コンテナーのペイロード領域を直接指す
-       コンテナーの生存期間中 (呼び出し元の処理完了まで) のみ有効 */
+
+    /*
+     * ゼロ コピー: コンテナーのペイロード領域を直接指す。
+     * コンテナーの生存期間中 (呼び出し元の処理完了まで) のみ有効である。
+     */
     elem_out->payload = p + POTR_PAYLOAD_ELEM_HDR_SIZE;
 
     *offset += POTR_PAYLOAD_ELEM_HDR_SIZE + payload_len;
+
     return POTR_OK;
 }
 
@@ -271,7 +278,7 @@ int potr_internal_packet_parse(potr_packet *packet, const void *buf, size_t buf_
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* ヘッダー長未満の受信データは不正パケットとして扱う */
+    /* ヘッダー長未満の受信データは不正パケットとして扱う。 */
     if (buf_len < POTR_PACKET_HEADER_SIZE)
     {
         return POTR_ERR_PROTOCOL;
@@ -302,8 +309,10 @@ int potr_internal_packet_parse(potr_packet *packet, const void *buf, size_t buf_
         return POTR_ERR_PROTOCOL;
     }
 
-    /* ゼロ コピー: 受信バッファー内のペイロード領域を直接指す
-       呼び出し元バッファー (recv_buf) の生存期間中のみ有効 */
+    /*
+     * ゼロ コピー: 受信バッファー内のペイロード領域を直接指す。
+     * 呼び出し元バッファー (recv_buf) の生存期間中のみ有効である。
+     */
     packet->payload = b + POTR_PACKET_HEADER_SIZE;
 
     return POTR_OK;

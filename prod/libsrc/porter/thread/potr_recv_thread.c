@@ -37,8 +37,10 @@
 #include "thread_recv_dispatch.h"
 #include "thread_recv_health.h"
 
-/* N:1 モード: 受信パケットをピアごとにディスパッチして処理する。
-   wire_hdr は認証検証用の受信 wire 先頭 (ヘッダー部)。 */
+/*
+ * N:1 モード: 受信パケットをピアごとにディスパッチして処理する。
+ * wire_hdr は認証検証用の受信 wire 先頭 (ヘッダー部)。
+ */
 static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t *wire_hdr,
                              const cplat_ipv4_endpoint *sender_addr, int path_idx)
 {
@@ -53,7 +55,7 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
 
     cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
-    /* session_triplet でピアを検索 */
+    /* session_triplet でピアを検索する。 */
     cplat_timespec pkt_session_ts;
     session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
     peer = potr_internal_peer_find_by_session(ctx, pkt->session_id, &pkt_session_ts);
@@ -105,6 +107,7 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
         int should_wake_health = thread_recv_dispatch_packet(&peer_slot, pkt, path_idx, sender_addr);
 
         cplat_local_lock_unlock(ctx->peers_mutex);
+
         if (should_wake_health != 0)
         {
             potr_internal_health_thread_wake(ctx);
@@ -112,9 +115,11 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
     }
 }
 
-/* 送信者ロール: NACK のみ処理する。
-   戻り値 1: パケットを消費した (呼び出し元は次のパケットへ)。
-   戻り値 0: UNICAST_BIDIR SENDER のため受信者処理へフォール スルーする。 */
+/*
+ * 送信者ロール: NACK のみ処理する。
+ * 戻り値 1: パケットを消費した (呼び出し元は次のパケットへ)。
+ * 戻り値 0: UNICAST_BIDIR SENDER のため受信者処理へフォール スルーする。
+ */
 static int sender_handle_packet(thread_recv_slot *slot, const potr_packet *pkt)
 {
     potr_context *ctx = slot->ctx;
@@ -138,7 +143,7 @@ static int sender_handle_packet(thread_recv_slot *slot, const potr_packet *pkt)
 static void recv_thread_func(void *arg)
 {
     potr_context *ctx = (potr_context *)arg;
-    uint8_t *buf = ctx->recv_buf; /* POTR_PACKET_HEADER_SIZE + max_payload バイト */
+    uint8_t *buf = ctx->recv_buf; /* POTR_PACKET_HEADER_SIZE + max_payload [byte] */
     potr_packet pkt;
     cplat_ipv4_endpoint sender_addr;
     uint32_t poll_ms;
@@ -157,7 +162,8 @@ static void recv_thread_func(void *arg)
     {
         poll_ms = 500U;
     }
-    /* reorder_timeout_ms が有効な場合は poll 間隔を短縮してタイムアウト精度を確保する */
+
+    /* reorder_timeout_ms が有効な場合は poll 間隔を短縮してタイムアウト精度を確保する。 */
     if ((ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR) &&
         ctx->global.reorder_timeout_ms > 0U)
     {
@@ -185,6 +191,7 @@ static void recv_thread_func(void *arg)
         }
 
         int has_ready = 0;
+
         for (i = 0; i < ctx->n_path; ++i)
         {
             if (ready[i] != 0U)
@@ -193,6 +200,7 @@ static void recv_thread_func(void *arg)
                 break;
             }
         }
+
         if (!has_ready)
         {
             if (ctx->is_multi_peer)
@@ -202,11 +210,13 @@ static void recv_thread_func(void *arg)
             else if (ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
             {
                 thread_recv_health_check_service(&svc_slot);
+
                 if (ctx->global.reorder_timeout_ms > 0U)
                 {
                     thread_recv_window_check_reorder_timeout(&svc_slot);
                 }
             }
+
             continue;
         }
 
@@ -239,6 +249,7 @@ static void recv_thread_func(void *arg)
                            ctx->service.service_id, recv_len);
                 continue;
             }
+
             if (pkt.service_id != ctx->service.service_id)
             {
                 POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
@@ -246,6 +257,7 @@ static void recv_thread_func(void *arg)
                            ctx->service.service_id, pkt.service_id);
                 continue;
             }
+
             if (!thread_recv_check_src_addr(ctx, &sender_addr))
                 continue;
 
@@ -266,7 +278,8 @@ static void recv_thread_func(void *arg)
                 {
                     continue;
                 }
-                /* UNICAST_BIDIR SENDER: フォール スルーして受信者処理 (FIN/REJECT/DATA/PING) へ */
+
+                /* UNICAST_BIDIR SENDER: フォール スルーして受信者処理 (FIN/REJECT/DATA/PING) へ進む。 */
             }
 
             /* ── 受信者ロール: FIN / REJECT / DATA / PING を処理 ── */
@@ -277,12 +290,16 @@ static void recv_thread_func(void *arg)
     return;
 }
 
-/* ================================================================
+/*
+ * ================================================================
  * TCP ストリーム受信スレッド
- * ================================================================ */
+ * ================================================================
+ */
 
-/* TCP ソケットが読み取り可能になるまで最大 wait_ms ミリ秒待機する。
- * 戻り値: 1 = データあり、0 = タイムアウト、-1 = エラー。 */
+/*
+ * TCP ソケットが読み取り可能になるまで最大 wait_ms [ms] 待機する。
+ * 戻り値: 1 = データあり、0 = タイムアウト、-1 = エラー。
+ */
 static int tcp_wait_readable(cplat_socket fd, int wait_ms)
 {
     int ready = 0;
@@ -291,11 +308,14 @@ static int tcp_wait_readable(cplat_socket fd, int wait_ms)
     {
         return -1;
     }
+
     return ready;
 }
 
-/* TCP ソケットから正確に n バイト読み取る。
- * 戻り値: 成功時は POTR_OK、切断時 (recv が 0 を返した) は POTR_ERR_EOF、エラー時は POTR_ERR_IO。 */
+/*
+ * TCP ソケットから正確に n [byte] 読み取る。
+ * 戻り値: 成功時は POTR_OK、切断時 (recv が 0 を返した) は POTR_ERR_EOF、エラー時は POTR_ERR_IO。
+ */
 static int tcp_read_all(cplat_socket fd, uint8_t *buf, size_t n)
 {
     cplat_error detail;
@@ -305,21 +325,26 @@ static int tcp_read_all(cplat_socket fd, uint8_t *buf, size_t n)
     {
         return POTR_OK;
     }
+
     if (result == CPLAT_ERR_EOF)
     {
         return POTR_ERR_EOF;
     }
+
     return POTR_ERR_IO;
 }
 
-/* 呼び出し元は tcp_recv_mutex を保持し、配信完了まで受信状態を直列化する。
- * 破棄するパケットは POTR_OK、ストリームを切断する解析失敗は POTR_ERR_PROTOCOL。 */
+/*
+ * 受信した TCP パケットを解析し、パケット種別に応じた処理を行う。
+ * 呼び出し元は tcp_recv_mutex を保持し、配信完了まで受信状態を直列化する。
+ * 破棄するパケットは POTR_OK、ストリームを切断する解析失敗は POTR_ERR_PROTOCOL を返す。
+ */
 static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, const uint8_t *buf,
                              uint16_t wire_payload_len, int path_idx)
 {
     potr_packet pkt;
 
-    /* 5. パケット解析 */
+    /* パケットを解析する。 */
     if (potr_internal_packet_parse(&pkt, buf, POTR_PACKET_HEADER_SIZE + wire_payload_len) != POTR_OK)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 "]: potr_internal_packet_parse failed",
@@ -327,7 +352,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
         return POTR_ERR_PROTOCOL;
     }
 
-    /* 6. service_id チェック */
+    /* service_id を確認する。 */
     if (pkt.service_id != ctx->service.service_id)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 "]: service_id mismatch (%" PRId64 ")",
@@ -338,12 +363,15 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
     if (thread_recv_authenticate_packet(ctx, &pkt, buf, "tcp_recv", path_idx) != POTR_OK)
         return POTR_OK;
 
-    /* accept で採用したセッション以外は PING を含めて状態へ反映しない。
-     * ウィンドウの開始通番は引き続き最初の DATA から決定する。 */
+    /*
+     * accept で採用したセッション以外は PING を含めて状態へ反映しない。
+     * ウィンドウの開始通番は引き続き最初の DATA から決定する。
+     */
     if (ctx->role == POTR_ROLE_RECEIVER && ctx->tcp_accepted_session_known)
     {
         cplat_timespec packet_session_ts;
         session_ts_from_hdr(pkt.session_tv_sec, pkt.session_tv_nsec, &packet_session_ts);
+
         if (pkt.session_id != ctx->tcp_accepted_session_id ||
             cplat_timespec_cmp(&packet_session_ts, &ctx->tcp_accepted_session_ts) != 0)
         {
@@ -351,7 +379,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
         }
     }
 
-    /* 8. パケット種別処理 */
+    /* パケット種別に応じた処理を行う。 */
     if (pkt.flags & POTR_FLAG_FIN_ACK)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "tcp_recv[service_id=%" PRId64 " path=%d]: FIN_ACK ack=%u",
@@ -365,6 +393,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
         int fin_action;
 
         cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+
         if (!thread_recv_session_adopt(svc_slot, &pkt))
         {
             cplat_local_lock_unlock(ctx->recv_window_mutex);
@@ -389,40 +418,45 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
         }
 
         cplat_local_lock_unlock(ctx->recv_window_mutex);
+
         if (fin_action == THREAD_RECV_FIN_FIRE)
         {
             thread_recv_fin_fire(svc_slot, fin_target_seq);
         }
+
         return POTR_OK;
     }
     else if (pkt.flags & POTR_FLAG_PING)
     {
         int ping_state_changed;
 
-        /* PING 受信: 最終受信時刻と受信状態を更新する。*/
+        /* PING 受信: 最終受信時刻と受信状態を更新する。 */
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: PING seq=%u",
                    ctx->service.service_id, path_idx, (unsigned)pkt.seq_num);
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
         cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], cplat_clock_get_monotonic_ms(),
                                CPLAT_MEMORY_ORDER_RELAXED);
         ping_state_changed = thread_recv_set_path_ping_state(&ctx->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
+
         if (pkt.payload_len >= POTR_MAX_PATH && pkt.payload != NULL)
         {
             thread_recv_apply_remote_path_ping_state(ctx->remote_path_ping_state, pkt.payload, POTR_MAX_PATH);
         }
+
         thread_recv_sync_path_state(svc_slot);
         cplat_local_lock_unlock(ctx->tcp_state_mutex);
         thread_recv_health_wake_tcp(ctx, path_idx, ping_state_changed);
     }
     else if (pkt.flags & POTR_FLAG_DATA)
     {
-        /* セッション照合 + recv_window への投入 (recv_window_mutex で保護) */
+        /* セッション照合と recv_window への投入を行う (recv_window_mutex で保護)。 */
         {
             uint32_t fin_target_seq = 0U;
             int should_fire_fin = 0;
             int pushed;
 
             cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+
             if (!thread_recv_session_adopt(svc_slot, &pkt))
             {
                 cplat_local_lock_unlock(ctx->recv_window_mutex);
@@ -431,12 +465,13 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
                            ctx->service.service_id, path_idx);
                 return POTR_OK;
             }
+
             pushed = potr_internal_window_recv_push(&ctx->recv_window, &pkt);
             cplat_local_lock_unlock(ctx->recv_window_mutex);
 
             if (pushed != POTR_OK)
             {
-                /* 重複パケット → スキップ */
+                /* 重複パケットのためスキップする。 */
                 POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                            "tcp_recv[service_id=%" PRId64 " path=%d]: DATA seq=%u duplicate, skipped",
                            ctx->service.service_id, path_idx, (unsigned)pkt.seq_num);
@@ -446,19 +481,23 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: DATA seq=%u payload=%u",
                        ctx->service.service_id, path_idx, (unsigned)pkt.seq_num, (unsigned)pkt.payload_len);
 
-            /* 順序整列済みパケットをポップして配信 */
+            /* 順序整列済みパケットをポップして配信する。 */
             cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+
             {
                 potr_packet out;
+
                 while (potr_internal_window_recv_pop(&ctx->recv_window, &out) == POTR_OK)
                 {
                     size_t offset = 0;
                     potr_packet elem;
                     cplat_local_lock_unlock(ctx->recv_window_mutex);
+
                     while (potr_internal_packet_unpack_next(&out, &offset, &elem) == POTR_OK)
                     {
                         thread_recv_slot_deliver_payload_elem(svc_slot, &elem);
                     }
+
                     cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
                 }
 
@@ -467,6 +506,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
                     should_fire_fin = 1;
                 }
             }
+
             cplat_local_lock_unlock(ctx->recv_window_mutex);
 
             if (should_fire_fin)
@@ -475,6 +515,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
             }
         }
     }
+
     return POTR_OK;
 }
 
@@ -484,17 +525,20 @@ static void tcp_recv_thread_func(void *arg)
     potr_internal_path_thread_arg *rarg = (potr_internal_path_thread_arg *)arg;
     potr_context *ctx = rarg->ctx;
     int path_idx = rarg->path_idx;
-    uint8_t *buf = ctx->tcp_recv_buf[path_idx]; /* POTR_PACKET_HEADER_SIZE + max_payload バイト */
+    uint8_t *buf = ctx->tcp_recv_buf[path_idx]; /* POTR_PACKET_HEADER_SIZE + max_payload [byte] */
     cplat_socket fd;
     thread_recv_slot svc_slot; /* TCP は 1:1 モードのみ */
 
     thread_recv_slot_init_ctx(&svc_slot, ctx);
 
-    /* PING 受信タイムアウト監視を使用するか判定する。
+    /*
+     * PING 受信タイムアウト監視を使用するか判定する。
      * TCP は bootstrap PING 往復だけでも CONNECTED できるが、受信タイムアウト監視は
-     * 定周期 PING を送信する構成でのみ有効とする。 */
+     * 定周期 PING を送信する構成でのみ有効とする。
+     */
     int use_recv_timeout = (ctx->health_interval_ms > 0 && ctx->health_timeout_ms > 0);
-    /* ポーリング間隔: 1 秒単位でチェックし、health_timeout_ms を超えないようにする。 */
+
+    /* ポーリング間隔: 1 [s] 単位でチェックし、health_timeout_ms を超えないようにする。 */
     uint32_t poll_ms;
     const char *recv_timeout_label;
 
@@ -537,16 +581,19 @@ static void tcp_recv_thread_func(void *arg)
             break;
         }
 
-        /* ── 先読みバッファー処理 ──
+        /*
+         * ── 先読みバッファー処理 ──
          * accept スレッドが session 判定のために読み取ったパケットが残っている場合、
          * ソケットからの読み取りをスキップしてバッファーの内容をそのまま使用する。
-         * accept スレッドは recv スレッド起動前に書き込みを完了しているため mutex 不要。 */
+         * accept スレッドは recv スレッド起動前に書き込みを完了しているため mutex 不要である。
+         */
         if (ctx->tcp_first_pkt_len[path_idx] > 0)
         {
-            /* accept スレッドの先読みバッファーを recv バッファーにコピーする */
+            /* accept スレッドの先読みバッファーを recv バッファーにコピーする。 */
             size_t first_len = ctx->tcp_first_pkt_len[path_idx];
             memcpy(buf, ctx->tcp_first_pkt_buf[path_idx], first_len);
             ctx->tcp_first_pkt_len[path_idx] = 0; /* 先読みバッファーをクリア */
+
             {
                 uint16_t wpl;
                 memcpy(&wpl, buf + 34, sizeof(wpl));
@@ -555,19 +602,22 @@ static void tcp_recv_thread_func(void *arg)
         }
         else
         {
-            /* タイムアウト付きポーリングで PING 受信を監視する。
-             * データが到着するまで poll_ms 待機し、タイムアウト時は PING 受信時刻を確認する。 */
+            /*
+             * タイムアウト付きポーリングで PING 受信を監視する。
+             * データが到着するまで poll_ms 待機し、タイムアウト時は PING 受信時刻を確認する。
+             */
             if (use_recv_timeout)
             {
-                /* poll_ms は health_timeout から算出したポーリング間隔。INT_MAX 以下 */
+                /* poll_ms は health_timeout から算出したポーリング間隔。INT_MAX 以下。 */
                 int readable = tcp_wait_readable(fd, (int)poll_ms);
                 if (cplat_atomic_load_i32(&ctx->running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
                     break;
                 if (readable < 0)
                     break; /* エラー */
+
                 if (readable == 0)
                 {
-                    /* ポーリング タイムアウト: PING 受信時刻を確認する */
+                    /* ポーリング タイムアウト: PING 受信時刻を確認する。 */
                     uint64_t last =
                         cplat_atomic_load_u64(&ctx->tcp_last_ping_recv_ms[path_idx], CPLAT_MEMORY_ORDER_RELAXED);
                     uint64_t elapsed = cplat_clock_get_monotonic_ms() - last;
@@ -587,26 +637,28 @@ static void tcp_recv_thread_func(void *arg)
                         thread_recv_health_wake_tcp(ctx, path_idx, ping_state_changed);
                         break;
                     }
+
                     continue;
                 }
+
                 /* readable == 1: データあり。以降の tcp_read_all へ進む。 */
             }
 
-            /* 1. 固定長ヘッダー読み取り */
+            /* 固定長ヘッダーを読み取る。 */
             r = tcp_read_all(fd, buf, POTR_PACKET_HEADER_SIZE);
             if (r != POTR_OK)
             {
                 break; /* 切断 or エラー */
             }
 
-            /* 2. payload_len をヘッダー末尾の offset 34 から抽出する */
+            /* payload_len をヘッダー末尾の offset 34 から抽出する。 */
             {
                 uint16_t wpl;
                 memcpy(&wpl, buf + 34, sizeof(wpl));
                 wire_payload_len = cplat_ntoh16(wpl);
             }
 
-            /* 3. ペイロード長バリデーション */
+            /* ペイロード長を検証する。 */
             if ((size_t)wire_payload_len > ctx->global.max_payload)
             {
                 POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
@@ -616,7 +668,7 @@ static void tcp_recv_thread_func(void *arg)
                 break;
             }
 
-            /* 4. ペイロード読み取り */
+            /* ペイロードを読み取る。 */
             if (wire_payload_len > 0)
             {
                 r = tcp_read_all(fd, buf + POTR_PACKET_HEADER_SIZE, wire_payload_len);
@@ -628,6 +680,7 @@ static void tcp_recv_thread_func(void *arg)
         } /* else (先読みバッファーなし) ここまで */
 
         cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
+
         if (cplat_atomic_load_i32(&ctx->running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             r = tcp_handle_packet(ctx, &svc_slot, buf, wire_payload_len, path_idx);
@@ -636,14 +689,16 @@ static void tcp_recv_thread_func(void *arg)
         {
             r = POTR_ERR_CANCELED;
         }
+
         cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+
         if (r != POTR_OK)
         {
             break;
         }
     }
 
-    /* 接続断処理: DISCONNECTED イベントは connect スレッドが tcp_active_paths == 0 時に発火する */
+    /* 接続断処理: DISCONNECTED イベントは connect スレッドが tcp_active_paths == 0 時に発火する。 */
     cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: exited", ctx->service.service_id,
@@ -670,7 +725,8 @@ int potr_internal_comm_recv_thread_start(potr_context *ctx)
         cplat_atomic_store_i32(&ctx->running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv_thread[service_id=%" PRId64 "]: thread create failed",
                    ctx->service.service_id);
-        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
+
+        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -690,6 +746,7 @@ int potr_internal_comm_recv_thread_stop(potr_context *ctx)
 
     {
         int i;
+
         for (i = 0; i < ctx->n_path; i++)
         {
             if (ctx->sock[i] != CPLAT_INVALID_SOCKET)
@@ -705,6 +762,7 @@ int potr_internal_comm_recv_thread_stop(potr_context *ctx)
         {
             return POTR_ERR_UNKNOWN;
         }
+
         ctx->recv_thread[0] = NULL;
     }
 
@@ -734,7 +792,8 @@ int potr_internal_tcp_recv_thread_start(potr_context *ctx, int path_idx)
         cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "tcp_recv_thread[service_id=%" PRId64 " path=%d]: thread create failed",
                    ctx->service.service_id, path_idx);
-        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
+
+        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -758,6 +817,7 @@ int potr_internal_tcp_recv_thread_stop(potr_context *ctx, int path_idx)
         {
             return POTR_ERR_UNKNOWN;
         }
+
         ctx->recv_thread[path_idx] = NULL;
     }
 

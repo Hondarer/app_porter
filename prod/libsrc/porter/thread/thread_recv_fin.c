@@ -35,6 +35,10 @@ static int fin_packet_has_target(const potr_packet *pkt)
     return (pkt->flags & POTR_FLAG_FIN_TARGET_VALID) != 0;
 }
 
+/*
+ * TCP の FIN_ACK パケットを構築して送信する。
+ * 成功時は POTR_OK、パケット構築または送信失敗時はエラー コードを返す。
+ */
 static int send_tcp_fin_ack(potr_context *ctx, uint32_t fin_target_seq)
 {
     potr_packet fin_ack_pkt;
@@ -94,6 +98,7 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
 {
     potr_context *ctx = slot->ctx;
 
+    /* N:1 モードでは全経路切断後にピアを解放する。 */
     if (slot->peer != NULL)
     {
         thread_recv_disconnect_peer_all_paths(ctx, slot->peer);
@@ -103,6 +108,7 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
         return;
     }
 
+    /* TCP では相手端へ FIN_ACK を送信する。 */
     if (ctx->service.type == POTR_TYPE_TCP || ctx->service.type == POTR_TYPE_TCP_BIDIR)
     {
         if (send_tcp_fin_ack(ctx, fin_target_seq) == POTR_OK)
@@ -117,6 +123,7 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
         }
     }
 
+    /* サービス全経路を切断し、PING 受信状態を不定に戻す。 */
     if (is_tcp_type(ctx->service.type))
     {
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
@@ -131,6 +138,8 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
         memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
         thread_recv_disconnect_service_all_paths(ctx);
     }
+
+    /* セッション状態および受信ウィンドウを初期化する。 */
     *slot->pending_fin = 0;
     *slot->fin_target_seq = 0;
     ctx->peer_session_known = 0;
@@ -146,11 +155,13 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
 void thread_recv_fin_on_ack(potr_context *ctx, uint32_t ack_num)
 {
     cplat_local_lock_lock(ctx->tcp_close_mutex, CPLAT_SYNC_WAIT_FOREVER);
+
     if (ctx->tcp_close_waiting_ack && ctx->tcp_close_wait_target_seq == ack_num && !ctx->tcp_close_ack_received)
     {
         ctx->tcp_close_ack_received = 1;
         ctx->tcp_close_ack_seq = ack_num;
         cplat_condvar_signal(ctx->tcp_close_cv);
     }
+
     cplat_local_lock_unlock(ctx->tcp_close_mutex);
 }

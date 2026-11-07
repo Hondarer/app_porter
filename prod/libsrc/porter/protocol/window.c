@@ -35,7 +35,7 @@ int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, u
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* 既存バッファーがあり、サイズが一致する場合は状態リセットのみ */
+    /* 既存バッファーがあり、サイズが一致する場合は状態リセットのみ行う。 */
     if (win->packets != NULL && win->window_size == window_size && win->max_payload == max_payload)
     {
         memset(win->valid, 0, window_size);
@@ -45,7 +45,6 @@ int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, u
         return POTR_OK;
     }
 
-    /* 既存バッファーを解放 */
     cplat_free(win->packets);
     cplat_free(win->valid);
     cplat_free(win->payload_pool);
@@ -53,7 +52,6 @@ int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, u
     win->valid = NULL;
     win->payload_pool = NULL;
 
-    /* 新規確保 */
     win->packets = (potr_packet *)cplat_calloc((size_t)window_size, sizeof(potr_packet));
     win->valid = (uint8_t *)cplat_calloc((size_t)window_size, sizeof(uint8_t));
     win->payload_pool = (uint8_t *)cplat_calloc((size_t)window_size, (size_t)max_payload);
@@ -71,7 +69,7 @@ int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, u
 
     memset(win->valid, 0, (size_t)window_size);
 
-    /* 各エントリの payload ポインターをプール スロットへ設定 */
+    /* 各エントリの payload ポインターをプール スロットへ設定する。 */
     for (i = 0; i < window_size; i++)
     {
         memset(&win->packets[i], 0, sizeof(potr_packet));
@@ -119,6 +117,7 @@ static uint16_t win_index(const potr_internal_window *win, uint32_t seq)
     return (uint16_t)(((uint32_t)win->base_index + distance) % (uint32_t)win->window_size);
 }
 
+/* ウィンドウの基底通番と循環バッファー上の基底位置を 1 つ進める。 */
 static void win_advance_base(potr_internal_window *win)
 {
     win->base_seq++;
@@ -138,8 +137,10 @@ int potr_internal_window_send_push(potr_internal_window *win, const potr_packet 
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* ACK なし設計のため、満杯の場合は最古エントリを evict して循環利用する。
-       evict されたエントリへの NACK は REJECT で応答する。 */
+    /*
+     * ACK なし設計のため、満杯の場合は最古エントリを evict して循環利用する。
+     * evict されたエントリへの NACK は REJECT で応答する。
+     */
     if (potr_internal_window_send_full(win))
     {
         idx = win_index(win, win->base_seq);
@@ -149,9 +150,12 @@ int potr_internal_window_send_push(potr_internal_window *win, const potr_packet 
 
     idx = win_index(win, win->next_seq);
 
-    /* プール スロットへディープ コピー (packet->payload_len は NBO: potr_internal_packet_build_packed が設定) */
+    /*
+     * プール スロットへディープ コピーする
+     * (packet->payload_len は NBO: potr_internal_packet_build_packed が設定)。
+     */
     {
-        /* プール スロット アドレスをインデックスから直接計算することで const 除去キャストを回避する */
+        /* プール スロット アドレスをインデックスから直接計算することで const 除去キャストを回避する。 */
         uint8_t *slot = win->payload_pool + idx * (size_t)win->max_payload;
         win->packets[idx] = *packet;      /* 構造体コピー */
         win->packets[idx].payload = slot; /* プール スロットを設定 */
@@ -172,6 +176,7 @@ int potr_internal_window_send_full(const potr_internal_window *win)
     {
         return 1;
     }
+
     return (uint32_t)(win->next_seq - win->base_seq) >= (uint32_t)win->window_size;
 }
 
@@ -186,7 +191,7 @@ int potr_internal_window_send_get(const potr_internal_window *win, uint32_t seq_
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* 通番がウィンドウ範囲外 */
+    /* 通番がウィンドウ範囲外である場合は未検出とする。 */
     if (!potr_internal_seqnum_in_window(seq_num, win->base_seq, (uint16_t)(win->next_seq - win->base_seq)))
     {
         return POTR_ERR_NOT_FOUND;
@@ -199,6 +204,7 @@ int potr_internal_window_send_get(const potr_internal_window *win, uint32_t seq_
     }
 
     *packet_out = win->packets[idx];
+
     return POTR_OK;
 }
 
@@ -223,8 +229,11 @@ int potr_internal_window_recv_push(potr_internal_window *win, const potr_packet 
     idx = win_index(win, packet->seq_num);
     if (!win->valid[idx])
     {
-        /* プール スロットへディープ コピー (packet->payload_len はホスト バイト オーダー: potr_internal_packet_parse が変換済み) */
-        /* プール スロット アドレスをインデックスから直接計算することで const 除去キャストを回避する */
+        /*
+         * プール スロットへディープ コピーする
+         * (packet->payload_len はホスト バイト オーダー: potr_internal_packet_parse が変換済み)。
+         * プール スロット アドレスをインデックスから直接計算することで const 除去キャストを回避する。
+         */
         uint8_t *slot = win->payload_pool + idx * (size_t)win->max_payload;
         win->packets[idx] = *packet;
         win->packets[idx].payload = slot;
@@ -295,7 +304,7 @@ int potr_internal_window_recv_needs_nack(const potr_internal_window *win, uint32
         return 0; /* next_seq が既着 = 欠番なし */
     }
 
-    /* next_seq が未着のとき、ウィンドウ内に先行して到着したパケットがあれば欠番 */
+    /* next_seq が未着のとき、ウィンドウ内に先行して到着したパケットがあれば欠番とする。 */
     for (i = 1U; i < win->window_size; i++)
     {
         uint16_t look_idx = win_index(win, win->next_seq + i);
@@ -322,6 +331,7 @@ int potr_internal_window_recv_has_packet(const potr_internal_window *win, uint32
     }
 
     idx = win_index(win, seq_num);
+
     return win->valid[idx] != 0;
 }
 

@@ -51,6 +51,7 @@ static int any_path_alive(const int *states)
             return 1;
         }
     }
+
     return 0;
 }
 
@@ -63,6 +64,7 @@ int potr_internal_callback_mutex_init(potr_context *ctx)
     {
         return POTR_ERR_UNKNOWN;
     }
+
     return POTR_OK;
 }
 
@@ -84,8 +86,10 @@ void potr_internal_callback_emit_locked(potr_context *ctx, potr_peer_id peer_id,
 {
     if (ctx != NULL && ctx->callback != NULL)
     {
-        /* コールバック内からの API 呼び出しを potr_internal_in_own_callback で判定できるよう、
-         * 実行中のスレッドを記録する。callback_mutex により記録は 1 件だけ有効になる。 */
+        /*
+         * コールバック内からの API 呼び出しを potr_internal_in_own_callback で判定できるよう、
+         * 実行中のスレッドを記録する。callback_mutex により記録は 1 件だけ有効になる。
+         */
         cplat_atomic_store_u32(&ctx->callback_tid, cplat_process_get_tid(), CPLAT_MEMORY_ORDER_RELAXED);
         cplat_atomic_store_i32(&ctx->callback_active, 1, CPLAT_MEMORY_ORDER_RELEASE);
         ctx->callback(ctx->service.service_id, peer_id, event, data, len);
@@ -101,12 +105,16 @@ int potr_internal_in_own_callback(const potr_context *ctx)
     {
         return 0;
     }
-    /* スレッド ID は終了したスレッドへ再割り当てされる場合があるが、
-     * 記録したスレッドはコールバック実行中で生存しているため、一致は同一スレッドを意味する。 */
+
+    /*
+     * スレッド ID は終了したスレッドへ再割り当てされる場合があるが、
+     * 記録したスレッドはコールバック実行中で生存しているため、一致は同一スレッドを意味する。
+     */
     if (cplat_atomic_load_u32(&ctx->callback_tid, CPLAT_MEMORY_ORDER_RELAXED) == cplat_process_get_tid())
     {
         return 1;
     }
+
     return 0;
 }
 
@@ -204,8 +212,10 @@ void potr_internal_sync_service_path_state_locked(potr_context *ctx, const int *
     {
         old_alive = 0;
     }
+
     new_alive = any_path_alive(next_states);
 
+    /* パスの論理接続状態に変化があったパス番号とイベントを記録する。 */
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
         if (ctx->path_logical_alive[k] == next_states[k])
@@ -214,6 +224,7 @@ void potr_internal_sync_service_path_state_locked(potr_context *ctx, const int *
         }
 
         prepared->changed_paths[prepared->changed_count] = k;
+
         if (next_states[k] != 0)
         {
             prepared->changed_events[prepared->changed_count] = POTR_EVENT_PATH_CONNECTED;
@@ -222,12 +233,14 @@ void potr_internal_sync_service_path_state_locked(potr_context *ctx, const int *
         {
             prepared->changed_events[prepared->changed_count] = POTR_EVENT_PATH_DISCONNECTED;
         }
+
         prepared->changed_count++;
     }
 
     memcpy(ctx->path_logical_alive, next_states, sizeof(ctx->path_logical_alive));
     cplat_atomic_store_i32(&ctx->health_alive, new_alive, CPLAT_MEMORY_ORDER_RELEASE);
 
+    /* サービス全体の接続状態に変化があればセッション イベントを記録する。 */
     if (old_alive != new_alive)
     {
         if (new_alive != 0)
@@ -261,8 +274,10 @@ void potr_internal_sync_peer_path_state_locked(potr_internal_peer_context *peer,
     {
         old_alive = 0;
     }
+
     new_alive = any_path_alive(next_states);
 
+    /* パスの論理接続状態に変化があったパス番号とイベントを記録する。 */
     for (k = 0; k < (int)POTR_MAX_PATH; k++)
     {
         if (peer->path_logical_alive[k] == next_states[k])
@@ -271,6 +286,7 @@ void potr_internal_sync_peer_path_state_locked(potr_internal_peer_context *peer,
         }
 
         prepared->changed_paths[prepared->changed_count] = k;
+
         if (next_states[k] != 0)
         {
             prepared->changed_events[prepared->changed_count] = POTR_EVENT_PATH_CONNECTED;
@@ -279,12 +295,14 @@ void potr_internal_sync_peer_path_state_locked(potr_internal_peer_context *peer,
         {
             prepared->changed_events[prepared->changed_count] = POTR_EVENT_PATH_DISCONNECTED;
         }
+
         prepared->changed_count++;
     }
 
     memcpy(peer->path_logical_alive, next_states, sizeof(peer->path_logical_alive));
     cplat_atomic_store_i32(&peer->health_alive, new_alive, CPLAT_MEMORY_ORDER_RELEASE);
 
+    /* ピア全体の接続状態に変化があればセッション イベントを記録する。 */
     if (old_alive != new_alive)
     {
         if (new_alive != 0)

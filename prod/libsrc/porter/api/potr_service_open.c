@@ -43,9 +43,13 @@
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
 
-/* セッション識別子と開始時刻を生成してコンテキストに格納する。
- * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は
- * (key, nonce) の再利用を招く。暗号論的乱数源から取得する。 */
+/*
+ * セッション識別子と開始時刻を生成してコンテキストに格納する。
+ * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は (key, nonce) の再利用を招く。
+ * 暗号論的乱数源から取得する。
+ * 成功時は CPLAT_OK を返す。
+ * 乱数の取得に失敗したときは cplat_random_bytes() の結果を返し、POTR の結果コードには変換しない。
+ */
 static int generate_session(potr_context *ctx)
 {
     int ret = cplat_random_bytes(&ctx->session_id, sizeof(ctx->session_id));
@@ -54,6 +58,7 @@ static int generate_session(potr_context *ctx)
     {
         return ret;
     }
+
     cplat_clock_get_realtime(&ctx->session_ts);
 
     cplat_atomic_store_u64(&ctx->last_ping_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
@@ -62,7 +67,11 @@ static int generate_session(potr_context *ctx)
     return CPLAT_OK;
 }
 
-/* 呼び出し前に、起動済みスレッドの終了待ちを完了する。 */
+/*
+ * 共通資源を破棄してコンテキストを解放する。
+ * 呼び出し前に、起動済みスレッドの終了待ちを完了する。
+ * スレッド ハンドルが残っているときは、コンテキストを解放せずに戻る。
+ */
 static void ctx_cleanup(potr_context *ctx)
 {
     if (api_context_has_threads(ctx))
@@ -70,11 +79,15 @@ static void ctx_cleanup(potr_context *ctx)
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: thread join incomplete; retaining context");
         return;
     }
+
     api_context_dispose_resources(ctx);
     cplat_free(ctx);
 }
 
-/* callback と role・通信種別の整合性を検証する (ctx->service 確定後に呼び出す) */
+/*
+ * callback と role・通信種別の整合性を検証する。ctx->service の確定後に呼び出す。
+ * 整合するときは POTR_OK を返し、不正なときは POTR_ERR_INVALID_ARGUMENT を返す。
+ */
 static int open_validate_callback(const potr_context *ctx, potr_role role, potr_recv_fn callback)
 {
     if (role == POTR_ROLE_SENDER && callback != NULL && ctx->service.type != POTR_TYPE_UNICAST_BIDIR &&
@@ -86,6 +99,7 @@ static int open_validate_callback(const potr_context *ctx, potr_role role, potr_
                    ctx->service.service_id, (int)ctx->service.type);
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     if (role == POTR_ROLE_SENDER && callback == NULL &&
         (ctx->service.type == POTR_TYPE_UNICAST_BIDIR || ctx->service.type == POTR_TYPE_TCP_BIDIR))
     {
@@ -99,9 +113,13 @@ static int open_validate_callback(const potr_context *ctx, potr_role role, potr_
     return POTR_OK;
 }
 
-/* 設定値を検証し、実効ヘルス チェック間隔・タイムアウトを解決する */
+/*
+ * 設定値を検証し、実効ヘルス チェック間隔・タイムアウトを解決する。
+ * 検証に通ったときは POTR_OK を返し、不正なときは POTR_ERR_INVALID_ARGUMENT を返す。
+ */
 static int open_validate_config(potr_context *ctx)
 {
+    /* max_payload の許容範囲の正本は app/porter/docs/config.md の「global オブジェクト」節である。 */
     if (ctx->global.max_payload < 64U || ctx->global.max_payload > POTR_MAX_PAYLOAD)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
@@ -109,6 +127,8 @@ static int open_validate_config(potr_context *ctx)
                    ctx->service.service_id, (unsigned)ctx->global.max_payload, (unsigned)POTR_MAX_PAYLOAD);
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
+    /* window_size の許容範囲の正本は app/porter/docs/config.md の「global オブジェクト」節である。 */
     if (ctx->global.window_size < 2U || ctx->global.window_size > POTR_MAX_WINDOW_SIZE)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
@@ -116,6 +136,7 @@ static int open_validate_config(potr_context *ctx)
                    ctx->service.service_id, (unsigned)ctx->global.window_size, (unsigned)POTR_MAX_WINDOW_SIZE);
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     if (ctx->global.max_message_size < (uint32_t)ctx->global.max_payload)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
@@ -123,6 +144,7 @@ static int open_validate_config(potr_context *ctx)
                    ctx->service.service_id, (unsigned)ctx->global.max_message_size, (unsigned)ctx->global.max_payload);
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     if (ctx->global.send_queue_depth < 2U)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
@@ -131,7 +153,11 @@ static int open_validate_config(potr_context *ctx)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* 通信種別ごとのグローバル既定値を選び、サービス単位設定で実効値を上書きする。 */
+    /*
+     * 通信種別ごとのグローバル既定値を選び、サービス単位設定で実効値を上書きする。
+     * サービス側の値が 0 のときは上書きせず、グローバル既定値を維持する。
+     * 正本は app/porter/docs/health-check.md の「設定パラメーター」節である。
+     */
     if (is_tcp_type(ctx->service.type))
     {
         ctx->health_interval_ms = ctx->global.tcp_health_interval_ms;
@@ -147,6 +173,7 @@ static int open_validate_config(potr_context *ctx)
     {
         ctx->health_interval_ms = ctx->service.health_interval_ms;
     }
+
     if (ctx->service.health_timeout_ms != 0U)
     {
         ctx->health_timeout_ms = ctx->service.health_timeout_ms;
@@ -155,7 +182,11 @@ static int open_validate_config(potr_context *ctx)
     return POTR_OK;
 }
 
-/* 送受信ウィンドウを初期化し、動的バッファーを確保する */
+/*
+ * 送受信ウィンドウを初期化し、動的バッファーを確保する。
+ * 失敗時に途中まで確保した資源は解放せず、呼び出し元が ctx_cleanup() で破棄する。
+ * 成功時は POTR_OK を返す。失敗時はウィンドウ初期化の結果、または POTR_ERR_OUT_OF_MEMORY を返す。
+ */
 static int alloc_context_buffers(potr_context *ctx)
 {
     int result;
@@ -165,6 +196,7 @@ static int alloc_context_buffers(potr_context *ctx)
     {
         return result;
     }
+
     ctx->send_has_data = 0;
     result = potr_internal_window_init(&ctx->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
     if (result != POTR_OK)
@@ -206,6 +238,7 @@ static int alloc_context_buffers(potr_context *ctx)
     {
         return POTR_ERR_OUT_OF_MEMORY;
     }
+
     if (is_tcp_type(ctx->service.type))
     {
         for (int i = 0; i < ctx->n_path; i++)
@@ -221,7 +254,12 @@ static int alloc_context_buffers(potr_context *ctx)
     return POTR_OK;
 }
 
-/* TCP 同期資源は、全スレッドの停止後に共通処理で破棄する。 */
+/*
+ * TCP の同期資源と送信キューを生成し、接続スレッドを起動する。
+ * TCP 同期資源は、全スレッドの停止後に共通処理で破棄する。
+ * 成功時は POTR_OK を返す。同期資源の生成に失敗したときは POTR_ERR_UNKNOWN を返す。
+ * 送信キューの初期化または接続スレッドの起動に失敗したときは、その結果を返す。
+ */
 static int start_threads_tcp(potr_context *ctx, potr_role role)
 {
     int result;
@@ -237,6 +275,7 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
         api_context_dispose_tcp_sync(ctx);
         return POTR_ERR_UNKNOWN;
     }
+
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
         if (cplat_local_lock_create(&ctx->tcp_send_mutex[i]) != CPLAT_OK ||
@@ -247,6 +286,7 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
             return POTR_ERR_UNKNOWN;
         }
     }
+
     if (cplat_local_lock_create(&ctx->recv_window_mutex) != CPLAT_OK)
     {
         api_context_dispose_tcp_sync(ctx);
@@ -263,6 +303,7 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
             return result;
         }
     }
+
     result = potr_internal_connect_thread_start(ctx);
     if (result != POTR_OK)
     {
@@ -271,23 +312,30 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
         {
             return result;
         }
+
         if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
         {
             potr_internal_send_queue_dispose(&ctx->send_queue);
         }
+
         api_context_dispose_tcp_sync(ctx);
     }
+
     return result;
 }
 
-/* 非 TCP: 役割と通信種別に応じて受信・送信・ヘルス チェック スレッドを起動する */
+/*
+ * 非 TCP では、役割と通信種別に応じて受信・送信・ヘルス チェック スレッドを起動する。
+ * 成功時は POTR_OK を返す。起動または送信キューの初期化に失敗したときは、その結果を返す。
+ */
 static int start_threads_udp(potr_context *ctx, potr_role role)
 {
     int result;
 
-    /* 非 TCP: 受信者の場合は受信スレッドのみ起動
-       ただし UNICAST_BIDIR / UNICAST_BIDIR_N1 の RECEIVER は
-       下の全スレッド起動ブロックで処理する */
+    /*
+     * 非 TCP の受信者は、受信スレッドだけを起動する。
+     * ただし UNICAST_BIDIR と UNICAST_BIDIR_N1 の RECEIVER は、下の全スレッド起動で処理する。
+     */
     if (role == POTR_ROLE_RECEIVER && ctx->service.type != POTR_TYPE_UNICAST_BIDIR &&
         ctx->service.type != POTR_TYPE_UNICAST_BIDIR_N1)
     {
@@ -298,8 +346,10 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
         }
     }
 
-    /* 非 TCP 送信者 / UNICAST_BIDIR / UNICAST_BIDIR_N1 受信者:
-       送信キュー・送信スレッド・ヘルス チェック スレッド・受信スレッドを起動 */
+    /*
+     * 非 TCP の送信者、および UNICAST_BIDIR と UNICAST_BIDIR_N1 の受信者は、
+     * 送信キュー、送信スレッド、ヘルス チェック スレッド、受信スレッドを起動する。
+     */
     if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR ||
         ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1)
     {
@@ -317,19 +367,29 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
             return result;
         }
 
+        /*
+         * 片方向 UDP 以外は、ヘルス チェック スレッドの開始前に即時 PING を要求する。
+         * 片方向 UDP は open 直後の即時 PING を送らない。
+         * 正本は app/porter/docs/config.md の「health_interval_ms と health_timeout_ms の関係」節である。
+         */
         cplat_atomic_store_i32(&ctx->health_send_immediate[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+
         if (type_uses_immediate_health_ping(ctx->service.type))
         {
             cplat_atomic_store_i32(&ctx->health_send_immediate[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
         }
+
         result = potr_internal_health_thread_start(ctx);
         if (result != POTR_OK)
         {
             potr_internal_send_thread_stop(ctx);
+
+            /* 待機失敗でハンドルが残る場合は、使用中のキューを保持する。 */
             if (api_context_has_threads(ctx))
             {
                 return result;
             }
+
             potr_internal_send_queue_dispose(&ctx->send_queue);
             return result;
         }
@@ -337,15 +397,20 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
         result = potr_internal_comm_recv_thread_start(ctx);
         if (result != POTR_OK)
         {
+            /* ヘルス チェック スレッドの終了待ちに失敗したときは、ハンドルが残るためキューを保持して戻る。 */
             if (potr_internal_health_thread_stop(ctx) != POTR_OK)
             {
                 return result;
             }
+
             potr_internal_send_thread_stop(ctx);
+
+            /* 待機失敗でハンドルが残る場合は、使用中のキューを保持する。 */
             if (api_context_has_threads(ctx))
             {
                 return result;
             }
+
             potr_internal_send_queue_dispose(&ctx->send_queue);
             return result;
         }
@@ -373,15 +438,19 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_open: service_id=%" PRId64 " role=%d", service->service_id,
                (int)role);
 
-    /* role と callback の整合性チェック (設定読み込み前に確定できる部分のみ) */
+    /*
+     * role と callback の整合性のうち、設定の読み込み前に確定できる部分だけを検査する。
+     * SENDER と callback の完全な検査は、設定の読み込み後に行う。
+     * POTR_TYPE_UNICAST_BIDIR と POTR_TYPE_TCP_BIDIR の SENDER は callback が必須であるため、
+     * 通信種別が必要になる。
+     */
     if (role == POTR_ROLE_RECEIVER && callback == NULL)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " RECEIVER role requires callback",
                    service->service_id);
         return POTR_ERR_INVALID_ARGUMENT;
     }
-    /* SENDER + callback の完全チェックは設定読み込み後に行う
-       (POTR_TYPE_UNICAST_BIDIR の SENDER は callback が必須のため) */
+
     if (role != POTR_ROLE_SENDER && role != POTR_ROLE_RECEIVER)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " unknown role=%d",
@@ -394,6 +463,7 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
     {
         return POTR_ERR_OUT_OF_MEMORY;
     }
+
     memset(ctx, 0, sizeof(*ctx));
     result = potr_internal_callback_mutex_init(ctx);
     if (result != POTR_OK)
@@ -402,9 +472,10 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         return result;
     }
 
-    /* 全ソケットを INVALID で初期化 */
+    /* 全ソケットを INVALID で初期化する。 */
     {
         int i;
+
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
             ctx->sock[i] = CPLAT_INVALID_SOCKET;
@@ -413,16 +484,16 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         }
     }
 
-    /* グローバル設定とサービス定義をコンテキストにコピー */
     memcpy(&ctx->global, global, sizeof(potr_global_config));
     memcpy(&ctx->service, service, sizeof(potr_service_def));
 
-    /* SENDER + callback の整合性チェック (型が確定した後) と設定値バリデーション */
+    /* 型が確定した後に、SENDER と callback の整合性と設定値を検証する。 */
     result = open_validate_callback(ctx, role, callback);
     if (result == POTR_OK)
     {
         result = open_validate_config(ctx);
     }
+
     if (result != POTR_OK)
     {
         ctx_cleanup(ctx);
@@ -438,7 +509,6 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
                (unsigned)ctx->global.send_queue_depth, (unsigned)ctx->health_interval_ms,
                (unsigned)ctx->health_timeout_ms, (unsigned)ctx->global.tcp_close_timeout_ms);
 
-    /* 通信種別に応じてソケット・パスを準備する */
     result = api_open_paths_by_type(ctx, role);
     if (result != POTR_OK)
     {
@@ -449,7 +519,6 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
     ctx->callback = callback;
     ctx->role = role;
 
-    /* 送信先ソケット アドレスを設定する */
     result = api_setup_dest_addr(ctx, role);
     if (result != POTR_OK)
     {
@@ -457,7 +526,6 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         return result;
     }
 
-    /* セッション識別子を生成する */
     if (generate_session(ctx) != CPLAT_OK)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: session id generation failed (service_id=%" PRId64 ")",
@@ -466,7 +534,6 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         return POTR_ERR_UNKNOWN;
     }
 
-    /* 送受信ウィンドウと動的バッファーを確保する */
     result = alloc_context_buffers(ctx);
     if (result != POTR_OK)
     {
@@ -474,7 +541,7 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         return result;
     }
 
-    /* 通信種別に応じてスレッドを起動する */
+    /* 通信種別に応じてスレッドを起動する。 */
     if (is_tcp_type(ctx->service.type))
     {
         start_result = start_threads_tcp(ctx, role);
@@ -483,6 +550,7 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
     {
         start_result = start_threads_udp(ctx, role);
     }
+
     if (start_result != POTR_OK)
     {
         ctx_cleanup(ctx);
@@ -490,6 +558,7 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
     }
 
     *handle = ctx;
+
     {
         const char *role_str;
         const char *encrypt_str;
@@ -502,6 +571,7 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         {
             role_str = "RECEIVER";
         }
+
         if (ctx->service.encrypt_enabled)
         {
             encrypt_str = "ON";
@@ -510,9 +580,11 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         {
             encrypt_str = "OFF";
         }
+
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                    "potr_service_open: service_id=%" PRId64 " role=%s encrypt=%s opened successfully",
                    ctx->service.service_id, role_str, encrypt_str);
     }
+
     return POTR_OK;
 }

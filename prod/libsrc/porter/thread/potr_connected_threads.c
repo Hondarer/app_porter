@@ -41,6 +41,7 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
     is_bidir = (ctx->service.type == POTR_TYPE_TCP_BIDIR);
     is_sender = (ctx->role == POTR_ROLE_SENDER);
 
+    /* 送信スレッドは、SENDER または TCP_BIDIR の path 0 で、未起動の場合だけ起動する。 */
     if ((is_sender || is_bidir) && path_idx == 0 &&
         cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
@@ -51,13 +52,17 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
                        ctx->service.service_id);
             return result;
         }
+
         started_send_thread = 1;
     }
 
-    /* recv スレッドは accept 時に先読みした PING を起動直後に処理し、経路状態を NORMAL にする。
-     * 起動後に初期化すると、その NORMAL を上書きして経路を切断扱いにするため、起動前に初期化する。 */
+    /*
+     * recv スレッドは accept 時に先読みした PING を起動直後に処理し、経路状態を NORMAL にする。
+     * 起動後に初期化すると、その NORMAL を上書きして経路を切断扱いにするため、起動前に初期化する。
+     */
     ops->set_path_ping_state(ctx, path_idx, POTR_PING_STATE_UNDEFINED);
 
+    /* 受信スレッドを起動する。失敗時は接続を閉じ、ここで起動した送信スレッドを停止する。 */
     result = ops->recv_start(ctx, path_idx);
     if (result != POTR_OK)
     {
@@ -66,13 +71,16 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
                    " (path=%d)",
                    ctx->service.service_id, path_idx);
         ops->close_conn(ctx, path_idx);
+
         if (started_send_thread)
         {
             ops->send_stop(ctx);
         }
+
         return result;
     }
 
+    /* 初回 PING (bootstrap PING) を送信する。失敗時は接続を閉じ、ここで起動したスレッドを停止する。 */
     result = potr_internal_tcp_send_ping_now(ctx, path_idx);
     if (result != POTR_OK)
     {
@@ -83,13 +91,16 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
         cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
         ops->close_conn(ctx, path_idx);
         ops->join_recv(ctx, path_idx);
+
         if (started_send_thread)
         {
             ops->send_stop(ctx);
         }
+
         return result;
     }
 
+    /* ヘルス スレッドを起動する。失敗時は接続を閉じ、ここで起動したスレッドを停止する。 */
     result = ops->health_start(ctx, path_idx);
     if (result != POTR_OK)
     {
@@ -100,10 +111,12 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
         cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
         ops->close_conn(ctx, path_idx);
         ops->join_recv(ctx, path_idx);
+
         if (started_send_thread)
         {
             ops->send_stop(ctx);
         }
+
         return result;
     }
 

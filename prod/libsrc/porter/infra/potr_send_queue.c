@@ -43,6 +43,7 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
 
     q->depth = depth;
 
+    /* 各エントリを初期化し、ペイロード領域を割り当てる。 */
     for (i = 0; i < depth; i++)
     {
         q->entries[i].peer_id = POTR_PEER_NA;
@@ -59,6 +60,7 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
         potr_internal_send_queue_dispose(q);
         return POTR_ERR_UNKNOWN;
     }
+
     return POTR_OK;
 }
 
@@ -71,31 +73,37 @@ void potr_internal_send_queue_dispose(potr_internal_send_queue *q)
         cplat_condvar_dispose(q->progress);
         q->progress = NULL;
     }
+
     if (q->drained != NULL)
     {
         cplat_condvar_dispose(q->drained);
         q->drained = NULL;
     }
+
     if (q->not_full != NULL)
     {
         cplat_condvar_dispose(q->not_full);
         q->not_full = NULL;
     }
+
     if (q->not_empty != NULL)
     {
         cplat_condvar_dispose(q->not_empty);
         q->not_empty = NULL;
     }
+
     if (q->push_mutex != NULL)
     {
         cplat_local_lock_dispose(q->push_mutex);
         q->push_mutex = NULL;
     }
+
     if (q->mutex != NULL)
     {
         cplat_local_lock_dispose(q->mutex);
         q->mutex = NULL;
     }
+
     cplat_free(q->entries);
     cplat_free(q->payload_pool);
     q->entries = NULL;
@@ -115,6 +123,7 @@ static void push_locked(potr_internal_send_queue *q, potr_peer_id peer_id, uint1
     q->tail = (q->tail + 1U) % q->depth;
     q->count++;
     q->pushed_seq++;
+
     if (ticket != NULL)
     {
         *ticket = q->pushed_seq;
@@ -150,8 +159,10 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
-    /* count + inflight < depth が保証されるまで待機する。
-       inflight エントリもプール スロットを占有するため、count だけでは不足。 */
+    /*
+     * count + inflight < depth が保証されるまで待機する。
+     * inflight エントリもプール スロットを占有するため、count だけでは不足する。
+     */
     while (q->count + q->inflight >= q->depth)
     {
         if (cplat_atomic_load_i32(running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
@@ -159,6 +170,7 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
             cplat_local_lock_unlock(q->mutex);
             return POTR_ERR_CANCELED;
         }
+
         cplat_condvar_wait(q->not_full, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
     }
 
@@ -182,6 +194,7 @@ int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payl
             cplat_local_lock_unlock(q->mutex);
             return POTR_ERR_CANCELED;
         }
+
         cplat_condvar_wait(q->not_empty, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
     }
 
@@ -190,9 +203,12 @@ int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payl
     q->count--;
     q->inflight++;
 
-    /* count + inflight は変化しない (count-- と inflight++ が相殺) ため
-       not_full シグナルは complete() が担う */
+    /*
+     * count + inflight は変化しない (count-- と inflight++ が相殺する) ため、
+     * not_full シグナルは complete() が担う。
+     */
     cplat_local_lock_unlock(q->mutex);
+
     return POTR_OK;
 }
 
@@ -211,6 +227,7 @@ int potr_internal_send_queue_peek(potr_internal_send_queue *q, potr_internal_pay
     *out = q->entries[q->head]; /* head は送信スレッドのみが変更するので安全 */
 
     cplat_local_lock_unlock(q->mutex);
+
     return POTR_OK;
 }
 
@@ -234,6 +251,7 @@ int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_intern
     *out = q->entries[q->head];
 
     cplat_local_lock_unlock(q->mutex);
+
     return POTR_OK;
 }
 
@@ -255,6 +273,7 @@ int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_
     q->inflight++;
 
     cplat_local_lock_unlock(q->mutex);
+
     return POTR_OK;
 }
 
@@ -278,8 +297,10 @@ void potr_internal_send_queue_complete(potr_internal_send_queue *q)
         cplat_condvar_broadcast(q->drained);
     }
 
-    /* inflight 減少により count + inflight < depth となる可能性があるため
-       push_wait で待機中のスレッドを起床させる */
+    /*
+     * inflight の減少により count + inflight < depth となる可能性があるため、
+     * push_wait で待機中のスレッドを起床させる。
+     */
     cplat_condvar_signal(q->not_full);
 
     cplat_local_lock_unlock(q->mutex);

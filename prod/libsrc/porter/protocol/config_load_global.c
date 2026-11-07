@@ -62,21 +62,29 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
     {
         return ret;
     }
+
     global_object = cJSON_GetObjectItemCaseSensitive(root, "global");
     if (global_object != NULL && !cJSON_IsObject(global_object))
     {
         cJSON_Delete(root);
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
+    /*
+     * global オブジェクトの各キーを走査し、対応する設定項目を更新する。
+     * パースに失敗した項目はデフォルト値を維持する。
+     */
     cJSON_ArrayForEach(item, global_object)
     {
         char value_buffer[32];
         const char *val = config_value_text(item, value_buffer, sizeof(value_buffer));
         const char *key = item->string;
+
         if (val == NULL)
         {
             continue;
         }
+
         if (strcmp(key, "window_size") == 0)
         {
             (void)cplat_parse_uint16(&global->window_size, val, 10);

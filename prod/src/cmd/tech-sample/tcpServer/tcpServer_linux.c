@@ -43,11 +43,14 @@
 
     #include "tcpServer.h"
 
+/* 終了シグナルを受けると shutdown_handler() が 0 にする */
 static volatile sig_atomic_t running = 1;
 
-/* ============================================================
+/*
+ * ============================================================
  *  シグナル ハンドラー
- * ============================================================ */
+ * ============================================================
+ */
 
 /**
  *  @brief          SIGCHLD シグナル ハンドラー。
@@ -58,6 +61,11 @@ static volatile sig_atomic_t running = 1;
 static void sigchld_handler(int sig)
 {
     (void)sig;
+
+    /*
+     * 終了したすべての子プロセスをノンブロッキングで回収し、ゾンビ プロセスの残留を防ぐ。
+     * see: https://man7.org/linux/man-pages/man2/waitpid.2.html
+     */
     while (waitpid(-1, NULL, WNOHANG) > 0)
         ;
 }
@@ -74,9 +82,11 @@ static void shutdown_handler(int sig)
     running = 0;
 }
 
-/* ============================================================
+/*
+ * ============================================================
  *  内部ヘルパー
- * ============================================================ */
+ * ============================================================
+ */
 
 /**
  *  @brief          listen ソケットを作成してバインドし、待ち受けを開始します。
@@ -133,9 +143,11 @@ static int create_listen_socket(int port)
  *    シングルスレッドで同時処理します。容量に達すると server_fd を epoll から
  *    除去して新規 accept を止め、空きが生じると再登録して受け付けを再開します。
  */
-/* 本関数は fork() した子プロセスからのみ呼び出される。
-   子で cplat_exit() を使うと、親が登録したシャットダウン コールバックを
-   fork で継承したまま子側で実行してしまうため、生の exit() を使用する。 */
+/*
+ * 本関数は fork() した子プロセスからのみ呼び出される。
+ * 子で cplat_exit() を使うと、親が登録したシャットダウン コールバックを
+ * fork で継承したまま子側で実行してしまうため、生の exit() を使用する。
+ */
 static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
 {
     printf("[ワーカー %d, PID %lu] 起動完了、接続待機\n", worker_id, (unsigned long)get_pid());
@@ -147,6 +159,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
         socklen_t addr_len;
         int client_fd;
 
+        /* クライアントからの接続を受け付け、1 接続ずつ順次処理する。 */
         while (running)
         {
             addr_len = sizeof(client_addr);
@@ -158,6 +171,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
                 {
                     continue;
                 }
+
                 perror("accept");
                 continue;
             }
@@ -185,12 +199,14 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
 
         ev.events = EPOLLIN;
         ev.data.fd = server_fd;
+
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev) < 0)
         {
             perror("epoll_ctl add server_fd");
             exit(1);
         }
 
+        /* epoll イベントを監視し、新規接続の受け付けおよび既存接続のデータ送受信を多重処理する。 */
         while (running)
         {
             int nfds = epoll_wait(epoll_fd, events, MAX_EPOLL_EVENTS, -1);
@@ -200,6 +216,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
                 {
                     continue;
                 }
+
                 perror("epoll_wait");
                 break;
             }
@@ -210,7 +227,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
 
                 if (fd == server_fd)
                 {
-                    /* 新規接続 */
+                    /* 新規クライアントからの接続を受け付け、epoll 監視対象に追加する。 */
                     int client_fd = accept(server_fd, NULL, NULL);
                     if (client_fd < 0)
                     {
@@ -218,11 +235,13 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
                         {
                             perror("accept");
                         }
+
                         continue;
                     }
 
                     ev.events = EPOLLIN;
                     ev.data.fd = client_fd;
+
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev) < 0)
                     {
                         perror("epoll_ctl add client_fd");
@@ -233,7 +252,10 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
                     active_count++;
                     printf("[ワーカー %d] 新規接続 (計 %d 接続)\n", worker_id, active_count);
 
-                    /* 容量到達 → server_fd を epoll から除去して新規 accept を止める */
+                    /*
+                     * ワーカーの同時接続数上限に達したため、
+                     * server_fd を epoll から除外して新規接続の受け付けを停止する。
+                     */
                     if (active_count >= conns_per_worker)
                     {
                         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, server_fd, NULL);
@@ -242,7 +264,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
                 }
                 else
                 {
-                    /* 既存接続のデータ到着または切断 */
+                    /* 既存接続からのデータ受信、またはクライアントの切断を処理する。 */
                     ssize_t n = client_recv(fd, buf, sizeof(buf));
                     if (n <= 0)
                     {
@@ -251,11 +273,12 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
                         active_count--;
                         printf("[ワーカー %d] 接続終了 (残 %d 接続)\n", worker_id, active_count);
 
-                        /* 空きが生じた → server_fd を再登録して accept を再開 */
+                        /* 接続に空きが生じたため、server_fd を epoll に再登録して新規接続の受け付けを再開する。 */
                         if (!accepting && active_count < conns_per_worker)
                         {
                             ev.events = EPOLLIN;
                             ev.data.fd = server_fd;
+
                             if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev) == 0)
                             {
                                 accepting = 1;
@@ -277,9 +300,11 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
     exit(0);
 }
 
-/* ============================================================
+/*
+ * ============================================================
  *  プラットフォーム フック
- * ============================================================ */
+ * ============================================================
+ */
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -292,7 +317,7 @@ void platform_init(ClientSessionFn session_fn)
 
 void platform_cleanup(void)
 {
-    /* Linux では後処理不要 */
+    /* Linux では後処理を必要としない。 */
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -305,9 +330,11 @@ int dispatch_internal_args(int argc, char *argv[])
     return 0;
 }
 
-/* ============================================================
+/*
+ * ============================================================
  *  サーバー実装
- * ============================================================ */
+ * ============================================================
+ */
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -318,7 +345,7 @@ void run_fork_server(int port)
     socklen_t addr_len = sizeof(addr);
     struct sigaction sa;
 
-    /* SIGCHLD ハンドラー設定 (ゾンビ プロセス回避) */
+    /* 終了した子プロセスのゾンビ化を防ぐため、SIGCHLD ハンドラーを設定する。 */
     sa.sa_handler = sigchld_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
@@ -327,6 +354,7 @@ void run_fork_server(int port)
     server_fd = create_listen_socket(port);
     printf("[親プロセス %lu] fork モード、ポート %d で待ち受け開始\n", (unsigned long)get_pid(), port);
 
+    /* クライアントからの接続を受け付け、接続ごとに子プロセスを fork して通信を処理する。 */
     while (1)
     {
         client_fd = accept(server_fd, (struct sockaddr *)&addr, &addr_len);
@@ -346,16 +374,18 @@ void run_fork_server(int port)
         }
         else if (pid == 0)
         {
-            /* 子プロセス。
-               cplat_exit() は親が登録したシャットダウン コールバックを
-               fork で継承したまま実行してしまうため、生の exit() を使用する。 */
+            /*
+             * 子プロセス。
+             * cplat_exit() は親が登録したシャットダウン コールバックを
+             * fork で継承したまま実行してしまうため、生の exit() を使用する。
+             */
             cplat_close(server_fd, NULL);
             g_session_fn(client_fd);
             exit(0);
         }
         else
         {
-            /* 親プロセス */
+            /* 親プロセス側では不要となったクライアント ソケットを閉じる。 */
             cplat_close(client_fd, NULL);
         }
     }
@@ -368,14 +398,14 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
     int server_fd;
     struct sigaction sa;
 
-    /* SIGINT/SIGTERM ハンドラー設定 */
+    /* SIGINT と SIGTERM で待機ループを抜けるため、ハンドラーを設定する。 */
     sa.sa_handler = shutdown_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
 
-    /* SIGCHLD ハンドラー設定 */
+    /* 終了した子プロセスのゾンビ化を防ぐため、SIGCHLD ハンドラーを設定する。 */
     sa.sa_handler = sigchld_handler;
     sa.sa_flags = SA_RESTART;
     sigaction(SIGCHLD, &sa, NULL);
@@ -392,6 +422,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         cplat_exit(1);
     }
 
+    /* 指定された数のワーカー プロセスを事前に生成する。 */
     for (int i = 0; i < num_workers; i++)
     {
         pid_t pid = fork();
@@ -405,19 +436,24 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         {
             cplat_free(worker_pids);
             worker_loop(server_fd, i, conns_per_worker);
-            /* ここには到達しない */
+
+            /* worker_loop() 内でプロセスが終了するため、ここには到達しない。 */
         }
+
         worker_pids[i] = pid;
     }
 
     printf("[親プロセス] Ctrl+C で終了\n");
 
+    /* シグナルを受信するまで待機を継続する。 */
     while (running)
     {
         pause();
     }
 
     printf("\n[親プロセス] 全ワーカーを終了させます\n");
+
+    /* 全ワーカー プロセスへ SIGTERM を送信して終了を促す。 */
     for (int i = 0; i < num_workers; i++)
     {
         if (worker_pids[i] > 0)
@@ -426,6 +462,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         }
     }
 
+    /* 全ワーカー プロセスの終了を同期待機して回収する。 */
     for (int i = 0; i < num_workers; i++)
     {
         if (worker_pids[i] > 0)

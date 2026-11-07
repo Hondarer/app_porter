@@ -38,7 +38,7 @@
 
 #include "thread_recv_health.h"
 
-/* N:1: poll タイムアウト時にヘルス チェック タイムアウトを確認する */
+/* N:1 の poll タイムアウト時にヘルス チェック タイムアウトを確認する。 */
 /* Doxygen コメントは、ヘッダーに記載 */
 void thread_recv_health_check_peers(potr_context *ctx)
 {
@@ -64,7 +64,7 @@ void thread_recv_health_check_peers(potr_context *ctx)
         if (cplat_atomic_load_i32(&ctx->peers[i].health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
             continue;
 
-        /* パス単位のタイムアウト: 不通パスを dest_addr から削除する */
+        /* パス単位のタイムアウトを判定し、不通パスを dest_addr から削除する。 */
         for (k = 0; k < (int)POTR_MAX_PATH; k++)
         {
             int64_t path_elapsed;
@@ -94,7 +94,7 @@ void thread_recv_health_check_peers(potr_context *ctx)
             thread_recv_sync_path_state(&peer_slot);
         }
 
-        /* ピア単位のタイムアウト: 全パス消滅、または最終受信から切断判定 */
+        /* ピア単位のタイムアウトを判定し、全パス消滅または最終受信経過により切断する。 */
         if (ctx->peers[i].last_recv_ts.tv_sec == 0)
             continue;
 
@@ -143,7 +143,7 @@ void thread_recv_health_wake_tcp(potr_context *ctx, const int path_idx, const in
     }
 }
 
-/* タイムアウト時に経過時間を確認し、必要なら peer_port クリアと DISCONNECTED イベントを発火する */
+/* タイムアウト時に経過時間を確認し、必要なら peer_port クリアと DISCONNECTED イベントを発火する。 */
 /* Doxygen コメントは、ヘッダーに記載 */
 void thread_recv_health_check_service(thread_recv_slot *slot)
 {
@@ -158,7 +158,7 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
 
     cplat_clock_get_monotonic(&now_ts);
 
-    /* パスごとのタイムアウト: peer_port をクリア */
+    /* パスごとのタイムアウトを判定し、peer_port をクリアする。 */
     for (i = 0; i < ctx->n_path; i++)
     {
         int64_t elapsed_ms;
@@ -175,17 +175,19 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
             path_state_changed |= state_changed;
             ctx->peer_port[i] = 0;
             ctx->path_last_recv_ts[i].tv_sec = 0;
+
             /* unicast_bidir で動的学習したアドレス・ポートをリセットする (再接続を許可) */
             if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
             {
                 if (ctx->service.src_addr[0][0] == '\0')
                 {
-                    /* 動的 1:1 RECEIVER: 学習した送信元 IP をリセット */
+                    /* 動的 1:1 RECEIVER では、学習した送信元 IP をリセットする。 */
                     ctx->dest_addr[i].address = 0;
                 }
+
                 if (ctx->service.src_port == 0)
                 {
-                    /* エフェメラル ポート動的学習: ポートをリセット */
+                    /* エフェメラル ポートを動的に学習する場合は、ポートをリセットする。 */
                     ctx->dest_addr[i].port = 0;
                 }
             }
@@ -197,7 +199,7 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
         thread_recv_sync_path_state(slot);
     }
 
-    /* 全体の health_alive 判定 */
+    /* 全体の health_alive を判定する。 */
     if (cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0 || ctx->last_recv_ts.tv_sec == 0)
         return;
 
@@ -209,16 +211,20 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING, "recv[service_id=%" PRId64 "]: DISCONNECTED (timeout %lldms >= %ums)",
                        ctx->service.service_id, (long long)elapsed_ms, (unsigned)ctx->health_timeout_ms);
-            /* FIN と同様にセッション状態をリセットして次の接続を受け入れ可能にする。
-               peer_session_known をクリアすることで、送信者が同一セッションのまま
-               復帰した場合でも potr_internal_window_init を経由して受信ウィンドウを初期化し、
-               前セッションの next_seq が gap スキャンに影響しないようにする。 */
+
+            /*
+             * FIN と同様にセッション状態をリセットして次の接続を受け入れ可能にする。
+             * peer_session_known をクリアすることで、送信者が同一セッションのまま
+             * 復帰した場合でも potr_internal_window_init を経由して受信ウィンドウを初期化し、
+             * 前セッションの next_seq が gap スキャンに影響しないようにする。
+             */
             ctx->pending_fin = 0;
             ctx->fin_target_seq = 0;
             ctx->peer_session_known = 0;
             ctx->reorder_pending = 0;
             ctx->last_recv_ts.tv_sec = 0;
-            /* 次の接続到来まで受信状態を不定に戻す */
+
+            /* 次の接続到来まで受信状態を不定に戻す。 */
             should_wake_health |=
                 thread_recv_set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
             memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));

@@ -13,8 +13,10 @@
  *******************************************************************************
  */
 
-/* NOTE: このヘッダーは多数のソース ファイルから参照されるため、            */
-/*       @hideincludedbygraph によって "Included by" グラフを無効にします。 */
+/*
+ * このヘッダーは多数のソース ファイルから参照されるため、
+ * @hideincludedbygraph によって "Included by" グラフを無効にする。
+ */
 
 #ifndef POTR_PROTOCOL_PACKET_H
 #define POTR_PROTOCOL_PACKET_H
@@ -26,7 +28,7 @@
 #include <porter/porter_result.h>
 #include <porter/porter_type.h>
 
-/** パケット ヘッダーの固定長 (バイト)。payload フィールドの開始オフセット。 */
+/** パケット ヘッダーの固定長 [byte]。payload フィールドの開始オフセット。 */
 #define POTR_PACKET_HEADER_SIZE ((size_t)offsetof(potr_packet, payload))
 
 /**
@@ -94,7 +96,7 @@ extern "C"
      *  @param[in]      seq_num            通番 (ウィンドウ管理に使用)。
      *  @param[in]      health_payload     パス PING 受信状態ペイロードへのポインター (POTR_PING_STATE_* 値の配列)。
      *                                     NULL の場合はペイロードなし (payload_len=0)。
-     *  @param[in]      health_payload_len ペイロード長 (バイト)。通常 POTR_MAX_PATH。health_payload が NULL の場合は無視。
+     *  @param[in]      health_payload_len ペイロード長 [byte]。通常 POTR_MAX_PATH。health_payload が NULL の場合は無視。
      *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      *
      *  ヘルス チェック パケットです。\n
@@ -198,7 +200,7 @@ extern "C"
      *                          potr_internal_packet_build_*() で構築した NBO パケットを渡すこと。
      *                          potr_internal_packet_parse() 済み (ホスト バイト オーダー) のパケットを
      *                          渡すと payload_len の ntohs 変換が二重になり誤値を返します。
-     *  @return         パケットの送信サイズ (バイト)。packet が NULL の場合は 0。
+     *  @return         パケットの送信サイズ [byte]。packet が NULL の場合は 0。
      *
      *  UDP 送信時に sendto() へ渡すバイト数を求めるために使用します。\n
      *  内部で ntohs(packet->payload_len) を呼び出すため、引数は必ず NBO 状態で渡してください。

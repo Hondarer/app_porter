@@ -13,8 +13,10 @@
  *******************************************************************************
  */
 
-/* NOTE: このヘッダーは多数のソース ファイルから参照されるため、            */
-/*       @hideincludedbygraph によって "Included by" グラフを無効にします。 */
+/*
+ * このヘッダーは多数のソース ファイルから参照されるため、
+ * @hideincludedbygraph によって "Included by" グラフを無効にする。
+ */
 
 #ifndef PORTER_CONST_H
 #define PORTER_CONST_H
@@ -81,7 +83,7 @@
 #define POTR_FLAG_MORE_FRAG \
     0x0001U /**< 後続フラグメントが存在することを示すペイロード エレメント フラグ。メッセージが複数ペイロード エレメントに分割された場合、最終フラグメント以外に設定します。 */
 #define POTR_FLAG_COMPRESSED \
-    0x0002U /**< ペイロードが圧縮されていることを示すペイロード エレメント フラグ。圧縮はメッセージ単位で行い、全フラグメントのペイロード エレメントに設定します。先頭 8 バイトが元サイズ (NBO)、続くデータが raw DEFLATE。 */
+    0x0002U /**< ペイロードが圧縮されていることを示すペイロード エレメント フラグ。圧縮はメッセージ単位で行い、全フラグメントのペイロード エレメントに設定します。先頭 8 [byte] が元サイズ (NBO)、続くデータが raw DEFLATE。 */
 /** @} */
 
 /** @defgroup POTR_PROTOCOL プロトコル定数
@@ -104,27 +106,27 @@
  *  @{
  */
 #define POTR_DEFAULT_WINDOW_SIZE  16U   /**< デフォルト ウィンドウ サイズ (パケット数)。 */
-#define POTR_DEFAULT_MAX_PAYLOAD  1400U /**< デフォルト最大ペイロード長 (バイト)。 */
+#define POTR_DEFAULT_MAX_PAYLOAD  1400U /**< デフォルト最大ペイロード長 [byte]。 */
 #define POTR_DEFAULT_TTL          1U    /**< デフォルト マルチキャスト TTL。 */
-#define POTR_DEFAULT_PACK_WAIT_MS 0U    /**< デフォルト パッキング待ち時間 (ミリ秒)。0 = 即時送信。 */
+#define POTR_DEFAULT_PACK_WAIT_MS 0U    /**< デフォルト パッキング待ち時間 [ms]。0 = 即時送信。 */
 #define POTR_DEFAULT_RECONNECT_INTERVAL_MS \
-    5000U /**< SENDER 自動再接続間隔のデフォルト (ミリ秒)。TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) のみ有効。 */
+    5000U /**< SENDER 自動再接続間隔のデフォルト [ms]。TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) のみ有効。 */
 #define POTR_DEFAULT_CONNECT_TIMEOUT_MS \
-    10000U /**< SENDER TCP 接続タイムアウトのデフォルト (ミリ秒)。0 = OS デフォルト。TCP 通信種別のみ有効。 */
+    10000U /**< SENDER TCP 接続タイムアウトのデフォルト [ms]。0 = OS デフォルト。TCP 通信種別のみ有効。 */
 #define POTR_DEFAULT_UDP_HEALTH_INTERVAL_MS \
-    3000U /**< UDP 通信種別に適用する既定ヘルス チェック送信間隔 (ミリ秒)。0 = 無効。 */
+    3000U /**< UDP 通信種別に適用する既定ヘルス チェック送信間隔 [ms]。0 = 無効。 */
 #define POTR_DEFAULT_UDP_HEALTH_TIMEOUT_MS \
-    10000U /**< UDP 通信種別に適用する既定ヘルス チェック タイムアウト (ミリ秒)。0 = 無効。 */
+    10000U /**< UDP 通信種別に適用する既定ヘルス チェック タイムアウト [ms]。0 = 無効。 */
 #define POTR_DEFAULT_TCP_HEALTH_INTERVAL_MS \
-    10000U /**< TCP 通信種別に適用する既定ヘルス チェック送信間隔 (ミリ秒)。0 = 無効。 */
+    10000U /**< TCP 通信種別に適用する既定ヘルス チェック送信間隔 [ms]。0 = 無効。 */
 #define POTR_DEFAULT_TCP_HEALTH_TIMEOUT_MS \
-    31000U /**< TCP 通信種別に適用する既定ヘルス チェック タイムアウト (ミリ秒)。0 = 無効。 */
+    31000U /**< TCP 通信種別に適用する既定ヘルス チェック タイムアウト [ms]。0 = 無効。 */
 #define POTR_DEFAULT_TCP_CLOSE_TIMEOUT_MS \
-    5000U /**< TCP 通信種別に適用する close 完了待機タイムアウト (ミリ秒)。0 = 待機なし。 */
+    5000U /**< TCP 通信種別に適用する close 完了待機タイムアウト [ms]。0 = 待機なし。 */
 #define POTR_TCP_FIRST_PKT_TIMEOUT_SCALE \
     3U /**< TCP 先読みパケット タイムアウトの係数。tcp_health_timeout_ms にこの値を乗じて先読みタイムアウトを算出します。 */
 #define POTR_DEFAULT_TCP_FIRST_PKT_TIMEOUT_MS \
-    30000U /**< TCP 先読みパケット タイムアウトの既定値 (ミリ秒)。tcp_health_timeout_ms が 0 (無効) の場合に使用します。 */
+    30000U /**< TCP 先読みパケット タイムアウトの既定値 [ms]。tcp_health_timeout_ms が 0 (無効) の場合に使用します。 */
 /** @} */
 
 /** @defgroup POTR_CRYPTO 暗号化定数 (AES-256-GCM)
@@ -137,10 +139,10 @@
  *  @{
  */
 #define POTR_CRYPTO_KEY_SIZE \
-    32U /**< AES-256-GCM 鍵サイズ (バイト)。設定ファイルの encrypt_key に 64 文字 hex で指定します。 */
+    32U /**< AES-256-GCM 鍵サイズ [byte]。設定ファイルの encrypt_key に 64 文字 hex で指定します。 */
 #define POTR_CRYPTO_NONCE_SIZE \
-    12U /**< AES-256-GCM ノンス サイズ (バイト)。session_id (4B NBO) + flags (2B NBO) + seq_or_ack_num (4B NBO) + padding (2B 0x00) で構成します。 */
-#define POTR_CRYPTO_TAG_SIZE 16U /**< AES-256-GCM 認証タグ サイズ (バイト)。暗号文の直後に付加します。 */
+    12U /**< AES-256-GCM ノンス サイズ [byte]。session_id (4B NBO) + flags (2B NBO) + seq_or_ack_num (4B NBO) + padding (2B 0x00) で構成します。 */
+#define POTR_CRYPTO_TAG_SIZE 16U /**< AES-256-GCM 認証タグ サイズ [byte]。暗号文の直後に付加します。 */
 /** @} */
 
 /** @defgroup POTR_LIMIT 上限値・デフォルト値
@@ -153,17 +155,17 @@
  */
 #define POTR_MAX_ADDR_LEN 64U /**< アドレス文字列の最大長 (バイト、終端 NUL を含む)。 */
 #define POTR_MAX_PAYLOAD \
-    65507U /**< ペイロードの最大長 (バイト)。UDP 最大ペイロード (65535 - IP20 - UDP8)。max_payload 設定値のバリデーション上限として使用します。 */
+    65507U /**< ペイロードの最大長 [byte]。UDP 最大ペイロード (65535 - IP20 - UDP8)。max_payload 設定値のバリデーション上限として使用します。 */
 #define POTR_MAX_WINDOW_SIZE \
     256U /**< ウィンドウ サイズの最大値 (パケット数)。window_size 設定値のバリデーション上限として使用します。 */
 #define POTR_MAX_SERVICES \
     64U /**< potr_internal_config_list_service_ids() の初期バッファー容量。サービス数がこれを超えた場合は realloc で自動拡張します。 */
 #define POTR_MAX_MESSAGE_SIZE \
-    65535U /**< 1 回の potr_service_send で送信できる最大メッセージ長 (バイト) のデフォルト値。設定ファイルの max_message_size で変更可能。フラグメント化により max_payload を超えるメッセージも送受信できます。 */
+    65535U /**< 1 回の potr_service_send で送信できる最大メッセージ長 [byte] のデフォルト値。設定ファイルの max_message_size で変更可能。フラグメント化により max_payload を超えるメッセージも送受信できます。 */
 #define POTR_SEND_QUEUE_DEPTH \
     1024U /**< 非同期送信キューの最大エントリ数のデフォルト値。設定ファイルの send_queue_depth で変更可能。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。 */
 #define POTR_PAYLOAD_ELEM_HDR_SIZE \
-    6U /**< パック コンテナー内ペイロード エレメントのヘッダー サイズ (バイト)。flags (2): POTR_FLAG_MORE_FRAG / POTR_FLAG_COMPRESSED を格納 + payload_len (4): uint32_t (NBO)。通番は外側パケットで管理するためペイロード エレメントには含まない。 */
+    6U /**< パック コンテナー内ペイロード エレメントのヘッダー サイズ [byte]。flags (2): POTR_FLAG_MORE_FRAG / POTR_FLAG_COMPRESSED を格納 + payload_len (4): uint32_t (NBO)。通番は外側パケットで管理するためペイロード エレメントには含まない。 */
 #define POTR_MAX_PATH 4U /**< マルチパスの最大パス数。 */
 /** @} */
 

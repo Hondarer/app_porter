@@ -25,7 +25,10 @@
 #include <porter/potr_context.h>
 #include <porter/protocol/packet.h>
 
-/* path 単位の送信ミューテックスを取得して全バイト送信する */
+/*
+ * パス単位の送信ミューテックスを取得して全バイトを送信する。
+ * 送信成功時は POTR_OK、失敗時はエラー コードを返す。
+ */
 static int tcp_send_all_locked(cplat_socket fd, cplat_local_lock *mtx, const uint8_t *buf, size_t len)
 {
     int result;
@@ -39,6 +42,7 @@ static int tcp_send_all_locked(cplat_socket fd, cplat_local_lock *mtx, const uin
     {
         return potr_internal_result_from_error(&detail);
     }
+
     return POTR_OK;
 }
 
@@ -72,12 +76,14 @@ int potr_internal_tcp_send_control_packet(const potr_context *ctx, potr_packet *
         memset(nonce + 10, 0, 2);
 
         memcpy(wire_buf, pkt, POTR_PACKET_HEADER_SIZE);
+
         if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
                                  wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
             /* 暗号化失敗は入力データ起因と断定できないため、分類不能として扱う。 */
             return POTR_ERR_UNKNOWN;
         }
+
         wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
     }
     else
@@ -86,19 +92,23 @@ int potr_internal_tcp_send_control_packet(const potr_context *ctx, potr_packet *
         wire_len = POTR_PACKET_HEADER_SIZE;
     }
 
+    /* すべての有効な TCP パスに対して制御パケットの送信を試行する。 */
     for (i = 0; i < ctx->n_path; i++)
     {
         if (ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
         {
             continue;
         }
+
         attempted = 1;
+
         if (tcp_send_all_locked(ctx->tcp_conn_fd[i], ctx->tcp_send_mutex[i], wire_buf, wire_len) == POTR_OK)
         {
             sent_any = 1;
         }
     }
 
+    /* 1 本以上のパスで送信成功した場合は POTR_OK、有効なパスがなければ切断、全パス失敗なら I/O エラーとする。 */
     if (sent_any)
     {
         return POTR_OK;

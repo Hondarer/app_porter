@@ -25,6 +25,7 @@
 
 #include "thread_recv_session.h"
 
+/* スロットの pending FIN 状態と目標通番をクリアする。 */
 static void slot_clear_pending_fin(thread_recv_slot *slot)
 {
     *slot->pending_fin = 0;
@@ -39,13 +40,15 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
 
     if (!*slot->peer_session_known)
     {
-        /* 初回受信 (または FIN/タイムアウト後の再接続): セッション採用およびウィンドウのリセット。
-           pkt->seq_num で初期化することで、送信者の現在位置に直接同期し
-           NACK/REJECT サイクルを経ずに再加入できる。
-             DATA 着信時: potr_internal_window_init(DATA.seq_num) → push → pop → 即時 CONNECTED
-             PING 着信時: potr_internal_window_init(PING.seq_num) → gap スキャン範囲がゼロ → NACK なし
-           FIN/タイムアウト後は送信者が同一セッションのまま任意の seq から
-           再開する可能性があるため pkt->seq_num を使用する。 */
+        /*
+         * 初回受信 (または FIN/タイムアウト後の再接続): セッション採用およびウィンドウのリセット。
+         * pkt->seq_num で初期化することで、送信者の現在位置に直接同期し
+         * NACK/REJECT サイクルを経ずに再加入できる。
+         *   DATA 着信時: potr_internal_window_init(DATA.seq_num) → push → pop → 即時 CONNECTED
+         *   PING 着信時: potr_internal_window_init(PING.seq_num) → gap スキャン範囲がゼロ → NACK なし
+         * FIN/タイムアウト後は送信者が同一セッションのまま任意の seq から
+         * 再開する可能性があるため pkt->seq_num を使用する。
+         */
         *slot->peer_session_id = pkt->session_id;
         session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, slot->peer_session_ts);
         *slot->peer_session_known = 1;
@@ -58,20 +61,22 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
         return 1;
     }
 
-    /* (セッション開始時刻, session_id) の辞書順で新旧を判定する。
-       - pkt > 既知セッション: 新セッション。return せずにフォール スルーし、
-         関数末尾の「新セッション採用」ブロックで採用処理を行う。
-       - pkt < 既知セッション: 旧セッション。直ちに return 0 で破棄する。
-       - pkt == 既知セッション: 同一セッション。直ちに return 1 で通常受信を継続する。
-       新セッションと判定された分岐は LOG のみで return しないため、
-       if-else チェーンを抜けた後に必ず末尾の採用ブロックに到達する。 */
+    /*
+     * (セッション開始時刻, session_id) の辞書順で新旧を判定する。
+     * - pkt > 既知セッション: 新セッション。return せずにフォール スルーし、
+     *   関数末尾の「新セッション採用」ブロックで採用処理を行う。
+     * - pkt < 既知セッション: 旧セッション。直ちに return 0 で破棄する。
+     * - pkt == 既知セッション: 同一セッション。直ちに return 1 で通常受信を継続する。
+     * 新セッションと判定された分岐は LOG のみで return しないため、
+     * if-else チェーンを抜けた後に必ず末尾の採用ブロックに到達する。
+     */
     cplat_timespec pkt_session_ts;
     session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
     int ts_cmp = cplat_timespec_cmp(&pkt_session_ts, slot->peer_session_ts);
 
     if (ts_cmp > 0)
     {
-        /* 新セッション (セッション開始時刻が大): フォール スルーして採用 */
+        /* 新セッション (セッション開始時刻が大): フォール スルーして採用する。 */
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "recv[service_id=%" PRId64 "]: new session (ts %lld.%09lld > %lld.%09lld)"
                    ", old_id=%u new_id=%u",
@@ -85,15 +90,17 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
     }
     else if (pkt->session_id > *slot->peer_session_id)
     {
-        /* 新セッション (タイムスタンプ完全一致・session_id が大): フォール スルーして採用 */
+        /* 新セッション (タイムスタンプ完全一致・session_id が大): フォール スルーして採用する。 */
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: new session (id tiebreak %u > %u)",
                    ctx->service.service_id, pkt->session_id, *slot->peer_session_id);
     }
     else
     {
-        /* ここに到達するのはセッション開始時刻が完全一致かつ
-           session_id <= peer_session_id の場合のみ。
-           新セッション分岐はこの else には入らない。 */
+        /*
+         * ここに到達するのはセッション開始時刻が完全一致かつ
+         * session_id <= peer_session_id の場合のみ。
+         * 新セッション分岐はこの else には入らない。
+         */
         if (pkt->session_id == *slot->peer_session_id)
         {
             return 1; /* 同一セッション: 採用済みのため再初期化不要 */
@@ -104,15 +111,18 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
         }
     }
 
-    /* 新セッション採用: スロットを更新し、ウィンドウおよびリオーダー状態をリセットする。
-       最初に受信したパケットの seq_num で初期化することで、送信者が先行して
-       送信済みの seq に直接同期し、不要な NACK/REJECT サイクルを発生させない。
-       送信者を先に起動して受信者が後から参加した場合も同様に機能する。 */
+    /*
+     * 新セッション採用: スロットを更新し、ウィンドウおよびリオーダー状態をリセットする。
+     * 最初に受信したパケットの seq_num で初期化することで、送信者が先行して
+     * 送信済みの seq に直接同期し、不要な NACK/REJECT サイクルを発生させない。
+     * 送信者を先に起動して受信者が後から参加した場合も同様に機能する。
+     */
     *slot->peer_session_id = pkt->session_id;
     *slot->peer_session_ts = pkt_session_ts;
     *slot->reorder_pending = 0;
     slot_clear_pending_fin(slot);
     potr_internal_window_init(slot->recv_window, pkt->seq_num, ctx->global.window_size, ctx->global.max_payload);
+
     return 1;
 }
 
@@ -126,6 +136,7 @@ int thread_recv_set_path_ping_state(cplat_atomic_u8 *state, uint8_t next_state)
     }
 
     cplat_atomic_store_u8(state, next_state, CPLAT_MEMORY_ORDER_RELAXED);
+
     return 1;
 }
 
@@ -185,6 +196,7 @@ int thread_recv_update_path_health(thread_recv_slot *slot, int path_idx)
     cplat_clock_get_monotonic(&now_ts);
     *slot->last_recv_ts = now_ts;
     slot->path_last_recv_ts[path_idx] = now_ts;
+
     return thread_recv_set_path_ping_state(&slot->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
 }
 
@@ -244,6 +256,7 @@ void thread_recv_learn_sender_path(thread_recv_slot *slot, int path_idx, const c
             POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "n1_update_path_recv: peer=%u path %d learned",
                        (unsigned)slot->peer->peer_id, path_idx);
         }
+
         return;
     }
 
@@ -255,6 +268,7 @@ void thread_recv_learn_sender_path(thread_recv_slot *slot, int path_idx, const c
         {
             slot->dest_addr[path_idx].address = sender->address;
         }
+
         if (slot->dest_addr[path_idx].port == 0)
         {
             slot->dest_addr[path_idx].port = sender->port;

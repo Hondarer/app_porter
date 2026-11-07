@@ -56,8 +56,10 @@ int potr_internal_result_from_error(const cplat_error *detail)
     case CPLAT_CAUSE_NAME_TOO_LONG:
     case CPLAT_CAUSE_DISK_FULL:
     case CPLAT_CAUSE_BUSY:
-    /* cplat がシグナルによる中断を吸収するため、ソケット経路で本要因が返ることはない。
-       Windows の I/O キャンセル由来では返りうるため case を残す。 */
+    /*
+     * cplat がシグナルによる中断を吸収するため、ソケット経路で本要因が返ることはない。
+     * Windows の I/O キャンセル由来では返りうるため case を残す。
+     */
     case CPLAT_CAUSE_INTERRUPTED:
     case CPLAT_CAUSE_BROKEN_PIPE:
     case CPLAT_CAUSE_TOO_MANY_OPEN_FILES:
@@ -89,10 +91,12 @@ int potr_internal_result_from_socket_result(int cplat_result, const cplat_error 
     {
         return POTR_OK;
     }
+
     if (cplat_result == CPLAT_ERR_EOF)
     {
         return POTR_ERR_EOF;
     }
+
     if (cplat_result == CPLAT_ERR_INVALID_ARGUMENT)
     {
         return POTR_ERR_INVALID_ARGUMENT;

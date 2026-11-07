@@ -18,18 +18,20 @@
 #include <porter/potr_context.h>
 #include <porter/potr_peer_table.h>
 
-/* ================================================================
+/*
+ * ================================================================
  * 受信セッション スロット
  *
  * 1:1 モード (potr_context が直接保持) と N:1 モード (potr_internal_peer_context が
  * ピアごとに保持) で同じ意味を持つ受信状態フィールド群を、ポインター経由で
  * 一元的に参照するためのビュー。1:1 を「ピア数 1 のスロット」として扱う
  * ことで、受信処理関数の二重実装 (n1_* 系と通常系のペア) を排除する。
- * ================================================================ */
+ * ================================================================
+ */
 typedef struct thread_recv_slot
 {
     potr_context *ctx;                /* 所属コンテキスト */
-    potr_internal_peer_context *peer; /* N:1 のピア。1:1 モードでは NULL */
+    potr_internal_peer_context *peer; /* N:1 のピア (1:1 モードでは NULL) */
     potr_peer_id peer_id;             /* コールバック用ピア識別子 (1:1 は POTR_PEER_NA) */
     int pad;                          /* パディング (recv_window をポインター境界に揃える) */
     potr_internal_window *recv_window;

@@ -13,8 +13,10 @@
  *******************************************************************************
  */
 
-/* NOTE: このヘッダーは多数のソース ファイルから参照されるため、            */
-/*       @hideincludedbygraph によって "Included by" グラフを無効にします。 */
+/*
+ * このヘッダーは多数のソース ファイルから参照されるため、
+ * @hideincludedbygraph によって "Included by" グラフを無効にする。
+ */
 
 #ifndef POTR_PROTOCOL_WINDOW_H
 #define POTR_PROTOCOL_WINDOW_H
@@ -39,9 +41,9 @@ typedef struct potr_internal_window
     uint32_t base_seq;     /**< ウィンドウ先頭の通番。 */
     uint32_t next_seq;     /**< 送信側: 次に割り当てる通番。受信側: 次に期待する通番。 */
     uint16_t window_size;  /**< ウィンドウ サイズ (パケット数)。 */
-    uint16_t max_payload;  /**< エントリごとのペイロード最大長 (バイト)。 */
+    uint16_t max_payload;  /**< エントリごとのペイロード最大長 [byte]。 */
     uint16_t base_index;   /**< base_seq に対応する循環バッファー位置。 */
-    uint16_t _pad;         /**< パディング (構造体サイズを 8 バイト境界に揃える)。 */
+    uint16_t _pad;         /**< パディング (構造体サイズを 8 [byte] 境界に揃える)。 */
 } potr_internal_window;
 
 #ifdef __cplusplus
@@ -54,7 +56,7 @@ extern "C"
      *  @param[in,out]  win         初期化するウィンドウ構造体へのポインター。
      *  @param[in]      initial_seq 初期通番。
      *  @param[in]      window_size ウィンドウ サイズ (パケット数)。
-     *  @param[in]      max_payload エントリごとのペイロード最大長 (バイト)。
+     *  @param[in]      max_payload エントリごとのペイロード最大長 [byte]。
      *  @return         成功時は POTR_OK、win が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
      *                  メモリ確保に失敗した場合は POTR_ERR_OUT_OF_MEMORY を返します。
      *

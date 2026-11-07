@@ -60,8 +60,10 @@ int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
         return POTR_ERR_UNSUPPORTED;
     }
 
-    /* N:1 の受信スレッドは peers_mutex を保持したままコールバックを呼ぶ。
-     * 同じスレッドから peers_mutex を取得すると停止するため、停止前に拒否する。 */
+    /*
+     * N:1 の受信スレッドは peers_mutex を保持したままコールバックを呼ぶ。
+     * 同じスレッドから peers_mutex を取得すると停止するため、停止前に拒否する。
+     */
     if (potr_internal_in_own_callback(ctx))
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
@@ -86,10 +88,10 @@ int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_peer_disconnect: service_id=%" PRId64 " peer_id=%u disconnecting",
                    ctx->service.service_id, (unsigned)peer_id);
 
-        /* FIN を送信 */
+        /* FIN を送信する。 */
         potr_internal_peer_send_fin(ctx, peer);
 
-        /* 論理接続 path をすべて落としてから DISCONNECTED を発火する */
+        /* 論理接続 path をすべて落としてから DISCONNECTED を発火する。 */
         {
             int next_states[POTR_MAX_PATH];
             potr_internal_prepared_path_events prepared;
@@ -101,10 +103,11 @@ int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
             cplat_local_lock_unlock(ctx->callback_mutex);
         }
 
-        /* ピア リソースを解放 */
+        /* ピア リソースを解放する。 */
         potr_internal_peer_free(ctx, peer);
     }
 
     cplat_local_lock_unlock(ctx->peers_mutex);
+
     return POTR_OK;
 }

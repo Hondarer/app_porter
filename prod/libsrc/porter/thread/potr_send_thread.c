@@ -51,12 +51,16 @@
 #include <cplat/net/byteorder.h>
 #include <cplat/net/socket.h>
 
+/*
+ * 有効データの送信時刻を記録するかを判定する。
+ * 1:1 かつ片方向 UDP の場合は 1、それ以外は 0 を返す。
+ */
 static int should_track_valid_data_send_time(const potr_context *ctx)
 {
     return ctx != NULL && !ctx->is_multi_peer && is_oneway_udp_type(ctx->service.type);
 }
 
-/* ペイロード エレメントを packed_buf に追記する */
+/* ペイロード エレメントを packed_buf に追記する。 */
 static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const potr_internal_payload_elem *entry)
 {
     uint16_t flags_nbo = cplat_hton16(entry->flags);
@@ -70,10 +74,12 @@ static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const p
     *packed_len += entry->payload_len;
 }
 
-/* send_wire_buf の [POTR_PACKET_HEADER_SIZE .. POTR_PACKET_HEADER_SIZE+packed_len-1] に
-   詰め済みのペイロードから外側コンテナーを構築して送信する。
-   seq_num を付与する。UDP では再送バッファー (send_window) にも登録する。
-   send_wire_buf = [NBO ヘッダー 32B][packed_payload packed_len B] として組み立てる。 */
+/*
+ * send_wire_buf の [POTR_PACKET_HEADER_SIZE .. POTR_PACKET_HEADER_SIZE+packed_len-1] に
+ * 詰め済みのペイロードから外側コンテナーを構築して送信する。
+ * seq_num を付与する。UDP では再送バッファー (send_window) にも登録する。
+ * send_wire_buf = [NBO ヘッダー 32 [byte]][packed_payload packed_len [byte]] として組み立てる。
+ */
 static void flush_packed(potr_context *ctx, size_t packed_len)
 {
     potr_packet outer_pkt;
@@ -87,7 +93,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
     shdr.session_id = ctx->session_id;
     session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    /* send_window へのアクセスを排他制御する (送信スレッド・ヘルス チェック スレッド・受信スレッドが競合) */
+    /* send_window へのアクセスを排他制御する (送信スレッド・ヘルス チェック スレッド・受信スレッドが競合)。 */
     cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     seq = ctx->send_window.next_seq;
@@ -100,11 +106,12 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
 
     if (ctx->service.encrypt_enabled)
     {
-        /* 暗号化パス:
+        /*
+         * 暗号化パス:
          *   1. ENCRYPTED フラグを OR (outer_pkt.flags はすでに NBO)
          *   2. payload_len を packed_len + TAG_SIZE に更新
-         *   3. nonce = session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
-         *   4. AAD  = outer_pkt ヘッダー 32B (NBO)
+         *   3. nonce = session_id (4 [byte] NBO) + flags (2 [byte] NBO) + seq_num (4 [byte] NBO) + padding (2 [byte])
+         *   4. AAD  = outer_pkt ヘッダー 32 [byte] (NBO)
          *   5. packed_buf → ctx->crypto_buf に暗号化
          *   6. UDP: potr_internal_window_send_push に暗号化済みペイロードを登録
          *      TCP: ウィンドウ登録不要 (再送は TCP 層が担保); next_seq のみインクリメント
@@ -116,8 +123,10 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
         outer_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
         outer_pkt.payload_len = cplat_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
 
-        /* ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
-         * outer_pkt の各フィールドはすでに NBO */
+        /*
+         * ノンス: session_id (4 [byte] NBO) + flags (2 [byte] NBO) + seq_num (4 [byte] NBO) + padding (2 [byte])。
+         * outer_pkt の各フィールドはすでに NBO である。
+         */
         memcpy(nonce, &outer_pkt.session_id, 4);
         memcpy(nonce + 4, &outer_pkt.flags, 2);
         memcpy(nonce + 6, &outer_pkt.seq_num, 4);
@@ -140,14 +149,14 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
         }
         else
         {
-            /* window には暗号化済みペイロードを格納して NACK 再送時に再暗号化不要にする */
+            /* window には暗号化済みペイロードを格納して NACK 再送時に再暗号化不要にする。 */
             outer_pkt.payload = ctx->crypto_buf;
             potr_internal_window_send_push(&ctx->send_window, &outer_pkt);
             ctx->send_has_data = 1;
             cplat_local_lock_unlock(ctx->send_window_mutex);
         }
 
-        /* wire 組立: NBO ヘッダー + 暗号文 + タグ */
+        /* wire 組立: NBO ヘッダー + 暗号文 + タグ。 */
         memcpy(ctx->send_wire_buf, &outer_pkt, POTR_PACKET_HEADER_SIZE);
         memcpy(ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE, ctx->crypto_buf, enc_len);
         wire_len = POTR_PACKET_HEADER_SIZE + enc_len;
@@ -171,7 +180,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
             cplat_local_lock_unlock(ctx->send_window_mutex);
         }
 
-        /* NBO ヘッダー (32B) を send_wire_buf 先頭に書き込む (ペイロードはすでに直後に配置済み) */
+        /* NBO ヘッダー (32 [byte]) を send_wire_buf 先頭に書き込む (ペイロードはすでに直後に配置済み)。 */
         memcpy(ctx->send_wire_buf, &outer_pkt, POTR_PACKET_HEADER_SIZE);
         wire_len = POTR_PACKET_HEADER_SIZE + packed_len;
 
@@ -181,10 +190,11 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
 
     if (is_tcp)
     {
-        /* TCP v2: アクティブな全 path にループ送信する */
+        /* TCP v2: アクティブな全 path にループ送信する。 */
         if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) > 0)
         {
             int i;
+
             for (i = 0; i < ctx->n_path; i++)
             {
                 int writable = 0;
@@ -192,14 +202,16 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
                 if (ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
                     continue;
 
-                /* 送信バッファーの空きを確認 (非ブロッキング) */
+                /* 送信バッファーの空きを確認する (非ブロッキング)。 */
                 (void)cplat_socket_wait_writable(ctx->tcp_conn_fd[i], CPLAT_SOCKET_NO_WAIT, &writable, NULL);
+
                 if (writable)
                 {
                     if (ctx->buf_full_suppress_cnt[i] > 0 && ++ctx->buf_full_suppress_cnt[i] > 10)
                     {
                         ctx->buf_full_suppress_cnt[i] = 0;
                     }
+
                     cplat_local_lock_lock(ctx->tcp_send_mutex[i], CPLAT_SYNC_WAIT_FOREVER);
                     (void)cplat_socket_send_all(ctx->tcp_conn_fd[i], ctx->send_wire_buf, wire_len, NULL);
                     cplat_local_lock_unlock(ctx->tcp_send_mutex[i]);
@@ -217,12 +229,14 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
                 }
             }
         }
+
         cplat_local_lock_unlock(ctx->send_window_mutex);
     }
     else
     {
         int i;
         int sent_any = 0;
+
         for (i = 0; i < ctx->n_path; i++)
         {
             size_t sent = 0;
@@ -244,8 +258,10 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
     }
 }
 
-/* N:1 モード専用: ピアの send_window を使ってパック コンテナーを構築して sendto する。
-   呼び出し元は peers_mutex を保持し、peer が解放されないことを保証する。 */
+/*
+ * N:1 モード専用: ピアの send_window を使ってパック コンテナーを構築して sendto する。
+ * 呼び出し元は peers_mutex を保持し、peer が解放されないことを保証する。
+ */
 static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *peer, size_t packed_len)
 {
     potr_packet outer_pkt;
@@ -276,8 +292,10 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         outer_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
         outer_pkt.payload_len = cplat_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
 
-        /* ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
-         * outer_pkt の各フィールドはすでに NBO */
+        /*
+         * ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
+         * outer_pkt の各フィールドはすでに NBO
+         */
         memcpy(nonce, &outer_pkt.session_id, 4);
         memcpy(nonce + 4, &outer_pkt.flags, 2);
         memcpy(nonce + 6, &outer_pkt.seq_num, 4);
@@ -322,6 +340,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
     /* N:1 はインデックス = ctx->sock[] のインデックスとして全パスへ送信する */
     {
         int k;
+
         for (k = 0; k < (int)POTR_MAX_PATH; k++)
         {
             size_t sent = 0;
@@ -333,7 +352,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
     }
 }
 
-/* N:1 モード専用: キューからエントリを取り出してピアへパッキング送信する */
+/* N:1 モード専用: キューからエントリを取り出してピアへパッキング送信する。 */
 static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem *first)
 {
     potr_peer_id target_peer_id = first->peer_id;
@@ -343,9 +362,11 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
     int n_dequeued = 1;
     int peer_exists;
 
-    /* 宛先の存在だけを先に判定する。ここで得たピアのポインターは、ロック解放後に使わない。
+    /*
+     * 宛先の存在だけを先に判定する。ここで得たピアのポインターは、ロック解放後に使わない。
      * 受信スレッド、ヘルス チェック スレッド、potr_peer_disconnect がピアを解放すると、
-     * 同じスロットのウィンドウと mutex は破棄または別ピアへ再利用されるためである。 */
+     * 同じスロットのウィンドウと mutex は破棄または別ピアへ再利用されるためである。
+     */
     cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
     peer_exists = (potr_internal_peer_find_by_id(ctx, target_peer_id) != NULL);
     cplat_local_lock_unlock(ctx->peers_mutex);
@@ -359,7 +380,7 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
 
     append_payload_elem(packed_buf, &packed_len, first);
 
-    /* 同一ピア宛の追加エントリを即時パッキング (pack_wait なし) */
+    /* 同一ピア宛の追加エントリを即時パッキングする (pack_wait なし)。 */
     if (!(first->flags & POTR_FLAG_MORE_FRAG))
     {
         potr_internal_payload_elem next;
@@ -400,9 +421,11 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
         }
     }
 
-    /* ピアを ID で再検索し、sendto の完了まで peers_mutex を保持する。
+    /*
+     * ピアを ID で再検索し、sendto の完了まで peers_mutex を保持する。
      * ヘルス チェック スレッドの N:1 PING 送信と同じく、ロック順は
-     * peers_mutex -> peer->send_window_mutex とする。 */
+     * peers_mutex -> peer->send_window_mutex とする。
+     */
     cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
     peer = potr_internal_peer_find_by_id(ctx, target_peer_id);
     if (peer != NULL)
@@ -415,10 +438,12 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
                    "sender[service_id=%" PRId64 "]: peer=%u disconnected before flush, %d elem(s) dropped",
                    ctx->service.service_id, (unsigned)target_peer_id, n_dequeued);
     }
+
     cplat_local_lock_unlock(ctx->peers_mutex);
 
     {
         int i;
+
         for (i = 0; i < n_dequeued; i++)
         {
             potr_internal_send_queue_complete(&ctx->send_queue);
@@ -434,36 +459,36 @@ static void send_thread_func(void *arg)
 
     for (;;)
     {
-        /* キューからエントリを取り出す (ブロッキング) */
+        /* キューからエントリを取り出す (ブロッキング)。 */
         if (potr_internal_send_queue_pop(&ctx->send_queue, &first, &ctx->send_thread_running) != POTR_OK)
         {
             break;
         }
 
-        /* N:1 モード: peer_id でルーティングして送信 */
+        /* N:1 モード: peer_id でルーティングして送信する。 */
         if (ctx->is_multi_peer)
         {
             send_packed_peer_mode(ctx, &first);
             continue;
         }
 
-        /* パッキング試行 */
+        /* パッキングを試行する。 */
         {
-            /* packed_buf は send_wire_buf のヘッダー直後領域を直接使用 (ゼロ コピー) */
+            /* packed_buf は send_wire_buf のヘッダー直後領域を直接使用する (ゼロ コピー)。 */
             uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
             size_t packed_len = 0;
             int n_dequeued = 1;
 
             append_payload_elem(packed_buf, &packed_len, &first);
 
-            /* MORE_FRAG エントリはパッキング不可。そのまま単体コンテナーとして送信。 */
+            /* MORE_FRAG エントリはパッキング不可のため、そのまま単体コンテナーとして送信する。 */
             if (!(first.flags & POTR_FLAG_MORE_FRAG))
             {
                 uint32_t pack_wait_ms = ctx->service.pack_wait_ms;
 
                 if (pack_wait_ms > 0)
                 {
-                    /* パッキング待ちあり: タイムアウトまで追加エントリを待ち合わせる */
+                    /* パッキング待ちあり: タイムアウトまで追加エントリを待ち合わせる。 */
                     uint64_t deadline = cplat_clock_get_monotonic_ms() + pack_wait_ms;
                     potr_internal_payload_elem next;
 
@@ -481,7 +506,7 @@ static void send_thread_func(void *arg)
 
                         remaining = (uint32_t)(deadline - now);
 
-                        /* remaining は deadline - now (ms) であり pack_wait_ms 以下で INT_MAX に収まる */
+                        /* remaining は deadline - now [ms] であり pack_wait_ms 以下で INT_MAX に収まる。 */
                         if (potr_internal_send_queue_peek_timed(&ctx->send_queue, &next, (int)remaining) != POTR_OK)
                         {
                             break; /* タイムアウト (エントリなし) */
@@ -519,7 +544,7 @@ static void send_thread_func(void *arg)
                 }
                 else
                 {
-                    /* パッキング待ちなし: キューにあるエントリを即時まとめる */
+                    /* パッキング待ちなし: キューにあるエントリを即時まとめる。 */
                     potr_internal_payload_elem next;
 
                     while (potr_internal_send_queue_peek(&ctx->send_queue, &next) == POTR_OK)
@@ -559,12 +584,13 @@ static void send_thread_func(void *arg)
                 }
             }
 
-            /* 外側パケットを構築して送信 */
+            /* 外側パケットを構築して送信する。 */
             flush_packed(ctx, packed_len);
 
-            /* デキューした全エントリ分の inflight を減算 */
+            /* デキューした全エントリ分の inflight を減算する。 */
             {
                 int i;
+
                 for (i = 0; i < n_dequeued; i++)
                 {
                     potr_internal_send_queue_complete(&ctx->send_queue);
@@ -590,15 +616,18 @@ int potr_internal_send_thread_start(potr_context *ctx)
     if (cplat_local_lock_create(&ctx->send_window_mutex) != CPLAT_OK)
     {
         cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
+
         /* 同期資源生成 API は詳細原因を提供しない。 */
         return POTR_ERR_UNKNOWN;
     }
+
     if (cplat_thread_create(&ctx->send_thread, send_thread_func, ctx) != CPLAT_OK)
     {
         cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
         cplat_local_lock_dispose(ctx->send_window_mutex);
         ctx->send_window_mutex = NULL;
-        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
+
+        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -613,6 +642,7 @@ void potr_internal_send_thread_stop(potr_context *ctx)
     {
         return;
     }
+
     cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
     potr_internal_send_queue_shutdown(&ctx->send_queue);
 
@@ -620,6 +650,7 @@ void potr_internal_send_thread_stop(potr_context *ctx)
     {
         return;
     }
+
     ctx->send_thread = NULL;
     cplat_local_lock_dispose(ctx->send_window_mutex);
     ctx->send_window_mutex = NULL;

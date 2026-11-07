@@ -54,10 +54,13 @@ static void create_trace(void)
     if (s_trace != NULL)
     {
         cplat_tracer_set_name(s_trace, "porter", 0);
-        /* set_name は OS トレースの識別名のみに作用する。出力先はデフォルト設定に従い、
+
+        /*
+         * set_name は OS トレースの識別名のみに作用する。出力先はデフォルト設定に従い、
          * デフォルトはすべての出力先が CPLAT_TRACE_LEVEL_NONE で、porter 自身は
          * 出力先を設定しない。出力先の詳細度の設定と start は、potr_tracer_get() 経由で
-         * 利用者が明示的に呼び出す。 */
+         * 利用者が明示的に呼び出す。
+         */
     }
 }
 
@@ -84,13 +87,16 @@ void potr_internal_trace_socket_failure_at(const char *file, const int line, con
     {
         return;
     }
+
     va_start(args, format);
     (void)cplat_vsnprintf(context, sizeof(context), format, args);
     va_end(args);
     (void)cplat_error_message(message, sizeof(message), detail);
 
-    /* POTR_TRACE は展開位置の __FILE__ と __LINE__ を埋め込むため、本関数で使うと発生位置が
-       potr_trace.c で固定される。呼び出し元の位置を残すため、下位 API へ直接書式を渡す。 */
+    /*
+     * POTR_TRACE は展開位置の __FILE__ と __LINE__ を埋め込むため、本関数で使うと発生位置が
+     * potr_trace.c で固定される。呼び出し元の位置を残すため、下位 API へ直接書式を渡す。
+     */
     (void)cplat_tracer_writef_at(potr_internal_trace_get(), level, NULL, "[%s:%d] %s: domain=%d code=%lu: %s",
                                  cplat_path_basename(file), line, context, (int)detail->domain, detail->code, message);
 }

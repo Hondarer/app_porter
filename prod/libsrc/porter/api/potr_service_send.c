@@ -28,10 +28,13 @@
 #include <cplat/runtime/memory_lock.h>
 #include <porter/infra/potr_trace.h>
 
-/* 1 宛先へ 1 メッセージ分の断片を登録する (peers_mutex 取得不要・呼び出し元で検索済み)。
+/*
+ * 1 宛先へ 1 メッセージ分の断片を登録する (peers_mutex の取得は不要で、呼び出し元で検索済みである)。
  * 同一ハンドルへの並行送信で断片が他のメッセージと交互に並ばないよう、登録の間は push_mutex を保持する。
  * ブロッキング送信では、登録した最後の断片の番号まで送信済みになるのを待つ。
- * 送信スレッドは取り出した順に完了させるため、それ以前に登録された送信も送信済みになる。 */
+ * 送信スレッドは取り出した順に完了させるため、それ以前に登録された送信も送信済みになる。
+ * 成功時は POTR_OK を返す。断片の登録に失敗したときは、その結果を返す。
+ */
 static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, int flags,
                         uint16_t base_flags)
 {
@@ -42,6 +45,7 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
     int result = POTR_OK;
 
     max_payload = ctx->global.max_payload - POTR_PAYLOAD_ELEM_HDR_SIZE;
+
     if (ctx->service.encrypt_enabled)
     {
         max_payload -= POTR_CRYPTO_TAG_SIZE;
@@ -59,6 +63,7 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
         {
             chunk = remaining;
         }
+
         int more_frag = (remaining > chunk);
         uint16_t elem_flags = base_flags;
 
@@ -85,7 +90,7 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
         return result;
     }
 
-    /* flags はビット フラグ。POTR_SEND_* 定数は 0x0002U 以下で int に収まる */
+    /* flags はビット フラグであり、POTR_SEND_* 定数は int に収まる。 */
     if (((unsigned)flags & POTR_SEND_BLOCKING) != 0U)
     {
         potr_internal_send_queue_wait_ticket(&ctx->send_queue, last_ticket);
@@ -118,6 +123,7 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
         {
             max_message_size = 0U;
         }
+
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_send: invalid argument (handle=%p data=%p len=%zu max=%u)",
                    (const void *)handle, data, len, max_message_size);
         return POTR_ERR_INVALID_ARGUMENT;
@@ -126,8 +132,10 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_send: service_id=%" PRId64 " peer_id=%u len=%zu flags=0x%x",
                ctx->service.service_id, (unsigned)peer_id, len, (unsigned)flags);
 
-    /* N:1 の受信スレッドは peers_mutex を保持したままコールバックを呼ぶ。
-     * 同じスレッドから送信すると非再帰の peers_mutex を二重に取得して停止するため、停止前に拒否する。 */
+    /*
+     * N:1 の受信スレッドは peers_mutex を保持したままコールバックを呼ぶ。
+     * 同じスレッドから送信すると非再帰の peers_mutex を二重に取得して停止するため、停止前に拒否する。
+     */
     if (ctx->is_multi_peer && potr_internal_in_own_callback(ctx))
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
@@ -144,8 +152,10 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
         return POTR_ERR_CANCELED;
     }
 
-    /* TCP: 物理 path 未接続、または PING 交換による論理 CONNECTED 前は
-       POTR_ERR_DISCONNECTED を返す */
+    /*
+     * TCP では、物理 path が未接続のとき、または PING 交換による論理 CONNECTED の前は、
+     * POTR_ERR_DISCONNECTED を返す。
+     */
     if (is_tcp_type(ctx->service.type) &&
         (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) == 0 ||
          cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0))
@@ -159,7 +169,7 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
         return POTR_ERR_DISCONNECTED;
     }
 
-    /* UDP 1:1 双方向: PING 交換による接続確立前は POTR_ERR_DISCONNECTED を返す */
+    /* UDP の 1:1 双方向では、PING 交換による接続確立前は POTR_ERR_DISCONNECTED を返す。 */
     if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR &&
         cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
@@ -168,16 +178,17 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
         return POTR_ERR_DISCONNECTED;
     }
 
-    /* RAW モードは常にブロッキング送信 */
+    /* RAW モードでは常にブロッキング送信を行う。 */
     if (is_raw_type(ctx->service.type))
     {
-        /* POTR_SEND_BLOCKING は 0x0002U であり int に収まる */
-        flags |= (int)POTR_SEND_BLOCKING;
+        flags |= (int)POTR_SEND_BLOCKING; /* POTR_SEND_BLOCKING は int に収まる */
     }
 
-    /* 圧縮が要求された場合はペイロード全体を圧縮する。
+    /*
+     * 圧縮が要求された場合はペイロード全体を圧縮する。
      * 同一ハンドルへの並行送信で圧縮結果が混ざらないよう、圧縮先は呼び出しごとに確保する。
-     * 圧縮結果は登録時にキューへ複製されるため、登録の完了後に消去して解放できる。 */
+     * 圧縮結果は登録時にキューへ複製されるため、登録の完了後に消去して解放できる。
+     */
     if (((unsigned)flags & POTR_SEND_COMPRESS) != 0U)
     {
         size_t cmp_len = ctx->compress_buf_size;
@@ -198,8 +209,7 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
                        ctx->service.service_id, len);
             cplat_secure_zero(compress_buf, ctx->compress_buf_size);
             cplat_free(compress_buf);
-            /* 圧縮失敗は入力データ起因と断定できないため、分類不能として扱う。 */
-            return POTR_ERR_UNKNOWN;
+            return POTR_ERR_UNKNOWN; /* 圧縮失敗は入力データ起因と断定できないため、分類不能として扱う */
         }
 
         if (cmp_len < len)
@@ -212,11 +222,11 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
         }
         else
         {
+            /* 圧縮後の長さが元の長さ以上のため、非圧縮のまま送る。ptr, len, base_flags は初期値を維持する。 */
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                        "potr_service_send: service_id=%" PRId64 " compression skipped"
                        " (compressed %zu >= original %zu bytes), sending uncompressed",
                        ctx->service.service_id, cmp_len, len);
-            /* 圧縮効果なし: 非圧縮のまま送信 (ptr, len, base_flags は初期値を維持) */
         }
     }
 
@@ -235,7 +245,7 @@ int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *da
 static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, int flags,
                           uint16_t base_flags)
 {
-    /* N:1 モード: peer_id に基づくルーティング */
+    /* N:1 モードでは、peer_id に基づいてルーティングする。 */
     if (ctx->is_multi_peer)
     {
         if (peer_id == POTR_PEER_NA)
@@ -248,8 +258,10 @@ static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t
 
         if (peer_id == POTR_PEER_ALL)
         {
-            /* 全アクティブ ピアへ送信: peers_mutex を保持しない状態で送信するため
-             * まず peer_id リストを収集してからキューに格納する */
+            /*
+             * 全アクティブ ピアへ送信する。
+             * peers_mutex を保持しない状態で送信するため、先に peer_id のリストを収集してからキューへ格納する。
+             */
             potr_peer_id *ids;
             int n_ids = 0;
             int i;
@@ -264,6 +276,7 @@ static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t
             }
 
             cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+
             for (i = 0; i < ctx->max_peers; i++)
             {
                 if (ctx->peers[i].active &&
@@ -272,6 +285,7 @@ static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t
                     ids[n_ids++] = ctx->peers[i].peer_id;
                 }
             }
+
             cplat_local_lock_unlock(ctx->peers_mutex);
 
             if (n_ids == 0)
@@ -286,19 +300,22 @@ static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t
             {
                 int send_result = send_to_peer(ctx, ids[i], ptr, len, flags, base_flags);
 
+                /* 最初の失敗を結果に残し、残りのピアへの登録は続ける。 */
                 if (result == POTR_OK && send_result != POTR_OK)
                 {
                     result = send_result;
                 }
             }
+
             cplat_free(ids);
             return result;
         }
         else
         {
-            /* 指定ピアへ送信: 存在確認・接続確認だけ mutex で保護し、送信は mutex 外で行う */
+            /* 指定ピアへ送信する。存在確認と接続確認だけを mutex で保護し、送信は mutex の外で行う。 */
             int peer_alive;
             cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+
             {
                 potr_internal_peer_context *peer = potr_internal_peer_find_by_id(ctx, peer_id);
                 if (peer == NULL)
@@ -309,8 +326,10 @@ static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t
                                ctx->service.service_id, (unsigned)peer_id);
                     return POTR_ERR_NOT_FOUND;
                 }
+
                 peer_alive = cplat_atomic_load_i32(&peer->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE);
             }
+
             cplat_local_lock_unlock(ctx->peers_mutex);
 
             if (!peer_alive)
@@ -325,6 +344,6 @@ static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t
         }
     }
 
-    /* 1:1 モード: peer_id は無視 */
+    /* 1:1 モードでは、peer_id を無視する。 */
     return send_to_peer(ctx, POTR_PEER_NA, ptr, len, flags, base_flags);
 }

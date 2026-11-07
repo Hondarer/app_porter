@@ -19,5 +19,6 @@
 
 int potr_internal_seqnum_in_window(uint32_t seq, uint32_t base, uint16_t window_size)
 {
+    /* 符号なし整数の減算により、通番のラップアラウンドを考慮してウィンドウ内判定を行う。 */
     return (uint32_t)(seq - base) < (uint32_t)window_size;
 }

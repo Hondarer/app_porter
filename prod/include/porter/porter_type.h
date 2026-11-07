@@ -13,8 +13,10 @@
  *******************************************************************************
  */
 
-/* NOTE: このヘッダーは多数のソース ファイルから参照されるため、            */
-/*       @hideincludedbygraph によって "Included by" グラフを無効にします。 */
+/*
+ * このヘッダーは多数のソース ファイルから参照されるため、
+ * @hideincludedbygraph によって "Included by" グラフを無効にする。
+ */
 
 #ifndef PORTER_TYPE_H
 #define PORTER_TYPE_H
@@ -129,9 +131,9 @@ typedef struct potr_service_def
 
     /* POTR_TYPE_MULTICAST */
     uint8_t ttl;     /**< マルチキャスト TTL。(multicast のみ) */
-    uint8_t _pad[3]; /**< パディング (pack_wait_ms を 4 バイト境界に揃える)。 */
+    uint8_t _pad[3]; /**< パディング (pack_wait_ms を 4 [byte] 境界に揃える)。 */
     uint32_t
-        pack_wait_ms; /**< パッキング待ち時間 (ミリ秒)。最初の送信要求からこの時間だけ待ち合わせ、複数メッセージを 1 パケットにまとめる。0 = 即時送信 (パッキング待ちなし)。パケット容量が満杯になった場合はタイマーを無視して即時送信します。 */
+        pack_wait_ms; /**< パッキング待ち時間 [ms]。最初の送信要求からこの時間だけ待ち合わせ、複数メッセージを 1 パケットにまとめる。0 = 即時送信 (パッキング待ちなし)。パケット容量が満杯になった場合はタイマーを無視して即時送信します。 */
 
     char multicast_group[POTR_MAX_ADDR_LEN]; /**< マルチキャスト グループ アドレス。(multicast のみ) */
     char broadcast_addr
@@ -147,7 +149,7 @@ typedef struct potr_service_def
 
     /* 暗号化設定 (AES-256-GCM) */
     uint8_t encrypt_key
-        [POTR_CRYPTO_KEY_SIZE]; /**< AES-256-GCM 事前共有鍵 (32 バイト)。encrypt_enabled が 0 の場合は未使用。 */
+        [POTR_CRYPTO_KEY_SIZE]; /**< AES-256-GCM 事前共有鍵 (32 [byte])。encrypt_enabled が 0 の場合は未使用。 */
     int encrypt_enabled; /**< 非 0 のとき暗号化有効。設定ファイルに有効な encrypt_key が存在するときに 1 に設定される。 */
 
     /* N:1 モード設定 */
@@ -161,9 +163,9 @@ typedef struct potr_service_def
 
     /* TCP 固有フィールド (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR 以外では無視) */
     uint32_t
-        reconnect_interval_ms; /**< SENDER 自動再接続間隔 (ms)。0 = 再接続なし。デフォルト: POTR_DEFAULT_RECONNECT_INTERVAL_MS。 */
+        reconnect_interval_ms; /**< SENDER 自動再接続間隔 [ms]。0 = 再接続なし。デフォルト: POTR_DEFAULT_RECONNECT_INTERVAL_MS。 */
     uint32_t
-        connect_timeout_ms; /**< SENDER TCP 接続タイムアウト (ms)。0 = OS デフォルト。デフォルト: POTR_DEFAULT_CONNECT_TIMEOUT_MS。 */
+        connect_timeout_ms; /**< SENDER TCP 接続タイムアウト [ms]。0 = OS デフォルト。デフォルト: POTR_DEFAULT_CONNECT_TIMEOUT_MS。 */
 } potr_service_def;
 
 /**
@@ -174,22 +176,22 @@ typedef struct potr_service_def
 typedef struct potr_global_config
 {
     uint16_t window_size; /**< スライディング ウィンドウ サイズ (パケット数)。 */
-    uint16_t max_payload; /**< 最大ペイロード長 (バイト)。 */
+    uint16_t max_payload; /**< 最大ペイロード長 [byte]。 */
     uint32_t
-        reorder_timeout_ms; /**< 受信ウィンドウ欠番検出後、NACK または切断を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 = 即時 (デフォルト)。推奨値: LAN/マルチパス=10〜30 ms、遠距離 WAN=30〜100 ms。 */
+        reorder_timeout_ms; /**< 受信ウィンドウ欠番検出後、NACK または切断を遅延する時間 [ms]。マルチパスや近距離 WAN での追い越し吸収用。0 = 即時 (デフォルト)。推奨値: LAN/マルチパス=10〜30 [ms]、遠距離 WAN=30〜100 [ms]。 */
     uint32_t
-        max_message_size; /**< 1 回の potr_service_send で送信できる最大メッセージ長 (バイト)。デフォルト: POTR_MAX_MESSAGE_SIZE。 */
+        max_message_size; /**< 1 回の potr_service_send で送信できる最大メッセージ長 [byte]。デフォルト: POTR_MAX_MESSAGE_SIZE。 */
     uint32_t send_queue_depth; /**< 非同期送信キューの最大エントリ数。デフォルト: POTR_SEND_QUEUE_DEPTH。 */
     uint32_t
-        udp_health_interval_ms; /**< UDP 通信種別の既定 PING 送信間隔 (ミリ秒)。設定周期ごとに PING を送信します。0 = 無効。設定ファイル キー: udp_health_interval_ms。 */
+        udp_health_interval_ms; /**< UDP 通信種別の既定 PING 送信間隔 [ms]。設定周期ごとに PING を送信します。0 = 無効。設定ファイル キー: udp_health_interval_ms。 */
     uint32_t
-        udp_health_timeout_ms; /**< UDP 通信種別の既定 PING 応答待機タイムアウト (ミリ秒)。0 = 無効。設定ファイル キー: udp_health_timeout_ms。 */
+        udp_health_timeout_ms; /**< UDP 通信種別の既定 PING 応答待機タイムアウト [ms]。0 = 無効。設定ファイル キー: udp_health_timeout_ms。 */
     uint32_t
-        tcp_health_interval_ms; /**< TCP 通信種別の既定 PING 送信間隔 (ミリ秒)。設定周期ごとに PING を送信します。0 = 無効。設定ファイル キー: tcp_health_interval_ms。 */
+        tcp_health_interval_ms; /**< TCP 通信種別の既定 PING 送信間隔 [ms]。設定周期ごとに PING を送信します。0 = 無効。設定ファイル キー: tcp_health_interval_ms。 */
     uint32_t
-        tcp_health_timeout_ms; /**< TCP 通信種別の既定 PING 応答待機タイムアウト (ミリ秒)。0 = 無効。設定ファイル キー: tcp_health_timeout_ms。 */
+        tcp_health_timeout_ms; /**< TCP 通信種別の既定 PING 応答待機タイムアウト [ms]。0 = 無効。設定ファイル キー: tcp_health_timeout_ms。 */
     uint32_t
-        tcp_close_timeout_ms; /**< TCP 通信種別の close 完了待機タイムアウト (ミリ秒)。設定ファイル キー: tcp_close_timeout_ms。0 = 待機なし。 */
+        tcp_close_timeout_ms; /**< TCP 通信種別の close 完了待機タイムアウト [ms]。設定ファイル キー: tcp_close_timeout_ms。0 = 待機なし。 */
 } potr_global_config;
 
 /**
@@ -197,21 +199,21 @@ typedef struct potr_global_config
  *
  *  UDP で送受信される物理パケットのレイアウトです。\n
  *  各フィールドはネットワーク バイト オーダー (ビッグ エンディアン) で格納します。\n
- *  ヘッダー固定長: offsetof(potr_packet, payload) = 40 バイト (64 ビット環境)。\n
+ *  ヘッダー固定長: offsetof(potr_packet, payload) = 40 [byte] (64 ビット環境)。\n
  *  payload フィールドはポインターであり、wire データとして直接 sendto に渡せません。\n
  *  送信時は potr_context の send_wire_buf / recv_buf に wire データを組み立ててください。
  *
  *  ワイヤー フォーマット (バイト オフセット):
     @code
-     0: service_id       (int64_t,  8 bytes)
-     8: session_tv_sec   (int64_t,  8 bytes)
-    16: session_id       (uint32_t, 4 bytes)
-    20: session_tv_nsec  (int32_t,  4 bytes)
-    24: seq_num          (uint32_t, 4 bytes)
-    28: ack_num          (uint32_t, 4 bytes)
-    32: flags            (uint16_t, 2 bytes)
-    34: payload_len      (uint16_t, 2 bytes)
-    36: protocol_version (uint32_t, 4 bytes)
+     0: service_id       (int64_t,  8 [byte])
+     8: session_tv_sec   (int64_t,  8 [byte])
+    16: session_id       (uint32_t, 4 [byte])
+    20: session_tv_nsec  (int32_t,  4 [byte])
+    24: seq_num          (uint32_t, 4 [byte])
+    28: ack_num          (uint32_t, 4 [byte])
+    32: flags            (uint16_t, 2 [byte])
+    34: payload_len      (uint16_t, 2 [byte])
+    36: protocol_version (uint32_t, 4 [byte])
     40: payload          (pointer)
     @endcode
  */
@@ -225,7 +227,7 @@ typedef struct potr_packet
     uint32_t
         ack_num;    /**< 再送要求番号 / 再送不能通番 (NBO)。NACK では要求通番、REJECT では再送不能通番を格納します。 */
     uint16_t flags; /**< パケット種別フラグ (POTR_FLAG_*) (NBO)。 */
-    uint16_t payload_len;      /**< ペイロード長 (バイト) (NBO)。 */
+    uint16_t payload_len;      /**< ペイロード長 [byte] (NBO)。 */
     uint32_t protocol_version; /**< プロトコル バージョン (NBO)。POTR_PROTOCOL_VERSION と照合します。 */
     const uint8_t *
         payload; /**< ペイロード データへのポインター (読み取り専用)。ウィンドウ プールまたは受信バッファー内を指す。 */
@@ -268,6 +270,7 @@ typedef uint32_t potr_peer_id;
     ((potr_peer_id)UINT32_MAX) /**< 全接続ピアへの一斉送信を指示する予約ピア ID。
                                                 *   N:1 モードでは全アクティブ ピアへユニキャスト送信します。
                                                 *   1:1 モードでは唯一のピアへの送信として動作します。 */
+
 /** @} */
 
 /**

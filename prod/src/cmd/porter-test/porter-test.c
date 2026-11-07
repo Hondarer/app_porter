@@ -75,12 +75,16 @@
 
 /** REPL 継続フラグ。終了要求 callback で 0 に設定される。 */
 static cplat_atomic_i32 s_running = CPLAT_ATOMIC_INIT(1);
+
 /** 終了要求の受信有無。main 側の表示制御に使う。 */
 static volatile sig_atomic_t s_shutdown_requested = 0;
+
 /** pinned prompt ハンドル。on_recv や trace hook から参照する。 */
 static cplat_pinned_prompt *s_screen = NULL;
+
 /** トレースしきい値レベル。trace hook が context として参照するため寿命を持続させる。 */
 static cplat_trace_level s_trace_level = CPLAT_TRACE_LEVEL_NONE;
+
 /** トレーサーへの hook 設定と開始を実施済みかどうか。 */
 static int s_tracer_started = 0;
 
@@ -118,19 +122,23 @@ static int is_text_data(const void *data, size_t len)
         {
             return 0; /* NUL */
         }
+
         if (c < 0x20 && c != '\t' && c != '\n' && c != '\r')
         {
             return 0; /* C0 制御文字 (タブ/改行/復帰以外) */
         }
+
         if (c == 0x7F)
         {
             return 0; /* DEL */
         }
+
         if (c == 0xFE || c == 0xFF)
         {
             return 0; /* UTF-8 無効バイト */
         }
     }
+
     return 1;
 }
 
@@ -167,6 +175,7 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
     int path_idx;
 
     (void)peer_id;
+
     switch (event)
     {
     case POTR_EVENT_CONNECTED:
@@ -190,6 +199,7 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
 
         path_states = (const int *)data;
         path_idx = (int)len;
+
         if (event == POTR_EVENT_PATH_CONNECTED)
         {
             event_str = "CONNECTED";
@@ -198,6 +208,7 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
         {
             event_str = "DISCONNECTED";
         }
+
         if (path_states != NULL)
         {
             path_state0 = path_states[0];
@@ -212,6 +223,7 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
             path_state2 = 0;
             path_state3 = 0;
         }
+
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
                                    "[サービス %" PRId64 "] path[%d] %s states={%d,%d,%d,%d}\n", service_id, path_idx,
                                    event_str, path_state0, path_state1, path_state2, path_state3);
@@ -230,6 +242,7 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
             {
                 copy_len = POTR_MAX_PAYLOAD;
             }
+
             memcpy(buf, data, copy_len);
             buf[copy_len] = '\0';
             cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
@@ -254,12 +267,14 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
                 {
                     fclose(fp);
                 }
+
                 cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
                                            "[サービス %" PRId64
                                            "] 受信 (%zu バイト): バイナリ データの保存に失敗しました。\n",
                                            service_id, len);
             }
         }
+
         break;
     }
 }
@@ -282,7 +297,7 @@ static void trace_console_hook(cplat_tracer_hook_entry *prev, cplat_tracer *hand
     char ts[CPLAT_CLOCK_ISO8601_LOCAL_MSEC_LEN + 1];
     char lc;
 
-    /* 強制出力は、しきい値によらず出力する指定であり、記録の重大度は対応する通常のレベルと同じ */
+    /* 強制出力は、しきい値によらず出力する指定であり、記録の重大度は対応する通常のレベルと同じである。 */
     if (CPLAT_TRACE_LEVEL_IS_FORCE(level))
     {
         display_level = CPLAT_TRACE_LEVEL_FROM_FORCE(level);
@@ -298,9 +313,11 @@ static void trace_console_hook(cplat_tracer_hook_entry *prev, cplat_tracer *hand
         {
             lc = 'D';
         }
+
         cplat_clock_format_realtime_iso8601_local(ts, sizeof(ts), timestamp);
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR, "%s %c %s\n", ts, lc, message);
     }
+
     cplat_tracer_call_next_hook(prev, handle, level, timestamp, message);
 }
 
@@ -326,6 +343,7 @@ static int parse_trace_level(const char *str, cplat_trace_level *out)
     size_t i;
     size_t j;
 
+    /* 大文字小文字を区別せずに照合するため、入力文字列を大文字へ変換する。 */
     for (j = 0; j < sizeof(upper) - 1U && str[j] != '\0'; j++)
     {
         if (str[j] >= 'a' && str[j] <= 'z')
@@ -337,8 +355,10 @@ static int parse_trace_level(const char *str, cplat_trace_level *out)
             upper[j] = str[j];
         }
     }
+
     upper[j] = '\0';
 
+    /* 定義テーブルと照合して一致するログ レベルを取得する。 */
     for (i = 0; i < sizeof(tbl) / sizeof(tbl[0]); i++)
     {
         if (strcmp(upper, tbl[i].name) == 0)
@@ -347,6 +367,7 @@ static int parse_trace_level(const char *str, cplat_trace_level *out)
             return 1;
         }
     }
+
     return 0;
 }
 
@@ -362,16 +383,19 @@ static int parse_role(const char *str, potr_role *out)
     {
         return 0;
     }
+
     if (strcmp(str, "sender") == 0 || strcmp(str, "SENDER") == 0)
     {
         *out = POTR_ROLE_SENDER;
         return 1;
     }
+
     if (strcmp(str, "receiver") == 0 || strcmp(str, "RECEIVER") == 0)
     {
         *out = POTR_ROLE_RECEIVER;
         return 1;
     }
+
     return 0;
 }
 
@@ -386,6 +410,7 @@ static char *skip_spaces(char *p)
     {
         p++;
     }
+
     return p;
 }
 
@@ -407,6 +432,7 @@ static void trim_right(char *s)
     {
         len--;
     }
+
     s[len] = '\0';
 }
 
@@ -433,16 +459,20 @@ static char *next_token(char **cursor)
     }
 
     start = p;
+
     while (*p != '\0' && *p != ' ' && *p != '\t')
     {
         p++;
     }
+
     if (*p != '\0')
     {
         *p = '\0';
         p++;
     }
+
     *cursor = p;
+
     return start;
 }
 
@@ -464,6 +494,7 @@ static char *strip_matching_quotes(char *value)
         value[len - 1U] = '\0';
         value++;
     }
+
     return value;
 }
 
@@ -572,6 +603,7 @@ static int read_file_data(const char *path, unsigned char **data_out, size_t *le
 
     *data_out = buf;
     *len_out = (size_t)file_size;
+
     return 0;
 }
 
@@ -595,6 +627,7 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
     unsigned int send_flags;
     int send_ret;
 
+    /* 圧縮オプション (-c または --compress) の有無を判定する。 */
     payload = skip_spaces(cursor);
     if (strncmp(payload, "-c", 2) == 0 && (payload[2] == '\0' || payload[2] == ' ' || payload[2] == '\t'))
     {
@@ -624,12 +657,14 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
         return;
     }
 
+    /* ファイル送信時はファイル全体を読み込み、テキスト送信時は文字列をそのまま送信対象とする。 */
     if (is_file)
     {
         if (read_file_data(payload, &file_data, &file_len) != 0)
         {
             return;
         }
+
         send_data = file_data;
         send_len = file_len;
     }
@@ -647,6 +682,7 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
     {
         compress_label = "";
     }
+
     if (is_file)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
@@ -666,7 +702,8 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
     {
         send_flags = 0;
     }
-    /* send_flags と POTR_SEND_* は 0x0003U 以下であり int に収まる */
+
+    /* send_flags と POTR_SEND_* は int に収まる。 */
     send_ret = potr_service_send(handle, POTR_PEER_NA, send_data, send_len, (int)(send_flags | POTR_SEND_BLOCKING));
     if (send_ret != POTR_OK)
     {
@@ -679,6 +716,7 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
         {
             cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR, "エラー: 送信に失敗しました。\n");
         }
+
         cplat_free(file_data);
         return;
     }
@@ -693,7 +731,7 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "送信完了。\n");
     }
 
-    cplat_free(file_data);
+    cplat_free(file_data); /* テキスト送信時は NULL */
 }
 
 /**
@@ -738,9 +776,11 @@ static int do_open(porter_test_session *session, potr_role role, const char *con
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
                                "サービス %" PRId64 " を開いています... (設定: %s)\n", service_id, config_path);
 
-    /* サービス種別を取得して双方向サービスかどうか判定する。 */
-    /* sender は unicast_bidir / tcp_bidir の双方を、receiver は unicast_bidir を双方向として扱う */
-    /* (送受信コマンド統合前の send / recv それぞれの判定を踏襲)。 */
+    /*
+     * サービス種別を取得して双方向サービスかどうか判定する。
+     * sender は unicast_bidir / tcp_bidir の双方を、receiver は unicast_bidir を双方向として扱う
+     * (送受信コマンド統合前の send / recv それぞれの判定を踏襲)。
+     */
     if (potr_service_get_type(config_path, service_id, &svc_type) == POTR_OK)
     {
         if (role == POTR_ROLE_SENDER)
@@ -759,7 +799,7 @@ static int do_open(porter_test_session *session, potr_role role, const char *con
         }
     }
 
-    /* receiver は受信のためコールバック必須。sender は双方向時のみコールバックを設定する。 */
+    /* receiver は受信のためコールバックが必須である。sender は双方向時のみコールバックを設定する。 */
     if (role == POTR_ROLE_RECEIVER)
     {
         callback = on_recv;
@@ -768,6 +808,7 @@ static int do_open(porter_test_session *session, potr_role role, const char *con
     else
     {
         can_send = 1;
+
         if (is_bidir)
         {
             callback = on_recv;
@@ -803,12 +844,14 @@ static int do_open(porter_test_session *session, potr_role role, const char *con
     else
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "受信待機中... (Ctrl+C で終了)\n");
+
         if (can_send)
         {
             cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
                                        "send / file で送信もできます。help でコマンド一覧を表示します。\n");
         }
     }
+
     return 0;
 }
 
@@ -856,6 +899,7 @@ static void handle_open_command(porter_test_session *session, char *cursor)
                                    "エラー: open <role> <config_path> <service_id> を指定してください。\n");
         return;
     }
+
     if (!parse_role(role_token, &role))
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
@@ -870,6 +914,7 @@ static void handle_open_command(porter_test_session *session, char *cursor)
                                    "エラー: service_id \"%s\" を整数として解釈できません。\n", id_token);
         return;
     }
+
     do_open(session, role, config_token, service_id);
 }
 
@@ -889,6 +934,7 @@ static void handle_log_command(char *cursor)
                                    "エラー: log <level> を指定してください。\n");
         return;
     }
+
     if (!parse_trace_level(level_token, &level))
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
@@ -928,20 +974,24 @@ static int process_line(porter_test_session *session, char *line)
         print_interactive_help();
         return 1;
     }
+
     if (strcmp(command, "exit") == 0 || strcmp(command, "quit") == 0)
     {
         return 0;
     }
+
     if (strcmp(command, "open") == 0)
     {
         handle_open_command(session, cursor);
         return 1;
     }
+
     if (strcmp(command, "close") == 0)
     {
         do_close(session);
         return 1;
     }
+
     if (strcmp(command, "log") == 0)
     {
         handle_log_command(cursor);
@@ -957,12 +1007,14 @@ static int process_line(porter_test_session *session, char *line)
                                        "open <role> <config_path> <service_id> で開いてください。\n");
             return 1;
         }
+
         if (!session->can_send)
         {
             cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
                                        "エラー: 受信専用サービスのため送信できません。\n");
             return 1;
         }
+
         is_file = (strcmp(command, "file") == 0);
         apply_send_command(session->handle, is_file, cursor);
         return 1;
@@ -971,6 +1023,7 @@ static int process_line(porter_test_session *session, char *line)
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR, "エラー: 不明なコマンドです: %s\n",
                                command);
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR, "help でコマンド一覧を表示します。\n");
+
     return 1;
 }
 
@@ -1056,10 +1109,12 @@ int main(int argc, char *argv[])
     {
         positional_count++;
     }
+
     if (config_path_arg != NULL)
     {
         positional_count++;
     }
+
     if (service_id_arg != NULL)
     {
         positional_count++;
@@ -1076,10 +1131,12 @@ int main(int argc, char *argv[])
             cplat_argparser_print_usage(stderr);
             return EXIT_FAILURE;
         }
-        s_tracer_started = 0; /* 後段の ensure_tracer_started で開始する。 */
+
+        s_tracer_started = 0; /* 後段の ensure_tracer_started で開始する */
         ensure_tracer_started();
     }
 
+    /* 位置引数は 3 個すべて指定するか、すべて省略して対話コンソールで開くかのいずれかとする。 */
     if (positional_count != 0 && positional_count != 3)
     {
         fprintf(stderr, "エラー: role、config_path、service_id は 3 個すべてを指定してください。\n\n");
@@ -1109,6 +1166,7 @@ int main(int argc, char *argv[])
     if (positional_count == 3)
     {
         potr_role role;
+
         if (!parse_role(role_arg, &role))
         {
             cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
@@ -1137,14 +1195,17 @@ int main(int argc, char *argv[])
                                    "help でコマンド一覧を表示します。\n");
     }
 
+    /* 対話入力ループを実行し、終了指示があるまでコマンドを順次処理する。 */
     while (cplat_atomic_load_i32(&s_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         build_prompt_state(&session, prompt_state, sizeof(prompt_state));
+
         if (cplat_pinned_prompt_readline_fmt(s_screen, line, sizeof(line), "porter-test[%s]> ", prompt_state) !=
             CPLAT_OK)
         {
             break;
         }
+
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "porter-test[%s]> %s\n", prompt_state,
                                    line);
 
@@ -1164,7 +1225,9 @@ int main(int argc, char *argv[])
         potr_service_close(session.handle);
         session.is_open = 0;
     }
+
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "終了しました。\n");
     cplat_pinned_prompt_dispose(s_screen);
+
     return EXIT_SUCCESS;
 }

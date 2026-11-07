@@ -34,6 +34,10 @@
 #include <cplat/net/byteorder.h>
 #include <cplat/net/socket.h>
 
+/*
+ * PING 送信時刻と有効データ送信時刻のうち、新しい方の時刻を取得する。
+ * 戻り値は最終送信時刻 [ms]。
+ */
 static uint64_t get_last_health_signal_send_ms(const potr_context *ctx)
 {
     uint64_t last_ping = cplat_atomic_load_u64(&ctx->last_ping_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
@@ -47,6 +51,7 @@ static uint64_t get_last_health_signal_send_ms(const potr_context *ctx)
     return last_data;
 }
 
+/* 指定パスのヘルス スレッドに起床シグナルを送信する。 */
 static void signal_health_thread(potr_context *ctx, int path_idx)
 {
     if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH ||
@@ -56,34 +61,42 @@ static void signal_health_thread(potr_context *ctx, int path_idx)
     }
 
     cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+
     if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         cplat_condvar_signal(ctx->health_wakeup[path_idx]);
     }
+
     cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
 }
 
-/* health_interval_ms ミリ秒、または停止シグナルが来るまでスリープする (path_idx 版) */
+/* health_interval_ms [ms]、または停止シグナルを受信するまでスリープする (path_idx 版)。 */
 static void health_sleep(potr_context *ctx, int path_idx, uint32_t interval_ms)
 {
-    /* オープン時割り込み PING フラグが立っていれば即リターン (初回スリープをスキップ)。
-       チェックと直後のクリアに割り込みが入らないよう交換 (exchange) で一体に行う。 */
+    /*
+     * オープン時割り込み PING フラグが立っていれば即リターンする (初回スリープをスキップ)。
+     * チェックと直後のクリアに割り込みが入らないよう交換 (exchange) で一体に行う。
+     */
     if (cplat_atomic_exchange_i32(&ctx->health_send_immediate[path_idx], 0, CPLAT_MEMORY_ORDER_ACQ_REL) != 0)
     {
         return;
     }
 
     cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+
     if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
-        /* interval_ms は PING 間隔の設定値。実用範囲は INT_MAX 以下 */
+        /* interval_ms は PING 間隔の設定値。実用範囲は INT_MAX 以下。 */
         cplat_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], (int)interval_ms);
     }
+
     cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
 }
 
-/* 次回 PING 送信時刻まで待機する。PING を送信すべきなら 1、health_running 停止なら 0 を返す。
-   待機結果の判定 (真偽値) を返す述語のため共通結果コードの適用対象外。 */
+/*
+ * 次回 PING 送信時刻まで待機する。PING を送信すべきなら 1、health_running 停止なら 0 を返す。
+ * 待機結果の判定 (真偽値) を返す述語のため共通結果コードの適用対象外である。
+ */
 static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due_ms, uint64_t *last_logged_data_ms)
 {
     while (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
@@ -122,6 +135,10 @@ static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due
     return 0;
 }
 
+/*
+ * TCP 接続の指定パスへ PING パケットを送信する。
+ * 成功時は POTR_OK、失敗時はエラー コードを返す。
+ */
 static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
 {
     potr_packet ping_pkt;
@@ -136,10 +153,12 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     if (cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         return POTR_ERR_CANCELED;
     }
+
     if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) == 0 ||
         ctx->tcp_conn_fd[path_idx] == CPLAT_INVALID_SOCKET)
     {
@@ -159,10 +178,12 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
         return build_result;
     }
 
-    /* path_ping_state スナップショットの採取と TCP 書き込みを同一クリティカル セクション
+    /*
+     * path_ping_state スナップショットの採取と TCP 書き込みを同一クリティカル セクション
      * に閉じ込め、同一 path で送信する PING が「古いスナップショットを後から配送する」 順序逆転を
      * 起こさないようにする。順序が崩れると peer 側の remote_path_ping_state が
-     * NORMAL から UNDEFINED へ後退し、瞬間的に DISCONNECTED と判定される。 */
+     * NORMAL から UNDEFINED へ後退し、瞬間的に DISCONNECTED と判定される。
+     */
     if (ctx->service.encrypt_enabled)
     {
         uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
@@ -181,10 +202,12 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
         memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
 
         cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+
         if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
         {
             copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+
             if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, wire_buf + POTR_PACKET_HEADER_SIZE,
                                      POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
                                      POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
@@ -206,11 +229,12 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
                 }
             }
         }
+
         cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
 
         if (encrypt_failed)
         {
-            /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがありません。 */
+            /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがない。 */
             return POTR_ERR_UNKNOWN;
         }
     }
@@ -221,12 +245,14 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
         wire_len = POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH;
 
         cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+
         if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
         {
             cplat_error detail;
 
             copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
             memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+
             if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) == CPLAT_OK)
             {
                 send_result = POTR_OK;
@@ -236,15 +262,18 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
                 send_result = potr_internal_result_from_error(&detail);
             }
         }
+
         cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
     }
 
     return send_result;
 }
 
-/* ====================================================================
+/*
+ * ====================================================================
  * 非 TCP (UDP/マルチキャスト) 用ヘルス チェック スレッド本体
- * ==================================================================== */
+ * ====================================================================
+ */
 static void health_thread_func(void *arg)
 {
     potr_context *ctx = (potr_context *)arg;
@@ -254,7 +283,8 @@ static void health_thread_func(void *arg)
     uint64_t last_logged_data_ms = 0U;
 
     shdr.service_id = ctx->service.service_id;
-    /* 1:1 モード: session はコンテキストから取得 (N:1 は後述のループで各ピアから取得) */
+
+    /* 1:1 モード: session はコンテキストから取得する (N:1 は後述のループで各ピアから取得)。 */
     if (!ctx->is_multi_peer)
     {
         shdr.session_id = ctx->session_id;
@@ -278,10 +308,10 @@ static void health_thread_func(void *arg)
                 break;
         }
 
-        /* PING を送信する */
+        /* PING を送信する。 */
         if (ctx->is_multi_peer)
         {
-            /* N:1 モード: アクティブ全ピアへ PING を送信する */
+            /* N:1 モード: アクティブ全ピアへ PING を送信する。 */
             int i;
 
             cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
@@ -306,6 +336,7 @@ static void health_thread_func(void *arg)
 
                 cplat_local_lock_lock(ctx->peers[i].send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
                 seq = ctx->peers[i].send_window.next_seq;
+
                 /* N:1 (UNICAST_BIDIR_N1) は双方向 PING。ピアごとの自端パス受信状態をペイロードに設定する。 */
                 copy_path_ping_state(health_states, ctx->peers[i].path_ping_state, POTR_MAX_PATH);
                 potr_internal_packet_build_ping(&ping_pkt, &peer_shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
@@ -327,6 +358,7 @@ static void health_thread_func(void *arg)
 
                     memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
                     memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+
                     if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out,
                                              wire_buf + POTR_PACKET_HEADER_SIZE, POTR_MAX_PATH,
                                              ctx->service.encrypt_key, nonce, wire_buf,
@@ -334,6 +366,7 @@ static void health_thread_func(void *arg)
                     {
                         continue;
                     }
+
                     wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
 
                     for (k = 0; k < (int)POTR_MAX_PATH; k++)
@@ -372,7 +405,7 @@ static void health_thread_func(void *arg)
         }
         else
         {
-            /* 1:1 UDP/マルチキャスト: 単一宛先へ PING を送信する */
+            /* 1:1 UDP/マルチキャスト: 単一宛先へ PING を送信する。 */
             potr_packet ping_pkt;
             uint32_t seq;
             size_t wire_len;
@@ -381,8 +414,10 @@ static void health_thread_func(void *arg)
             uint8_t health_states[POTR_MAX_PATH];
             int k;
 
-            /* 双方向 PING (UNICAST_BIDIR) のみ自端のパス受信状態を設定する。
-               それ以外 (UNICAST/MULTICAST/BROADCAST/RAW 系) は PING を受信しないため UNDEFINED を設定する。 */
+            /*
+             * 双方向 PING (UNICAST_BIDIR) のみ自端のパス受信状態を設定する。
+             * それ以外 (UNICAST/MULTICAST/BROADCAST/RAW 系) は PING を受信しないため UNDEFINED を設定する。
+             */
             if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
             {
                 copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
@@ -422,12 +457,14 @@ static void health_thread_func(void *arg)
 
                 memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
                 memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+
                 if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out,
                                          wire_buf + POTR_PACKET_HEADER_SIZE, POTR_MAX_PATH, ctx->service.encrypt_key,
                                          nonce, wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
                 {
                     continue;
                 }
+
                 wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
 
                 for (k = 0; k < ctx->n_path; k++)
@@ -474,9 +511,11 @@ static void health_thread_func(void *arg)
     return;
 }
 
-/* ====================================================================
+/*
+ * ====================================================================
  * TCP 用ヘルス チェック スレッド本体 (path ごと)
- * ==================================================================== */
+ * ====================================================================
+ */
 static void tcp_health_thread_func(void *arg)
 {
     potr_internal_path_thread_arg *harg = (potr_internal_path_thread_arg *)arg;
@@ -488,7 +527,7 @@ static void tcp_health_thread_func(void *arg)
 
     while (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
-        /* 固定間隔でスリープ */
+        /* 固定間隔でスリープする。 */
         health_sleep(ctx, path_idx, ctx->health_interval_ms);
 
         if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
@@ -533,6 +572,7 @@ int potr_internal_health_thread_start(potr_context *ctx)
         /* 同期資源生成 API は詳細原因を提供しない。 */
         return POTR_ERR_UNKNOWN;
     }
+
     if (cplat_condvar_create(&ctx->health_wakeup[0]) != CPLAT_OK)
     {
         cplat_local_lock_dispose(ctx->health_mutex[0]);
@@ -551,7 +591,8 @@ int potr_internal_health_thread_start(potr_context *ctx)
         ctx->health_mutex[0] = NULL;
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "health_thread[service_id=%" PRId64 "]: thread create failed",
                    ctx->service.service_id);
-        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
+
+        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -566,6 +607,7 @@ int potr_internal_health_thread_stop(potr_context *ctx)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     if (ctx->health_thread[0] == NULL)
     {
         return POTR_OK;
@@ -581,6 +623,7 @@ int potr_internal_health_thread_stop(potr_context *ctx)
     {
         return POTR_ERR_UNKNOWN;
     }
+
     ctx->health_thread[0] = NULL;
 
     cplat_condvar_dispose(ctx->health_wakeup[0]);
@@ -625,7 +668,8 @@ int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx)
         cplat_atomic_store_i32(&ctx->health_running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "tcp_health_thread[service_id=%" PRId64 " path=%d]: thread create failed",
                    ctx->service.service_id, path_idx);
-        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがありません。 */
+
+        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
         return POTR_ERR_UNKNOWN;
     }
 
@@ -640,6 +684,7 @@ int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
     if (ctx->health_thread[path_idx] == NULL)
     {
         return POTR_OK;
@@ -655,6 +700,7 @@ int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
     {
         return POTR_ERR_UNKNOWN;
     }
+
     ctx->health_thread[path_idx] = NULL;
 
     return POTR_OK;

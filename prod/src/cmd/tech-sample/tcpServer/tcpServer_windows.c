@@ -44,9 +44,11 @@
     /** 名前付きパイプ名フォーマット。 */
     #define TCPSERVER_PIPE_NAME_FMT "\\\\.\\pipe\\tcpserver_worker_%d"
 
-/* ============================================================
+/*
+ * ============================================================
  *  内部型定義
- * ============================================================ */
+ * ============================================================
+ */
 
 /**
  *  @brief          ワーカー プロセスの情報を管理する構造体。
@@ -69,9 +71,11 @@ typedef struct WorkerMonitorArg
     int conns_per_worker; /**< 1 ワーカーあたりの同時接続数上限。 */
 } WorkerMonitorArg;
 
-/* ============================================================
+/*
+ * ============================================================
  *  内部ヘルパー
- * ============================================================ */
+ * ============================================================
+ */
 
 /**
  *  @brief          listen ソケットを作成してバインドし、待ち受けを開始します。
@@ -148,7 +152,7 @@ __declspec(noreturn) static void run_as_fork_child(SOCKET client_socket)
  *  conns_per_worker > 1 の場合:
  *    PeekNamedPipe() でパイプを非ブロッキング チェックしながら、select() で
  *    アクティブな複数ソケットを監視するイベント ループ。接続が閉じるたびに親へ
- *    完了通知 (done=1) を 1 バイト送信します。
+ *    完了通知 (done=1) を 1 [byte] 送信します。
  */
 static void worker_loop(const char *pipe_name, int conns_per_worker)
 {
@@ -170,10 +174,12 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
         while (1)
         {
             SOCKET client_socket;
+
             if (!ReadFile(pipe, &client_socket, sizeof(client_socket), &bytes_read, NULL))
             {
                 break;
             }
+
             if (bytes_read != sizeof(client_socket))
             {
                 break;
@@ -183,7 +189,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
             g_session_fn(client_socket);
             printf("[ワーカー PID %lu] 次のソケット待機\n", GetCurrentProcessId());
 
-            /* 親に処理完了を通知 */
+            /* 親プロセスへ処理完了を通知する。 */
             char done = 1;
             WriteFile(pipe, &done, 1, &bytes_written, NULL);
         }
@@ -201,17 +207,20 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
         int active_count = 0;
         char buf[BUFFER_SIZE];
 
+        /* 名前付きパイプからの新規ソケット受信とアクティブ ソケットの I/O を多重監視する。 */
         while (1)
         {
-            /* パイプから新規ソケットを非ブロッキング チェック */
+            /* パイプに受信可能な新規ソケットがあるかを非ブロッキングで確認する。 */
             DWORD avail = 0;
             if (!PeekNamedPipe(pipe, NULL, 0, NULL, &avail, NULL))
             {
                 break; /* パイプ切断 */
             }
+
             if (avail >= sizeof(SOCKET))
             {
                 SOCKET new_sock;
+
                 if (ReadFile(pipe, &new_sock, sizeof(new_sock), &bytes_read, NULL) && bytes_read == sizeof(new_sock))
                 {
                     active[active_count++] = new_sock;
@@ -221,23 +230,29 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
 
             if (active_count == 0)
             {
-                /* アクティブな接続がない場合は少し待ってパイプを再チェック */
+                /* アクティブな接続がない場合は、少し待ってからパイプを再確認する。 */
                 cplat_sleep_ms(10);
                 continue;
             }
 
-            /* select で全アクティブ ソケットを監視 (10ms タイムアウト) */
+            /* select() で全アクティブ ソケットを 10 [ms] のタイムアウト付きで監視する。 */
             fd_set read_fds;
             FD_ZERO(&read_fds);
+
             for (int i = 0; i < active_count; i++)
             {
                 CPLAT_FD_SET(active[i], &read_fds);
             }
-            struct timeval tv = {0, 10000}; /* 10ms */
-            /* Windows では select の第 1 引数は無視される */
+
+            struct timeval tv = {0, 10000}; /* 10 [ms] */
+
+            /*
+             * Windows Sockets において select() の第 1 引数 nfds は互換性のためにのみ存在し、無視される。
+             * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-select
+             */
             select(0, &read_fds, NULL, NULL, &tv);
 
-            /* 末尾から走査して配列詰めを安全に行う */
+            /* 末尾から走査して配列詰めを安全に行う。 */
             for (int i = active_count - 1; i >= 0; i--)
             {
                 if (!FD_ISSET(active[i], &read_fds))
@@ -251,7 +266,8 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
                     closesocket(active[i]);
                     active[i] = active[--active_count]; /* 末尾と入れ替えて削除 */
                     printf("[ワーカー PID %lu] 接続終了 (残 %d 接続)\n", GetCurrentProcessId(), active_count);
-                    /* 親に接続 1 本分の完了を通知 */
+
+                    /* 親プロセスへ接続 1 本分の処理完了を通知する。 */
                     char done = 1;
                     WriteFile(pipe, &done, 1, &bytes_written, NULL);
                 }
@@ -291,8 +307,12 @@ static void worker_monitor_thread(void *arg)
     {
         if (ReadFile(workers[id].pipe, &done, 1, &bytes_read, NULL))
         {
-            /* 接続 1 本分の完了通知 → conn_count を減らし、空きができたらイベントをシグナル */
+            /*
+             * 接続 1 本分の完了通知を受信したため、アクティブ接続数を減らし、
+             * 空きが生じた場合はイベントをシグナル状態にする。
+             */
             workers[id].conn_count--;
+
             if (workers[id].conn_count < conns_per_worker)
             {
                 SetEvent(events[id]);
@@ -303,6 +323,7 @@ static void worker_monitor_thread(void *arg)
             break;
         }
     }
+
     return;
 }
 
@@ -328,6 +349,7 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
                 return i;
             }
         }
+
         WaitForMultipleObjects((DWORD)n, events, FALSE, INFINITE);
     }
 }
@@ -351,7 +373,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
 
     GetModuleFileNameU(NULL, exepath, PLATFORM_PATH_MAX);
 
-    /* 監視スレッド引数はプロセス終了まで有効である必要があるため heap 確保 */
+    /* 監視スレッドの引数はプロセス終了まで有効である必要があるため、ヒープに確保する。 */
     WorkerMonitorArg *args = (WorkerMonitorArg *)cplat_malloc((size_t)n * sizeof(WorkerMonitorArg));
     if (args == NULL)
     {
@@ -359,6 +381,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         cplat_exit(1);
     }
 
+    /* 各ワーカー向けの名前付きパイプと監視スレッドを作成し、ワーカー プロセスを起動する。 */
     for (int i = 0; i < n; i++)
     {
         sprintf_s(pipe_name, sizeof(pipe_name), TCPSERVER_PIPE_NAME_FMT, i);
@@ -373,10 +396,10 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
             cplat_exit(1);
         }
 
-        /* イベント作成 (初期状態: 空き) */
+        /* ワーカーの空き状態を通知するイベントを作成する (初期状態はシグナル状態)。 */
         events[i] = CreateEvent(NULL, FALSE, TRUE, NULL);
 
-        /* ワーカー プロセス起動 (--conns-per-worker を渡す) */
+        /* 1 ワーカーあたりの同時接続数上限を指定してワーカー プロセスを起動する。 */
         sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --worker %s --conns-per-worker %d", exepath, pipe_name,
                   conns_per_worker);
 
@@ -394,44 +417,50 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         workers[i].conn_count = 0;
         CloseHandle(pi.hThread);
 
-        /* ワーカーがパイプに接続するのを待つ */
+        /* ワーカー プロセスが名前付きパイプに接続するのを待機する。 */
         ConnectNamedPipe(workers[i].pipe, NULL);
 
-        /* 監視スレッド起動 */
+        /* ワーカーからの完了通知を受信する監視スレッドを起動する。 */
         cplat_thread *monitor_thread;
 
         args[i].id = i;
         args[i].workers = workers;
         args[i].events = events;
         args[i].conns_per_worker = conns_per_worker;
+
         if (cplat_thread_create(&monitor_thread, worker_monitor_thread, (void *)&args[i]) != CPLAT_OK)
         {
             fprintf(stderr, "監視スレッド起動失敗: %d\n", i);
             cplat_free(args);
             cplat_exit(1);
         }
+
         cplat_thread_detach(monitor_thread);
 
         printf("[親プロセス] ワーカー %d (PID %lu) 起動完了\n", i, pi.dwProcessId);
     }
 
-    /* args はスレッドが使い続けるため解放しない (プロセス終了時に解放される) */
+    /* args はスレッドが使い続けるため解放しない (プロセス終了時に解放される)。 */
 }
 
-/* ============================================================
+/*
+ * ============================================================
  *  プラットフォーム フック
- * ============================================================ */
+ * ============================================================
+ */
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
 void platform_init(ClientSessionFn session_fn)
 {
     WSADATA wsaData;
+
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
     {
         fprintf(stderr, "WSAStartup 失敗\n");
         cplat_exit(1);
     }
+
     g_session_fn = session_fn;
 }
 
@@ -446,6 +475,7 @@ void platform_cleanup(void)
 
 int dispatch_internal_args(int argc, char *argv[])
 {
+    /* コマンド ライン引数を走査し、内部起動オプション (--child または --worker) を処理する。 */
     for (int i = 1; i < argc - 1; i++)
     {
         if (strcmp(argv[i], "--child") == 0)
@@ -453,10 +483,12 @@ int dispatch_internal_args(int argc, char *argv[])
             SOCKET sock = (SOCKET)_strtoui64(argv[i + 1], NULL, 10);
             run_as_fork_child(sock);
         }
+
         if (strcmp(argv[i], "--worker") == 0)
         {
-            /* --conns-per-worker が続く場合は読み取る */
+            /* --conns-per-worker が続く場合は、その値を読み取る。 */
             int conns_per_worker = DEFAULT_CONNS_PER_WORKER;
+
             for (int j = i + 2; j < argc - 1; j++)
             {
                 if (strcmp(argv[j], "--conns-per-worker") == 0)
@@ -470,9 +502,11 @@ int dispatch_internal_args(int argc, char *argv[])
                             conns_per_worker = (int)parsed;
                         }
                     }
+
                     break;
                 }
             }
+
             worker_loop(argv[i + 1], conns_per_worker);
 
             return 1;
@@ -482,9 +516,11 @@ int dispatch_internal_args(int argc, char *argv[])
     return 0;
 }
 
-/* ============================================================
+/*
+ * ============================================================
  *  サーバー実装
- * ============================================================ */
+ * ============================================================
+ */
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -496,6 +532,7 @@ void run_fork_server(int port)
 
     printf("[親プロセス %lu] fork モード、ポート %d で待ち受け開始\n", GetCurrentProcessId(), port);
 
+    /* クライアント接続を受け付けるたびに、子プロセスを生成してソケット ハンドルを引き渡す。 */
     while (1)
     {
         SOCKET client_socket = accept(listen_socket, NULL, NULL);
@@ -506,7 +543,7 @@ void run_fork_server(int port)
 
         printf("[親プロセス] 接続受付、子プロセス生成\n");
 
-        /* ソケット ハンドルを継承可能に設定 */
+        /* 子プロセスへソケット ハンドルを継承させるため、継承可能フラグを設定する。 */
         SetHandleInformation((HANDLE)client_socket, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
 
         char cmdline[PLATFORM_PATH_MAX + 64];
@@ -544,6 +581,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
     start_prefork_workers(workers, events, num_workers, conns_per_worker);
     printf("[親プロセス] ポート %d で待ち受け開始\n", port);
 
+    /* クライアント接続を受け付け、空きのあるワーカー プロセスへ名前付きパイプ経由でソケットを引き渡す。 */
     while (1)
     {
         SOCKET client_socket = accept(listen_socket, NULL, NULL);
@@ -552,13 +590,13 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
             continue;
         }
 
-        /* ソケットを継承可能に */
+        /* クライアント ソケットのハンドルを継承可能に設定する。 */
         SetHandleInformation((HANDLE)client_socket, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
 
         int worker_id = find_available_worker(workers, events, num_workers, conns_per_worker);
         workers[worker_id].conn_count++;
 
-        /* 容量に達した場合はイベントを非シグナルにして次の割り当てを防ぐ */
+        /* ワーカーの同時接続数上限に達した場合は、イベントを非シグナル状態にして次の接続割り当てを抑止する。 */
         if (workers[worker_id].conn_count >= conns_per_worker)
         {
             ResetEvent(events[worker_id]);
@@ -570,10 +608,10 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         DWORD bytes_written;
         WriteFile(workers[worker_id].pipe, &client_socket, sizeof(client_socket), &bytes_written, NULL);
 
-        /* ソケットはワーカーが処理完了後に closesocket する */
+        /* ソケットはワーカーが処理完了後に closesocket する。 */
     }
 
-    /* 到達しないが形式上記述 */
+    /* 到達しないが形式上記述する。 */
     cplat_free(workers);
     cplat_free(events);
 }
