@@ -83,6 +83,7 @@ extern "C"
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
      *  @retval         POTR_OK                    起動に成功したか、起動が不要です。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx または path_idx が不正です。
+     *  @retval         POTR_ERR_CANCELED          終了処理中です。
      *  @retval         POTR_ERR_UNKNOWN           同期資源またはスレッドの生成に失敗しました。
      */
     extern int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx);
@@ -90,6 +91,8 @@ extern "C"
     /**
      *  @brief          TCP ヘルス チェック スレッドを停止します。
      *  @note           終了待ち成功後にハンドルを NULL へ戻します。同期資源の所有権はサービスに残ります。
+     *                  同じ path への起動・停止要求と同期し、並行する停止要求は終了待ちの完了を待ちます。
+     *                  終了待ち失敗時はハンドルを保持し、停止を再試行できます。
      *  @retval         POTR_ERR_UNKNOWN           終了待ちに失敗しました。
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。

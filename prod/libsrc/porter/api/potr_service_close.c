@@ -235,10 +235,7 @@ static void stop_tcp_health_threads(potr_context *ctx)
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        if (ctx->health_thread[i] != NULL)
-        {
-            (void)potr_internal_tcp_health_thread_stop(ctx, i);
-        }
+        (void)potr_internal_tcp_health_thread_stop(ctx, i);
     }
 }
 

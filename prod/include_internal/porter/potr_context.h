@@ -257,6 +257,7 @@ struct potr_context
     cplat_thread *health_thread[POTR_MAX_PATH]; /**< ヘルス チェック スレッド ハンドル (path ごと、TCP: 全ロール)。 */
     cplat_local_lock *health_mutex[POTR_MAX_PATH]; /**< ヘルス チェック スレッド停止用ミューテックス (path ごと)。 */
     cplat_condvar *health_wakeup[POTR_MAX_PATH]; /**< ヘルス チェック スレッドを即時起床させる条件変数 (path ごと)。 */
+    int health_stopping[POTR_MAX_PATH];          /**< TCP health の終了待ち中か。health_mutex で保護します。 */
     potr_service_def service;                    /**< サービス定義。 */
     potr_global_config global;                   /**< プロトコル別のグローバル既定値。 */
     uint32_t health_interval_ms;                 /**< 通信種別とサービス上書きを解決した実効 PING 送信間隔。 */

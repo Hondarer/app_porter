@@ -660,21 +660,43 @@ int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx)
         return POTR_OK;
     }
 
+    cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+
+    /* 前のスレッドの回収が終わるまで、同じ path のハンドルを再利用しない。 */
+    while (ctx->health_stopping[path_idx] != 0)
+    {
+        cplat_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    }
+
+    if (cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    {
+        cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
+        return POTR_ERR_CANCELED;
+    }
+
+    if (ctx->health_thread[path_idx] != NULL)
+    {
+        cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
+        return POTR_OK;
+    }
+
     ctx->health_args[path_idx].ctx = ctx;
     ctx->health_args[path_idx].path_idx = path_idx;
-
     cplat_atomic_store_i32(&ctx->health_running[path_idx], 1, CPLAT_MEMORY_ORDER_RELEASE);
 
     if (cplat_thread_create(&ctx->health_thread[path_idx], tcp_health_thread_func, &ctx->health_args[path_idx]) !=
         CPLAT_OK)
     {
         cplat_atomic_store_i32(&ctx->health_running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
+        cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "tcp_health_thread[service_id=%" PRId64 " path=%d]: thread create failed",
                    ctx->service.service_id, path_idx);
 
         /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
         return POTR_ERR_UNKNOWN;
     }
+
+    cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
 
     return POTR_OK;
 }
@@ -688,23 +710,50 @@ int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (ctx->health_thread[path_idx] == NULL)
+    /* 起動前の失敗で同期資源が未生成なら、回収するスレッドもない。 */
+    if (ctx->health_mutex[path_idx] == NULL)
     {
         return POTR_OK;
     }
 
-    cplat_atomic_store_i32(&ctx->health_running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
-
     cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
-    cplat_condvar_signal(ctx->health_wakeup[path_idx]);
-    cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
 
-    if (cplat_thread_join(ctx->health_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
+    /* close と接続管理の停止要求が重なっても、join を実行する呼び出しは 1 つにする。 */
+    while (ctx->health_stopping[path_idx] != 0)
     {
-        return POTR_ERR_UNKNOWN;
+        cplat_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
     }
 
-    ctx->health_thread[path_idx] = NULL;
+    if (ctx->health_thread[path_idx] == NULL)
+    {
+        cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
+        return POTR_OK;
+    }
+
+    ctx->health_stopping[path_idx] = 1;
+    cplat_atomic_store_i32(&ctx->health_running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_condvar_broadcast(ctx->health_wakeup[path_idx]);
+    cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
+
+    /* health 自身も health_mutex を取得するため、ロックを保持したまま終了を待たない。 */
+    int ret = cplat_thread_join(ctx->health_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+
+    cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+
+    if (ret == CPLAT_OK)
+    {
+        ctx->health_thread[path_idx] = NULL;
+    }
+
+    ctx->health_stopping[path_idx] = 0;
+    cplat_condvar_broadcast(ctx->health_wakeup[path_idx]);
+    cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
+
+    if (ret != CPLAT_OK)
+    {
+        /* cplat の終了待ち失敗には、porter の分類へ変換できる詳細コードがない。 */
+        return POTR_ERR_UNKNOWN;
+    }
 
     return POTR_OK;
 }

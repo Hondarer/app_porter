@@ -280,11 +280,11 @@ TEST_F(handleConcurrencyTest, concurrent_fragmented_compressed_sends_arrive_inta
     for (int t = 0; t < send_threads; ++t)
     {
         threads.emplace_back(
-            [client, &failures, t]()
+            [client, &failures](int thread_index)
             {
                 for (int i = 0; i < messages_per_thread; ++i)
                 {
-                    bytes msg = make_message(t, i);
+                    bytes msg = make_message(thread_index, i);
                     unsigned int flags = POTR_SEND_BLOCKING;
                     if ((i % 2) == 1)
                     {
@@ -295,7 +295,8 @@ TEST_F(handleConcurrencyTest, concurrent_fragmented_compressed_sends_arrive_inta
                         failures.fetch_add(1);
                     }
                 }
-            }); // [手順] - 4 スレッドから同一ハンドルへ、分割されるメッセージを交互に圧縮して 10 件ずつ送信する。
+            },
+            t); // [手順] - 4 スレッドから同一ハンドルへ、分割されるメッセージを交互に圧縮して 10 件ずつ送信する。
     }
     for (std::thread &th : threads)
     {
