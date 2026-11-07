@@ -232,13 +232,17 @@ typedef struct potr_internal_path_thread_arg
  */
 struct potr_context
 {
+    struct potr_internal_handle *handle_owner;         /**< 公開ハンドルの制御情報。 */
+    struct potr_internal_notifications *notifications; /**< 通知専用スレッドとキュー。 */
+    cplat_atomic_i32 fatal_error;                      /**< 通知継続不能の原因。 */
+    int lifecycle_padding;                             /**< ポインター境界の明示パディング。 */
     potr_recv_fn callback;                         /**< 受信コールバック。 */
-    cplat_local_lock *callback_mutex;              /**< コールバック直列化用ミューテックス。 */
+    cplat_local_lock *callback_mutex;              /**< 通知登録と状態変更の順序保護用ミューテックス。 */
     /* コールバック実行中のスレッドの記録。
      * コールバック内からの API 呼び出しのうち、停止 (自スレッドの join や非再帰ロックの二重取得) を
      * 招くものを検出してエラーを返すために使います。
-     * コールバックは callback_mutex の下で 1 つずつ呼ばれるため、記録する場所は 1 つで足ります。
-     * potr_internal_callback_emit_locked が callback_mutex 保持中に設定・解除します。 */
+     * 通知専用スレッドがコールバックを 1 つずつ実行します。
+     * 通知専用スレッドが呼び出し前後に設定・解除します。 */
     cplat_atomic_i32 callback_active; /**< コールバック実行中か (1: 実行中, 0: なし)。アトミックに読み書きします。 */
     cplat_atomic_u32 callback_tid; /**< コールバックを実行中のスレッドの ID (cplat_process_get_tid)。アトミックに読み書きします。 */
     cplat_thread *recv_thread[POTR_MAX_PATH];      /**< 受信スレッド ハンドル (path ごと)。 */

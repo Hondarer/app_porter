@@ -1,2 +1,5 @@
+/potr_handle.c
+/potr_notify.c
 /potr_path_event.c
 /potr_peer_disconnect.c
+/potr_send_queue_abort.c

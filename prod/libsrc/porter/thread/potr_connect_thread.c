@@ -201,7 +201,8 @@ static void stop_connected_threads(potr_context *ctx, int path_idx)
 /* SENDER 用接続ループ (path ごと) */
 static void sender_connect_loop(potr_context *ctx, int path_idx)
 {
-    while (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    while (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
+           cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
         cplat_socket sock;
         int active_count;
@@ -337,7 +338,8 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
         first_pkt_timeout_ms = ctx->global.tcp_health_timeout_ms * POTR_TCP_FIRST_PKT_TIMEOUT_SCALE;
     }
 
-    while (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    while (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
+           cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
         cplat_socket conn;
         cplat_ipv4_endpoint peer_addr = {0};

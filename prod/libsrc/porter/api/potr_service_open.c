@@ -27,6 +27,8 @@
 #include <porter/protocol/packet.h>
 #include <porter/protocol/window.h>
 #include <porter/potr_context.h>
+#include <porter/potr_handle.h>
+#include <porter/potr_notify.h>
 #include <porter/potr_path_event.h>
 #include <porter/potr_peer_table.h>
 #include <porter/thread/potr_recv_thread.h>
@@ -70,6 +72,11 @@ static void ctx_cleanup(potr_context *ctx)
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: thread join incomplete; retaining context");
         return;
     }
+    if (potr_internal_notify_stop(ctx) != POTR_OK)
+    {
+        return;
+    }
+    potr_internal_handle_discard(ctx);
     api_context_dispose_resources(ctx);
     cplat_free(ctx);
 }
@@ -262,6 +269,20 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
             api_context_dispose_tcp_sync(ctx);
             return result;
         }
+    }
+    result = potr_internal_handle_prepare(ctx);
+    if (result == POTR_OK)
+    {
+        result = potr_internal_notify_start(ctx);
+    }
+    if (result != POTR_OK)
+    {
+        if (ctx->send_queue.mutex != NULL)
+        {
+            potr_internal_send_queue_dispose(&ctx->send_queue);
+        }
+        api_context_dispose_tcp_sync(ctx);
+        return result;
     }
     result = potr_internal_connect_thread_start(ctx);
     if (result != POTR_OK)
@@ -474,6 +495,20 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         return result;
     }
 
+    if (!is_tcp_type(ctx->service.type))
+    {
+        result = potr_internal_handle_prepare(ctx);
+        if (result == POTR_OK)
+        {
+            result = potr_internal_notify_start(ctx);
+        }
+        if (result != POTR_OK)
+        {
+            ctx_cleanup(ctx);
+            return result;
+        }
+    }
+
     /* 通信種別に応じてスレッドを起動する */
     if (is_tcp_type(ctx->service.type))
     {
@@ -489,7 +524,7 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         return start_result;
     }
 
-    *handle = ctx;
+    potr_context *public_handle = potr_internal_handle_public(ctx);
     {
         const char *role_str;
         const char *encrypt_str;
@@ -514,5 +549,6 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
                    "potr_service_open: service_id=%" PRId64 " role=%s encrypt=%s opened successfully",
                    ctx->service.service_id, role_str, encrypt_str);
     }
+    *handle = public_handle;
     return POTR_OK;
 }

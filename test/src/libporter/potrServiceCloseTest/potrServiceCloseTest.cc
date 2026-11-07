@@ -11,6 +11,8 @@
 #include <cstring>
 #include <vector>
 
+#include "../../../include/porter_handle_test.h"
+
 using namespace testing;
 
 // UDP 通常終了で停止手順の後に共通解放と本体解放を呼ぶことの確認
@@ -20,6 +22,7 @@ TEST(potrServiceCloseTest, udp_stop_precedes_shared_cleanup)
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
+    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
     ctx.service.type = POTR_TYPE_UNICAST;
     ctx.role = POTR_ROLE_SENDER;
     int token = 0;
@@ -41,7 +44,7 @@ TEST(potrServiceCloseTest, udp_stop_precedes_shared_cleanup)
     EXPECT_CALL(mock_porter, api_context_dispose_resources(&ctx)).Times(1);
     // [Pre-Assert確認_正常系] - 通常終了で共通解放を一度呼ぶこと。
     // Act
-    int actual_ret = potr_service_close(&ctx); // [手順] - UDP サービスを終了する。
+    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - UDP サービスを終了する。
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 通常終了が成功すること。
     EXPECT_EQ((std::vector<int>{1, 2, 4, 5}), order);
@@ -55,6 +58,7 @@ TEST(potrServiceCloseTest, tcp_stop_precedes_shared_cleanup)
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
+    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
     ctx.service.type = POTR_TYPE_TCP;
     ctx.role = POTR_ROLE_SENDER;
     int token = 0;
@@ -76,7 +80,7 @@ TEST(potrServiceCloseTest, tcp_stop_precedes_shared_cleanup)
     EXPECT_CALL(mock_porter, api_context_dispose_resources(&ctx)).Times(1);
     // [Pre-Assert確認_正常系] - 通常終了で共通解放を一度呼ぶこと。
     // Act
-    int actual_ret = potr_service_close(&ctx); // [手順] - TCP サービスを終了する。
+    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - TCP サービスを終了する。
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 通常終了が成功すること。
     EXPECT_EQ((std::vector<int>{1, 2, 3, 4, 5}), order);
@@ -90,6 +94,7 @@ TEST(potrServiceCloseTest, call_from_own_callback_returns_unsupported)
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
+    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
     ctx.service.type = POTR_TYPE_UNICAST;
     ctx.role = POTR_ROLE_RECEIVER;
     ON_CALL(mock_porter, potr_internal_in_own_callback(&ctx))
@@ -99,10 +104,12 @@ TEST(potrServiceCloseTest, call_from_own_callback_returns_unsupported)
     // [Pre-Assert確認_異常系] - 受信スレッドを停止しないこと。
     EXPECT_CALL(mock_porter, api_context_dispose_resources(_)).Times(0);
     // [Pre-Assert確認_異常系] - 共通資源を解放しないこと。
+    EXPECT_CALL(mock_cplat, cplat_free(_)).Times(AnyNumber());
+    // [Pre-Assert確認_正常系] - 試験用制御オブジェクトの解放を許可する。
     EXPECT_CALL(mock_cplat, cplat_free(&ctx)).Times(0);
     // [Pre-Assert確認_異常系] - コンテキスト本体を解放しないこと。
     // Act
-    int actual_ret = potr_service_close(&ctx); // [手順] - コールバック内からサービスを閉じる。
+    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - コールバック内からサービスを閉じる。
     // Assert
     EXPECT_EQ(POTR_ERR_UNSUPPORTED, actual_ret); // [確認_異常系] - 未サポート コードを返すこと。
     EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.close_requested, CPLAT_MEMORY_ORDER_RELAXED));
@@ -116,6 +123,7 @@ TEST(potrServiceCloseTest, tcp_close_without_active_path_after_data_returns_disc
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
+    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
     ctx.service.type = POTR_TYPE_TCP;
     ctx.role = POTR_ROLE_SENDER;
     ctx.send_has_data = 1; // [状態] - 現セッションで DATA を送信済みとする。
@@ -125,12 +133,14 @@ TEST(potrServiceCloseTest, tcp_close_without_active_path_after_data_returns_disc
     delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
     // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
+    // [Pre-Assert確認_正常系] - ハンドル管理用ロックの取得も許可する。
     EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex, _)).Times(AtLeast(1));
     // [Pre-Assert確認_正常系] - 送信済み状態を send_window_mutex の保護下で取得すること。
     EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _, _)).Times(0);
     // [Pre-Assert確認_異常系] - 切断済みのため FIN を送信しないこと。
     // Act
-    int actual_ret = potr_service_close(&ctx); // [手順] - 全パス切断後の TCP サービスを閉じる。
+    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - 全パス切断後の TCP サービスを閉じる。
     // Assert
     EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret); // [確認_異常系] - 切断エラーを返すこと。
     // Cleanup
@@ -144,6 +154,7 @@ TEST(potrServiceCloseTest, incomplete_join_retains_shared_resources)
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
+    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
     ctx.service.type = POTR_TYPE_TCP;
     ON_CALL(mock_porter, api_context_has_threads(_)).WillByDefault(Return(1));
     // Pre-Assert
@@ -151,10 +162,12 @@ TEST(potrServiceCloseTest, incomplete_join_retains_shared_resources)
     // [Pre-Assert確認_異常系] - 終了待ち未完了で共通資源を解放しないこと。
     EXPECT_CALL(mock_porter, api_context_dispose_tcp_sync(_)).Times(0);
     // [Pre-Assert確認_異常系] - 終了待ち未完了で同期資源を解放しないこと。
+    EXPECT_CALL(mock_cplat, cplat_free(_)).Times(AnyNumber());
+    // [Pre-Assert確認_正常系] - 試験用制御オブジェクトの解放を許可する。
     EXPECT_CALL(mock_cplat, cplat_free(&ctx)).Times(0);
     // [Pre-Assert確認_異常系] - コンテキスト本体を解放しないこと。
     // Act
-    int actual_ret = potr_service_close(&ctx); // [手順] - 終了待ちが完了しないサービスを閉じる。
+    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - 終了待ちが完了しないサービスを閉じる。
     // Assert
     EXPECT_EQ(POTR_ERR_UNKNOWN, actual_ret); // [確認_異常系] - 終了待ち失敗を成功としないこと。
 }

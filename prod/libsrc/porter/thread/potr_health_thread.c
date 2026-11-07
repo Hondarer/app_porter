@@ -86,7 +86,8 @@ static void health_sleep(potr_context *ctx, int path_idx, uint32_t interval_ms)
    待機結果の判定 (真偽値) を返す述語のため共通結果コードの適用対象外。 */
 static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due_ms, uint64_t *last_logged_data_ms)
 {
-    while (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    while (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
+           cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
         uint64_t now = cplat_clock_get_monotonic_ms();
         uint64_t last_ping = cplat_atomic_load_u64(&ctx->last_ping_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
@@ -261,7 +262,8 @@ static void health_thread_func(void *arg)
         session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
     }
 
-    while (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    while (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
+           cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
         if (is_oneway_udp)
         {
@@ -486,7 +488,8 @@ static void tcp_health_thread_func(void *arg)
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_health[service_id=%" PRId64 " path=%d]: starting",
                ctx->service.service_id, path_idx);
 
-    while (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    while (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
+           cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
         /* 固定間隔でスリープ */
         health_sleep(ctx, path_idx, ctx->health_interval_ms);

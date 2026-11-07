@@ -5,6 +5,36 @@
 porter は、アプリケーションと UDP ソケット層の間に抽象レイヤーを置き、非同期送受信・再送制御・ヘルス チェックを透過的に提供します。  
 アプリケーションは `potr_service_open()` または `potr_service_open_from_config()` でサービスを開き、送信側は `potr_service_send(handle, peer_id, ...)` を呼び出すだけで、内部スレッドが送受信・再送・ヘルス チェックをすべて担います。1:1 モードおよび他通信種別では `peer_id` に `POTR_PEER_NA` を指定し、`unicast_bidir` の N:1 モードでは接続中ピアの `peer_id` を指定します。
 
+## ハンドルの寿命と通知の実行
+
+公開ハンドルは、通信コンテキストから分離した軽量な制御情報を指します。  
+登録表で検証し、ハンドル単位の受付状態と使用中参照を保護してから通信コンテキストへ到達します。  
+登録表の保護は検索と登録に限定し、API 本体や送信待ちの間は保持しません。  
+終了済みの制御情報はライブラリ存続中保持し、アドレス再利用による古いハンドルの誤認を防ぎます。
+
+通知先を持つハンドルでは専用通知スレッドを起動します。  
+受信・ヘルス チェック・ピア切断の処理は、状態と通知内容を確定してから動的通知キューへ登録します。  
+通知スレッドは内部状態のロックを保持せずに利用者のコールバックを実行するため、コールバック内のブロッキング送信中も I/O が進行します。  
+通知ノードを再利用し、DATA と PATH 状態はコールバック復帰まで有効な領域に保持します。
+
+正常 close は受付を停止し、受付済み API と送信の完了を待って通信スレッドを停止します。  
+通知生成元がなくなった後にキューを確定し、登録済み通知の完了と通知スレッドの終了を待って資源を回収します。  
+スレッド停止の失敗時は資源を保持し、完了済みの段階を二重処理せず再試行します。
+
+通知領域の確保失敗時は永続する異常理由を設定し、送信キューの空き待ちとチケット待ちを失敗で解除します。  
+open 時に予約した異常通知ノードを先行通知の末尾に登録し、追加確保なしで原因を一度通知します。  
+close の状態と異常理由は分けて管理し、close 中の失敗も同じ回収手順へ合流させます。
+
+```mermaid
+flowchart LR
+    API[公開 API] --> H[登録検証と使用中参照]
+    H --> C[通信コンテキスト]
+    C --> Q[動的通知キュー]
+    Q --> N[通知専用スレッド]
+    N --> U[利用者コールバック]
+    U --> API
+```
+
 ## 役割モデル
 
 porter は通信の参加者を **送信者 (SENDER)** と **受信者 (RECEIVER)** に区別します。
@@ -92,7 +122,7 @@ Table: 送信者 (SENDER) のスレッド構成と役割
 
 受信スレッドが担う処理:
 
-- DATA パケットの受信・受信ウィンドウへの格納・フラグメント結合・コールバック呼び出し
+- DATA パケットの受信・受信ウィンドウへの格納・フラグメント結合・通知キューへの登録
 - 欠番検出と NACK 送出 (reorder_timeout_ms > 0 の場合は待機後に送出)
 - RAW モードのギャップ検出による `POTR_EVENT_DISCONNECTED` 発火 (reorder_timeout_ms > 0 の場合は待機後に発火)
 - FIN / REJECT パケット受信による `POTR_EVENT_DISCONNECTED` 発火
@@ -129,7 +159,11 @@ HT --> SOCK : sendto (PING 要求)\n一定間隔で送信
 RT <-- SOCK : recvfrom\n(DATA / NACK / REJECT / PING 要求 / PING 応答)
 RT --> ST : 再送要求（NACK）・REJECT 通知
 RT --> SOCK : sendto (PING 応答)\nPING 要求受信時に即返答
-RT --> [コールバック] : DATA / CONNECTED / DISCONNECTED
+RT --> NQ : 通知内容を登録
+queue "通知キュー" as NQ
+[通知専用スレッド] as NT
+NQ --> NT : 登録順に取り出す
+NT --> [コールバック] : DATA / CONNECTED / DISCONNECTED
 @enduml
 ```
 
@@ -161,7 +195,11 @@ ST --> PT : peer_id ごとの send_window / 送信先参照
 ST --> SOCK : sendto(peer ごとの dest_addr)
 RT <-- SOCK : recvfrom(DATA / NACK / REJECT / PING)
 RT --> PT : 認証成功後に session triplet でピア検索 / 新規作成
-RT --> [コールバック] : DATA / CONNECTED / DISCONNECTED\n(peer_id 付き)
+RT --> NQ : 通知内容を登録
+queue "通知キュー" as NQ
+[通知専用スレッド] as NT
+NQ --> NT : 登録順に取り出す
+NT --> [コールバック] : DATA / CONNECTED / DISCONNECTED\n(peer_id 付き)
 HT --> PT : 全ピアを巡回
 HT --> SOCK : PING 要求送信 / タイムアウト監視
 @enduml
@@ -275,7 +313,11 @@ CS0 --> RT0 : recv (DATA / PING 要求)
 CSN --> RTN : recv (DATA / PING 要求)
 RT0 --> CS0 : send (PING 応答)
 RTN --> CSN : send (PING 応答)
-RT0 --> [コールバック] : DATA / CONNECTED / DISCONNECTED
+RT0 --> NQ : 通知内容を登録
+queue "通知キュー" as NQ
+[通知専用スレッド] as NT
+NQ --> NT : 登録順に取り出す
+NT --> [コールバック] : DATA / CONNECTED / DISCONNECTED
 RTN --> [コールバック] : DATA / DISCONNECTED
 @enduml
 ```

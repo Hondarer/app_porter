@@ -95,13 +95,32 @@ void client_callback(int64_t, potr_peer_id, potr_event event, const void *, size
     s_cv.notify_all();
 }
 
+bool s_gate_entered = false;
+bool s_gate_release = false;
+int s_gate_send = POTR_OK;
+void gated_callback(int64_t service_id, potr_peer_id peer_id, potr_event event, const void *data, size_t len)
+{
+    if (event != POTR_EVENT_DATA)
+    {
+        record_callback(service_id, peer_id, event, data, len);
+        return;
+    }
+    {
+        std::unique_lock<std::mutex> lock(s_mutex);
+        s_gate_entered = true;
+        s_cv.notify_all();
+        s_cv.wait(lock, [] { return s_gate_release; });
+    }
+    uint8_t reply = 7;
+    s_gate_send = potr_service_send(s_server, peer_id, &reply, sizeof(reply), POTR_SEND_BLOCKING);
+}
 // [サブ手順 名前=handleConcurrencyTest.reentry_callback]
 void reentry_callback(int64_t, potr_peer_id peer_id, potr_event event, const void *data, size_t len)
 {
     if (event == POTR_EVENT_DATA && s_server != nullptr)
     {
         uint8_t reply = 'r';
-        int send_ret = potr_service_send(s_server, peer_id, &reply, sizeof(reply), 0);
+        int send_ret = potr_service_send(s_server, peer_id, &reply, sizeof(reply), POTR_SEND_BLOCKING);
         // [手順] - DATA のコールバック内から、同一サービスへ potr_service_send() を呼び出す。
         int disconnect_ret = potr_peer_disconnect(s_server, peer_id);
         // [手順] - DATA のコールバック内から、同一サービスへ potr_peer_disconnect() を呼び出す。
@@ -429,9 +448,9 @@ TEST_F(handleConcurrencyTest, n1_disconnect_peers_while_sending)
 }
 // [サブ手順参照 名前=handleConcurrencyTest.TearDown]
 
-// N:1 の受信コールバック内から送信、切断、終了を呼ぶと、停止せずに POTR_ERR_UNSUPPORTED を返すことの確認
+// N:1 のコールバック内からブロッキング送信と切断を実行でき、終了だけを拒否することの確認
 // [サブ手順参照 名前=handleConcurrencyTest.SetUp]
-TEST_F(handleConcurrencyTest, n1_api_calls_from_own_callback_return_unsupported)
+TEST_F(handleConcurrencyTest, n1_callback_supports_send_and_disconnect)
 {
     // Arrange
     // [サブ手順参照 名前=handleConcurrencyTest.open_n1]
@@ -454,12 +473,112 @@ TEST_F(handleConcurrencyTest, n1_api_calls_from_own_callback_return_unsupported)
     EXPECT_EQ(POTR_OK, send_ret); // [確認_正常系] - クライアントの送信が成功すること。
     EXPECT_TRUE(done);            // [確認_異常系] - コールバックが停止せずに復帰すること。
     std::lock_guard<std::mutex> lock(s_mutex);
-    EXPECT_EQ(POTR_ERR_UNSUPPORTED, s_reentry_send);
-    // [確認_異常系] - コールバック内の potr_service_send() の戻り値が POTR_ERR_UNSUPPORTED であること。
-    EXPECT_EQ(POTR_ERR_UNSUPPORTED, s_reentry_disconnect);
-    // [確認_異常系] - コールバック内の potr_peer_disconnect() の戻り値が POTR_ERR_UNSUPPORTED であること。
+    EXPECT_EQ(POTR_OK, s_reentry_send);
+    // [確認_正常系] - コールバック内の potr_service_send() が成功すること。
+    EXPECT_EQ(POTR_OK, s_reentry_disconnect);
+    // [確認_正常系] - コールバック内の potr_peer_disconnect() が成功すること。
     EXPECT_EQ(POTR_ERR_UNSUPPORTED, s_reentry_close);
     // [確認_異常系] - コールバック内の potr_service_close() の戻り値が POTR_ERR_UNSUPPORTED であること。
     // (サーバーは閉じられずに残り、TearDown で正常に閉じる)
+}
+// [サブ手順参照 名前=handleConcurrencyTest.TearDown]
+
+// [サブ手順参照 名前=handleConcurrencyTest.SetUp]
+TEST_F(handleConcurrencyTest, concurrent_close_and_send_preserve_handle_lifetime)
+{
+    // Arrange
+    // [サブ手順参照 名前=handleConcurrencyTest.open_tcp_pair]
+    ASSERT_NO_FATAL_FAILURE(open_tcp_pair(19935));
+    potr_context *client = clients[0];
+    std::atomic<int> ready(0);
+    std::atomic<bool> go(false);
+    std::atomic<int> unexpected(0);
+    std::vector<std::thread> threads;
+    // Pre-Assert
+    // Act
+    for (int i = 0; i < 4; ++i)
+    {
+        threads.emplace_back(
+            [&]
+            {
+                uint8_t payload[64] = {};
+                ready.fetch_add(1);
+                while (!go.load())
+                    std::this_thread::yield();
+                for (int n = 0; n < 100; ++n)
+                {
+                    int ret = potr_service_send(client, POTR_PEER_NA, payload, sizeof(payload), POTR_SEND_BLOCKING);
+                    if (ret != POTR_OK && ret != POTR_ERR_CANCELED && ret != POTR_ERR_INVALID_HANDLE)
+                        unexpected.fetch_add(1);
+                }
+            }); // [手順 回数=4] - 同じハンドルで送信を繰り返すスレッドを作成する。
+    }
+    while (ready.load() != 4)
+        std::this_thread::yield();
+    go.store(true);
+    int closed = potr_service_close(client); // [手順] - 送信開始と競合してハンドルを閉じる。
+    clients.clear();
+    for (auto &thread : threads)
+        thread.join();
+    uint8_t value = 1;
+    int stale_send = potr_service_send(client, POTR_PEER_NA, &value, sizeof(value), 0);
+    int stale_disconnect = potr_peer_disconnect(client, 1U);
+    int stale_close = potr_service_close(client);
+    // [手順] - close 完了後の同じ値で各公開操作を実行する。
+    // Assert
+    EXPECT_EQ(POTR_OK, closed);      // [確認_正常系] - 競合中の close を完了できること。
+    EXPECT_EQ(0, unexpected.load()); // [確認_正常系] - 送信が成功または受付状態に対応するエラーで復帰すること。
+    EXPECT_EQ(POTR_ERR_INVALID_HANDLE, stale_send);       // [確認_異常系] - 古いハンドルによる送信を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_HANDLE, stale_disconnect); // [確認_異常系] - 古いハンドルによるピア操作を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_HANDLE, stale_close);      // [確認_異常系] - close 完了後の再 close を拒否すること。
+}
+// [サブ手順参照 名前=handleConcurrencyTest.TearDown]
+// [サブ手順参照 名前=handleConcurrencyTest.SetUp]
+TEST_F(handleConcurrencyTest, close_waits_for_running_callback_and_rejects_callback_send)
+{
+    // Arrange
+    s_gate_entered = false;
+    s_gate_release = false;
+    s_gate_send = POTR_OK;
+    // [サブ手順参照 名前=handleConcurrencyTest.open_n1]
+    ASSERT_NO_FATAL_FAILURE(open_n1(19936, 1, gated_callback));
+    uint8_t data = 3;
+    ASSERT_EQ(POTR_OK, potr_service_send(clients[0], POTR_PEER_NA, &data, sizeof(data), POTR_SEND_BLOCKING));
+    // [状態確認] - 先行通知を生成できること。
+    bool entered = wait_for([] { return s_gate_entered; });
+    std::atomic<bool> finished(false);
+    int actual_ret_close = POTR_ERR_UNKNOWN;
+    int actual_ret_late = POTR_ERR_UNKNOWN;
+    bool waited = false;
+    // Pre-Assert
+    // Act
+    std::thread closer(
+        [&]
+        {
+            actual_ret_close = potr_service_close(server);
+            finished.store(true);
+        }); // [手順] - 実行中コールバックと並行して close する。
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    do
+    {
+        actual_ret_late = potr_service_send(server, POTR_PEER_NA, &data, sizeof(data), 0);
+        std::this_thread::yield();
+    } while (actual_ret_late != POTR_ERR_CANCELED && std::chrono::steady_clock::now() < deadline);
+    waited = !finished.load();
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_gate_release = true;
+        s_cv.notify_all();
+    }
+    closer.join(); // [手順] - コールバックの復帰後に close が終了するまで待つ。
+    server = nullptr;
+    s_server = nullptr;
+    // Assert
+    EXPECT_TRUE(entered);                          // [確認_正常系] - 先行通知を実行中にできたこと。
+    EXPECT_TRUE(waited);                           // [確認_正常系] - コールバック復帰前に close が完了しないこと。
+    EXPECT_EQ(POTR_ERR_CANCELED, actual_ret_late); // [確認_異常系] - 受付停止後の操作を拒否すること。
+    EXPECT_EQ(POTR_ERR_CANCELED,
+              s_gate_send);               // [確認_異常系] - close 中にコールバックから行う新しい送信を拒否すること。
+    EXPECT_EQ(POTR_OK, actual_ret_close); // [確認_正常系] - コールバック完了後に資源を回収すること。
 }
 // [サブ手順参照 名前=handleConcurrencyTest.TearDown]

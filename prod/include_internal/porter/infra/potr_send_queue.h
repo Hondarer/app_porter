@@ -71,6 +71,8 @@ typedef struct potr_internal_send_queue
 {
     potr_internal_payload_elem *entries; /**< ペイロード エレメント バッファー (動的確保。depth 要素)。 */
     uint8_t *payload_pool;               /**< ペイロード プール (動的確保。depth × max_payload バイト)。 */
+    int failure;                         /**< 永続する待機中断理由。mutex で保護します。 */
+    int failure_padding;                 /**< 境界調整。 */
     size_t depth;                        /**< キュー容量 (エントリ数)。 */
     size_t head;                         /**< 読み出し位置 (送信スレッドが使用)。 */
     size_t tail;                         /**< 書き込み位置 (potr_service_send 呼び出し元が使用)。 */
@@ -244,6 +246,9 @@ extern "C"
      *  @param[in,out]  q   送信キュー。
      */
     extern void potr_internal_send_queue_shutdown(potr_internal_send_queue *q);
+
+    /** @brief 異常で全待機を解除します。@param[in,out] q キュー。@param[in] error 原因コード。 */
+    void potr_internal_send_queue_abort(potr_internal_send_queue *q, int error);
 
 #ifdef __cplusplus
 }

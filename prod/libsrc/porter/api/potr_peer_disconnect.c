@@ -18,13 +18,12 @@
 #include <porter/porter_spec.h>
 
 #include <porter/potr_context.h>
+#include <porter/potr_handle.h>
 #include <porter/potr_path_event.h>
 #include <porter/potr_peer_table.h>
 #include <porter/infra/potr_trace.h>
 
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
+static int disconnect_impl(potr_context *handle, potr_peer_id peer_id)
 {
     potr_context *ctx = (potr_context *)handle;
     int64_t service_id;
@@ -60,15 +59,6 @@ int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
         return POTR_ERR_UNSUPPORTED;
     }
 
-    /* N:1 の受信スレッドは peers_mutex を保持したままコールバックを呼ぶ。
-     * 同じスレッドから peers_mutex を取得すると停止するため、停止前に拒否する。 */
-    if (potr_internal_in_own_callback(ctx))
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_peer_disconnect: service_id=%" PRId64 " called from its own callback",
-                   ctx->service.service_id);
-        return POTR_ERR_UNSUPPORTED;
-    }
 
     cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -107,4 +97,23 @@ int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
 
     cplat_local_lock_unlock(ctx->peers_mutex);
     return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
+{
+    potr_context *ctx = NULL;
+    int ret;
+    if (handle == NULL)
+    {
+        return disconnect_impl(NULL, peer_id);
+    }
+    ret = potr_internal_handle_acquire(handle, &ctx);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+    ret = disconnect_impl(ctx, peer_id);
+    potr_internal_handle_release(ctx);
+    return ret;
 }

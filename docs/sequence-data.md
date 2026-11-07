@@ -16,6 +16,8 @@ participant "送信スレッド" as ST
 participant "UDP" as UDP
 participant "受信スレッド\n(受信者)" as RRT
 participant "アプリ\n(受信側)" as RAPP
+participant "通知キュー" as NQ
+participant "通知専用スレッド" as NT
 
 SAPP -> Q: potr_service_send(handle, POTR_PEER_NA, data, len, 0)\n→ エレメントを push して即座に復帰
 SAPP <-- Q: POTR_OK
@@ -30,10 +32,16 @@ UDP -> RRT: recvfrom → DATA パケット受信
 RRT -> RRT: service_id 照合\nセッション識別\n受信ウィンドウへ格納
 
 alt 初回受信 (片方向 type 1-6 かつ health_alive = 0)
-  RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
+  RRT -> NQ: 通知内容を保持して登録
+  NQ -> NT: 登録順に取り出す
+  NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
 end
 
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data, len)
+RRT -> NQ: 通知内容を保持して登録
+
+NQ -> NT: 登録順に取り出す
+
+NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data, len)
 
 @enduml
 ```
@@ -87,6 +95,8 @@ participant "送信スレッド" as ST
 participant "UDP" as UDP
 participant "受信スレッド\n(受信者)" as RRT
 participant "アプリ\n(受信側)" as RAPP
+participant "通知キュー" as NQ
+participant "通知専用スレッド" as NT
 
 SAPP -> Q: potr_service_send(handle, POTR_PEER_NA, data, len=max_payload×3, 0)\nlen が max_payload を超えるためフラグメント化
 
@@ -107,7 +117,11 @@ RRT -> RRT: frag_buf に追加
 UDP -> RRT: DATA[seq=12] 受信
 RRT -> RRT: frag_buf に追加\nフラグメント結合完了
 
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, 結合済みデータ, 全体 len)
+RRT -> NQ: 通知内容を保持して登録
+
+NQ -> NT: 登録順に取り出す
+
+NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, 結合済みデータ, 全体 len)
 
 @enduml
 ```
@@ -176,6 +190,8 @@ participant "UDP\n(送信側)" as SUDP
 participant "UDP\n(受信側)" as RUDP
 participant "受信スレッド" as RRT
 participant "アプリ\n(受信側)" as RAPP
+participant "通知キュー" as NQ
+participant "通知専用スレッド" as NT
 
 ST -> SUDP: DATA[seq=10] 送信
 ST -> SUDP: DATA[seq=11] 送信 (遅延)
@@ -183,7 +199,9 @@ ST -> SUDP: DATA[seq=12] 送信
 
 SUDP -> RUDP: DATA[seq=10] 到着
 RUDP -> RRT: DATA[seq=10] 受信 → 処理 OK
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[10], len)
+RRT -> NQ: 通知内容を保持して登録
+NQ -> NT: 登録順に取り出す
+NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[10], len)
 
 SUDP -> RUDP: DATA[seq=12] 到着 (seq=11 より先に到達)
 
@@ -194,8 +212,12 @@ note over RRT: deadline 内は NACK を保留
 SUDP -> RUDP: DATA[seq=11] 到着 (追い越し解消)
 RUDP -> RRT: DATA[seq=11] 受信\n欠番が埋まった → reorder_pending クリア
 RRT -> RRT: seq=11, 12 の順で取り出し
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[11], len)
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[12], len)
+RRT -> NQ: 通知内容を保持して登録
+NQ -> NT: 登録順に取り出す
+NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[11], len)
+RRT -> NQ: 通知内容を保持して登録
+NQ -> NT: 登録順に取り出す
+NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[12], len)
 
 note over RRT: NACK は送出されなかった
 
@@ -213,6 +235,8 @@ participant "UDP\n(送信側)" as SUDP
 participant "UDP\n(受信側)" as RUDP
 participant "受信スレッド" as RRT
 participant "アプリ\n(受信側)" as RAPP
+participant "通知キュー" as NQ
+participant "通知専用スレッド" as NT
 
 ST -> SUDP: DATA[seq=10] 送信
 ST -> SUDP: DATA[seq=11] 送信 (遅延)
@@ -220,7 +244,9 @@ ST -> SUDP: DATA[seq=12] 送信
 
 SUDP -> RUDP: DATA[seq=10] 到着
 RUDP -> RRT: DATA[seq=10] 受信 → 処理 OK
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[10], len)
+RRT -> NQ: 通知内容を保持して登録
+NQ -> NT: 登録順に取り出す
+NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[10], len)
 
 SUDP -> RUDP: DATA[seq=12] 到着 (seq=11 より先に到達)
 
@@ -231,8 +257,12 @@ note over RRT: deadline 内は DISCONNECTED を保留
 SUDP -> RUDP: DATA[seq=11] 到着 (追い越し解消)
 RUDP -> RRT: DATA[seq=11] 受信\n欠番が埋まった → reorder_pending クリア
 RRT -> RRT: seq=11, 12 の順で取り出し
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[11], len)
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[12], len)
+RRT -> NQ: 通知内容を保持して登録
+NQ -> NT: 登録順に取り出す
+NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[11], len)
+RRT -> NQ: 通知内容を保持して登録
+NQ -> NT: 登録順に取り出す
+NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[12], len)
 
 note over RRT: DISCONNECTED は発火しなかった
 
@@ -251,6 +281,8 @@ participant "送信スレッド" as ST
 participant "UDP" as UDP
 participant "受信スレッド" as RRT
 participant "アプリ\n(受信側)" as RAPP
+participant "通知キュー" as NQ
+participant "通知専用スレッド" as NT
 
 ST -> UDP: DATA[seq=0..15] 送信 (ウィンドウサイズ 16)
 
@@ -270,14 +302,22 @@ ST -> UDP: REJECT[ack_num=0] 送信
 
 UDP -> RRT: REJECT[ack_num=0] 受信
 
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
+RRT -> NQ: 通知内容を保持して登録
+
+NQ -> NT: 登録順に取り出す
+
+NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
 RRT -> RRT: 欠落 seq=0 をスキップ\n次の通番 seq=1 から再開
 
 note over RRT: 次のパケット到着で復帰
 
 UDP -> RRT: DATA[seq=17] 受信
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, ...)
+RRT -> NQ: 通知内容を保持して登録
+NQ -> NT: 登録順に取り出す
+NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
+RRT -> NQ: 通知内容を保持して登録
+NQ -> NT: 登録順に取り出す
+NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, ...)
 
 @enduml
 ```
@@ -295,6 +335,8 @@ participant "UDP\n(送信側)" as SUDP
 participant "UDP\n(受信側)" as RUDP
 participant "受信スレッド" as RRT
 participant "アプリ\n(受信側)" as RAPP
+participant "通知キュー" as NQ
+participant "通知専用スレッド" as NT
 
 ST -> SUDP: DATA[seq=10] 送信
 ST -> SUDP: DATA[seq=11] 送信 (ロスト)
@@ -310,11 +352,17 @@ RUDP -> RRT: DATA[seq=12] 受信
 RRT -> RRT: seq=11 の欠番を検出\n(RAW: NACK は送信しない)
 
 alt reorder_timeout_ms = 0 (即時・既定値)
-  RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
+  RRT -> NQ: 通知内容を保持して登録
+  NQ -> NT: 登録順に取り出す
+  NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
   RRT -> RRT: recv_window を seq=12 でリセット
   RRT -> RRT: DATA[seq=12] をウィンドウから取り出し
-  RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
-  RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[seq=12], len)
+  RRT -> NQ: 通知内容を保持して登録
+  NQ -> NT: 登録順に取り出す
+  NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
+  RRT -> NQ: 通知内容を保持して登録
+  NQ -> NT: 登録順に取り出す
+  NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data[seq=12], len)
 else reorder_timeout_ms > 0 (リオーダー待機)
   RRT -> RRT: タイマー開始\n(deadline = now + reorder_timeout_ms)\n→ 待機中に seq=11 が到着すれば DISCONNECTED 不要
   note over RRT: タイムアウト後に check_reorder_timeout で\nDISCONNECTED 発火・ウィンドウリセット
@@ -337,6 +385,8 @@ participant "ヘルス チェック\nスレッド (送信者)" as HT
 participant "UDP" as UDP
 participant "受信スレッド" as RRT
 participant "アプリ\n(受信側)" as RAPP
+participant "通知キュー" as NQ
+participant "通知専用スレッド" as NT
 
 note over RRT: recv_window.next_seq = 10
 
@@ -349,9 +399,13 @@ UDP -> RRT: PING[seq=13] 受信
 RRT -> RRT: pkt.seq_num(13) != next_seq(10)\n→ ギャップあり (window内)
 
 alt reorder_timeout_ms = 0 (即時・既定値)
-  RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
+  RRT -> NQ: 通知内容を保持して登録
+  NQ -> NT: 登録順に取り出す
+  NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
   RRT -> RRT: recv_window を seq=13 でリセット
-  RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
+  RRT -> NQ: 通知内容を保持して登録
+  NQ -> NT: 登録順に取り出す
+  NT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
 else reorder_timeout_ms > 0 (リオーダー待機)
   RRT -> RRT: タイマー開始 (next_seq=10 の欠番に対して)\n→ 待機中に seq=10〜12 が到着すれば DISCONNECTED 不要
   note over RRT: タイムアウト後に check_reorder_timeout で\nDISCONNECTED 発火・ウィンドウリセット
@@ -360,4 +414,25 @@ end
 note over RRT: seq=10〜12 は配信されない\nnext_seq = 13 に更新
 
 @enduml
+```
+
+## close と登録済み通知
+
+close は API の受付を停止して、受付済み操作と送信の完了を待ちます。  
+通知の生成元が停止した後に通知キューを確定し、すべての登録済み通知を実行してから復帰します。  
+close 中にコールバックが新たに送信を要求した場合は CANCELED で拒否します。
+
+```mermaid
+sequenceDiagram
+    participant A as close 呼び出し元
+    participant H as ハンドル制御
+    participant W as 通信スレッド
+    participant N as 通知専用スレッド
+    A->>H: 受付停止、使用中参照の返却待ち
+    H->>W: 登録済み送信の完了待ち、終了処理
+    W->>N: 終了までに生成した通知を登録
+    H->>W: 通知生成元の停止と join
+    H->>N: キュー確定、登録済み通知の完了待ち
+    N-->>H: 全通知の完了とスレッド終了
+    H-->>A: 通信資源の回収とハンドル無効化
 ```

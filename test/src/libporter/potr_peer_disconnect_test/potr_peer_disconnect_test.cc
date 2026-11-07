@@ -11,6 +11,7 @@
 #include <porter/porter_const.h>
 #include <porter/porter_spec.h>
 #include <porter/potr_context.h>
+#include <porter/potr_handle.h>
 
 #if defined(PLATFORM_LINUX)
     #include <pthread.h>
@@ -57,6 +58,9 @@ class potrDisconnectPeerTest : public Test
     void SetUp() override
     {
         memset(&ctx, 0, sizeof(ctx));
+        ASSERT_EQ(POTR_OK, potr_internal_handle_prepare(&ctx));
+        // [状態確認] - potr_internal_handle_prepare() が成功すること。
+        handle = potr_internal_handle_public(&ctx);
         cplat_local_lock_create(&ctx.peers_mutex);
         cplat_local_lock_create(&ctx.callback_mutex);
         ctx.service.service_id = 42;
@@ -74,11 +78,13 @@ class potrDisconnectPeerTest : public Test
     // [サブ手順 名前=potrDisconnectPeerTest.TearDown]
     void TearDown() override
     {
+        potr_internal_handle_discard(&ctx);
         cplat_local_lock_dispose(ctx.peers_mutex);
         cplat_local_lock_dispose(ctx.callback_mutex);
     }
     // [サブ手順終了]
 
+    potr_context *handle = nullptr;
     potr_context ctx;
     potr_internal_peer_context peer_ctx; /* potr_internal_peer_find_by_id が返す実体 */
 };
@@ -128,7 +134,7 @@ TEST_F(potrDisconnectPeerTest, peer_id_na)
 
     // Act
     int actual_ret = potr_peer_disconnect(
-        &ctx, POTR_PEER_NA); // [手順] - peer_id に POTR_PEER_NA を指定して potr_peer_disconnect() を呼び出す。
+        handle, POTR_PEER_NA); // [手順] - peer_id に POTR_PEER_NA を指定して potr_peer_disconnect() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -154,7 +160,7 @@ TEST_F(potrDisconnectPeerTest, peer_id_all)
 
     // Act
     int actual_ret = potr_peer_disconnect(
-        &ctx, POTR_PEER_ALL); // [手順] - peer_id に POTR_PEER_ALL を指定して potr_peer_disconnect() を呼び出す。
+        handle, POTR_PEER_ALL); // [手順] - peer_id に POTR_PEER_ALL を指定して potr_peer_disconnect() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -181,7 +187,7 @@ TEST_F(potrDisconnectPeerTest, not_multi_peer)
 
     // Act
     int actual_ret =
-        potr_peer_disconnect(&ctx, 1); // [手順] - is_multi_peer=0 の状態で potr_peer_disconnect() を呼び出す。
+        potr_peer_disconnect(handle, 1); // [手順] - is_multi_peer=0 の状態で potr_peer_disconnect() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -213,7 +219,7 @@ TEST_F(potrDisconnectPeerTest, peer_not_found)
 
     // Act
     int actual_ret = potr_peer_disconnect(
-        &ctx, 99); // [手順] - 存在しない peer_id に 99 を指定して potr_peer_disconnect() を呼び出す。
+        handle, 99); // [手順] - 存在しない peer_id に 99 を指定して potr_peer_disconnect() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -259,7 +265,7 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
             1); // [Pre-Assert確認_正常系] - potr_internal_peer_free() が &ctx、&peer_ctx を指定して 1 回呼び出されること。
 
     // Act
-    int actual_ret = potr_peer_disconnect(&ctx, 1); // [手順] - 正常な状態で potr_peer_disconnect() を呼び出す。
+    int actual_ret = potr_peer_disconnect(handle, 1); // [手順] - 正常な状態で potr_peer_disconnect() を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_peer_disconnect() の戻り値が POTR_OK であること。
@@ -327,57 +333,25 @@ TEST_F(potrDisconnectPeerTest, normal_with_callback)
 }
 // [サブ手順参照 名前=potrDisconnectPeerTest.TearDown]
 
-/* ---------- 異常系 (コールバック内からの呼び出し) ---------- */
-
-static potr_context *s_reentry_ctx;
-static int s_reentry_ret;
-
-// [サブ手順 名前=potrDisconnectPeerTest.reentry_callback]
-static void reentry_callback(int64_t service_id, potr_peer_id peer_id, potr_event event, const void *data, size_t len)
-{
-    mock_callback(service_id, peer_id, event, data, len);
-    if (event == POTR_EVENT_DISCONNECTED)
-    {
-        s_reentry_ret = potr_peer_disconnect(s_reentry_ctx, peer_id);
-        // [手順] - DISCONNECTED のコールバック内から、同一サービスへ potr_peer_disconnect() を呼び出す。
-    }
-}
-// [サブ手順終了]
-
-// 自サービスのコールバック内から呼ぶと、停止せずに POTR_ERR_UNSUPPORTED を返すことの確認
+// コールバック内の切断も通常のピア検証へ進むことの確認
 // [サブ手順参照 名前=potrDisconnectPeerTest.SetUp]
-TEST_F(potrDisconnectPeerTest, call_from_own_callback_returns_unsupported)
+TEST_F(potrDisconnectPeerTest, own_callback_uses_normal_peer_validation)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_peer_table;
-    ctx.is_multi_peer = 1;           // [状態] - N:1 モードに設定する。
-    ctx.callback = reentry_callback; // [状態] - コールバック内で再度切断を要求するコールバックを設定する。
-    s_reentry_ctx = &ctx;
-    s_reentry_ret = POTR_OK;
-    cplat_atomic_store_i32(&peer_ctx.health_alive, 1,
-                           CPLAT_MEMORY_ORDER_RELAXED); // [状態] - ピアを疎通済み状態 (health_alive=1) に設定する。
-    peer_ctx.path_logical_alive[0] = 1;
-    ON_CALL(mock_peer_table, potr_internal_peer_find_by_id(&ctx, (potr_peer_id)1))
-        .WillByDefault(Return(&peer_ctx)); // [状態] - ピア 1 の検索結果としてピア コンテキストを返す。
-
+    ctx.is_multi_peer = 1; // [状態] - N:1 モードとする。
+    ON_CALL(mock_peer_table, potr_internal_in_own_callback(&ctx)).WillByDefault(Return(1));
+    // [状態] - 自サービスのコールバック内として応答する。
+    ON_CALL(mock_peer_table, potr_internal_peer_find_by_id(&ctx, 1U)).WillByDefault(Return(nullptr));
+    // [状態] - 指定ピアは切断済みとする。
     // Pre-Assert
-    EXPECT_CALL(mock_peer_table, potr_internal_peer_free(&ctx, &peer_ctx))
-        .Times(1); // [Pre-Assert確認_正常系] - 外側の切断だけがピアを解放すること。
-
     // Act
-    // [サブ手順参照 名前=potrDisconnectPeerTest.reentry_callback]
-    int actual_ret = potr_peer_disconnect(&ctx, 1); // [手順] - 疎通済みのピア 1 を切断する。
-
+    int ret = potr_peer_disconnect(handle, 1U); // [手順] - コールバック内から切断する。
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 外側の potr_peer_disconnect() の戻り値が POTR_OK であること。
-    EXPECT_EQ(POTR_ERR_UNSUPPORTED,
-              s_reentry_ret); // [確認_異常系] - コールバック内の potr_peer_disconnect() の戻り値が POTR_ERR_UNSUPPORTED であること。
-    EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.callback_active, CPLAT_MEMORY_ORDER_RELAXED));
-    // [確認_正常系] - コールバック復帰後は実行中の記録が解除されていること。
+    EXPECT_EQ(POTR_ERR_NOT_FOUND, ret); // [確認_異常系] - 再入拒否ではなくピアの不在を返すこと。
 }
 // [サブ手順参照 名前=potrDisconnectPeerTest.TearDown]
-
 /* ---------- 正常系 (切断済みピア) ---------- */
 
 // ピアが存在し health_alive=0 の場合に切断処理のみ行われコールバックが発火しないことの確認
@@ -408,7 +382,7 @@ TEST_F(potrDisconnectPeerTest, normal_health_dead)
 
     // Act
     int actual_ret =
-        potr_peer_disconnect(&ctx, 1); // [手順] - health_alive=0 の状態で potr_peer_disconnect() を呼び出す。
+        potr_peer_disconnect(handle, 1); // [手順] - health_alive=0 の状態で potr_peer_disconnect() を呼び出す。
 
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_peer_disconnect() の戻り値が POTR_OK であること。

@@ -69,14 +69,14 @@ extern "C"
      *  @param[in]      data    イベントに付随するデータ。付随しない場合は NULL。
      *  @param[in]      len     data の長さ、または PATH イベントの対象 path index。
      *
-     *  callback_mutex を取得してからコールバックを呼び出し、呼び出し後に解放します。\n
+     *  callback_mutex で登録順を保護し、通知専用スレッドへ内容をコピーして引き渡します。\n
      *  ctx または callback が NULL の場合は何もしません。
      */
     extern void potr_internal_callback_emit(potr_context *ctx, potr_peer_id peer_id, potr_event event, const void *data,
                                             size_t len);
 
     /**
-     *  @brief          受信コールバックを発火します (ロック取得なし)。
+     *  @brief          通知を登録します (ロック取得なし)。
      *  @param[in,out]  ctx     対象のセッション コンテキストへのポインター。
      *  @param[in]      peer_id 通知するピア識別子。
      *  @param[in]      event   通知するイベント種別。
@@ -95,7 +95,7 @@ extern "C"
      *  @param[in]      ctx     対象のセッション コンテキストへのポインター。
      *  @return         ctx のコールバック内から呼ばれている場合は 1、それ以外は 0 を返します。
      *
-     *  コールバック内から呼ぶと停止する API (N:1 の送信、close、ピア切断) が、
+     *  同一コールバック内の close が、
      *  停止する前に POTR_ERR_UNSUPPORTED を返すために使います。\n
      *  別のハンドルのコールバック内から呼ばれた場合は 0 を返します。\n
      *  ctx が NULL の場合は 0 を返します。失敗モードのない述語のため共通結果コードの適用対象外。
