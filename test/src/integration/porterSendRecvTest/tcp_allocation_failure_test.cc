@@ -212,7 +212,7 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
     // Arrange
 #if defined(PLATFORM_LINUX)
     const auto target = GetParam();
-    size_t expected_calls = 2;
+    size_t expected_calls = target.size == compress_size ? 1U : 2U;
     if (target.size == wire_size)
     {
         // recv_buf/send_wire_buf と経路別受信バッファー、既存の経路別先読みバッファーです。
