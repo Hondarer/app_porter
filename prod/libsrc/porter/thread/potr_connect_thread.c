@@ -267,6 +267,16 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP connected",
                    ctx->service.service_id, path_idx);
 
+        uint64_t connected_time;
+
+        if (cplat_clock_get_monotonic_ms(&connected_time) != CPLAT_OK)
+        {
+            cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+            potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+            cplat_socket_close(sock);
+            return;
+        }
+
         /* 0→1 の初期化を完了してから接続を公開する。 */
         cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
@@ -277,8 +287,7 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         }
 
         ctx->tcp_conn_fd[path_idx] = sock;
-        cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], cplat_clock_get_monotonic_ms(),
-                               CPLAT_MEMORY_ORDER_RELAXED);
+        cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], connected_time, CPLAT_MEMORY_ORDER_RELAXED);
         cplat_local_lock_unlock(ctx->tcp_state_mutex);
         cplat_local_lock_unlock(ctx->tcp_recv_mutex);
 
@@ -447,6 +456,16 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                 continue;
             }
 
+            uint64_t connected_time;
+
+            if (cplat_clock_get_monotonic_ms(&connected_time) != CPLAT_OK)
+            {
+                cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+                potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+                cplat_socket_close(conn);
+                return;
+            }
+
             /* session_establish_mutex 下でセッション判定と状態更新を行う。 */
             cplat_local_lock_lock(ctx->session_establish_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -508,8 +527,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
             (void)cplat_atomic_fetch_add_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL);
             ctx->tcp_conn_fd[path_idx] = conn;
-            cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], cplat_clock_get_monotonic_ms(),
-                                   CPLAT_MEMORY_ORDER_RELAXED);
+            cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], connected_time, CPLAT_MEMORY_ORDER_RELAXED);
             ctx->tcp_first_pkt_len[path_idx] = pkt_len; /* 先読みバッファー有効化 */
 
             cplat_local_lock_unlock(ctx->tcp_state_mutex);

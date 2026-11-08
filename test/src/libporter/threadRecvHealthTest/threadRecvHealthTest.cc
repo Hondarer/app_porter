@@ -37,6 +37,7 @@ TEST(threadRecvHealthTest, service_disabled)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
@@ -95,6 +96,7 @@ TEST(threadRecvHealthTest, service_before)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{99}), Return(CPLAT_OK)));
@@ -153,6 +155,7 @@ TEST(threadRecvHealthTest, service_at_deadline)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
@@ -211,6 +214,7 @@ TEST(threadRecvHealthTest, service_after_deadline)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{101}), Return(CPLAT_OK)));
@@ -269,6 +273,7 @@ TEST(threadRecvHealthTest, service_inactive_service)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
@@ -322,6 +327,7 @@ TEST(threadRecvHealthTest, peers_disabled)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
@@ -372,6 +378,7 @@ TEST(threadRecvHealthTest, peers_before)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{99}), Return(CPLAT_OK)));
@@ -426,6 +433,7 @@ TEST(threadRecvHealthTest, peers_at_deadline)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
@@ -480,6 +488,7 @@ TEST(threadRecvHealthTest, peers_after_deadline)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{101}), Return(CPLAT_OK)));
@@ -534,6 +543,7 @@ TEST(threadRecvHealthTest, peers_inactive_peer)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
@@ -588,6 +598,7 @@ TEST(threadRecvHealthTest, peers_dead_peer)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
@@ -642,6 +653,7 @@ TEST(threadRecvHealthTest, peers_path_only)
             {
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
+                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
         .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
@@ -796,4 +808,43 @@ TEST(threadRecvHealthTest, preserves_service_state_when_time_arithmetic_fails)
     // Assert
     EXPECT_EQ(123, ctx.peer_port[0]); // [確認_異常系] - 接続情報を保持すること。
     EXPECT_EQ(1, ctx.pending_fin);
+}
+
+// 時計取得失敗時に接続状態を更新せず致命的エラーを通知することの確認
+TEST(threadRecvHealthTest, clock_failure_preserves_path_state)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    thread_recv_slot slot = {};
+    slot.ctx = &ctx;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.n_path = 1;
+    ctx.health_timeout_ms = 100;
+    ctx.path_last_recv_ts[0].tv_sec = 10;
+    ctx.last_recv_ts.tv_sec = 10;
+    ctx.peer_port[0] = 123;
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_clock_get_monotonic(_)).WillOnce(Return(CPLAT_ERR_UNKNOWN));
+
+    // [Pre-Assert確認_異常系] - 監視用の時計を 1 回取得すること。
+    // [Pre-Assert手順] - 時計取得失敗を返す。
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_service_all_paths(_)).Times(0);
+
+    // [Pre-Assert確認_異常系] - 不正な時刻で切断を判断しないこと。
+
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_abort(&ctx.send_queue, POTR_ERR_IO)).Times(1);
+
+    // [Pre-Assert確認_異常系] - 送信キューの待機を 1 回解除すること。
+
+    // Act
+    thread_recv_health_check_service(&slot); // [手順] - 監視中の時刻取得を失敗させる。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_IO, cplat_atomic_load_i32(
+                               &ctx.fatal_error,
+                               CPLAT_MEMORY_ORDER_ACQUIRE)); // [確認_異常系] - 呼び出し元へ入出力失敗を通知すること。
+    EXPECT_EQ(123, ctx.peer_port[0]);                        // [確認_異常系] - パス状態を変更しないこと。
 }

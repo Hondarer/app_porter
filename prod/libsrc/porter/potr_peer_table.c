@@ -50,7 +50,11 @@ static int peer_generate_session(potr_internal_peer_context *peer)
         return potr_internal_result_from_socket_result(ret, NULL);
     }
 
-    cplat_clock_get_realtime(&peer->session_ts);
+    ret = cplat_clock_get_realtime(&peer->session_ts);
+    if (ret != CPLAT_OK)
+    {
+        return potr_internal_result_from_socket_result(ret, NULL);
+    }
 
     return POTR_OK;
 }
@@ -402,7 +406,14 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
         return NULL;
     }
 
-    cplat_local_lock_create(&peer->send_window_mutex);
+    if (cplat_local_lock_create(&peer->send_window_mutex) != CPLAT_OK)
+    {
+        potr_internal_window_dispose(&peer->recv_window);
+        potr_internal_window_dispose(&peer->send_window);
+        peer->active = 0;
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_internal_peer_create: send_window mutex creation failed");
+        return NULL;
+    }
 
     /* フラグメント結合バッファーを確保する。 */
     peer->frag_buf = (uint8_t *)cplat_malloc(ctx->global.max_message_size);

@@ -65,3 +65,37 @@ TEST(potrPeerTableTest, dispose_clears_ownership)
     EXPECT_EQ(nullptr, ctx.peers);       // [確認_正常系] - テーブルを NULL にすること。
     EXPECT_EQ(nullptr, ctx.peers_mutex); // [確認_正常系] - ロックを NULL にすること。
 }
+
+// ピアの送信ロック生成失敗時にウィンドウを破棄して未使用へ戻すことの確認
+TEST(potrPeerTableTest, peer_mutex_failure_rolls_back_windows)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_peer_context peer = {};
+    ctx.peers = &peer;
+    ctx.max_peers = 1;
+    cplat_ipv4_endpoint sender = {};
+    ON_CALL(mock_cplat, cplat_random_bytes(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_clock_get_realtime(_)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_porter, potr_internal_window_init(_, _, _, _)).WillByDefault(Return(POTR_OK));
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_create(_)).WillOnce(Return(CPLAT_ERR_UNKNOWN));
+
+    // [Pre-Assert確認_異常系] - ピアの送信ロックを 1 回作成すること。
+    // [Pre-Assert手順] - 生成失敗を返す。
+    EXPECT_CALL(mock_porter, potr_internal_window_dispose(&peer.recv_window)).Times(1);
+    EXPECT_CALL(mock_porter, potr_internal_window_dispose(&peer.send_window)).Times(1);
+
+    // [Pre-Assert確認_異常系] - 初期化済みの送受信ウィンドウを各 1 回破棄すること。
+
+    // Act
+    auto *result = potr_internal_peer_create(&ctx, &sender, 0); // [手順] - ピア生成中のロック作成を失敗させる。
+
+    // Assert
+    EXPECT_EQ(nullptr, result); // [確認_異常系] - ピアの生成に失敗すること。
+    EXPECT_EQ(0, peer.active);  // [確認_異常系] - スロットを未使用へ戻すこと。
+    EXPECT_EQ(0, ctx.n_peers);  // [確認_異常系] - ピア数を増やさないこと。
+}

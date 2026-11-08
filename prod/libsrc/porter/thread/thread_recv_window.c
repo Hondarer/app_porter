@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include <cplat/base/platform.h>
+#include <porter/infra/potr_send_queue.h>
 #include <cplat/clock/timespec.h>
 #include <cplat/crypto/crypto.h>
 #include <cplat/net/byteorder.h>
@@ -228,7 +229,13 @@ static int reorder_gap_ready(thread_recv_slot *slot, uint32_t nack_num)
     {
         uint32_t effective_ms;
 
-        cplat_clock_get_monotonic(&now_ts);
+        if (cplat_clock_get_monotonic(&now_ts) != CPLAT_OK)
+        {
+            cplat_atomic_store_i32(&slot->ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+            potr_internal_send_queue_abort(&slot->ctx->send_queue, POTR_ERR_IO);
+            return 0;
+        }
+
         effective_ms = ms;
 
         /*
@@ -251,7 +258,12 @@ static int reorder_gap_ready(thread_recv_slot *slot, uint32_t nack_num)
         return 0;
     }
 
-    cplat_clock_get_monotonic(&now_ts);
+    if (cplat_clock_get_monotonic(&now_ts) != CPLAT_OK)
+    {
+        cplat_atomic_store_i32(&slot->ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+        potr_internal_send_queue_abort(&slot->ctx->send_queue, POTR_ERR_IO);
+        return 0;
+    }
 
     if (cplat_timespec_cmp(&now_ts, slot->reorder_deadline_ts) >= 0)
     {
@@ -354,7 +366,15 @@ static int slot_drain_recv_window(thread_recv_slot *slot)
 
 static int nack_is_duplicate(thread_recv_slot *slot, uint32_t ack_num)
 {
-    uint64_t now_ms = cplat_clock_get_monotonic_ms();
+    uint64_t now_ms;
+
+    if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
+    {
+        cplat_atomic_store_i32(&slot->ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+        potr_internal_send_queue_abort(&slot->ctx->send_queue, POTR_ERR_IO);
+        return 1;
+    }
+
     int dedup_idx;
 
     /*

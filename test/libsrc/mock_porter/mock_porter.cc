@@ -65,6 +65,7 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_peer_table_send_fin(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_result_from_error(_)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_result_from_socket_result(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_send_queue_abort(_, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_complete(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_dispose(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_init(_, _, _)).WillByDefault(Return(0));

@@ -12,6 +12,7 @@
  */
 
 #include <cplat/base/platform.h>
+#include <porter/infra/potr_send_queue.h>
 #include <string.h>
 #include <inttypes.h>
 
@@ -434,9 +435,17 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
         /* PING 受信: 最終受信時刻と受信状態を更新する。 */
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: PING seq=%u",
                    ctx->service.service_id, path_idx, (unsigned)pkt.seq_num);
+        uint64_t ping_time;
+
+        if (cplat_clock_get_monotonic_ms(&ping_time) != CPLAT_OK)
+        {
+            cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+            potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+            return POTR_ERR_IO;
+        }
+
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-        cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], cplat_clock_get_monotonic_ms(),
-                               CPLAT_MEMORY_ORDER_RELAXED);
+        cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], ping_time, CPLAT_MEMORY_ORDER_RELAXED);
         ping_state_changed = thread_recv_set_path_ping_state(&ctx->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
 
         if (pkt.payload_len >= POTR_MAX_PATH && pkt.payload != NULL)
@@ -622,7 +631,16 @@ static void tcp_recv_thread_func(void *arg)
                     /* ポーリング タイムアウト: PING 受信時刻を確認する。 */
                     uint64_t last =
                         cplat_atomic_load_u64(&ctx->tcp_last_ping_recv_ms[path_idx], CPLAT_MEMORY_ORDER_RELAXED);
-                    uint64_t elapsed = cplat_clock_get_monotonic_ms() - last;
+                    uint64_t now;
+
+                    if (cplat_clock_get_monotonic_ms(&now) != CPLAT_OK)
+                    {
+                        cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+                        potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+                        break;
+                    }
+
+                    uint64_t elapsed = now - last;
                     if (last > 0 && elapsed > (uint64_t)ctx->health_timeout_ms)
                     {
                         int ping_state_changed;

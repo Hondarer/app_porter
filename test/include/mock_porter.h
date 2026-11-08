@@ -73,6 +73,7 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_peer_table_send_fin")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_result_from_error")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_result_from_socket_result")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_abort")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_complete")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_dispose")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_init")
@@ -193,6 +194,7 @@ class Mock_porter
     MOCK_METHOD(void, potr_internal_peer_table_send_fin, (potr_context * ctx));
     MOCK_METHOD(int, potr_internal_result_from_error, (const cplat_error *detail));
     MOCK_METHOD(int, potr_internal_result_from_socket_result, (int cplat_result, const cplat_error *detail));
+    MOCK_METHOD(void, potr_internal_send_queue_abort, (potr_internal_send_queue * q, int error));
     MOCK_METHOD(void, potr_internal_send_queue_complete, (potr_internal_send_queue * q));
     MOCK_METHOD(void, potr_internal_send_queue_dispose, (potr_internal_send_queue * q));
     MOCK_METHOD(int, potr_internal_send_queue_init, (potr_internal_send_queue * q, size_t depth, uint16_t max_payload));
@@ -269,17 +271,19 @@ class Mock_porter
 
     MOCK_METHOD(int, api_open_paths_tcp, (potr_context * ctx, potr_role role));
 
-    MOCK_METHOD(int, api_paths_resolve_ipv4, (const char * host, uint32_t * address_out));
+    MOCK_METHOD(int, api_paths_resolve_ipv4, (const char *host, uint32_t *address_out));
 
-    MOCK_METHOD(int, api_paths_parse_ipv4, (const char * text, uint32_t * address_out));
+    MOCK_METHOD(int, api_paths_parse_ipv4, (const char *text, uint32_t *address_out));
 
-    MOCK_METHOD(int, thread_connect_read_first_packet, (cplat_socket fd, uint8_t * buf, size_t max_buf, size_t * len_out, int timeout_ms));
+    MOCK_METHOD(int, thread_connect_read_first_packet,
+                (cplat_socket fd, uint8_t *buf, size_t max_buf, size_t *len_out, int timeout_ms));
 
-    MOCK_METHOD(int, thread_connect_session_compare, (const potr_context * ctx, const potr_packet * pkt));
+    MOCK_METHOD(int, thread_connect_session_compare, (const potr_context *ctx, const potr_packet *pkt));
 
     MOCK_METHOD(cplat_socket, thread_connect_with_timeout, (potr_context * ctx, int path_idx));
 
-    MOCK_METHOD(int, thread_connect_peer_allowed, (const potr_context * ctx, int path_idx, const cplat_ipv4_endpoint * peer_addr));
+    MOCK_METHOD(int, thread_connect_peer_allowed,
+                (const potr_context *ctx, int path_idx, const cplat_ipv4_endpoint *peer_addr));
 
     MOCK_METHOD(void, thread_recv_health_check_peers, (potr_context * ctx));
 

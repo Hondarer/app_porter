@@ -16,6 +16,7 @@
  */
 
 #include <cplat/base/platform.h>
+#include <porter/infra/potr_send_queue.h>
 #include <string.h>
 #include <inttypes.h>
 
@@ -102,7 +103,15 @@ static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due
     while (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
            cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
-        uint64_t now = cplat_clock_get_monotonic_ms();
+        uint64_t now;
+
+        if (cplat_clock_get_monotonic_ms(&now) != CPLAT_OK)
+        {
+            cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+            potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+            return 0;
+        }
+
         uint64_t last_ping = cplat_atomic_load_u64(&ctx->last_ping_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
         uint64_t last_data = cplat_atomic_load_u64(&ctx->last_valid_data_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
         uint64_t due_ms;
@@ -280,7 +289,17 @@ static void health_thread_func(void *arg)
     potr_context *ctx = (potr_context *)arg;
     potr_internal_packet_session_hdr shdr;
     int is_oneway_udp = is_oneway_udp_type(ctx->service.type);
-    uint64_t initial_ping_due_ms = cplat_clock_get_monotonic_ms() + (uint64_t)ctx->health_interval_ms;
+    uint64_t initial_ping_due_ms;
+
+    if (cplat_clock_get_monotonic_ms(&initial_ping_due_ms) != CPLAT_OK)
+    {
+        cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+        potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+        cplat_atomic_store_i32(&ctx->health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+        return;
+    }
+
+    initial_ping_due_ms += (uint64_t)ctx->health_interval_ms;
     uint64_t last_logged_data_ms = 0U;
 
     shdr.service_id = ctx->service.service_id;
@@ -503,12 +522,22 @@ static void health_thread_func(void *arg)
 
             if (is_oneway_udp && sent_any)
             {
-                cplat_atomic_store_u64(&ctx->last_ping_send_ms, cplat_clock_get_monotonic_ms(),
-                                       CPLAT_MEMORY_ORDER_RELAXED);
+                uint64_t ping_time;
+
+                if (cplat_clock_get_monotonic_ms(&ping_time) != CPLAT_OK)
+                {
+                    cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+                    potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+                    break;
+                }
+
+                cplat_atomic_store_u64(&ctx->last_ping_send_ms, ping_time, CPLAT_MEMORY_ORDER_RELAXED);
                 last_logged_data_ms = 0U;
             }
         }
     }
+
+    cplat_atomic_store_i32(&ctx->health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
 
     return;
 }

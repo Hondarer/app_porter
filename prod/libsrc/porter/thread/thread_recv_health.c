@@ -12,6 +12,7 @@
  */
 
 #include <cplat/base/platform.h>
+#include <porter/infra/potr_send_queue.h>
 #include <string.h>
 #include <inttypes.h>
 
@@ -45,7 +46,13 @@ void thread_recv_health_check_peers(potr_context *ctx)
     cplat_timespec now_ts;
     int i;
 
-    cplat_clock_get_monotonic(&now_ts);
+    if (cplat_clock_get_monotonic(&now_ts) != CPLAT_OK)
+    {
+        cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+        potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+        return;
+    }
+
     int k;
     int should_wake_health = 0;
 
@@ -162,7 +169,12 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
     if (ctx->health_timeout_ms == 0)
         return;
 
-    cplat_clock_get_monotonic(&now_ts);
+    if (cplat_clock_get_monotonic(&now_ts) != CPLAT_OK)
+    {
+        cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+        potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+        return;
+    }
 
     /* パスごとのタイムアウトを判定し、peer_port をクリアする。 */
     for (i = 0; i < ctx->n_path; i++)

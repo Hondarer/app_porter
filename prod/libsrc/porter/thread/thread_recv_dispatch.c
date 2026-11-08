@@ -99,6 +99,11 @@ static int dispatch_ping(thread_recv_slot *slot, const potr_packet *pkt, int pat
     potr_context *ctx = slot->ctx;
     int ping_state_changed = thread_recv_update_path_health(slot, path_idx);
 
+    if (cplat_atomic_load_i32(&slot->ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) != POTR_OK)
+    {
+        return POTR_ERR_IO;
+    }
+
     if (pkt->payload_len >= POTR_MAX_PATH && pkt->payload != NULL)
     {
         thread_recv_apply_remote_path_ping_state(slot->remote_path_ping_state, pkt->payload, POTR_MAX_PATH);

@@ -61,7 +61,11 @@ static int generate_session(potr_context *ctx)
         return ret;
     }
 
-    cplat_clock_get_realtime(&ctx->session_ts);
+    ret = cplat_clock_get_realtime(&ctx->session_ts);
+    if (ret != CPLAT_OK)
+    {
+        return ret;
+    }
 
     cplat_atomic_store_u64(&ctx->last_ping_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
     cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
@@ -464,8 +468,8 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
                (int)role);
 
     /*
-     * role と callback の整合性のうち、設定の読み込み前に確定できる部分だけを検査する。
-     * SENDER と callback の完全な検査は、設定の読み込み後に行う。
+     * role と callback の整合性のうち、通信種別に依存しない部分を先に検査する。
+     * SENDER と callback の完全な検査は、通信種別を確認してから行う。
      * POTR_TYPE_UNICAST_BIDIR と POTR_TYPE_TCP_BIDIR の SENDER は callback が必須であるため、
      * 通信種別が必要になる。
      */

@@ -14,6 +14,7 @@
 #include <inttypes.h>
 
 #include <cplat/base/platform.h>
+#include <porter/infra/potr_send_queue.h>
 #include <porter/porter_const.h>
 #include <porter/protocol/packet.h>
 #include <porter/protocol/window.h>
@@ -193,7 +194,13 @@ int thread_recv_update_path_health(thread_recv_slot *slot, int path_idx)
 {
     cplat_timespec now_ts;
 
-    cplat_clock_get_monotonic(&now_ts);
+    if (cplat_clock_get_monotonic(&now_ts) != CPLAT_OK)
+    {
+        cplat_atomic_store_i32(&slot->ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+        potr_internal_send_queue_abort(&slot->ctx->send_queue, POTR_ERR_IO);
+        return 0;
+    }
+
     *slot->last_recv_ts = now_ts;
     slot->path_last_recv_ts[path_idx] = now_ts;
 

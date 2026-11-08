@@ -377,7 +377,6 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
 /**
  *  @brief          ワーカーの完了を監視するスレッド。
  *  @param[in]      arg WorkerMonitorArg へのポインター。
- *  @return         スレッド終了時は 0 を返します。
  *
  *  ワーカーからの完了通知を受け取ると、ワーカーの状態を「空き」に更新し
  *  イベントをシグナル状態にします。

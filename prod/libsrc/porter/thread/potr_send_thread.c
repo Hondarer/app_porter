@@ -251,8 +251,16 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
 
         if (sent_any && should_track_valid_data_send_time(ctx))
         {
-            cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, cplat_clock_get_monotonic_ms(),
-                                   CPLAT_MEMORY_ORDER_RELAXED);
+            uint64_t sent_time;
+
+            if (cplat_clock_get_monotonic_ms(&sent_time) != CPLAT_OK)
+            {
+                cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+                potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+                return;
+            }
+
+            cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, sent_time, CPLAT_MEMORY_ORDER_RELAXED);
             potr_internal_health_thread_wake(ctx);
         }
     }
@@ -457,7 +465,7 @@ static void send_thread_func(void *arg)
     potr_context *ctx = (potr_context *)arg;
     potr_internal_payload_elem first;
 
-    for (;;)
+    while (cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
         /* キューからエントリを取り出す (ブロッキング)。 */
         if (potr_internal_send_queue_pop(&ctx->send_queue, &first, &ctx->send_thread_running) != POTR_OK)
@@ -489,12 +497,29 @@ static void send_thread_func(void *arg)
                 if (pack_wait_ms > 0)
                 {
                     /* パッキング待ちあり: タイムアウトまで追加エントリを待ち合わせる。 */
-                    uint64_t deadline = cplat_clock_get_monotonic_ms() + pack_wait_ms;
+                    uint64_t deadline;
+
+                    if (cplat_clock_get_monotonic_ms(&deadline) != CPLAT_OK)
+                    {
+                        cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+                        potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+                        goto complete_packed;
+                    }
+
+                    deadline += pack_wait_ms;
                     potr_internal_payload_elem next;
 
                     for (;;)
                     {
-                        uint64_t now = cplat_clock_get_monotonic_ms();
+                        uint64_t now;
+
+                        if (cplat_clock_get_monotonic_ms(&now) != CPLAT_OK)
+                        {
+                            cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+                            potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+                            goto complete_packed;
+                        }
+
                         uint32_t remaining;
                         size_t elem_size;
                         size_t crypto_tag_overhead;
@@ -587,6 +612,7 @@ static void send_thread_func(void *arg)
             /* 外側パケットを構築して送信する。 */
             flush_packed(ctx, packed_len);
 
+        complete_packed:
             /* デキューした全エントリ分の inflight を減算する。 */
             {
                 int i;
@@ -598,6 +624,8 @@ static void send_thread_func(void *arg)
             }
         }
     }
+
+    cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
 
     return;
 }
