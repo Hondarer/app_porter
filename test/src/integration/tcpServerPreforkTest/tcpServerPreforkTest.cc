@@ -5,9 +5,9 @@
 #include <testfw.h>
 #if defined(PLATFORM_WINDOWS)
     #include <cplat/base/windows_sdk.h>
+    #include <cplat/crt/path.h>
     #include <cplat/crt/stdlib.h>
     #include <cplat/crt/stdio.h>
-    #include <cplat/win32/win32.h>
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <chrono>
@@ -83,7 +83,9 @@ int exercise(const int capacity)
     sockaddr_in endpoint = {};
     endpoint.sin_family = AF_INET;
     endpoint.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    if (bind(probe.value, reinterpret_cast<sockaddr *>(&endpoint), sizeof(endpoint)) != 0)
+    // testfw.h の using namespace std があると、第 3 引数が size_t の bind は std::bind になる。
+    // see: https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
+    if (::bind(probe.value, reinterpret_cast<sockaddr *>(&endpoint), static_cast<int>(sizeof(endpoint))) != 0)
         return -1;
     int address_size = sizeof(endpoint);
     if (getsockname(probe.value, reinterpret_cast<sockaddr *>(&endpoint), &address_size) != 0)
@@ -102,9 +104,15 @@ int exercise(const int capacity)
     ServerProcess server;
     if (server.job == nullptr)
         return -1;
+    // CreateProcessU は win32.h に extern "C" が無く、C++ から libcplat の実体へリンクできない。
+    // see: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+    wchar_t wide_command[4096];
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, command, -1, wide_command,
+                            static_cast<int>(sizeof(wide_command) / sizeof(wide_command[0]))) == 0)
+        return -1;
     STARTUPINFOW info = {};
     info.cb = sizeof(info);
-    if (!CreateProcessU(nullptr, command, nullptr, nullptr, FALSE, CREATE_SUSPENDED, nullptr, nullptr, &info,
+    if (!CreateProcessW(nullptr, wide_command, nullptr, nullptr, FALSE, CREATE_SUSPENDED, nullptr, nullptr, &info,
                         &server.process))
         return -1;
     if (!AssignProcessToJobObject(server.job, server.process.hProcess))
