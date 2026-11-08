@@ -24,7 +24,9 @@
  *  @param[in]      wire_hdr        POTR_PACKET_HEADER_SIZE バイト以上の受信ヘッダー。
  *  @param[in]      log_prefix      ログの接頭辞。
  *  @param[in]      path_idx        TCP の経路番号。UDP は -1 を指定します。
- *  @return         成功時は POTR_OK、認証失敗時は POTR_ERR_PROTOCOL を返します。
+ *  @return         成功時は POTR_OK、受信形式不正または認証失敗時は POTR_ERR_PROTOCOL を返します。
+ *                  メモリ不足は POTR_ERR_OUT_OF_MEMORY、ローカルの引数・容量・範囲の不整合は
+ *                  POTR_ERR_INVALID_ARGUMENT、その他の内部失敗は POTR_ERR_UNKNOWN です。
  *  @note           ポインター引数に NULL は許可しません。所有権は移動しません。
  *                  同じ ctx の復号バッファーを並行して使用しないでください。
  */

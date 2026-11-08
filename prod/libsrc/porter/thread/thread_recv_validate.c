@@ -22,6 +22,25 @@
 
 #include "thread_recv_validate.h"
 
+/* 認証不成立と内部処理失敗を通信側でも区別する。 */
+static int authentication_result(const int ret)
+{
+    if (ret == CPLAT_ERR_AUTHENTICATION_FAILED)
+    {
+        return POTR_ERR_PROTOCOL;
+    }
+    if (ret == CPLAT_ERR_OUT_OF_MEMORY)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    if (ret == CPLAT_ERR_INVALID_ARGUMENT || ret == CPLAT_ERR_BUFFER_TOO_SMALL || ret == CPLAT_ERR_OUT_OF_RANGE)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    /* 他の分類へ写せない backend の失敗は、内部障害として通知する。 */
+    return POTR_ERR_UNKNOWN;
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const uint8_t *wire_hdr,
@@ -65,6 +84,7 @@ int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const u
      */
     if ((pkt->flags & POTR_FLAG_ENCRYPTED) && (pkt->flags & (POTR_FLAG_DATA | POTR_FLAG_PING)))
     {
+        int decrypt_ret;
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
         size_t dec_len = ctx->crypto_buf_size; /* 呼び出し時は出力先の容量、復帰後は平文のバイト数 */
         uint32_t sid_nbo = cplat_hton32(pkt->session_id);
@@ -76,22 +96,26 @@ int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const u
         memcpy(nonce + 6, &seq_nbo, 4);
         memset(nonce + 10, 0, 2);
 
-        if (cplat_crypto_decrypt(ctx->recv_crypto_buf, &dec_len, pkt->payload, pkt->payload_len,
-                                 ctx->service.encrypt_key, nonce, wire_hdr, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+        if (pkt->payload_len < POTR_CRYPTO_TAG_SIZE)
+        {
+            return POTR_ERR_PROTOCOL;
+        }
+        decrypt_ret = cplat_crypto_decrypt(ctx->recv_crypto_buf, &dec_len, pkt->payload, pkt->payload_len,
+                                           ctx->service.encrypt_key, nonce, wire_hdr, POTR_PACKET_HEADER_SIZE);
+        if (decrypt_ret != CPLAT_OK)
         {
             if (path_idx >= 0)
             {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                           "%s[service_id=%" PRId64 " path=%d]: decrypt failed (auth) seq=%u", log_prefix,
-                           ctx->service.service_id, path_idx, (unsigned)pkt->seq_num);
+                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 " path=%d]: decrypt failed seq=%u",
+                           log_prefix, ctx->service.service_id, path_idx, (unsigned)pkt->seq_num);
             }
             else
             {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 "]: decrypt failed (auth) seq=%u",
-                           log_prefix, ctx->service.service_id, (unsigned)pkt->seq_num);
+                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 "]: decrypt failed seq=%u", log_prefix,
+                           ctx->service.service_id, (unsigned)pkt->seq_num);
             }
 
-            return POTR_ERR_PROTOCOL;
+            return authentication_result(decrypt_ret);
         }
 
         /*
@@ -137,6 +161,7 @@ int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const u
          * 正本は app/porter/docs/config.md の「ノンス構成」節である。
          */
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
+        int decrypt_ret;
         uint8_t dummy[1];
         size_t dummy_len = sizeof(dummy); /* 呼び出し時は出力先の容量、復帰後は平文のバイト数 */
         uint32_t val;
@@ -160,22 +185,24 @@ int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const u
         memcpy(nonce + 6, &val_nbo, 4);
         memset(nonce + 10, 0, 2);
 
-        if (cplat_crypto_decrypt(dummy, &dummy_len, pkt->payload, POTR_CRYPTO_TAG_SIZE, ctx->service.encrypt_key, nonce,
-                                 wire_hdr, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+        decrypt_ret = cplat_crypto_decrypt(dummy, &dummy_len, pkt->payload, POTR_CRYPTO_TAG_SIZE,
+                                           ctx->service.encrypt_key, nonce, wire_hdr, POTR_PACKET_HEADER_SIZE);
+        if (decrypt_ret != CPLAT_OK)
         {
             if (path_idx >= 0)
             {
                 POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                           "%s[service_id=%" PRId64 " path=%d]: tag verify failed flags=0x%04x", log_prefix,
+                           "%s[service_id=%" PRId64 " path=%d]: tag verification failed flags=0x%04x", log_prefix,
                            ctx->service.service_id, path_idx, (unsigned)pkt->flags);
             }
             else
             {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 "]: tag verify failed flags=0x%04x",
-                           log_prefix, ctx->service.service_id, (unsigned)pkt->flags);
+                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                           "%s[service_id=%" PRId64 "]: tag verification failed flags=0x%04x", log_prefix,
+                           ctx->service.service_id, (unsigned)pkt->flags);
             }
 
-            return POTR_ERR_PROTOCOL;
+            return authentication_result(decrypt_ret);
         }
     }
 

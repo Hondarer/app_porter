@@ -134,24 +134,32 @@ Linux では複数の子プロセスが同じ listen ソケットに対して `a
 
 ### Windows 実装
 
-Windows では `fork()` がないため、親プロセスが `accept()` を行い、空きワーカーにソケット ハンドルを渡す方式を採用しています。
+Windows では `fork()` がないため、親プロセスが `accept()` を行い、空きワーカーへ `WSADuplicateSocketW()` で複製したソケット情報を引き渡す方式を採用しています。
 
-ワーカーとの通信には名前付きパイプを使用します。ワーカーは `--worker <pipe_name> --conns-per-worker <N>` 引数付きで起動されます。
+ワーカーとの通信には名前付きパイプを使用します。  
+ワーカーは `--worker <pipe_name> --conns-per-worker <N>` 引数付きで起動されます。
 
 `--conns-per-worker 1` の動作:
 
-1. 親プロセスが名前付きパイプを作成
-2. `CreateProcess()` でワーカー プロセスを起動
-3. ワーカーはパイプに接続して待機
-4. 親が `accept()` で接続を受け付け
-5. 空きワーカーを探し、パイプ経由でソケット ハンドルを送信
-6. ワーカーは処理完了後、パイプ経由で完了を通知 (done=1)
+1. 親プロセスがワーカーごとの名前付きパイプと監視スレッドを作成
+2. `CreateProcess()` でワーカー プロセスを起動し、ワーカーはパイプへ接続して待機
+3. 親が `accept()` でクライアント接続を受け付け
+4. 稼働中の空きワーカーの接続枠を 1 つ予約 (`pending = 1`) し、そのワーカーの PID を指定した `WSADuplicateSocketW()` で `WSAPROTOCOL_INFOW` を作成してパイプへ送信
+5. ワーカーが `WSASocketW()` で共有ソケットを復元し、成否を含む型付きの受領通知 (`WORKER_ACK`) を返信 (返信失敗時は復元したソケットをワーカー側でクローズ)
+6. 親は受領通知またはワーカー終了を確認してから親側のソケット参照を閉じ、ワーカーはセッション完了後に型付きの完了通知 (`WORKER_DONE`) を返信
 
 `--conns-per-worker N` (N ≥ 2) の動作:
 
-各ワーカーが `PeekNamedPipe()` でパイプを非ブロッキングで確認しながら `select()` でアクティブなソケットを監視するイベント ループを使用します。接続が閉じるたびに完了通知を 1 バイト送信します。
+各ワーカーが `PeekNamedPipe()` でパイプを非ブロッキングで確認しながら、`select()` でアクティブな複数ソケットを監視するイベント ループを実行します。  
+ソケットの復元時に型付きの `WORKER_ACK`、各接続の終了時に型付きの `WORKER_DONE` を親へ送信します。
 
-各ワーカーに対して監視スレッドが割り当てられ、完了通知を受け取るたびに `conn_count` をデクリメントし、空きが生じたらイベントをシグナル状態にします。`find_available_worker()` は全ワーカーが満杯の場合、`WaitForMultipleObjects()` でいずれかに空きが生じるまで待機します。
+親側パイプの読み手はワーカーごとの監視スレッド (`worker_monitor_thread`) だけに限定し、接続を割り当てるスレッドはパイプを直接読み取りません。  
+監視スレッドは型付き応答の `WORKER_ACK` と `WORKER_DONE` を振り分け、受領済み接続数 (`conn_count`)、受領待ちの予約数 (`pending`)、稼働状態 (`alive`)、および空き通知イベントを同じロック (`state_lock`) の下で更新します。  
+`WORKER_ACK` の成功時だけ予約を受領済み接続数へ計上し、複製・送信・復元の失敗時は予約を取り消して親側のソケット参照を閉じます。
+
+ワーカー プロセスの終了やパイプの切断・転送失敗を検出した場合は、そのワーカーを稼働停止 (`alive = 0`) として以降の割り当て対象から除外します。  
+`find_available_worker()` は稼働中かつ `conn_count + pending < conns_per_worker` のワーカーを探して予約を行い、稼働中の全ワーカーが満杯の場合は `WaitForMultipleObjects()` で空きが生じるまで待機します。  
+稼働中のワーカーがなくなった場合は `-1` を返し、親は受け付けたソケットを閉じます。
 
 ## 主要関数一覧
 
@@ -177,15 +185,15 @@ Table: Linux 版 tcpServer の主要関数一覧
 |------|------|
 | `create_listen_socket(port)` | getaddrinfo + bind + listen |
 | `run_as_fork_child(socket)` | --child 時のエコー処理 |
-| `worker_loop(pipe_name, conns_per_worker)` | --worker 時のパイプ受信 + エコー処理 (N=1: 逐次、N>1: PeekNamedPipe+select) |
-| `worker_monitor_thread(arg)` | 完了通知を受け取り conn_count をデクリメント |
-| `find_available_worker(workers, events, n, cpw)` | conn_count < cpw のワーカー探索 |
+| `worker_loop(pipe_name, conns_per_worker)` | --worker 時のパイプ受信 (`WSASocketW` 復元 + 型付き ACK/DONE 送信) とエコー処理 (N=1: 逐次、N>1: PeekNamedPipe+select) |
+| `worker_monitor_thread(arg)` | 親側パイプを単独で読み取り、型付き ACK/DONE の振り分けと予約数・接続数・稼働状態の同期更新を行う |
+| `find_available_worker(workers, events, n, cpw)` | 稼働中かつ `conn_count + pending < cpw` のワーカーを探索して接続枠を予約 (満杯時は待機、生存ワーカー不在時は -1) |
 | `start_prefork_workers(workers, events, n, cpw)` | n ワーカーを `--worker --conns-per-worker` で起動 |
 | `platform_init(session_fn)` | WSAStartup + g_session_fn の設定 |
 | `platform_cleanup()` | WSACleanup |
 | `dispatch_internal_args(argc, argv)` | --child/--worker を検出して処理 |
 | `run_fork_server(port)` | accept + CreateProcess(`--child`) ループ |
-| `run_prefork_server(port, n, conns_per_worker)` | listen_socket 確保 + workers 起動 + 振り分けループ |
+| `run_prefork_server(port, n, conns_per_worker)` | listen_socket 確保 + workers 起動 + `WSADuplicateSocketW` による引き渡し・ACK 確認後の親側参照クローズ |
 
 Table: Windows 版 tcpServer の主要関数一覧
 
@@ -243,3 +251,9 @@ nc localhost 8080
 `--conns-per-worker N` (N ≥ 2) では、1 ワーカーが N 本の接続を同時に保持できます。ワーカー数 × N を超える接続が到着すると、listen キューに留まります。
 
 Ctrl+C で終了すると、prefork モードでは全ワーカーに SIGTERM が送信され、順次終了します。
+
+### Windows のソケット受け渡しテスト
+
+`test/src/integration/tcpServerPreforkTest` の `make test` は、逐次処理と多重処理の両方で、全接続枠の使用と完了後の再割り当てを繰り返します。  
+サーバーの実行ファイルは既定で `prod/cbin/tcpServer.exe` を使用し、別の配置では環境変数 `POTR_TCPSERVER_TEST_EXE` で指定します。  
+Linux ではこのテストをスキップします。

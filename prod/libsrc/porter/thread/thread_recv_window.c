@@ -240,9 +240,14 @@ static int reorder_gap_ready(thread_recv_slot *slot, uint32_t nack_num)
             effective_ms = ms + (uint32_t)((uint64_t)now_ts.tv_nsec % ms); /* ms 以上 2 * ms 未満 */
         }
 
+        if (cplat_timespec_add_ms(&now_ts, (uint64_t)effective_ms, slot->reorder_deadline_ts) != CPLAT_OK)
+        {
+            *slot->reorder_pending = 0;
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv: cannot calculate reorder deadline");
+            return 1;
+        }
         *slot->reorder_pending = 1;
         *slot->reorder_nack_num = nack_num;
-        cplat_timespec_add_ms(&now_ts, (uint64_t)effective_ms, slot->reorder_deadline_ts);
         return 0;
     }
 

@@ -38,7 +38,8 @@ TEST(threadRecvHealthTest, service_disabled)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(100));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - 受信済みセッションと監視期限を指定する。
     // Pre-Assert
@@ -95,7 +96,8 @@ TEST(threadRecvHealthTest, service_before)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(99));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{99}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - 受信済みセッションと監視期限を指定する。
     // Pre-Assert
@@ -152,7 +154,8 @@ TEST(threadRecvHealthTest, service_at_deadline)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(100));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - 受信済みセッションと監視期限を指定する。
     // Pre-Assert
@@ -209,7 +212,8 @@ TEST(threadRecvHealthTest, service_after_deadline)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(101));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{101}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - 受信済みセッションと監視期限を指定する。
     // Pre-Assert
@@ -266,7 +270,8 @@ TEST(threadRecvHealthTest, service_inactive_service)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(100));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - 受信済みセッションと監視期限を指定する。
     // Pre-Assert
@@ -318,7 +323,8 @@ TEST(threadRecvHealthTest, peers_disabled)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(100));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
@@ -367,7 +373,8 @@ TEST(threadRecvHealthTest, peers_before)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(99));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{99}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
@@ -420,7 +427,8 @@ TEST(threadRecvHealthTest, peers_at_deadline)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(100));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
@@ -473,7 +481,8 @@ TEST(threadRecvHealthTest, peers_after_deadline)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(101));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{101}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
@@ -526,7 +535,8 @@ TEST(threadRecvHealthTest, peers_inactive_peer)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(100));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
@@ -579,7 +589,8 @@ TEST(threadRecvHealthTest, peers_dead_peer)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(100));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
@@ -632,7 +643,8 @@ TEST(threadRecvHealthTest, peers_path_only)
                 out->tv_sec = 11;
                 out->tv_nsec = 0;
             });
-    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _)).WillByDefault(Return(100));
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
     ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
@@ -754,4 +766,34 @@ TEST(threadRecvHealthTest, tcp_stopped_health)
         .Times(1); // [Pre-Assert確認_正常系] - TCP の状態変化時に health を起床できなければ即時 PING を送ること。
     // Act
     thread_recv_health_wake_tcp(&ctx, 0, 1); // [手順] - 状態変化の起床判断を行う。
+}
+
+// 時刻差分を計算できない場合に受信状態を保持することの確認
+TEST(threadRecvHealthTest, preserves_service_state_when_time_arithmetic_fails)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    thread_recv_slot slot = {};
+    slot.ctx = &ctx;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.n_path = 1;
+    ctx.health_timeout_ms = 100;
+    ctx.path_last_recv_ts[0].tv_sec = 10;
+    ctx.last_recv_ts.tv_sec = 10;
+    ctx.peer_port[0] = 123;
+    ctx.pending_fin = 1; // [状態] - 接続中のパスを用意する。
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _)).WillByDefault(Return(CPLAT_ERR_OUT_OF_RANGE));
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_service_all_paths(_))
+        .Times(0); // [Pre-Assert確認_異常系] - 計算失敗だけでは切断しないこと。
+
+    // Act
+    thread_recv_health_check_service(&slot); // [手順] - 時刻計算失敗中の監視を実行する。
+
+    // Assert
+    EXPECT_EQ(123, ctx.peer_port[0]); // [確認_異常系] - 接続情報を保持すること。
+    EXPECT_EQ(1, ctx.pending_fin);
 }

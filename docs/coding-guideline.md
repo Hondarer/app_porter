@@ -168,14 +168,29 @@ if (ret != POTR_OK)
 cplat の API を呼び出した結果は `ret != CPLAT_OK` の名前比較で判定します。  
 porter の関数から返す場合は、`CPLAT_ERR_*` を porter の結果コードへ変換して返します。cplat の結果コードをそのまま porter の戻り値として直接返却しません。  
 タイムアウトは `POTR_ERR_TIMEOUT`、ファイルおよびネットワークの失敗は `POTR_ERR_IO` のように、原因が判別できる場合は対応する分類へ変換します。  
-下位 API が詳細コードを提供せず、ほかの分類へ変換できない場合だけ `POTR_ERR_UNKNOWN` を返し、その理由をソース コメントに記載します。  
+受信復号では、認証タグ不一致 (`CPLAT_ERR_AUTHENTICATION_FAILED`) を `POTR_ERR_PROTOCOL`、メモリ不足を `POTR_ERR_OUT_OF_MEMORY`、その他の内部処理の失敗を `POTR_ERR_UNKNOWN` へ変換します。  
+暗号文の長さなど、復号前に確認できる受信形式の不正も `POTR_ERR_PROTOCOL` とします。  
+ローカルの引数・容量・範囲の不整合は `POTR_ERR_INVALID_ARGUMENT` へ変換し、受信パケットの認証不一致と区別します。  
+他の分類へ変換できない内部失敗は `POTR_ERR_UNKNOWN` とし、ソース コメントで判断の根拠を示します。  
 ソケット API (`cplat/net`) の失敗は `cplat_error *detail_out` で受け取り、対応する `POTR_ERR_*` へ変換します。  
 OS 固有コードは直接比較せず、`cplat_error_is()` と `CPLAT_CAUSE_*` を使用します。
 
 ```c
-int ret = cplat_crypto_encrypt(...);
+int ret = cplat_crypto_decrypt(...);
 if (ret != CPLAT_OK)
 {
+    if (ret == CPLAT_ERR_AUTHENTICATION_FAILED)
+    {
+        return POTR_ERR_PROTOCOL;
+    }
+    if (ret == CPLAT_ERR_OUT_OF_MEMORY)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    if (ret == CPLAT_ERR_INVALID_ARGUMENT || ret == CPLAT_ERR_BUFFER_TOO_SMALL || ret == CPLAT_ERR_OUT_OF_RANGE)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
     return POTR_ERR_UNKNOWN;
 }
 ```

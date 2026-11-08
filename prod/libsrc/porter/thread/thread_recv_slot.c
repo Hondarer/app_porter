@@ -98,7 +98,8 @@ static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, si
     {
         size_t dec_len = ctx->compress_buf_size;
 
-        if (cplat_decompress(ctx->recv_compress_buf, &dec_len, payload, payload_len) == CPLAT_OK)
+        int ret = cplat_decompress(ctx->recv_compress_buf, &dec_len, payload, payload_len);
+        if (ret == CPLAT_OK)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: decompress %zu -> %zu bytes",
                        ctx->service.service_id, payload_len, dec_len);
@@ -106,8 +107,9 @@ static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, si
         }
         else
         {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv[service_id=%" PRId64 "]: decompress failed (src_len=%zu)",
-                       ctx->service.service_id, payload_len);
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                       "recv[service_id=%" PRId64 "]: decompress failed (src_len=%zu result=%d)",
+                       ctx->service.service_id, payload_len, ret);
         }
     }
     else

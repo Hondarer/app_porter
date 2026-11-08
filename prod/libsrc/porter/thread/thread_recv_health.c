@@ -73,8 +73,11 @@ void thread_recv_health_check_peers(potr_context *ctx)
                 continue; /* 未使用 */
             if (ctx->peers[i].path_last_recv_ts[k].tv_sec == 0)
                 continue; /* 初回受信前 */
-
-            path_elapsed = cplat_timespec_diff_ms(&now_ts, &ctx->peers[i].path_last_recv_ts[k]);
+            if (cplat_timespec_diff_ms(&now_ts, &ctx->peers[i].path_last_recv_ts[k], &path_elapsed) != CPLAT_OK)
+            {
+                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv: cannot calculate health interval");
+                continue;
+            }
 
             if (path_elapsed >= (int64_t)ctx->health_timeout_ms)
             {
@@ -97,8 +100,11 @@ void thread_recv_health_check_peers(potr_context *ctx)
         /* ピア単位のタイムアウトを判定し、全パス消滅または最終受信経過により切断する。 */
         if (ctx->peers[i].last_recv_ts.tv_sec == 0)
             continue;
-
-        elapsed_ms = cplat_timespec_diff_ms(&now_ts, &ctx->peers[i].last_recv_ts);
+        if (cplat_timespec_diff_ms(&now_ts, &ctx->peers[i].last_recv_ts, &elapsed_ms) != CPLAT_OK)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv: cannot calculate health interval");
+            continue;
+        }
 
         if (elapsed_ms >= (int64_t)ctx->health_timeout_ms)
         {
@@ -165,8 +171,11 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
 
         if (ctx->path_last_recv_ts[i].tv_sec == 0)
             continue;
-
-        elapsed_ms = cplat_timespec_diff_ms(&now_ts, &ctx->path_last_recv_ts[i]);
+        if (cplat_timespec_diff_ms(&now_ts, &ctx->path_last_recv_ts[i], &elapsed_ms) != CPLAT_OK)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv: cannot calculate health interval");
+            continue;
+        }
 
         if (elapsed_ms >= (int64_t)ctx->health_timeout_ms)
         {
@@ -205,7 +214,11 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
 
     {
         int64_t elapsed_ms;
-        elapsed_ms = cplat_timespec_diff_ms(&now_ts, &ctx->last_recv_ts);
+        if (cplat_timespec_diff_ms(&now_ts, &ctx->last_recv_ts, &elapsed_ms) != CPLAT_OK)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv: cannot calculate health interval");
+            return;
+        }
 
         if (elapsed_ms >= (int64_t)ctx->health_timeout_ms)
         {

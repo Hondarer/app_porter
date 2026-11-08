@@ -55,9 +55,15 @@
  */
 typedef struct WorkerInfo
 {
-    HANDLE pipe;    /**< ワーカーとの通信用パイプ。 */
-    HANDLE process; /**< ワーカー プロセスのハンドル。 */
-    int conn_count; /**< 現在処理中のアクティブ接続数。 */
+    HANDLE pipe;                 /**< ワーカーとの通信用パイプ。 */
+    HANDLE process;              /**< ワーカー プロセスのハンドル。 */
+    int conn_count;              /**< 受領済みのアクティブ接続数。 */
+    int pending;                 /**< 受領通知待ちの予約数 (0 または 1)。 */
+    int alive;                   /**< パイプを使用できる場合は 1。 */
+    int ack_ok;                  /**< 最後の受領結果。 */
+    DWORD process_id;            /**< 複製先のプロセス ID。 */
+    HANDLE ack_event;            /**< 監視スレッドが受領結果または切断を通知するイベント。 */
+    CRITICAL_SECTION state_lock; /**< 接続数、予約、稼働状態を保護する。 */
 } WorkerInfo;
 
 /**
@@ -70,6 +76,82 @@ typedef struct WorkerMonitorArg
     HANDLE *events;       /**< ワーカー イベント配列へのポインター。 */
     int conns_per_worker; /**< 1 ワーカーあたりの同時接続数上限。 */
 } WorkerMonitorArg;
+
+enum WorkerReplyType
+{
+    WORKER_ACK = 1,
+    WORKER_DONE = 2
+};
+
+typedef struct WorkerReply
+{
+    DWORD type;
+    DWORD accepted;
+} WorkerReply;
+
+/* byte モードのパイプでは短い読み書きを繰り返して構造体全体を転送する。
+ * see: https://learn.microsoft.com/windows/win32/ipc/named-pipe-type-read-and-wait-modes
+ * see: https://learn.microsoft.com/windows/win32/ipc/synchronous-and-overlapped-input-and-output
+ */
+static int pipe_transfer(const HANDLE pipe, void *data, DWORD length, const int writing)
+{
+    unsigned char *cursor = (unsigned char *)data;
+    while (length > 0U)
+    {
+        DWORD transferred = 0;
+        OVERLAPPED operation = {0};
+        BOOL ok;
+        operation.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+        if (operation.hEvent == NULL)
+        {
+            return 0;
+        }
+        ok = writing ? WriteFile(pipe, cursor, length, &transferred, &operation)
+                     : ReadFile(pipe, cursor, length, &transferred, &operation);
+        if (ok || GetLastError() == ERROR_IO_PENDING)
+        {
+            ok = GetOverlappedResult(pipe, &operation, &transferred, TRUE);
+        }
+        CloseHandle(operation.hEvent);
+        if (!ok || transferred == 0U)
+        {
+            return 0;
+        }
+        cursor += transferred;
+        length -= transferred;
+    }
+    return 1;
+}
+
+static int worker_reply(const HANDLE pipe, const DWORD type, const DWORD accepted)
+{
+    WorkerReply reply = {type, accepted};
+    return pipe_transfer(pipe, &reply, sizeof(reply), 1);
+}
+
+/* 親が WSADuplicateSocketW で作成した情報を、対象ワーカー内でのみ復元する。
+ * see: https://learn.microsoft.com/windows/win32/api/winsock2/nf-winsock2-wsaduplicatesocketw
+ */
+static SOCKET receive_socket(const HANDLE pipe)
+{
+    WSAPROTOCOL_INFOW protocol_info;
+    SOCKET result;
+    if (!pipe_transfer(pipe, &protocol_info, sizeof(protocol_info), 0))
+    {
+        return INVALID_SOCKET;
+    }
+    result =
+        WSASocketW(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &protocol_info, 0, WSA_FLAG_OVERLAPPED);
+    if (!worker_reply(pipe, WORKER_ACK, result != INVALID_SOCKET))
+    {
+        if (result != INVALID_SOCKET)
+        {
+            closesocket(result);
+        }
+        return INVALID_SOCKET;
+    }
+    return result;
+}
 
 /*
  * ============================================================
@@ -152,15 +234,15 @@ __declspec(noreturn) static void run_as_fork_child(SOCKET client_socket)
  *  conns_per_worker > 1 の場合:
  *    PeekNamedPipe() でパイプを非ブロッキング チェックしながら、select() で
  *    アクティブな複数ソケットを監視するイベント ループ。接続が閉じるたびに親へ
- *    完了通知 (done=1) を 1 [byte] 送信します。
+ *    型付き完了通知を送信します。
  */
 static void worker_loop(const char *pipe_name, int conns_per_worker)
 {
-    DWORD bytes_read, bytes_written;
 
     printf("[ワーカー PID %lu] 起動完了\n", GetCurrentProcessId());
 
-    HANDLE pipe = CreateFileU(pipe_name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    HANDLE pipe =
+        CreateFileU(pipe_name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
 
     if (pipe == INVALID_HANDLE_VALUE)
     {
@@ -173,14 +255,8 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
         /* --- 従来の逐次処理 --- */
         while (1)
         {
-            SOCKET client_socket;
-
-            if (!ReadFile(pipe, &client_socket, sizeof(client_socket), &bytes_read, NULL))
-            {
-                break;
-            }
-
-            if (bytes_read != sizeof(client_socket))
+            SOCKET client_socket = receive_socket(pipe);
+            if (client_socket == INVALID_SOCKET)
             {
                 break;
             }
@@ -190,8 +266,10 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
             printf("[ワーカー PID %lu] 次のソケット待機\n", GetCurrentProcessId());
 
             /* 親プロセスへ処理完了を通知する。 */
-            char done = 1;
-            WriteFile(pipe, &done, 1, &bytes_written, NULL);
+            if (!worker_reply(pipe, WORKER_DONE, 1))
+            {
+                break;
+            }
         }
     }
     else
@@ -217,15 +295,14 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
                 break; /* パイプ切断 */
             }
 
-            if (avail >= sizeof(SOCKET))
+            if (avail >= sizeof(WSAPROTOCOL_INFOW) && active_count < conns_per_worker)
             {
-                SOCKET new_sock;
-
-                if (ReadFile(pipe, &new_sock, sizeof(new_sock), &bytes_read, NULL) && bytes_read == sizeof(new_sock))
+                SOCKET new_sock = receive_socket(pipe);
+                if (new_sock == INVALID_SOCKET)
                 {
-                    active[active_count++] = new_sock;
-                    printf("[ワーカー PID %lu] 新規接続 (計 %d 接続)\n", GetCurrentProcessId(), active_count);
+                    break;
                 }
+                active[active_count++] = new_sock;
             }
 
             if (active_count == 0)
@@ -268,8 +345,16 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
                     printf("[ワーカー PID %lu] 接続終了 (残 %d 接続)\n", GetCurrentProcessId(), active_count);
 
                     /* 親プロセスへ接続 1 本分の処理完了を通知する。 */
-                    char done = 1;
-                    WriteFile(pipe, &done, 1, &bytes_written, NULL);
+                    if (!worker_reply(pipe, WORKER_DONE, 1))
+                    {
+                        for (int j = 0; j < active_count; ++j)
+                        {
+                            closesocket(active[j]);
+                        }
+                        cplat_free(active);
+                        CloseHandle(pipe);
+                        return;
+                    }
                 }
                 else
                 {
@@ -278,6 +363,10 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
             }
         }
 
+        for (int i = 0; i < active_count; ++i)
+        {
+            closesocket(active[i]);
+        }
         cplat_free(active);
     }
 
@@ -296,35 +385,49 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
 static void worker_monitor_thread(void *arg)
 {
     WorkerMonitorArg *ctx = (WorkerMonitorArg *)arg;
-    int id = ctx->id;
-    WorkerInfo *workers = ctx->workers;
-    HANDLE *events = ctx->events;
-    int conns_per_worker = ctx->conns_per_worker;
-    char done;
-    DWORD bytes_read;
-
-    while (1)
+    WorkerInfo *worker = &ctx->workers[ctx->id];
+    WorkerReply reply;
+    /* このスレッドだけが親側パイプを読み、ACK と DONE を振り分ける。 */
+    while (pipe_transfer(worker->pipe, &reply, sizeof(reply), 0))
     {
-        if (ReadFile(workers[id].pipe, &done, 1, &bytes_read, NULL))
+        EnterCriticalSection(&worker->state_lock);
+        if (reply.type == WORKER_ACK && worker->pending)
         {
-            /*
-             * 接続 1 本分の完了通知を受信したため、アクティブ接続数を減らし、
-             * 空きが生じた場合はイベントをシグナル状態にする。
-             */
-            workers[id].conn_count--;
-
-            if (workers[id].conn_count < conns_per_worker)
+            worker->ack_ok = reply.accepted != 0U;
+            worker->pending = 0;
+            if (worker->ack_ok)
             {
-                SetEvent(events[id]);
+                ++worker->conn_count;
             }
+            SetEvent(worker->ack_event);
+        }
+        else if (reply.type == WORKER_DONE && worker->conn_count > 0)
+        {
+            --worker->conn_count;
         }
         else
         {
+            LeaveCriticalSection(&worker->state_lock);
             break;
         }
+        if (worker->alive && worker->conn_count + worker->pending < ctx->conns_per_worker)
+        {
+            SetEvent(ctx->events[ctx->id]);
+        }
+        else
+        {
+            ResetEvent(ctx->events[ctx->id]);
+        }
+        LeaveCriticalSection(&worker->state_lock);
     }
-
-    return;
+    DisconnectNamedPipe(worker->pipe);
+    EnterCriticalSection(&worker->state_lock);
+    worker->alive = 0;
+    worker->pending = 0;
+    worker->ack_ok = 0;
+    SetEvent(worker->ack_event);
+    SetEvent(ctx->events[ctx->id]); /* 空き待機側に終了を通知する。 */
+    LeaveCriticalSection(&worker->state_lock);
 }
 
 /**
@@ -340,17 +443,39 @@ static void worker_monitor_thread(void *arg)
  */
 static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int conns_per_worker)
 {
-    while (1)
+    for (;;)
     {
-        for (int i = 0; i < n; i++)
+        int any_alive = 0;
+        for (int i = 0; i < n; ++i)
         {
-            if (workers[i].conn_count < conns_per_worker)
+            WorkerInfo *worker = &workers[i];
+            EnterCriticalSection(&worker->state_lock);
+            if (worker->alive)
             {
-                return i;
+                any_alive = 1;
+                if (worker->conn_count + worker->pending < conns_per_worker)
+                {
+                    worker->pending = 1;
+                    worker->ack_ok = 0;
+                    ResetEvent(worker->ack_event);
+                    if (worker->conn_count + worker->pending == conns_per_worker)
+                    {
+                        ResetEvent(events[i]);
+                    }
+                    LeaveCriticalSection(&worker->state_lock);
+                    return i;
+                }
             }
+            else
+            {
+                ResetEvent(events[i]);
+            }
+            LeaveCriticalSection(&worker->state_lock);
         }
-
-        WaitForMultipleObjects((DWORD)n, events, FALSE, INFINITE);
+        if (!any_alive || WaitForMultipleObjects((DWORD)n, events, FALSE, INFINITE) == WAIT_FAILED)
+        {
+            return -1;
+        }
     }
 }
 
@@ -386,7 +511,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
     {
         sprintf_s(pipe_name, sizeof(pipe_name), TCPSERVER_PIPE_NAME_FMT, i);
 
-        workers[i].pipe = CreateNamedPipeU(pipe_name, PIPE_ACCESS_DUPLEX,
+        workers[i].pipe = CreateNamedPipeU(pipe_name, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
                                            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4096, 4096, 0, NULL);
 
         if (workers[i].pipe == INVALID_HANDLE_VALUE)
@@ -397,7 +522,16 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         }
 
         /* ワーカーの空き状態を通知するイベントを作成する (初期状態はシグナル状態)。 */
-        events[i] = CreateEvent(NULL, FALSE, TRUE, NULL);
+        events[i] = CreateEvent(NULL, TRUE, TRUE, NULL);
+        workers[i].ack_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+        InitializeCriticalSection(&workers[i].state_lock);
+        workers[i].pending = 0;
+        workers[i].ack_ok = 0;
+        workers[i].alive = 1;
+        if (events[i] == NULL || workers[i].ack_event == NULL)
+        {
+            cplat_exit(1);
+        }
 
         /* 1 ワーカーあたりの同時接続数上限を指定してワーカー プロセスを起動する。 */
         sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --worker %s --conns-per-worker %d", exepath, pipe_name,
@@ -406,7 +540,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         STARTUPINFOW si = {sizeof(si)};
         PROCESS_INFORMATION pi;
 
-        if (!CreateProcessU(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
+        if (!CreateProcessU(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
         {
             fprintf(stderr, "ワーカー起動失敗: %d\n", i);
             cplat_free(args);
@@ -414,11 +548,59 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         }
 
         workers[i].process = pi.hProcess;
+        workers[i].process_id = pi.dwProcessId;
         workers[i].conn_count = 0;
         CloseHandle(pi.hThread);
 
         /* ワーカー プロセスが名前付きパイプに接続するのを待機する。 */
-        ConnectNamedPipe(workers[i].pipe, NULL);
+        {
+            OVERLAPPED connection = {0};
+            DWORD ignored;
+            int connected = 0;
+            connection.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+            if (connection.hEvent != NULL)
+            {
+                if (ConnectNamedPipe(workers[i].pipe, &connection))
+                {
+                    connected = 1;
+                }
+                else
+                {
+                    DWORD error = GetLastError();
+                    if (error == ERROR_PIPE_CONNECTED)
+                    {
+                        connected = 1;
+                    }
+                    else if (error == ERROR_IO_PENDING)
+                    {
+                        HANDLE waits[] = {connection.hEvent, pi.hProcess};
+                        if (WaitForMultipleObjects(2, waits, FALSE, INFINITE) == WAIT_OBJECT_0)
+                        {
+                            connected = GetOverlappedResult(workers[i].pipe, &connection, &ignored, FALSE) != 0;
+                        }
+                        else
+                        {
+                            CancelIoEx(workers[i].pipe, &connection);
+                            (void)GetOverlappedResult(workers[i].pipe, &connection, &ignored, TRUE);
+                        }
+                    }
+                }
+                CloseHandle(connection.hEvent);
+            }
+            if (!connected)
+            {
+                workers[i].alive = 0;
+                ResetEvent(events[i]);
+                CloseHandle(workers[i].pipe);
+                workers[i].pipe = INVALID_HANDLE_VALUE;
+                CloseHandle(workers[i].process);
+                workers[i].process = NULL;
+                CloseHandle(workers[i].ack_event);
+                workers[i].ack_event = NULL;
+                fprintf(stderr, "ワーカーのパイプ接続失敗: %d\n", i);
+                continue;
+            }
+        }
 
         /* ワーカーからの完了通知を受信する監視スレッドを起動する。 */
         cplat_thread *monitor_thread;
@@ -590,25 +772,50 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
             continue;
         }
 
-        /* クライアント ソケットのハンドルを継承可能に設定する。 */
-        SetHandleInformation((HANDLE)client_socket, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
-
         int worker_id = find_available_worker(workers, events, num_workers, conns_per_worker);
-        workers[worker_id].conn_count++;
-
-        /* ワーカーの同時接続数上限に達した場合は、イベントを非シグナル状態にして次の接続割り当てを抑止する。 */
-        if (workers[worker_id].conn_count >= conns_per_worker)
+        if (worker_id < 0)
         {
-            ResetEvent(events[worker_id]);
+            closesocket(client_socket);
+            fprintf(stderr, "利用可能なワーカーがありません\n");
+            continue;
         }
-
-        printf("[親プロセス] ワーカー %d に接続を割り当て (接続数: %d/%d)\n", worker_id, workers[worker_id].conn_count,
-               conns_per_worker);
-
-        DWORD bytes_written;
-        WriteFile(workers[worker_id].pipe, &client_socket, sizeof(client_socket), &bytes_written, NULL);
-
-        /* ソケットはワーカーが処理完了後に closesocket する。 */
+        WorkerInfo *worker = &workers[worker_id];
+        WSAPROTOCOL_INFOW protocol_info;
+        int duplicated = WSADuplicateSocketW(client_socket, worker->process_id, &protocol_info) == 0;
+        if (!duplicated || !pipe_transfer(worker->pipe, &protocol_info, sizeof(protocol_info), 1))
+        {
+            EnterCriticalSection(&worker->state_lock);
+            worker->pending = 0;
+            if (duplicated)
+            {
+                worker->alive = 0; /* 書きかけの転送があるパイプは再利用しない。 */
+            }
+            SetEvent(events[worker_id]);
+            LeaveCriticalSection(&worker->state_lock);
+            if (duplicated)
+            {
+                DisconnectNamedPipe(worker->pipe);
+            }
+            closesocket(client_socket);
+            continue;
+        }
+        /* 受領通知の読み取りは監視スレッドへ委ねる。ワーカー終了も待機を解除する。 */
+        HANDLE wait_handles[] = {worker->ack_event, worker->process};
+        DWORD wait_result = WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
+        EnterCriticalSection(&worker->state_lock);
+        int accepted = wait_result == WAIT_OBJECT_0 && worker->alive && worker->ack_ok;
+        if (wait_result != WAIT_OBJECT_0)
+        {
+            worker->alive = 0;
+            worker->pending = 0;
+            SetEvent(events[worker_id]);
+        }
+        LeaveCriticalSection(&worker->state_lock);
+        closesocket(client_socket); /* 子が取得済み、または引き渡し失敗の親側参照を閉じる。 */
+        if (!accepted)
+        {
+            fprintf(stderr, "ワーカー %d へのソケット引き渡しに失敗しました\n", worker_id);
+        }
     }
 
     /* 到達しないが形式上記述する。 */

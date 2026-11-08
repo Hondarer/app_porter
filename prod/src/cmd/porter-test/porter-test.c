@@ -255,12 +255,22 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
         }
         else
         {
-            char tmp_path[PLATFORM_PATH_MAX];
+            char tmp_path[PLATFORM_PATH_MAX] = {0};
             FILE *fp = cplat_fopen_temp("ptr", "wb", tmp_path, sizeof(tmp_path), NULL);
 
-            if (fp != NULL && fwrite(data, 1, len, fp) == len)
+            const int created = fp != NULL;
+            int saved = 0;
+            if (fp != NULL)
             {
-                fclose(fp);
+                saved = fwrite(data, 1, len, fp) == len;
+                if (fclose(fp) != 0)
+                {
+                    saved = 0;
+                }
+                fp = NULL;
+            }
+            if (saved)
+            {
                 cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
                                            "[サービス %" PRId64
                                            "] 受信 (%zu バイト): バイナリ データを保存しました: %s\n",
@@ -268,9 +278,10 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
             }
             else
             {
-                if (fp != NULL)
+                if (created && tmp_path[0] != '\0' && remove(tmp_path) != 0)
                 {
-                    fclose(fp);
+                    cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                               "一時ファイルを削除できませんでした: %s\n", tmp_path);
                 }
 
                 cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
