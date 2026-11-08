@@ -95,8 +95,6 @@ typedef enum
     POTR_TYPE_TCP = 9, /**< TCP ユニキャスト通信 (単方向: SENDER のみ potr_service_send 可)。 */
 
     POTR_TYPE_TCP_BIDIR = 10, /**< TCP 双方向通信 (両端が potr_service_send 可)。 */
-
-    /* POTR_TYPE_TCP_BIDIR_N1 = 11, */ /**< TCP 双方向 N:1 通信 (将来)。 */
 } potr_type;
 
 /**
