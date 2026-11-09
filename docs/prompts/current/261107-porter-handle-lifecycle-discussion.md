@@ -69,17 +69,17 @@
 
 | 根拠 | 確認した内容 |
 | --- | --- |
-| [過去の最終仕様](past/261106-porter-handle-concurrency-design.md) | close の並行呼び出しとコールバックを peers_mutex 外へ移す対策を範囲外としていた |
-| [過去の検討](past/261106-porter-handle-concurrency-discussion.md) | 前回の判断履歴。今回の新しい要求に対する合意の代用にはしない |
-| [公開 API](../api.md) | close は並行不可。N:1 の同一ハンドルへのコールバック内送信は禁止 |
-| [型定義](../../prod/include/porter/porter_type.h) | 公開ハンドルは不透明な `potr_context *`。コールバックのデータは復帰後に無効 |
-| [send](../../prod/libsrc/porter/api/potr_service_send.c) | ハンドル参照が引数検証時点から発生。キュー登録とチケット完了を待機 |
-| [close](../../prod/libsrc/porter/api/potr_service_close.c) | `close_requested` 設定後にスレッド停止と資源解放。成功時にコンテキストを free |
-| [disconnect](../../prod/libsrc/porter/api/potr_peer_disconnect.c) | peers_mutex 内で通知し、ピアを解放 |
-| [N:1 受信](../../prod/libsrc/porter/thread/potr_recv_thread.c) | peers_mutex を保持したままパケットを処理し、通知へ到達 |
-| [通知処理](../../prod/libsrc/porter/potr_path_event.c) | callback_mutex による直列化と同一ハンドルのコールバック内判定 |
-| [受信データ通知](../../prod/libsrc/porter/thread/thread_recv_slot.c) | 受信領域や展開領域を参照して通知 |
-| [送信キュー](../../prod/libsrc/porter/infra/potr_send_queue.c) | 有限容量。チケット待機には取消条件がなく、shutdown も progress を通知しない |
+| [過去の最終仕様](../past/261106-porter-handle-concurrency-design.md) | close の並行呼び出しとコールバックを peers_mutex 外へ移す対策を範囲外としていた |
+| [過去の検討](../past/261106-porter-handle-concurrency-discussion.md) | 前回の判断履歴。今回の新しい要求に対する合意の代用にはしない |
+| [公開 API](../../api.md) | close は並行不可。N:1 の同一ハンドルへのコールバック内送信は禁止 |
+| [型定義](../../../prod/include/porter/porter_type.h) | 公開ハンドルは不透明な `potr_context *`。コールバックのデータは復帰後に無効 |
+| [send](../../../prod/libsrc/porter/api/potr_service_send.c) | ハンドル参照が引数検証時点から発生。キュー登録とチケット完了を待機 |
+| [close](../../../prod/libsrc/porter/api/potr_service_close.c) | `close_requested` 設定後にスレッド停止と資源解放。成功時にコンテキストを free |
+| [disconnect](../../../prod/libsrc/porter/api/potr_peer_disconnect.c) | peers_mutex 内で通知し、ピアを解放 |
+| [N:1 受信](../../../prod/libsrc/porter/thread/potr_recv_thread.c) | peers_mutex を保持したままパケットを処理し、通知へ到達 |
+| [通知処理](../../../prod/libsrc/porter/potr_path_event.c) | callback_mutex による直列化と同一ハンドルのコールバック内判定 |
+| [受信データ通知](../../../prod/libsrc/porter/thread/thread_recv_slot.c) | 受信領域や展開領域を参照して通知 |
+| [送信キュー](../../../prod/libsrc/porter/infra/potr_send_queue.c) | 有限容量。チケット待機には取消条件がなく、shutdown も progress を通知しない |
 
 Table: 現行仕様と実装の調査根拠
 
@@ -907,4 +907,3 @@ B を選ぶ場合は、承認済み設計の測定を補い、結果を提示し
 本対話の「A」を、既存性能結果と指定 CI の受入、追加性能評価の別件引き継ぎ、および成果物の承認として受け付けました。  
 [残課題 BL-001](261107-porter-handle-lifecycle-backlog.md#bl-001-追加性能評価の実施) に未確認項目を整理しました。  
 第 3 ゲートを通過し、作業 WBS を完了としました。
-
