@@ -6,7 +6,7 @@
 Linux (WSL Oracle Linux 8) の製品ビルドも成功しています。  
 `potrServiceCloseTest` は `make test` で 5 件成功、失敗 0 件、警告 0 件です。  
 変更対象の単体テスト 7 スイート計 69 件と、ハンドル並行操作の結合テスト 6 件が成功しました。実行ファイルを直接実行した結果です。  
-porter 全体の最終 `make test` (結果収集を含む) と各 OS の CI の結果は、実行完了後に確認します。
+porter 全体のビルドとテストについて、2026-11-10 に下記 CI の各 OS の成功結果を確認しました。
 
 ## CI の結果
 
@@ -50,3 +50,45 @@ UDP のループバックで、64 / 5000 バイト、通常 / 圧縮 / ブロッ
 TCP の予備測定では両版で終了時エラーが発生したため、上記の比較は UDP に限定しています。
 
 [比較表](261107-porter-handle-lifecycle-performance.csv) に条件別の平均処理件数、p99 API 呼び出し時間 (マイクロ秒)、確保回数を記録しています。
+
+## CI #42605427102 の受入照合 (2026-11-10)
+
+[指定された CI](https://github.com/Hondarer/c-modernization-kit/actions/runs/42605427102) の全 6 ジョブが成功しました。  
+親リポジトリは `aadbb96b4ce1e8350813896d9a916b5074cf86d7`、porter は `1b24a89920d505081c6e0e7200cc1b22e1b8081a` です。  
+確認時の porter HEAD `cbd70f3e82acf2324b98fc228f1186e8866bc922` との差分は別案件の検討文書 3 件と `current/.gitkeep` のみで、実装・テスト・ビルド構成に差はありません。
+
+| ジョブ | 結果 | ハンドル並行操作の結合試験 |
+| --- | --- | --- |
+| [Windows](https://github.com/Hondarer/c-modernization-kit/actions/runs/42605427102/job/129120095940) | 成功 | 6 件成功 |
+| [Oracle Linux 8](https://github.com/Hondarer/c-modernization-kit/actions/runs/42605427102/job/129120096254) | 成功 | 6 件成功 |
+| [Oracle Linux 9](https://github.com/Hondarer/c-modernization-kit/actions/runs/42605427102/job/129120096206) | 成功 | 6 件成功 |
+| [Oracle Linux 10](https://github.com/Hondarer/c-modernization-kit/actions/runs/42605427102/job/129120096436) | 成功 | 6 件成功 |
+| deploy-pages | 成功 | 対象外 |
+| warnings-summary | 成功 | 対象外 |
+
+Table: 指定 CI のジョブと結合試験の確認結果
+
+各 OS のジョブ ログで、以前間欠失敗した `concurrent_fragmented_compressed_sends_arrive_intact` を含む 6 件の成功を確認しました。  
+4 環境とも警告収集対象の `app/**/prod/**/*.warn`、`app/**/test/**/*.warn` などに該当ファイルがなく、警告アーティファクトはありません。  
+Oracle Linux 8 の文書生成も成功し、`docs.warn` と `app/**/doxy*.warn` はありませんでした。  
+今回の確認では既存 CI の結果を利用し、ビルド、全体テスト、CI の再実行は行っていません。
+
+Windows と Oracle Linux 8 のログでは、次の単体試験の成功も個別に確認しました。
+
+- `potrHandleTest` 3 件: 参照待ちと後続操作の拒否、close 再試行と古いハンドル、異常時の通常操作拒否と close の許可
+- `potrNotifyTest` 2 件: データの所有と通知順序、確保失敗時の予約エラー通知と送信待機の解除
+- `potrServiceCloseTest` 5 件: UDP/TCP の停止順序、コールバック内 close の拒否、切断時の結果、停止未完了時の資源保持
+
+これらは登録された試験の成功を示します。  
+設計の試験計画に挙げた全組合せや、性能測定項目の網羅を CI の成功だけで保証するものではありません。
+
+### 性能評価の未確認項目
+
+既存の性能記録と CSV には、UDP の 24 条件の処理件数、API 呼び出しの p99、動的確保回数と CPU 時間の比較があります。  
+一方、設計で予定した N:1 のコールバック内返信と外部返信の比較、低速コールバック時の通知遅延とピーク・回収後の保持メモリ、open/close 反復時の保持メモリと終了時間は確認できませんでした。  
+API 遅延の中央値・p95、通知遅延の中央値・p95・p99、ウォーム アップと測定のばらつきの記録もありません。  
+TCP の予備測定の終了時エラーは既存記録にありますが、今回の CI は性能比較の再測定ではなく、その測定条件での再確認結果はありません。
+
+このため、CI の結果確認は完了とし、性能評価の全項目を実施済みとは扱いません。  
+[Q-014](261107-porter-handle-lifecycle-discussion.md#q-014-ci-成功後に残る性能評価の扱い) で、未確認項目を別件へ引き継いで本案件を受け入れるか、本案件で追加測定するかを確認します。
+
