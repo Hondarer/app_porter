@@ -224,6 +224,48 @@ TEST_F(potrSendQueueTest, wait_ticket_returns_after_entries_complete)
 }
 // [サブ手順参照 名前=potrSendQueueTest.TearDown]
 
+// 送信失敗として完了したエントリが、その番号以前から始まるメッセージの結果に反映されることの確認
+// [サブ手順参照 名前=potrSendQueueTest.SetUp]
+TEST_F(potrSendQueueTest, complete_failed_reports_failure_to_covering_tickets)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    const uint8_t payload[4] = {0x01, 0x02, 0x03, 0x04};
+    cplat_atomic_i32 running = CPLAT_ATOMIC_INIT(1);
+    potr_internal_payload_elem elem;
+    uint64_t tickets[3] = {0U, 0U, 0U};
+    size_t i;
+
+    for (i = 0; i < 3; i++)
+    {
+        ASSERT_EQ(POTR_OK, potr_internal_send_queue_push(&q, 0, 0, payload, sizeof(payload),
+                                                         &tickets[i])); // [状態] - 3 件を登録し、各番号を保持する。
+        // [状態確認] - potr_internal_send_queue_push() の戻り値が POTR_OK であること。
+    }
+
+    // Pre-Assert
+
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_send_queue_pop(&q, &elem, &running));
+    // [手順] - 1 件目を取り出す。
+    potr_internal_send_queue_complete(&q); // [手順] - 1 件目を成功として完了させる。
+    int result_before_failure = potr_internal_send_queue_ticket_result(&q, tickets[0]);
+    ASSERT_EQ(POTR_OK, potr_internal_send_queue_pop(&q, &elem, &running));
+    // [手順] - 2 件目を取り出す。
+    potr_internal_send_queue_complete_failed(&q, POTR_ERR_DISCONNECTED); // [手順] - 2 件目を送信失敗として完了させる。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, result_before_failure); // [確認_正常系] - 失敗の記録前は 1 件目からの結果が POTR_OK であること。
+    EXPECT_EQ(POTR_ERR_DISCONNECTED, potr_internal_send_queue_ticket_result(&q, tickets[1]));
+    // [確認_異常系] - 失敗したエントリから始まるメッセージの結果が POTR_ERR_DISCONNECTED であること。
+    EXPECT_EQ(POTR_ERR_DISCONNECTED, potr_internal_send_queue_ticket_result(&q, tickets[0]));
+    // [確認_異常系] - 失敗したエントリを含むメッセージの結果が POTR_ERR_DISCONNECTED であること。
+    EXPECT_EQ(POTR_OK, potr_internal_send_queue_ticket_result(&q, tickets[2]));
+    // [確認_正常系] - 失敗より後から始まるメッセージの結果が POTR_OK であること。
+    EXPECT_EQ(2U, q.completed_seq); // [確認_正常系] - 送信失敗も完了済み件数に数えること。
+}
+// [サブ手順参照 名前=potrSendQueueTest.TearDown]
+
 // 停止済み (running=0) の空キューからの pop が POTR_ERR_CANCELED を返すことの確認
 // [サブ手順参照 名前=potrSendQueueTest.SetUp]
 TEST_F(potrSendQueueTest, pop_returns_canceled_when_stopped)

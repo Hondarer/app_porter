@@ -75,12 +75,143 @@ static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const p
 }
 
 /*
+ * TCP の指定 path へ send_wire_buf の wire_len バイトをすべて書き込む。
+ * 相手端は CONNECTED になる前に受信した DATA を破棄するため、未通知の経路状態があれば先に PING を書き込む。
+ * 書き込めなかった path はストリームの途中が欠けるため、ソケットを停止して受信スレッドに切断を検知させる。
+ * 成功時は POTR_OK、path が未接続または書き込みに失敗した場合は POTR_ERR_DISCONNECTED を返す。
+ * 呼び出し元は send_window_mutex を保持する。
+ */
+static int tcp_write_path(potr_context *ctx, int path_idx, size_t wire_len)
+{
+    int result = POTR_ERR_DISCONNECTED;
+
+    cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+
+    if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
+    {
+        cplat_error detail;
+        int announce_result = potr_internal_tcp_announce_ping_state_locked(ctx, path_idx);
+
+        if (announce_result != POTR_OK)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                       "send_thread[service_id=%" PRId64
+                       "]: path[%d] PING before DATA failed (result=%d), disconnecting",
+                       ctx->service.service_id, path_idx, announce_result);
+            cplat_socket_shutdown(ctx->tcp_conn_fd[path_idx]);
+        }
+        else if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], ctx->send_wire_buf, wire_len, &detail) == CPLAT_OK)
+        {
+            result = POTR_OK;
+        }
+        else
+        {
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
+                                      "send_thread[service_id=%" PRId64 "]: path[%d] send failed, disconnecting",
+                                      ctx->service.service_id, path_idx);
+            cplat_socket_shutdown(ctx->tcp_conn_fd[path_idx]);
+        }
+    }
+
+    cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
+
+    return result;
+}
+
+/*
+ * TCP のアクティブな全 path へ同じパケットを書き込む。
+ * 送信バッファーに空きがない path は、他の path が書き込めた場合に限り今回のパケットを飛ばす。
+ * TCP 受信側は欠けた通番を補えないため、どの path にも書き込めないままパケットを捨ててはならない。
+ * いずれかの path に書き込めた場合は POTR_OK、どの path にも書き込めない場合は POTR_ERR_DISCONNECTED を返す。
+ * 呼び出し元は send_window_mutex を保持する。
+ */
+static int tcp_write_all_paths(potr_context *ctx, size_t wire_len)
+{
+    int skipped[POTR_MAX_PATH];
+    int sent_any = 0;
+    int i;
+
+    if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) <= 0)
+    {
+        return POTR_ERR_DISCONNECTED;
+    }
+
+    for (i = 0; i < (int)POTR_MAX_PATH; i++)
+    {
+        skipped[i] = 0;
+    }
+
+    for (i = 0; i < ctx->n_path; i++)
+    {
+        int writable = 0;
+
+        if (ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
+            continue;
+
+        /* 送信バッファーの空きを確認する (非ブロッキング)。確認できない場合は書き込みの結果で判定する。 */
+        if (cplat_socket_wait_writable(ctx->tcp_conn_fd[i], CPLAT_SOCKET_NO_WAIT, &writable, NULL) != CPLAT_OK)
+        {
+            writable = 1;
+        }
+
+        if (writable)
+        {
+            if (ctx->buf_full_suppress_cnt[i] > 0 && ++ctx->buf_full_suppress_cnt[i] > 10)
+            {
+                ctx->buf_full_suppress_cnt[i] = 0;
+            }
+
+            if (tcp_write_path(ctx, i, wire_len) == POTR_OK)
+            {
+                sent_any = 1;
+            }
+        }
+        else
+        {
+            skipped[i] = 1;
+        }
+    }
+
+    for (i = 0; i < ctx->n_path; i++)
+    {
+        if (!skipped[i])
+            continue;
+
+        if (!sent_any)
+        {
+            /* どの path にも書き込めていないため、空きを待って書き込む。 */
+            if (tcp_write_path(ctx, i, wire_len) == POTR_OK)
+            {
+                sent_any = 1;
+            }
+        }
+        else if (ctx->buf_full_suppress_cnt[i] == 0)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                       "send_thread[service_id=%" PRId64 "]: path[%d]"
+                       " send buffer full, packet sent on other path only",
+                       ctx->service.service_id, i);
+            ctx->buf_full_suppress_cnt[i] = 1;
+        }
+    }
+
+    if (sent_any)
+    {
+        return POTR_OK;
+    }
+
+    return POTR_ERR_DISCONNECTED;
+}
+
+/*
  * send_wire_buf の [POTR_PACKET_HEADER_SIZE .. POTR_PACKET_HEADER_SIZE+packed_len-1] に
  * 詰め済みのペイロードから外側コンテナーを構築して送信する。
  * seq_num を付与する。UDP では再送バッファー (send_window) にも登録する。
  * send_wire_buf = [NBO ヘッダー 32 [byte]][packed_payload packed_len [byte]] として組み立てる。
+ * 成功時は POTR_OK を返す。パケットを構築できない場合と、TCP でどの path にも書き込めない場合は
+ * エラー コードを返す。UDP の送信失敗は再送で回復するため、成功として扱う。
  */
-static void flush_packed(potr_context *ctx, size_t packed_len)
+static int flush_packed(potr_context *ctx, size_t packed_len)
 {
     potr_packet outer_pkt;
     potr_internal_packet_session_hdr shdr;
@@ -88,6 +219,8 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
     size_t wire_len;
     uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
     int is_tcp = is_tcp_type(ctx->service.type);
+    int build_result;
+    int result = POTR_OK;
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
@@ -98,10 +231,11 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
 
     seq = ctx->send_window.next_seq;
 
-    if (potr_internal_packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len) != POTR_OK)
+    build_result = potr_internal_packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len);
+    if (build_result != POTR_OK)
     {
         cplat_local_lock_unlock(ctx->send_window_mutex);
-        return;
+        return build_result;
     }
 
     if (ctx->service.encrypt_enabled)
@@ -114,7 +248,7 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
          *   4. AAD  = outer_pkt ヘッダー 32 [byte] (NBO)
          *   5. packed_buf → ctx->crypto_buf に暗号化
          *   6. UDP: potr_internal_window_send_push に暗号化済みペイロードを登録
-         *      TCP: ウィンドウ登録不要 (再送は TCP 層が担保); next_seq のみインクリメント
+         *      TCP: ウィンドウ登録不要 (再送は TCP 層が担保); 書き込めた場合に next_seq だけを進める
          *   7. send_wire_buf に暗号化済みデータを組立て
          */
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
@@ -138,13 +272,14 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
             cplat_local_lock_unlock(ctx->send_window_mutex);
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: encrypt failed seq=%u",
                        ctx->service.service_id, (unsigned)seq);
-            return;
+
+            /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがない。 */
+            return POTR_ERR_UNKNOWN;
         }
 
         if (is_tcp)
         {
             /* TCP: ウィンドウ登録不要。実送信完了まで mutex を保持して全 path リセットと直列化する。 */
-            ctx->send_window.next_seq++;
             ctx->send_has_data = 1;
         }
         else
@@ -170,7 +305,6 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
         if (is_tcp)
         {
             /* TCP: ウィンドウ登録不要。実送信完了まで mutex を保持して全 path リセットと直列化する。 */
-            ctx->send_window.next_seq++;
             ctx->send_has_data = 1;
         }
         else
@@ -190,44 +324,14 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
 
     if (is_tcp)
     {
-        /* TCP v2: アクティブな全 path にループ送信する。 */
-        if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) > 0)
+        /*
+         * TCP v2: アクティブな全 path に書き込む。
+         * TCP の受信側は欠番を補えないため、どの path にも書き込めなかった通番は消費しない。
+         */
+        result = tcp_write_all_paths(ctx, wire_len);
+        if (result == POTR_OK)
         {
-            int i;
-
-            for (i = 0; i < ctx->n_path; i++)
-            {
-                int writable = 0;
-
-                if (ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
-                    continue;
-
-                /* 送信バッファーの空きを確認する (非ブロッキング)。 */
-                (void)cplat_socket_wait_writable(ctx->tcp_conn_fd[i], CPLAT_SOCKET_NO_WAIT, &writable, NULL);
-
-                if (writable)
-                {
-                    if (ctx->buf_full_suppress_cnt[i] > 0 && ++ctx->buf_full_suppress_cnt[i] > 10)
-                    {
-                        ctx->buf_full_suppress_cnt[i] = 0;
-                    }
-
-                    cplat_local_lock_lock(ctx->tcp_send_mutex[i], CPLAT_SYNC_WAIT_FOREVER);
-                    (void)cplat_socket_send_all(ctx->tcp_conn_fd[i], ctx->send_wire_buf, wire_len, NULL);
-                    cplat_local_lock_unlock(ctx->tcp_send_mutex[i]);
-                }
-                else
-                {
-                    if (ctx->buf_full_suppress_cnt[i] == 0)
-                    {
-                        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                                   "send_thread[service_id=%" PRId64 "]: path[%d]"
-                                   " send buffer full, packet skipped",
-                                   ctx->service.service_id, i);
-                        ctx->buf_full_suppress_cnt[i] = 1;
-                    }
-                }
-            }
+            ctx->send_window.next_seq++;
         }
 
         cplat_local_lock_unlock(ctx->send_window_mutex);
@@ -257,13 +361,15 @@ static void flush_packed(potr_context *ctx, size_t packed_len)
             {
                 cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
                 potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
-                return;
+                return POTR_ERR_IO;
             }
 
             cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, sent_time, CPLAT_MEMORY_ORDER_RELAXED);
             potr_internal_health_thread_wake(ctx);
         }
     }
+
+    return result;
 }
 
 /*
@@ -486,6 +592,7 @@ static void send_thread_func(void *arg)
             uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
             size_t packed_len = 0;
             int n_dequeued = 1;
+            int flush_result = POTR_OK;
 
             append_payload_elem(packed_buf, &packed_len, &first);
 
@@ -610,16 +717,23 @@ static void send_thread_func(void *arg)
             }
 
             /* 外側パケットを構築して送信する。 */
-            flush_packed(ctx, packed_len);
+            flush_result = flush_packed(ctx, packed_len);
 
         complete_packed:
-            /* デキューした全エントリ分の inflight を減算する。 */
+            /* デキューした全エントリ分の inflight を減算する。送信できなかった場合は失敗を記録する。 */
             {
                 int i;
 
                 for (i = 0; i < n_dequeued; i++)
                 {
-                    potr_internal_send_queue_complete(&ctx->send_queue);
+                    if (flush_result == POTR_OK)
+                    {
+                        potr_internal_send_queue_complete(&ctx->send_queue);
+                    }
+                    else
+                    {
+                        potr_internal_send_queue_complete_failed(&ctx->send_queue, flush_result);
+                    }
                 }
             }
         }

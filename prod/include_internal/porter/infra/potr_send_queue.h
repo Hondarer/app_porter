@@ -74,7 +74,7 @@ typedef struct potr_internal_send_queue
     potr_internal_payload_elem *entries; /**< ペイロード エレメント バッファー (動的確保。depth 要素)。 */
     uint8_t *payload_pool;               /**< ペイロード プール (動的確保。depth × max_payload バイト)。 */
     int failure;                         /**< 永続する待機中断理由。mutex で保護します。 */
-    int failure_padding;                 /**< 境界調整。 */
+    int failed_result;                   /**< failed_seq のエントリの送信失敗の結果コード。mutex で保護します。 */
     size_t depth;                        /**< キュー容量 (エントリ数)。 */
     size_t head;                         /**< 読み出し位置 (送信スレッドが使用)。 */
     size_t tail;                         /**< 書き込み位置 (potr_service_send 呼び出し元が使用)。 */
@@ -82,6 +82,7 @@ typedef struct potr_internal_send_queue
     size_t inflight;                     /**< sendto 実行中エントリ数。 */
     uint64_t pushed_seq;                 /**< 登録済みエントリ数。登録順の番号の最大値。mutex で保護します。 */
     uint64_t completed_seq;              /**< 完了済みエントリ数。mutex で保護します。 */
+    uint64_t failed_seq;                 /**< 送信に失敗した最後のエントリの番号。0 は失敗なし。mutex で保護します。 */
     cplat_local_lock *mutex;             /**< 排他制御。 */
     cplat_local_lock *push_mutex;        /**< 1 メッセージ分の登録を直列化する。mutex より先に取得します。 */
     cplat_condvar *not_empty;            /**< count > 0 になったことを通知する条件変数。 */
@@ -208,6 +209,19 @@ extern "C"
     extern void potr_internal_send_queue_complete(potr_internal_send_queue *q);
 
     /**
+     *  @brief          送信できなかった inflight エントリを 1 つ完了としてマークします。
+     *
+     *  potr_internal_send_queue_complete() と同じく完了数を進め、待機中のスレッドを起床させます。\n
+     *  あわせて、完了したエントリの番号と @p error を送信失敗として記録します。\n
+     *  ブロッキング送信は potr_internal_send_queue_ticket_result() で記録を参照し、
+     *  送信できなかったメッセージを成功として返しません。
+     *
+     *  @param[in,out]  q       送信キュー。
+     *  @param[in]      error   送信できなかった理由の結果コード。POTR_OK 以外を指定します。
+     */
+    extern void potr_internal_send_queue_complete_failed(potr_internal_send_queue *q, int error);
+
+    /**
      *  @brief          count と inflight が共に 0 になるまで待機します。
      *  @param[in,out]  q   送信キュー。
      */
@@ -222,6 +236,20 @@ extern "C"
      *  @param[in]      ticket  待機する番号。potr_internal_send_queue_push_wait() が返した値を指定します。
      */
     extern void potr_internal_send_queue_wait_ticket(potr_internal_send_queue *q, uint64_t ticket);
+
+    /**
+     *  @brief          指定した番号以降に完了したエントリの送信失敗を取得します。
+     *
+     *  potr_internal_send_queue_wait_ticket() の復帰後に呼び出し、1 メッセージ分の断片の送信結果を判定します。\n
+     *  記録は最後の失敗だけを保持します。@p first_ticket 以降の失敗が 1 件でもあれば、その結果コードを返します。\n
+     *  判定の時点までに後続のメッセージが失敗した場合も失敗を返します。
+     *  失敗したエントリを成功と誤認しないことを優先するためです。
+     *
+     *  @param[in,out]  q               送信キュー。
+     *  @param[in]      first_ticket    判定するメッセージの最初の断片の番号。
+     *  @return         失敗がなければ POTR_OK、あれば記録した結果コードを返します。
+     */
+    extern int potr_internal_send_queue_ticket_result(potr_internal_send_queue *q, uint64_t first_ticket);
 
     /**
      *  @brief          1 メッセージ分の登録を開始し、他の登録元を待たせます。

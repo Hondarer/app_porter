@@ -21,6 +21,9 @@
 #endif /* PLATFORM_ */
 #include <string.h>
 
+#include <chrono>
+#include <thread>
+
 using namespace testing;
 
 class potrSendTest : public Test
@@ -340,6 +343,46 @@ TEST_F(potrSendTest, peer_all_sends_only_to_connected_peers)
             elem.payload, payload,
             strlen(
                 payload))); // [確認_正常系] - memcmp() の戻り値が 0 であること。(キューに積んだ内容が送信ペイロードと一致することの確認)
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// TCP のブロッキング送信で、送信スレッドが送信失敗として完了させた場合に失敗を返すことの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, tcp_blocking_send_returns_recorded_send_failure)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
+    const char payload[] = "tcp-send-failure"; // [状態] - 送信ペイロードを "tcp-send-failure" とする。
+    potr_internal_payload_elem elem = {};
+    int actual_ret = POTR_OK;
+
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(
+        &ctx.health_alive, 1,
+        CPLAT_MEMORY_ORDER_RELAXED); // [状態] - TCP_BIDIR で物理パスと論理接続が成立しているものとする。
+
+    // Pre-Assert
+
+    // Act
+    std::thread sender(
+        [&]()
+        {
+            actual_ret = potr_service_send(handle, POTR_PEER_NA, payload, strlen(payload), POTR_SEND_BLOCKING);
+        }); // [手順] - 別スレッドで POTR_SEND_BLOCKING を指定して potr_service_send() を呼び出す。
+    while (potr_internal_send_queue_try_pop(&ctx.send_queue, &elem) != POTR_OK)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    } // [手順] - 送信スレッドの代わりに、登録された 1 件を取り出す。
+    potr_internal_send_queue_complete_failed(
+        &ctx.send_queue,
+        POTR_ERR_DISCONNECTED); // [手順] - 取り出した 1 件を送信失敗として完了させる。
+    sender.join();
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret);
+    // [確認_異常系] - ブロッキング送信の potr_service_send() の戻り値が、記録した POTR_ERR_DISCONNECTED であること。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
 

@@ -319,18 +319,15 @@ int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_
     return POTR_OK;
 }
 
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void potr_internal_send_queue_complete(potr_internal_send_queue *q)
+/* inflight エントリを 1 つ完了とし、待機中のスレッドを起床させる。呼び出し元は mutex を保持する。 */
+static void complete_locked(potr_internal_send_queue *q)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
-
     if (q->inflight > 0U)
     {
         q->inflight--;
     }
 
-    /* 送信スレッドは取り出した順に完了させるため、completed_seq 以下の番号はすべて送信済みである。 */
+    /* 送信スレッドは取り出した順に完了させるため、completed_seq 以下の番号はすべて処理済みである。 */
     q->completed_seq++;
     cplat_condvar_broadcast(q->progress);
 
@@ -344,7 +341,27 @@ void potr_internal_send_queue_complete(potr_internal_send_queue *q)
      * push_wait で待機中のスレッドを起床させる。
      */
     cplat_condvar_signal(q->not_full);
+}
 
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_send_queue_complete(potr_internal_send_queue *q)
+{
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    complete_locked(q);
+    cplat_local_lock_unlock(q->mutex);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_send_queue_complete_failed(potr_internal_send_queue *q, int error)
+{
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+
+    /* 完了数に 1 を足した番号が、これから完了するエントリの番号である。 */
+    q->failed_seq = q->completed_seq + 1U;
+    q->failed_result = error;
+    complete_locked(q);
     cplat_local_lock_unlock(q->mutex);
 }
 
@@ -374,6 +391,24 @@ void potr_internal_send_queue_wait_ticket(potr_internal_send_queue *q, uint64_t 
     }
 
     cplat_local_lock_unlock(q->mutex);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_send_queue_ticket_result(potr_internal_send_queue *q, uint64_t first_ticket)
+{
+    int result = POTR_OK;
+
+    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+
+    if (q->failed_seq != 0U && q->failed_seq >= first_ticket)
+    {
+        result = q->failed_result;
+    }
+
+    cplat_local_lock_unlock(q->mutex);
+
+    return result;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

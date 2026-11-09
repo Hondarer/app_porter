@@ -415,6 +415,15 @@ struct potr_context
         [POTR_MAX_PATH]; /**< path ごとの送信バッファー満杯ログ抑制カウンター (0: 抑制なし、1-10: 抑制中)。 */
 
     /*
+     * 相手端へ PING で通知済みの経路状態 (TCP のみ)。
+     * 相手端は CONNECTED になる前に受信した DATA を破棄する。そこで、送信スレッドは DATA を書き込む前に、
+     * 同じストリームへ最新の経路状態を書き込み済みであることを確かめる。tcp_send_mutex[path] で保護する。
+     */
+    uint8_t tcp_announced_ping_state
+        [POTR_MAX_PATH][POTR_MAX_PATH];    /**< path ごとに最後に PING で書き込んだ経路状態 (POTR_PING_STATE_*)。 */
+    int tcp_ping_announced[POTR_MAX_PATH]; /**< 現在の接続で tcp_announced_ping_state が有効か (1: 有効, 0: 未通知)。 */
+
+    /*
      * TCP セッション確立排他制御 (RECEIVER TCP のみ使用)。
      * 複数 path の accept スレッドが並行して session_id 判定を行う際の競合を防ぐ。
      * potr_internal_connect_thread_start で初期化、potr_internal_connect_thread_stop で破棄する。

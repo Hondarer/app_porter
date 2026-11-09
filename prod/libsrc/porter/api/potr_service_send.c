@@ -35,6 +35,7 @@
  * ブロッキング送信では、登録した最後の断片の番号まで送信済みになるのを待つ。
  * 送信スレッドは取り出した順に完了させるため、それ以前に登録された送信も送信済みになる。
  * 成功時は POTR_OK を返す。断片の登録に失敗したときは、その結果を返す。
+ * ブロッキング送信で断片を送信できなかったときは、送信スレッドが記録した結果を返す。
  */
 static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, int flags,
                         uint16_t base_flags)
@@ -42,6 +43,7 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
     size_t remaining = len;
     size_t max_payload;
     size_t chunk;
+    uint64_t first_ticket = 0U;
     uint64_t last_ticket = 0U;
     int result = POTR_OK;
 
@@ -80,6 +82,11 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
             break;
         }
 
+        if (first_ticket == 0U)
+        {
+            first_ticket = last_ticket;
+        }
+
         ptr += chunk;
         remaining -= chunk;
     }
@@ -95,7 +102,13 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
     if (((unsigned)flags & POTR_SEND_BLOCKING) != 0U)
     {
         potr_internal_send_queue_wait_ticket(&ctx->send_queue, last_ticket);
-        return (int)cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE);
+        result = (int)cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE);
+        if (result != POTR_OK)
+        {
+            return result;
+        }
+
+        return potr_internal_send_queue_ticket_result(&ctx->send_queue, first_ticket);
     }
 
     return POTR_OK;

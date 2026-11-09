@@ -75,6 +75,23 @@ extern "C"
     extern int potr_internal_tcp_send_ping_now(potr_context *ctx, int path_idx);
 
     /**
+     *  @brief          TCP の指定パスへ、未通知の経路状態があれば PING で書き込みます。
+     *
+     *  相手端は CONNECTED になる前に受信した DATA を破棄します。
+     *  送信スレッドは DATA を書き込む前に本関数を呼び出し、同じストリームで DATA より先に
+     *  最新の経路状態を相手端へ届けます。この接続で通知済みの経路状態が現在と同じ場合は書き込みません。
+     *
+     *  @param[in,out]  ctx      セッション コンテキスト。
+     *  @param[in]      path_idx パス インデックス。
+     *  @retval         POTR_OK                    通知済み、または書き込みに成功しました。
+     *  @retval         POTR_ERR_DISCONNECTED      パスが未接続です。
+     *  @retval         POTR_ERR_IO                書き込みに失敗しました。
+     *  @retval         POTR_ERR_UNKNOWN           暗号化に失敗しました。
+     *  @pre            呼び出し元は send_window_mutex と tcp_send_mutex[path_idx] をこの順に保持します。
+     */
+    extern int potr_internal_tcp_announce_ping_state_locked(potr_context *ctx, int path_idx);
+
+    /**
      *  @brief          TCP ヘルス チェック スレッドを path ごとに起動します。
      *
      *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_OK を返す)。

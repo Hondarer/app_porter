@@ -90,6 +90,7 @@ static void close_tcp_conn(potr_context *ctx, int path_idx)
     {
         cplat_socket_close(closing_fd);
         ctx->tcp_conn_fd[path_idx] = CPLAT_INVALID_SOCKET;
+        ctx->tcp_ping_announced[path_idx] = 0;
     }
 
     cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);

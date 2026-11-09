@@ -33,7 +33,7 @@ Table: PATH イベント時のコールバック引数の意味
 |---|---|
 | `POTR_OK` | 送信キューへの追加成功 |
 | `POTR_ERR_INVALID_ARGUMENT` | ハンドル、データ、サイズ、または N:1 モードの `peer_id` が不正 |
-| `POTR_ERR_DISCONNECTED` | 論理 CONNECTED 前または切断中。`unicast_bidir`、`unicast_bidir_n1` の未接続 peer、`POTR_PEER_ALL` で接続済み peer 0 件、`tcp` / `tcp_bidir` の CONNECTED 前または全 path 切断中が該当 |
+| `POTR_ERR_DISCONNECTED` | 論理 CONNECTED 前または切断中。`unicast_bidir`、`unicast_bidir_n1` の未接続 peer、`POTR_PEER_ALL` で接続済み peer 0 件、`tcp` / `tcp_bidir` の CONNECTED 前または全 path 切断中が該当。ブロッキング送信では、`tcp` / `tcp_bidir` のどの path にも書き込めなかった場合も該当 |
 | `POTR_ERR_NOT_FOUND` | N:1 モードで指定した peer が存在しない |
 | `POTR_ERR_OUT_OF_MEMORY` | `POTR_PEER_ALL` の送信先一覧・圧縮用の一時領域の確保失敗、または通知継続不能 |
 | `POTR_ERR_INVALID_HANDLE` | ハンドルが未登録または終了済み |
@@ -94,7 +94,9 @@ Table: サービス開始 API の入力と用途の使い分け
 
 `POTR_SEND_BLOCKING` を指定した送信は、自分が登録した最後の断片の送信が終わるまで待ちます。  
 送信スレッドは登録順に送信するため、復帰した時点で、それ以前に登録された送信も送信済みです。  
-自分の送信は、直前に登録された他の送信と同じ UDP パケットにまとめられる場合があります。
+自分の送信は、直前に登録された他の送信と同じ UDP パケットにまとめられる場合があります。  
+TCP でどの path にも書き込めなかった場合は `POTR_ERR_DISCONNECTED` を返し、書き込めなかった path は切断して再接続します。  
+送信できなかったメッセージを成功として返さないことを優先するため、復帰までに後続の送信が書き込みに失敗した場合も `POTR_ERR_DISCONNECTED` を返すことがあります。
 
 ### close と無効ハンドル
 

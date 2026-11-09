@@ -67,6 +67,7 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_result_from_socket_result(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_send_queue_abort(_, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_complete(_)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_send_queue_complete_failed(_, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_dispose(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_init(_, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_send_queue_peek(_, _)).WillByDefault(Return(0));
@@ -76,6 +77,7 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_send_queue_try_pop(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_send_queue_wait_drained(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_wait_ticket(_, _)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_send_queue_ticket_result(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_send_queue_lock_push(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_unlock_push(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_thread_start(_)).WillByDefault(Return(0));
@@ -90,6 +92,7 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_tcp_recv_thread_stop(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_tcp_send_control_packet(_, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_tcp_send_ping_now(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_tcp_announce_ping_state_locked(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_window_dispose(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_window_init(_, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_window_recv_pop(_, _)).WillByDefault(Return(0));

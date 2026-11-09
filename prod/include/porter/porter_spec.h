@@ -248,6 +248,7 @@ extern "C"
      *  @retval         POTR_ERR_INVALID_ARGUMENT  引数または N:1 モードの peer_id が不正です。
      *  @retval         POTR_ERR_UNSUPPORTED    片方向の受信専用サービスへ送信を要求しました。
      *  @retval         POTR_ERR_DISCONNECTED   送信先が論理 CONNECTED 前または切断中です。
+     *                                          ブロッキング送信では、TCP のどの path にも書き込めなかった場合も返します。
      *  @retval         POTR_ERR_NOT_FOUND       N:1 モードで指定したピアが存在しません。
      *  @retval         POTR_ERR_OUT_OF_MEMORY   全ピア送信用または圧縮用の一時領域を確保できないか、通知継続不能です。
      *  @retval         POTR_ERR_CANCELED        終了処理によって送信を中止しました。
@@ -278,7 +279,10 @@ extern "C"
      *  本呼び出しのメッセージをキューへ登録し、その最後のフラグメントの sendto が完了するまで待機します。\n
      *  送信スレッドは登録順に sendto するため、本関数が返った時点で、自身のメッセージと、
      *  それ以前に登録されたメッセージの sendto は完了しています。\n
-     *  自身のメッセージは、直前に登録された他のメッセージと同じパケットにまとめて送信される場合があります。
+     *  自身のメッセージは、直前に登録された他のメッセージと同じパケットにまとめて送信される場合があります。\n
+     *  TCP で自身のメッセージをどの path にも書き込めなかった場合は POTR_ERR_DISCONNECTED を返します。
+     *  送信できなかったメッセージを成功として返さないことを優先するため、本関数が返るまでに
+     *  後続のメッセージの書き込みが失敗した場合も、POTR_ERR_DISCONNECTED を返すことがあります。
      *
      *  @note           圧縮フォーマットには raw DEFLATE (RFC 1951) を使用します。\n
      *                  Linux と Windows はともに cplat を通じて app/zlib を使用し、

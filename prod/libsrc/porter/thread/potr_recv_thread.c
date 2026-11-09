@@ -477,11 +477,34 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
             }
 
             pushed = potr_internal_window_recv_push(&ctx->recv_window, &pkt);
+
+            /*
+             * 通番の差を符号なしで求め、半周以上先を「ウィンドウ先頭より前」と判定する。
+             * 先頭より前は、他の path で受信済みの重複である。
+             */
+            if (pushed != POTR_OK && (uint32_t)(pkt.seq_num - ctx->recv_window.base_seq) < 0x80000000U)
+            {
+                uint32_t recv_base = ctx->recv_window.base_seq;
+
+                cplat_local_lock_unlock(ctx->recv_window_mutex);
+
+                /*
+                 * ウィンドウより先の通番は、受信していない通番があることを示す。
+                 * TCP は欠番を再送で補えないため、黙って破棄すると以降の受信が止まる。
+                 * ストリームを切断し、再接続で受信状態を回復させる。
+                 */
+                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                           "tcp_recv[service_id=%" PRId64
+                           " path=%d]: DATA seq=%u beyond window (base=%u), disconnecting",
+                           ctx->service.service_id, path_idx, (unsigned)pkt.seq_num, (unsigned)recv_base);
+                return POTR_ERR_PROTOCOL;
+            }
+
             cplat_local_lock_unlock(ctx->recv_window_mutex);
 
             if (pushed != POTR_OK)
             {
-                /* 重複パケットのためスキップする。 */
+                /* 他の path で受信済みの重複パケットのためスキップする。 */
                 POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                            "tcp_recv[service_id=%" PRId64 " path=%d]: DATA seq=%u duplicate, skipped",
                            ctx->service.service_id, path_idx, (unsigned)pkt.seq_num);

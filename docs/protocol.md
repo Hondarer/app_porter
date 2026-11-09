@@ -135,15 +135,25 @@ Table: TCP モードにおけるパケット種別フラグの使用可否と理
 複数の TCP 接続 (path) が確立されると、送信スレッドは全アクティブ path に同一 `seq_num` のパケットを送信します。  
 受信側は複数の path から同一パケットを受け取るため、重複排除が必要です。
 
+TCP の受信側は欠けた通番を再送で補えないため、送信スレッドは各通番を少なくとも 1 つの path へ必ず書き込みます。
+
+- 送信バッファーに空きがない path は、他の path へ書き込めた場合に限り、そのパケットを飛ばします。
+- どの path にも空きがない場合は、空きを待って書き込みます。
+- 書き込みに失敗した path はソケットを停止し、受信スレッドに切断を検知させて再接続します。
+- どの path にも書き込めなかったパケットの通番は消費せず、ブロッキング送信へ `POTR_ERR_DISCONNECTED` を返します。
+
 UDP マルチパスで実装済みの `potr_internal_window_recv_push()` / `potr_internal_window_recv_pop()` をそのまま流用します。  
 複数の recv スレッドが同一の `recv_window` に並行してアクセスするため、呼び出し前後を `recv_window_mutex` で保護します。
 
 ```text
 recv スレッド #i:
   recv_window_mutex を lock
-  potr_internal_window_recv_push(recv_window, pkt)  → 重複なら FAIL を返す
+  potr_internal_window_recv_push(recv_window, pkt)  → ウィンドウ範囲外なら FAIL を返す
+  FAIL かつウィンドウ先頭より先の通番の場合:
+    recv_window_mutex を unlock
+    ストリームを切断する (受信していない通番があるため)
   recv_window_mutex を unlock
-  FAIL の場合: continue（コールバック呼び出しなし）
+  FAIL の場合: continue（他の path で受信済みの重複。コールバック呼び出しなし）
 
   recv_window_mutex を lock
   while potr_internal_window_recv_pop(recv_window, out) == SUCCESS:

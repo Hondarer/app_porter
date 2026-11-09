@@ -75,6 +75,7 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_result_from_socket_result")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_abort")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_complete")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_complete_failed")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_dispose")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_init")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_peek")
@@ -84,6 +85,7 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_try_pop")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_wait_drained")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_wait_ticket")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_ticket_result")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_lock_push")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_unlock_push")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_thread_start")
@@ -98,6 +100,7 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_recv_thread_stop")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_send_control_packet")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_send_ping_now")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_announce_ping_state_locked")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_window_dispose")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_window_init")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_window_recv_pop")
@@ -196,6 +199,7 @@ class Mock_porter
     MOCK_METHOD(int, potr_internal_result_from_socket_result, (int cplat_result, const cplat_error *detail));
     MOCK_METHOD(void, potr_internal_send_queue_abort, (potr_internal_send_queue * q, int error));
     MOCK_METHOD(void, potr_internal_send_queue_complete, (potr_internal_send_queue * q));
+    MOCK_METHOD(void, potr_internal_send_queue_complete_failed, (potr_internal_send_queue * q, int error));
     MOCK_METHOD(void, potr_internal_send_queue_dispose, (potr_internal_send_queue * q));
     MOCK_METHOD(int, potr_internal_send_queue_init, (potr_internal_send_queue * q, size_t depth, uint16_t max_payload));
     MOCK_METHOD(int, potr_internal_send_queue_peek, (potr_internal_send_queue * q, potr_internal_payload_elem *out));
@@ -207,6 +211,7 @@ class Mock_porter
     MOCK_METHOD(int, potr_internal_send_queue_try_pop, (potr_internal_send_queue * q, potr_internal_payload_elem *out));
     MOCK_METHOD(void, potr_internal_send_queue_wait_drained, (potr_internal_send_queue * q));
     MOCK_METHOD(void, potr_internal_send_queue_wait_ticket, (potr_internal_send_queue * q, uint64_t ticket));
+    MOCK_METHOD(int, potr_internal_send_queue_ticket_result, (potr_internal_send_queue * q, uint64_t first_ticket));
     MOCK_METHOD(void, potr_internal_send_queue_lock_push, (potr_internal_send_queue * q));
     MOCK_METHOD(void, potr_internal_send_queue_unlock_push, (potr_internal_send_queue * q));
     MOCK_METHOD(int, potr_internal_send_thread_start, (potr_context * ctx));
@@ -224,6 +229,7 @@ class Mock_porter
     MOCK_METHOD(int, potr_internal_tcp_send_control_packet,
                 (const potr_context *ctx, potr_packet *pkt, uint32_t nonce_val));
     MOCK_METHOD(int, potr_internal_tcp_send_ping_now, (potr_context * ctx, int path_idx));
+    MOCK_METHOD(int, potr_internal_tcp_announce_ping_state_locked, (potr_context * ctx, int path_idx));
     MOCK_METHOD(void, potr_internal_window_dispose, (potr_internal_window * win));
     MOCK_METHOD(int, potr_internal_window_init,
                 (potr_internal_window * win, uint32_t initial_seq, uint16_t window_size, uint16_t max_payload));

@@ -146,18 +146,99 @@ static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due
 }
 
 /*
+ * TCP 接続の指定パスへ、現在の経路状態を載せた PING パケットを書き込む。
+ * 呼び出し元は send_window_mutex と tcp_send_mutex[path_idx] をこの順に保持する。
+ * 経路状態の採取と書き込みを同じクリティカル セクションで行い、同一 path で
+ * 古い経路状態を後から届ける順序逆転を防ぐ。順序が崩れると、相手端の remote_path_ping_state が
+ * NORMAL から UNDEFINED へ後退し、瞬間的に DISCONNECTED と判定される。
+ * force が 0 の場合は、この接続で通知済みの経路状態が現在と同じであれば書き込まない。
+ * 書き込みに成功した経路状態は通知済みとして記録する。
+ * 成功時は POTR_OK、失敗時はエラー コードを返す。
+ */
+static int tcp_write_ping_locked(potr_context *ctx, int path_idx, int force)
+{
+    potr_packet ping_pkt;
+    potr_internal_packet_session_hdr shdr;
+    uint8_t health_states[POTR_MAX_PATH];
+    uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
+    size_t wire_len;
+    cplat_error detail;
+    int build_result;
+
+    if (ctx->tcp_conn_fd[path_idx] == CPLAT_INVALID_SOCKET)
+    {
+        return POTR_ERR_DISCONNECTED;
+    }
+
+    copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
+
+    if (!force && ctx->tcp_ping_announced[path_idx] != 0 &&
+        memcmp(health_states, ctx->tcp_announced_ping_state[path_idx], POTR_MAX_PATH) == 0)
+    {
+        return POTR_OK;
+    }
+
+    shdr.service_id = ctx->service.service_id;
+    shdr.session_id = ctx->session_id;
+    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+    build_result = potr_internal_packet_build_ping(&ping_pkt, &shdr, ctx->send_window.next_seq, health_states,
+                                                   (uint16_t)POTR_MAX_PATH);
+    if (build_result != POTR_OK)
+    {
+        return build_result;
+    }
+
+    memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
+
+    if (ctx->service.encrypt_enabled)
+    {
+        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
+        size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
+
+        ping_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
+        ping_pkt.payload_len = cplat_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
+
+        memcpy(nonce, &ping_pkt.session_id, 4);
+        memcpy(nonce + 4, &ping_pkt.flags, 2);
+        memcpy(nonce + 6, &ping_pkt.seq_num, 4);
+        memset(nonce + 10, 0, 2);
+
+        memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
+
+        if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, wire_buf + POTR_PACKET_HEADER_SIZE,
+                                 POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
+                                 POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+        {
+            /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがない。 */
+            return POTR_ERR_UNKNOWN;
+        }
+
+        wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
+    }
+    else
+    {
+        memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
+        wire_len = POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH;
+    }
+
+    if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) != CPLAT_OK)
+    {
+        return potr_internal_result_from_error(&detail);
+    }
+
+    memcpy(ctx->tcp_announced_ping_state[path_idx], health_states, POTR_MAX_PATH);
+    ctx->tcp_ping_announced[path_idx] = 1;
+
+    return POTR_OK;
+}
+
+/*
  * TCP 接続の指定パスへ PING パケットを送信する。
  * 成功時は POTR_OK、失敗時はエラー コードを返す。
  */
 static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
 {
-    potr_packet ping_pkt;
-    potr_internal_packet_session_hdr shdr;
-    uint8_t health_states[POTR_MAX_PATH];
-    uint32_t seq;
-    size_t wire_len;
-    int build_result;
-    int send_result = POTR_ERR_DISCONNECTED;
+    int send_result;
 
     if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
     {
@@ -176,105 +257,10 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
     }
 
     cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
-    shdr.service_id = ctx->service.service_id;
-    shdr.session_id = ctx->session_id;
-    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
-    seq = ctx->send_window.next_seq;
-    build_result = potr_internal_packet_build_ping(&ping_pkt, &shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
+    cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    send_result = tcp_write_ping_locked(ctx, path_idx, 1);
+    cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
     cplat_local_lock_unlock(ctx->send_window_mutex);
-
-    if (build_result != POTR_OK)
-    {
-        return build_result;
-    }
-
-    /*
-     * path_ping_state スナップショットの採取と TCP 書き込みを同一クリティカル セクション
-     * に閉じ込め、同一 path で送信する PING が「古いスナップショットを後から配送する」 順序逆転を
-     * 起こさないようにする。順序が崩れると peer 側の remote_path_ping_state が
-     * NORMAL から UNDEFINED へ後退し、瞬間的に DISCONNECTED と判定される。
-     */
-    if (ctx->service.encrypt_enabled)
-    {
-        uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
-        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
-        int encrypt_failed = 0;
-
-        ping_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
-        ping_pkt.payload_len = cplat_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
-
-        memcpy(nonce, &ping_pkt.session_id, 4);
-        memcpy(nonce + 4, &ping_pkt.flags, 2);
-        memcpy(nonce + 6, &ping_pkt.seq_num, 4);
-        memset(nonce + 10, 0, 2);
-
-        memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
-
-        cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
-
-        if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
-        {
-            copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
-            memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-
-            if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, wire_buf + POTR_PACKET_HEADER_SIZE,
-                                     POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
-                                     POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
-            {
-                encrypt_failed = 1;
-            }
-            else
-            {
-                cplat_error detail;
-
-                wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
-                if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) == CPLAT_OK)
-                {
-                    send_result = POTR_OK;
-                }
-                else
-                {
-                    send_result = potr_internal_result_from_error(&detail);
-                }
-            }
-        }
-
-        cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
-
-        if (encrypt_failed)
-        {
-            /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがない。 */
-            return POTR_ERR_UNKNOWN;
-        }
-    }
-    else
-    {
-        uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH];
-        memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
-        wire_len = POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH;
-
-        cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
-
-        if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
-        {
-            cplat_error detail;
-
-            copy_path_ping_state(health_states, ctx->path_ping_state, POTR_MAX_PATH);
-            memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-
-            if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) == CPLAT_OK)
-            {
-                send_result = POTR_OK;
-            }
-            else
-            {
-                send_result = potr_internal_result_from_error(&detail);
-            }
-        }
-
-        cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
-    }
 
     return send_result;
 }
@@ -578,6 +564,13 @@ static void tcp_health_thread_func(void *arg)
 int potr_internal_tcp_send_ping_now(potr_context *ctx, int path_idx)
 {
     return tcp_send_ping_packet(ctx, path_idx);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_tcp_announce_ping_state_locked(potr_context *ctx, int path_idx)
+{
+    return tcp_write_ping_locked(ctx, path_idx, 0);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
