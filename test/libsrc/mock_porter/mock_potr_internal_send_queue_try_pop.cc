@@ -5,12 +5,12 @@
 #include <testfw.h>
 #include <mock_porter.h>
 
-MOCK_WEAK_IMPL(int, potr_internal_send_queue_try_pop, potr_internal_send_queue *q, potr_internal_payload_elem *out)
+MOCK_WEAK_IMPL(int, potr_internal_send_queue_try_pop, potr_internal_send_queue *q, potr_internal_payload_elem *item_out)
 {
     int mock_ret = 0;
     if (_mock_porter != nullptr)
     {
-        mock_ret = _mock_porter->potr_internal_send_queue_try_pop(q, out);
+        mock_ret = _mock_porter->potr_internal_send_queue_try_pop(q, item_out);
     }
     return mock_ret;
 }

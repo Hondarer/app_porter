@@ -817,9 +817,6 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         }
     }
 
-    /* 到達しないが形式上記述する。 */
-    cplat_free(workers);
-    cplat_free(events);
 }
 
 #endif /* PLATFORM_WINDOWS */

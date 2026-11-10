@@ -196,7 +196,7 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out,
+int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *item_out,
                                  cplat_atomic_i32 *running)
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
@@ -219,7 +219,7 @@ int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payl
         return ret;
     }
 
-    *out = q->entries[q->head];
+    *item_out = q->entries[q->head];
     q->head = (q->head + 1U) % q->depth;
     q->count--;
     q->inflight++;
@@ -235,7 +235,7 @@ int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payl
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_send_queue_peek(potr_internal_send_queue *q, potr_internal_payload_elem *out)
+int potr_internal_send_queue_peek(potr_internal_send_queue *q, potr_internal_payload_elem *item_out)
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -252,7 +252,7 @@ int potr_internal_send_queue_peek(potr_internal_send_queue *q, potr_internal_pay
         return ret;
     }
 
-    *out = q->entries[q->head]; /* head は送信スレッドのみが変更するので安全 */
+    *item_out = q->entries[q->head]; /* head は送信スレッドのみが変更するので安全 */
 
     cplat_local_lock_unlock(q->mutex);
 
@@ -261,7 +261,8 @@ int potr_internal_send_queue_peek(potr_internal_send_queue *q, potr_internal_pay
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_internal_payload_elem *out, int timeout_ms)
+int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_internal_payload_elem *item_out,
+                                        int timeout_ms)
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -283,7 +284,7 @@ int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_intern
         return ret;
     }
 
-    *out = q->entries[q->head];
+    *item_out = q->entries[q->head];
 
     cplat_local_lock_unlock(q->mutex);
 
@@ -292,7 +293,7 @@ int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_intern
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out)
+int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_payload_elem *item_out)
 {
     cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -309,7 +310,7 @@ int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_
         return ret;
     }
 
-    *out = q->entries[q->head];
+    *item_out = q->entries[q->head];
     q->head = (q->head + 1U) % q->depth;
     q->count--;
     q->inflight++;

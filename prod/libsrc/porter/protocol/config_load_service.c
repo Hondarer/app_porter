@@ -28,6 +28,9 @@
 #include <porter/protocol/config.h>
 #include <porter/protocol/config_parse_common.h>
 
+/** サービスの最大ピア数の既定値。 */
+#define POTR_DEFAULT_MAX_PEERS 1024U
+
 /**
  *  @brief          src を dst に終端 NUL 付きで切り詰めコピーします。
  *  @param[out]     dst      コピー先バッファーへのポインター。
@@ -310,7 +313,7 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
     memset(def, 0, sizeof(*def));
     def->ttl = (uint8_t)POTR_DEFAULT_TTL;
     def->pack_wait_ms = (uint32_t)POTR_DEFAULT_PACK_WAIT_MS;
-    def->max_peers = 1024U;
+    def->max_peers = POTR_DEFAULT_MAX_PEERS;
     def->service_id = service_id;
     def->reconnect_interval_ms = (uint32_t)POTR_DEFAULT_RECONNECT_INTERVAL_MS;
     def->connect_timeout_ms = (uint32_t)POTR_DEFAULT_CONNECT_TIMEOUT_MS;

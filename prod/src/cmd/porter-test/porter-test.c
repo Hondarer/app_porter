@@ -1080,6 +1080,8 @@ int main(int argc, char *argv[])
     const char *service_id_arg = NULL;
     int positional_count = 0;
     porter_test_session session;
+    int need_help = 0;
+    const char *log_level = NULL;
 
     cplat_console_init();
 
@@ -1089,9 +1091,6 @@ int main(int argc, char *argv[])
     session.is_open = 0;
     session.is_bidir = 0;
     session.can_send = 0;
-
-    int need_help = 0;
-    const char *log_level = NULL;
 
     cplat_argparser_init(argc, argv, "porter の送受信動作を対話的に検証します。");
     cplat_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);

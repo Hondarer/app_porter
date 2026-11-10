@@ -61,10 +61,10 @@ int thread_connect_read_first_packet(const cplat_socket fd, uint8_t *buf, const 
             return potr_internal_result_from_socket_result(recv_result, &detail);
     }
 
-    /* payload_len は固定長ヘッダー末尾の offset 34 に格納される。 */
+    /* payload_len は固定長ヘッダー内の protocol_version の直前に格納される。 */
     {
         uint16_t wpl;
-        memcpy(&wpl, buf + 34, sizeof(wpl));
+        memcpy(&wpl, buf + POTR_PACKET_PAYLOAD_LEN_OFFSET, sizeof(wpl));
         wire_payload_len = cplat_ntoh16(wpl);
     }
 

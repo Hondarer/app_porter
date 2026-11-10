@@ -169,9 +169,13 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
             size_t sent = 0;
 
             if (endpoint_is_unset(&peer->dest_addr[i]))
+            {
                 continue;
+            }
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+            {
                 continue;
+            }
             (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &peer->dest_addr[i], &sent, NULL);
         }
     }
@@ -185,9 +189,13 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
             size_t sent = 0;
 
             if (endpoint_is_unset(&peer->dest_addr[i]))
+            {
                 continue;
+            }
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+            {
                 continue;
+            }
             (void)cplat_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &peer->dest_addr[i], &sent,
                                       NULL);
         }

@@ -157,7 +157,9 @@ static void recv_thread_func(void *arg)
     {
         poll_ms = ctx->health_timeout_ms / 3U;
         if (poll_ms < 100U)
+        {
             poll_ms = 100U;
+        }
     }
     else
     {
@@ -186,7 +188,9 @@ static void recv_thread_func(void *arg)
         if (poll_result != CPLAT_OK)
         {
             if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+            {
                 break;
+            }
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv[service_id=%" PRId64 "]: socket poll failed: rc=%d",
                        ctx->service.service_id, poll_result);
             break;
@@ -228,9 +232,13 @@ static void recv_thread_func(void *arg)
             int recv_result;
 
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+            {
                 continue;
+            }
             if (ready[i] == 0U)
+            {
                 continue;
+            }
 
             memset(&sender_addr, 0, sizeof(sender_addr));
 
@@ -239,7 +247,9 @@ static void recv_thread_func(void *arg)
             if (recv_result != CPLAT_OK || recv_len == 0U)
             {
                 if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+                {
                     break; /* 正常終了: ソケット クローズによる割り込み */
+                }
                 POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: recvfrom failed (rc=%d)",
                            ctx->service.service_id, recv_result);
                 continue;
@@ -261,7 +271,9 @@ static void recv_thread_func(void *arg)
             }
 
             if (!thread_recv_check_src_addr(ctx, &sender_addr))
+            {
                 continue;
+            }
 
             /* ── N:1 モード: ピアごとにディスパッチ ── */
             if (ctx->is_multi_peer)
@@ -271,7 +283,9 @@ static void recv_thread_func(void *arg)
             }
 
             if (thread_recv_authenticate_packet(ctx, &pkt, buf, "recv", -1) != POTR_OK)
+            {
                 continue;
+            }
 
             /* ── 送信者ロール: NACK のみ処理 ── */
             if (ctx->role == POTR_ROLE_SENDER)
@@ -363,7 +377,9 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
     }
 
     if (thread_recv_authenticate_packet(ctx, &pkt, buf, "tcp_recv", path_idx) != POTR_OK)
+    {
         return POTR_OK;
+    }
 
     /*
      * accept で採用したセッション以外は PING を含めて状態へ反映しない。
@@ -645,9 +661,13 @@ static void tcp_recv_thread_func(void *arg)
                 /* poll_ms は health_timeout から算出したポーリング間隔。INT_MAX 以下。 */
                 int readable = tcp_wait_readable(fd, (int)poll_ms);
                 if (cplat_atomic_load_i32(&ctx->running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+                {
                     break;
+                }
                 if (readable < 0)
+                {
                     break; /* エラー */
+                }
 
                 if (readable == 0)
                 {

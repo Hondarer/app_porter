@@ -202,13 +202,15 @@ class Mock_porter
     MOCK_METHOD(void, potr_internal_send_queue_complete_failed, (potr_internal_send_queue * q, int error));
     MOCK_METHOD(void, potr_internal_send_queue_dispose, (potr_internal_send_queue * q));
     MOCK_METHOD(int, potr_internal_send_queue_init, (potr_internal_send_queue * q, size_t depth, uint16_t max_payload));
-    MOCK_METHOD(int, potr_internal_send_queue_peek, (potr_internal_send_queue * q, potr_internal_payload_elem *out));
+    MOCK_METHOD(int, potr_internal_send_queue_peek,
+                (potr_internal_send_queue * q, potr_internal_payload_elem *item_out));
     MOCK_METHOD(int, potr_internal_send_queue_peek_timed,
-                (potr_internal_send_queue * q, potr_internal_payload_elem *out, int timeout_ms));
+                (potr_internal_send_queue * q, potr_internal_payload_elem *item_out, int timeout_ms));
     MOCK_METHOD(int, potr_internal_send_queue_pop,
-                (potr_internal_send_queue * q, potr_internal_payload_elem *out, cplat_atomic_i32 *running));
+                (potr_internal_send_queue * q, potr_internal_payload_elem *item_out, cplat_atomic_i32 *running));
     MOCK_METHOD(void, potr_internal_send_queue_shutdown, (potr_internal_send_queue * q));
-    MOCK_METHOD(int, potr_internal_send_queue_try_pop, (potr_internal_send_queue * q, potr_internal_payload_elem *out));
+    MOCK_METHOD(int, potr_internal_send_queue_try_pop,
+                (potr_internal_send_queue * q, potr_internal_payload_elem *item_out));
     MOCK_METHOD(void, potr_internal_send_queue_wait_drained, (potr_internal_send_queue * q));
     MOCK_METHOD(void, potr_internal_send_queue_wait_ticket, (potr_internal_send_queue * q, uint64_t ticket));
     MOCK_METHOD(int, potr_internal_send_queue_ticket_result, (potr_internal_send_queue * q, uint64_t first_ticket));

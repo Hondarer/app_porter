@@ -156,9 +156,13 @@ static int tcp_write_all_paths(potr_context *ctx, size_t wire_len)
 
         if (writable)
         {
-            if (ctx->buf_full_suppress_cnt[i] > 0 && ++ctx->buf_full_suppress_cnt[i] > 10)
+            if (ctx->buf_full_suppress_cnt[i] > 0)
             {
-                ctx->buf_full_suppress_cnt[i] = 0;
+                ++ctx->buf_full_suppress_cnt[i];
+                if (ctx->buf_full_suppress_cnt[i] > 10)
+                {
+                    ctx->buf_full_suppress_cnt[i] = 0;
+                }
             }
 
             if (tcp_write_path(ctx, i, wire_len) == POTR_OK)

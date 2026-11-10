@@ -31,6 +31,9 @@
 /** パケット ヘッダーの固定長 [byte]。payload フィールドの開始オフセット。 */
 #define POTR_PACKET_HEADER_SIZE ((size_t)offsetof(potr_packet, payload))
 
+/** potr_packet のワイヤー フォーマットで payload_len が始まる位置 [byte]。 */
+#define POTR_PACKET_PAYLOAD_LEN_OFFSET 34U
+
 /**
  *  @brief  パケットに付与するセッション識別情報。
  *

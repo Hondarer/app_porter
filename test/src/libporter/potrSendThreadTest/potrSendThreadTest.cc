@@ -287,3 +287,54 @@ TEST_F(potrSendThreadTcpTest, announce_failure_stops_path_without_data)
     EXPECT_EQ(0U, ctx.send_window.next_seq); // [確認_異常系] - 書き込めなかった DATA の通番を消費しないこと。
 }
 // [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]
+
+// 送信バッファー警告抑止カウンターが 0 から 0 になることの確認
+// [サブ手順参照 名前=potrSendThreadTcpTest.SetUp]
+TEST_F(potrSendThreadTcpTest, suppress_counter_zero_stays_zero)
+{
+    // Arrange
+    ctx.buf_full_suppress_cnt[0] = 0; // [状態] - 送信前の抑止カウンターを設定する。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpTest.runOneEntry]
+    int actual_ret = runOneEntry();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);             // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(0, ctx.buf_full_suppress_cnt[0]); // [確認_正常系] - 送信後の抑止カウンターが 0 であること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]
+
+// 送信バッファー警告抑止カウンターが 9 から 10 になることの確認
+// [サブ手順参照 名前=potrSendThreadTcpTest.SetUp]
+TEST_F(potrSendThreadTcpTest, suppress_counter_below_limit_reaches_limit)
+{
+    // Arrange
+    ctx.buf_full_suppress_cnt[0] = 9; // [状態] - 送信前の抑止カウンターを設定する。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpTest.runOneEntry]
+    int actual_ret = runOneEntry();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);              // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(10, ctx.buf_full_suppress_cnt[0]); // [確認_正常系] - 送信後の抑止カウンターが 10 であること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]
+
+// 送信バッファー警告抑止カウンターが 10 から 0 になることの確認
+// [サブ手順参照 名前=potrSendThreadTcpTest.SetUp]
+TEST_F(potrSendThreadTcpTest, suppress_counter_exceeding_limit_resets)
+{
+    // Arrange
+    ctx.buf_full_suppress_cnt[0] = 10; // [状態] - 送信前の抑止カウンターを設定する。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpTest.runOneEntry]
+    int actual_ret = runOneEntry();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);             // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(0, ctx.buf_full_suppress_cnt[0]); // [確認_正常系] - 送信後の抑止カウンターが 0 であること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]

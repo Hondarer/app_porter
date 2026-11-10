@@ -153,12 +153,12 @@ extern "C"
      *
      *  キューが空の場合は not_empty 条件変数を待機します。
      *
-     *  @param[in,out]  q       送信キュー。
-     *  @param[out]     out     取り出したエントリの書き戻し先。
-     *  @param[in]      running 実行フラグへのポインター。取得順序で読み、0 になると待機を中断します。
+     *  @param[in,out]  q        送信キュー。
+     *  @param[out]     item_out 取り出したエントリの書き戻し先。
+     *  @param[in]      running  実行フラグへのポインター。取得順序で読み、0 になると待機を中断します。
      *  @return         成功時は POTR_OK、running が 0 になった場合は POTR_ERR_CANCELED。
      */
-    extern int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out,
+    extern int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *item_out,
                                             cplat_atomic_i32 *running);
 
     /**
@@ -166,11 +166,11 @@ extern "C"
      *
      *  キューが空の場合は即時 POTR_ERR_EMPTY を返します。
      *
-     *  @param[in,out]  q   送信キュー (mutex ロック・ロック解除を行う)。
-     *  @param[out]     out 先頭エントリの書き戻し先。
+     *  @param[in,out]  q        送信キュー (mutex ロック・ロック解除を行う)。
+     *  @param[out]     item_out 先頭エントリの書き戻し先。
      *  @return         成功時は POTR_OK、空の場合は POTR_ERR_EMPTY。
      */
-    extern int potr_internal_send_queue_peek(potr_internal_send_queue *q, potr_internal_payload_elem *out);
+    extern int potr_internal_send_queue_peek(potr_internal_send_queue *q, potr_internal_payload_elem *item_out);
 
     /**
      *  @brief          先頭エントリを参照する (タイムアウトあり)。
@@ -178,11 +178,11 @@ extern "C"
      *  キューが空の場合は timeout_ms ミリ秒まで待機します。
      *
      *  @param[in,out]  q           送信キュー。
-     *  @param[out]     out         先頭エントリの書き戻し先。
+     *  @param[out]     item_out    先頭エントリの書き戻し先。
      *  @param[in]      timeout_ms  待機タイムアウト [ms]。
      *  @return         成功時は POTR_OK、timeout_ms 以内にエントリが到着しなかった場合は POTR_ERR_TIMEOUT。
      */
-    extern int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_internal_payload_elem *out,
+    extern int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_internal_payload_elem *item_out,
                                                    int timeout_ms);
 
     /**
@@ -190,11 +190,11 @@ extern "C"
      *
      *  キューが空の場合は即時 POTR_ERR_EMPTY を返します。
      *
-     *  @param[in,out]  q   送信キュー。
-     *  @param[out]     out 取り出したエントリの書き戻し先。
+     *  @param[in,out]  q        送信キュー。
+     *  @param[out]     item_out 取り出したエントリの書き戻し先。
      *  @return         成功時は POTR_OK、空の場合は POTR_ERR_EMPTY。
      */
-    extern int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_payload_elem *out);
+    extern int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_payload_elem *item_out);
 
     /**
      *  @brief          inflight エントリを 1 つ完了としてマークします。

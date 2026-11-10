@@ -244,7 +244,9 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         if (sock == CPLAT_INVALID_SOCKET)
         {
             if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+            {
                 break;
+            }
 
             if (ctx->service.reconnect_interval_ms == 0U)
             {
@@ -305,9 +307,13 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
             }
 
             if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+            {
                 break;
+            }
             if (ctx->service.reconnect_interval_ms == 0U)
+            {
                 break;
+            }
 
             /* reconnect_interval_ms は再接続間隔の設定値。実用範囲は INT_MAX 以下。 */
             reconnect_wait(ctx, path_idx, (int)ctx->service.reconnect_interval_ms);
@@ -339,7 +345,9 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         }
 
         if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+        {
             break;
+        }
 
         if (ctx->service.reconnect_interval_ms == 0U)
         {
@@ -508,7 +516,9 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                 for (k = 0; k < ctx->n_path; k++)
                 {
                     if (k == path_idx)
+                    {
                         continue;
+                    }
 
                     if (ctx->tcp_conn_fd[k] != CPLAT_INVALID_SOCKET)
                     {

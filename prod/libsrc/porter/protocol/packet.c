@@ -298,7 +298,7 @@ int potr_internal_packet_parse(potr_packet *packet, const void *buf, size_t buf_
     packet->ack_num = cplat_ntoh32(tmp32);
     memcpy(&tmp16, b + 32, 2);
     packet->flags = cplat_ntoh16(tmp16);
-    memcpy(&tmp16, b + 34, 2);
+    memcpy(&tmp16, b + POTR_PACKET_PAYLOAD_LEN_OFFSET, 2);
     packet->payload_len = cplat_ntoh16(tmp16);
     memcpy(&tmp32, b + 36, 4);
     packet->protocol_version = cplat_ntoh32(tmp32);
