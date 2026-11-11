@@ -177,6 +177,31 @@ _makefw_with_cov_prod:
 		$(MAKE) -C prod || exit 1; \
 	fi
 
+# gen は、prod 配下の生成ソースだけを作る。test はビルドせず、make_build.stamp / make_test.stamp も更新しない。
+# 自前でビルドした生成器が必要な app (appdeps.mk の APP_GEN_REQUIRES_BUILD := 1) と、その依存先の app は、
+# 生成器とライブラリを用意するため prod を通常どおり make する。それ以外の app は prod の _gen だけを実行する。
+# 対象の一覧は、app/makefile の gen が MAKEFW_GEN_BUILD_APPS で渡す。app 直下で直接実行した場合は自分で解決する。
+# その場合、依存先の app は make しない (app 直下の make が依存先をビルドしないことと同じ)。
+.PHONY: gen
+gen:
+	@if [ -f prod/makefile ]; then \
+		if [ "$${MAKEFW_GEN_BUILD_APPS+x}" = "x" ]; then \
+			gen_build_apps="$$MAKEFW_GEN_BUILD_APPS"; \
+		else \
+			gen_build_apps=$$(bash "$(APPDEPS_RESOLVER)" --gen-build-apps) || { \
+				echo "ERROR: Failed to resolve apps that require a prod build for gen." >&2; \
+				exit 1; \
+			}; \
+		fi; \
+		gen_goal="_gen"; \
+		for gen_build_app in $$gen_build_apps; do \
+			if [ "$$gen_build_app" = "$(APP_NAME)" ]; then gen_goal=""; fi; \
+		done; \
+		$(call _MAKEFW_RESOLVE_APP_PATHS) \
+		echo $(MAKE) -C prod $$gen_goal; \
+		$(MAKE) -C prod $$gen_goal || exit 1; \
+	fi
+
 # with-cov の前提。cov-build が prod の翻訳単位を取得できるよう、prod の成果物と make_build.stamp を削除する。
 # assured.stamp の省略条件に関係なく、cov-build の外で毎回実行する。test は with-cov の対象外のため clean しない。
 .PHONY: _makefw_clean_for_coverity
