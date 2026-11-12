@@ -39,6 +39,26 @@ fi; \
 export MAKEFW_APP_PATHS_CACHE_APP MAKEFW_APP_PATHS_CACHE;
 endef
 
+# 子 make の 1 段階 (prod のビルド、test のビルド、テストの実行) の経過時間を 1 行表示する。
+# 引数は表示する段階の名前。直前に stage_started=$$SECONDS で開始時点を記録しておく。
+# Windows ではプロセスの起動に時間がかかるため、date やコマンド置換を使わず、
+# シェルの変数 SECONDS と組み込みの printf だけで求める。
+# SECONDS を持たないシェルでは表示を省き、ビルドの結果には影響させない。
+define _MAKEFW_PRINT_STAGE_ELAPSED
+case "$${stage_started:-}" in ''|*[!0-9]*) ;; *) \
+    case "$${SECONDS:-}" in ''|*[!0-9]*) ;; *) \
+        stage_elapsed=$$((SECONDS - stage_started)); \
+        if [ $$stage_elapsed -ge 3600 ]; then \
+            printf 'INFO: %s %s elapsed=%02d:%02d:%02d\n' "$(APP_NAME)" "$(1)" \
+                $$((stage_elapsed / 3600)) $$(((stage_elapsed % 3600) / 60)) $$((stage_elapsed % 60)); \
+        else \
+            printf 'INFO: %s %s elapsed=%02d:%02d\n' "$(APP_NAME)" "$(1)" \
+                $$((stage_elapsed / 60)) $$((stage_elapsed % 60)); \
+        fi;; \
+    esac;; \
+esac;
+endef
+
 # app/<name>.assured.stamp が HEAD と一致し、追加・削除・変更が無いとき 1。
 # サブモジュールでない app は警告して 0。子 make へは export せず、署名コマンドの直前だけで渡す。
 # Windows では bash の起動が 1 回あたり 1 秒近くかかり、app 直下 makefile の parse ごとに積み上がる。
@@ -153,7 +173,11 @@ default:
 					skip_src="MAKEFW_SKIP_TEST_SRC=1"; \
 				fi; \
 				echo $(MAKE) -C $$dir $$skip_src; \
-				$(MAKE) -C $$dir $$skip_src || { make_exit=$$?; break; }; \
+				stage_started=$$SECONDS; \
+				$(MAKE) -C $$dir $$skip_src; \
+				make_exit=$$?; \
+				$(call _MAKEFW_PRINT_STAGE_ELAPSED,$$dir) \
+				if [ $$make_exit -ne 0 ]; then break; fi; \
 			fi; \
 		done; \
 		if [ $$make_exit -eq 0 ] && [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ]; then \
@@ -299,8 +323,10 @@ test :
 		rm -f "$(TEST_STAMP)"; \
 		$(call _MAKEFW_RESOLVE_APP_PATHS) \
 		echo $(MAKE) -C test _test_run; \
+		stage_started=$$SECONDS; \
 		$(MAKE) -C test _test_run; \
 		make_exit=$$?; \
+		$(call _MAKEFW_PRINT_STAGE_ELAPSED,test _test_run) \
 		if [ $$make_exit -eq 0 ] && [ $$signature_available -eq 1 ] && [ "$$current_clean" = "1" ]; then \
 			cp "$$sig_file" "$(TEST_STAMP)"; \
 		fi; \
