@@ -301,7 +301,7 @@ class porterSendRecvTest : public Test
         recv_path = ws + "/app/porter/prod/cbin/porter-test";
         send_path = ws + "/app/porter/prod/cbin/porter-test";
         lib_path = ws + "/app/porter/prod/lib" + ":" + ws + "/app/cplat/prod/lib" + ":" + ws + "/app/cjson/prod/lib" +
-                   ":" + ws + "/app/zlib/prod/lib";
+                   ":" + ws + "/app/zlib/prod/lib" + ":" + ws + "/app/openssl/prod/lib";
 #elif defined(PLATFORM_WINDOWS)
         recv_path = ws + "\\app\\porter\\prod\\cbin\\porter-test.exe";
         send_path = ws + "\\app\\porter\\prod\\cbin\\porter-test.exe";
