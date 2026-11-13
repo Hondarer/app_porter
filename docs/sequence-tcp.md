@@ -17,193 +17,188 @@ accept 後にフィルター・先読み・解析・認証などで拒否した�
 `potr_service_open()` を TCP SENDER として呼び出したときの内部処理です。  
 `potr_service_open()` は即座に復帰し、接続確立は connect スレッドが非同期に行います。
 
-```plantuml
-@startuml TCP サービス開始 (SENDER)
-caption TCP サービス開始 (SENDER)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant APP as アプリ
+    participant OPEN as potr_service_open
 
-participant "アプリ" as APP
-participant "potr_service_open" as OPEN
-participant "connect スレッド" as CT
-participant "送信スレッド" as ST
-participant "受信スレッド" as RT
-participant "ヘルス チェック スレッド" as HT
+    APP->>+OPEN: potr_service_open(&global, &service, POTR_ROLE_SENDER, cb, &handle)
+    OPEN->>OPEN: 構成構造体の検証・セッション識別子生成
+    OPEN->>OPEN: 送信キュー / ウィンドウ初期化
+    OPEN->>OPEN: tcp_state_mutex / tcp_state_cv 初期化
 
-APP -> OPEN: potr_service_open(&global, &service, POTR_ROLE_SENDER, cb, &handle)
-activate OPEN
-OPEN -> OPEN: 構成構造体の検証・セッション識別子生成
-OPEN -> OPEN: 送信キュー / ウィンドウ初期化
-OPEN -> OPEN: tcp_state_mutex / tcp_state_cv 初期化
+    create participant CT as connect スレッド
+    OPEN->>CT: connect スレッド起動
+    OPEN-->>-APP: POTR_OK, *handle
 
-OPEN -> CT**: connect スレッド起動
-OPEN --> APP: POTR_OK, *handle
-deactivate OPEN
+    activate CT
+    CT->>CT: connect(dst_addr, dst_port)<br>(接続確立まで connect_timeout_ms 待機)
+    create participant ST as 送信スレッド
+    CT->>ST: 送信スレッド起動
+    create participant RT as 受信スレッド
+    CT->>RT: 受信スレッド起動
+    create participant HT as ヘルス チェック スレッド
+    CT->>HT: ヘルス チェック スレッド起動
 
-activate CT
-CT -> CT: connect(dst_addr, dst_port)\n（接続確立まで connect_timeout_ms 待機）
-CT -> ST**: 送信スレッド起動
-CT -> RT**: 受信スレッド起動
-CT -> HT**: ヘルス チェック スレッド起動
-
-note over CT: recv スレッドが切断を検知するまで待機
-
-@enduml
+    Note over CT: recv スレッドが切断を検知するまで待機
 ```
+
+CodeBlock: TCP サービス開始 (SENDER)
 
 ## TCP サービス開始 (RECEIVER)
 
 `potr_service_open()` を TCP RECEIVER として呼び出したときの内部処理です。
 
-```plantuml
-@startuml TCP サービス開始 (RECEIVER)
-caption TCP サービス開始 (RECEIVER)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant APP as アプリ
+    participant OPEN as potr_service_open
 
-participant "アプリ" as APP
-participant "potr_service_open" as OPEN
-participant "accept スレッド" as AT
-participant "recv スレッド" as RT
+    APP->>+OPEN: potr_service_open(&global, &service, POTR_ROLE_RECEIVER, callback, &handle)
+    OPEN->>OPEN: 構成構造体の検証
+    OPEN->>OPEN: TCP listen ソケット作成<br>bind(dst_addr, dst_port) → listen()
 
-APP -> OPEN: potr_service_open(&global, &service, POTR_ROLE_RECEIVER, callback, &handle)
-activate OPEN
-OPEN -> OPEN: 構成構造体の検証
-OPEN -> OPEN: TCP listen ソケット作成\nbind(dst_addr, dst_port) → listen()
+    create participant AT as accept スレッド
+    OPEN->>AT: accept スレッド起動
+    OPEN-->>-APP: POTR_OK, *handle
 
-OPEN -> AT**: accept スレッド起動
-OPEN --> APP: POTR_OK, *handle
-deactivate OPEN
+    activate AT
+    Note over AT: accept() 待機中
+    create participant RT as recv スレッド
+    AT->>RT: 接続確立後に recv スレッド起動
 
-activate AT
-note over AT: accept() 待機中
-AT -> RT**: 接続確立後に recv スレッド起動
-
-activate RT
-note over RT: DATA / PING を待機するポーリングループ
-
-@enduml
+    activate RT
+    Note over RT: DATA / PING を待機するポーリングループ
 ```
+
+CodeBlock: TCP サービス開始 (RECEIVER)
 
 ## TCP 正常接続・通信・切断
 
 TCP SENDER / RECEIVER 間の正常な接続確立・データ送信・切断シーケンスです。
 
-```plantuml
-@startuml TCP 正常シーケンス
-caption TCP 正常シーケンス
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as SENDER<br>(クライアント)
+    participant R as RECEIVER<br>(サーバー)
 
-participant "SENDER\n(クライアント)" as S
-participant "RECEIVER\n(サーバー)" as R
+    rect rgb(240, 240, 240)
+        Note over S,R: サービス開始
+    end
+    Note over R: potr_service_open()<br>bind() → listen()
+    Note over S: potr_service_open()<br>connect() 開始
+    S->>R: TCP 3way handshake
+    Note over S: 接続確立
 
-== サービス開始 ==
+    rect rgb(240, 240, 240)
+        Note over S,R: データ送信
+    end
+    S->>R: DATA (seq_num=0, 最初のパケット)
+    Note over R: peer_session_known = false<br>→ セッション採用<br>POTR_EVENT_CONNECTED 発火
 
-note over R: potr_service_open()\nbind() → listen()
-note over S: potr_service_open()\nconnect() 開始
-S -> R: TCP 3way handshake
-note over S: 接続確立
+    S->>R: DATA (seq_num=1)
+    S->>R: DATA (seq_num=2)
+    Note over R: POTR_EVENT_DATA × 3
 
-== データ送信 ==
+    rect rgb(240, 240, 240)
+        Note over S,R: ヘルス チェック
+    end
+    S->>R: 定周期 PING (seq_num=3, payload=UNDEFINED)
+    Note over R: path_ping_state を NORMAL に更新
+    R->>S: 割り込み PING (seq_num=M,<br>payload に NORMAL を含む)
+    Note over S: 初回の認証済み PING を受信<br>→ CONNECTED / alive 確認
 
-S -> R: DATA (seq_num=0, 最初のパケット)
-note over R: peer_session_known = false\n→ セッション採用\nPOTR_EVENT_CONNECTED 発火
-
-S -> R: DATA (seq_num=1)
-S -> R: DATA (seq_num=2)
-note over R: POTR_EVENT_DATA × 3
-
-== ヘルス チェック ==
-
-S -> R: 定周期 PING (seq_num=3, payload=UNDEFINED)
-note over R: path_ping_state を NORMAL に更新
-R -> S: 割り込み PING (seq_num=M,\npayload に NORMAL を含む)
-note over S: 初回の認証済み PING を受信\n→ CONNECTED / alive 確認
-
-== 正常終了 ==
-
-note over S: potr_service_close()\nclose_requested=1\nsend_queue drain 待機
-S -> R: FIN[target_valid, ack_num=3]
-note over R: recv_window.next_seq が 3 に追い付くまで\n必要なら pending_fin
-note over R: 最後の DATA callback 完了
-R -> S: FIN_ACK[ack_num=3]
-note over R: POTR_EVENT_DISCONNECTED 発火\ncurrent session をリセット
-note over S: FIN_ACK 受信後に socket teardown
-
-@enduml
+    rect rgb(240, 240, 240)
+        Note over S,R: 正常終了
+    end
+    Note over S: potr_service_close()<br>close_requested=1<br>send_queue drain 待機
+    S->>R: FIN[target_valid, ack_num=3]
+    Note over R: recv_window.next_seq が 3 に追い付くまで<br>必要なら pending_fin
+    Note over R: 最後の DATA callback 完了
+    R->>S: FIN_ACK[ack_num=3]
+    Note over R: POTR_EVENT_DISCONNECTED 発火<br>current session をリセット
+    Note over S: FIN_ACK 受信後に socket teardown
 ```
+
+CodeBlock: TCP 正常シーケンス
 
 ## TCP SENDER 再起動・自動再接続
 
 SENDER プロセスが再起動した場合に自動再接続が行われるシーケンスです。
 
-```plantuml
-@startuml TCP 再接続シーケンス
-caption TCP SENDER 再起動・自動再接続
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as SENDER
+    participant R as RECEIVER
 
-participant "SENDER" as S
-participant "RECEIVER" as R
+    Note over S,R: 通信中（セッション A）
 
-note over S,R: 通信中（セッション A）
+    rect rgb(240, 240, 240)
+        Note over S,R: SENDER プロセス再起動
+    end
+    S-->>R: TCP 接続断
+    Note over R: TCP 切断検知<br>POTR_EVENT_DISCONNECTED 発火<br>peer_session_known = false
 
-== SENDER プロセス再起動 ==
+    Note over S: potr_service_open()<br>新セッション識別子を生成
+    S->>R: TCP 3way handshake（再接続）
+    S->>R: DATA (セッション B の最初のパケット)
 
-S -[#red]-> R: TCP 接続断
-note over R: TCP 切断検知\nPOTR_EVENT_DISCONNECTED 発火\npeer_session_known = false
-
-note over S: potr_service_open()\n新セッション識別子を生成
-S -> R: TCP 3way handshake（再接続）
-S -> R: DATA (セッション B の最初のパケット)
-
-note over R: セッション B を採用\nPOTR_EVENT_CONNECTED 発火
-
-@enduml
+    Note over R: セッション B を採用<br>POTR_EVENT_CONNECTED 発火
 ```
+
+CodeBlock: TCP SENDER 再起動・自動再接続
 
 ## TCP PING 応答タイムアウト
 
 RECEIVER のアプリケーション層がハングした場合に SENDER が切断を検知するシーケンスです。  
 TCP 接続は OS レベルで生存していてもアプリ層の PING 応答が途絶えることで検知します。
 
-```plantuml
-@startuml TCP PING 応答タイムアウト
-caption TCP PING 応答タイムアウト
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as SENDER
+    participant R as RECEIVER<br>(応答なし)
 
-participant "SENDER" as S
-participant "RECEIVER\n(応答なし)" as R
+    Note over S,R: 通信中
 
-note over S,R: 通信中
+    S->>R: PING (ack_num=0, seq_num=N)
+    Note over R: アプリケーション層がハング<br>(TCP 接続は維持されているが PING 応答が返却されない)
+    Note over S: tcp_health_timeout_ms 経過<br>PING 応答（ack_num=N）未受信
+    Note over S: POTR_EVENT_DISCONNECTED 発火<br>TCP 接続を切断
 
-S -> R: PING (ack_num=0, seq_num=N)
-note over R: アプリケーション層がハング\n（TCP 接続は維持されているが PING 応答が返却されない）
-note over S: tcp_health_timeout_ms 経過\nPING 応答（ack_num=N）未受信
-note over S: POTR_EVENT_DISCONNECTED 発火\nTCP 接続を切断
-
-note over S: reconnect_interval_ms 待機後\nconnect() 再試行
-
-@enduml
+    Note over S: reconnect_interval_ms 待機後<br>connect() 再試行
 ```
+
+CodeBlock: TCP PING 応答タイムアウト
 
 ## TCP RECEIVER 側 PING タイムアウト
 
 SENDER のアプリケーション層がハングして PING 送信が停止した場合に RECEIVER が切断を検知するシーケンスです。  
 TCP 接続は OS レベルで生存していても、PING 要求が到着しなくなることで RECEIVER が検知します。
 
-```plantuml
-@startuml TCP RECEIVER PING タイムアウト
-caption TCP RECEIVER 側 PING タイムアウト
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as SENDER<br>(PING 送信停止)
+    participant R as RECEIVER
 
-participant "SENDER\n(PING 送信停止)" as S
-participant "RECEIVER" as R
+    Note over S,R: 通信中
 
-note over S,R: 通信中
+    S->>R: 定周期 PING (seq_num=N, payload=UNDEFINED)
+    R->>S: 割り込み PING (seq_num=M,<br>payload に NORMAL を含む)
+    Note over S: アプリケーション層がハング<br>(TCP 接続は維持されているが PING を送信できない)
 
-S -> R: 定周期 PING (seq_num=N, payload=UNDEFINED)
-R -> S: 割り込み PING (seq_num=M,\npayload に NORMAL を含む)
-note over S: アプリケーション層がハング\n（TCP 接続は維持されているが PING を送信できない）
+    Note over R: tcp_health_timeout_ms 経過<br>PING 要求（ack_num=0）未着信
+    Note over R: POTR_EVENT_DISCONNECTED 発火<br>TCP 接続を切断
 
-note over R: tcp_health_timeout_ms 経過\nPING 要求（ack_num=0）未着信
-note over R: POTR_EVENT_DISCONNECTED 発火\nTCP 接続を切断
-
-note over R: accept スレッドへ戻り\n次の接続を待機
-
-@enduml
+    Note over R: accept スレッドへ戻り<br>次の接続を待機
 ```
+
+CodeBlock: TCP RECEIVER 側 PING タイムアウト
 
 ## TCP マルチパス
 
@@ -212,90 +207,90 @@ note over R: accept スレッドへ戻り\n次の接続を待機
 path 数 = 2 の例。RECEIVER が 2 つの listen ソケットを用意し、SENDER が各 path に接続します。  
 最初の 1 本が接続した時点で `POTR_EVENT_CONNECTED` が発火します。
 
-```plantuml
-@startuml TCP マルチパス接続確立
-caption TCP マルチパス接続確立（path 数 = 2）
+```mermaid
+sequenceDiagram
+    autonumber
+    participant SC0 as SENDER<br>(connect スレッド #35;0)
+    participant SC1 as SENDER<br>(connect スレッド #35;1)
+    participant RA0 as RECEIVER<br>(accept スレッド #35;0)
+    participant RA1 as RECEIVER<br>(accept スレッド #35;1)
+    participant RAPP as アプリ<br>(受信側)
 
-participant "SENDER\n(connect スレッド #0)" as SC0
-participant "SENDER\n(connect スレッド #1)" as SC1
-participant "RECEIVER\n(accept スレッド #0)" as RA0
-participant "RECEIVER\n(accept スレッド #1)" as RA1
-participant "アプリ\n(受信側)" as RAPP
+    Note over RA0: bind(dst_addr[0]) → listen()
+    Note over RA1: bind(dst_addr[1]) → listen()
 
-note over RA0: bind(dst_addr[0]) → listen()
-note over RA1: bind(dst_addr[1]) → listen()
+    SC0->>RA0: TCP 3way handshake (path 0)
+    RA0->>RA0: tcp_conn_fd[0] = accept()<br>tcp_active_paths 0→1
+    RA0->>RAPP: callback(POTR_EVENT_CONNECTED)
+    Note over RA0: recv スレッド #35;0 起動
 
-SC0 -> RA0: TCP 3way handshake (path 0)
-RA0 -> RA0: tcp_conn_fd[0] = accept()\ntcp_active_paths 0→1
-RA0 -> RAPP: callback(POTR_EVENT_CONNECTED)
-note over RA0: recv スレッド #0 起動
+    SC1->>RA1: TCP 3way handshake (path 1)
+    RA1->>RA1: tcp_conn_fd[1] = accept()<br>tcp_active_paths 1→2
+    Note over RA1: POTR_EVENT_CONNECTED は発火しない
+    Note over RA1: recv スレッド #35;1 起動
 
-SC1 -> RA1: TCP 3way handshake (path 1)
-RA1 -> RA1: tcp_conn_fd[1] = accept()\ntcp_active_paths 1→2
-note over RA1: POTR_EVENT_CONNECTED は発火しない
-note over RA1: recv スレッド #1 起動
-
-note over SC0,RA1: 2 path で接続確立。同一 seq_num のパケットが両 path から到着する
-@enduml
+    Note over SC0,RA1: 2 path で接続確立。同一 seq_num のパケットが両 path から到着する
 ```
+
+CodeBlock: TCP マルチパス接続確立 (path 数 = 2)
 
 ### 部分切断時の継続
 
 1 本の path が切断しても残りの path で通信を継続します。  
 `POTR_EVENT_DISCONNECTED` は発火しません。
 
-```plantuml
-@startuml TCP 部分切断時の継続
-caption TCP 部分切断時の継続（path 0 切断）
+```mermaid
+sequenceDiagram
+    autonumber
+    participant SC0 as SENDER<br>(connect スレッド #35;0)
+    participant ST as SENDER<br>(送信スレッド)
+    participant RA0 as RECEIVER<br>(accept スレッド #35;0)
+    participant RR1 as RECEIVER<br>(recv スレッド #35;1)
+    participant RAPP as アプリ<br>(受信側)
 
-participant "SENDER\n(connect スレッド #0)" as SC0
-participant "SENDER\n(送信スレッド)" as ST
-participant "RECEIVER\n(accept スレッド #0)" as RA0
-participant "RECEIVER\n(recv スレッド #1)" as RR1
-participant "アプリ\n(受信側)" as RAPP
+    Note over SC0,RR1: path 0 / path 1 で通信中
 
-note over SC0,RR1: path 0 / path 1 で通信中
+    Note over SC0,RA0: path 0 の TCP 接続断（ネットワーク障害など）
+    RA0->>RA0: tcp_active_paths 2→1
+    Note over RA0: POTR_EVENT_DISCONNECTED は発火しない<br>(残り 1 path が存在するため)
+    Note over RA0: session_id / session_tv_* を保持
 
-note over SC0,RA0: path 0 の TCP 接続断（ネットワーク障害など）
-RA0 -> RA0: tcp_active_paths 2→1
-note over RA0: POTR_EVENT_DISCONNECTED は発火しない\n(残り 1 path が存在するため)
-note over RA0: session_id / session_tv_* を保持
+    Note over ST: path 0 をスキップして path 1 のみ送信継続
 
-note over ST: path 0 をスキップして path 1 のみ送信継続
+    SC0->>SC0: reconnect_interval_ms 待機後に<br>再 connect()
 
-SC0 -> SC0: reconnect_interval_ms 待機後に\n再 connect()
+    SC0->>RA0: TCP 3way handshake (path 0 再接続)
+    RA0->>RA0: session triplet 照合 → 既存セッションに合流<br>tcp_active_paths 1→2
+    Note over RA0: POTR_EVENT_CONNECTED は再発火しない
 
-SC0 -> RA0: TCP 3way handshake (path 0 再接続)
-RA0 -> RA0: session triplet 照合 → 既存セッションに合流\ntcp_active_paths 1→2
-note over RA0: POTR_EVENT_CONNECTED は再発火しない
-
-note over SC0,RR1: 2 path で通信再開
-@enduml
+    Note over SC0,RR1: 2 path で通信再開
 ```
+
+CodeBlock: TCP 部分切断時の継続 (path 0 切断)
 
 ### 全 path 切断
 
 全 path が切断した時点で `POTR_EVENT_DISCONNECTED` が発火します。
 
-```plantuml
-@startuml TCP 全 path 切断
-caption TCP 全 path 切断
+```mermaid
+sequenceDiagram
+    autonumber
+    participant RA0 as RECEIVER<br>(accept スレッド #35;0)
+    participant RA1 as RECEIVER<br>(accept スレッド #35;1)
+    participant RAPP as アプリ<br>(受信側)
 
-participant "RECEIVER\n(accept スレッド #0)" as RA0
-participant "RECEIVER\n(accept スレッド #1)" as RA1
-participant "アプリ\n(受信側)" as RAPP
+    Note over RA0,RA1: path 0 / path 1 で通信中
 
-note over RA0,RA1: path 0 / path 1 で通信中
+    Note over RA0: path 0 の TCP 接続断
+    RA0->>RA0: tcp_active_paths 2→1
+    Note over RA0: POTR_EVENT_DISCONNECTED は発火しない
 
-note over RA0: path 0 の TCP 接続断
-RA0 -> RA0: tcp_active_paths 2→1
-note over RA0: POTR_EVENT_DISCONNECTED は発火しない
+    Note over RA1: path 1 の TCP 接続断
+    RA1->>RA1: tcp_active_paths 1→0
+    RA1->>RAPP: callback(POTR_EVENT_DISCONNECTED)
+    Note over RA1: session_tv_* をリセット<br>次の接続は新セッションとして扱う
 
-note over RA1: path 1 の TCP 接続断
-RA1 -> RA1: tcp_active_paths 1→0
-RA1 -> RAPP: callback(POTR_EVENT_DISCONNECTED)
-note over RA1: session_tv_* をリセット\n次の接続は新セッションとして扱う
-
-note over RA0,RA1: 各 accept スレッドが次の接続を待機
-@enduml
+    Note over RA0,RA1: 各 accept スレッドが次の接続を待機
 ```
+
+CodeBlock: TCP 全 path 切断

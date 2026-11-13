@@ -82,30 +82,29 @@ UDP は無接続のため先に開いた方が待機するだけですが、TCP 
 
 ### 送信者のスレッド
 
-```plantuml
-@startuml
-title 送信者のスレッド構成
+```mermaid
+flowchart TD
+    subgraph アプリケーション
+        PSS["potr_service_send()"]
+    end
 
-rectangle "アプリケーション" {
-  [potr_service_send()]
-}
+    subgraph porter["porter ライブラリ (送信者)"]
+        Q["送信キュー<br>(リングバッファ 1024 要素)"]
+        ST["送信スレッド"]
+        RT["受信スレッド"]
+        HT["ヘルス チェック スレッド"]
+        SOCK["UDP ソケット"]
+    end
 
-rectangle "porter ライブラリ (送信者) " {
-  queue "送信キュー\n(リングバッファ 1024 要素)" as Q
-  [送信スレッド] as ST
-  [受信スレッド] as RT
-  [ヘルス チェック スレッド] as HT
-  [UDP ソケット] as SOCK
-}
-
-[potr_service_send()] --> Q : エレメントを push
-Q --> ST : pop → パケット構築
-ST --> SOCK : sendto\n(DATA / PING / 再送)
-RT <-- SOCK : recvfrom\n(NACK / REJECT / FIN)
-RT --> ST : 再送要求・REJECT 通知
-HT --> SOCK : sendto (PING)\n片方向は最後の PING / DATA 基準\n双方向は一定間隔で送信
-@enduml
+    PSS -->|"エレメントを push"| Q
+    Q -->|"pop → パケット構築"| ST
+    ST -->|"sendto<br>(DATA / PING / 再送)"| SOCK
+    SOCK -->|"recvfrom<br>(NACK / REJECT / FIN)"| RT
+    RT -->|"再送要求・REJECT 通知"| ST
+    HT -->|"sendto (PING)<br>片方向は最後の PING / DATA 基準<br>双方向は一定間隔で送信"| SOCK
 ```
+
+CodeBlock: 送信者のスレッド構成
 
 | スレッド | 役割 |
 |---|---|
@@ -135,75 +134,73 @@ Table: 送信者 (SENDER) のスレッド構成と役割
 
 `POTR_TYPE_UNICAST_BIDIR` の 1:1 モードでは、両端が対称な 3 スレッド構成を持ちます。
 
-```plantuml
-@startuml unicast_bidir 1to1 スレッド構成
-title unicast_bidir 1:1 のスレッド構成
+```mermaid
+flowchart TD
+    subgraph アプリケーション
+        PSS["potr_service_send(peer_id=POTR_PEER_NA)"]
+        CB["コールバック"]
+    end
 
-rectangle "アプリケーション" {
-  [potr_service_send(peer_id=POTR_PEER_NA)]
-  [コールバック]
-}
+    subgraph porter["porter ライブラリ (unicast_bidir 1:1)"]
+        Q["送信キュー<br>(リングバッファ 1024 要素)"]
+        ST["送信スレッド"]
+        RT["受信スレッド"]
+        HT["ヘルス チェック スレッド"]
+        SOCK["UDP ソケット<br>(bind 済み)"]
+        NQ["通知キュー"]
+        NT["通知専用スレッド"]
+    end
 
-rectangle "porter ライブラリ (unicast_bidir 1:1)" {
-  queue "送信キュー\n(リングバッファ 1024 要素)" as Q
-  [送信スレッド] as ST
-  [受信スレッド] as RT
-  [ヘルス チェック スレッド] as HT
-  [UDP ソケット\n(bind 済み)] as SOCK
-}
-
-[potr_service_send(peer_id=POTR_PEER_NA)] --> Q : エレメントを push
-Q --> ST : pop → パケット構築
-ST --> SOCK : sendto\n(DATA / 再送)
-HT --> SOCK : sendto (PING 要求)\n一定間隔で送信
-RT <-- SOCK : recvfrom\n(DATA / NACK / REJECT / PING 要求 / PING 応答)
-RT --> ST : 再送要求（NACK）・REJECT 通知
-RT --> SOCK : sendto (PING 応答)\nPING 要求受信時に即返答
-RT --> NQ : 通知内容を登録
-queue "通知キュー" as NQ
-[通知専用スレッド] as NT
-NQ --> NT : 登録順に取り出す
-NT --> [コールバック] : DATA / CONNECTED / DISCONNECTED
-@enduml
+    PSS -->|"エレメントを push"| Q
+    Q -->|"pop → パケット構築"| ST
+    ST -->|"sendto<br>(DATA / 再送)"| SOCK
+    HT -->|"sendto (PING 要求)<br>一定間隔で送信"| SOCK
+    SOCK -->|"recvfrom<br>(DATA / NACK / REJECT / PING 要求 / PING 応答)"| RT
+    RT -->|"再送要求（NACK）・REJECT 通知"| ST
+    RT -->|"sendto (PING 応答)<br>PING 要求受信時に即返答"| SOCK
+    RT -->|"通知内容を登録"| NQ
+    NQ -->|"登録順に取り出す"| NT
+    NT -->|"DATA / CONNECTED / DISCONNECTED"| CB
 ```
+
+CodeBlock: unicast_bidir 1:1 のスレッド構成
 
 #### N:1 サーバー モード
 
 N:1 モードではサーバー側に 1 つの共有スレッド群があり、各ピアの状態は `peer_id` ごとにピア テーブルへ分離して保持されます。
 
-```plantuml
-@startuml unicast_bidir n1 スレッド構成
-title unicast_bidir N:1 サーバのスレッド構成
+```mermaid
+flowchart TD
+    subgraph アプリケーション
+        PSS["potr_service_send(peer_id)"]
+        CB["コールバック"]
+    end
 
-rectangle "アプリケーション" {
-  [potr_service_send(peer_id)]
-  [コールバック]
-}
+    subgraph porter["porter ライブラリ (unicast_bidir N:1 サーバ)"]
+        Q["送信キュー<br>(共有)"]
+        PT[("peer table<br>(max_peers)")]
+        ST["送信スレッド"]
+        RT["受信スレッド"]
+        HT["ヘルス チェック スレッド"]
+        SOCK["UDP ソケット<br>(dst_addr:dst_port で bind)"]
+        NQ["通知キュー"]
+        NT["通知専用スレッド"]
+    end
 
-rectangle "porter ライブラリ (unicast_bidir N:1 サーバ)" {
-  queue "送信キュー\n(共有)" as Q
-  database "peer table\n(max_peers)" as PT
-  [送信スレッド] as ST
-  [受信スレッド] as RT
-  [ヘルス チェック スレッド] as HT
-  [UDP ソケット\n(dst_addr:dst_port で bind)] as SOCK
-}
-
-[potr_service_send(peer_id)] --> Q : peer_id 付きで push
-Q --> ST : pop → peer_id で送信先解決
-ST --> PT : peer_id ごとの send_window / 送信先参照
-ST --> SOCK : sendto(peer ごとの dest_addr)
-RT <-- SOCK : recvfrom(DATA / NACK / REJECT / PING)
-RT --> PT : 認証成功後に session triplet でピア検索 / 新規作成
-RT --> NQ : 通知内容を登録
-queue "通知キュー" as NQ
-[通知専用スレッド] as NT
-NQ --> NT : 登録順に取り出す
-NT --> [コールバック] : DATA / CONNECTED / DISCONNECTED\n(peer_id 付き)
-HT --> PT : 全ピアを巡回
-HT --> SOCK : PING 要求送信 / タイムアウト監視
-@enduml
+    PSS -->|"peer_id 付きで push"| Q
+    Q -->|"pop → peer_id で送信先解決"| ST
+    ST -->|"peer_id ごとの send_window / 送信先参照"| PT
+    ST -->|"sendto(peer ごとの dest_addr)"| SOCK
+    SOCK -->|"recvfrom(DATA / NACK / REJECT / PING)"| RT
+    RT -->|"認証成功後に session triplet でピア検索 / 新規作成"| PT
+    RT -->|"通知内容を登録"| NQ
+    NQ -->|"登録順に取り出す"| NT
+    NT -->|"DATA / CONNECTED / DISCONNECTED<br>(peer_id 付き)"| CB
+    HT -->|"全ピアを巡回"| PT
+    HT -->|"PING 要求送信 / タイムアウト監視"| SOCK
 ```
+
+CodeBlock: unicast_bidir N:1 サーバーのスレッド構成
 
 | スレッド | 役割 |
 |---|---|
@@ -223,45 +220,44 @@ TCP では接続確立・再接続を担う **connect スレッド** (RECEIVER �
 path 数 N (最大 `POTR_MAX_PATH = 4`) の例。各 path に独立した connect・recv・health スレッドが起動します。  
 送信スレッドは 1 本だけ起動し、全アクティブ path への送信を担います。
 
-```plantuml
-@startuml TCP SENDER スレッド構成
-title TCP SENDER のスレッド構成（path 数 = N の例）
+```mermaid
+flowchart TD
+    subgraph アプリケーション
+        PSS["potr_service_send()"]
+    end
 
-rectangle "アプリケーション" {
-  [potr_service_send()]
-}
+    subgraph porter["porter ライブラリ (TCP SENDER)"]
+        CT0["connect スレッド #0"]
+        CTN["connect スレッド #N-1"]
+        Q["送信キュー<br>(リングバッファ)"]
+        ST["送信スレッド"]
+        RT0["recv スレッド #0<br>(PING 応答 / DATA)"]
+        RTN["recv スレッド #N-1<br>(PING 応答 / DATA)"]
+        HT0["health スレッド #0"]
+        HTN["health スレッド #N-1"]
+        S0["TCP ソケット #0"]
+        SN["TCP ソケット #N-1"]
+    end
 
-rectangle "porter ライブラリ (TCP SENDER)" {
-  [connect スレッド #0] as CT0
-  [connect スレッド #N-1] as CTN
-  queue "送信キュー\n(リングバッファ)" as Q
-  [送信スレッド] as ST
-  [recv スレッド #0\n(PING 応答 / DATA)] as RT0
-  [recv スレッド #N-1] as RTN
-  [health スレッド #0] as HT0
-  [health スレッド #N-1] as HTN
-  [TCP ソケット #0] as S0
-  [TCP ソケット #N-1] as SN
-}
+    PSS --> Q
+    CT0 -->|"connect()"| S0
+    CTN -->|"connect()"| SN
+    Q -->|"pop → パケット構築"| ST
+    ST -->|"send (DATA)"| S0
+    ST -->|"send (DATA)"| SN
+    HT0 -->|"send (PING)"| S0
+    HTN -->|"send (PING)"| SN
+    S0 -->|"recv (PING 応答)"| RT0
+    SN -->|"recv (PING 応答)"| RTN
+    RT0 -->|"応答通知"| HT0
+    RTN -->|"応答通知"| HTN
 
-[potr_service_send()] --> Q
-CT0 --> S0 : connect()
-CTN --> SN : connect()
-Q --> ST : pop → パケット構築
-ST --> S0 : send (DATA)
-ST --> SN : send (DATA)
-HT0 --> S0 : send (PING)
-HTN --> SN : send (PING)
-RT0 <-- S0 : recv (PING 応答)
-RTN <-- SN : recv (PING 応答)
-RT0 --> HT0 : 応答通知
-RTN --> HTN : 応答通知
-
-note "DATA 受信は POTR_TYPE_TCP_BIDIR 時のみ" as NOTE
-RT0 .. NOTE
-RTN .. NOTE
-@enduml
+    NOTE["DATA 受信は POTR_TYPE_TCP_BIDIR 時のみ"]
+    RT0 -.- NOTE
+    RTN -.- NOTE
 ```
+
+CodeBlock: TCP SENDER のスレッド構成 (path 数 = N の例)
 
 | スレッド | 数 | 役割 |
 |---|---|---|
@@ -286,41 +282,40 @@ Table: TCP SENDER のスレッド種別と合計数
 
 #### TCP RECEIVER のスレッド
 
-```plantuml
-@startuml TCP RECEIVER スレッド構成
-title TCP RECEIVER のスレッド構成（path 数 = N の例）
+```mermaid
+flowchart TD
+    subgraph アプリケーション
+        CB["コールバック"]
+    end
 
-rectangle "アプリケーション" {
-  [コールバック]
-}
+    subgraph porter["porter ライブラリ (TCP RECEIVER)"]
+        AT0["accept スレッド #0"]
+        ATN["accept スレッド #N-1"]
+        RT0["recv スレッド #0"]
+        RTN["recv スレッド #N-1"]
+        LS0["TCP listen ソケット #0"]
+        LSN["TCP listen ソケット #N-1"]
+        CS0["TCP 接続ソケット #0"]
+        CSN["TCP 接続ソケット #N-1"]
+        NQ["通知キュー"]
+        NT["通知専用スレッド"]
+    end
 
-rectangle "porter ライブラリ (TCP RECEIVER)" {
-  [accept スレッド #0] as AT0
-  [accept スレッド #N-1] as ATN
-  [recv スレッド #0] as RT0
-  [recv スレッド #N-1] as RTN
-  [TCP listen ソケット #0] as LS0
-  [TCP listen ソケット #N-1] as LSN
-  [TCP 接続ソケット #0] as CS0
-  [TCP 接続ソケット #N-1] as CSN
-}
-
-AT0 --> LS0 : accept() 待機
-ATN --> LSN : accept() 待機
-AT0 --> CS0 : 接続確立後に起動
-ATN --> CSN : 接続確立後に起動
-CS0 --> RT0 : recv (DATA / PING 要求)
-CSN --> RTN : recv (DATA / PING 要求)
-RT0 --> CS0 : send (PING 応答)
-RTN --> CSN : send (PING 応答)
-RT0 --> NQ : 通知内容を登録
-queue "通知キュー" as NQ
-[通知専用スレッド] as NT
-NQ --> NT : 登録順に取り出す
-NT --> [コールバック] : DATA / CONNECTED / DISCONNECTED
-RTN --> [コールバック] : DATA / DISCONNECTED
-@enduml
+    AT0 -->|"accept() 待機"| LS0
+    ATN -->|"accept() 待機"| LSN
+    AT0 -->|"接続確立後に起動"| CS0
+    ATN -->|"接続確立後に起動"| CSN
+    CS0 -->|"recv (DATA / PING 要求)"| RT0
+    CSN -->|"recv (DATA / PING 要求)"| RTN
+    RT0 -->|"send (PING 応答)"| CS0
+    RTN -->|"send (PING 応答)"| CSN
+    RT0 -->|"通知内容を登録"| NQ
+    NQ -->|"登録順に取り出す"| NT
+    NT -->|"DATA / CONNECTED / DISCONNECTED"| CB
+    RTN -->|"DATA / DISCONNECTED"| CB
 ```
+
+CodeBlock: TCP RECEIVER のスレッド構成 (path 数 = N の例)
 
 | スレッド | 数 | 役割 |
 |---|---|---|
@@ -403,117 +398,110 @@ Table: porter コンポーネントの責務と境界条件一覧
 表のパスは `prod/libsrc/porter/` を起点とします。  
 分割した関数の契約は同じディレクトリの私有ヘッダーへ記載し、公開 API やライブラリ内共有 API には追加しません。
 
-```plantuml
-@startuml
-title porter コンポーネント構成
+```mermaid
+flowchart TD
+    subgraph api["api"]
+        potr_service_open["potr_service_open"]
+        api_open_paths["api_open_paths"]
+        api_open_paths_udp["api_open_paths_udp"]
+        api_open_paths_tcp["api_open_paths_tcp"]
+        api_open_paths_common["api_open_paths_common"]
+        potr_service_open_from_config["potr_service_open_from_config"]
+        potr_service_send["potr_service_send"]
+        potr_service_close["potr_service_close"]
+    end
 
-package "api" {
-  [potr_service_open]
-  [api_open_paths]
-  [api_open_paths_udp]
-  [api_open_paths_tcp]
-  [api_open_paths_common]
-  [potr_service_open_from_config]
-  [potr_service_send]
-  [potr_service_close]
-}
+    subgraph thread["thread"]
+        potr_recv_thread["potr_recv_thread"]
+        thread_recv_validate["thread_recv_validate"]
+        thread_recv_slot["thread_recv_slot"]
+        thread_recv_session["thread_recv_session"]
+        thread_recv_fin["thread_recv_fin"]
+        thread_recv_window["thread_recv_window"]
+        thread_recv_dispatch["thread_recv_dispatch"]
+        thread_recv_health["thread_recv_health"]
+        potr_send_thread["potr_send_thread"]
+        potr_health_thread["potr_health_thread"]
+        potr_connect_thread["potr_connect_thread"]
+        thread_connect_prepare["thread_connect_prepare"]
+    end
 
-package "thread" {
-  [potr_recv_thread]
-  [thread_recv_validate]
-  [thread_recv_slot]
-  [thread_recv_session]
-  [thread_recv_fin]
-  [thread_recv_window]
-  [thread_recv_dispatch]
-  [thread_recv_health]
-  [potr_send_thread]
-  [potr_health_thread]
-  [potr_connect_thread]
-  [thread_connect_prepare]
-}
+    subgraph protocol["protocol"]
+        packet["packet<br>(パケット構築・解析)"]
+        window["window<br>(スライディングウィンドウ)"]
+        seqnum["seqnum<br>(通番管理)"]
+        config["config<br>(設定ファイル解析)"]
+    end
 
-package "protocol" {
-  [packet\n(パケット構築・解析)]
-  [window\n(スライディングウィンドウ)]
-  [seqnum\n(通番管理)]
-  [config\n(設定ファイル解析)]
-}
+    subgraph infra["infra"]
+        potr_send_queue["potr_send_queue<br>(リングバッファ)"]
+        potr_trace["potr_trace<br>(トレーサー取得)"]
+    end
 
-package "infra" {
-  [potr_send_queue\n(リングバッファ)]
-  [potr_trace\n(トレーサー取得)]
-}
+    subgraph cplat["cplat"]
+        net["net<br>(socket・endpoint・byteorder)"]
+        subgraph compress["compress"]
+            compress_mod["compress<br>(raw DEFLATE)"]
+        end
+        subgraph crypto["crypto"]
+            crypto_mod["crypto<br>(AES-256-GCM)"]
+        end
+    end
 
-package "cplat" {
-  [net\n(socket・endpoint・byteorder)]
-  package "compress" {
-    [compress\n(raw DEFLATE)]
-  }
-  package "crypto" {
-    [crypto\n(AES-256-GCM)]
-  }
-}
+    CTX[("potr_context<br>(セッション全状態)")]
 
-database "potr_context\n(セッション全状態)" as CTX
+    potr_service_open -->|"生成・初期化"| CTX
+    potr_service_open -->|"経路準備"| api_open_paths
+    api_open_paths -->|"UDP 方式別準備"| api_open_paths_udp
+    api_open_paths -->|"TCP 準備"| api_open_paths_tcp
+    api_open_paths -->|"宛先解析"| api_open_paths_common
+    api_open_paths_udp --> api_open_paths_common
+    api_open_paths_tcp --> api_open_paths_common
+    api_open_paths_udp --> net
+    api_open_paths_tcp --> net
+    api_open_paths_common --> net
+    potr_service_open_from_config -->|"委譲"| potr_service_open
+    potr_service_send -->|"エレメント push"| potr_send_queue
+    potr_service_close -->|"スレッド停止・解放"| CTX
 
-[potr_service_open] --> CTX : 生成・初期化
-[potr_service_open] --> [api_open_paths] : 経路準備
-[api_open_paths] --> [api_open_paths_udp] : UDP 方式別準備
-[api_open_paths] --> [api_open_paths_tcp] : TCP 準備
-[api_open_paths] --> [api_open_paths_common] : 宛先解析
-[api_open_paths_udp] --> [api_open_paths_common]
-[api_open_paths_tcp] --> [api_open_paths_common]
-[api_open_paths_udp] --> [net\n(socket・endpoint・byteorder)]
-[api_open_paths_tcp] --> [net\n(socket・endpoint・byteorder)]
-[api_open_paths_common] --> [net\n(socket・endpoint・byteorder)]
-[potr_service_open_from_config] --> [potr_service_open] : 委譲
-[potr_service_send] --> [potr_send_queue] : エレメント push
-[potr_service_close] --> CTX : スレッド停止・解放
+    potr_send_thread --> packet
+    potr_send_thread --> window
+    potr_send_thread --> compress_mod
+    potr_send_thread --> crypto_mod
+    potr_send_thread --> potr_send_queue
+    potr_send_thread -->|"送信"| net
 
-[potr_send_thread] --> [packet]
-[potr_send_thread] --> [window]
-[potr_send_thread] --> [compress]
-[potr_send_thread] --> [crypto]
-[potr_send_thread] --> [potr_send_queue]
-[potr_send_thread] --> [net\n(socket・endpoint・byteorder)] : 送信
-
-[potr_connect_thread] --> [thread_connect_prepare] : 接続・先読み・比較
-[potr_connect_thread] --> [packet] : 先読みパケットの解析
-[thread_connect_prepare] --> [net\n(socket・endpoint・byteorder)]
-[potr_recv_thread] --> [packet]
-[potr_recv_thread] --> [thread_recv_slot] : 受信状態参照・DATA 配信
-[thread_recv_slot] --> [compress]
-[potr_recv_thread] --> [thread_recv_validate] : 認証・送信元照合
-[potr_recv_thread] --> [thread_recv_session] : セッション採用・経路切断
-[potr_recv_thread] --> [thread_recv_dispatch] : 構成済みスロットへ振り分け
-[thread_recv_dispatch] --> [thread_recv_fin] : FIN 判定・切断発火
-[thread_recv_dispatch] --> [thread_recv_window] : 再送・順序整列
-[thread_recv_dispatch] --> [thread_recv_session] : セッション採用・経路学習
-[potr_recv_thread] --> [thread_recv_fin] : TCP の FIN 判定・切断発火
-[potr_recv_thread] --> [thread_recv_window] : リオーダー期限切れ
-[potr_recv_thread] --> [thread_recv_health] : 受信期限・TCP 状態変化
-[thread_recv_health] --> [thread_recv_session] : 切断・パス状態同期
-[thread_recv_health] --> [window] : 切断時の初期化
-[thread_recv_window] --> [window]
-[thread_recv_window] --> [seqnum]
-[thread_recv_window] --> [packet]
-[thread_recv_window] --> [crypto] : 制御パケットの認証タグ生成
-[thread_recv_window] --> [thread_recv_slot] : 整列済みデータの配信
-[thread_recv_window] --> [thread_recv_session] : 経路学習・経路状態同期
-[thread_recv_window] --> [thread_recv_fin] : pending FIN 到達
-[thread_recv_fin] --> [thread_recv_session] : 経路切断
-[thread_recv_validate] --> [crypto]
-[potr_recv_thread] --> [net\n(socket・endpoint・byteorder)] : 受信
-[thread_recv_window] --> [net\n(socket・endpoint・byteorder)] : NACK / REJECT / 再送
-
-api -[hidden]--thread
-thread -[hidden]-- infra
-api -[hidden]----- protocol
-protocol -[hidden]--cplat
-
-@enduml
+    potr_connect_thread -->|"接続・先読み・比較"| thread_connect_prepare
+    potr_connect_thread -->|"先読みパケットの解析"| packet
+    thread_connect_prepare --> net
+    potr_recv_thread --> packet
+    potr_recv_thread -->|"受信状態参照・DATA 配信"| thread_recv_slot
+    thread_recv_slot --> compress_mod
+    potr_recv_thread -->|"認証・送信元照合"| thread_recv_validate
+    potr_recv_thread -->|"セッション採用・経路切断"| thread_recv_session
+    potr_recv_thread -->|"構成済みスロットへ振り分け"| thread_recv_dispatch
+    thread_recv_dispatch -->|"FIN 判定・切断発火"| thread_recv_fin
+    thread_recv_dispatch -->|"再送・順序整列"| thread_recv_window
+    thread_recv_dispatch -->|"セッション採用・経路学習"| thread_recv_session
+    potr_recv_thread -->|"TCP の FIN 判定・切断発火"| thread_recv_fin
+    potr_recv_thread -->|"リオーダー期限切れ"| thread_recv_window
+    potr_recv_thread -->|"受信期限・TCP 状態変化"| thread_recv_health
+    thread_recv_health -->|"切断・パス状態同期"| thread_recv_session
+    thread_recv_health -->|"切断時の初期化"| window
+    thread_recv_window --> window
+    thread_recv_window --> seqnum
+    thread_recv_window --> packet
+    thread_recv_window -->|"制御パケットの認証タグ生成"| crypto_mod
+    thread_recv_window -->|"整列済みデータの配信"| thread_recv_slot
+    thread_recv_window -->|"経路学習・経路状態同期"| thread_recv_session
+    thread_recv_window -->|"pending FIN 到達"| thread_recv_fin
+    thread_recv_fin -->|"経路切断"| thread_recv_session
+    thread_recv_validate --> crypto_mod
+    potr_recv_thread -->|"受信"| net
+    thread_recv_window -->|"NACK / REJECT / 再送"| net
 ```
+
+CodeBlock: porter コンポーネント構成
 
 ## セッション コンテキスト (potr_context)
 

@@ -17,70 +17,68 @@ TCP の受信状態が変化した場合は、定周期 health が稼働して�
 
 ヘルス チェックが有効な場合の PING 送信です。片方向 type 1-6 は open 直後の即時 PING を行わず、最後の `PING` または有効 `DATA` 送信から `health_interval_ms` 経過したときだけ PING を送信します。双方向 UDP では従来どおり定周期 PING と、`path_ping_state[]` 変化時の割り込み PING を送出します。双方向 UDP はこの PING 往復で `CONNECTED` するため、実効 `health_interval_ms = 0` のままでは接続確立しません。
 
-```plantuml
-@startuml ヘルス チェック (正常疎通)
-caption ヘルス チェック (正常疎通)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant HT as ヘルス チェック<br>スレッド
+    participant UDP as UDP
+    participant RRT as 受信スレッド<br>(受信者)
 
-participant "ヘルス チェック\nスレッド" as HT
-participant "UDP" as UDP
-participant "受信スレッド\n(受信者)" as RRT
+    Note over HT: health_interval_ms = 3000ms<br>片方向は初回も 3000ms 待機
 
-note over HT: health_interval_ms = 3000ms\n片方向は初回も 3000ms 待機
+    HT->>HT: 最後の PING / DATA 送信から<br>3000ms 待機
+    Note over HT: send_window.next_seq を読み取る<br>(ウィンドウには登録しない)
+    HT->>UDP: PING[seq=N] 送信 (全パス)
 
-HT -> HT: 最後の PING / DATA 送信から\n3000ms 待機
-note over HT: send_window.next_seq を読み取る\n(ウィンドウには登録しない)
-HT -> UDP: PING[seq=N] 送信 (全パス)
+    UDP->>RRT: PING[seq=N] 受信
+    RRT->>RRT: last_recv_tv を更新<br>(タイムアウトカウンタリセット)
+    RRT->>RRT: notify_health_alive()<br>(health_alive=0 のとき CONNECTED 発火)
+    RRT->>RRT: next_seq〜N-1 を全スキャン<br>欠番を一括 NACK する
+    Note over RRT: 欠番なければ返信なし
 
-UDP -> RRT: PING[seq=N] 受信
-RRT -> RRT: last_recv_tv を更新\n(タイムアウトカウンタリセット)
-RRT -> RRT: notify_health_alive()\n(health_alive=0 のとき CONNECTED 発火)
-RRT -> RRT: next_seq〜N-1 を全スキャン\n欠番を一括 NACK する
-note over RRT: 欠番なければ返信なし
+    HT->>HT: DATA が送信されたら期限を延長する<br>送信が停止したら 3000ms 後に PING
 
-HT -> HT: DATA が送信されたら期限を延長する\n送信が停止したら 3000ms 後に PING
-
-note over HT, UDP: 片方向は recent DATA により PING を抑止する\n双方向系は従来どおり定周期 + 割り込み送信
-
-@enduml
+    Note over HT, UDP: 片方向は recent DATA により PING を抑止する<br>双方向系は従来どおり定周期 + 割り込み送信
 ```
+
+CodeBlock: ヘルス チェック (正常疎通)
 
 ## ヘルス チェック タイムアウト
 
 片方向 type 1-6 で、最後の有効な `PING` / `DATA` から一定時間パケットが到着しなくなった場合の切断検知と復帰です。
 
-```plantuml
-@startuml ヘルス チェック タイムアウト
-caption ヘルス チェック タイムアウト
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as 送信者
+    participant UDP as UDP
+    participant RRT as 受信スレッド<br>(受信者)
+    participant RAPP as アプリ<br>(受信側)
 
-participant "送信者" as S
-participant "UDP" as UDP
-participant "受信スレッド\n(受信者)" as RRT
-participant "アプリ\n(受信側)" as RAPP
+    S->>UDP: DATA 送信 (正常稼働中)
+    UDP->>RRT: DATA 受信 → last_recv_tv 更新
+    RRT->>RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, ...)
 
-S -> UDP: DATA 送信 (正常稼働中)
-UDP -> RRT: DATA 受信 → last_recv_tv 更新
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, ...)
+    Note over S, UDP: ここでネットワーク断が発生
 
-note over S, UDP: ここでネットワーク断が発生
+    S--xUDP: PING 送信 (到達せず)
+    S--xUDP: PING 送信 (到達せず)
 
-S -[#red]> UDP: PING 送信 (到達せず)
-S -[#red]> UDP: PING 送信 (到達せず)
+    Note over RRT: health_timeout_ms = 10000ms
 
-note over RRT: health_timeout_ms = 10000ms
+    RRT->>RRT: last_recv_tv から 10000ms 経過を検出
 
-RRT -> RRT: last_recv_tv から 10000ms 経過を検出
+    RRT->>RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
+    RRT->>RRT: health_alive = 0<br>peer_session_known = 0<br>recv_window リセット
 
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
-RRT -> RRT: health_alive = 0\npeer_session_known = 0\nrecv_window リセット
+    Note over S, UDP: ネットワーク復旧
 
-note over S, UDP: ネットワーク復旧
+    S->>UDP: DATA または PING 送信
+    UDP->>RRT: パケット受信
+    RRT->>RRT: セッション採用<br>recv_window を pkt.seq_num で初期化
+    RRT->>RRT: health_alive = 1
 
-S -> UDP: DATA または PING 送信
-UDP -> RRT: パケット受信
-RRT -> RRT: セッション採用\nrecv_window を pkt.seq_num で初期化
-RRT -> RRT: health_alive = 1
-
-RRT -> RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
-
-@enduml
+    RRT->>RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
 ```
+
+CodeBlock: ヘルス チェック タイムアウト

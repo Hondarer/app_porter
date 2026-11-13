@@ -367,20 +367,20 @@ Table: DNS 解決のポリシー仕様
 
 ### unicast (1:1 通信)
 
-```plantuml
-@startuml
-title unicast のソケット bind / sendto
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as 送信者<br>src_addr:src_port
+    participant R as 受信者<br>dst_addr:dst_port
 
-participant "送信者\nsrc_addr:src_port" as S
-participant "受信者\ndst_addr:dst_port" as R
+    Note over S: bind(src_addr1, src_port)<br>src_port=0 → OS 自動選定
+    Note over R: bind(dst_addr1, dst_port)
 
-note over S: bind(src_addr1, src_port)\n src_port=0 → OS 自動選定
-note over R: bind(dst_addr1, dst_port)
-
-S -> R: sendto(dst_addr1, dst_port)\nDATA / PING / FIN
-R -> S: sendto(src_addr1, src_port)\nNACK (NACK 送信元は dst_addr1:dst_port)
-@enduml
+    S->>R: sendto(dst_addr1, dst_port)<br>DATA / PING / FIN
+    R->>S: sendto(src_addr1, src_port)<br>NACK (NACK 送信元は dst_addr1:dst_port)
 ```
+
+CodeBlock: unicast のソケット bind / sendto
 
 | | 送信者 | 受信者 |
 |---|---|---|
@@ -397,20 +397,20 @@ Table: unicast (1:1) のソケット動作仕様
 
 #### 1:1 モード
 
-```plantuml
-@startuml
-title unicast_bidir 1:1 のソケット bind / sendto
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Side A<br>(POTR_ROLE_SENDER)<br>src_addr=A, src_port=PA
+    participant B as Side B<br>(POTR_ROLE_RECEIVER)<br>dst_addr=B, dst_port=PB
 
-participant "Side A\n(POTR_ROLE_SENDER)\nsrc_addr=A, src_port=PA" as A
-participant "Side B\n(POTR_ROLE_RECEIVER)\ndst_addr=B, dst_port=PB" as B
+    Note over A: bind(src_addr1=A, src_port=PA または 0)
+    Note over B: bind(dst_addr1=B, dst_port=PB)
 
-note over A: bind(src_addr1=A, src_port=PA または 0)
-note over B: bind(dst_addr1=B, dst_port=PB)
-
-A -> B: sendto(dst_addr1=B, dst_port=PB)\nDATA / PING 要求 / PING 応答 / NACK / REJECT
-B -> A: sendto(dst_addr1=A, learned or configured port)\nDATA / PING 要求 / PING 応答 / NACK / REJECT
-@enduml
+    A->>B: sendto(dst_addr1=B, dst_port=PB)<br>DATA / PING 要求 / PING 応答 / NACK / REJECT
+    B->>A: sendto(dst_addr1=A, learned or configured port)<br>DATA / PING 要求 / PING 応答 / NACK / REJECT
 ```
+
+CodeBlock: unicast_bidir 1:1 のソケット bind / sendto
 
 | | Side A (SENDER) | Side B (RECEIVER) |
 |---|---|---|
@@ -424,24 +424,24 @@ Table: unicast_bidir (1:1) のソケット動作仕様
 
 #### N:1 モード (unicast_bidir_n1)
 
-```plantuml
-@startuml
-title unicast_bidir_n1 のソケット bind / sendto
+```mermaid
+sequenceDiagram
+    autonumber
+    participant CA as Client A<br>(unicast_bidir 1:1)
+    participant CB as Client B<br>(unicast_bidir 1:1)
+    participant S as Server<br>(unicast_bidir_n1<br>POTR_ROLE_RECEIVER)
 
-participant "Client A\n(unicast_bidir 1:1)" as CA
-participant "Client B\n(unicast_bidir 1:1)" as CB
-participant "Server\n(unicast_bidir_n1\nPOTR_ROLE_RECEIVER)" as S
+    Note over S: bind(dst_addr1, dst_port)<br>dst_addr 省略時は INADDR_ANY
+    Note over CA: unicast_bidir クライアント
+    Note over CB: unicast_bidir クライアント
 
-note over S: bind(dst_addr1, dst_port)\ndst_addr 省略時は INADDR_ANY
-note over CA: unicast_bidir クライアント
-note over CB: unicast_bidir クライアント
-
-CA -> S: sendto(server dst_addr1, dst_port)\nDATA / PING / NACK / REJECT
-CB -> S: sendto(server dst_addr1, dst_port)\nDATA / PING / NACK / REJECT
-S -> CA: sendto(recvfrom で学習した送信元)\nDATA / PING / NACK / REJECT
-S -> CB: sendto(recvfrom で学習した送信元)\nDATA / PING / NACK / REJECT
-@enduml
+    CA->>S: sendto(server dst_addr1, dst_port)<br>DATA / PING / NACK / REJECT
+    CB->>S: sendto(server dst_addr1, dst_port)<br>DATA / PING / NACK / REJECT
+    S->>CA: sendto(recvfrom で学習した送信元)<br>DATA / PING / NACK / REJECT
+    S->>CB: sendto(recvfrom で学習した送信元)<br>DATA / PING / NACK / REJECT
 ```
+
+CodeBlock: unicast_bidir_n1 のソケット bind / sendto
 
 | | N:1 サーバー (unicast_bidir_n1) | クライアント (unicast_bidir) |
 |---|---|---|
@@ -457,23 +457,23 @@ Table: unicast_bidir_n1 (N:1) のソケット動作仕様
 
 ### multicast (1:N 通信)
 
-```plantuml
-@startuml
-title multicast のソケット bind / sendto
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as 送信者<br>src_addr
+    participant RA as 受信者 A<br>src_addr_A
+    participant RB as 受信者 B<br>src_addr_B
 
-participant "送信者\nsrc_addr" as S
-participant "受信者 A\nsrc_addr_A" as RA
-participant "受信者 B\nsrc_addr_B" as RB
+    Note over S: bind(INADDR_ANY, src_port)<br>IP_MULTICAST_IF = src_addr1
+    Note over RA: bind(INADDR_ANY, dst_port)<br>グループ参加: src_addr_A
+    Note over RB: bind(INADDR_ANY, dst_port)<br>グループ参加: src_addr_B
 
-note over S: bind(INADDR_ANY, src_port)\n IP_MULTICAST_IF = src_addr1
-note over RA: bind(INADDR_ANY, dst_port)\n グループ参加: src_addr_A
-note over RB: bind(INADDR_ANY, dst_port)\n グループ参加: src_addr_B
-
-S -> RA: sendto(multicast_group, dst_port)\nDATA / PING
-S -> RB: sendto(multicast_group, dst_port)\nDATA / PING
-RA -> S: sendto(src_addr1, src_port)\nNACK (全パスからユニキャスト)
-@enduml
+    S->>RA: sendto(multicast_group, dst_port)<br>DATA / PING
+    S->>RB: sendto(multicast_group, dst_port)<br>DATA / PING
+    RA->>S: sendto(src_addr1, src_port)<br>NACK (全パスからユニキャスト)
 ```
+
+CodeBlock: multicast のソケット bind / sendto
 
 | | 送信者 | 受信者 |
 |---|---|---|
@@ -499,19 +499,19 @@ Table: broadcast (1:N) のソケット動作仕様
 
 ### tcp / tcp_bidir (TCP 接続)
 
-```plantuml
-@startuml
-title tcp のソケット connect / accept
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as SENDER<br>(TCP クライアント)
+    participant R as RECEIVER<br>(TCP サーバー)
 
-participant "SENDER\n(TCP クライアント)" as S
-participant "RECEIVER\n(TCP サーバー)" as R
-
-note over R: bind(dst_addr1, dst_port)\nlisten()
-note over S: connect(dst_addr1, dst_port)
-S -> R: TCP 3way handshake
-note over R: accept() → 接続ソケット取得
-@enduml
+    Note over R: bind(dst_addr1, dst_port)<br>listen()
+    Note over S: connect(dst_addr1, dst_port)
+    S->>R: TCP 3way handshake
+    Note over R: accept() → 接続ソケット取得
 ```
+
+CodeBlock: tcp のソケット connect / accept
 
 | | SENDER | RECEIVER |
 |---|---|---|
