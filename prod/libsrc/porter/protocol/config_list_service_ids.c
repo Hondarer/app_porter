@@ -34,10 +34,10 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
         return ret;
     }
 
-    services = cJSON_GetObjectItemCaseSensitive(root, "services");
-    if (services != NULL && !cJSON_IsObject(services))
+    services = cjson_app_cJSON_GetObjectItemCaseSensitive(root, "services");
+    if (services != NULL && !cjson_app_cJSON_IsObject(services))
     {
-        cJSON_Delete(root);
+        cjson_app_cJSON_Delete(root);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
@@ -46,7 +46,7 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
     ids = (int64_t *)cplat_calloc((size_t)capacity, sizeof(*ids));
     if (ids == NULL)
     {
-        cJSON_Delete(root);
+        cjson_app_cJSON_Delete(root);
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
@@ -56,7 +56,7 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
         int64_t parsed_id;
 
         if (service->string == NULL || cplat_parse_int64(&parsed_id, service->string, 10) != CPLAT_OK ||
-            !cJSON_IsObject(service))
+            !cjson_app_cJSON_IsObject(service))
         {
             continue;
         }
@@ -69,7 +69,7 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
             if (new_ids == NULL)
             {
                 cplat_free(ids);
-                cJSON_Delete(root);
+                cjson_app_cJSON_Delete(root);
                 return POTR_ERR_OUT_OF_MEMORY;
             }
 
@@ -79,7 +79,7 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
 
         ids[count++] = parsed_id;
     }
-    cJSON_Delete(root);
+    cjson_app_cJSON_Delete(root);
     *ids_out = ids;
     *count_out = count;
 

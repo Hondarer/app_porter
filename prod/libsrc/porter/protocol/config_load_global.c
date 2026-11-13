@@ -63,10 +63,10 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
         return ret;
     }
 
-    global_object = cJSON_GetObjectItemCaseSensitive(root, "global");
-    if (global_object != NULL && !cJSON_IsObject(global_object))
+    global_object = cjson_app_cJSON_GetObjectItemCaseSensitive(root, "global");
+    if (global_object != NULL && !cjson_app_cJSON_IsObject(global_object))
     {
-        cJSON_Delete(root);
+        cjson_app_cJSON_Delete(root);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
@@ -126,7 +126,7 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
             (void)cplat_parse_uint32(&global->send_queue_depth, val, 10);
         }
     }
-    cJSON_Delete(root);
+    cjson_app_cJSON_Delete(root);
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                "config loaded: window_size=%u max_payload=%u "

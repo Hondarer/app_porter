@@ -32,7 +32,7 @@
  * 成功時は POTR_OK、ファイルを開けない場合は POTR_ERR_IO、メモリを確保できない場合は
  * POTR_ERR_OUT_OF_MEMORY、構文解析に失敗した場合とルートがオブジェクトでない場合は
  * POTR_ERR_INVALID_ARGUMENT を返す。
- * 成功時に root_out へ返された cJSON オブジェクトは、呼び出し元が cJSON_Delete() で解放する。
+ * 成功時に root_out へ返された cJSON オブジェクトは、呼び出し元が cjson_app_cJSON_Delete() で解放する。
  */
 static int config_read_jsonc(const char *path, cJSON **root_out)
 {
@@ -112,13 +112,13 @@ static int config_read_jsonc(const char *path, cJSON **root_out)
     text[length] = '\0';
 
     /* 蓄積した JSONC テキストを構文解析し、ルート オブジェクトを検証する。 */
-    root = cJSON_ParseJSONCWithLength(text, length);
+    root = cjson_app_cJSON_ParseJSONCWithLength(text, length);
     cplat_secure_zero(text, length);
     cplat_free(text);
 
-    if (!cJSON_IsObject(root))
+    if (!cjson_app_cJSON_IsObject(root))
     {
-        cJSON_Delete(root);
+        cjson_app_cJSON_Delete(root);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
@@ -136,12 +136,12 @@ static inline const char *config_value_text(const cJSON *item, char *buffer, siz
 {
     int64_t parsed;
 
-    if (cJSON_IsString(item))
+    if (cjson_app_cJSON_IsString(item))
     {
-        return cJSON_GetStringValue(item);
+        return cjson_app_cJSON_GetStringValue(item);
     }
 
-    if (cJSON_HasExactInteger(item) && cJSON_GetInt64Value(item, &parsed) && buffer_size >= 32U)
+    if (cjson_app_cJSON_HasExactInteger(item) && cjson_app_cJSON_GetInt64Value(item, &parsed) && buffer_size >= 32U)
     {
         (void)snprintf(buffer, buffer_size, "%" PRId64, parsed);
         return buffer;
