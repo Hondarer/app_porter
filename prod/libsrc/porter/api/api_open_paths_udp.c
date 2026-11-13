@@ -264,7 +264,9 @@ int api_open_paths_multicast(potr_context *ctx, const potr_role role)
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
         if (ctx->service.src_addr[i][0] == '\0')
+        {
             break;
+        }
 
         result = api_paths_resolve_ipv4(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
         if (result != POTR_OK)
@@ -312,7 +314,9 @@ int api_open_paths_broadcast(potr_context *ctx, const potr_role role)
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
         if (ctx->service.src_addr[i][0] == '\0')
+        {
             break;
+        }
 
         result = api_paths_resolve_ipv4(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
         if (result != POTR_OK)
@@ -410,9 +414,13 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
              * RECEIVER は src_addr も必要 (src_addr なし RECEIVER は上で処理済み)。
              */
             if (ctx->service.dst_addr[i][0] == '\0')
+            {
                 break;
+            }
             if (role == POTR_ROLE_RECEIVER && ctx->service.src_addr[i][0] == '\0')
+            {
                 break;
+            }
 
             if (ctx->service.src_addr[i][0] != '\0')
             {
@@ -510,7 +518,9 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
             uint32_t bind_addr;
 
             if (ctx->service.dst_addr[i][0] == '\0')
+            {
                 break;
+            }
 
             result = api_paths_resolve_ipv4(ctx->service.dst_addr[i], &bind_addr);
             if (result != POTR_OK)

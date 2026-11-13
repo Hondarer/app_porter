@@ -175,7 +175,7 @@ TEST_F(potrSendTest, non_n1_call_from_own_callback_is_accepted)
     NiceMock<Mock_cplat> mock_log;
     NiceMock<Mock_porter> mock_porter;
     const char payload[] = "reply-in-callback"; // [状態] - 送信ペイロードを "reply-in-callback" とする。
-    ctx.service.type = POTR_TYPE_UNICAST; // [状態] - 片方向 unicast とする。
+    ctx.service.type = POTR_TYPE_UNICAST;       // [状態] - 片方向 unicast とする。
     ON_CALL(mock_porter, potr_internal_in_own_callback(&ctx))
         .WillByDefault(Return(1)); // [状態] - 自サービスのコールバック内からの呼び出しとする。
 
@@ -187,8 +187,9 @@ TEST_F(potrSendTest, non_n1_call_from_own_callback_is_accepted)
                           0); // [手順] - 片方向 unicast のサービスを指定して potr_service_send() を呼び出す。
 
     // Assert
-    EXPECT_EQ(POTR_OK,
-              actual_ret); // [確認_正常系] - N:1 以外のコールバック内からの potr_service_send() の戻り値が POTR_OK であること。
+    EXPECT_EQ(
+        POTR_OK,
+        actual_ret); // [確認_正常系] - N:1 以外のコールバック内からの potr_service_send() の戻り値が POTR_OK であること。
     EXPECT_EQ(1U, ctx.send_queue.count); // [確認_正常系] - ctx.send_queue.count が 1U であること。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]

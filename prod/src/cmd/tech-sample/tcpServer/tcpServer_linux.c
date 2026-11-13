@@ -67,7 +67,8 @@ static void sigchld_handler(int sig)
      * see: https://man7.org/linux/man-pages/man2/waitpid.2.html
      */
     while (waitpid(-1, NULL, WNOHANG) > 0)
-        ;
+    {
+    }
 }
 
 /**

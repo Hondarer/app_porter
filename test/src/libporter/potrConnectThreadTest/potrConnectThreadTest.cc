@@ -127,7 +127,9 @@ TEST(potrConnectThreadTest, buffer_failure_1_rolls_back)
             {
                 allocations++;
                 if (allocations == 1)
+                {
                     return nullptr;
+                }
                 return malloc(size);
             });
     ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
@@ -204,7 +206,9 @@ TEST(potrConnectThreadTest, buffer_failure_2_rolls_back)
             {
                 allocations++;
                 if (allocations == 2)
+                {
                     return nullptr;
+                }
                 return malloc(size);
             });
     ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
@@ -288,7 +292,9 @@ TEST(potrConnectThreadTest, thread_failure_1_rolls_back)
             [&](cplat_thread **out, cplat_thread_fn, void *)
             {
                 if (creates + 1 == 1)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 *out = reinterpret_cast<cplat_thread *>(&tokens[creates++]);
                 return CPLAT_OK;
             });
@@ -366,7 +372,9 @@ TEST(potrConnectThreadTest, thread_failure_2_rolls_back)
             [&](cplat_thread **out, cplat_thread_fn, void *)
             {
                 if (creates + 1 == 2)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 *out = reinterpret_cast<cplat_thread *>(&tokens[creates++]);
                 return CPLAT_OK;
             });

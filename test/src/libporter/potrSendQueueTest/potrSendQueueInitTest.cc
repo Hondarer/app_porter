@@ -23,7 +23,9 @@ TEST(potrSendQueueInitTest, sync_failure_1_releases_allocations)
             [&](cplat_local_lock **out)
             {
                 if (++attempts == 1)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 allocated++;
                 return delegate_real_cplat_local_lock_create(out);
             });
@@ -32,7 +34,9 @@ TEST(potrSendQueueInitTest, sync_failure_1_releases_allocations)
             [&](cplat_condvar **out)
             {
                 if (++attempts == 1)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 allocated++;
                 return delegate_real_cplat_condvar_create(out);
             });
@@ -41,7 +45,9 @@ TEST(potrSendQueueInitTest, sync_failure_1_releases_allocations)
             [&](cplat_local_lock *p)
             {
                 if (p != nullptr)
+                {
                     disposed++;
+                }
                 delegate_real_cplat_local_lock_dispose(p);
             });
     ON_CALL(mock_cplat, cplat_condvar_dispose(_))
@@ -49,7 +55,9 @@ TEST(potrSendQueueInitTest, sync_failure_1_releases_allocations)
             [&](cplat_condvar *p)
             {
                 if (p != nullptr)
+                {
                     disposed++;
+                }
                 delegate_real_cplat_condvar_dispose(p);
             }); // [状態] - 生成成功数と破棄数を記録し、指定回で生成失敗を返す。
     // Act
@@ -75,7 +83,9 @@ TEST(potrSendQueueInitTest, sync_failure_2_releases_allocations)
             [&](cplat_local_lock **out)
             {
                 if (++attempts == 2)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 allocated++;
                 return delegate_real_cplat_local_lock_create(out);
             });
@@ -84,7 +94,9 @@ TEST(potrSendQueueInitTest, sync_failure_2_releases_allocations)
             [&](cplat_condvar **out)
             {
                 if (++attempts == 2)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 allocated++;
                 return delegate_real_cplat_condvar_create(out);
             });
@@ -93,7 +105,9 @@ TEST(potrSendQueueInitTest, sync_failure_2_releases_allocations)
             [&](cplat_local_lock *p)
             {
                 if (p != nullptr)
+                {
                     disposed++;
+                }
                 delegate_real_cplat_local_lock_dispose(p);
             });
     ON_CALL(mock_cplat, cplat_condvar_dispose(_))
@@ -101,7 +115,9 @@ TEST(potrSendQueueInitTest, sync_failure_2_releases_allocations)
             [&](cplat_condvar *p)
             {
                 if (p != nullptr)
+                {
                     disposed++;
+                }
                 delegate_real_cplat_condvar_dispose(p);
             }); // [状態] - 生成成功数と破棄数を記録し、指定回で生成失敗を返す。
     // Act
@@ -127,7 +143,9 @@ TEST(potrSendQueueInitTest, sync_failure_3_releases_allocations)
             [&](cplat_local_lock **out)
             {
                 if (++attempts == 3)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 allocated++;
                 return delegate_real_cplat_local_lock_create(out);
             });
@@ -136,7 +154,9 @@ TEST(potrSendQueueInitTest, sync_failure_3_releases_allocations)
             [&](cplat_condvar **out)
             {
                 if (++attempts == 3)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 allocated++;
                 return delegate_real_cplat_condvar_create(out);
             });
@@ -145,7 +165,9 @@ TEST(potrSendQueueInitTest, sync_failure_3_releases_allocations)
             [&](cplat_local_lock *p)
             {
                 if (p != nullptr)
+                {
                     disposed++;
+                }
                 delegate_real_cplat_local_lock_dispose(p);
             });
     ON_CALL(mock_cplat, cplat_condvar_dispose(_))
@@ -153,7 +175,9 @@ TEST(potrSendQueueInitTest, sync_failure_3_releases_allocations)
             [&](cplat_condvar *p)
             {
                 if (p != nullptr)
+                {
                     disposed++;
+                }
                 delegate_real_cplat_condvar_dispose(p);
             }); // [状態] - 生成成功数と破棄数を記録し、指定回で生成失敗を返す。
     // Act
@@ -179,7 +203,9 @@ TEST(potrSendQueueInitTest, sync_failure_4_releases_allocations)
             [&](cplat_local_lock **out)
             {
                 if (++attempts == 4)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 allocated++;
                 return delegate_real_cplat_local_lock_create(out);
             });
@@ -188,7 +214,9 @@ TEST(potrSendQueueInitTest, sync_failure_4_releases_allocations)
             [&](cplat_condvar **out)
             {
                 if (++attempts == 4)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 allocated++;
                 return delegate_real_cplat_condvar_create(out);
             });
@@ -197,7 +225,9 @@ TEST(potrSendQueueInitTest, sync_failure_4_releases_allocations)
             [&](cplat_local_lock *p)
             {
                 if (p != nullptr)
+                {
                     disposed++;
+                }
                 delegate_real_cplat_local_lock_dispose(p);
             });
     ON_CALL(mock_cplat, cplat_condvar_dispose(_))
@@ -205,7 +235,9 @@ TEST(potrSendQueueInitTest, sync_failure_4_releases_allocations)
             [&](cplat_condvar *p)
             {
                 if (p != nullptr)
+                {
                     disposed++;
+                }
                 delegate_real_cplat_condvar_dispose(p);
             }); // [状態] - 生成成功数と破棄数を記録し、指定回で生成失敗を返す。
     // Act

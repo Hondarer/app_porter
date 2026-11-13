@@ -83,7 +83,7 @@ TEST_F(resultTest, only_ok_is_zero_and_all_errors_are_negative)
     }
 
     // Assert
-    EXPECT_EQ(0, POTR_OK);             // [確認_正常系] - POTR_OK の値が 0 であること。
+    EXPECT_EQ(0, POTR_OK); // [確認_正常系] - POTR_OK の値が 0 であること。
     EXPECT_EQ(
         0U,
         non_negative_count); // [確認_正常系] - non_negative_count が 0U であること。(0 以上の値を持つエラー コードが存在しないことの確認)

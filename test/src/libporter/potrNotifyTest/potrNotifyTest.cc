@@ -34,9 +34,13 @@ void capture(int64_t, potr_peer_id, potr_event event, const void *data, size_t)
     }
     s_events.push_back(event);
     if (event == POTR_EVENT_ERROR)
+    {
         s_values.push_back(*static_cast<const int *>(data));
+    }
     else
+    {
         s_values.push_back(*static_cast<const unsigned char *>(data));
+    }
 }
 } // namespace
 class potrNotifyTest : public Test

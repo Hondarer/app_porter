@@ -381,7 +381,7 @@ TEST_F(porterSendRecvTest, send_single_message)
     bool actual_ret_write_hello = writeLineStdin(
         send_h_,
         "send Hello Porter"); // [手順] - SENDER のハンドルと "send Hello Porter" を指定して writeLineStdin() を呼び出す。
-    ASSERT_TRUE(actual_ret_write_hello);              // [状態確認] - writeLineStdin() の戻り値が true であること。
+    ASSERT_TRUE(actual_ret_write_hello); // [状態確認] - writeLineStdin() の戻り値が true であること。
     bool actual_ret_wait_3 = tryWaitForOutput(
         send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
     ASSERT_TRUE(
@@ -608,7 +608,7 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
     send_h_ = startProcessAsync(
         send_path, {"sender", config_path, "13"},
         makeOpts()); // [手順] - open() 直後の SENDER の状態を作るため、起動引数を指定して startProcessAsync() を呼び出す。
-    ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
     bool actual_ret_wait_15 =
         tryWaitForOutput(send_h_, "porter-test[sender:", 5000); // [手順] - SENDER がプロンプトを出力するまで待機する。
     ASSERT_TRUE(
@@ -764,7 +764,7 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
     bool actual_ret_write_exit = writeLineStdin(
         send_h_,
         "exit"); // [手順] - 送信直後に SENDER のサービスを閉じるため、SENDER のハンドルと "exit" を指定して writeLineStdin() を呼び出す。
-    ASSERT_TRUE(actual_ret_write_exit);  // [状態確認] - writeLineStdin() の戻り値が true であること。
+    ASSERT_TRUE(actual_ret_write_exit); // [状態確認] - writeLineStdin() の戻り値が true であること。
     int actual_ret_send_exit = waitForExit(send_h_, 5000);
 
     bool actual_ret_wait_23 =
@@ -831,7 +831,7 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
     int actual_ret_send_fin = send_udp_packet(
         make_plain_fin_packet(56, 0x5601U, 4234, 8678, 0U, false),
         19056); // [手順] - target フラグなしの FIN パケットを送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
-    ASSERT_EQ(0, actual_ret_send_fin);                // [状態確認] - send_udp_packet() の戻り値が 0 であること。
+    ASSERT_EQ(0, actual_ret_send_fin); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_27 =
         tryWaitForOutput(recv_h_, "切断検知", 3000); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
 
@@ -897,7 +897,7 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
     int actual_ret_send_data = send_udp_packet(
         make_plain_data_packet(57, 0x5701U, 5234, 9678, UINT32_MAX, payload),
         19057); // [手順] - 通番 UINT32_MAX の最終 DATA を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
-    ASSERT_EQ(0, actual_ret_send_data);                     // [状態確認] - send_udp_packet() の戻り値が 0 であること。
+    ASSERT_EQ(0, actual_ret_send_data); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_30 =
         tryWaitForOutput(recv_h_, payload, 3000); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
     ASSERT_TRUE(actual_ret_wait_30); // [確認_正常系] - payload を待つ tryWaitForOutput() の戻り値が true であること。
@@ -981,7 +981,7 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
     bool actual_ret_write_exit = writeLineStdin(
         send_h_,
         "exit"); // [手順] - 送信直後に SENDER のサービスを閉じるため、SENDER のハンドルと "exit" を指定して writeLineStdin() を呼び出す。
-    ASSERT_TRUE(actual_ret_write_exit);  // [状態確認] - writeLineStdin() の戻り値が true であること。
+    ASSERT_TRUE(actual_ret_write_exit); // [状態確認] - writeLineStdin() の戻り値が true であること。
     int actual_ret_send_exit = waitForExit(send_h_, 5000);
     bool actual_ret_wait_38 =
         tryWaitForOutput(recv_h_, payload, 3000); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
@@ -1028,8 +1028,8 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
                              .build(); // [状態] - N:1 サーバー側サービスをポート 19058 で定義する。
 
     recv_h_ = startProcessAsync(recv_path, {"receiver", "-l", "INFO", config_path, "58"},
-                                makeOpts());                     // [状態] - INFO トレース付きで RECEIVER を起動する。
-    ASSERT_NE(nullptr, recv_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
+                                makeOpts()); // [状態] - INFO トレース付きで RECEIVER を起動する。
+    ASSERT_NE(nullptr, recv_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
     ASSERT_TRUE(
         tryWaitForOutput(recv_h_, "受信待機中", 5000)); // [状態] - RECEIVER が "受信待機中" を出力するまで待機する。
     // [状態確認] - tryWaitForOutput() の戻り値が true であること。
@@ -1049,7 +1049,7 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
     int actual_ret_send_fin = send_udp_packet(
         make_plain_fin_packet(58, 0x5801U, 6234, 10678, 1U, true),
         19058); // [手順] - 未到達の通番 1 を目標とする FIN を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
-    ASSERT_EQ(0, actual_ret_send_fin);                // [状態確認] - send_udp_packet() の戻り値が 0 であること。
+    ASSERT_EQ(0, actual_ret_send_fin); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_fin_pending = wait_for_stderr(
         recv_h_, "FIN pending",
         3000U); // [手順] - RECIEVER が FIN の pending 状態への登録を示す "FIN pending" を出力するまで待機する。
@@ -1058,7 +1058,7 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
     int actual_ret_send_data = send_udp_packet(
         make_plain_data_packet(58, 0x5801U, 6234, 10678, 0U, payload),
         19058); // [手順] - 通番 0 の DATA で pending FIN の目標に到達させるため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
-    ASSERT_EQ(0, actual_ret_send_data);                // [状態確認] - send_udp_packet() の戻り値が 0 であること。
+    ASSERT_EQ(0, actual_ret_send_data); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_42 =
         tryWaitForOutput(recv_h_, payload, 3000); // [手順] - FIN 完了前に RECIEVER が payload を出力するまで待機する。
     ASSERT_TRUE(actual_ret_wait_42); // [確認_正常系] - payload を待つ tryWaitForOutput() の戻り値が true であること。
@@ -1127,7 +1127,7 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
     int actual_ret_send_first = send_udp_packet(
         make_plain_data_packet(55, 0x5501U, 3234, 7678, 0U, first_payload),
         19055); // [手順] - 1 つ目のセッションで DATA を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
-    ASSERT_EQ(0, actual_ret_send_first);                // [状態確認] - send_udp_packet() の戻り値が 0 であること。
+    ASSERT_EQ(0, actual_ret_send_first); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_46 =
         tryWaitForOutput(recv_h_, first_payload, 3000); // [手順] - RECIEVER が受信を出力するまで待機する。
     ASSERT_TRUE(
@@ -1147,7 +1147,7 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
     int actual_ret_send_payload = send_udp_packet(
         make_plain_data_packet(55, 0x5502U, 3235, 7679, 0U, payload),
         19055); // [手順] - 新しいセッション ID で DATA を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
-    ASSERT_EQ(0, actual_ret_send_payload);                // [状態確認] - send_udp_packet() の戻り値が 0 であること。
+    ASSERT_EQ(0, actual_ret_send_payload); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_48 =
         tryWaitForOutput(recv_h_, payload, 3000); // [手順] - RECIEVER が新セッションの受信を出力するまで待機する。
     sleep_ms(
@@ -1212,7 +1212,7 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
     bool actual_ret_write_delay1 = writeLineStdin(
         send_h_,
         "send ping-delay-1"); // [手順] - 1 通目の送信コマンド "send ping-delay-1" と SENDER のハンドルを指定して writeLineStdin() を呼び出す。
-    ASSERT_TRUE(actual_ret_write_delay1);             // [状態確認] - writeLineStdin() の戻り値が true であること。
+    ASSERT_TRUE(actual_ret_write_delay1); // [状態確認] - writeLineStdin() の戻り値が true であること。
     bool actual_ret_wait_51 = tryWaitForOutput(
         send_h_, "porter-test[sender:", 3000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
     ASSERT_TRUE(
@@ -1392,7 +1392,7 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
     send_h_ = startProcessAsync(
         send_path, {"sender", config_path, "30"},
         makeOpts()); // [手順] - 暗号化設定の SENDER を起動するため、起動引数を指定して startProcessAsync() を呼び出す。
-    ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
     bool actual_ret_wait_63 = tryWaitForOutput(
         send_h_, "porter-test[sender:", 5000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
     ASSERT_TRUE(
@@ -1479,7 +1479,7 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
     send_h_ = startProcessAsync(
         send_path, {"sender", client_config_path, "50"},
         makeOpts()); // [手順] - 正規のクライアントを起動するため、起動引数を指定して startProcessAsync() を呼び出す。
-    ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
     bool actual_ret_wait_67 =
         tryWaitForOutput(send_h_, "双方向モード", 5000); // [手順] - SENDER が "双方向モード" を出力するまで待機する。
     ASSERT_TRUE(
@@ -1579,7 +1579,7 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
     send_h_ = startProcessAsync(
         send_path, {"sender", client_config_path, "52"},
         makeOpts()); // [手順] - 正規のクライアントを起動するため、起動引数を指定して startProcessAsync() を呼び出す。
-    ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
     bool actual_ret_wait_74 =
         tryWaitForOutput(send_h_, "双方向モード", 5000); // [手順] - SENDER が "双方向モード" を出力するまで待機する。
     ASSERT_TRUE(
@@ -1776,7 +1776,7 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
     // (テスト並列実行下) では recv 側の出力反映よりも interrupt が先行し、
     // recv_out に "tcp-encrypted-ok" が残らないことがある。
     bool actual_ret_wait_92 =
-        tryWaitForOutput(recv_h_, "tcp-encrypted-ok", 5000);      // [手順] - RECIEVER が受信を出力するまで待機する。
+        tryWaitForOutput(recv_h_, "tcp-encrypted-ok", 5000); // [手順] - RECIEVER が受信を出力するまで待機する。
     bool actual_ret_write_exit = writeLineStdin(
         send_h_, "exit"); // [手順] - 終了させる SENDER のハンドルと "exit" を指定して writeLineStdin() を呼び出す。
     ASSERT_TRUE(actual_ret_write_exit);
@@ -1831,7 +1831,7 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
     send_h_ = startProcessAsync(
         send_path, {"sender", "-l", "VERBOSE", config_path, "61"},
         makeOpts()); // [手順] - SENDER を VERBOSE トレース付きで起動するため、起動引数を指定して startProcessAsync() を呼び出す。
-    ASSERT_NE(nullptr, send_h_);             // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
+    ASSERT_NE(nullptr, send_h_); // [状態確認] - startProcessAsync() の戻り値が nullptr 以外であること。
     bool actual_ret_wait_94 = tryWaitForOutput(
         send_h_, "porter-test[sender:", 5000); // [手順] - SENDER が "porter-test[sender:" を出力するまで待機する。
     ASSERT_TRUE(

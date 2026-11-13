@@ -50,15 +50,21 @@ int thread_connect_read_first_packet(const cplat_socket fd, uint8_t *buf, const 
 
     /* 読み取り可能になるまでタイムアウト付きで待機する。 */
     if (cplat_socket_wait_readable(fd, timeout_ms, &ready, &detail) != CPLAT_OK)
+    {
         return potr_internal_result_from_error(&detail);
+    }
     if (!ready)
+    {
         return POTR_ERR_TIMEOUT;
+    }
 
     /* 固定長ヘッダーを読み取る。 */
     {
         int recv_result = cplat_socket_recv_all(fd, buf, POTR_PACKET_HEADER_SIZE, &detail);
         if (recv_result != CPLAT_OK)
+        {
             return potr_internal_result_from_socket_result(recv_result, &detail);
+        }
     }
 
     /* payload_len は固定長ヘッダー内の protocol_version の直前に格納される。 */
@@ -70,14 +76,18 @@ int thread_connect_read_first_packet(const cplat_socket fd, uint8_t *buf, const 
 
     /* 受信したペイロード長がバッファー容量を超えていないか検証する。 */
     if (POTR_PACKET_HEADER_SIZE + (size_t)wire_payload_len > max_buf)
+    {
         return POTR_ERR_PROTOCOL;
+    }
 
     /* ペイロードを読み取る。 */
     if (wire_payload_len > 0)
     {
         int recv_result = cplat_socket_recv_all(fd, buf + POTR_PACKET_HEADER_SIZE, (size_t)wire_payload_len, &detail);
         if (recv_result != CPLAT_OK)
+        {
             return potr_internal_result_from_socket_result(recv_result, &detail);
+        }
     }
 
     *len_out = POTR_PACKET_HEADER_SIZE + (size_t)wire_payload_len;
@@ -92,19 +102,29 @@ int thread_connect_session_compare(const potr_context *ctx, const potr_packet *p
     int ts_cmp;
 
     if (!ctx->tcp_accepted_session_known)
+    {
         return TCP_SESSION_NEW;
+    }
 
     session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
     ts_cmp = cplat_timespec_cmp(&pkt_session_ts, &ctx->tcp_accepted_session_ts);
 
     if (ts_cmp > 0)
+    {
         return TCP_SESSION_NEW;
+    }
     else if (ts_cmp < 0)
+    {
         return TCP_SESSION_OLD;
+    }
     else if (pkt->session_id > ctx->tcp_accepted_session_id)
+    {
         return TCP_SESSION_NEW;
+    }
     else if (pkt->session_id < ctx->tcp_accepted_session_id)
+    {
         return TCP_SESSION_OLD;
+    }
 
     return TCP_SESSION_SAME;
 }
@@ -207,10 +227,14 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
             int wait_ready = 0;
             int wait_result;
             if (poll_ms > 100U)
+            {
                 poll_ms = 100U;
+            }
             wait_result = cplat_socket_wait_writable(sock, (int)poll_ms, &wait_ready, NULL);
             if (wait_result != CPLAT_OK)
+            {
                 break;
+            }
 
             if (wait_ready)
             {

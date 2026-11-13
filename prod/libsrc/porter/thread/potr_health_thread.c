@@ -312,7 +312,9 @@ static void health_thread_func(void *arg)
             health_sleep(ctx, 0, ctx->health_interval_ms);
 
             if (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+            {
                 break;
+            }
         }
 
         /* PING を送信する。 */
@@ -335,7 +337,9 @@ static void health_thread_func(void *arg)
                 int k;
 
                 if (!ctx->peers[i].active)
+                {
                     continue;
+                }
 
                 peer_shdr.service_id = ctx->service.service_id;
                 peer_shdr.session_id = ctx->peers[i].session_id;
@@ -381,7 +385,9 @@ static void health_thread_func(void *arg)
                         size_t sent = 0;
 
                         if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
+                        {
                             continue;
+                        }
                         (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k], &sent,
                                                   NULL);
                     }
@@ -398,7 +404,9 @@ static void health_thread_func(void *arg)
                         size_t sent = 0;
 
                         if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
+                        {
                             continue;
+                        }
                         (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k], &sent,
                                                   NULL);
                     }
@@ -549,7 +557,9 @@ static void tcp_health_thread_func(void *arg)
         health_sleep(ctx, path_idx, ctx->health_interval_ms);
 
         if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+        {
             break;
+        }
         (void)tcp_send_ping_packet(ctx, path_idx);
     }
 

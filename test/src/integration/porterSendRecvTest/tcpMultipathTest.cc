@@ -134,7 +134,9 @@ void receive(int64_t, potr_peer_id, potr_event event, const void *data, size_t l
         s_live_paths = static_cast<unsigned>(states[0] != 0) | (static_cast<unsigned>(states[1] != 0) << 1);
     }
     if (event == POTR_EVENT_DISCONNECTED)
+    {
         ++s_disconnects;
+    }
     s_cv.notify_all();
 }
 } // namespace
@@ -210,7 +212,9 @@ class tcpMultipathTest : public Test
         service.service_id = 7123;
         service.type = POTR_TYPE_TCP;
         if (bidirectional)
+        {
             service.type = POTR_TYPE_TCP_BIDIR;
+        }
         service.dst_port = 19723;
         service.encrypt_enabled = crypto;
         strcpy(service.src_addr[0], "127.0.0.1");
@@ -381,7 +385,9 @@ TEST_F(tcpMultipathTest, encrypted_compressed_fragments)
         size_t end = std::min(length, offset + 400);
         uint16_t flags = POTR_FLAG_COMPRESSED;
         if (end < length)
+        {
             flags |= POTR_FLAG_MORE_FRAG;
+        }
         // [サブ手順参照 名前=tcpMultipathTest.send_packet]
         send_packet(static_cast<int>(seq % 2), data_packet(seq,
                                                            bytes(compressed.begin() + static_cast<ptrdiff_t>(offset),

@@ -57,7 +57,9 @@ static void send_fin(potr_context *ctx)
     session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     if (potr_internal_packet_build_fin(&fin_pkt, &shdr) != POTR_OK)
+    {
         return;
+    }
 
     /*
      * 現セッションで DATA を送っている場合のみ FIN target を有効化する。
@@ -104,7 +106,9 @@ static void send_fin(potr_context *ctx)
             size_t sent = 0;
 
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+            {
                 continue;
+            }
             (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
         }
     }
@@ -117,7 +121,9 @@ static void send_fin(potr_context *ctx)
             size_t sent = 0;
 
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+            {
                 continue;
+            }
             (void)cplat_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &ctx->dest_addr[i], &sent,
                                       NULL);
         }
@@ -433,7 +439,9 @@ static int close_impl(potr_context *handle)
         for (i = 0; i < ctx->n_path; i++)
         {
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+            {
                 continue;
+            }
 
             if (raw_base_type(ctx->service.type) == POTR_TYPE_MULTICAST)
             {

@@ -193,7 +193,9 @@ TEST(threadConnectPrepareTest, first_packet_empty)
             {
                 ++reads;
                 if (reads == -1)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 std::memset(out, 0, count);
                 if (reads == 1)
                 {
@@ -235,7 +237,9 @@ TEST(threadConnectPrepareTest, first_packet_payload)
             {
                 ++reads;
                 if (reads == -1)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 std::memset(out, 0, count);
                 if (reads == 1)
                 {
@@ -277,7 +281,9 @@ TEST(threadConnectPrepareTest, first_packet_timeout)
             {
                 ++reads;
                 if (reads == -1)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 std::memset(out, 0, count);
                 if (reads == 1)
                 {
@@ -318,7 +324,9 @@ TEST(threadConnectPrepareTest, first_packet_wait_error)
             {
                 ++reads;
                 if (reads == -1)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 std::memset(out, 0, count);
                 if (reads == 1)
                 {
@@ -359,7 +367,9 @@ TEST(threadConnectPrepareTest, first_packet_header_eof)
             {
                 ++reads;
                 if (reads == 1)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 std::memset(out, 0, count);
                 if (reads == 1)
                 {
@@ -400,7 +410,9 @@ TEST(threadConnectPrepareTest, first_packet_payload_error)
             {
                 ++reads;
                 if (reads == 2)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 std::memset(out, 0, count);
                 if (reads == 1)
                 {
@@ -441,7 +453,9 @@ TEST(threadConnectPrepareTest, first_packet_oversize)
             {
                 ++reads;
                 if (reads == -1)
+                {
                     return CPLAT_ERR_UNKNOWN;
+                }
                 std::memset(out, 0, count);
                 if (reads == 1)
                 {

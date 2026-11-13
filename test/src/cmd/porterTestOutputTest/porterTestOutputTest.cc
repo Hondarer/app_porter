@@ -80,6 +80,8 @@ TEST(porterTestOutputTest, does_not_remove_path_when_creation_fails)
 
     // Cleanup
     if (remaining != nullptr)
+    {
         fclose(remaining);
+    }
     remove(path);
 }

@@ -816,7 +816,6 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
             fprintf(stderr, "ワーカー %d へのソケット引き渡しに失敗しました\n", worker_id);
         }
     }
-
 }
 
 #endif /* PLATFORM_WINDOWS */

@@ -290,7 +290,8 @@ TEST_F(handleConcurrencyTest, concurrent_fragmented_compressed_sends_arrive_inta
                     {
                         flags |= POTR_SEND_COMPRESS;
                     }
-                    if (potr_service_send(client, POTR_PEER_NA, msg.data(), msg.size(), static_cast<int>(flags)) != POTR_OK)
+                    if (potr_service_send(client, POTR_PEER_NA, msg.data(), msg.size(), static_cast<int>(flags)) !=
+                        POTR_OK)
                     {
                         failures.fetch_add(1);
                     }
@@ -302,8 +303,7 @@ TEST_F(handleConcurrencyTest, concurrent_fragmented_compressed_sends_arrive_inta
     {
         th.join();
     }
-    bool all_arrived =
-        wait_for([] { return s_received.size() == (size_t)(send_threads * messages_per_thread); });
+    bool all_arrived = wait_for([] { return s_received.size() == (size_t)(send_threads * messages_per_thread); });
     // [手順] - 全メッセージの到着を待つ。
 
     // Assert
@@ -505,22 +505,30 @@ TEST_F(handleConcurrencyTest, concurrent_close_and_send_preserve_handle_lifetime
                 uint8_t payload[64] = {};
                 ready.fetch_add(1);
                 while (!go.load())
+                {
                     std::this_thread::yield();
+                }
                 for (int n = 0; n < 100; ++n)
                 {
                     int ret = potr_service_send(client, POTR_PEER_NA, payload, sizeof(payload), POTR_SEND_BLOCKING);
                     if (ret != POTR_OK && ret != POTR_ERR_CANCELED && ret != POTR_ERR_INVALID_HANDLE)
+                    {
                         unexpected.fetch_add(1);
+                    }
                 }
             }); // [手順 回数=4] - 同じハンドルで送信を繰り返すスレッドを作成する。
     }
     while (ready.load() != 4)
+    {
         std::this_thread::yield();
+    }
     go.store(true);
     int closed = potr_service_close(client); // [手順] - 送信開始と競合してハンドルを閉じる。
     clients.clear();
     for (auto &thread : threads)
+    {
         thread.join();
+    }
     uint8_t value = 1;
     int stale_send = potr_service_send(client, POTR_PEER_NA, &value, sizeof(value), 0);
     int stale_disconnect = potr_peer_disconnect(client, 1U);

@@ -504,7 +504,7 @@ TEST_F(windowTest, recvHasPacketUsesStableIndexWithNonzeroBase)
     uint8_t payload[1] = {0x5a}; // [状態] - 受信パケットのペイロード 1 バイトを用意する。
     potr_packet pkt12 = make_recv_packet(12U, payload, sizeof(payload));
     ASSERT_EQ(POTR_OK,
-              potr_internal_window_init(&win, 10U, 4U, 16U));         // [状態] - 非ゼロ基点 10 のウィンドウを用意する。
+              potr_internal_window_init(&win, 10U, 4U, 16U)); // [状態] - 非ゼロ基点 10 のウィンドウを用意する。
     // [状態確認] - potr_internal_window_init() の戻り値が POTR_OK であること。
     ASSERT_EQ(POTR_OK, potr_internal_window_recv_push(&win, &pkt12)); // [状態] - 基点から 2 先の通番 12 を格納する。
     // [状態確認] - potr_internal_window_recv_push() の戻り値が POTR_OK であること。
@@ -567,7 +567,7 @@ TEST_F(windowTest, recvHasPacketReturnsFalseForUnavailableWindow)
     // Arrange
     ASSERT_EQ(POTR_OK, potr_internal_window_init(&win, 0U, 4U, 16U)); // [状態] - 解放済み状態を作るため初期化する。
     // [状態確認] - potr_internal_window_init() の戻り値が POTR_OK であること。
-    potr_internal_window_dispose(&win);                               // [状態] - ウィンドウを解放済みにする。
+    potr_internal_window_dispose(&win); // [状態] - ウィンドウを解放済みにする。
 
     // Pre-Assert
 

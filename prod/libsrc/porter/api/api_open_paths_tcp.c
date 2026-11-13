@@ -150,7 +150,9 @@ int api_open_paths_tcp(potr_context *ctx, const potr_role role)
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
             if (ctx->service.dst_addr[i][0] == '\0')
+            {
                 break;
+            }
 
             result = open_socket_tcp_receiver(ctx, i);
             if (result != POTR_OK)
@@ -184,7 +186,9 @@ int api_open_paths_tcp(potr_context *ctx, const potr_role role)
         for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
             if (ctx->service.dst_addr[i][0] == '\0')
+            {
                 break;
+            }
 
             result = open_socket_tcp_sender(ctx, i);
             if (result != POTR_OK)

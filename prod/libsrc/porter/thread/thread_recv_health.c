@@ -57,7 +57,9 @@ void thread_recv_health_check_peers(potr_context *ctx)
     int should_wake_health = 0;
 
     if (ctx->health_timeout_ms == 0)
+    {
         return;
+    }
 
     cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
@@ -67,9 +69,13 @@ void thread_recv_health_check_peers(potr_context *ctx)
         int path_state_changed = 0;
 
         if (!ctx->peers[i].active)
+        {
             continue;
+        }
         if (cplat_atomic_load_i32(&ctx->peers[i].health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+        {
             continue;
+        }
 
         /* パス単位のタイムアウトを判定し、不通パスを dest_addr から削除する。 */
         for (k = 0; k < (int)POTR_MAX_PATH; k++)
@@ -77,9 +83,13 @@ void thread_recv_health_check_peers(potr_context *ctx)
             int64_t path_elapsed;
 
             if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
+            {
                 continue; /* 未使用 */
+            }
             if (ctx->peers[i].path_last_recv_ts[k].tv_sec == 0)
+            {
                 continue; /* 初回受信前 */
+            }
             if (cplat_timespec_diff_ms(&now_ts, &ctx->peers[i].path_last_recv_ts[k], &path_elapsed) != CPLAT_OK)
             {
                 POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv: cannot calculate health interval");
@@ -106,7 +116,9 @@ void thread_recv_health_check_peers(potr_context *ctx)
 
         /* ピア単位のタイムアウトを判定し、全パス消滅または最終受信経過により切断する。 */
         if (ctx->peers[i].last_recv_ts.tv_sec == 0)
+        {
             continue;
+        }
         if (cplat_timespec_diff_ms(&now_ts, &ctx->peers[i].last_recv_ts, &elapsed_ms) != CPLAT_OK)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv: cannot calculate health interval");
@@ -167,7 +179,9 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
     int path_state_changed = 0;
 
     if (ctx->health_timeout_ms == 0)
+    {
         return;
+    }
 
     if (cplat_clock_get_monotonic(&now_ts) != CPLAT_OK)
     {
@@ -182,7 +196,9 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
         int64_t elapsed_ms;
 
         if (ctx->path_last_recv_ts[i].tv_sec == 0)
+        {
             continue;
+        }
         if (cplat_timespec_diff_ms(&now_ts, &ctx->path_last_recv_ts[i], &elapsed_ms) != CPLAT_OK)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv: cannot calculate health interval");
@@ -222,7 +238,9 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
 
     /* 全体の health_alive を判定する。 */
     if (cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0 || ctx->last_recv_ts.tv_sec == 0)
+    {
         return;
+    }
 
     {
         int64_t elapsed_ms;

@@ -81,9 +81,9 @@ TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
 
     for (i = 0; i < 4; i++)
     {
-        ASSERT_EQ(POTR_OK, potr_internal_send_queue_push(
-                               &q, 0, 0, payload,
-                               sizeof(payload), nullptr)); // [状態] - depth=4 のキューに 4 件を積んで満杯にする。
+        ASSERT_EQ(POTR_OK,
+                  potr_internal_send_queue_push(&q, 0, 0, payload, sizeof(payload),
+                                                nullptr)); // [状態] - depth=4 のキューに 4 件を積んで満杯にする。
         // [状態確認] - potr_internal_send_queue_push() の戻り値が POTR_OK であること。
     }
 
@@ -91,9 +91,7 @@ TEST_F(potrSendQueueTest, push_to_full_queue_returns_full)
 
     // Act
     int actual_ret_full = potr_internal_send_queue_push(
-        &q, 0, 0, payload,
-        sizeof(
-            payload),
+        &q, 0, 0, payload, sizeof(payload),
         nullptr); // [手順] - 満杯のキューに 5 件目のペイロードを指定して potr_internal_send_queue_push() を呼び出す。
 
     // Assert
@@ -115,8 +113,8 @@ TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
 
     for (i = 0; i < 4; i++)
     {
-        ASSERT_EQ(POTR_OK, potr_internal_send_queue_push(&q, 0, 0, payload,
-                                                         sizeof(payload), nullptr)); // [状態] - キューを満杯にしておく。
+        ASSERT_EQ(POTR_OK, potr_internal_send_queue_push(&q, 0, 0, payload, sizeof(payload),
+                                                         nullptr)); // [状態] - キューを満杯にしておく。
         // [状態確認] - potr_internal_send_queue_push() の戻り値が POTR_OK であること。
     }
 
@@ -124,8 +122,8 @@ TEST_F(potrSendQueueTest, push_wait_returns_canceled_when_stopped)
 
     // Act
     int actual_ret = potr_internal_send_queue_push_wait(
-        &q, 0, 0, payload, sizeof(payload),
-        &running, nullptr); // [手順] - 満杯のキューと停止済みの実行フラグを指定して potr_internal_send_queue_push_wait() を呼び出す。
+        &q, 0, 0, payload, sizeof(payload), &running,
+        nullptr); // [手順] - 満杯のキューと停止済みの実行フラグを指定して potr_internal_send_queue_push_wait() を呼び出す。
 
     // Assert
     EXPECT_EQ(
@@ -149,21 +147,23 @@ TEST_F(potrSendQueueTest, push_returns_sequential_tickets)
     // Pre-Assert
 
     // Act
-    int actual_ret1 = potr_internal_send_queue_push(&q, 0, 0, payload, sizeof(payload),
-                                                    &ticket1); // [手順] - 1 件目を potr_internal_send_queue_push() で登録する。
+    int actual_ret1 =
+        potr_internal_send_queue_push(&q, 0, 0, payload, sizeof(payload),
+                                      &ticket1); // [手順] - 1 件目を potr_internal_send_queue_push() で登録する。
     int actual_ret2 = potr_internal_send_queue_push_wait(
         &q, 0, 0, payload, sizeof(payload), &running,
         &ticket2); // [手順] - 2 件目を potr_internal_send_queue_push_wait() で登録する。
-    int actual_ret3 = potr_internal_send_queue_push(&q, 0, 0, payload, sizeof(payload),
-                                                    &ticket3); // [手順] - 3 件目を potr_internal_send_queue_push() で登録する。
+    int actual_ret3 =
+        potr_internal_send_queue_push(&q, 0, 0, payload, sizeof(payload),
+                                      &ticket3); // [手順] - 3 件目を potr_internal_send_queue_push() で登録する。
 
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret1); // [確認_正常系] - 1 件目の登録が成功すること。
-    EXPECT_EQ(POTR_OK, actual_ret2); // [確認_正常系] - 2 件目の登録が成功すること。
-    EXPECT_EQ(POTR_OK, actual_ret3); // [確認_正常系] - 3 件目の登録が成功すること。
-    EXPECT_EQ(1U, ticket1);          // [確認_正常系] - 1 件目の番号が 1 であること。
-    EXPECT_EQ(2U, ticket2);          // [確認_正常系] - 2 件目の番号が 2 であること。
-    EXPECT_EQ(3U, ticket3);          // [確認_正常系] - 3 件目の番号が 3 であること。
+    EXPECT_EQ(POTR_OK, actual_ret1);  // [確認_正常系] - 1 件目の登録が成功すること。
+    EXPECT_EQ(POTR_OK, actual_ret2);  // [確認_正常系] - 2 件目の登録が成功すること。
+    EXPECT_EQ(POTR_OK, actual_ret3);  // [確認_正常系] - 3 件目の登録が成功すること。
+    EXPECT_EQ(1U, ticket1);           // [確認_正常系] - 1 件目の番号が 1 であること。
+    EXPECT_EQ(2U, ticket2);           // [確認_正常系] - 2 件目の番号が 2 であること。
+    EXPECT_EQ(3U, ticket3);           // [確認_正常系] - 3 件目の番号が 3 であること。
     EXPECT_NE(nullptr, q.push_mutex); // [確認_正常系] - 登録用ロックが生成されていること。
     EXPECT_NE(nullptr, q.progress);   // [確認_正常系] - 完了通知の条件変数が生成されていること。
 

@@ -146,7 +146,9 @@ static int tcp_write_all_paths(potr_context *ctx, size_t wire_len)
         int writable = 0;
 
         if (ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
+        {
             continue;
+        }
 
         /* 送信バッファーの空きを確認する (非ブロッキング)。確認できない場合は書き込みの結果で判定する。 */
         if (cplat_socket_wait_writable(ctx->tcp_conn_fd[i], CPLAT_SOCKET_NO_WAIT, &writable, NULL) != CPLAT_OK)
@@ -179,7 +181,9 @@ static int tcp_write_all_paths(potr_context *ctx, size_t wire_len)
     for (i = 0; i < ctx->n_path; i++)
     {
         if (!skipped[i])
+        {
             continue;
+        }
 
         if (!sent_any)
         {
@@ -464,7 +468,9 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
             size_t sent = 0;
 
             if (endpoint_is_unset(&peer->dest_addr[k]))
+            {
                 continue;
+            }
             (void)cplat_socket_sendto(ctx->sock[k], ctx->send_wire_buf, wire_len, &peer->dest_addr[k], &sent, NULL);
         }
     }
@@ -509,9 +515,13 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
             size_t crypto_tag_overhead;
 
             if (next.peer_id != target_peer_id)
+            {
                 break;
+            }
             if (next.flags & POTR_FLAG_MORE_FRAG)
+            {
                 break;
+            }
 
             elem_size = POTR_PAYLOAD_ELEM_HDR_SIZE + (size_t)next.payload_len;
 

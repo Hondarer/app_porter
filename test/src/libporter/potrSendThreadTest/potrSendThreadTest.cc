@@ -82,9 +82,9 @@ TEST(potrSendThreadTest, n1_peer_freed_before_flush_drops_entries)
     std::vector<uint8_t> wire_buf(POTR_PACKET_HEADER_SIZE + 1400U);
     uint8_t payload[4] = {1U, 2U, 3U, 4U};
     potr_internal_payload_elem elem = {};
-    ctx.is_multi_peer = 1;                  // [状態] - N:1 モードとする。
-    ctx.global.max_payload = 1400U;         // [状態] - 最大ペイロード長を設定する。
-    ctx.send_wire_buf = wire_buf.data();    // [状態] - 送信 wire 組立バッファーを設定する。
+    ctx.is_multi_peer = 1;               // [状態] - N:1 モードとする。
+    ctx.global.max_payload = 1400U;      // [状態] - 最大ペイロード長を設定する。
+    ctx.send_wire_buf = wire_buf.data(); // [状態] - 送信 wire 組立バッファーを設定する。
     delegate_real_cplat_local_lock_create(&ctx.peers_mutex);
     peer.active = 1;
     peer.peer_id = 5U;
@@ -99,9 +99,7 @@ TEST(potrSendThreadTest, n1_peer_freed_before_flush_drops_entries)
         .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
         .WillRepeatedly(Return(POTR_ERR_CANCELED));
     // [Pre-Assert手順] - 1 回目はピア 5 宛のエントリを返し、以降は停止を返す。
-    EXPECT_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 5U))
-        .WillOnce(Return(&peer))
-        .WillOnce(Return(nullptr));
+    EXPECT_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 5U)).WillOnce(Return(&peer)).WillOnce(Return(nullptr));
     // [Pre-Assert確認_正常系] - 存在確認と送信直前の再検索で、ピアを 2 回検索すること。
     // [Pre-Assert手順] - 存在確認ではピアを返し、再検索では解放済みとして NULL を返す。
     EXPECT_CALL(mock_porter, potr_internal_packet_build_packed(_, _, _, _, _)).Times(0);

@@ -253,12 +253,16 @@ int thread_recv_check_src_addr(const potr_context *ctx, const cplat_ipv4_endpoin
              * dst_addr の先頭が空なら未指定としてすべて許可する。
              */
             if (ctx->service.dst_addr[0][0] == '\0')
+            {
                 return 1;
+            }
 
             for (i = 0; i < ctx->n_path; i++)
             {
                 if (sender->address == ctx->dst_addr_resolved[i])
+                {
                     return 1;
+                }
             }
         }
         else
@@ -268,12 +272,16 @@ int thread_recv_check_src_addr(const potr_context *ctx, const cplat_ipv4_endpoin
              * src_addr の先頭が空なら未指定としてすべて許可する。
              */
             if (ctx->service.src_addr[0][0] == '\0')
+            {
                 return 1;
+            }
 
             for (i = 0; i < ctx->n_path; i++)
             {
                 if (sender->address == ctx->src_addr_resolved[i])
+                {
                     return 1;
+                }
             }
         }
 

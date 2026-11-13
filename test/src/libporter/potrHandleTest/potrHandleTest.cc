@@ -40,13 +40,17 @@ TEST(potrHandleTest, close_waits_for_reference_and_rejects_late_entries)
     {
         late_ret = potr_internal_handle_acquire(handle, &later);
         if (late_ret == POTR_OK)
+        {
             potr_internal_handle_release(later);
+        }
         std::this_thread::yield();
     } while (late_ret == POTR_OK && std::chrono::steady_clock::now() < deadline);
     bool waited = !finished.load();
     int duplicate_ret = POTR_ERR_UNKNOWN;
     if (late_ret == POTR_ERR_CANCELED)
+    {
         duplicate_ret = potr_internal_handle_begin_close(handle, &later);
+    }
     potr_internal_handle_release(active); // [手順] - 先行 API の参照を返して close を進める。
     closer.join();
     potr_internal_handle_end_close(&ctx, 1); // [手順] - 資源回収済みとしてハンドルを無効化する。
