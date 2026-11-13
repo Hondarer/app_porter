@@ -1110,9 +1110,11 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
     PorterConfigBuilder cfg;
     const string payload = "after-timeout-ok";
     const string first_payload = "before-timeout-pending"; // [状態] - timeout 前後のメッセージを 2 種類用意する。
-    string config_path = cfg.setUdpHealthTimeoutMs(300)
+    // health timeout は最後の受信から数えるため、受信の表示待ちと FIN の送信が CI の負荷で延びても、
+    // FIN の 150 ms 後の確認より前に期限が来ないよう、十分に長くする。
+    string config_path = cfg.setUdpHealthTimeoutMs(1000)
                              .addUnicastService(55, 19055)
-                             .build(); // [状態] - health timeout 300 ms の unicast サービスをポート 19055 で定義する。
+                             .build(); // [状態] - health timeout 1000 ms の unicast サービスをポート 19055 で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "55"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -1140,7 +1142,7 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
     sleep_ms(150);                     // [手順] - 150 ms を指定して sleep_ms() を呼び出す。
     size_t actual_ret_find_disc_early = getStdout(recv_h_).find("切断検知");
     bool actual_ret_wait_47 = tryWaitForOutput(
-        recv_h_, "切断検知", 2000); // [手順] - health timeout により RECIEVER が "切断検知" を出力するまで待機する。
+        recv_h_, "切断検知", 3000); // [手順] - health timeout により RECIEVER が "切断検知" を出力するまで待機する。
     ASSERT_TRUE(
         actual_ret_wait_47); // [確認_正常系] - "切断検知" を待つ tryWaitForOutput() の戻り値が true であること。
 
