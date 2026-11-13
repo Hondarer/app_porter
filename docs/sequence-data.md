@@ -41,7 +41,7 @@ sequenceDiagram
     NT->>RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, data, len)
 ```
 
-CodeBlock: 正常送受信 (非ブロッキング)
+Figure: 正常送受信 (非ブロッキング)
 
 ## 正常送受信 (ブロッキング)
 
@@ -73,7 +73,7 @@ sequenceDiagram
     Note over SAPP: 返却時点で UDP 送信済み
 ```
 
-CodeBlock: 正常送受信 (ブロッキング)
+Figure: 正常送受信 (ブロッキング)
 
 ## フラグメント化と結合
 
@@ -115,7 +115,7 @@ sequenceDiagram
     NT->>RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, 結合済みデータ, 全体 len)
 ```
 
-CodeBlock: フラグメント化と結合 (3 フラグメントの例)
+Figure: フラグメント化と結合 (3 フラグメントの例)
 
 ## NACK による再送
 
@@ -163,7 +163,7 @@ sequenceDiagram
     RRT->>RRT: seq=11, 12 の順で整列
 ```
 
-CodeBlock: NACK による再送
+Figure: NACK による再送
 
 ## リオーダー バッファー (reorder_timeout_ms > 0) {#reorder-buffer}
 
@@ -211,7 +211,7 @@ sequenceDiagram
     Note over RRT: NACK は送出されなかった
 ```
 
-CodeBlock: リオーダー - 通常モード: 待機中に到着した場合 (NACK なし)
+Figure: リオーダー - 通常モード: 待機中に到着した場合 (NACK なし)
 
 ### RAW モード: 待機中に到着した場合 (DISCONNECTED なし)
 
@@ -255,7 +255,7 @@ sequenceDiagram
     Note over RRT: DISCONNECTED は発火しなかった
 ```
 
-CodeBlock: リオーダー - RAW モード: 待機中に届いた場合 (DISCONNECTED なし)
+Figure: リオーダー - RAW モード: 待機中に届いた場合 (DISCONNECTED なし)
 
 ## REJECT による切断と復帰
 
@@ -305,7 +305,7 @@ sequenceDiagram
     NT->>RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, ...)
 ```
 
-CodeBlock: REJECT による切断と復帰
+Figure: REJECT による切断と復帰
 
 ## RAW モード: ギャップ検出による切断と復帰 (DATA)
 
@@ -355,7 +355,7 @@ sequenceDiagram
     Note over RRT: seq=11 は配信されない<br>(欠落として確定)
 ```
 
-CodeBlock: RAW モード - DATA ギャップ検出
+Figure: RAW モード - DATA ギャップ検出
 
 ## RAW モード: ギャップ検出による切断と復帰 (PING)
 
@@ -397,7 +397,7 @@ sequenceDiagram
     Note over RRT: seq=10〜12 は配信されない<br>next_seq = 13 に更新
 ```
 
-CodeBlock: RAW モード - PING ギャップ検出
+Figure: RAW モード - PING ギャップ検出
 
 ## close と登録済み通知
 

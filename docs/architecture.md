@@ -104,7 +104,7 @@ flowchart TD
     HT -->|"sendto (PING)<br>片方向は最後の PING / DATA 基準<br>双方向は一定間隔で送信"| SOCK
 ```
 
-CodeBlock: 送信者のスレッド構成
+Figure: 送信者のスレッド構成
 
 | スレッド | 役割 |
 |---|---|
@@ -163,7 +163,7 @@ flowchart TD
     NT -->|"DATA / CONNECTED / DISCONNECTED"| CB
 ```
 
-CodeBlock: unicast_bidir 1:1 のスレッド構成
+Figure: unicast_bidir 1:1 のスレッド構成
 
 #### N:1 サーバー モード
 
@@ -200,7 +200,7 @@ flowchart TD
     HT -->|"PING 要求送信 / タイムアウト監視"| SOCK
 ```
 
-CodeBlock: unicast_bidir N:1 サーバーのスレッド構成
+Figure: unicast_bidir N:1 サーバーのスレッド構成
 
 | スレッド | 役割 |
 |---|---|
@@ -257,7 +257,7 @@ flowchart TD
     RTN -.- NOTE
 ```
 
-CodeBlock: TCP SENDER のスレッド構成 (path 数 = N の例)
+Figure: TCP SENDER のスレッド構成 (path 数 = N の例)
 
 | スレッド | 数 | 役割 |
 |---|---|---|
@@ -315,7 +315,7 @@ flowchart TD
     RTN -->|"DATA / DISCONNECTED"| CB
 ```
 
-CodeBlock: TCP RECEIVER のスレッド構成 (path 数 = N の例)
+Figure: TCP RECEIVER のスレッド構成 (path 数 = N の例)
 
 | スレッド | 数 | 役割 |
 |---|---|---|
@@ -501,7 +501,7 @@ flowchart TD
     thread_recv_window -->|"NACK / REJECT / 再送"| net
 ```
 
-CodeBlock: porter コンポーネント構成
+Figure: porter コンポーネント構成
 
 ## セッション コンテキスト (potr_context)
 

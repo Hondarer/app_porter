@@ -380,7 +380,7 @@ sequenceDiagram
     R->>S: sendto(src_addr1, src_port)<br>NACK (NACK 送信元は dst_addr1:dst_port)
 ```
 
-CodeBlock: unicast のソケット bind / sendto
+Figure: unicast のソケット bind / sendto
 
 | | 送信者 | 受信者 |
 |---|---|---|
@@ -410,7 +410,7 @@ sequenceDiagram
     B->>A: sendto(dst_addr1=A, learned or configured port)<br>DATA / PING 要求 / PING 応答 / NACK / REJECT
 ```
 
-CodeBlock: unicast_bidir 1:1 のソケット bind / sendto
+Figure: unicast_bidir 1:1 のソケット bind / sendto
 
 | | Side A (SENDER) | Side B (RECEIVER) |
 |---|---|---|
@@ -441,7 +441,7 @@ sequenceDiagram
     S->>CB: sendto(recvfrom で学習した送信元)<br>DATA / PING / NACK / REJECT
 ```
 
-CodeBlock: unicast_bidir_n1 のソケット bind / sendto
+Figure: unicast_bidir_n1 のソケット bind / sendto
 
 | | N:1 サーバー (unicast_bidir_n1) | クライアント (unicast_bidir) |
 |---|---|---|
@@ -473,7 +473,7 @@ sequenceDiagram
     RA->>S: sendto(src_addr1, src_port)<br>NACK (全パスからユニキャスト)
 ```
 
-CodeBlock: multicast のソケット bind / sendto
+Figure: multicast のソケット bind / sendto
 
 | | 送信者 | 受信者 |
 |---|---|---|
@@ -511,7 +511,7 @@ sequenceDiagram
     Note over R: accept() → 接続ソケット取得
 ```
 
-CodeBlock: tcp のソケット connect / accept
+Figure: tcp のソケット connect / accept
 
 | | SENDER | RECEIVER |
 |---|---|---|

@@ -41,7 +41,7 @@ sequenceDiagram
     Note over HT, UDP: 片方向は recent DATA により PING を抑止する<br>双方向系は従来どおり定周期 + 割り込み送信
 ```
 
-CodeBlock: ヘルス チェック (正常疎通)
+Figure: ヘルス チェック (正常疎通)
 
 ## ヘルス チェック タイムアウト
 
@@ -81,4 +81,4 @@ sequenceDiagram
     RRT->>RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)
 ```
 
-CodeBlock: ヘルス チェック タイムアウト
+Figure: ヘルス チェック タイムアウト

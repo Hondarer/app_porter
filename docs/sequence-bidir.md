@@ -66,7 +66,7 @@ sequenceDiagram
     Note over B: remote_path_ping_state に NORMAL を確認
 ```
 
-CodeBlock: unicast_bidir 1:1 双方向通信シーケンス
+Figure: unicast_bidir 1:1 双方向通信シーケンス
 
 ## unicast_bidir N:1 サーバーでの接続と送受信
 
@@ -93,7 +93,7 @@ sequenceDiagram
     S->>CA: DATA (peer_id=1 向け送信)
 ```
 
-CodeBlock: unicast_bidir N:1 サーバーでの接続と送受信
+Figure: unicast_bidir N:1 サーバーでの接続と送受信
 
 ## unicast_bidir N:1 サーバーでの切断
 
@@ -116,7 +116,7 @@ sequenceDiagram
     S->>S: peer table から peer_id=2 を削除
 ```
 
-CodeBlock: unicast_bidir N:1 サーバーでの切断
+Figure: unicast_bidir N:1 サーバーでの切断
 
 ## unicast_bidir ヘルス チェック タイムアウトによる切断検知
 
@@ -136,4 +136,4 @@ sequenceDiagram
     Note over A: POTR_EVENT_DISCONNECTED 発火
 ```
 
-CodeBlock: unicast_bidir ヘルス チェック タイムアウトによる切断検知
+Figure: unicast_bidir ヘルス チェック タイムアウトによる切断検知

@@ -34,7 +34,7 @@ sequenceDiagram
     Note over HT: 次回 PING 送信時刻を<br>計算してスリープ
 ```
 
-CodeBlock: サービス開始 (送信者)
+Figure: サービス開始 (送信者)
 
 ## サービス開始 (受信者)
 
@@ -61,7 +61,7 @@ sequenceDiagram
     Note over RT: DATA/PING/FIN を<br>待機するポーリングループ<br>ヘルス チェック タイムアウト監視
 ```
 
-CodeBlock: サービス開始 (受信者)
+Figure: サービス開始 (受信者)
 
 ## サービス終了 (potr_service_close)
 
@@ -105,7 +105,7 @@ sequenceDiagram
     Note over SAPP: handle は以後使用不可
 ```
 
-CodeBlock: 正常終了 (送信者側)
+Figure: 正常終了 (送信者側)
 
 ### 送信者側の終了 (FIN が DATA より先に到着する場合)
 
@@ -139,7 +139,7 @@ sequenceDiagram
     Note over ST,RRT: wrap 後は FIN[target_valid, ack_num=0] も通常の有効 target
 ```
 
-CodeBlock: 正常終了 (FIN が DATA より先に到着する場合)
+Figure: 正常終了 (FIN が DATA より先に到着する場合)
 
 ### 受信者側の終了
 
@@ -162,7 +162,7 @@ sequenceDiagram
     CLOSE-->>-RAPP: POTR_OK
 ```
 
-CodeBlock: 正常終了 (受信者側)
+Figure: 正常終了 (受信者側)
 
 ## 補足: 接続状態の遷移
 
@@ -193,7 +193,7 @@ stateDiagram-v2
     end note
 ```
 
-CodeBlock: 接続状態遷移 (受信者側 health_alive フラグ)
+Figure: 接続状態遷移 (受信者側 health_alive フラグ)
 
 ## 開始失敗の巻き戻しと停止後の共通解放
 

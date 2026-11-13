@@ -44,7 +44,7 @@ sequenceDiagram
     Note over CT: recv スレッドが切断を検知するまで待機
 ```
 
-CodeBlock: TCP サービス開始 (SENDER)
+Figure: TCP サービス開始 (SENDER)
 
 ## TCP サービス開始 (RECEIVER)
 
@@ -73,7 +73,7 @@ sequenceDiagram
     Note over RT: DATA / PING を待機するポーリングループ
 ```
 
-CodeBlock: TCP サービス開始 (RECEIVER)
+Figure: TCP サービス開始 (RECEIVER)
 
 ## TCP 正常接続・通信・切断
 
@@ -123,7 +123,7 @@ sequenceDiagram
     Note over S: FIN_ACK 受信後に socket teardown
 ```
 
-CodeBlock: TCP 正常シーケンス
+Figure: TCP 正常シーケンス
 
 ## TCP SENDER 再起動・自動再接続
 
@@ -150,7 +150,7 @@ sequenceDiagram
     Note over R: セッション B を採用<br>POTR_EVENT_CONNECTED 発火
 ```
 
-CodeBlock: TCP SENDER 再起動・自動再接続
+Figure: TCP SENDER 再起動・自動再接続
 
 ## TCP PING 応答タイムアウト
 
@@ -173,7 +173,7 @@ sequenceDiagram
     Note over S: reconnect_interval_ms 待機後<br>connect() 再試行
 ```
 
-CodeBlock: TCP PING 応答タイムアウト
+Figure: TCP PING 応答タイムアウト
 
 ## TCP RECEIVER 側 PING タイムアウト
 
@@ -198,7 +198,7 @@ sequenceDiagram
     Note over R: accept スレッドへ戻り<br>次の接続を待機
 ```
 
-CodeBlock: TCP RECEIVER 側 PING タイムアウト
+Figure: TCP RECEIVER 側 PING タイムアウト
 
 ## TCP マルチパス
 
@@ -232,7 +232,7 @@ sequenceDiagram
     Note over SC0,RA1: 2 path で接続確立。同一 seq_num のパケットが両 path から到着する
 ```
 
-CodeBlock: TCP マルチパス接続確立 (path 数 = 2)
+Figure: TCP マルチパス接続確立 (path 数 = 2)
 
 ### 部分切断時の継続
 
@@ -266,7 +266,7 @@ sequenceDiagram
     Note over SC0,RR1: 2 path で通信再開
 ```
 
-CodeBlock: TCP 部分切断時の継続 (path 0 切断)
+Figure: TCP 部分切断時の継続 (path 0 切断)
 
 ### 全 path 切断
 
@@ -293,4 +293,4 @@ sequenceDiagram
     Note over RA0,RA1: 各 accept スレッドが次の接続を待機
 ```
 
-CodeBlock: TCP 全 path 切断
+Figure: TCP 全 path 切断
