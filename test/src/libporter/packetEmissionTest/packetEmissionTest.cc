@@ -62,8 +62,9 @@ TEST(packetEmissionTest, udp_paths_ping_and_retransmissions_are_sealed_independe
     potr_packet ping = {};
     ASSERT_EQ(POTR_OK, potr_internal_packet_build_ping(&ping, &identity, 1, health, sizeof(health)));
     // [状態確認] - DATA の次の通番を持つ PING を作成できること。
-    ON_CALL(mock_cplat, cplat_clock_get_monotonic_high_resolution_ns(_)).WillByDefault([&](uint64_t *out) {
-        *out = monotonic;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic(_)).WillByDefault([&](cplat_timespec *out) {
+        out->tv_sec = (time_t)(monotonic / 1000000000U);
+        out->tv_nsec = (int64_t)(monotonic % 1000000000U);
         monotonic += 100;
         return CPLAT_OK;
     }); // [状態] - 各送出の単調増加時計を進める。

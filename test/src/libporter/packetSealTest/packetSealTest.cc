@@ -224,15 +224,16 @@ TEST(packetSealTest, clocks_are_sampled_for_each_path_and_retransmission)
         out->tv_nsec = 123;
         return CPLAT_OK;
     }); // [状態] - 呼び出しごとに実時刻の秒部を進める。
-    ON_CALL(mock_cplat, cplat_clock_get_monotonic_high_resolution_ns(_)).WillByDefault([&](uint64_t *out) {
-        *out = nanoseconds;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic(_)).WillByDefault([&](cplat_timespec *out) {
+        out->tv_sec = (time_t)(nanoseconds / 1000000000U);
+        out->tv_nsec = (int64_t)(nanoseconds % 1000000000U);
         nanoseconds += 100;
         return CPLAT_OK;
     }); // [状態] - 起点と各送出の単調増加時計を 100 [ns] ずつ進める。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_clock_get_realtime(_)).Times(3);
     // [Pre-Assert確認_正常系] - 実時刻を送出ごとに合計 3 回取得すること。
-    EXPECT_CALL(mock_cplat, cplat_clock_get_monotonic_high_resolution_ns(_)).Times(4);
+    EXPECT_CALL(mock_cplat, cplat_clock_get_monotonic(_)).Times(4);
     // [Pre-Assert確認_正常系] - 起点と送出ごとに単調増加時計を合計 4 回取得すること。
     // Act
     potr_internal_tx_session_init(&session);
@@ -268,12 +269,12 @@ TEST(packetSealTest, clock_failures_use_sentinels)
     ON_CALL(mock_cplat, cplat_clock_get_realtime(_)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
     // [状態] - 送出時の実時刻は取得に失敗する。
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_clock_get_monotonic_high_resolution_ns(_))
+    EXPECT_CALL(mock_cplat, cplat_clock_get_monotonic(_))
         .WillOnce(Return(CPLAT_ERR_UNKNOWN))
-        .WillOnce(DoAll(SetArgPointee<0>(100U), Return(CPLAT_OK)))
-        .WillOnce(DoAll(SetArgPointee<0>(200U), Return(CPLAT_OK)))
+        .WillOnce(DoAll(SetArgPointee<0>(cplat_timespec{0, 100}), Return(CPLAT_OK)))
+        .WillOnce(DoAll(SetArgPointee<0>(cplat_timespec{0, 200}), Return(CPLAT_OK)))
         .WillOnce(Return(CPLAT_ERR_UNKNOWN))
-        .WillOnce(DoAll(SetArgPointee<0>(199U), Return(CPLAT_OK)));
+        .WillOnce(DoAll(SetArgPointee<0>(cplat_timespec{0, 199}), Return(CPLAT_OK)));
     // [Pre-Assert確認_異常系] - 起点 2 回と送出 3 回の時計取得が呼ばれること。
     // [Pre-Assert手順] - 起点の失敗、送出時計の失敗、起点より前の値を順に用意する。
     // Act
@@ -298,6 +299,48 @@ TEST(packetSealTest, clock_failures_use_sentinels)
         EXPECT_EQ(0, emitted[i].tx_tv_sec); // [確認_異常系 回数=3] - 実時刻の秒部が 0 であること。
         EXPECT_EQ(-1, emitted[i].tx_tv_nsec); // [確認_異常系 回数=3] - 実時刻のナノ秒部が -1 であること。
         EXPECT_EQ(UINT64_MAX, emitted[i].tx_mono_ns); // [確認_異常系 回数=3] - 単調増加時刻が未取得値であること。
+    }
+}
+
+// 不正な単調増加時刻を経過時間へ変換しないことの確認
+TEST(packetSealTest, malformed_monotonic_times_use_sentinel)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    potr_internal_tx_session session = {};
+    potr_packet packet = {};
+    packet.protocol_version = cplat_hton32(POTR_PROTOCOL_VERSION);
+    ON_CALL(mock_cplat, cplat_clock_get_realtime(_)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
+    // [状態] - 実時刻の取得は失敗する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_clock_get_monotonic(_))
+        .WillOnce(DoAll(SetArgPointee<0>(cplat_timespec{-1, 0}), Return(CPLAT_OK)))
+        .WillOnce(DoAll(SetArgPointee<0>(cplat_timespec{0, 100}), Return(CPLAT_OK)))
+        .WillOnce(DoAll(SetArgPointee<0>(cplat_timespec{0, 1000000000}), Return(CPLAT_OK)))
+        .WillOnce(DoAll(SetArgPointee<0>(cplat_timespec{0, 100}), Return(CPLAT_OK)))
+        .WillOnce(DoAll(SetArgPointee<0>(cplat_timespec{INT64_MAX, 0}), Return(CPLAT_OK)))
+        .WillOnce(DoAll(SetArgPointee<0>(cplat_timespec{0, 100}), Return(CPLAT_OK)));
+    // [Pre-Assert確認_異常系] - 起点の取得と送出の時計取得を 3 組行うこと。
+    // [Pre-Assert手順] - 負の秒、範囲外のナノ秒、uint64_t ナノ秒換算の範囲超過を起点に設定する。
+
+    // Act
+    uint8_t wire[128] = {};
+    size_t wire_len = sizeof(wire);
+    uint64_t actual_tx_mono_ns[3] = {};
+    for (size_t i = 0; i < 3; i++)
+    {
+        potr_packet emitted = {};
+        potr_internal_tx_session_init(&session);
+        ASSERT_EQ(POTR_OK, potr_internal_packet_seal(&session, &packet, nullptr, wire, &wire_len));
+        ASSERT_EQ(POTR_OK, potr_internal_packet_parse(&emitted, wire, wire_len));
+        actual_tx_mono_ns[i] = emitted.tx_mono_ns;
+    }
+
+    // Assert
+    for (size_t i = 0; i < 3; i++)
+    {
+        EXPECT_EQ(UINT64_MAX, actual_tx_mono_ns[i]); // [確認_異常系 回数=3] - 不正な起点を使わず sentinel を送ること。
     }
 }
 
@@ -486,7 +529,7 @@ TEST(packetSealTest, counter_exhaustion_stops_session_without_wrapping)
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_clock_get_realtime(_)).Times(0);
     // [Pre-Assert確認_異常系] - 枯渇時に実時刻を取得しないこと。
-    EXPECT_CALL(mock_cplat, cplat_clock_get_monotonic_high_resolution_ns(_)).Times(0);
+    EXPECT_CALL(mock_cplat, cplat_clock_get_monotonic(_)).Times(0);
     // [Pre-Assert確認_異常系] - 枯渇時に単調増加時計を取得しないこと。
     EXPECT_CALL(mock_cplat, cplat_crypto_encrypt(_, _, _, _, _, _, _, _)).Times(0);
     // [Pre-Assert確認_異常系] - 枯渇時に暗号化を行わないこと。

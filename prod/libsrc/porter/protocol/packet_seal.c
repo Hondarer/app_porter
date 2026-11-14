@@ -18,9 +18,38 @@
 #include <porter/protocol/packet.h>
 #include <porter/protocol/packet_seal.h>
 
+#define NSEC_PER_SEC_U64 UINT64_C(1000000000)
+
 static uint64_t to_network_u64(uint64_t value)
 {
     return ((uint64_t)cplat_hton32((uint32_t)value) << 32) | cplat_hton32((uint32_t)(value >> 32));
+}
+
+static int get_monotonic_ns(uint64_t *nanoseconds_out)
+{
+    cplat_timespec timestamp;
+    uint64_t seconds;
+    int ret;
+
+    ret = cplat_clock_get_monotonic(&timestamp);
+    if (ret != CPLAT_OK)
+    {
+        return ret;
+    }
+
+    if (timestamp.tv_sec < 0 || timestamp.tv_nsec < 0 || timestamp.tv_nsec >= (int64_t)NSEC_PER_SEC_U64)
+    {
+        return CPLAT_ERR_UNKNOWN;
+    }
+
+    seconds = (uint64_t)timestamp.tv_sec;
+    if (seconds > (UINT64_MAX - (uint64_t)timestamp.tv_nsec) / NSEC_PER_SEC_U64)
+    {
+        return CPLAT_ERR_OUT_OF_RANGE;
+    }
+
+    *nanoseconds_out = seconds * NSEC_PER_SEC_U64 + (uint64_t)timestamp.tv_nsec;
+    return CPLAT_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -34,8 +63,7 @@ void potr_internal_tx_session_init(potr_internal_tx_session *session)
     cplat_atomic_store_u64(&session->next_counter, 0U, CPLAT_MEMORY_ORDER_RELAXED);
     cplat_atomic_store_i32(&session->exhausted, 0, CPLAT_MEMORY_ORDER_RELAXED);
     session->start_mono_ns = 0U;
-    session->start_mono_valid =
-        (cplat_clock_get_monotonic_high_resolution_ns(&session->start_mono_ns) == CPLAT_OK);
+    session->start_mono_valid = (get_monotonic_ns(&session->start_mono_ns) == CPLAT_OK);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -93,8 +121,8 @@ int potr_internal_packet_seal(potr_internal_tx_session *session, const potr_pack
         header.tx_tv_sec = (int64_t)to_network_u64((uint64_t)now.tv_sec);
         header.tx_tv_nsec = (int32_t)cplat_hton32((uint32_t)now.tv_nsec);
     }
-    if (cplat_clock_get_monotonic_high_resolution_ns(&mono_ns) == CPLAT_OK &&
-        session->start_mono_valid && mono_ns >= session->start_mono_ns)
+    if (get_monotonic_ns(&mono_ns) == CPLAT_OK && session->start_mono_valid &&
+        mono_ns >= session->start_mono_ns)
     {
         header.tx_mono_ns = to_network_u64(mono_ns - session->start_mono_ns);
     }

@@ -21,8 +21,8 @@
 
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
-| BL-003 | cplat の単調増加時計を高分解能の実装へ一本化する | 見送り | 低 | 未着手 (Windows での計測後に対処) |
-| BL-004 | Windows/MSVC でのビルド・局所テストと OS 間の相互接続確認が未実施 | 見送り | 高 | 未着手 (Windows 環境で実施) |
+| BL-003 | cplat の単調増加時計を高分解能の実装へ一本化する | 見送り | 低 | 対応済み (実機計測・一本化完了。仮想環境では未計測) |
+| BL-004 | Windows/MSVC でのビルド・局所テストと OS 間の相互接続確認が未実施 | 継続中 | 高 | Windows 検証完了。相互接続 10/12 成功。残りは新 backlog `261114-porter-windows-verification-clock-unify-backlog.md` へ移管 |
 
 作業中に記録した BL-001 (PING の nonce の再使用) と BL-002 (`max_payload` の検査上限) は、本案件で解消したため一覧から除外しました。課題 ID は振り直していません。
 
@@ -30,24 +30,24 @@
 
 ### 概要と問題点
 
-- 現状の事象: cplat の単調増加時計の API が 2 系統あります。`cplat_clock_get_monotonic()` と `cplat_clock_get_monotonic_ms()` は Windows で `GetTickCount64()` を使い、分解能は約 10〜16 [ms] です。本案件で追加した `cplat_clock_get_monotonic_high_resolution_ns()` は Windows で `QueryPerformanceFrequency()` と `QueryPerformanceCounter()` を使います。Linux では、どちらも `clock_gettime(CLOCK_MONOTONIC)` を呼び、戻り値の形だけが異なります。
-- 本来あるべき姿: `cplat_clock_get_monotonic()` の Windows 実装を `QueryPerformanceCounter()` に置き換えて性能上の問題がなければ、単調増加時計を 1 系統にまとめ、`cplat_clock_get_monotonic_high_resolution_ns()` を廃止します。
+- 現状の事象: (着手時点) cplat の単調増加時計 API が 2 系統ありました。`cplat_clock_get_monotonic()` と `cplat_clock_get_monotonic_ms()` は Windows で `GetTickCount64()` を使い、`cplat_clock_get_monotonic_high_resolution_ns()` は Windows で QPF/QPC を使っていました。
+- 本来あるべき姿: `cplat_clock_get_monotonic()` を Windows で QPF/QPC に一本化し、`cplat_clock_get_monotonic_high_resolution_ns()` を廃止します。性能低下は許容され、性能上の課題が生じた場合にだけ `GetTickCount64()` を使う高速版関数の追加を検討します。
 
 ### 経緯と見送り理由
 
 - 摘出契機: 2026-11-14 の対話で、作業 WBS の 4.1 の成果物に対し、ユーザーから「`cplat_clock_get_monotonic()` の実装を高分解能に置き換えるだけでよいのではないか」との確認を受けました。
-- 今回の見送り理由: 置き換えの可否は、Windows での取得コストの差で決まります。`GetTickCount64()` と `QueryPerformanceCounter()` の 1 回あたりの所要時間を、このワークスペースでは計測していません。ユーザーの指示により、Windows での計測の後に対処します。本案件は、最終仕様どおり API を追加した形で進めます。
-- 継続作業での経緯と対処: (未記入)
+- 今回の見送り理由: (解消) Windows 実機で計測し、その結果を見てからユーザーが判断するため、計測まで一本化を保留しました。
+- 継続作業での経緯と対処: 2026-11-14 に Windows 11 実機で計測しました。環境は Windows 11 Pro for Workstations build 26300、MSVC x64 19.50.35724、Intel Xeon Gold 6254、仮想化機能あり (`HypervisorPresent=True`) です。QPF は 10 MHz、QPF/QPC は全試行で成功しました。1,000,000 回を 10 試行した中央値は、`GetTickCount64()` → timespec が 3.165 ns/回、QPF 毎回 + QPC → timespec が 35.575 ns/回でした (前者の最小/最大 3.160/3.186 ns、後者 35.528/35.670 ns)。補助の QPF キャッシュ経路は 34.666 ns/回でしたが、判断には使用していません。TEMP の `C:\Users\tetsuo\AppData\Local\Temp\porter-clock-bench-261114-86cab813\measurement-refined.csv` が計測根拠です。ユーザーは性能低下を許容して一本化を判断しました。QPF/QPC を毎回使う単一 API に変更し、古い高分解能専用 API とその mock、エクスポート表、テストを削除しました。porter は timespec の値を検証して `tx_mono_ns` に変換します。性能上の課題が出た場合だけ `GetTickCount64()` 専用の高速版関数を検討し、課題がない限り一系統を維持します。Windows で cplat と porter の対象ライブラリをビルドし、clock/export および packetSeal/packetEmission の対象テストはすべて成功しました。仮想環境では計測していません。結果は `261114-porter-windows-verification-clock-unify-discussion.md` と design に記録します。
 
 ### 影響範囲とリスク
 
-- 影響対象: `app/cplat/prod/libsrc/cplat/clock/clock.c`、`app/cplat/prod/include/cplat/clock/clock.h`、`app/cplat/test/` の `mock_cplat` とエクスポート表、`app/cplat/docs/api-cheatsheet.md`、`app/cplat/docs/functional-spec/clock.md` の `CPLAT-CLOCK-FUNC-007` <!-- cplat-req: uuid=32a417f6-af82-4a99-967b-a76105d8b945 -->、porter の送信時刻 `tx_mono_ns` の取得箇所。
+- 影響対象: `app/cplat/prod/libsrc/cplat/clock/clock.c`、`app/cplat/prod/include/cplat/clock/clock.h`、`app/cplat/test/` の `mock_cplat` とエクスポート表、テスト、API チート シート、時計の機能仕様、porter の送信時刻 `tx_mono_ns` の取得箇所。機能要件 `CPLAT-CLOCK-FUNC-007` <!-- cplat-req: uuid=32a417f6-af82-4a99-967b-a76105d8b945 --> は単一の高分解能時刻 API の要件として維持します。
 - 置き換える場合の影響: `GetTickCount64()` は失敗しませんが、`QueryPerformanceCounter()` は API 上は失敗を返せるため、`cplat_clock_get_monotonic_ms()` を含めて Windows に失敗の経路が生じます。`GetTickCount64` の mock で時刻を制御している cplat のテスト (`clockTest.cc`、`syncSleepMsTest.cc`、`syncTestHelper.h`) を、`QueryPerformanceCounter` の mock へ書き換える必要があります。サスペンド中に時計が進む点は、Windows ではどちらの API も同じです。
 - 放置した場合のリスク: 動作上の問題はありません。同じ目的の API が 2 系統残り、利用側が選択を誤ると、Windows でミリ秒刻みの値を短い経過時間の測定に使うおそれがあります。
 
 ### 推奨される対応策
 
-- 恒久対応案: Windows の実機と仮想環境で、`GetTickCount64()` と、`QueryPerformanceFrequency()` + `QueryPerformanceCounter()` の 1 回あたりの所要時間を計測します。タイムアウト判定や porter の 1 送出ごとの取得で問題にならない差であれば、`cplat_clock_get_monotonic()` の Windows 実装を置き換え、`cplat_clock_get_monotonic_high_resolution_ns()` とその mock、エクスポート表の行、要件 `CPLAT-CLOCK-FUNC-007` <!-- cplat-req: uuid=32a417f6-af82-4a99-967b-a76105d8b945 --> を削除し、porter は `cplat_clock_get_monotonic()` の差から `tx_mono_ns` を求めます。差が問題になる場合は 2 系統を維持し、選択の指針を `clock.h` と機能仕様に残します。
+- 恒久対応案: 対応済みです。Windows の `cplat_clock_get_monotonic()` を QPF/QPC に置き換え、QPF を呼び出しごとに取得します。`cplat_clock_get_monotonic_high_resolution_ns()` と関連する mock、エクスポート行、テストを削除し、`CPLAT-CLOCK-FUNC-007` <!-- cplat-req: uuid=32a417f6-af82-4a99-967b-a76105d8b945 --> は単一の高分解能 API に対する機能要件として維持しました。porter は timespec を検証して `tx_mono_ns` を計算します。仮想環境では計測していません。性能上の課題が生じた場合にのみ `GetTickCount64()` を使う高速版の追加を検討します。
 - 参考情報: [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps)、`framework/testfw` の `mock_windows` の `QueryPerformanceCounter()` と `QueryPerformanceFrequency()` の mock。
 
 ## BL-004 Windows/MSVC でのビルド・局所テストと OS 間の相互接続確認が未実施
@@ -61,12 +61,18 @@
 
 - 摘出契機: 作業 WBS の 4.9 で、作業環境 (WSL) に Windows のビルド環境がないことを確認しました。
 - 今回の見送り理由: 2026-11-14 の対話で、ユーザーから「Windows 向けの課題は backlog に書いて」との指示を受けました。本案件は Linux での検証までで成果物を提示し、Windows での検証は本項目として引き継ぎます。
-- 継続作業での経緯と対処: (未記入)
+- 継続作業での経緯と対処: 2026-11-15、ユーザーの「続けて」という指示を受けて BL-004 を再開しました。Windows の 4 対象を検証しました。`app/cplat make test` は exit 0 で終了し、87 leaf summary、1,854 件成功、警告 0 件、失敗 0 件でした (全体 test 段階の実行時間 2 時間 42 分 55 秒)。`app/porter make test` は exit 0 で終了し、43/43 leaf、511 件成功、失敗 0 件でした。`app/openssl make test` は exit 0 で終了し、製品 OpenSSL は最新のため再ビルドされず、`mock_openssl` をビルドしました。`app/openssl/test/src` に単体テスト leaf はありません。`framework/testfw make test` は exit 0 で終了しました。C/C++ テストは `exportCheckTest` と `mockInstanceTest` が各 2 件成功し、Python `bin_test` は 124 件実行、3 件 skip、`OK` でした。`mock_syslog` は Windows の `SKIP_BUILD` 対象外として skip されました。
+
+  相互接続は PSK と証明書を合わせて 12 組み合わせ中 10 組み合わせが成功しました。マルチキャスト 2 件はユーザー判断「backlog に回す」により今回修正せず、新案件 backlog BL-001 へ移管しました。Q-011 の技術的選択肢は未決のままです。
+
+  検証後に確認した非空 `.warn` は次のとおりです。`app/cplat/doxy_internal.warn` は実行前の 2026-11-14 に更新された 142 byte の Doxygen Mermaid タグ警告です。`app/porter/test/src/integration/certificateTest/potr_health_thread.c.warn` は porter test 開始前の 2026-11-15 03:00 に更新された生成 `.warn` で、旧 API の C4013 と C4310 を含みます。これらは今回の実行で発生した警告と分けて扱います。`app/openssl` と `framework/testfw` には非空 `.warn` はありません。
+
+  `app/porter make test` の出力では、`certificateTest` の依存スキップ表示前に `/usr/bin/sh: -c: line 1: unexpected EOF while looking for matching '"'` が出ました。leaf の既存 summary は 31 件すべて成功し、依存が変わっていないとしてテストはスキップされました。次の読み取り専用 no-op make でも再現しました: `make -C app/porter/test/src/integration/certificateTest --eval='printenv:;@:' printenv`。直接の `resolve_app_deps.sh --signature` は単独では再現しませんでした。make 構成時の stderr と確認しましたが原因関数は未特定です。テスト結果の失敗や新しい `.warn` は確認していません。原因の不明な修正は行わず、再現と影響を残課題として記録します。
 
 ### 影響範囲とリスク
 
-- 影響対象と、MSVC で特に確認が必要な箇所:
-    - `framework/testfw` の `mock_windows` に追加した `QueryPerformanceCounter()` と `QueryPerformanceFrequency()` の mock、`app/cplat` の `cplat_clock_get_monotonic_high_resolution_ns()` の Windows 実装とそのテスト (`clockHighResolutionTest.cc` の Windows 分岐は、Linux では一度もコンパイルされていません)。
+- 影響対象と、MSVC で特に確認が必要な箇所 (2026-11-15 の Windows 検証でビルドとテストを確認):
+    - `framework/testfw` の `mock_windows` に追加した `QueryPerformanceCounter()` と `QueryPerformanceFrequency()` の mock、および `app/cplat` の `cplat_clock_get_monotonic()` の Windows 実装。旧 `cplat_clock_get_monotonic_high_resolution_ns()` と `clockHighResolutionTest.cc` は BL-003 対応で削除済みです。Windows clock/export テストと cplat 全体テストは成功しました。
     - `app/openssl` の `mock_openssl` に追加した libssl と証明書関連の関数の mock、差し替えヘッダー (`test/include_override/openssl/`)、実委譲の読み込み先 `libssl-3-x64_app.dll`。
     - `app/porter` の構造体の明示パディング (`prod/include_internal/porter/potr_context.h`、`prod/libsrc/porter/security/potr_auth.c`、`test/src/libporter/auth_test/auth_test.cc`)。GCC の配置規則を前提に `-Wpadded` を解消しています。
     - `app/porter/test/include/mock_porter.h` に追加した mock の `/INCLUDE` プラグマ (`potr_internal_callback_emit`、`potr_internal_window_send_get` など)。
@@ -78,3 +84,11 @@
 
 - 恒久対応案: Windows の開発環境で、`framework/testfw`、`app/cplat`、`app/openssl`、`app/porter` を順に make し、`app/cplat` と `app/porter` の局所テストを実行して、内容のある `.warn` がないことを確認します。失敗と警告を修正した後、`porter-test` で、Linux と Windows の間の相互接続を確認します。対象は、事前共有鍵方式と証明書方式のそれぞれで、`unicast_bidir`、`unicast_bidir_n1`、`tcp`、`tcp_bidir`、`unicast`、`multicast` です。
 - 参考情報: 最終仕様の「受入条件」の検証環境の行、`app/general/docs/workspace-agent-workflow.md`。
+
+## BL-004 継続作業の整理 (2026-11-15)
+
+Windows 検証は framework/testfw、app/cplat、app/openssl、app/porter の対象作業を完了しました。Linux/Windows 相互接続は PSK・証明書の計 12 組み合わせ中 10 件が成功し、マルチキャスト 2 件はユーザー判断「backlog に回す」により今回修正せず、新案件 backlog の BL-001 へ移管しました。Q-011 の技術的選択肢は未決のままです。
+
+Q-006=A で明示的に残した Windows VM 時計計測は、新案件 backlog BL-002 に独立項目として転記しました。certificateTest make 構成時の unexpected EOF stderr は新案件 backlog BL-003 に切り分けました。古い生成 `.warn` と既存の一般警告は今回の新規残課題に含めません。
+
+今回の残課題の正本: `261114-porter-windows-verification-clock-unify-backlog.md`。本書の BL-003/BL-004 の履歴は保持し、後続対応は当該案件 backlog で追跡します。
