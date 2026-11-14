@@ -35,6 +35,8 @@ flowchart LR
     U --> API
 ```
 
+Figure: ハンドルの寿命と非同期通知の実行関係
+
 ## 役割モデル
 
 porter は通信の参加者を **送信者 (SENDER)** と **受信者 (RECEIVER)** に区別します。
