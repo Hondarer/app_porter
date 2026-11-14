@@ -7,6 +7,7 @@
  */
 #include <testfw.h>
 #include <porter.h>
+#include <cplat/crt/string.h>
 #include <cplat/net/socket.h>
 #include <cplat/net/byteorder.h>
 #include <chrono>
@@ -82,12 +83,12 @@ TEST_F(pathGroupReportTest, receiver_reports_select_reachable_group)
     source.max_peers = 4;
     source.path_group[0] = 1;
     source.path_group[1] = 3;
-    std::strcpy(source.src_addr[0], "127.0.0.1");
-    std::strcpy(source.src_addr[1], "127.0.0.2");
-    std::strcpy(source.dst_addr[0], "127.0.0.1");
-    std::strcpy(source.dst_addr[1], "127.0.0.2");
+    cplat_strcpy(source.src_addr[0], sizeof(source.src_addr[0]), "127.0.0.1");
+    cplat_strcpy(source.src_addr[1], sizeof(source.src_addr[1]), "127.0.0.2");
+    cplat_strcpy(source.dst_addr[0], sizeof(source.dst_addr[0]), "127.0.0.1");
+    cplat_strcpy(source.dst_addr[1], sizeof(source.dst_addr[1]), "127.0.0.2");
     destination = source;
-    std::strcpy(destination.dst_addr[0], "127.0.0.3");
+    cplat_strcpy(destination.dst_addr[0], sizeof(destination.dst_addr[0]), "127.0.0.3");
     {
         std::lock_guard<std::mutex> lock(report_test_mutex);
         report_test_messages.clear();

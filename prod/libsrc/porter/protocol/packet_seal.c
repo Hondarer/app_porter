@@ -229,7 +229,7 @@ int potr_internal_packet_open(potr_packet *packet, const uint8_t *wire_header, c
         packet->payload = plaintext;
     }
     packet->payload_len = (uint16_t)plaintext_len;
-    packet->flags &= (uint16_t)~POTR_FLAG_ENCRYPTED;
+    packet->flags = (uint16_t)(packet->flags & ~POTR_FLAG_ENCRYPTED);
     return POTR_OK;
 }
 

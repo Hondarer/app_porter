@@ -4,6 +4,7 @@
 #include <porter/potr_context.h>
 #include <porter/potr_handle.h>
 #include <porter/protocol/packet.h>
+#include <cplat/crt/string.h>
 #include <cplat/runtime/memory_lock.h>
 #include <array>
 #include <atomic>
@@ -101,9 +102,9 @@ struct certificate_configuration
         definition.max_peers = 4U;
         definition.reconnect_interval_ms = 100U;
         definition.connect_timeout_ms = 1000U;
-        std::strcpy(definition.src_addr[0], "127.0.0.1");
-        std::strcpy(definition.dst_addr[0], "127.0.0.1");
-        std::strcpy(definition.multicast_group, "239.255.86.72");
+        cplat_strcpy(definition.src_addr[0], sizeof(definition.src_addr[0]), "127.0.0.1");
+        cplat_strcpy(definition.dst_addr[0], sizeof(definition.dst_addr[0]), "127.0.0.1");
+        cplat_strcpy(definition.multicast_group, sizeof(definition.multicast_group), "239.255.86.72");
         definition.cert_file = certificate.c_str();
         definition.key_file = key.c_str();
         if (mode != 1)
