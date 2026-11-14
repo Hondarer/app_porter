@@ -126,6 +126,14 @@ int exercise(const int capacity)
     {
         return -1;
     }
+    // テスト実行体が終了した場合も、Job 内の親とワーカーを回収する。
+    // see: https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {};
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!SetInformationJobObject(server.job, JobObjectExtendedLimitInformation, &limits, sizeof(limits)))
+    {
+        return -1;
+    }
     // CreateProcessU は win32.h に extern "C" が無く、C++ から libcplat の実体へリンクできない。
     // see: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
     wchar_t wide_command[4096];
@@ -218,7 +226,17 @@ int exercise(const int capacity)
             {
                 return -1;
             }
-            ++completed; // [手順] - 親側参照を閉じた後の往復通信を数える。
+            ++completed; // [手順] - 往復通信を数え、続けて全接続の EOF を検証する。
+        }
+        // 親の参照が残ると、ワーカーだけが閉じても EOF は届かない。
+        // see: https://learn.microsoft.com/en-us/windows/win32/winsock/shared-sockets-2
+        for (SOCKET client : clients.values)
+        {
+            char byte;
+            if (shutdown(client, SD_SEND) != 0 || recv(client, &byte, 1, 0) != 0)
+            {
+                return -1;
+            }
         }
     }
     return completed;
@@ -238,7 +256,7 @@ TEST(tcpServerPreforkTest, transfers_sockets_to_sequential_workers)
     // Assert
     EXPECT_EQ(16, completed); // [確認_正常系] - 2 ワーカーで 8 回の往復通信が完了すること。
 #else
-    GTEST_SKIP() << "Windows 実機で実行するテストです。";
+    GTEST_SKIP() << "[Windows] Windows 実機で実行するテストです。";
 #endif
 }
 TEST(tcpServerPreforkTest, transfers_sockets_to_multiplex_workers)
@@ -252,6 +270,6 @@ TEST(tcpServerPreforkTest, transfers_sockets_to_multiplex_workers)
     // Assert
     EXPECT_EQ(48, completed); // [確認_正常系] - 6 接続枠で 8 回の往復通信が完了すること。
 #else
-    GTEST_SKIP() << "Windows 実機で実行するテストです。";
+    GTEST_SKIP() << "[Windows] Windows 実機で実行するテストです。";
 #endif
 }

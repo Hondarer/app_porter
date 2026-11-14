@@ -33,6 +33,11 @@
     #include <cplat/crt/select.h>
     #include <cplat/crt/path.h>
     #include <cplat/sync/sync.h>
+    #include <cplat/trace/tracer.h>
+
+    #if defined(TCPSERVER_PREFORK_TEST)
+        #include "prefork_probe.h"
+    #endif
     #include <cplat/win32/win32.h>
 
     #include <stdio.h>
@@ -43,6 +48,33 @@
 
     /** 名前付きパイプ名フォーマット。 */
     #define TCPSERVER_PIPE_NAME_FMT "\\\\.\\pipe\\tcpserver_worker_%d"
+
+/* NONE は通常の出力先へ送らず、テスト時のプロセス内フックでのみ記録する。 */
+static void prefork_trace(const char *stage, const DWORD worker_pid, const SOCKET connection, const int result)
+{
+    cplat_tracer *tracer = NULL;
+    #if defined(TCPSERVER_PREFORK_TEST)
+    tracer = prefork_probe_tracer();
+    #endif
+    cplat_tracer_writef_at(tracer, CPLAT_TRACE_LEVEL_NONE, NULL, "%s worker=%lu connection=%llu result=%d", stage,
+                           worker_pid, (unsigned long long)connection, result);
+}
+
+/* ワーカーへの引き渡し後も、親が所有する記述子の解放は親の責務である。
+ * see: https://learn.microsoft.com/en-us/windows/win32/winsock/shared-sockets-2
+ */
+static void close_parent_socket(const SOCKET connection, const DWORD worker_pid)
+{
+    #if defined(TCPSERVER_PREFORK_TEST)
+    if (prefork_probe_skip_close(connection))
+    {
+        prefork_trace("parent_close_skipped", worker_pid, connection, 0);
+        return;
+    }
+    #endif
+    int result = closesocket(connection);
+    prefork_trace("parent_close", worker_pid, connection, result);
+}
 
 /*
  * ============================================================
@@ -125,6 +157,12 @@ static int pipe_transfer(const HANDLE pipe, void *data, DWORD length, const int 
 
 static int worker_reply(const HANDLE pipe, const DWORD type, const DWORD accepted)
 {
+    #if defined(TCPSERVER_PREFORK_TEST)
+    if (type == WORKER_DONE)
+    {
+        prefork_probe_before_done();
+    }
+    #endif
     WorkerReply reply = {type, accepted};
     return pipe_transfer(pipe, &reply, sizeof(reply), 1);
 }
@@ -140,8 +178,14 @@ static SOCKET receive_socket(const HANDLE pipe)
     {
         return INVALID_SOCKET;
     }
+    #if defined(TCPSERVER_PREFORK_TEST)
+    result = prefork_probe_restore(&protocol_info);
+    prefork_probe_before_ack(pipe, result);
+    #else
     result =
         WSASocketW(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &protocol_info, 0, WSA_FLAG_OVERLAPPED);
+    #endif
+    prefork_trace("restore", GetCurrentProcessId(), result, result != INVALID_SOCKET);
     if (!worker_reply(pipe, WORKER_ACK, result != INVALID_SOCKET))
     {
         if (result != INVALID_SOCKET)
@@ -409,6 +453,7 @@ static void worker_monitor_thread(void *arg)
             LeaveCriticalSection(&worker->state_lock);
             break;
         }
+        int connection_count = worker->conn_count;
         if (worker->alive && worker->conn_count + worker->pending < ctx->conns_per_worker)
         {
             SetEvent(ctx->events[ctx->id]);
@@ -418,6 +463,8 @@ static void worker_monitor_thread(void *arg)
             ResetEvent(ctx->events[ctx->id]);
         }
         LeaveCriticalSection(&worker->state_lock);
+        prefork_trace(reply.type == WORKER_ACK ? "ack" : "done", worker->process_id, INVALID_SOCKET,
+                      reply.type == WORKER_ACK ? (int)reply.accepted : connection_count);
     }
     DisconnectNamedPipe(worker->pipe);
     EnterCriticalSection(&worker->state_lock);
@@ -427,6 +474,7 @@ static void worker_monitor_thread(void *arg)
     SetEvent(worker->ack_event);
     SetEvent(ctx->events[ctx->id]); /* 空き待機側に終了を通知する。 */
     LeaveCriticalSection(&worker->state_lock);
+    prefork_trace("monitor_dead", worker->process_id, INVALID_SOCKET, 0);
 }
 
 /**
@@ -471,7 +519,12 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
             }
             LeaveCriticalSection(&worker->state_lock);
         }
-        if (!any_alive || WaitForMultipleObjects((DWORD)n, events, FALSE, INFINITE) == WAIT_FAILED)
+        if (!any_alive)
+        {
+            return -1;
+        }
+        prefork_trace("capacity_wait", 0, INVALID_SOCKET, 0);
+        if (WaitForMultipleObjects((DWORD)n, events, FALSE, INFINITE) == WAIT_FAILED)
         {
             return -1;
         }
@@ -548,6 +601,9 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
 
         workers[i].process = pi.hProcess;
         workers[i].process_id = pi.dwProcessId;
+    #if defined(TCPSERVER_PREFORK_TEST)
+        prefork_probe_worker_started(i, pi.dwProcessId);
+    #endif
         workers[i].conn_count = 0;
         CloseHandle(pi.hThread);
 
@@ -643,6 +699,9 @@ void platform_init(ClientSessionFn session_fn)
     }
 
     g_session_fn = session_fn;
+    #if defined(TCPSERVER_PREFORK_TEST)
+    prefork_probe_initialize();
+    #endif
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -771,10 +830,14 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
             continue;
         }
 
+    #if defined(TCPSERVER_PREFORK_TEST)
+        prefork_probe_accepted();
+    #endif
         int worker_id = find_available_worker(workers, events, num_workers, conns_per_worker);
         if (worker_id < 0)
         {
-            closesocket(client_socket);
+            close_parent_socket(client_socket, 0);
+            prefork_trace("no_worker", 0, client_socket, 0);
             fprintf(stderr, "利用可能なワーカーがありません\n");
             continue;
         }
@@ -795,11 +858,15 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
             {
                 DisconnectNamedPipe(worker->pipe);
             }
-            closesocket(client_socket);
+            close_parent_socket(client_socket, worker->process_id);
             continue;
         }
         /* 受領通知の読み取りは監視スレッドへ委ねる。ワーカー終了も待機を解除する。 */
         HANDLE wait_handles[] = {worker->ack_event, worker->process};
+        prefork_trace("ack_wait", worker->process_id, client_socket, 0);
+    #if defined(TCPSERVER_PREFORK_TEST)
+        prefork_probe_before_wait();
+    #endif
         DWORD wait_result = WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
         EnterCriticalSection(&worker->state_lock);
         int accepted = wait_result == WAIT_OBJECT_0 && worker->alive && worker->ack_ok;
@@ -810,7 +877,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
             SetEvent(events[worker_id]);
         }
         LeaveCriticalSection(&worker->state_lock);
-        closesocket(client_socket); /* 子が取得済み、または引き渡し失敗の親側参照を閉じる。 */
+        close_parent_socket(client_socket, worker->process_id);
         if (!accepted)
         {
             fprintf(stderr, "ワーカー %d へのソケット引き渡しに失敗しました\n", worker_id);
