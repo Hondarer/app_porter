@@ -681,7 +681,7 @@ sequenceDiagram
     R->>S: POTR_FLAG_REPORT / POTR_FLAG_NACK (受信者ごとの鍵または受信方向鍵で保護)
 ```
 
-CodeBlock: 証明書方式のハンドシェイクと鍵確立の流れ
+Figure: 証明書方式のハンドシェイクと鍵確立の流れ
 
 ## 型定数
 
