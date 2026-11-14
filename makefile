@@ -291,12 +291,13 @@ clean:
 	@echo "INFO: Skipping clean (assured.stamp matches the commit and make succeeded)"
 endif
 
-.PHONY: test
-test :
+.PHONY: test quicktest
+test quicktest :
 	@MAKEFW_ASSURED_CACHE="$(CURDIR)|$(_MAKEFW_ASSURED_ACTIVE)" $(MAKE) $(MFLAGS)
 	@if [ "$(_MAKEFW_ASSURED_ACTIVE)" = "1" ] && [ -f test/makefile ]; then \
 		echo "INFO: Skipping test/src (assured.stamp matches the commit and the tree is clean)"; \
 	elif [ -f test/makefile ]; then \
+		if [ "$@" = "quicktest" ]; then export TESTFW_QUICKTEST=1; fi; \
 		sig_file=$$(mktemp); \
 		signature_available=1; \
 		if ! CONFIG="$(CONFIG)" MSVC_CRT_SUBDIR="$(MSVC_CRT_SUBDIR)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" DEFINES="$(DEFINES)" LIBS="$(LIBS)" MAKEFW_ASSURED_ACTIVE="$(_MAKEFW_ASSURED_ACTIVE)" bash "$(APPDEPS_RESOLVER)" --signature "$(CURDIR)" test > "$$sig_file"; then \
