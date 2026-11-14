@@ -561,7 +561,7 @@ porter はソケット型・無効値・初期化・クローズのいずれに�
 | スレッド型 | `cplat_thread *` | `cplat_thread *` |
 | ミューテックス型 | `cplat_local_lock *` | `cplat_local_lock *` |
 | 条件変数型 | `cplat_condvar *` | `cplat_condvar *` |
-| 単調時間 (ヘルス チェック用) | cplat 経由 `clock_gettime(CLOCK_MONOTONIC, ...)` | cplat 経由 `GetTickCount64()` |
+| 単調時間 (ヘルス チェック用) | cplat 経由 `clock_gettime(CLOCK_MONOTONIC, ...)` | cplat 経由 `QueryPerformanceCounter()` |
 | カレンダー時刻 (セッション ID 用) | cplat 経由 `clock_gettime(CLOCK_REALTIME, ...)` | cplat 経由 `GetSystemTimeAsFileTime()` |
 | 呼び出し規約 (`POTRAPI`) | (なし) | `__stdcall` |
 | 暗号化 (`crypto` モジュール) | OpenSSL EVP AES-256-GCM | Windows CNG (BCrypt) AES-256-GCM |
