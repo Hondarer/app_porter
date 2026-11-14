@@ -25,24 +25,26 @@
 #include <porter/porter_spec.h>
 
 #include <porter/protocol/packet.h>
+#include <porter/protocol/packet_seal.h>
 #include <porter/protocol/window.h>
 #include <porter/potr_context.h>
 #include <porter/potr_peer_table.h>
 #include <porter/thread/potr_health_thread.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_result.h>
-#include <cplat/crypto/crypto.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/socket.h>
+
+#include "thread_recv_session.h"
 
 /*
  * PING 送信時刻と有効データ送信時刻のうち、新しい方の時刻を取得する。
  * 戻り値は最終送信時刻 [ms]。
  */
-static uint64_t get_last_health_signal_send_ms(const potr_context *ctx)
+static uint64_t get_last_health_signal_send_ms(const potr_context *ctx, int path_idx)
 {
-    uint64_t last_ping = cplat_atomic_load_u64(&ctx->last_ping_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
-    uint64_t last_data = cplat_atomic_load_u64(&ctx->last_valid_data_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
+    uint64_t last_ping = cplat_atomic_load_u64(&ctx->last_ping_send_ms[path_idx], CPLAT_MEMORY_ORDER_RELAXED);
+    uint64_t last_data = cplat_atomic_load_u64(&ctx->last_valid_data_send_ms[path_idx], CPLAT_MEMORY_ORDER_RELAXED);
 
     if (last_ping > last_data)
     {
@@ -104,6 +106,8 @@ static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due
            cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
         uint64_t now;
+        uint64_t due_ms = UINT64_MAX;
+        int i;
 
         if (cplat_clock_get_monotonic_ms(&now) != CPLAT_OK)
         {
@@ -111,37 +115,45 @@ static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due
             potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
             return 0;
         }
-
-        uint64_t last_ping = cplat_atomic_load_u64(&ctx->last_ping_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
-        uint64_t last_data = cplat_atomic_load_u64(&ctx->last_valid_data_send_ms, CPLAT_MEMORY_ORDER_RELAXED);
-        uint64_t due_ms;
-
-        if (last_ping == 0U && last_data == 0U)
+        for (i = 0; i < ctx->n_path; i++)
         {
-            due_ms = initial_ping_due_ms;
-        }
-        else
-        {
-            due_ms = get_last_health_signal_send_ms(ctx) + (uint64_t)ctx->health_interval_ms;
-        }
+            uint64_t last_signal = get_last_health_signal_send_ms(ctx, i);
+            uint64_t path_due = initial_ping_due_ms;
 
+            if (last_signal != 0U)
+            {
+                path_due = last_signal + ctx->health_interval_ms;
+            }
+            if (path_due < due_ms)
+            {
+                due_ms = path_due;
+            }
+        }
         if (now >= due_ms)
         {
             return 1;
         }
-
-        if (last_data != 0U && last_data >= last_ping && last_data != *last_logged_data_ms)
+        for (i = 0; i < ctx->n_path; i++)
         {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "health[service_id=%" PRId64 "]: suppress PING due to recent DATA"
-                       " (remaining=%" PRIu64 "ms)",
-                       ctx->service.service_id, due_ms - now);
-            *last_logged_data_ms = last_data;
-        }
+            uint64_t last_ping = cplat_atomic_load_u64(&ctx->last_ping_send_ms[i], CPLAT_MEMORY_ORDER_RELAXED);
+            uint64_t last_data = cplat_atomic_load_u64(&ctx->last_valid_data_send_ms[i], CPLAT_MEMORY_ORDER_RELAXED);
 
+            if (last_data != 0U && last_data >= last_ping && last_data != last_logged_data_ms[i])
+            {
+                uint64_t path_due = last_data + ctx->health_interval_ms;
+
+                if (path_due > now)
+                {
+                    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                               "health[service_id=%" PRId64 "]: suppress PING due to recent DATA"
+                               " (remaining=%" PRIu64 "ms)",
+                               ctx->service.service_id, path_due - now);
+                }
+                last_logged_data_ms[i] = last_data;
+            }
+        }
         health_sleep(ctx, 0, (uint32_t)(due_ms - now));
     }
-
     return 0;
 }
 
@@ -188,37 +200,11 @@ static int tcp_write_ping_locked(potr_context *ctx, int path_idx, int force)
         return build_result;
     }
 
-    memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-
-    if (ctx->service.encrypt_enabled)
+    wire_len = sizeof(wire_buf);
+    build_result = potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &ping_pkt, wire_buf, &wire_len);
+    if (build_result != POTR_OK)
     {
-        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
-
-        ping_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
-        ping_pkt.payload_len = cplat_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
-
-        memcpy(nonce, &ping_pkt.session_id, 4);
-        memcpy(nonce + 4, &ping_pkt.flags, 2);
-        memcpy(nonce + 6, &ping_pkt.seq_num, 4);
-        memset(nonce + 10, 0, 2);
-
-        memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
-
-        if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, wire_buf + POTR_PACKET_HEADER_SIZE,
-                                 POTR_MAX_PATH, ctx->service.encrypt_key, nonce, wire_buf,
-                                 POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
-        {
-            /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがない。 */
-            return POTR_ERR_UNKNOWN;
-        }
-
-        wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
-    }
-    else
-    {
-        memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
-        wire_len = POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH;
+        return build_result;
     }
 
     if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) != CPLAT_OK)
@@ -276,6 +262,7 @@ static void health_thread_func(void *arg)
     potr_internal_packet_session_hdr shdr;
     int is_oneway_udp = is_oneway_udp_type(ctx->service.type);
     uint64_t initial_ping_due_ms;
+    uint64_t last_logged_data_ms[POTR_MAX_PATH] = {0};
 
     if (cplat_clock_get_monotonic_ms(&initial_ping_due_ms) != CPLAT_OK)
     {
@@ -286,7 +273,6 @@ static void health_thread_func(void *arg)
     }
 
     initial_ping_due_ms += (uint64_t)ctx->health_interval_ms;
-    uint64_t last_logged_data_ms = 0U;
 
     shdr.service_id = ctx->service.service_id;
 
@@ -302,7 +288,7 @@ static void health_thread_func(void *arg)
     {
         if (is_oneway_udp)
         {
-            if (!wait_oneway_udp_ping_due(ctx, initial_ping_due_ms, &last_logged_data_ms))
+            if (!wait_oneway_udp_ping_due(ctx, initial_ping_due_ms, last_logged_data_ms))
             {
                 break;
             }
@@ -353,67 +339,31 @@ static void health_thread_func(void *arg)
                 potr_internal_packet_build_ping(&ping_pkt, &peer_shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
                 cplat_local_lock_unlock(ctx->peers[i].send_window_mutex);
 
-                if (ctx->service.encrypt_enabled)
+                for (k = 0; k < (int)POTR_MAX_PATH; k++)
                 {
                     uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
-                    uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-                    size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
+                    size_t sent = 0;
 
-                    ping_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
-                    ping_pkt.payload_len = cplat_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
-
-                    memcpy(nonce, &ping_pkt.session_id, 4);
-                    memcpy(nonce + 4, &ping_pkt.flags, 2);
-                    memcpy(nonce + 6, &ping_pkt.seq_num, 4);
-                    memset(nonce + 10, 0, 2);
-
-                    memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
-                    memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-
-                    if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out,
-                                             wire_buf + POTR_PACKET_HEADER_SIZE, POTR_MAX_PATH,
-                                             ctx->service.encrypt_key, nonce, wire_buf,
-                                             POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+                    if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                     {
                         continue;
                     }
-
-                    wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
-
-                    for (k = 0; k < (int)POTR_MAX_PATH; k++)
+                    wire_len = sizeof(wire_buf);
+                    if (potr_internal_packet_seal_for_context(ctx, &ctx->peers[i].tx_session, &ping_pkt,
+                                                               wire_buf, &wire_len) != POTR_OK)
                     {
-                        size_t sent = 0;
-
-                        if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
-                        {
-                            continue;
-                        }
-                        (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k], &sent,
-                                                  NULL);
+                        break;
                     }
-                }
-                else
-                {
-                    uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH];
-                    memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
-                    memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                    wire_len = POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH;
-
-                    for (k = 0; k < (int)POTR_MAX_PATH; k++)
-                    {
-                        size_t sent = 0;
-
-                        if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
-                        {
-                            continue;
-                        }
-                        (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k], &sent,
-                                                  NULL);
-                    }
+                    (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k], &sent, NULL);
                 }
 
                 POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "health[service_id=%" PRId64 "]: PING peer=%u seq=%u",
                            ctx->service.service_id, (unsigned)ctx->peers[i].peer_id, (unsigned)seq);
+                if (cplat_atomic_load_i32(&ctx->peers[i].tx_session.exhausted, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+                {
+                    thread_recv_disconnect_peer_all_paths(ctx, &ctx->peers[i]);
+                    potr_internal_peer_free(ctx, &ctx->peers[i]);
+                }
             }
 
             cplat_local_lock_unlock(ctx->peers_mutex);
@@ -456,77 +406,51 @@ static void health_thread_func(void *arg)
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "health[service_id=%" PRId64 "]: PING seq=%u",
                        ctx->service.service_id, (unsigned)seq);
 
-            if (ctx->service.encrypt_enabled)
+            for (k = 0; k < ctx->n_path; k++)
             {
                 uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
-                uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-                size_t enc_out = POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE;
+                size_t sent = 0;
+                int send_ret;
 
-                ping_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
-                ping_pkt.payload_len = cplat_hton16((uint16_t)(POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE));
+                uint64_t ping_time = 0U;
 
-                memcpy(nonce, &ping_pkt.session_id, 4);
-                memcpy(nonce + 4, &ping_pkt.flags, 2);
-                memcpy(nonce + 6, &ping_pkt.seq_num, 4);
-                memset(nonce + 10, 0, 2);
-
-                memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
-                memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-
-                if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out,
-                                         wire_buf + POTR_PACKET_HEADER_SIZE, POTR_MAX_PATH, ctx->service.encrypt_key,
-                                         nonce, wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+                if (is_oneway_udp)
                 {
-                    continue;
-                }
+                    uint64_t last_signal = get_last_health_signal_send_ms(ctx, k);
 
-                wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
-
-                for (k = 0; k < ctx->n_path; k++)
-                {
-                    size_t sent = 0;
-                    int send_ret;
-
-                    send_ret = cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
-                    if (send_ret == CPLAT_OK)
+                    if (cplat_clock_get_monotonic_ms(&ping_time) != CPLAT_OK)
                     {
-                        sent_any = 1;
+                        cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+                        potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+                        break;
+                    }
+                    if ((last_signal == 0U && ping_time < initial_ping_due_ms) ||
+                        (last_signal != 0U && ping_time - last_signal < ctx->health_interval_ms))
+                    {
+                        continue;
                     }
                 }
-            }
-            else
-            {
-                uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH];
-                memcpy(wire_buf, &ping_pkt, POTR_PACKET_HEADER_SIZE);
-                memcpy(wire_buf + POTR_PACKET_HEADER_SIZE, health_states, POTR_MAX_PATH);
-                wire_len = POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH;
-
-                for (k = 0; k < ctx->n_path; k++)
+                wire_len = sizeof(wire_buf);
+                if (potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &ping_pkt, wire_buf, &wire_len) != POTR_OK)
                 {
-                    size_t sent = 0;
-                    int send_ret;
-
-                    send_ret = cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
-                    if (send_ret == CPLAT_OK)
-                    {
-                        sent_any = 1;
-                    }
-                }
-            }
-
-            if (is_oneway_udp && sent_any)
-            {
-                uint64_t ping_time;
-
-                if (cplat_clock_get_monotonic_ms(&ping_time) != CPLAT_OK)
-                {
-                    cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
-                    potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
                     break;
                 }
+                send_ret = cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
+                if (send_ret == CPLAT_OK)
+                {
+                    sent_any = 1;
+                    if (is_oneway_udp)
+                    {
+                        cplat_atomic_store_u64(&ctx->last_ping_send_ms[k], ping_time, CPLAT_MEMORY_ORDER_RELAXED);
+                        last_logged_data_ms[k] = 0U;
+                    }
+                }
+            }
 
-                cplat_atomic_store_u64(&ctx->last_ping_send_ms, ping_time, CPLAT_MEMORY_ORDER_RELAXED);
-                last_logged_data_ms = 0U;
+            if (is_oneway_udp && !sent_any)
+            {
+                /* 送出失敗による待機なしの再試行を避けます。 */
+                health_sleep(ctx, 0, ctx->health_interval_ms);
             }
         }
     }

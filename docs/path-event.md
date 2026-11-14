@@ -44,12 +44,13 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id,
         const int *path_states = (const int *)data;
         int path_idx = (int)len;
 
-        printf("service=%" PRId64 " peer=%u path=%d %s states={%d,%d,%d,%d}\n",
+        printf("service=%" PRId64 " peer=%u path=%d %s states={%d,%d,%d,%d,%d,%d,%d,%d}\n",
                service_id,
                (unsigned)peer_id,
                path_idx,
                (event == POTR_EVENT_PATH_CONNECTED) ? "CONNECTED" : "DISCONNECTED",
-               path_states[0], path_states[1], path_states[2], path_states[3]);
+               path_states[0], path_states[1], path_states[2], path_states[3],
+               path_states[4], path_states[5], path_states[6], path_states[7]);
     }
 }
 ```
@@ -66,7 +67,7 @@ path logical の定義は通信種別で異なります。
 - その path の受信タイムアウトで 0 になります。
 - service 全体が継続不能になった場合は、現在 1 の path をすべて 0 にします。
 
-片方向通信では path ごとの応答確認を持たないため、「その path で有効な受信が継続していること」自体が path logical です。
+片方向通信の受信側では「その path で有効な受信が継続していること」自体が path logical です。なお、片方向の送信者は受信報告から得た経路状態を優先グループの選択にのみ使用し、`POTR_EVENT_PATH_*` イベントとしては通知しません。
 
 ### type 7-8
 

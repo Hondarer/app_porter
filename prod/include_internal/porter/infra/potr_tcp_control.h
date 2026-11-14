@@ -31,20 +31,19 @@ extern "C"
 
     /**
      *  @brief          TCP 制御パケットをアクティブな全パスへ送信します。
-     *  @param[in]      ctx        セッション コンテキスト。
-     *  @param[in,out]  pkt        送信する制御パケット。暗号化有効時は flags と payload_len を書き換えます。
-     *  @param[in]      nonce_val  暗号化ノンスの seq_or_ack_num 部に使用する値 (ホスト バイト オーダー)。
+     *  @param[in,out]  ctx        セッション コンテキスト。
+     *  @param[in]      pkt        平文の NBO 制御パケット。呼び出し中は不変とします。
      *  @retval         POTR_OK                    1 パス以上への送信に成功しました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  引数が不正です。
      *  @retval         POTR_ERR_DISCONNECTED      送信可能なパスがありません。
      *  @retval         POTR_ERR_IO                全パスで送信に失敗しました。
      *  @retval         POTR_ERR_UNKNOWN           暗号化に失敗しました。
      *
-     *  制御パケットをヘッダーのみの wire 形式に直列化し、tcp_conn_fd が有効な全パスへ
+     *  各経路の送信ロック取得後に封緘し、tcp_conn_fd が有効な全パスへ
      *  path 単位の送信ミューテックスを取得して送信します。\n
      *  暗号化有効時はヘッダー全体を AAD とする GCM 認証タグのみを付加します。
      */
-    int potr_internal_tcp_send_control_packet(const potr_context *ctx, potr_packet *pkt, uint32_t nonce_val);
+    int potr_internal_tcp_send_control_packet(potr_context *ctx, const potr_packet *pkt);
 
 #ifdef __cplusplus
 }

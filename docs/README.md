@@ -32,7 +32,8 @@ porter は UDP/IP および TCP/IP をサポートするクロスプラットフ
 | データ圧縮 | raw DEFLATE (両 OS 共通の app/zlib) |
 | フラグメント化 | 最大 65,535 バイトのメッセージを自動分割・結合 |
 | ヘルス チェック | 片方向 type 1-6 は「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過時だけ PING を送信し、有効な PING / DATA 受信で疎通を維持します。双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は定周期 PING の送受信で接続を確立するため、実効 `health_interval_ms` が 0 のままでは `CONNECTED` 状態へ遷移しません。各パスの PING 受信状態変化時には割り込み PING も送信します。 |
-| マルチパス | 最大 4 経路の並列送信 |
+| マルチパス | 最大 8 経路および最大 4 つの優先グループによる送信先の切り替え |
+| 暗号化・認証 | AES-256-GCM によるデータ保護とリプレイ対策。事前共有鍵 (`"psk"`) または X.509 証明書による相互認証 (`"cert"`、DTLS 1.2 / TLS 1.3) |
 | プラットフォーム | Linux、Windows 両プラットフォーム対応 |
 
 Table: porter の主要機能一覧

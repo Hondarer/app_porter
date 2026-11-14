@@ -33,12 +33,16 @@
 #include <porter/porter_type.h>
 
 #include <porter/protocol/window.h>
+#include <porter/protocol/path_group.h>
+#include <porter/protocol/receiver_report.h>
+#include <porter/protocol/packet_seal.h>
 #include <cplat/compress/compress.h>
 #include <cplat/crypto/crypto.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
 #include <porter/infra/potr_send_queue.h>
+#include <porter/security/certificate.h>
 
 /** TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
 static inline int is_tcp_type(potr_type t)
@@ -75,7 +79,7 @@ static inline potr_type raw_base_type(potr_type t)
     }
 }
 
-/** 片方向 UDP 系通信種別 (type 1-6) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
+/** 片方向 UDP 系通信種別 (RAW を含む type 1-6) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
 static inline int is_oneway_udp_type(potr_type t)
 {
     potr_type base = raw_base_type(t);
@@ -154,6 +158,12 @@ typedef struct potr_internal_peer_context
     potr_peer_id peer_id; /**< 外部公開用ピア識別子 (単調増加カウンターから付与)。 */
     int active;           /**< 1: 有効スロット, 0: 空き。 */
 
+    potr_internal_certificate_state certificate; /**< 方向別の鍵と相互認証。certificate_mutex で保護。 */
+    potr_internal_tx_session tx_session; /**< 自セッションの送出状態。 */
+    potr_internal_replay_window replay_window; /**< 相手セッションの認証済み受信記録。 */
+
+    potr_internal_path_group_state path_group_state; /**< ピアの選択状態。callback_mutex で保護。 */
+
     /* 自セッション (このピア宛の送信に使用) */
     uint32_t session_id;       /**< 自セッション識別子 (乱数)。 */
     uint32_t _pad_session;     /**< パディング (session_ts を 8 [byte] 境界に揃える)。 */
@@ -178,7 +188,7 @@ typedef struct potr_internal_peer_context
 
     /* ヘルス チェック */
     cplat_atomic_i32 health_alive;         /**< 疎通状態 (1: alive, 0: dead/未接続)。アトミックに読み書きします。 */
-    int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。 */
+    int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。callback_mutex で保護。 */
     cplat_atomic_u8 path_ping_state
         [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルス チェック スレッドが読み取ります。アトミックに読み書きします。 */
     uint8_t remote_path_ping_state
@@ -236,6 +246,11 @@ typedef struct potr_internal_path_thread_arg
  */
 struct potr_context
 {
+    potr_internal_auth_credentials *credentials; /**< open 時に 1 回読み込む認証情報。 */
+    cplat_local_lock *certificate_mutex; /**< 認証セッションと鍵を保護。peers_mutex の内側で取得します。 */
+    uint8_t group_key[POTR_CRYPTO_KEY_SIZE]; /**< 一対多のセッション全体で共用する鍵。 */
+    int group_key_known; /**< グループ鍵を取得済みか。 */
+    int certificate_padding; /**< 8 バイト境界のパディング。 */
     struct potr_internal_handle *handle_owner;         /**< 公開ハンドルの制御情報。 */
     struct potr_internal_notifications *notifications; /**< 通知専用スレッドとキュー。 */
     cplat_atomic_i32 fatal_error;                      /**< 通知継続不能の原因。 */
@@ -279,13 +294,14 @@ struct potr_context
         [POTR_MAX_PATH]; /**< オープン時割り込み PING フラグ。health_sleep() 冒頭でチェック・クリア。アトミックに読み書きします。 */
     cplat_atomic_i32
         health_alive; /**< 疎通状態 (1: alive, 0: dead/未接続)。UDP 用。受信者が管理。アトミックに読み書きします。 */
-    int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。 */
+    int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。callback_mutex で保護。 */
     cplat_atomic_u8 path_ping_state
         [POTR_MAX_PATH]; /**< 自端の各パス PING 受信状態 (POTR_PING_STATE_*)。受信スレッドが更新し、ヘルス チェック スレッドが読み取ります。アトミックに読み書きします。 */
+    uint32_t _pad_ping_state; /**< パディング (last_ping_send_ms を 8 [byte] 境界に揃える)。 */
     cplat_atomic_u64
-        last_ping_send_ms; /**< 送信側ヘルス チェック用 PING 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。アトミックに読み書きします。 */
+        last_ping_send_ms[POTR_MAX_PATH]; /**< 送信側ヘルス チェック用 PING 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。アトミックに読み書きします。 */
     cplat_atomic_u64
-        last_valid_data_send_ms; /**< 送信側ヘルス チェック用有効 DATA 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。アトミックに読み書きします。 */
+        last_valid_data_send_ms[POTR_MAX_PATH]; /**< 送信側ヘルス チェック用有効 DATA 最終送信時刻 (ms, CLOCK_MONOTONIC)。type 1-6 のみ使用。0 = 未送信。アトミックに読み書きします。 */
     uint8_t remote_path_ping_state
         [POTR_MAX_PATH]; /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     potr_role role;      /**< 役割 (POTR_ROLE_SENDER / POTR_ROLE_RECEIVER)。 */
@@ -295,6 +311,18 @@ struct potr_context
     uint32_t dst_addr_resolved[POTR_MAX_PATH]; /**< 解決済み宛先 IPv4 アドレス (unicast のみ)。 */
     cplat_ipv4_endpoint dest_addr
         [POTR_MAX_PATH]; /**< 送信先エンドポイント (送信者が sendto に使用)。未使用スロットは endpoint_is_unset() が真。 */
+    uint32_t _pad_tx_session; /**< パディング (tx_session を 8 [byte] 境界に揃える)。 */
+
+    potr_internal_certificate_state certificate; /**< 方向別の鍵と相互認証。certificate_mutex で保護。 */
+    potr_internal_tx_session tx_session; /**< 自セッションの送出状態。 */
+    potr_internal_replay_window replay_window; /**< 相手セッションの認証済み受信記録。 */
+
+    potr_internal_receiver *receivers; /**< max_peers を上限とする報告・リプレイ管理表。callback_mutex で保護。 */
+    potr_internal_path_group_state path_group_state; /**< 選択状態。callback_mutex で保護。 */
+    uint64_t started_ms; /**< 起動時の単調増加時刻 [ms]。スレッド起動後は不変。 */
+    uint64_t next_report_ms; /**< 次の報告予定時刻 [ms]。UDP 受信スレッドだけが使用。 */
+    int report_received; /**< REPORT を一度以上受理したか。callback_mutex で保護。 */
+    int report_padding; /**< 8 [byte] 境界のパディング。 */
 
     /* 自セッション識別子 (potr_service_open 時に決定) */
     cplat_timespec session_ts; /**< 自セッション開始時刻。 */
@@ -308,6 +336,8 @@ struct potr_context
     /* 受信者: パスごとの送信者ポート キャッシュ (src_port=0 対応) */
     uint16_t peer_port[POTR_MAX_PATH]; /**< 各パスで観測した送信者ポート (NBO)。0 = 未観測。 */
 
+    uint32_t peer_address[POTR_MAX_PATH]; /**< 受信で観測した送信者アドレス (NBO)。UDP 受信スレッドが所有。 */
+
     /* ヘルス チェック: 最終受信時刻 (受信者が使用。CLOCK_MONOTONIC 基準) */
     uint32_t _pad_last_recv;     /**< パディング (last_recv_ts を 8 [byte] 境界に揃える)。 */
     cplat_timespec last_recv_ts; /**< 最終受信時刻。tv_sec == 0 は未受信。 */
@@ -320,10 +350,10 @@ struct potr_context
     uint32_t _pad_frag;       /**< パディング (frag_buf を 8 [byte] 境界に揃える)。 */
     uint8_t *frag_buf;        /**< フラグメント結合バッファー (動的確保。max_message_size バイト)。 */
     size_t compress_buf_size; /**< 圧縮・展開用バッファーのサイズ [byte]。送信時の圧縮先は呼び出しごとに確保します。 */
-    uint8_t *crypto_buf;      /**< 送信暗号化用一時バッファー (動的確保)。 */
+    uint8_t *crypto_buf;      /**< 送信スレッド専用の封緘先 (動的確保、ヘッダーを含む)。 */
     size_t crypto_buf_size;   /**< crypto_buf のサイズ [byte]。 */
     uint8_t *recv_compress_buf; /**< 受信展開用バッファー (動的確保、compress_buf_size バイト)。 */
-    uint8_t *recv_crypto_buf;   /**< 受信復号用バッファー (動的確保、crypto_buf_size バイト)。 */
+    uint8_t *recv_crypto_buf;   /**< 受信復号と UDP 再送平文の退避用バッファー (動的確保、crypto_buf_size バイト)。 */
     uint8_t *tcp_recv_buf
         [POTR_MAX_PATH]; /**< TCP 経路専用受信バッファー (動的確保、POTR_PACKET_HEADER_SIZE + max_payload バイト)。 */
     uint8_t *

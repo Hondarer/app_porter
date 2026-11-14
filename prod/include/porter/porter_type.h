@@ -108,6 +108,13 @@ typedef enum
     POTR_ROLE_RECEIVER = 2, /**< 受信者。 */
 } potr_role;
 
+/** @brief サービスの認証方式。0 初期化では事前共有鍵方式です。 */
+typedef enum
+{
+    POTR_AUTH_PSK = 0, /**< encrypt_key を使用します。 */
+    POTR_AUTH_CERT = 1 /**< 証明書による相互認証と方向別の鍵を使用します。 */
+} potr_auth;
+
 /**
  *  @brief          サービス定義。
  *
@@ -124,8 +131,8 @@ typedef struct potr_service_def
     uint16_t
         dst_port; /**< 宛先ポート番号。サービスの識別子。受信者の bind ポート / 送信者の送信先ポート。(全通信種別で必須) */
 
-    /* POTR_TYPE_MULTICAST / POTR_TYPE_BROADCAST */
-    uint16_t src_port; /**< 送信者の送信元 bind ポート番号。0 = OS 自動選定。(全通信種別で省略可) */
+    /* 送信元ポート */
+    uint16_t src_port; /**< 送信者の送信元 bind ポート番号。0 = OS 自動選定。証明書方式の片方向送信者では 0 以外が必須。(そのほかは全通信種別で省略可) */
 
     /* POTR_TYPE_MULTICAST */
     uint8_t ttl;     /**< マルチキャスト TTL。(multicast のみ) */
@@ -140,18 +147,22 @@ typedef struct potr_service_def
     /* マルチパス対応 (src_addr は全通信種別、dst_addr は unicast のみ有効) */
     char src_addr
         [POTR_MAX_PATH]
-        [POTR_MAX_ADDR_LEN]; /**< 送信元アドレス [0]=src_addr1 〜 [3]=src_addr4。送信者は bind / 送信インターフェイス、受信者は送信元フィルター。(全通信種別で必須) */
+        [POTR_MAX_ADDR_LEN]; /**< 送信元アドレス [0]=src_addr1 〜 [7]=src_addr8。送信者は bind / 送信インターフェイス、受信者は送信元フィルター。(全通信種別で必須) */
     char dst_addr
         [POTR_MAX_PATH]
-        [POTR_MAX_ADDR_LEN]; /**< 宛先アドレス [0]=dst_addr1 〜 [3]=dst_addr4。送信者は送信先、受信者は bind アドレス。(unicast のみ) */
+        [POTR_MAX_ADDR_LEN]; /**< 宛先アドレス [0]=dst_addr1 〜 [7]=dst_addr8。送信者は送信先、受信者は bind アドレス。(unicast のみ) */
+
+    uint8_t path_group[POTR_MAX_PATH]; /**< 各経路の優先グループ番号。1〜POTR_MAX_PATH_GROUP。設定ファイルでの省略時と直接指定時の 0 は 1 として扱います。 */
+    uint32_t group_failback_ms; /**< 上位グループの回復判定時間 [ms]。0 = 実効 health_timeout_ms を使用。 */
+    potr_auth auth; /**< 認証方式。0 初期化では POTR_AUTH_PSK。POTR_AUTH_CERT は暗号化を必須とし encrypt_key を使用しません。 */
 
     /* 暗号化設定 (AES-256-GCM) */
     uint8_t encrypt_key
-        [POTR_CRYPTO_KEY_SIZE]; /**< AES-256-GCM 事前共有鍵 (32 [byte])。encrypt_enabled が 0 の場合は未使用。 */
-    int encrypt_enabled; /**< 非 0 のとき暗号化有効。設定ファイルに有効な encrypt_key が存在するときに 1 に設定される。 */
+        [POTR_CRYPTO_KEY_SIZE]; /**< AES-256-GCM 事前共有鍵 (32 [byte])。事前共有鍵方式で encrypt_enabled が非 0 の場合だけ使用します。 */
+    int encrypt_enabled; /**< 事前共有鍵方式では非 0 のとき暗号化有効。証明書方式ではこの指定によらず暗号化を必須とします。 */
 
     /* N:1 モード設定 */
-    uint32_t max_peers; /**< N:1 モード時の最大同時接続ピア数。省略時: 1024。1:1 モードでは無視される。 */
+    uint32_t max_peers; /**< N:1 の最大同時接続ピア数、および片方向 UDP 送信者の受信報告・リプレイ管理数の上限。0 または省略時: 1024。 */
 
     /* サービス単位のヘルス チェック上書き (0 = グローバル値を使用) */
     uint32_t
@@ -164,6 +175,19 @@ typedef struct potr_service_def
         reconnect_interval_ms; /**< SENDER 自動再接続間隔 [ms]。0 = 再接続なし。デフォルト: POTR_DEFAULT_RECONNECT_INTERVAL_MS。 */
     uint32_t
         connect_timeout_ms; /**< SENDER TCP 接続タイムアウト [ms]。0 = OS デフォルト。デフォルト: POTR_DEFAULT_CONNECT_TIMEOUT_MS。 */
+    /** @name 証明書の設定
+     * ポインター、配列とその文字列は potr_service_open() の呼び出し中だけ参照します。
+     * porter はこれらのポインターを保持しません。証明書などは open 時に読み込みます。
+     * @{ */
+    const char *cert_file; /**< 自端の証明書 PEM。証明書方式では必須。 */
+    const char *key_file; /**< 自端の秘密鍵 PEM。証明書方式では必須。 */
+    const char *ca_file; /**< 信頼する CA の PEM。直接登録との少なくとも一方が必要。 */
+    const char *crl_file; /**< 複数の失効リストを格納できる PEM。NULL は省略。 */
+    const char *const *pinned_certs; /**< 直接登録する相手の証明書 PEM のパス配列。 */
+    size_t pinned_cert_count; /**< 直接登録する証明書数。 */
+    const char *const *peer_names; /**< CA 検証で照合する SAN の DNS 名または URI の配列。 */
+    size_t peer_name_count; /**< 相手の名前の数。ca_file 指定時は 1 以上。 */
+    /** @} */
 } potr_service_def;
 
 /**
@@ -197,9 +221,9 @@ typedef struct potr_global_config
  *
  *  UDP で送受信される物理パケットのレイアウトです。\n
  *  各フィールドはネットワーク バイト オーダー (ビッグ エンディアン) で格納します。\n
- *  ヘッダー固定長: offsetof(potr_packet, payload) = 40 [byte] (64 ビット環境)。\n
+ *  ヘッダー固定長: offsetof(potr_packet, payload) = POTR_PACKET_HEADER_WIRE_SIZE [byte] (64 ビット環境)。\n
  *  payload フィールドはポインターであり、wire データとして直接 sendto に渡せません。\n
- *  送信時は potr_context の send_wire_buf / recv_buf に wire データを組み立ててください。
+ *  送信時は内部の封緘処理がヘッダーとペイロードをワイヤーへ書き込みます。
  *
  *  ワイヤー フォーマット (バイト オフセット):
     @code
@@ -212,7 +236,12 @@ typedef struct potr_global_config
     32: flags            (uint16_t, 2 [byte])
     34: payload_len      (uint16_t, 2 [byte])
     36: protocol_version (uint32_t, 4 [byte])
-    40: payload          (pointer)
+    40: tx_counter       (uint64_t, 8 [byte])
+    48: tx_tv_sec        (int64_t,  8 [byte])
+    56: tx_tv_nsec       (int32_t,  4 [byte])
+    60: reserved         (uint32_t, 4 [byte])
+    64: tx_mono_ns       (uint64_t, 8 [byte])
+    72: payload          (pointer)
     @endcode
  */
 typedef struct potr_packet
@@ -227,6 +256,11 @@ typedef struct potr_packet
     uint16_t flags; /**< パケット種別フラグ (POTR_FLAG_*) (NBO)。 */
     uint16_t payload_len;      /**< ペイロード長 [byte] (NBO)。 */
     uint32_t protocol_version; /**< プロトコル バージョン (NBO)。POTR_PROTOCOL_VERSION と照合します。 */
+    uint64_t tx_counter; /**< セッションごとの送出通番 (NBO)。 */
+    int64_t tx_tv_sec;   /**< 送出時の実時刻の POSIX 秒部 (NBO)。取得失敗時は 0。 */
+    int32_t tx_tv_nsec;  /**< 送出時の実時刻のナノ秒部 (NBO)。0〜999999999。取得失敗時は -1。 */
+    uint32_t reserved;   /**< 予約領域 (NBO)。送信時は 0、受信時は値を無視します。 */
+    uint64_t tx_mono_ns; /**< セッション開始からの経過時間 [ns] (NBO)。時計または起点の取得失敗時は UINT64_MAX。 */
     const uint8_t *
         payload; /**< ペイロード データへのポインター (読み取り専用)。ウィンドウ プールまたは受信バッファー内を指す。 */
 } potr_packet;

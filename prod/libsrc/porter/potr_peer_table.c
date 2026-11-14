@@ -25,10 +25,10 @@
 #include <porter/potr_context.h>
 #include <porter/potr_peer_table.h>
 #include <porter/protocol/packet.h>
+#include <porter/protocol/packet_seal.h>
 #include <porter/protocol/window.h>
 #include <porter/infra/potr_result.h>
 #include <porter/infra/potr_trace.h>
-#include <cplat/crypto/crypto.h>
 #include <cplat/crypto/random.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/endpoint.h>
@@ -50,6 +50,7 @@ static int peer_generate_session(potr_internal_peer_context *peer)
         return potr_internal_result_from_socket_result(ret, NULL);
     }
 
+    potr_internal_tx_session_init(&peer->tx_session);
     ret = cplat_clock_get_realtime(&peer->session_ts);
     if (ret != CPLAT_OK)
     {
@@ -135,70 +136,25 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
         fin_pkt.ack_num = cplat_hton32(wire_target_seq);
     }
 
-    if (ctx->service.encrypt_enabled)
+    for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
         uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
-        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t enc_out = POTR_CRYPTO_TAG_SIZE;
+        size_t sent = 0;
 
-        fin_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
-        fin_pkt.payload_len = cplat_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
-
-        /*
-         * ノンスを構成する: session_id (4 [byte]) + flags (2 [byte], FIN | ENCRYPTED NBO) +
-         * 0 (4 [byte]) + パディング (2 [byte])。
-         */
-        memcpy(nonce, &fin_pkt.session_id, 4);
-        memcpy(nonce + 4, &fin_pkt.flags, 2);
-        memset(nonce + 6, 0, 4);
-        memset(nonce + 10, 0, 2);
-
-        memcpy(wire_buf, &fin_pkt, POTR_PACKET_HEADER_SIZE);
-
-        if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                                 wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+        if (endpoint_is_unset(&peer->dest_addr[i]))
+        {
+            continue;
+        }
+        if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+        {
+            continue;
+        }
+        wire_len = sizeof(wire_buf);
+        if (potr_internal_packet_seal_for_context(ctx, &peer->tx_session, &fin_pkt, wire_buf, &wire_len) != POTR_OK)
         {
             return;
         }
-
-        wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
-
-        /* すべての有効なパスに対して FIN パケットを送信する。 */
-        for (i = 0; i < (int)POTR_MAX_PATH; i++)
-        {
-            size_t sent = 0;
-
-            if (endpoint_is_unset(&peer->dest_addr[i]))
-            {
-                continue;
-            }
-            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
-            {
-                continue;
-            }
-            (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &peer->dest_addr[i], &sent, NULL);
-        }
-    }
-    else
-    {
-        wire_len = potr_internal_packet_wire_size(&fin_pkt);
-
-        /* すべての有効なパスに対して FIN パケットを送信する。 */
-        for (i = 0; i < (int)POTR_MAX_PATH; i++)
-        {
-            size_t sent = 0;
-
-            if (endpoint_is_unset(&peer->dest_addr[i]))
-            {
-                continue;
-            }
-            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
-            {
-                continue;
-            }
-            (void)cplat_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &peer->dest_addr[i], &sent,
-                                      NULL);
-        }
+        (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &peer->dest_addr[i], &sent, NULL);
     }
 }
 
@@ -261,6 +217,7 @@ void potr_internal_peer_table_dispose(potr_context *ctx)
             continue;
         }
 
+        potr_internal_certificate_state_dispose(&ctx->peers[i].certificate);
         /* ピアの資源を解放する。 */
         potr_internal_window_dispose(&ctx->peers[i].send_window);
         potr_internal_window_dispose(&ctx->peers[i].recv_window);
@@ -494,6 +451,12 @@ void potr_internal_peer_free(potr_context *ctx, potr_internal_peer_context *peer
     cplat_free(peer->frag_buf);
     peer->frag_buf = NULL;
 
+    if (ctx->service.auth == POTR_AUTH_CERT)
+    {
+        cplat_local_lock_lock(ctx->certificate_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        potr_internal_certificate_state_dispose(&peer->certificate);
+        cplat_local_lock_unlock(ctx->certificate_mutex);
+    }
     peer->active = 0;
     ctx->n_peers--;
 }

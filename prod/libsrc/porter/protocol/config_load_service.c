@@ -133,30 +133,6 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     {
         copy_cstr_trunc(current->broadcast_addr, sizeof(current->broadcast_addr), val);
     }
-    else if (strncmp(key, "src_addr", 8) == 0)
-    {
-        int idx;
-
-        if (key[8] < '1' || key[8] > '4' || key[9] != '\0')
-        {
-            return;
-        }
-
-        idx = key[8] - '1';
-        copy_cstr_trunc(current->src_addr[idx], POTR_MAX_ADDR_LEN, val);
-    }
-    else if (strncmp(key, "dst_addr", 8) == 0)
-    {
-        int idx;
-
-        if (key[8] < '1' || key[8] > '4' || key[9] != '\0')
-        {
-            return;
-        }
-
-        idx = key[8] - '1';
-        copy_cstr_trunc(current->dst_addr[idx], POTR_MAX_ADDR_LEN, val);
-    }
     else if (strcmp(key, "pack_wait_ms") == 0)
     {
         (void)cplat_parse_uint32(&current->pack_wait_ms, val, 10);
@@ -267,32 +243,200 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     }
 }
 
+/**
+ *  @brief          経路キーの番号を検査します。
+ *  @param[in]      key       設定キー。
+ *  @param[out]     path_idx  経路の添字。
+ *  @param[out]     prefix_len キーの接頭辞の長さ。
+ *  @return         経路キーは POTR_OK、その他のキーは POTR_ERR_NOT_FOUND、番号が範囲外なら POTR_ERR_INVALID_ARGUMENT。
+ */
+static int parse_path_key(const char *key, size_t *path_idx, size_t *prefix_len)
+{
+    const char *number;
+    const char *cursor;
+    uint32_t parsed;
+
+    if (strncmp(key, "src_addr", 8) == 0 || strncmp(key, "dst_addr", 8) == 0)
+    {
+        *prefix_len = 8U;
+    }
+    else if (strncmp(key, "path_group", 10) == 0)
+    {
+        *prefix_len = 10U;
+    }
+    else
+    {
+        return POTR_ERR_NOT_FOUND;
+    }
+
+    number = key + *prefix_len;
+    if (*number == '\0')
+    {
+        return POTR_ERR_NOT_FOUND;
+    }
+    for (cursor = number; *cursor != '\0'; cursor++)
+    {
+        if (!isdigit((unsigned char)*cursor))
+        {
+            return POTR_ERR_NOT_FOUND;
+        }
+    }
+    if (cplat_parse_uint32(&parsed, number, 10) != CPLAT_OK || parsed < 1U || parsed > POTR_MAX_PATH)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    if (number[0] == '0')
+    {
+        return POTR_ERR_NOT_FOUND;
+    }
+    *path_idx = (size_t)(parsed - 1U);
+    return POTR_OK;
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_config_load_service(const char *config_path, int64_t service_id, potr_service_def *def)
+void potr_internal_config_service_dispose(potr_internal_config_service *loaded)
+{
+    if (loaded == NULL)
+    {
+        return;
+    }
+    cjson_app_cJSON_Delete(loaded->document);
+    cplat_free(loaded->pinned_certs);
+    cplat_free(loaded->peer_names);
+    cplat_secure_zero(loaded, sizeof(*loaded));
+}
+
+static int borrow_auth_string(const cJSON *item, const char **out)
+{
+    if (!cjson_app_cJSON_IsString(item) || item->valuestring == NULL || item->valuestring[0] == '\0')
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    *out = item->valuestring;
+    return POTR_OK;
+}
+
+static int borrow_auth_array(const cJSON *item, const char ***out, size_t *count)
+{
+    cJSON *element;
+    size_t used = 0U;
+    int length;
+
+    if (!cjson_app_cJSON_IsArray(item) || *out != NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    length = cjson_app_cJSON_GetArraySize(item);
+    if (length == 0)
+    {
+        return POTR_OK;
+    }
+    *out = (const char **)cplat_calloc((size_t)length, sizeof(**out));
+    if (*out == NULL)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    cJSON_ArrayForEach(element, item)
+    {
+        int ret = borrow_auth_string(element, &(*out)[used]);
+        if (ret != POTR_OK)
+        {
+            return ret;
+        }
+        ++used;
+    }
+    *count = used;
+    return POTR_OK;
+}
+
+static int apply_auth_item(const cJSON *item, potr_internal_config_service *loaded)
+{
+    const char *key = item->string;
+    potr_service_def *def = &loaded->definition;
+
+    if (strcmp(key, "auth") == 0)
+    {
+        if (!cjson_app_cJSON_IsString(item) || item->valuestring == NULL)
+        {
+            return POTR_ERR_INVALID_ARGUMENT;
+        }
+        if (strcmp(item->valuestring, "psk") == 0)
+        {
+            def->auth = POTR_AUTH_PSK;
+        }
+        else if (strcmp(item->valuestring, "cert") == 0)
+        {
+            def->auth = POTR_AUTH_CERT;
+        }
+        else
+        {
+            return POTR_ERR_INVALID_ARGUMENT;
+        }
+        return POTR_OK;
+    }
+    if (strcmp(key, "cert_file") == 0)
+    {
+        return borrow_auth_string(item, &def->cert_file);
+    }
+    if (strcmp(key, "key_file") == 0)
+    {
+        return borrow_auth_string(item, &def->key_file);
+    }
+    if (strcmp(key, "ca_file") == 0)
+    {
+        return borrow_auth_string(item, &def->ca_file);
+    }
+    if (strcmp(key, "crl_file") == 0)
+    {
+        return borrow_auth_string(item, &def->crl_file);
+    }
+    if (strcmp(key, "pinned_certs") == 0)
+    {
+        int ret = borrow_auth_array(item, &loaded->pinned_certs, &def->pinned_cert_count);
+        def->pinned_certs = loaded->pinned_certs;
+        return ret;
+    }
+    if (strcmp(key, "peer_names") == 0)
+    {
+        int ret = borrow_auth_array(item, &loaded->peer_names, &def->peer_name_count);
+        def->peer_names = loaded->peer_names;
+        return ret;
+    }
+    return POTR_ERR_NOT_FOUND;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_config_load_service(const char *config_path, int64_t service_id, potr_internal_config_service *loaded)
 {
     cJSON *root;
+    potr_service_def *def;
     cJSON *services;
     cJSON *service;
     cJSON *item;
     char id_text[32];
     int ret;
+    int path_group_specified = 0;
 
-    if (config_path == NULL || def == NULL)
+    if (config_path == NULL || loaded == NULL)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
+    memset(loaded, 0, sizeof(*loaded));
+    def = &loaded->definition;
     ret = config_read_jsonc(config_path, &root);
     if (ret != POTR_OK)
     {
         return ret;
     }
 
+    loaded->document = root;
     services = cjson_app_cJSON_GetObjectItemCaseSensitive(root, "services");
     if (services != NULL && !cjson_app_cJSON_IsObject(services))
     {
-        cjson_app_cJSON_Delete(root);
+        potr_internal_config_service_dispose(loaded);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
@@ -300,17 +444,18 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
     service = cjson_app_cJSON_GetObjectItemCaseSensitive(services, id_text);
     if (service == NULL)
     {
-        cjson_app_cJSON_Delete(root);
+        potr_internal_config_service_dispose(loaded);
         return POTR_ERR_NOT_FOUND;
     }
 
     if (!cjson_app_cJSON_IsObject(service))
     {
-        cjson_app_cJSON_Delete(root);
+        potr_internal_config_service_dispose(loaded);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
     memset(def, 0, sizeof(*def));
+    memset(def->path_group, 1, sizeof(def->path_group));
     def->ttl = (uint8_t)POTR_DEFAULT_TTL;
     def->pack_wait_ms = (uint32_t)POTR_DEFAULT_PACK_WAIT_MS;
     def->max_peers = POTR_DEFAULT_MAX_PEERS;
@@ -321,8 +466,65 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
     /* サービス定義オブジェクトの各キーを走査し、設定項目へ反映する。 */
     cJSON_ArrayForEach(item, service)
     {
+        int auth_ret = apply_auth_item(item, loaded);
+        if (auth_ret != POTR_ERR_NOT_FOUND)
+        {
+            if (auth_ret != POTR_OK)
+            {
+                potr_internal_config_service_dispose(loaded);
+                return auth_ret;
+            }
+            continue;
+        }
+        size_t path_idx = 0U;
+        size_t prefix_len = 0U;
+        int path_ret = parse_path_key(item->string, &path_idx, &prefix_len);
         char value_buffer[32];
         const char *val = config_value_text(item, value_buffer, sizeof(value_buffer));
+
+        if (path_ret == POTR_ERR_INVALID_ARGUMENT)
+        {
+            potr_internal_config_service_dispose(loaded);
+            return POTR_ERR_INVALID_ARGUMENT;
+        }
+        if (path_ret == POTR_OK)
+        {
+            if (val == NULL && prefix_len != 10U)
+            {
+                continue;
+            }
+            if (prefix_len == 10U)
+            {
+                uint8_t group;
+
+                if (val == NULL || cplat_parse_uint8(&group, val, 10) != CPLAT_OK ||
+                    group < 1U || group > POTR_MAX_PATH_GROUP)
+                {
+                    potr_internal_config_service_dispose(loaded);
+                    return POTR_ERR_INVALID_ARGUMENT;
+                }
+                def->path_group[path_idx] = group;
+                path_group_specified = 1;
+            }
+            else if (item->string[0] == 's')
+            {
+                copy_cstr_trunc(def->src_addr[path_idx], POTR_MAX_ADDR_LEN, val);
+            }
+            else
+            {
+                copy_cstr_trunc(def->dst_addr[path_idx], POTR_MAX_ADDR_LEN, val);
+            }
+            continue;
+        }
+        if (strcmp(item->string, "group_failback_ms") == 0)
+        {
+            if (val == NULL || cplat_parse_uint32(&def->group_failback_ms, val, 10) != CPLAT_OK)
+            {
+                potr_internal_config_service_dispose(loaded);
+                return POTR_ERR_INVALID_ARGUMENT;
+            }
+            continue;
+        }
         if (val != NULL)
         {
             apply_service_kv(item->string, val, def);
@@ -334,7 +536,15 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
             }
         }
     }
-    cjson_app_cJSON_Delete(root);
+
+    if (path_group_specified &&
+        (def->type == POTR_TYPE_UNICAST_RAW || def->type == POTR_TYPE_MULTICAST_RAW ||
+         def->type == POTR_TYPE_BROADCAST_RAW))
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                   "config: path_group is ignored in RAW mode (service_id=%" PRId64 ")", def->service_id);
+        memset(def->path_group, 0, sizeof(def->path_group));
+    }
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                "service loaded: service_id=%" PRId64 " type=%d "

@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 検討用 Markdown (discussion)
-最終更新エージェント: claude code / セッション ID: session_01KJc53U2rrJbqpruzwVQpnp
+最終更新エージェント: claude code / セッション ID: session_01KJc53Sx84uaP9E9DhMF2xe
 下流文書: 261109-porter-path-priority-timestamp-auth-design.md、261109-porter-path-priority-timestamp-auth-backlog.md。未作成の場合や削除済みの場合があります。
 再開手順: agree-before-implement スキルとこの文書の最新版を読み、存在する下流文書を確認してください。作業 WBS の CURRENT と実際の成果物を照合して再開します。全項目が完了の場合は合意フロー完了です。
 -->
@@ -23,28 +23,33 @@
     - ✅ 1.8. [Q-043](#q-043-グループ切り替えの通知) から [Q-048](#q-048-windows-での-openssl-の入手方法) の回答受付と検証、追加質問 ([Q-051](#q-051-linux-で使う-openssl)、[Q-052](#q-052-appopenssl-の準備の作業範囲)) の作成
     - ✅ 1.9. [Q-049](#q-049-残りの技術的な詳細の確定方法) から [Q-052](#q-052-appopenssl-の準備の作業範囲) の回答受付と検証、追加質問 ([Q-053](#q-053-cplat-の-openssl-切り替えの作業範囲)) の作成
     - ✅ 1.10. [Q-053](#q-053-cplat-の-openssl-切り替えの作業範囲) の回答受付と検証
-    - ✅ 1.11. 最終仕様の初版への指摘による再検討 ([Q-054](#q-054-porter-からの-openssl-の直接利用) から [Q-056](#q-056-openssl-のアセンブラ実装)) の回答受付と検証
+    - ✅ 1.11. 最終仕様の初版への指摘による再検討 ([Q-054](#q-054-porter-からの-openssl-の直接利用) から [Q-056](#q-056-openssl-のアセンブラー実装)) の回答受付と検証
+    - ✅ 1.12. 2026-11-13 時点の実装による棚卸しと、最終仕様の第 4 版の前提との差異の確認 ([現在の実装による棚卸し](#現在の実装による棚卸し))
+    - ✅ 1.13. [Q-057](#q-057-libssl-などの-mock-の配置) の回答受付と検証
 - ✅ 2. 残懸念の解消 (第 1 ゲート)
     - ✅ 2.1. 通信種別ごとの整合性と例外条件の確定
     - ✅ 2.2. 再検討後の合意版 (版 10) の特定
+    - ✅ 2.3. 棚卸しによる再検討後の合意版 (版 14) の特定
 - ✅ 3. 最終仕様の作成と承認
     - ✅ 3.1. `261109-porter-path-priority-timestamp-auth-design.md` の初版の作成
     - ✅ 3.2. 再検討の回答による最終仕様の改版 (第 2 版)
     - ✅ 3.3. 最終仕様の第 4 版の承認受付 (第 2 ゲート)。2026-11-09 に Tetsuo Honda が承認。初版から第 3 版は指摘・指示により未承認
-- 🚫 4. 承認後の実装と検証 (前提: 別作業の `app/openssl` の新設と cplat の Linux 実装の切り替えの完了)
-    - 🚫 4.1. `app/cplat` への高分解能の単調増加時計 API の追加。前提の別作業が未完了のため着手待ち (2026-11-09 時点で `app/openssl` は未作成、cplat は `LIBS += crypto` でシステムの OpenSSL を使用)。[Q-052](#q-052-appopenssl-の準備の作業範囲)、[Q-053](#q-053-cplat-の-openssl-切り替えの作業範囲) ← **CURRENT**
-    - ⏸️ 4.2. `prod/include/porter/porter_const.h`、`porter_type.h` の定数・設定項目・ヘッダー定義の更新
-    - ⏸️ 4.3. `prod/libsrc/` のパケット直列化、送出通番と nonce、送信時刻の取得の更新
-    - ⏸️ 4.4. `prod/libsrc/` の優先グループの選択、切り替え、切り戻し、TCP の送り直しの実装
-    - ⏸️ 4.5. `prod/libsrc/` の受信報告と受信者の管理の実装
-    - ⏸️ 4.6. `prod/libsrc/` の証明書方式 (OpenSSL の直接利用によるハンドシェイク、鍵導出、グループ鍵の配布) と OpenSSL の mock の実装
-    - ⏸️ 4.7. `docs/functional-spec/`、`docs/protocol.md`、`docs/config.md`、`docs/api.md` と cplat 文書の同期
-    - ⏸️ 4.8. `test/` の局所テスト、公開 API を変更する場合の `exportTest.cc` の確認
-    - ⏸️ 4.9. 局所ビルド、内容のある `.warn` の確認、両 OS の相互接続確認
-    - ⏸️ 4.10. 受入条件への適合確認と残課題の整理
-- ⏸️ 5. 成果物の承認 (第 3 ゲート)
-    - ⏸️ 5.1. 成果物、検証結果、残課題の提示
-    - ⏸️ 5.2. 「承認」または「完了」の受付
+    - ✅ 3.4. 棚卸しの結果による最終仕様の改版 (第 5 版)。前提条件の節を完了済みの事実に改め、OpenSSL の共有ライブラリのリンク (`ssl_app crypto_app`)、OpenSSL の mock の配置 ([Q-057](#q-057-libssl-などの-mock-の配置))、時計 API の mock、`cjson_app` への名前変更、BL-001 と BL-002 の解消の対応付けを反映
+    - ✅ 3.5. 最終仕様の第 5 版の承認受付 (第 2 ゲート)。2026-11-14 に Tetsuo Honda が承認。実装は codex へ委譲し、主エージェントが全体の管理と確認を担う (同日の指示)
+- ✅ 4. 承認後の実装と検証 (前提の別作業の `app/openssl` の新設と cplat の Linux 実装の切り替えは、2026-11-13 時点で完了済み)
+    - ✅ 4.1. `app/cplat` への高分解能の単調増加時計 API の追加と、その mock の追加 (`app/cplat/test/` の `mock_cplat`、`framework/testfw` の `mock_windows` への `QueryPerformanceCounter()` と `QueryPerformanceFrequency()`)。codex が実装し、主エージェントが差分を確認済み。Linux のビルドと `app/cplat` の局所テスト (2,136 件) は 2026-11-14 に agy が実行して成功。Windows のビルドと局所テストは、2026-11-14 のユーザーの指示により残課題 BL-004 へ引き継ぎ
+    - ✅ 4.2. `prod/include/porter/porter_const.h`、`porter_type.h` の定数・設定項目・ヘッダー定義の更新。`POTR_MAX_PAYLOAD` をヘッダー長から導出し、残課題 BL-002 を解消。codex が実装し、主エージェントが差分を確認済み。Linux のビルドと porter の局所テストは 2026-11-14 に agy が実行して成功。Windows のビルドと局所テストは、2026-11-14 のユーザーの指示により残課題 BL-004 へ引き継ぎ
+    - ✅ 4.3. `prod/libsrc/` のパケット直列化、送出通番と nonce、送信時刻の取得の更新。PING を含む全送出の nonce を送出通番で一意にし、残課題 BL-001 を解消。codex が実装し、主エージェントが封緘・開封モジュールを確認済み。Linux のビルドと porter の局所テストは 2026-11-14 に agy が実行して成功。Windows のビルドと局所テストは、2026-11-14 のユーザーの指示により残課題 BL-004 へ引き継ぎ
+    - ✅ 4.4. `prod/libsrc/` の優先グループの選択、切り替え、切り戻し、TCP の送り直しの実装。codex が実装し、主エージェントが選択の判定と呼び出し側を確認済み。Linux のビルドと porter の局所テスト (333 件) は 2026-11-14 に agy が実行して成功。Windows のビルドと局所テストは、2026-11-14 のユーザーの指示により残課題 BL-004 へ引き継ぎ
+    - ✅ 4.5. `prod/libsrc/` の受信報告と受信者の管理の実装。4.4 と同じく、Linux で確認済み。Windows のビルドと局所テストは、2026-11-14 のユーザーの指示により残課題 BL-004 へ引き継ぎ
+    - ✅ 4.6. `prod/libsrc/` の証明書方式 (OpenSSL の直接利用によるハンドシェイク、鍵導出、グループ鍵の配布)、`appdeps.mk` と `makepart.mk` への OpenSSL の依存とリンクの追加、`app/openssl` の `mock_openssl` への libssl と証明書関連の関数の mock の追加 ([Q-057](#q-057-libssl-などの-mock-の配置))。認証モジュールと `mock_openssl`、依存とリンクは実装済みで、Linux で確認済み。設定の受け渡し方は [Q-058](#q-058-証明書方式の設定を-potr_service_open-へ渡す方法) の A で確定。codex が組み込みを実装し、agy が Linux で検証中。[Q-059](#q-059-証明書方式の片方向-unicast-の送信元ポート) と [Q-060](#q-060-死活監視が無効な場合の認証の再試行周期) は A で確定。Linux のビルドと porter の局所テスト (42 スイート、506 件) は 2026-11-14 に agy が実行して成功。Windows のビルドと局所テストは、2026-11-14 のユーザーの指示により残課題 BL-004 へ引き継ぎ
+    - ✅ 4.7. `docs/functional-spec/`、`docs/protocol.md`、`docs/config.md`、`docs/api.md`、`docs/platform-abstraction-guideline.md`、cplat 文書、`app/openssl/README.md` の mock の一覧の同期。agy が最終仕様第 7 版と実装に合わせて同期済み。4.10 で最終仕様の第 8 版と実装を照合済み
+    - ✅ 4.8. `test/` の局所テスト (BL-001 の nonce の一意性と BL-002 の境界値を含む)、公開 API を変更する場合の `exportTest.cc` の確認。各工程でテストを追加し、Linux で porter 42 スイート 511 件、cplat 2,136 件がすべて成功 (2026-11-14、agy が実行)
+    - ✅ 4.9. 局所ビルド、内容のある `.warn` の確認、両 OS の相互接続確認。Linux は完了。Windows のビルド・局所テストと OS 間の相互接続は、2026-11-14 のユーザーの指示により残課題 BL-004 へ引き継ぎ
+    - ✅ 4.10. 受入条件への適合確認と残課題の整理 (BL-001 と BL-002 の解消の確認を含む)。Windows に依存しない部分 (受入条件とテストの照合、BL-001 と BL-002 の確認、最終仕様の第 8 版の補足) を先行。受入条件とテストを照合 (実ソケットの結合テストがなく単体テストで確認した条件は成果物の提示で明示)、BL-001 と BL-002 の解消を確認、残課題一覧を整理済み (BL-003、BL-004)
+- ✅ 5. 成果物の承認 (第 3 ゲート)
+    - ✅ 5.1. 成果物、検証結果、残課題の提示
+    - ✅ 5.2. 「承認」または「完了」の受付。2026-11-14 に Tetsuo Honda が承認
 
 実装ファイルと手順の詳細は、最終仕様の承認時に確定します。  
 framework や複数 app の全体テストは、コストを説明して別途確認します。
@@ -52,9 +57,9 @@ framework や複数 app の全体テストは、コストを説明して別途�
 ## 検討の識別
 
 検討 ID: porter-path-priority-timestamp-auth  
-版: 12  
+版: 16  
 作成日: 2026-11-09 JST  
-状態: 合意済み (第 1 ゲート再通過)
+状態: 完了 (2026-11-14 に成果物を承認)
 
 版 2 では、版 1 の質問がすべて未回答の段階で技術レビューを行いました。  
 暗号の nonce、切り替えの所要時間、時刻形式、証明書の組み込み位置について、質問の背景と選択肢を補い、[Q-023](#q-023-暗号の-nonce-の構成) から [Q-025](#q-025-グループ選択を判断する端) を追加しました。
@@ -65,8 +70,11 @@ framework や複数 app の全体テストは、コストを説明して別途�
 
 版 5 では、Q-039 から Q-042 の回答を記録し、通知、相手の識別、認証失敗時の動作、ハンドシェイクの方式、ライブラリ、残りの詳細の確定方法を [Q-043](#q-043-グループ切り替えの通知) から [Q-049](#q-049-残りの技術的な詳細の確定方法) として追加しました。
 
-今回の書き込み対象はこの検討用 Markdown です。  
-最終仕様と実装は未着手です。
+版 6 から版 12 の経緯は、[反映と検証の記録](#反映と検証の記録) に記載します。
+
+版 13 では、2026-11-13 の本対話の依頼により、最終仕様の第 4 版の承認後に完了した前提の別作業と、その後の変更を踏まえて、現在の実装で前提を棚卸ししました。  
+結果は [現在の実装による棚卸し](#現在の実装による棚卸し) に記載し、新たな判断が必要な 1 点を [Q-057](#q-057-libssl-などの-mock-の配置) として追加しました。  
+版 14 では、Q-057 の回答を記録して第 1 ゲートを再通過し、最終仕様を第 5 版に改版しました。porter の実装は未着手です。
 
 ## ユーザーから提示された要求
 
@@ -80,13 +88,16 @@ framework や複数 app の全体テストは、コストを説明して別途�
 - ヘッダーに送信時の OS 実時刻と単調増加時刻を格納します。ネットワークで一般的な時刻形式を希望しています。
 - 証明書を使う認証方式を追加します。
 - 作業で図を編集または追加する場合は、Mermaid を採用します (最終仕様の第 2 版に対する 2026-11-09 の指示)。
+- 検討用 Markdown の内容を現在の実装で棚卸しして改訂します (2026-11-13 の本対話)。
+- [残課題一覧](261109-porter-path-priority-timestamp-auth-backlog.md) の BL-001 と BL-002 は、本作業で対応します (2026-11-13 の本対話)。
 
 ## 現行仕様と参照資料
 
 porter の参照版は HEAD `a84fef25a00de10a45b0ebe78275540affff0a2e` と作業ツリーです。  
 版 5 の作成中に、ユーザーの指示で origin の更新を取り込み、porter の参照版を `abb0a21` (`1b24a89` の TCP の DATA 消失の修正を含む) に更新しました。影響は [origin の取り込みで判明した前提の変化](#origin-の取り込みで判明した前提の変化) に記載します。  
 作業開始時、porter の状態は `docs/prompts/current/` が未追跡で、配置済みファイルは `.gitkeep` でした。  
-ワークスペースの `app/cplat` に既存変更があります。
+ワークスペースの `app/cplat` に既存変更があります。  
+版 13 の棚卸しでは、porter の参照版を HEAD `de5f1d3` と作業ツリーに更新しました。棚卸しの結果は [現在の実装による棚卸し](#現在の実装による棚卸し) に記載します。
 
 | 資料 | 確認した内容 |
 |---|---|
@@ -164,14 +175,43 @@ porter の `1b24a89` (TCP の DATA を CONNECTED 前の破棄や送信失敗で�
 [Q-009](#q-009-グループ切り替え時の未達データ) の A (既存の再送契約に従い、TCP の欠落を許容) は取り込み前の規則を前提にしていたため、[Q-050](#q-050-tcp-のグループ切り替え時の欠番) で確認します。  
 3 点目により PING の送出が増えるため、[残課題一覧](261109-porter-path-priority-timestamp-auth-backlog.md) の BL-001 (PING の nonce 重複) が起きる機会も増えます。BL-001 は [Q-023](#q-023-暗号の-nonce-の構成) の A で解消する予定です。
 
+## 現在の実装による棚卸し
+
+版 13 で、2026-11-13 時点の親リポジトリ `24378ee8`、porter `de5f1d3`、cplat `ff9a2ab0`、app/openssl `58dd7ff` と各作業ツリーを確認しました。  
+最終仕様の第 4 版の記載と、現在の実装を次のとおり照合しました。
+
+| 項目 | 最終仕様の第 4 版の前提 | 2026-11-13 時点の実装 | 判定と扱い |
+|---|---|---|---|
+| `app/openssl` の新設 | 未作成。OpenSSL 3.5 系の静的ライブラリ (`no-shared`) を作る | 作成済み。OpenSSL 3.5.9、TLS 1.3 と DTLS 1.2 とアセンブラー実装が有効 ([app/openssl の README](../../../../openssl/README.md)) | 前提を満たす |
+| Windows の NASM と Perl | 開発環境と CI に追加する | CI に Perl と NASM を導入済み (親 `d14fa349`)。Perl は strawberry-perl (app/openssl `eadcc82`) | 前提を満たす ([Q-056](#q-056-openssl-のアセンブラー実装)) |
+| cplat の Linux 実装の切り替え | システムの OpenSSL (`LIBS += crypto`) を使う | `app/openssl` の libcrypto に切り替え済み (cplat `a51ef9ac`)。現在は共有ライブラリ `crypto_app` をリンク (cplat `d47bb35e`) | 前提を満たす。作業 WBS の 4. のブロックを解除 |
+| OpenSSL のリンク形態 | cplat と porter がそれぞれ静的ライブラリをリンクし、OpenSSL の関数を公開しない ([Q-055](#q-055-openssl-のリンク形態) の A) | 第三者管理ライブラリの名前変更の案件 ([最終仕様](../../../../general/docs/prompts/current/261111-third-party-lib-rename-design.md)、2026-11-11 承認) で、共有ライブラリ `libssl_app.so.3`、`libcrypto_app.so.3` (Windows は `libssl-3-x64_app.dll`、`libcrypto-3-x64_app.dll`) に変更。静的ライブラリは配置しない。Linux ではシンボル バージョンを `OPENSSL_APP_3.0.0` に変え、OS の OpenSSL と混ざらないようにする | Q-055 の A は、ユーザーが承認した後続の案件で置き換えられており、静的リンクは選べない。porter は `LIBS += ssl_app crypto_app` で共有ライブラリをリンクする。プロセス内の OpenSSL は 1 つになる。質問は設けず、最終仕様の第 5 版で「app/openssl の仕様案」と「porter の OpenSSL の利用」を改める |
+| OpenSSL の mock | porter のテストに mock を用意する ([Q-054](#q-054-porter-からの-openssl-の直接利用) の Assessment) | mock は `app/openssl` の `mock_openssl` に移管済み (app/openssl `c961b60`)。利用側のテストは mock だけをリンクし、mock が実行時に `libcrypto_app` へ委譲する。置き換える関数は EVP と RAND の 17 個で、libssl の mock は「利用する app がない」ため対象外とされた | porter が使う libssl と証明書関連の関数の mock がない。配置を [Q-057](#q-057-libssl-などの-mock-の配置) で確認する |
+| cplat の高分解能の単調増加時計 | 新設する ([Q-038](#q-038-windows-の単調増加時刻の分解能) の A) | 未追加。`cplat_clock_get_monotonic()` は Windows で `GetTickCount64()` を使い、ミリ秒刻み ([cplat の時計 API](../../../../cplat/prod/include/cplat/clock/clock.h)) | 作業 WBS の 4.1 で追加する。第 4 版に記載のない mock の追加を、下記の注記のとおり 4.1 に含める |
+| cjson のリンク名 | `LIBS += cplat cjson` ([Q-054](#q-054-porter-からの-openssl-の直接利用) の Context) | `LIBS += cplat cjson_app` (porter `753de0e`)。作業ツリーには、cjson の関数名を `cjson_app_` 接頭辞へ変える別作業の未コミット変更が、`prod/libsrc/porter/protocol/config_*.c` にある | 方針への影響はない。設定の読み込みを変更する 4.2 と 4.6 は、その変更の上で行う |
+| porter のソース構成 | 参照版 `abb0a21` | `abb0a21` 以降の変更は、ソース コメント、制御文の波括弧、makefile の同期、ライブラリ名の追従、テストの探索パス。公開ヘッダー (`porter_const.h`、`porter_type.h`) は変更なし | 最終仕様の対象ファイルはすべて存在し、方針への影響はない |
+| 残課題 BL-001 (PING の nonce 重複) | 本案件で解消する | 未解消。PING の nonce は今も `next_seq` から作る ([ヘルス チェック スレッド](../../../prod/libsrc/porter/thread/potr_health_thread.c) の PING 構築と nonce の設定の 3 か所) | 作業 WBS の 4.3 と 4.8 で解消し、4.10 で確認する |
+| 残課題 BL-002 (`max_payload` の上限) | 本案件で解消する | 未解消。`POTR_MAX_PAYLOAD` は 65,507 のまま ([公開定数](../../../prod/include/porter/porter_const.h)、[サービスの開始](../../../prod/libsrc/porter/api/potr_service_open.c) の検査) | 作業 WBS の 4.2 と 4.8 で解消し、4.10 で確認する |
+| プロトコル版と最大経路数 | 版 1、`POTR_MAX_PATH = 4` | 変更なし | 本案件の実装は未着手 |
+
+Table: 最終仕様の第 4 版の前提と 2026-11-13 時点の実装の照合
+
+> [!NOTE]
+> 時計 API の mock は、新しい OS API を呼ぶ場合は testfw に mock を用意し、cplat の公開 API を追加する場合は `mock_cplat` に委譲付きの mock を追加するという既存の作業規則に従います。  
+> そのため、質問は設けずに作業 WBS の 4.1 に含めました。`framework/testfw` を変更するため、framework の全体テストの実施は、コストを説明してから確認します。
+
+> [!NOTE]
+> Windows で porter を使う実行体は、`libssl-3-x64_app.dll` と `libcrypto-3-x64_app.dll` を探索パスから解決します。  
+> ワークスペースの探索パスには `app/openssl/prod/lib` が含まれ、porter の `porterSendRecvTest` にも追加済みです (porter `069305e`)。
+
 ## 観点別の確認
 
 | 観点 | 状態 | 根拠・関連質問 |
 |---|---|---|
 | 目的・利用者 | 確認済み | 時刻は障害調査用で利用者に渡さない ([Q-012](#q-012-時刻を採取する単位)、[Q-014](#q-014-時刻の利用目的))。証明書方式は全通信種別で相互認証 ([Q-034](#q-034-双方向通信での相互認証)、[Q-042](#q-042-グループ鍵を渡す前の受信者の認証)) |
-| 範囲・境界 | 確認済み | 全通信種別に適用 ([Q-001](#q-001-適用する通信種別)、[Q-017](#q-017-証明書認証の通信範囲))。`app/openssl` と cplat の切り替えは別作業 ([Q-052](#q-052-appopenssl-の準備の作業範囲)、[Q-053](#q-053-cplat-の-openssl-切り替えの作業範囲)) |
-| 入力・根拠 | 確認済み | 上記参照版、ユーザー要求、送信 API の戻り値 ([API 仕様](../../api.md))、cplat の時計 API を確認 |
-| 整合性・依存関係 | 確認済み | OpenSSL の利用経路、リンク形態、アセンブラーの採否が確定 ([Q-054](#q-054-porter-からの-openssl-の直接利用) から [Q-056](#q-056-openssl-のアセンブラ実装))。送信 API、認証方向、ライブラリの選定も確定 ([Q-029](#q-029-起動時の送信と送信-api-の契約)、[Q-030](#q-030-片方向一対多の全グループ不達時の送信-api)、[Q-042](#q-042-グループ鍵を渡す前の受信者の認証)、[Q-051](#q-051-linux-で使う-openssl))。origin 取り込み後の TCP 規則との整合 ([Q-050](#q-050-tcp-のグループ切り替え時の欠番))。機能仕様の適用範囲は承認後に同期 |
+| 範囲・境界 | 確認済み | 全通信種別に適用 ([Q-001](#q-001-適用する通信種別)、[Q-017](#q-017-証明書認証の通信範囲))。`app/openssl` と cplat の切り替えは別作業で完了済み ([Q-052](#q-052-appopenssl-の準備の作業範囲)、[Q-053](#q-053-cplat-の-openssl-切り替えの作業範囲)、[現在の実装による棚卸し](#現在の実装による棚卸し))。BL-001 と BL-002 は本作業で対応 (2026-11-13 の本対話)。OpenSSL の mock は `app/openssl` の `mock_openssl` に追加 ([Q-057](#q-057-libssl-などの-mock-の配置))。時計 API の mock のため `framework/testfw` も変更 |
+| 入力・根拠 | 確認済み | 上記参照版、ユーザー要求、送信 API の戻り値 ([API 仕様](../../api.md))、cplat の時計 API を確認。版 13 で 2026-11-13 時点の実装と照合 ([現在の実装による棚卸し](#現在の実装による棚卸し)) |
+| 整合性・依存関係 | 確認済み | OpenSSL の利用経路、アセンブラーの採否が確定 ([Q-054](#q-054-porter-からの-openssl-の直接利用)、[Q-056](#q-056-openssl-のアセンブラー実装))。リンク形態は後続の案件で共有ライブラリに置き換え済み ([Q-055](#q-055-openssl-のリンク形態)、[現在の実装による棚卸し](#現在の実装による棚卸し))。libssl などの mock は `app/openssl` の mock の方式に合わせる ([Q-057](#q-057-libssl-などの-mock-の配置))。送信 API、認証方向、ライブラリの選定も確定 ([Q-029](#q-029-起動時の送信と送信-api-の契約)、[Q-030](#q-030-片方向一対多の全グループ不達時の送信-api)、[Q-042](#q-042-グループ鍵を渡す前の受信者の認証)、[Q-051](#q-051-linux-で使う-openssl))。origin 取り込み後の TCP 規則との整合 ([Q-050](#q-050-tcp-のグループ切り替え時の欠番))。機能仕様の適用範囲は承認後に同期 |
 | 実現性・例外 | 確認済み | 方式と例外時の振る舞いが確定。実装上の詳細は最終仕様で具体案を示し第 2 ゲートで確定 ([Q-049](#q-049-残りの技術的な詳細の確定方法)) |
 | 受入条件・検証 | 確認済み | 両 OS の局所テストと相互接続 ([Q-022](#q-022-検証の受入範囲))。受入条件は最終仕様で確定 |
 
@@ -179,7 +219,7 @@ Table: 前提合意に必要な確認観点
 
 ## 質問一覧
 
-Q-001 から Q-056 はすべて回答済みです。
+Q-001 から Q-057 はすべて回答済みです。
 
 | Q-ID | 論点 | 状態 |
 |---|---|---|
@@ -238,7 +278,8 @@ Q-001 から Q-056 はすべて回答済みです。
 | [Q-053](#q-053-cplat-の-openssl-切り替えの作業範囲) | cplat の OpenSSL 切り替えの作業範囲 | 解決済み |
 | [Q-054](#q-054-porter-からの-openssl-の直接利用) | porter からの OpenSSL の直接利用 | 解決済み |
 | [Q-055](#q-055-openssl-のリンク形態) | OpenSSL のリンク形態 | 解決済み |
-| [Q-056](#q-056-openssl-のアセンブラ実装) | OpenSSL のアセンブラー実装 | 解決済み |
+| [Q-056](#q-056-openssl-のアセンブラー実装) | OpenSSL のアセンブラー実装 | 解決済み |
+| [Q-057](#q-057-libssl-などの-mock-の配置) | libssl などの mock の配置 | 解決済み |
 
 Table: 確認項目の一覧
 
@@ -2615,7 +2656,7 @@ porter の単体テストで OpenSSL の失敗を注入するため、OpenSSL �
 
 **Related**
 
-[Q-047](#q-047-暗号ライブラリの選定)、[Q-053](#q-053-cplat-の-openssl-切り替えの作業範囲)、[Q-055](#q-055-openssl-のリンク形態)
+[Q-047](#q-047-暗号ライブラリの選定)、[Q-053](#q-053-cplat-の-openssl-切り替えの作業範囲)、[Q-055](#q-055-openssl-のリンク形態)、[Q-057](#q-057-libssl-などの-mock-の配置)
 
 ### Q-055 OpenSSL のリンク形態
 
@@ -2658,7 +2699,11 @@ A を受け付けました。cplat と porter はそれぞれ `app/openssl` の�
 
 **Related**
 
-[Q-051](#q-051-linux-で使う-openssl)、[Q-054](#q-054-porter-からの-openssl-の直接利用)
+[Q-051](#q-051-linux-で使う-openssl)、[Q-054](#q-054-porter-からの-openssl-の直接利用)、[Q-057](#q-057-libssl-などの-mock-の配置)
+
+**History**
+
+- 2026-11-13 (版 13): 第三者管理ライブラリの名前変更の案件 (2026-11-11 承認) で、`app/openssl` は名前を変えた共有ライブラリ (`ssl_app`、`crypto_app`) を配置し、静的ライブラリを配置しない構成になりました。この回答の A は後続の案件の決定で置き換えられています。扱いは [現在の実装による棚卸し](#現在の実装による棚卸し) に記載しました。
 
 ### Q-056 OpenSSL のアセンブラー実装
 
@@ -2713,6 +2758,258 @@ A を受け付けました。`app/openssl` は両 OS でアセンブラー実装
 
 [Q-048](#q-048-windows-での-openssl-の入手方法)、[Q-051](#q-051-linux-で使う-openssl)、[Q-052](#q-052-appopenssl-の準備の作業範囲)
 
+### Q-057 libssl などの mock の配置
+
+**Status**
+
+解決済み
+
+**Question**
+
+porter の証明書方式の単体テストで使う、libssl と証明書関連 (X509、PEM、BIO など) の OpenSSL の関数の mock を、どこに置きますか。
+
+**Context**
+
+最終仕様の第 4 版は、「porter のテストに OpenSSL の関数への mock を用意する。既存の第三者共有ライブラリ向けの mock の作り方に従う」としていました ([Q-054](#q-054-porter-からの-openssl-の直接利用) の Assessment)。
+
+その後、第三者管理ライブラリの名前変更の案件 ([最終仕様](../../../../general/docs/prompts/current/261111-third-party-lib-rename-design.md)、2026-11-11 承認) で、OpenSSL の mock の方式が次のように決まりました ([app/openssl の README](../../../../openssl/README.md) の「単体テスト用のモック」)。
+
+- mock は `app/openssl` の `mock_openssl` が提供します (testfw から移管済み)。
+- テスト対象のソースが取り込む `<openssl/evp.h>` などを、`app/openssl/test/include_override/openssl/` の差し替えヘッダーで置き換え、関数の呼び出しをマクロで `mock_<関数名>` へ置き換えます。makefw は、依存先 app の `test/include_override/` をテスト対象のコンパイルに自動で追加します。
+- 利用側のテストは `mock_openssl` だけをリンクし、実ライブラリを同時にリンクしません。mock は実行時に `libcrypto_app` を読み込み、実関数へ委譲します。
+- 置き換える関数は、ワークスペースの app が使う関数だけです。現在は EVP と RAND の 17 個です。libssl の mock は、その時点で libssl を使う app がなかったため対象外とされました。
+
+porter は、ハンドシェイクと証明書の検証で、libssl の関数 (`SSL_CTX_new()`、`SSL_do_handshake()`、`SSL_export_keying_material()` など) と、libcrypto の証明書関連の関数 (`PEM_read_bio_X509()`、`X509_STORE_add_cert()`、`BIO_new()` など) を新たに使います。  
+上記の方式では、mock のない関数をテスト対象が呼ぶと、テストのリンクが未解決になります。失敗を注入しない正常系のテストでも、使う関数をすべて mock に加える必要があります。
+
+A は、`app/openssl` の `mock_openssl` に、porter が使う関数を追加します。追加先は、`mock_openssl.h` (宣言、置換マクロ、実委譲)、`mock_openssl.cc`、関数ごとの `mock_<関数名>.cc`、差し替えヘッダー (`ssl.h`、`x509.h`、`x509_vfy.h`、`pem.h`、`bio.h` など)、README の関数の一覧です。実委譲の読み込み先に `libssl_app` を加えます。`app/openssl` の変更となり、`mock_openssl` を使う cplat のテストも再ビルドして確認します。
+
+```text
+app/openssl/test/
+  include/mock_openssl.h            ← 関数の宣言と実委譲の読み込み先 (libssl_app を追加)
+  include_override/openssl/ssl.h    ← 新設 (x509.h、pem.h、bio.h なども同様)
+  libsrc/mock_openssl/mock_SSL_do_handshake.cc  ← 関数ごとに追加
+app/porter/test/src/.../makepart.mk  ← LIBS += mock_openssl だけを指定
+```
+
+B は、porter の `test/` に libssl などの mock を別に置きます。`app/openssl` は変更しません。ただし、`<openssl/...>` の差し替えヘッダーが `app/openssl` と porter の 2 か所に分かれ、同じヘッダーの置き換えが重ならないように管理する必要があります。また、porter のテストは `mock_openssl` と porter の mock の 2 つをリンクし、実委譲の読み込みも 2 か所で行います。
+
+```text
+app/porter/test/
+  include_override/openssl/ssl.h    ← porter 側に新設
+  libsrc/mock_openssl_ssl/...        ← porter 独自の mock ライブラリ
+app/porter/test/src/.../makepart.mk  ← LIBS += mock_openssl mock_openssl_ssl
+```
+
+C は、証明書方式のテストで mock を使わず、実ライブラリをリンクします。正常系と、証明書の内容で作れる異常系 (期限切れ、名前の不一致、信頼しない CA など) だけを確認し、OpenSSL の関数の失敗 (メモリ確保の失敗、ハンドシェイク中の内部エラーなど) は注入しません。ただし、porter が `APP_DEPS` に openssl を加えると、テスト対象の OpenSSL のヘッダーは自動で差し替えの対象になるため、差し替えを外す構成の工夫が必要です。また、`app/openssl` の「mock と実ライブラリを同時にリンクしない」規則のため、テストの実行体を mock 用と実ライブラリ用に分ける必要があります。
+
+**Answer**
+
+選択方式: 単一選択
+
+- [x] A: (推奨) `app/openssl` の `mock_openssl` に、porter が使う libssl と証明書関連の関数を追加する
+- [ ] B: porter の `test/` に libssl などの mock を別に置く
+- [ ] C: 証明書方式のテストは mock を使わず、実ライブラリで確認する
+- [ ] D: その他
+- [ ] X: 意図不明 (詳細な質問内容に再生成すること)
+
+その他の回答 / 補足:
+
+回答者: Tetsuo Honda  
+回答日時: 2026-11-13 23:10:43 JST (検討用 Markdown の保存時刻)
+
+**Recommendation**
+
+A。後続の案件で決まった「OpenSSL の mock は `app/openssl` が一元的に提供し、利用側は mock だけをリンクする」構成と一致します。差し替えヘッダーと実委譲の読み込みが 1 か所に集まり、将来ほかの app が libssl を使う場合も同じ mock を使えます。  
+制約として、本案件の変更対象に `app/openssl` (サブモジュール) が加わり、mock の変更後は `app/openssl` を make してから、cplat と porter のテストを実行する必要があります。
+
+**Assessment**
+
+A を受け付けました。porter が使う libssl と証明書関連の関数の mock は、`app/openssl` の `mock_openssl` に追加し、実委譲の読み込み先に `libssl_app` を加えます。porter の証明書方式のテストは `mock_openssl` だけをリンクします。  
+`app/openssl` の作業規則に従い、mock の関数を追加したら README の一覧を更新し、`app/openssl` を make してから、利用側の cplat と porter のテストを実行します。  
+Q-054 の Assessment の「porter のテストにも用意する」は、この回答により「`app/openssl` の mock に追加し、porter のテストで使う」と具体化されます。ほかの回答との矛盾はありません。
+
+**Related**
+
+[Q-054](#q-054-porter-からの-openssl-の直接利用)、[Q-055](#q-055-openssl-のリンク形態)、[現在の実装による棚卸し](#現在の実装による棚卸し)
+
+### Q-058 証明書方式の設定を potr_service_open() へ渡す方法
+
+**Status**
+
+解決済み
+
+**Question**
+
+証明書方式の設定 (`auth`、`cert_file`、`key_file`、`ca_file`、`pinned_certs`、`crl_file`、`peer_names`) を、公開 API の `potr_service_open()` へどの形で渡しますか。
+
+**Context**
+
+最終仕様の第 5 版は、証明書方式の設定ファイルのキーを定めていますが、設定ファイルを使わずに `potr_service_open()` へ `potr_service_def` を直接渡す利用側が、証明書方式をどう指定するかを定めていません。  
+`potr_service_def` は公開ヘッダー `porter_type.h` の構造体です。`potr_service_open_from_config()` も、設定ファイルを読んで `potr_service_def` を組み立て、`potr_service_open()` を呼ぶ実装です。現在の `potr_service_def` は、文字列もすべて固定長の配列 (`src_addr[POTR_MAX_PATH][POTR_MAX_ADDR_LEN]` など) で持ち、ポインターを含みません。
+
+証明書方式の設定には、ファイルのパス (長さが不定) と、個数が不定の配列 (`pinned_certs`、`peer_names`) が含まれます。最終仕様では、証明書、秘密鍵、CRL を `potr_service_open()` の中で 1 回だけ読み込むため、パスの文字列は `potr_service_open()` の呼び出し中だけ有効であれば足ります。
+
+A は、`potr_service_def` に、認証方式の列挙型と、呼び出し中だけ参照するポインターのメンバーを追加します。構造体を 0 で初期化した既存の利用側は、`auth` が 0 (事前共有鍵方式) になり、変更なしで従来どおり動きます。`potr_service_open()` は、ポインターの指す内容を open の中で読み込み、内部に保持する `potr_service_def` の写しではポインターを NULL にします。
+
+```c
+typedef enum { POTR_AUTH_PSK = 0, POTR_AUTH_CERT = 1 } potr_auth;
+
+typedef struct potr_service_def {
+    /* ... 既存のメンバー ... */
+    potr_auth auth;                       /* 認証方式。0 = 事前共有鍵方式 */
+    const char *cert_file;                /* 以下は potr_service_open() の呼び出し中だけ参照 */
+    const char *key_file;
+    const char *ca_file;
+    const char *crl_file;
+    const char *const *pinned_certs;
+    size_t pinned_cert_count;
+    const char *const *peer_names;
+    size_t peer_name_count;
+} potr_service_def;
+```
+
+B は、`potr_service_def` に固定長の配列で追加します。既存の構造体の流儀 (ポインターを含まない) と一致しますが、パスの長さ、`pinned_certs` と `peer_names` の個数に上限を設ける必要があり、構造体が大きくなります (例: パス 260 バイト、各 8 件の場合、約 6 KB の増加)。上限の値は別途決める必要があります。
+
+```c
+#define POTR_MAX_FILE_PATH_LEN 260U
+#define POTR_MAX_PINNED_CERTS  8U
+#define POTR_MAX_PEER_NAMES    8U
+    potr_auth auth;
+    char cert_file[POTR_MAX_FILE_PATH_LEN];
+    char pinned_certs[POTR_MAX_PINNED_CERTS][POTR_MAX_FILE_PATH_LEN];
+    char peer_names[POTR_MAX_PEER_NAMES][POTR_MAX_ADDR_LEN];
+    /* ... */
+```
+
+C は、`potr_service_def` を変えず、証明書方式を設定ファイル経由 (`potr_service_open_from_config()`) だけで使えるようにします。内部では設定ファイルの読み込み結果を別の内部の構造体で `potr_service_open()` の内部処理へ渡します。公開型は変わりませんが、`potr_service_open()` を直接使う利用側は証明書方式を使えません。
+
+**Answer**
+
+選択方式: 単一選択
+
+- [x] A: (推奨) `potr_service_def` に認証方式と、呼び出し中だけ参照するポインターのメンバーを追加する
+- [ ] B: `potr_service_def` に固定長の配列で追加する
+- [ ] C: 公開型を変えず、証明書方式は設定ファイル経由だけで使えるようにする
+- [ ] D: その他
+- [ ] X: 意図不明 (詳細な質問内容に再生成すること)
+
+その他の回答 / 補足:
+
+回答者: Tetsuo Honda  
+回答日時: 2026-11-14 JST (本対話での回答。原文: `Aとして進めましょう`)
+
+**Recommendation**
+
+A。最終仕様の「証明書などは open 時に 1 回だけ読み込む」と合い、パスの長さや件数に恣意的な上限を設けずに済みます。両方の open で同じ機能を使えます。  
+制約として、`potr_service_def` に初めてポインターが入るため、Doxygen に「呼び出し中だけ参照し、porter は保持しない」ことを明記します。公開型の変更となるため、`docs/api.md` と、`exportTest.cc` の確認も行います (公開関数は増えません)。
+
+**Assessment**
+
+A を受け付けました。`potr_service_def` に認証方式 `potr_auth` と、`potr_service_open()` の呼び出し中だけ参照するポインターのメンバーを追加します。設定ファイル経由では、設定の読み込みが文字列を所有し、`potr_service_open()` の呼び出し後に解放します。内部に保持する写しではポインターを NULL にします。  
+最終仕様の承認済みの内容 (設定ファイルのキー、open 時に 1 回だけ読み込む規則) との矛盾はありません。最終仕様を第 6 版に改め、「証明書方式の設定」に公開型での受け渡しを追記します。
+
+**Related**
+
+[Q-049](#q-049-残りの技術的な詳細の確定方法)、[Q-054](#q-054-porter-からの-openssl-の直接利用)
+
+### Q-059 証明書方式の片方向 unicast の送信元ポート
+
+**Status**
+
+解決済み
+
+**Question**
+
+証明書方式の片方向 unicast (`unicast`、`unicast_raw`) で、送信者の `src_port` を 0 以外に固定することを必須にしますか。
+
+**Context**
+
+証明書方式では、片方向の受信者がクライアントとなり、送信者のユニキャスト アドレスとポートへハンドシェイクを開始します。最終仕様は、一対多 (`multicast`、`broadcast`) の送信者について「`src_port` を 0 以外に固定します」と定めていますが、片方向 unicast については定めていません。
+
+`src_port` が 0 の場合、送信者のポートは OS が選び、受信者は送信者からのパケットを受け取るまでポートを知りません。事前共有鍵方式の NACK は、受信したパケットの送信元から学習したポートへ返しています。一方、証明書方式では、認証前のパケットを破棄し、状態を変えない規則があります。また、送信者は受信者が認証するまで DATA を送らないため、受信者が最初に受け取れるのは送信者の PING だけです。
+
+実装担当 (codex) は、この点を未解決として、現状では片方向 unicast で `src_port` が 0 の場合に通信を確立できない実装にとどめています。
+
+A は、一対多と同じく、証明書方式の片方向の送信者 (`unicast`、`unicast_raw`、`multicast`、`multicast_raw`、`broadcast`、`broadcast_raw`) すべてに `src_port` の固定を求め、0 は設定エラーにします。
+
+B は、`src_port` が 0 でも、受信者が送信者の PING などの送信元から学習したポートへハンドシェイクを開始します。認証前のパケットからポートだけを学習し、ほかの状態は変えないという例外を、「認証前のパケットと認証失敗」の規則に加えます。学習したポートは偽の送信元からも与えられるため、ハンドシェイクの宛先を攻撃者が誘導できます (証明書の検証で偽の相手は認証に失敗するため、通信の内容は漏れませんが、正しい送信者との認証が遅れます)。
+
+**Answer**
+
+選択方式: 単一選択
+
+- [x] A: (推奨) 証明書方式の片方向の送信者すべてに `src_port` の固定を求め、0 は設定エラーにする
+- [ ] B: `src_port` が 0 の場合は、受信者が学習した送信元ポートへハンドシェイクを開始する
+- [ ] C: その他
+- [ ] X: 意図不明 (詳細な質問内容に再生成すること)
+
+その他の回答 / 補足:
+
+回答者: Tetsuo Honda  
+回答日時: 2026-11-14 11:19:40 JST (検討用 Markdown の保存時刻)
+
+**Recommendation**
+
+A。一対多の規則と一致し、認証前のパケットは状態を変えない規則に例外を作らずに済みます。設定エラーとして起動時に検出できます。
+
+**Assessment**
+
+A を受け付けました。証明書方式の片方向の送信者 (`unicast`、`unicast_raw`、`multicast`、`multicast_raw`、`broadcast`、`broadcast_raw`) すべてに `src_port` の固定を求め、0 は `potr_service_open()` の検査で設定エラーにします。最終仕様の「一対多のグループ鍵」の `src_port` の規則を「証明書方式の片方向の送信者」に広げ、第 7 版とします。「認証前のパケットと認証失敗」の規則に例外は設けません。
+
+**Related**
+
+[Q-058](#q-058-証明書方式の設定を-potr_service_open-へ渡す方法)、[Q-060](#q-060-死活監視が無効な場合の認証の再試行周期)
+
+### Q-060 死活監視が無効な場合の認証の再試行周期
+
+**Status**
+
+解決済み
+
+**Question**
+
+証明書方式の UDP で、実効 `health_interval_ms` が 0 (死活監視が無効) の場合、ハンドシェイクのやり直しの周期をどうしますか。
+
+**Context**
+
+最終仕様は、UDP の認証の再試行を「DTLS の再送の後、実効 `health_interval_ms` ごとにハンドシェイクをやり直します」と定めています。実効 `health_interval_ms` が 0 の場合の周期は定めていません。TCP は `reconnect_interval_ms` で再接続するため、この問題はありません。
+
+実装担当 (codex) は、この場合に UDP の既定の監視間隔 (`POTR_DEFAULT_UDP_HEALTH_INTERVAL_MS`) を使う実装にしています。
+
+A は、実装のとおり、UDP の既定の監視間隔を使います。
+
+B は、死活監視が無効な構成では、DTLS 自身の再送 (指数的に間隔を延ばして約 1 分で打ち切り) だけを行い、その後はやり直しません。相手が後から起動した場合は、サービスを開き直すまで通信できません。
+
+C は、証明書方式で実効 `health_interval_ms` が 0 の構成を設定エラーにします。
+
+**Answer**
+
+選択方式: 単一選択
+
+- [x] A: (推奨) UDP の既定の監視間隔でハンドシェイクをやり直す
+- [ ] B: DTLS の再送だけを行い、その後はやり直さない
+- [ ] C: 証明書方式で死活監視を無効にする構成を設定エラーにする
+- [ ] D: その他
+- [ ] X: 意図不明 (詳細な質問内容に再生成すること)
+
+その他の回答 / 補足:
+
+回答者: Tetsuo Honda  
+回答日時: 2026-11-14 11:19:40 JST (検討用 Markdown の保存時刻)
+
+**Recommendation**
+
+A。死活監視を無効にした構成でも、相手の起動順に関係なく通信を確立できます。既定の間隔は既存の定数であり、新しい設定項目は要りません。
+
+**Assessment**
+
+A を受け付けました。実装済みの動作 (実効 `health_interval_ms` が 0 の場合は `POTR_DEFAULT_UDP_HEALTH_INTERVAL_MS` の間隔でハンドシェイクをやり直す) を最終仕様の「認証前のパケットと認証失敗」に追記し、第 7 版とします。
+
+**Related**
+
+[Q-059](#q-059-証明書方式の片方向-unicast-の送信元ポート)
+
 ## 回答後に具体化する事項
 
 以下の事項は、[Q-049](#q-049-残りの技術的な詳細の確定方法) の A により、最終仕様で具体案を示し、第 2 ゲートの承認で確定します。
@@ -2730,9 +3027,11 @@ A を受け付けました。`app/openssl` は両 OS でアセンブラー実装
 
 ## 対象成果物と合意版
 
-検討用 Markdown の合意版 (第 1 ゲート): 版 12 (2026-11-09 JST、Q-001 から Q-056 の全回答と、図の記法とヘッダー配置の指示を反映。初版の合意版は版 8)  
-最終仕様の合意版 (第 2 ゲート): 第 4 版 (2026-11-09 に Tetsuo Honda が承認)  
+検討用 Markdown の合意版 (第 1 ゲート): 版 14 (2026-11-13 JST、Q-001 から Q-057 の全回答と、現在の実装による棚卸しを反映。以前の合意版は版 8、版 10、版 12)  
+最終仕様の合意版 (第 2 ゲート): 第 4 版 (2026-11-09 に Tetsuo Honda が承認)。第 5 版は承認待ち  
 成果物の承認 (第 3 ゲート): 未承認
+
+版 13 で、現在の実装による棚卸しのためフェーズ 1 に戻りました。版 14 で合意版を特定し直し、最終仕様を第 5 版に改版しました。改めて第 2 ゲートの承認を受けます。
 
 対象候補は WBS に記載しています。  
 最終仕様には承認された要件、通信形式、例外処理、移行条件、正本文書への反映先をまとめます。
@@ -2746,7 +3045,8 @@ A を受け付けました。`app/openssl` は両 OS でアセンブラー実装
 - 1 経路だけの不達では同じグループを継続し、グループ内全断で次の利用可能なグループを選択します。
 - 起動時、上位回復、全断、監視無効、片方向断について、合意した通知と送信結果を確認します。
 - 両時刻の符号化と復号、再送時の値、時計補正の影響、旧版拒否または互換動作を確認します。
-- 暗号化を有効にした場合、PING の要求と応答、経路ごとの複製、再送を含めて、同じ鍵で同じ nonce を 2 回使わないことを確認します。
+- 暗号化を有効にした場合、PING の要求と応答、経路ごとの複製、再送を含めて、同じ鍵で同じ nonce を 2 回使わないことを確認します (残課題 BL-001 の解消)。
+- `max_payload` の上限がヘッダー長を含めた値になり、上限の値を受理し、上限を 1 超える値を拒否することを確認します (残課題 BL-002 の解消)。
 - 有効な証明書で認証が成功し、不正な信頼元・相手識別・期限など合意した拒否条件で認証が失敗します。
 - 認証失敗時の状態更新抑止と、既存共有鍵方式の動作を確認します。
 - 合意した OS の局所テスト、相互接続、文書の整形と機能仕様検査が通ります。
@@ -2800,3 +3100,14 @@ porter の zlib と cjson の利用形態、makefw のアセンブラー規則�
 
 2026-11-09 の対話で、Tetsuo Honda が最終仕様の第 4 版を承認しました (第 2 ゲート通過)。同じ対話で、Windows のビルド環境への NASM の配置が完了したとの連絡がありました (`C:\ProgramData\tetsuo\devbin-win\bin\nasm.exe` を確認)。  
 承認時点で前提の別作業を確認したところ、`app/openssl` は未作成で、cplat は `LIBS += crypto` によりシステムの OpenSSL を使っていました。最終仕様の前提条件に従い、本案件の実装は着手待ち (ブロック中) としました。
+
+版 13 では、2026-11-13 の本対話でのユーザーの依頼「検討用 Markdown の内容を現在の実装で棚卸して改訂したい。残課題一覧はこの作業で対応させたい」を受け、フェーズ 1 に戻りました。  
+親リポジトリ、porter、cplat、app/openssl の履歴と作業ツリー、第三者管理ライブラリの名前変更の案件の最終仕様と残課題一覧、app/openssl の README と AGENTS.md、cplat の時計 API と `mock_cplat`、testfw の `mock_windows` を確認しました。  
+前提の別作業 (`app/openssl` の新設と cplat の切り替え) の完了を確認し、作業 WBS の 4. のブロックを解除しました。  
+[Q-055](#q-055-openssl-のリンク形態) の A (静的リンク) は、後続の案件の承認済みの決定 (共有ライブラリ化) で置き換えられているため、質問を設けずに Q-055 の History に記録しました。  
+OpenSSL の mock が `app/openssl` へ移管され、libssl の mock が対象外とされていたため、porter が使う関数の mock の配置を [Q-057](#q-057-libssl-などの-mock-の配置) として追加しました。  
+時計 API の mock は、既存の作業規則に従って作業 WBS の 4.1 に含めました。BL-001 と BL-002 は、ユーザーの依頼に従い、解消する作業 WBS の項目と受入条件候補に対応付けました。  
+Q-056 の見出しと一致していなかったファイル内リンク (`アセンブラ` と `アセンブラー` の違い) を修正しました。
+
+版 14 では、Tetsuo Honda による Q-057 の回答 (2026-11-13 23:10:43 JST 保存) を記録しました。  
+全 57 問が回答済みとなり、観点別の確認がすべて確認済みとなったため、版 14 を合意版として第 1 ゲートを再通過し、最終仕様を第 5 版に改版しました。

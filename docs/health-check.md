@@ -44,7 +44,7 @@ tcp_health_timeout_ms  : TCP 系 PING 受信タイムアウト (ms)。両端で�
 
 ### PING ペイロード (パス受信状態)
 
-PING パケットのペイロードには自端の各パス PING 受信状態を `POTR_MAX_PATH` (= 4) バイトで格納します。各バイトがパス インデックス順に対応します。
+PING パケットのペイロードには自端の各パス PING 受信状態を `POTR_MAX_PATH` (= 8) バイトで格納します。各バイトがパス インデックス順に対応します。
 
 | 値 | 定数 | 意味 |
 |---|---|---|
@@ -170,13 +170,13 @@ Table: TCP / TCP_BIDIR (type 9-10) の接続状態別の実装
 
 非 N:1 モード (UNICAST_RAW / MULTICAST_RAW / BROADCAST_RAW / UNICAST / MULTICAST / BROADCAST / UNICAST_BIDIR) の処理は次のとおりです。
 
-1. 片方向 type 1-6 は `max(last_ping_send_ms, last_valid_data_send_ms) + health_interval_ms`、双方向 type 7 は定周期 `health_interval_ms` を送信期限として評価します。
+1. 片方向 type 1-6 は経路ごとに `max(last_ping_send_ms[path], last_valid_data_send_ms[path]) + health_interval_ms`、双方向 type 7 は定周期 `health_interval_ms` を送信期限として評価します。
 2. 送信ウィンドウから `next_seq` を取得します。
 3. `potr_internal_packet_build_ping()` で PING パケットを構築します。
-4. `ctx->n_path` 分のパスそれぞれで `cplat_socket_sendto()` を実行します。
+4. 送出対象の経路それぞれで `cplat_socket_sendto()` を実行します (片方向では期限を迎えた経路、双方向では全経路)。
 5. 暗号化有効時は `POTR_FLAG_ENCRYPTED` を付与して GCM 認証タグを追加します。
 
-片方向 type 1-6 では send スレッドが外側 DATA パケットを実送出した時点で `last_valid_data_send_ms` を更新します。`potr_service_send()` の API 成功時ではありません。1 つの外側 DATA パケットを全 path に fan-out したあと 1 回だけ更新し、その時点から次の PING 期限を再計算します。
+片方向 type 1-6 では、送信スレッドが各経路へ外側 DATA パケットを実送出した時点でその経路の最終 DATA 送信時刻を更新します (`potr_service_send()` の API 成功時ではありません)。待機グループの経路には DATA が流れないため、経路ごとに最終送信時刻を判定することで、待機グループの経路にも `health_interval_ms` ごとに PING が送出されます。
 
 N:1 モード (UNICAST_BIDIR_N1 のサーバー側) の処理は次のとおりです。
 
@@ -232,13 +232,32 @@ UDP 系と同様に受信スレッドが判定します。TCP の両端がそれ
 
 DATA パケットの受信は `tcp_last_ping_recv_ms` をリセットしません。`health_interval_ms > 0` の場合は PING は DATA 送信とは独立して定周期送出されるため、PING の到達有無のみで接続状態を判定できます。`health_interval_ms = 0` の場合は bootstrap PING のみで CONNECTED を確立し、その後の timeout 監視は行いません。
 
-## マルチパス (最大 4 パス) の振る舞い
+## 受信報告による片方向の経路状態の把握
 
-全 potr_type でパスは最大 4 (`POTR_MAX_PATH`) まで設定できます。
+片方向・一対多の送信者が優先グループの選択に必要な経路ごとの到達状態を知るため、通常モードの `unicast`、`multicast`、`broadcast` の受信者は受信報告 (`POTR_FLAG_REPORT`) を送信します (RAW モードの受信者は送信しません)。
+
+### 受信報告の送出 (受信者側)
+
+- 受信者は実効 `health_interval_ms` ごとに、受信者が保持する全経路から送信者のアドレスとポートへ `POTR_FLAG_REPORT` を送出します。
+- `multicast` と `broadcast` では、複数の受信者からの報告が送信者へ同時に集中しないよう、各回の送出間隔を `health_interval_ms` の 100%〜150% の範囲でばらつかせます (乱数生成には cplat の乱数 API を使用します)。
+- ペイロードには `POTR_MAX_PATH` バイト (8 バイト) の自端の経路受信状態 (`POTR_PING_STATE_*`) を格納します。暗号化有効時は PING と同じくペイロードを暗号化し、ヘッダー全体を AAD として保護します。
+
+### 受信者の管理と到達判定 (送信者側)
+
+- 送信者は、受信報告のヘッダーに含まれるセッション識別子 (`session_id`、`session_tv_sec`、`session_tv_nsec` の組) で受信者を識別し、受信者ごとの経路状態を保持します。
+- 保持できる受信者数の上限は既存の `max_peers` (既定値 1,024) であり、上限を超えた受信者の報告はログに記録して破棄します。
+- 全経路から受信報告が実効 `health_timeout_ms` の間届かない受信者は、離脱したものとして管理から外し、到達判定から除きます。
+- 受信者の経路状態は、報告の到着時刻とペイロード内容から PING と同じ規則 (`POTR_PING_STATE_NORMAL`、`POTR_PING_STATE_ABNORMAL`、`POTR_PING_STATE_UNDEFINED`) で更新します。
+- 一対多 (`multicast`、`broadcast`) では、報告中の全受信者について、そのグループに届く経路が 1 つ以上あるときにグループを到達可能と判定します。
+- 片方向の送信者は、受信報告から得た経路状態を優先グループの選択にのみ使用し、`POTR_EVENT_PATH_*` イベントでは通知しません。
+
+## マルチパス (最大 8 パス) の振る舞い
+
+全 potr_type でパスは最大 8 (`POTR_MAX_PATH`) まで設定できます。
 
 UDP 系の処理は次のとおりです。
 
-- PING は全パス (`ctx->sock[k]`, `ctx->dest_addr[k]`, k = 0〜n_path-1) に対して毎周期送出します。
+- PING は優先グループにかかわらず全グループの全パス (`k = 0 〜 n_path - 1`) に対して送出します (待機グループの監視を含む)。
 - パスごとに最終受信時刻 (`path_last_recv_sec[k]` / `path_last_recv_nsec[k]`) を独立して追跡します。
 - 特定パスのみタイムアウトした場合はそのパスの `peer_port[k]` だけをクリアし、他のパスの通信は継続します。
 - 全パスが揃ってタイムアウト (= 全体タイムアウト) になった場合に `POTR_EVENT_DISCONNECTED` を発火します。

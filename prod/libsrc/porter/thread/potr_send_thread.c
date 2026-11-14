@@ -45,11 +45,13 @@
 #include <porter/thread/potr_send_thread.h>
 #include <porter/thread/potr_health_thread.h>
 #include <porter/protocol/packet.h>
+#include <porter/protocol/packet_seal.h>
 #include <porter/protocol/window.h>
 #include <porter/infra/potr_trace.h>
-#include <cplat/crypto/crypto.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/socket.h>
+
+#include "thread_recv_session.h"
 
 /*
  * 有効データの送信時刻を記録するかを判定する。
@@ -75,15 +77,16 @@ static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const p
 }
 
 /*
- * TCP の指定 path へ send_wire_buf の wire_len バイトをすべて書き込む。
+ * TCP の指定 path へパケットを封緘して書き込む。
  * 相手端は CONNECTED になる前に受信した DATA を破棄するため、未通知の経路状態があれば先に PING を書き込む。
  * 書き込めなかった path はストリームの途中が欠けるため、ソケットを停止して受信スレッドに切断を検知させる。
  * 成功時は POTR_OK、path が未接続または書き込みに失敗した場合は POTR_ERR_DISCONNECTED を返す。
  * 呼び出し元は send_window_mutex を保持する。
  */
-static int tcp_write_path(potr_context *ctx, int path_idx, size_t wire_len)
+static int tcp_write_path(potr_context *ctx, int path_idx, const potr_packet *packet)
 {
     int result = POTR_ERR_DISCONNECTED;
+    size_t wire_len = ctx->crypto_buf_size;
 
     cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
 
@@ -100,7 +103,11 @@ static int tcp_write_path(potr_context *ctx, int path_idx, size_t wire_len)
                        ctx->service.service_id, path_idx, announce_result);
             cplat_socket_shutdown(ctx->tcp_conn_fd[path_idx]);
         }
-        else if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], ctx->send_wire_buf, wire_len, &detail) == CPLAT_OK)
+        else if (potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, packet, ctx->crypto_buf, &wire_len) != POTR_OK)
+        {
+            cplat_socket_shutdown(ctx->tcp_conn_fd[path_idx]);
+        }
+        else if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], ctx->crypto_buf, wire_len, &detail) == CPLAT_OK)
         {
             result = POTR_OK;
         }
@@ -119,13 +126,13 @@ static int tcp_write_path(potr_context *ctx, int path_idx, size_t wire_len)
 }
 
 /*
- * TCP のアクティブな全 path へ同じパケットを書き込む。
+ * TCP の指定された経路集合へ同じパケットを書き込む。
  * 送信バッファーに空きがない path は、他の path が書き込めた場合に限り今回のパケットを飛ばす。
  * TCP 受信側は欠けた通番を補えないため、どの path にも書き込めないままパケットを捨ててはならない。
  * いずれかの path に書き込めた場合は POTR_OK、どの path にも書き込めない場合は POTR_ERR_DISCONNECTED を返す。
  * 呼び出し元は send_window_mutex を保持する。
  */
-static int tcp_write_all_paths(potr_context *ctx, size_t wire_len)
+static int tcp_write_all_paths(potr_context *ctx, const potr_packet *packet, uint8_t paths)
 {
     int skipped[POTR_MAX_PATH];
     int sent_any = 0;
@@ -145,7 +152,7 @@ static int tcp_write_all_paths(potr_context *ctx, size_t wire_len)
     {
         int writable = 0;
 
-        if (ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
+        if ((paths & (uint8_t)(1U << i)) == 0U || ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
         {
             continue;
         }
@@ -167,7 +174,7 @@ static int tcp_write_all_paths(potr_context *ctx, size_t wire_len)
                 }
             }
 
-            if (tcp_write_path(ctx, i, wire_len) == POTR_OK)
+            if (tcp_write_path(ctx, i, packet) == POTR_OK)
             {
                 sent_any = 1;
             }
@@ -188,7 +195,7 @@ static int tcp_write_all_paths(potr_context *ctx, size_t wire_len)
         if (!sent_any)
         {
             /* どの path にも書き込めていないため、空きを待って書き込む。 */
-            if (tcp_write_path(ctx, i, wire_len) == POTR_OK)
+            if (tcp_write_path(ctx, i, packet) == POTR_OK)
             {
                 sent_any = 1;
             }
@@ -214,8 +221,8 @@ static int tcp_write_all_paths(potr_context *ctx, size_t wire_len)
 /*
  * send_wire_buf の [POTR_PACKET_HEADER_SIZE .. POTR_PACKET_HEADER_SIZE+packed_len-1] に
  * 詰め済みのペイロードから外側コンテナーを構築して送信する。
- * seq_num を付与する。UDP では再送バッファー (send_window) にも登録する。
- * send_wire_buf = [NBO ヘッダー 32 [byte]][packed_payload packed_len [byte]] として組み立てる。
+ * seq_num を付与し、送信済み DATA を send_window に登録する。
+ * send_wire_buf は平文ペイロード、crypto_buf は送出ごとの封緘先として使用する。
  * 成功時は POTR_OK を返す。パケットを構築できない場合と、TCP でどの path にも書き込めない場合は
  * エラー コードを返す。UDP の送信失敗は再送で回復するため、成功として扱う。
  */
@@ -229,6 +236,7 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
     int is_tcp = is_tcp_type(ctx->service.type);
     int build_result;
     int result = POTR_OK;
+    potr_internal_path_group_result selection;
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
@@ -236,6 +244,17 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
 
     /* send_window へのアクセスを排他制御する (送信スレッド・ヘルス チェック スレッド・受信スレッドが競合)。 */
     cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+
+    result = potr_internal_path_group_select(ctx, NULL, &selection);
+    if (result != POTR_OK || selection.disconnected)
+    {
+        cplat_local_lock_unlock(ctx->send_window_mutex);
+        if (result != POTR_OK)
+        {
+            return result;
+        }
+        return POTR_ERR_DISCONNECTED;
+    }
 
     seq = ctx->send_window.next_seq;
 
@@ -246,100 +265,46 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
         return build_result;
     }
 
-    if (ctx->service.encrypt_enabled)
-    {
-        /*
-         * 暗号化パス:
-         *   1. ENCRYPTED フラグを OR (outer_pkt.flags はすでに NBO)
-         *   2. payload_len を packed_len + TAG_SIZE に更新
-         *   3. nonce = session_id (4 [byte] NBO) + flags (2 [byte] NBO) + seq_num (4 [byte] NBO) + padding (2 [byte])
-         *   4. AAD  = outer_pkt ヘッダー 32 [byte] (NBO)
-         *   5. packed_buf → ctx->crypto_buf に暗号化
-         *   6. UDP: potr_internal_window_send_push に暗号化済みペイロードを登録
-         *      TCP: ウィンドウ登録不要 (再送は TCP 層が担保); 書き込めた場合に next_seq だけを進める
-         *   7. send_wire_buf に暗号化済みデータを組立て
-         */
-        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t enc_len = ctx->crypto_buf_size;
-
-        outer_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
-        outer_pkt.payload_len = cplat_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
-
-        /*
-         * ノンス: session_id (4 [byte] NBO) + flags (2 [byte] NBO) + seq_num (4 [byte] NBO) + padding (2 [byte])。
-         * outer_pkt の各フィールドはすでに NBO である。
-         */
-        memcpy(nonce, &outer_pkt.session_id, 4);
-        memcpy(nonce + 4, &outer_pkt.flags, 2);
-        memcpy(nonce + 6, &outer_pkt.seq_num, 4);
-        memset(nonce + 10, 0, 2);
-
-        if (cplat_crypto_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
-                                 (const uint8_t *)&outer_pkt, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
-        {
-            cplat_local_lock_unlock(ctx->send_window_mutex);
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: encrypt failed seq=%u",
-                       ctx->service.service_id, (unsigned)seq);
-
-            /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがない。 */
-            return POTR_ERR_UNKNOWN;
-        }
-
-        if (is_tcp)
-        {
-            /* TCP: ウィンドウ登録不要。実送信完了まで mutex を保持して全 path リセットと直列化する。 */
-            ctx->send_has_data = 1;
-        }
-        else
-        {
-            /* window には暗号化済みペイロードを格納して NACK 再送時に再暗号化不要にする。 */
-            outer_pkt.payload = ctx->crypto_buf;
-            potr_internal_window_send_push(&ctx->send_window, &outer_pkt);
-            ctx->send_has_data = 1;
-            cplat_local_lock_unlock(ctx->send_window_mutex);
-        }
-
-        /* wire 組立: NBO ヘッダー + 暗号文 + タグ。 */
-        memcpy(ctx->send_wire_buf, &outer_pkt, POTR_PACKET_HEADER_SIZE);
-        memcpy(ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE, ctx->crypto_buf, enc_len);
-        wire_len = POTR_PACKET_HEADER_SIZE + enc_len;
-
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                   "sender[service_id=%" PRId64 "]: DATA(enc) seq=%u packed_len=%zu enc_len=%zu",
-                   ctx->service.service_id, (unsigned)seq, packed_len, enc_len);
-    }
-    else
-    {
-        if (is_tcp)
-        {
-            /* TCP: ウィンドウ登録不要。実送信完了まで mutex を保持して全 path リセットと直列化する。 */
-            ctx->send_has_data = 1;
-        }
-        else
-        {
-            potr_internal_window_send_push(&ctx->send_window, &outer_pkt);
-            ctx->send_has_data = 1;
-            cplat_local_lock_unlock(ctx->send_window_mutex);
-        }
-
-        /* NBO ヘッダー (32 [byte]) を send_wire_buf 先頭に書き込む (ペイロードはすでに直後に配置済み)。 */
-        memcpy(ctx->send_wire_buf, &outer_pkt, POTR_PACKET_HEADER_SIZE);
-        wire_len = POTR_PACKET_HEADER_SIZE + packed_len;
-
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: DATA seq=%u packed_len=%zu",
-                   ctx->service.service_id, (unsigned)seq, packed_len);
-    }
-
     if (is_tcp)
     {
-        /*
-         * TCP v2: アクティブな全 path に書き込む。
-         * TCP の受信側は欠番を補えないため、どの path にも書き込めなかった通番は消費しない。
-         */
-        result = tcp_write_all_paths(ctx, wire_len);
+        if (selection.tcp_resend)
+        {
+            uint32_t retained = ctx->send_window.next_seq - ctx->send_window.base_seq;
+            uint32_t offset;
+
+            /* 通番が周回しても、基底からの距離の順に送り直します。新規 DATA はこの後に書き込みます。 */
+            for (offset = 0U; offset < retained; offset++)
+            {
+                potr_packet retained_packet;
+
+                result = potr_internal_window_send_get(&ctx->send_window, ctx->send_window.base_seq + offset,
+                                                        &retained_packet);
+                if (result == POTR_OK)
+                {
+                    result = tcp_write_all_paths(ctx, &retained_packet, selection.selected_paths);
+                }
+                if (result != POTR_OK)
+                {
+                    cplat_local_lock_unlock(ctx->send_window_mutex);
+                    return result;
+                }
+            }
+            cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            if (ctx->path_group_state.resend_group == selection.next_group)
+            {
+                ctx->path_group_state.resend_group = 0U;
+            }
+            cplat_local_lock_unlock(ctx->callback_mutex);
+        }
+        result = tcp_write_all_paths(ctx, &outer_pkt, selection.selected_paths);
+        if (result == POTR_OK && selection.data_paths != selection.selected_paths)
+        {
+            (void)tcp_write_all_paths(ctx, &outer_pkt, (uint8_t)(selection.data_paths & ~selection.selected_paths));
+        }
         if (result == POTR_OK)
         {
-            ctx->send_window.next_seq++;
+            potr_internal_window_send_push(&ctx->send_window, &outer_pkt);
+            ctx->send_has_data = 1;
         }
 
         cplat_local_lock_unlock(ctx->send_window_mutex);
@@ -348,31 +313,58 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
     {
         int i;
         int sent_any = 0;
+        int window_pending = 1;
 
         for (i = 0; i < ctx->n_path; i++)
         {
             size_t sent = 0;
             int send_ret;
 
-            send_ret = cplat_socket_sendto(ctx->sock[i], ctx->send_wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
+            if ((selection.data_paths & (uint8_t)(1U << i)) == 0U)
+            {
+                continue;
+            }
+            wire_len = ctx->crypto_buf_size;
+            result = potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &outer_pkt, ctx->crypto_buf, &wire_len);
+            if (result != POTR_OK)
+            {
+                cplat_local_lock_unlock(ctx->send_window_mutex);
+                return result;
+            }
+            send_ret = cplat_socket_sendto(ctx->sock[i], ctx->crypto_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
+            if (window_pending)
+            {
+                /* 封緘に成功した平文を保持する。封緘と送出の間にはウィンドウ操作を挟まない。 */
+                potr_internal_window_send_push(&ctx->send_window, &outer_pkt);
+                ctx->send_has_data = 1;
+                window_pending = 0;
+            }
             if (send_ret == CPLAT_OK)
             {
                 sent_any = 1;
+                if (should_track_valid_data_send_time(ctx))
+                {
+                    uint64_t path_sent_ms;
+
+                    if (cplat_clock_get_monotonic_ms(&path_sent_ms) == CPLAT_OK)
+                    {
+                        cplat_atomic_store_u64(&ctx->last_valid_data_send_ms[i], path_sent_ms,
+                                               CPLAT_MEMORY_ORDER_RELAXED);
+                    }
+                    else
+                    {
+                        cplat_local_lock_unlock(ctx->send_window_mutex);
+                        cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+                        potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+                        return POTR_ERR_IO;
+                    }
+                }
             }
         }
 
+        cplat_local_lock_unlock(ctx->send_window_mutex);
         if (sent_any && should_track_valid_data_send_time(ctx))
         {
-            uint64_t sent_time;
-
-            if (cplat_clock_get_monotonic_ms(&sent_time) != CPLAT_OK)
-            {
-                cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
-                potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
-                return POTR_ERR_IO;
-            }
-
-            cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, sent_time, CPLAT_MEMORY_ORDER_RELAXED);
             potr_internal_health_thread_wake(ctx);
         }
     }
@@ -390,6 +382,8 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
     potr_internal_packet_session_hdr shdr;
     uint32_t seq;
     size_t wire_len;
+    int window_pending = 1;
+    potr_internal_path_group_result selection;
     uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
 
     shdr.service_id = ctx->service.service_id;
@@ -398,6 +392,11 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
 
     cplat_local_lock_lock(peer->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
+    if (potr_internal_path_group_select(ctx, peer, &selection) != POTR_OK || selection.disconnected)
+    {
+        cplat_local_lock_unlock(peer->send_window_mutex);
+        return;
+    }
     seq = peer->send_window.next_seq;
 
     if (potr_internal_packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len) != POTR_OK)
@@ -406,60 +405,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         return;
     }
 
-    if (ctx->service.encrypt_enabled)
-    {
-        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t enc_len = ctx->crypto_buf_size;
-
-        outer_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
-        outer_pkt.payload_len = cplat_hton16((uint16_t)(packed_len + POTR_CRYPTO_TAG_SIZE));
-
-        /*
-         * ノンス: session_id(4B NBO) + flags(2B NBO) + seq_num(4B NBO) + padding(2B)
-         * outer_pkt の各フィールドはすでに NBO
-         */
-        memcpy(nonce, &outer_pkt.session_id, 4);
-        memcpy(nonce + 4, &outer_pkt.flags, 2);
-        memcpy(nonce + 6, &outer_pkt.seq_num, 4);
-        memset(nonce + 10, 0, 2);
-
-        if (cplat_crypto_encrypt(ctx->crypto_buf, &enc_len, packed_buf, packed_len, ctx->service.encrypt_key, nonce,
-                                 (const uint8_t *)&outer_pkt, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
-        {
-            cplat_local_lock_unlock(peer->send_window_mutex);
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "sender[service_id=%" PRId64 "]: peer=%u encrypt failed seq=%u",
-                       ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq);
-            return;
-        }
-
-        outer_pkt.payload = ctx->crypto_buf;
-        potr_internal_window_send_push(&peer->send_window, &outer_pkt);
-        peer->send_has_data = 1;
-
-        cplat_local_lock_unlock(peer->send_window_mutex);
-
-        memcpy(ctx->send_wire_buf, &outer_pkt, POTR_PACKET_HEADER_SIZE);
-        memcpy(ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE, ctx->crypto_buf, enc_len);
-        wire_len = POTR_PACKET_HEADER_SIZE + enc_len;
-
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: peer=%u DATA(enc) seq=%u packed_len=%zu",
-                   ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq, packed_len);
-    }
-    else
-    {
-        potr_internal_window_send_push(&peer->send_window, &outer_pkt);
-        peer->send_has_data = 1;
-
-        cplat_local_lock_unlock(peer->send_window_mutex);
-
-        memcpy(ctx->send_wire_buf, &outer_pkt, POTR_PACKET_HEADER_SIZE);
-        wire_len = POTR_PACKET_HEADER_SIZE + packed_len;
-
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "sender[service_id=%" PRId64 "]: peer=%u DATA seq=%u packed_len=%zu",
-                   ctx->service.service_id, (unsigned)peer->peer_id, (unsigned)seq, packed_len);
-    }
-
-    /* N:1 はインデックス = ctx->sock[] のインデックスとして全パスへ送信する */
+    /* N:1 はソケットのインデックスに対応する選択グループの経路へ送信する。 */
     {
         int k;
 
@@ -467,12 +413,32 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         {
             size_t sent = 0;
 
-            if (endpoint_is_unset(&peer->dest_addr[k]))
+            if ((selection.data_paths & (uint8_t)(1U << k)) == 0U || endpoint_is_unset(&peer->dest_addr[k]))
             {
                 continue;
             }
-            (void)cplat_socket_sendto(ctx->sock[k], ctx->send_wire_buf, wire_len, &peer->dest_addr[k], &sent, NULL);
+            wire_len = ctx->crypto_buf_size;
+            if (potr_internal_packet_seal_for_context(ctx, &peer->tx_session, &outer_pkt, ctx->crypto_buf, &wire_len) != POTR_OK)
+            {
+                if (window_pending)
+                {
+                    cplat_local_lock_unlock(peer->send_window_mutex);
+                }
+                return;
+            }
+            (void)cplat_socket_sendto(ctx->sock[k], ctx->crypto_buf, wire_len, &peer->dest_addr[k], &sent, NULL);
+            if (window_pending)
+            {
+                potr_internal_window_send_push(&peer->send_window, &outer_pkt);
+                peer->send_has_data = 1;
+                cplat_local_lock_unlock(peer->send_window_mutex);
+                window_pending = 0;
+            }
         }
+    }
+    if (window_pending)
+    {
+        cplat_local_lock_unlock(peer->send_window_mutex);
     }
 }
 
@@ -559,6 +525,11 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
     if (peer != NULL)
     {
         flush_packed_peer(ctx, peer, packed_len);
+        if (cplat_atomic_load_i32(&peer->tx_session.exhausted, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+        {
+            thread_recv_disconnect_peer_all_paths(ctx, peer);
+            potr_internal_peer_free(ctx, peer);
+        }
     }
     else
     {

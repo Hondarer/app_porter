@@ -6,6 +6,7 @@
 #include <mock_cplat.h>
 #include <mock_porter.h>
 #include <mock_string.h>
+#include <porter/porter_const.h>
 #include <porter/porter_result.h>
 #include <algorithm>
 #include <cstring>
@@ -126,6 +127,9 @@ class potrSendThreadTcpTest : public Test
         wire_buf.assign(POTR_PACKET_HEADER_SIZE + 1400U, 0U);
         ctx.service.type = POTR_TYPE_TCP_BIDIR; // [状態] - TCP_BIDIR とする。
         ctx.global.max_payload = 1400U;         // [状態] - 最大ペイロード長を設定する。
+        sealed_buf.assign(POTR_PACKET_HEADER_SIZE + 1400U + POTR_CRYPTO_TAG_SIZE, 0U);
+        ctx.crypto_buf = sealed_buf.data();
+        ctx.crypto_buf_size = sealed_buf.size();
         ctx.send_wire_buf = wire_buf.data();    // [状態] - 送信 wire 組立バッファーを設定する。
         ctx.n_path = 1;                         // [状態] - path 数を 1 とする。
         ctx.tcp_conn_fd[0] = conn_fd;           // [状態] - path 0 を接続済みとする。
@@ -135,6 +139,11 @@ class potrSendThreadTcpTest : public Test
         elem.flags = 0U;
         elem.payload_len = (uint16_t)sizeof(payload);
         elem.payload = payload;
+        ON_CALL(mock_porter, potr_internal_window_send_push(&ctx.send_window, _))
+            .WillByDefault([](potr_internal_window *window, const potr_packet *) {
+                window->next_seq++;
+                return POTR_OK;
+            }); // [状態] - DATA 保持時に送信通番を進める。
         ON_CALL(mock_porter, potr_internal_send_queue_peek(_, _))
             .WillByDefault(Return(POTR_ERR_EMPTY)); // [状態] - 追加のエントリはないものとする。
         ON_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
@@ -171,6 +180,7 @@ class potrSendThreadTcpTest : public Test
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx;
     std::vector<uint8_t> wire_buf;
+    std::vector<uint8_t> sealed_buf;
     uint8_t payload[8] = {1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U};
     potr_internal_payload_elem elem = {};
     const cplat_socket conn_fd = (cplat_socket)7;
@@ -334,5 +344,53 @@ TEST_F(potrSendThreadTcpTest, suppress_counter_exceeding_limit_resets)
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret);             // [確認_正常系] - 開始に成功すること。
     EXPECT_EQ(0, ctx.buf_full_suppress_cnt[0]); // [確認_正常系] - 送信後の抑止カウンターが 0 であること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]
+
+// 暗号化時にパッキング平文を認証タグ分の上限内に保つことの確認
+// [サブ手順参照 名前=potrSendThreadTcpTest.SetUp]
+TEST_F(potrSendThreadTcpTest, encrypted_packet_packing_reserves_tag_capacity)
+{
+    // Arrange
+    std::vector<uint8_t> first_payload(POTR_DEFAULT_MAX_PAYLOAD - POTR_CRYPTO_TAG_SIZE - POTR_PAYLOAD_ELEM_HDR_SIZE,
+                                       1U);
+    uint8_t next_payload = 2U;
+    potr_internal_payload_elem next_elem = {};
+    size_t encrypted_plaintext_len = 0U;
+    ctx.global.max_payload = POTR_DEFAULT_MAX_PAYLOAD;
+    ctx.service.encrypt_enabled = 1; // [状態] - パケットを暗号化する。
+    elem.payload_len = static_cast<uint16_t>(first_payload.size());
+    elem.payload = first_payload.data();
+    next_elem.peer_id = POTR_PEER_NA;
+    next_elem.flags = 0U;
+    next_elem.payload_len = 1U;
+    next_elem.payload = &next_payload;
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_peek(&ctx.send_queue, _))
+        .WillOnce(DoAll(SetArgPointee<1>(next_elem), Return(POTR_OK)));
+    // [Pre-Assert確認_正常系] - 追加エレメントを 1 回確認すること。
+    // [Pre-Assert手順] - 認証タグ分の上限を超える追加エレメントを返す。
+    EXPECT_CALL(mock_cplat, cplat_crypto_encrypt(_, _, _, _, _, _, _, POTR_PACKET_HEADER_SIZE))
+        .WillOnce([&](uint8_t *out, size_t *len, const uint8_t *in, size_t input_len,
+                      const uint8_t *key, const uint8_t *nonce, const uint8_t *aad, size_t aad_len) {
+            encrypted_plaintext_len = input_len;
+            return delegate_real_cplat_crypto_encrypt(out, len, in, input_len, key, nonce, aad, aad_len);
+        });
+    // [Pre-Assert確認_正常系] - 72 [byte]の AAD を指定して暗号化が 1 回呼ばれること。
+    // [Pre-Assert手順] - 暗号化する平文長を記録して実際の暗号化へ委譲する。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_try_pop(&ctx.send_queue, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 上限を超える追加エレメントを取り出さないこと。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpTest.runOneEntry]
+    int actual_ret = runOneEntry();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - パケットの送信処理が成功すること。
+    EXPECT_EQ(POTR_DEFAULT_MAX_PAYLOAD - POTR_CRYPTO_TAG_SIZE, encrypted_plaintext_len);
+    // [確認_正常系] - 暗号化する平文長が最大ペイロードから認証タグ長を引いた値であること。
+    EXPECT_LE(encrypted_plaintext_len, POTR_DEFAULT_MAX_PAYLOAD - POTR_CRYPTO_TAG_SIZE);
+    // [確認_正常系] - 暗号化する平文長が最大ペイロードから認証タグ長を引いた値を超えないこと。
 }
 // [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]

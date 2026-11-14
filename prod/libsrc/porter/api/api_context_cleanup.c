@@ -109,6 +109,15 @@ void api_context_dispose_resources(potr_context *ctx)
     ctx->crypto_buf = NULL;
     dispose_secret_buffer(ctx->recv_buf, POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
     ctx->recv_buf = NULL;
+    while (ctx->receivers != NULL)
+    {
+        potr_internal_receiver *source = ctx->receivers;
+        ctx->receivers = source->next;
+        potr_internal_certificate_state_dispose(&source->certificate);
+        cplat_secure_zero(source, sizeof(*source));
+        cplat_free(source);
+    }
+
     dispose_secret_buffer(ctx->recv_compress_buf, ctx->compress_buf_size);
     ctx->recv_compress_buf = NULL;
     dispose_secret_buffer(ctx->recv_crypto_buf, ctx->crypto_buf_size);
@@ -141,5 +150,6 @@ void api_context_dispose_resources(potr_context *ctx)
     cplat_free(ctx->send_wire_buf);
     ctx->send_wire_buf = NULL;
     cplat_secure_zero(ctx->service.encrypt_key, sizeof(ctx->service.encrypt_key));
+    potr_internal_certificate_dispose(ctx);
     potr_internal_callback_mutex_dispose(ctx);
 }

@@ -13,13 +13,23 @@
 
 #include <cstdlib>
 
+namespace
+{
+struct service_configuration : potr_internal_config_service
+{
+    service_configuration() : potr_internal_config_service{} {}
+    ~service_configuration() { potr_internal_config_service_dispose(this); }
+};
+}
+
 // 実ファイルから global、service、service ID 一覧が読み込めることの確認
 TEST(configFileLoadTest, loadsGlobalServiceAndServiceIdsFromRealFile)
 {
     // Arrange
     PorterConfigBuilder builder;
     potr_global_config global = {};
-    potr_service_def service = {};
+    service_configuration owned;
+    potr_service_def &service = owned.definition;
     int64_t *ids = nullptr;
     int count = 0;
 
@@ -43,7 +53,7 @@ TEST(configFileLoadTest, loadsGlobalServiceAndServiceIdsFromRealFile)
         config_path.c_str(), &global); // [手順] - 実ファイルを指定して potr_internal_config_load_global() を呼び出す。
     int actual_ret_service = potr_internal_config_load_service(
         config_path.c_str(), 2002,
-        &service); // [手順] - 実ファイルと service_id 2002 を指定して potr_internal_config_load_service() を呼び出す。
+        &owned); // [手順] - 実ファイルと service_id 2002 を指定して potr_internal_config_load_service() を呼び出す。
     int actual_ret_ids = potr_internal_config_list_service_ids(
         config_path.c_str(), &ids,
         &count); // [手順] - 実ファイルを指定して potr_internal_config_list_service_ids() を呼び出す。

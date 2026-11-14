@@ -12,3 +12,5 @@ ADD_SRCS += \
     $(MYAPP_DIR)/prod/libsrc/porter/potr_notify.c
 ADD_SRCS += $(MYAPP_DIR)/prod/libsrc/porter/infra/potr_send_queue.c
 ADD_SRCS += $(MYAPP_DIR)/prod/libsrc/porter/infra/potr_send_queue_abort.c
+
+ADD_SRCS += $(MYAPP_DIR)/prod/libsrc/porter/protocol/packet_seal.c

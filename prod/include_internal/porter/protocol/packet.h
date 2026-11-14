@@ -28,7 +28,7 @@
 #include <porter/porter_result.h>
 #include <porter/porter_type.h>
 
-/** パケット ヘッダーの固定長 [byte]。payload フィールドの開始オフセット。 */
+/** パケット ヘッダーの固定長 [byte]。payload の開始オフセット。POTR_PACKET_HEADER_WIRE_SIZE と一致します。 */
 #define POTR_PACKET_HEADER_SIZE ((size_t)offsetof(potr_packet, payload))
 
 /** potr_packet のワイヤー フォーマットで payload_len が始まる位置 [byte]。 */

@@ -12,6 +12,7 @@
  */
 
 #include <cplat/base/platform.h>
+#include <cplat/crt/stdlib.h>
 #include <porter/infra/potr_send_queue.h>
 #include <string.h>
 #include <inttypes.h>
@@ -37,6 +38,37 @@
 #include "thread_recv_window.h"
 #include "thread_recv_dispatch.h"
 #include "thread_recv_health.h"
+#include "thread_recv_report.h"
+
+/*
+ * 片方向 UDP の REPORT と NACK は複数の返送元から届く。
+ * 認証済みの送信元セッションごとに記録を保持し、返送元同士の通番とセッションを混同しない。
+ * 単一の UDP 受信スレッドからだけ呼び出す。
+ */
+static int check_service_replay(potr_context *ctx, const potr_packet *packet, const uint8_t *wire_header)
+{
+    if (ctx->role == POTR_ROLE_SENDER && is_oneway_udp_type(ctx->service.type))
+    {
+        if (is_raw_type(ctx->service.type))
+        {
+            return POTR_OK;
+        }
+        potr_internal_path_group_result selection;
+        int ret = potr_internal_path_group_select(ctx, NULL, &selection);
+
+        if (ret != POTR_OK)
+        {
+            return ret;
+        }
+        /* 到着前に期限切れを反映し、途絶を挟んだ回復を連続到達として数えません。 */
+        return potr_internal_receiver_accept(ctx, packet, wire_header);
+    }
+    if (ctx->service.encrypt_enabled && !ctx->peer_session_known)
+    {
+        potr_internal_replay_window_prepare(&ctx->replay_window, packet);
+    }
+    return thread_recv_replay_packet(&ctx->replay_window, packet, wire_header);
+}
 
 /*
  * N:1 モード: 受信パケットをピアごとにディスパッチして処理する。
@@ -49,12 +81,12 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
     int is_new_peer = 0;
     thread_recv_slot peer_slot;
 
+    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
     if (thread_recv_authenticate_packet(ctx, pkt, wire_hdr, "recv", -1) != POTR_OK)
     {
+        cplat_local_lock_unlock(ctx->peers_mutex);
         return;
     }
-
-    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
     /* session_triplet でピアを検索する。 */
     cplat_timespec pkt_session_ts;
@@ -71,6 +103,10 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
                 peer->peer_session_id = pkt->session_id;
                 peer->peer_session_ts = pkt_session_ts;
                 peer->peer_session_known = 1;
+                if (ctx->service.encrypt_enabled)
+                {
+                    potr_internal_replay_window_prepare(&peer->replay_window, pkt);
+                }
                 potr_internal_window_init(&peer->recv_window, pkt->seq_num, ctx->global.window_size,
                                           ctx->global.max_payload);
                 is_new_peer = 1;
@@ -91,6 +127,11 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
         return; /* max_peers 超過または初回受理対象外 */
     }
 
+    if (thread_recv_replay_packet(&peer->replay_window, pkt, wire_hdr) != POTR_OK)
+    {
+        cplat_local_lock_unlock(ctx->peers_mutex);
+        return;
+    }
     thread_recv_slot_init_peer(&peer_slot, ctx, peer);
 
     if (is_new_peer)
@@ -107,6 +148,11 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
     {
         int should_wake_health = thread_recv_dispatch_packet(&peer_slot, pkt, path_idx, sender_addr);
 
+        if (peer->active && cplat_atomic_load_i32(&peer->tx_session.exhausted, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+        {
+            thread_recv_disconnect_peer_all_paths(ctx, peer);
+            potr_internal_peer_free(ctx, peer);
+        }
         cplat_local_lock_unlock(ctx->peers_mutex);
 
         if (should_wake_health != 0)
@@ -117,7 +163,7 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
 }
 
 /*
- * 送信者ロール: NACK のみ処理する。
+ * 送信者ロール: REPORT と NACK を処理する。
  * 戻り値 1: パケットを消費した (呼び出し元は次のパケットへ)。
  * 戻り値 0: UNICAST_BIDIR SENDER のため受信者処理へフォール スルーする。
  */
@@ -130,6 +176,12 @@ static int sender_handle_packet(thread_recv_slot *slot, const potr_packet *pkt)
         return 1;
     }
 
+    if (pkt->flags == POTR_FLAG_REPORT)
+    {
+        potr_internal_path_group_result selection;
+        (void)potr_internal_path_group_select(ctx, NULL, &selection);
+        return 1;
+    }
     thread_recv_window_on_nack(slot, pkt);
 
     if (ctx->service.type != POTR_TYPE_UNICAST_BIDIR)
@@ -184,7 +236,40 @@ static void recv_thread_func(void *arg)
         int poll_result;
         int i;
 
-        poll_result = cplat_socket_wait_readable_multi(ctx->sock, (size_t)ctx->n_path, (int)poll_ms, ready, &detail);
+        uint64_t now_ms;
+        uint32_t wait_ms = poll_ms;
+
+        if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
+        {
+            cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+            potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+            break;
+        }
+        if (ctx->is_multi_peer)
+        {
+            thread_recv_health_check_peers(ctx);
+        }
+        else if (ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
+        {
+            thread_recv_health_check_service(&svc_slot);
+        }
+        potr_internal_certificate_tick(ctx, now_ms);
+        if (ctx->service.auth == POTR_AUTH_CERT && wait_ms > 100U)
+        {
+            wait_ms = 100U;
+        }
+        int report_ret = thread_recv_report_tick(ctx, now_ms);
+        if (report_ret != POTR_OK)
+        {
+            cplat_atomic_store_i32(&ctx->fatal_error, report_ret, CPLAT_MEMORY_ORDER_RELEASE);
+            potr_internal_send_queue_abort(&ctx->send_queue, report_ret);
+            break;
+        }
+        if (ctx->next_report_ms > now_ms && ctx->next_report_ms - now_ms < wait_ms)
+        {
+            wait_ms = (uint32_t)(ctx->next_report_ms - now_ms);
+        }
+        poll_result = cplat_socket_wait_readable_multi(ctx->sock, (size_t)ctx->n_path, (int)wait_ms, ready, &detail);
         if (poll_result != CPLAT_OK)
         {
             if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
@@ -209,18 +294,10 @@ static void recv_thread_func(void *arg)
 
         if (!has_ready)
         {
-            if (ctx->is_multi_peer)
+            if (!ctx->is_multi_peer && ctx->global.reorder_timeout_ms > 0U &&
+                (ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR))
             {
-                thread_recv_health_check_peers(ctx);
-            }
-            else if (ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
-            {
-                thread_recv_health_check_service(&svc_slot);
-
-                if (ctx->global.reorder_timeout_ms > 0U)
-                {
-                    thread_recv_window_check_reorder_timeout(&svc_slot);
-                }
+                thread_recv_window_check_reorder_timeout(&svc_slot);
             }
 
             continue;
@@ -275,6 +352,11 @@ static void recv_thread_func(void *arg)
                 continue;
             }
 
+            if (potr_internal_certificate_receive(ctx, &pkt, buf, &sender_addr, i) == POTR_OK)
+            {
+                continue;
+            }
+
             /* ── N:1 モード: ピアごとにディスパッチ ── */
             if (ctx->is_multi_peer)
             {
@@ -287,7 +369,12 @@ static void recv_thread_func(void *arg)
                 continue;
             }
 
-            /* ── 送信者ロール: NACK のみ処理 ── */
+            if (check_service_replay(ctx, &pkt, buf) != POTR_OK)
+            {
+                continue;
+            }
+
+            /* ── 送信者ロール: REPORT と NACK を処理 ── */
             if (ctx->role == POTR_ROLE_SENDER)
             {
                 if (sender_handle_packet(&svc_slot, &pkt))
@@ -356,7 +443,7 @@ static int tcp_read_all(cplat_socket fd, uint8_t *buf, size_t n)
  * 破棄するパケットは POTR_OK、ストリームを切断する解析失敗は POTR_ERR_PROTOCOL を返す。
  */
 static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, const uint8_t *buf,
-                             uint16_t wire_payload_len, int path_idx)
+                             uint16_t wire_payload_len, int path_idx, int replay_checked)
 {
     potr_packet pkt;
 
@@ -395,6 +482,11 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
         {
             return POTR_OK;
         }
+    }
+
+    if (!replay_checked && thread_recv_replay_packet(&ctx->replay_window, &pkt, buf) != POTR_OK)
+    {
+        return POTR_OK;
     }
 
     /* パケット種別に応じた処理を行う。 */
@@ -637,10 +729,13 @@ static void tcp_recv_thread_func(void *arg)
          * ソケットからの読み取りをスキップしてバッファーの内容をそのまま使用する。
          * accept スレッドは recv スレッド起動前に書き込みを完了しているため mutex 不要である。
          */
+        int replay_checked = 0;
+
         if (ctx->tcp_first_pkt_len[path_idx] > 0)
         {
             /* accept スレッドの先読みバッファーを recv バッファーにコピーする。 */
             size_t first_len = ctx->tcp_first_pkt_len[path_idx];
+            replay_checked = 1;
             memcpy(buf, ctx->tcp_first_pkt_buf[path_idx], first_len);
             ctx->tcp_first_pkt_len[path_idx] = 0; /* 先読みバッファーをクリア */
 
@@ -746,7 +841,7 @@ static void tcp_recv_thread_func(void *arg)
 
         if (cplat_atomic_load_i32(&ctx->running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
-            r = tcp_handle_packet(ctx, &svc_slot, buf, wire_payload_len, path_idx);
+            r = tcp_handle_packet(ctx, &svc_slot, buf, wire_payload_len, path_idx, replay_checked);
         }
         else
         {

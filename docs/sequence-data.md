@@ -25,7 +25,7 @@ sequenceDiagram
 
     Q->>ST: pop (エレメント取り出し)
     ST->>ST: seq_num 付与<br>送信ウィンドウへ登録<br>パケット構築
-    ST->>UDP: sendto (全パス)
+    ST->>UDP: sendto (選択中グループのパス)
 
     UDP->>RRT: recvfrom → DATA パケット受信
     RRT->>RRT: service_id 照合<br>セッション識別<br>受信ウィンドウへ格納
@@ -62,7 +62,7 @@ sequenceDiagram
     Note over Q: 1 メッセージの断片を連続して格納する
 
     Q->>ST: pop → パケット構築 → sendto
-    ST->>UDP: sendto (全パス)
+    ST->>UDP: sendto (選択中グループのパス)
     ST->>Q: complete() (completed_seq をインクリメント)
 
     Q->>Q: (2) completed_seq >= チケット になるまで待機
@@ -155,7 +155,7 @@ sequenceDiagram
     SUDP->>ST: NACK[ack_num=11] 受信
     ST->>ST: 送信ウィンドウから seq=11 を検索
 
-    ST->>SUDP: DATA[seq=11] 再送 (全パス)
+    ST->>SUDP: DATA[seq=11] 再送 (選択中グループのパス)
 
     SUDP->>RUDP: DATA[seq=11] 到着
 

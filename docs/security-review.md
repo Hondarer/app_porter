@@ -1,179 +1,62 @@
-# porter 暗号化版 セキュリティ レビュー
+# porter 暗号化・認証 セキュリティ レビュー
 
 ## 結論
 
-porter の暗号化ありバージョンは、`AES-256-GCM` により **ペイロードの機密性** と **ヘッダーを含む完全性検証** を提供しています。そのため、**参加ノードが限定され、構成ファイルや運用が適切に管理された閉域網で利用する分には、現時点でも大きな問題が発生しにくい構成** と考えてよいです。
+porter は、`AES-256-GCM` による **ペイロードの機密性**、**72 バイトのヘッダー全体を含む完全性検証 (AAD)**、および **`tx_counter` を用いたリプレイ対策** を提供します。認証と鍵確立の方式はサービスごとに選択でき、閉域網向けの事前共有鍵方式 (`auth = "psk"`) に加え、X.509 証明書による相互認証と前方秘匿性を備えた証明書方式 (`auth = "cert"`) を利用できます。
 
-一方で、より厳密な安全性を求める場合や、将来的に利用範囲を広げる場合には、**鍵管理**, **相手認証**, **ノンス生成**, **時刻依存のセッション採用** に改善余地があります。
+運用環境と選択した方式に応じて、次の点は設計上の前提・制約として認識する必要があります。
 
-特に次の点は、閉域網では直ちに致命的でない場合があるものの、設計上の注意点または改善候補として認識しておくのが望ましいです。
+- `auth = "psk"` (事前共有鍵方式) では、`encrypt_key` の passphrase 形式が `SHA-256` 直 hash であるため、弱い passphrase の場合はオフライン総当たり耐性が低くなります。また、共有鍵の所持確認にとどまるためピア固有の認証や前方秘匿性は提供しません。これらが必要な場合は `auth = "cert"` を選択します。
+- `auth = "cert"` (証明書方式) の一対多通信 (`multicast`、`broadcast`) では、送信者が生成したグループ鍵を受信者全員で共有するため、グループ鍵を持つ受信者が送信者を装うなりすましは対策の対象外です。
+- ヘッダー 72 バイトは平文のまま AAD で保護するため、メタデータ秘匿は提供しません。
+- `CLOCK_REALTIME` に依存するセッション採用のため、`health_timeout_ms = 0` の構成では時刻逆行時に新セッションを破棄し得ます。
 
-- GCM ノンスが `session_id + flags + seq_or_ack_num` であり、`session_id` が `rand()` ベースで生成されるため、再起動条件によっては nonce reuse の設計リスクが残ります。
-- `encrypt_key` は事前共有鍵であり、passphrase 形式は `SHA-256` 直 hash で導出されるため、鍵管理・耐総当たり性の観点では改善余地があります。
-- 暗号化は「同じ鍵を持っていること」の証明にとどまり、一般的な相手認証やピア単位の認可までは提供しません。
-- `CLOCK_REALTIME` に依存するセッション採用のため、docs が認める通り、特定条件では新セッションを永続的に破棄し得ます。
+## 暗号化・認証の仕様
 
-## 評価対象と前提
+### 暗号化範囲と AAD
 
-本レビューは、`app/porter/prod/docs` と `app/porter/prod/libsrc/porter` / `app/porter/prod/include` の実装をもとに、porter の UDP 系暗号化機能を対象に評価したものです。
+- `DATA`、`PING`、`REPORT`、`KEY` パケットのペイロードを `AES-256-GCM` で暗号化し、16 バイトの GCM 認証タグを付加します。`NACK` / `REJECT` / `FIN` / `FIN_ACK` はペイロードなしの 16 バイトの GCM 認証タグのみを付与します。
+- いずれのパケットも、72 バイトのヘッダー全体 (予約領域 `reserved` および送信時刻フィールドを含む) を追加認証データ (AAD) として認証し、ヘッダー改ざんを検知します。
+- 暗号化が有効な受信側は `POTR_FLAG_ENCRYPTED` を必須とし、平文パケットおよび GCM タグ検証に失敗したパケットを即座に破棄します。
 
-前提は以下です。
+### ノンス構成とリプレイ対策
 
-- 対象は porter 自身の暗号化・セッション管理・ピア識別・設定方式です。
-- 「鍵が外部に漏えいしない」という仮定は置くが、**弱い passphrase**, **構成ファイル露出**, **正規ノード間の共有鍵運用**, **通信路上の DoS**, **時刻異常** は評価対象に含める。
-- 暗号アルゴリズム (`AES-256-GCM`) の理論的安全性ではなく、**この実装・このプロトコル設計での安全性** を問う。
+- GCM ノンス (12 バイト) は `[session_id (4B NBO)][tx_counter (8B NBO)]` で構成します。
+- `tx_counter` は送信側のセッションごとに `0` から始まり、経路ごとの複製、再送、制御パケットを含め、1 回の送出ごとに `1` 増える `uint64_t` のカウンターです。同じ鍵の下で送出ごとに `tx_counter` が増加するため、同一鍵でのノンス重複は発生しません (`tx_counter` が上限に達した場合はセッションを閉じます)。
+- 受信側は、暗号化されたパケットについて送信元のセッションごとに直近 256 個の `tx_counter` を記録し、記録済みまたは記録範囲より古い `tx_counter` のパケットを復号後に破棄します。
 
-## docs / 実装から確認できる事実
+### 事前共有鍵方式 (auth = "psk") と証明書方式 (auth = "cert")
 
-### 暗号化範囲
+| 項目 | `auth = "psk"` (事前共有鍵方式) | `auth = "cert"` (証明書方式) |
+|---|---|---|
+| 鍵の指定・確立 | 設定ファイルの `encrypt_key` (64 文字 hex または SHA-256 passphrase) | DTLS 1.2 (UDP) / TLS 1.3 (TCP) ハンドシェイク (`POTR_FLAG_HANDSHAKE`) |
+| 相手認証 | 同一 `encrypt_key` の所持確認 | X.509 証明書による相互認証 (`ca_file` + `peer_names` + 任意 `crl_file`、または `pinned_certs`) |
+| 前方秘匿性 | なし (長期固定鍵) | あり (暗号の組を ECDHE + AES-256-GCM に限定) |
+| 鍵の導出 | — | RFC 5705 / RFC 8446 7.5 節 (`EXPORTER-porter-v2`、両端のセッション識別子) で方向別に 32 バイト鍵を導出 |
+| 一対多 (`multicast` / `broadcast`) | 全受信者が同一 `encrypt_key` を使用 | 受信者ごとに個別ハンドシェイク後、送信者が `POTR_FLAG_KEY` でグループ鍵を配布 |
+| 認証前のパケット | — | ハンドシェイク完了まで `POTR_FLAG_HANDSHAKE` 以外のパケットを破棄し、状態を変更しない |
 
-- docs は、DATA パケットのペイロードを `AES-256-GCM` で暗号化し、ヘッダー 40 バイトは平文のまま AAD で認証すると説明しています。`PING / NACK / REJECT / FIN` は、ヘッダーに対する 16 バイトの GCM タグのみを付与します。  
-  参照: `app/porter/prod/docs/config.md:181-207`
-- 実装でも、Linux 版 `potr_encrypt()` / `potr_decrypt()` は OpenSSL EVP により AAD を与えた `AES-256-GCM` を実装しています。  
-  参照: `app/porter/prod/libsrc/porter/infra/crypto/crypto_linux.c:29-243`
+Table: 認証・暗号化方式ごとのセキュリティ特性比較
 
-### ノンス構成
+### セッション識別と N:1 モードのピア識別
 
-- docs は、GCM ノンスを `[session_id][flags][seq_or_ack_num][padding]` としています。  
-  参照: `app/porter/prod/docs/config.md:194-207`
-- 実装でも、送信時に `session_id`, `flags`, `seq_num` または `ack_num` からノンスを組み立てています。  
-  参照: `app/porter/prod/libsrc/porter/thread/potr_send_thread.c:121-149`, `app/porter/prod/libsrc/porter/thread/potr_health_thread.c:207-245`, `app/porter/prod/libsrc/porter/thread/potr_recv_thread.c:62-99`
-
-### セッション識別
-
-- docs は、`session_id` を「現在時刻 × PID をシードにした乱数」、`session_tv_sec` / `session_tv_nsec` を `CLOCK_REALTIME` 由来の時刻として説明しています。  
-  参照: `app/porter/prod/docs/protocol.md:123-170`
-- 実装でも、Linux は `srand(time(NULL) ^ getpid())` → `rand()`、Windows は `GetTickCount() ^ GetCurrentProcessId()` → `rand()` で `session_id` を生成しています。  
-  参照: `app/porter/prod/libsrc/porter/api/potr_service_open.c:83-108`, `app/porter/prod/libsrc/porter/potr_peer_table.c:50-75`
-
-### N:1 モードのピア識別
-
-- docs は、N:1 モードで受信スレッドが `session triplet` (`session_id`, `session_tv_sec`, `session_tv_nsec`) を使ってピアを検索 / 新規作成すると説明しています。  
-  参照: `app/porter/prod/docs/architecture.md:143-155`
-- 実装でも、`potr_internal_peer_find_by_session()` は送信元 IP:Port ではなく session triplet でピア検索を行います。  
-  参照: `app/porter/prod/libsrc/porter/potr_peer_table.c:268-289`
-
-## 改善ポイント
-
-### GCM ノンス設計が session_id の強度に依存しており、nonce reuse の設計リスクがある
-
-#### 何が問題か
-
-GCM の安全性は **同一鍵でノンスを再利用しないこと** を強く要求します。porter ではノンスが `session_id + flags + seq_or_ack_num` で構成される一方、`session_id` は暗号学的乱数ではなく `rand()` に依存しています。さらに `session_tv_sec` / `session_tv_nsec` はノンスに含まれません。
-
-このため、再起動条件が重なって `session_id` が再現され、`seq_num` が再び同じ値から進み始めると、**同一鍵・同一ノンスの再使用** が起こり得る設計になっています。
-
-#### なぜ成立するか
-
-- docs のノンス定義に timestamp は含まれていません。  
-  参照: `app/porter/prod/docs/config.md:194-207`
-- `session_id` は docs 上も「現在時刻 × PID をシードにした乱数」であり、実装は `srand(...); rand();` で生成しています。  
-  参照: `app/porter/prod/docs/protocol.md:127-131`, `app/porter/prod/libsrc/porter/api/potr_service_open.c:83-108`
-- 新セッションでも `seq_num` は 0 から始まります。  
-  参照: `app/porter/prod/docs/protocol.md:197-209`
-
-#### 影響
-
-- nonce reuse が発生すると、`AES-GCM` の機密性・完全性は破綻し得ます。
-- 実際の再現条件は運用環境に依存し、閉域網で通常運用しているだけで直ちに問題化するとは限りませんが、将来的な堅牢化の観点では優先的に見直したい点です。
-
-### 相手認証は事前共有鍵の所持確認に留まり、ピア単位の認証・認可までは提供しない
-
-#### 何が問題か
-
-porter の暗号化は、「同じ `encrypt_key` を持っていること」を前提に通信を成立させる設計であり、TLS 証明書や署名鍵のような **ピア固有の身元証明** を提供しません。
-
-特にマルチキャストや N:1 モードでは、共有鍵を持つノード群を区別できず、**どの正規ノードが送信したのか** を暗号的には識別できません。
-
-#### なぜ成立するか
-
-- docs は `encrypt_key` を事前共有鍵として説明しており、マルチキャストでは「受信者全員が同一の `encrypt_key` を持っていれば動作する」としています。  
-  参照: `app/porter/prod/docs/config.md:181-192`
-- N:1 モードではピア識別の主軸が session triplet であり、証明書や公開鍵による識別はありません。  
-  参照: `app/porter/prod/docs/architecture.md:143-155`, `app/porter/prod/libsrc/porter/potr_peer_table.c:268-289`
-
-#### 影響
-
-- 単一の共有鍵に依存するため、正規参加者が増えるほど責任分界が曖昧になります。
-- 閉域網で少数ノードを固定運用する分には許容しやすいですが、ノード数や運用主体が増える場合は、共有鍵だけに依存しない設計へ見直す余地があります。
-
-### 鍵管理はシンプルだが、構成ファイルの事前共有鍵と SHA-256 直 hash に依存している
-
-#### 何が問題か
-
-`encrypt_key` は構成ファイルに置かれる事前共有鍵であり、passphrase 形式を使う場合の鍵導出は `SHA-256(passphrase)` のみです。閉域網で構成ファイル管理を厳密に行うなら運用可能ですが、salt も work factor もなく、KDF としては強くありません。
-
-#### なぜ成立するか
-
-- docs は、`encrypt_key` を構成ファイル中の文字列として受け付け、64 桁 hex 以外は SHA-256 で 32 バイト鍵に変換すると説明しています。  
-  参照: `app/porter/prod/docs/config.md:117-120`, `app/porter/prod/docs/config.md:181-192`
-- 実装も、非 hex 文字列を `potr_passphrase_to_key()` で SHA-256 に通してそのまま鍵にしています。  
-  参照: `app/porter/prod/libsrc/porter/protocol/config.c:372-444`, `app/porter/prod/libsrc/porter/infra/crypto/crypto_linux.c:213-242`
-
-#### 影響
-
-- 弱い passphrase を使うと、構成ファイルやメモリ ダンプ取得後のオフライン総当たり耐性が低い。
-- 現在の閉域網運用では十分でも、鍵ローテーションや前方秘匿性を求めるなら改善が必要です。
-
-### CLOCK_REALTIME ベースのセッション採用には、時刻逆行時の運用制約がある
-
-#### 何が問題か
-
-docs 自身が認めている通り、`health_timeout_ms = 0` の構成では、OS 時計が過去へ戻ると新セッションが旧セッション扱いされ、永続的に破棄され得ます。
-
-これは直接の暗号破りではありませんが、**時刻異常だけで復旧不能に近い状態へ入る** 可能性があるため、可用性上の運用制約として無視できません。
-
-#### なぜ成立するか
-
-- docs は、受信者が `session_tv_sec`, `session_tv_nsec`, `session_id` の辞書順で新旧セッションを判定すると明記しています。  
-  参照: `app/porter/prod/docs/protocol.md:136-145`
-- 同じ docs で、`health_timeout_ms = 0` の場合は `peer_session_known` がクリアされず、時刻逆行した新セッションを永続的に破棄すると述べています。  
-  参照: `app/porter/prod/docs/protocol.md:151-170`
-- 実装も `CLOCK_REALTIME` をセッション時刻として使用しています。  
-  参照: `app/porter/prod/libsrc/porter/api/potr_service_open.c:99-107`
-
-#### 影響
-
-- NTP ステップ修正や手動時刻変更で通信断が長期化し得ます。
-- 通常運用では顕在化しないかもしれませんが、障害時の復旧容易性を考慮すると改善候補です。
+- `session_id` (乱数) と `session_tv_sec` / `session_tv_nsec` (`CLOCK_REALTIME` 由来の時刻) の 3 つ組 (session triplet) でセッションを識別します。
+- `unicast_bidir_n1` サーバーは、認証 (暗号化検証および証明書検証) を通過したパケットのみをセッション・ピア管理へ渡し、未認証パケットによって `max_peers` のスロットを消費しません。
 
 ## 設計上の制約・注意点
 
 ### ヘッダーは平文であり、メタデータ秘匿は提供しない
 
-docs は明確に、ヘッダー 40 バイトは平文のまま AAD で保護すると説明しています。  
-参照: `app/porter/prod/docs/config.md:181-189`
+72 バイトのヘッダーは平文のまま AAD で保護します。したがって、`service_id`、`session_id`、`seq_num`、`ack_num`、`flags`、`payload_len`、`protocol_version`、`tx_counter`、送信時刻などのメタデータは通信路上で観測可能です。改ざんは検知できますが、トラフィックのメタデータ自体は秘匿されません。
 
-したがって、`service_id`, `session_id`, `seq_num`, `ack_num`, `flags`, `payload_len`, `protocol_version` などのメタデータは観測可能です。改ざんは検知できても、**通信内容の全体像が秘匿されるわけではありません**。
+### auth = "psk" の passphrase 導出と鍵固定
 
-### forward secrecy / 動的鍵交換 / 鍵ローテーションは提供しない
+`auth = "psk"` で passphrase 形式の `encrypt_key` を使用する場合、鍵導出は `SHA-256(passphrase)` であり、salt やストレッチングを行いません。また、鍵ローテーションも行いません。強い鍵管理や前方秘匿性が必要な場合は、64 文字 hex の十分な乱数鍵を用いるか、`auth = "cert"` を使用してください。
 
-docs / 実装には、鍵交換, 再ネゴシエーション, セッション鍵導出の仕組みが見当たりません。  
-参照: `app/porter/prod/docs/config.md:181-192`, `app/porter/prod/libsrc/porter/protocol/config.c:372-444`
+### CLOCK_REALTIME ベースのセッション採用には、時刻逆行時の運用制約がある
 
-これは直ちに問題というより設計上の前提であり、安全性を「鍵が漏れない限り」と表現する場合、**その鍵を長期に固定で使う設計** であることを併記するのが適切です。
+受信者は `session_tv_sec`、`session_tv_nsec`、`session_id` の辞書順で新旧セッションを判定します。`health_timeout_ms = 0` の構成では `peer_session_known` がタイムアウトでクリアされないため、OS 時計が過去へ戻った場合に新セッションのパケットが旧セッション扱いとして破棄され続けます。通常運用では `health_timeout_ms > 0` を維持することで、タイムアウト後の再採用により自動回復できます。
 
-## 総評
+### 一対多の証明書方式における受信者間のなりすまし
 
-porter の暗号化ありバージョンは、**ヘッダー改ざん検知** と **ペイロード暗号化** を実装しており、閉域網でノードと設定を適切に管理して使うのであれば、現時点でも十分に実用的です。
-
-ただし、より強い安全性や将来の拡張性を求めるのであれば、以下の項目が改善候補として挙げられます。
-
-1. GCM ノンス設計が `session_id` 生成の強度に依存している点
-2. 相手認証は共有鍵の所持確認にとどまり、ピア固有の認証になっていない点
-3. 鍵管理は事前共有鍵、平文構成、SHA-256 直 hash に依存している点
-4. `CLOCK_REALTIME` ベースのセッション採用に可用性上の既知制限がある点
-
-従って、porter の暗号化は **閉域網での利用において十分に有用** である一方、**より強い脅威モデルに耐えるためには追加改善の余地がある**、というのが妥当な評価です。
-
-## 推奨対応
-
-- `session_id` を暗号学的乱数で生成し、必要ならノンスにタイムスタンプではなく **再起動後も衝突しない単調増加値** を組み込む。
-- passphrase 形式は廃止するか、少なくとも PBKDF2 / scrypt / Argon2 などの KDF に置き換える。
-- 共有鍵だけでなく、用途に応じてピア固有認証 (証明書、公開鍵、ノード ID 署名など) を導入する。
-- `CLOCK_REALTIME` 依存のセッション採用を見直し、時刻逆行時も安全に回復できる設計にする。
-
-## 対応済みメモ
-
-- 2026-04: `encrypt_enabled` 時は受信直後に `POTR_FLAG_ENCRYPTED` を必須化し、GCM タグ検証成功後のみ後続処理へ進めるよう修正しました。
-- これにより、N:1 モードで未認証パケットが `potr_internal_peer_create()` に到達して `peer slot` を消費する経路は解消しました。
+`multicast` と `broadcast` の `auth = "cert"` では、DATA と PING の保護に送信者が生成したグループ鍵を全受信者で共有します (受信報告と NACK は受信者ごとの鍵で保護します)。このため、正当なグループ鍵を配布された受信者が同じグループ鍵を用いて送信者を装うなりすましは対策の対象外です。

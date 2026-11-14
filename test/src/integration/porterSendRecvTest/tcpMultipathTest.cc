@@ -55,7 +55,9 @@ void put(bytes &out, size_t offset, uint64_t value, size_t width)
 // [サブ手順 名前=tcpMultipathTest.packet]
 bytes packet(uint32_t seq, uint16_t flags, const bytes &payload, bool encrypted)
 {
+    static uint64_t next_counter = 0;
     bytes out(header_size, 0);
+    put(out, 40, next_counter++, 8);
     put(out, 0, 7123, 8);
     put(out, 8, 1000, 8);
     put(out, 16, 123, 4);
@@ -75,8 +77,7 @@ bytes packet(uint32_t seq, uint16_t flags, const bytes &payload, bool encrypted)
         uint8_t nonce[POTR_CRYPTO_NONCE_SIZE] = {};
         uint8_t key[POTR_CRYPTO_KEY_SIZE] = {};
         memcpy(nonce, out.data() + 16, 4);
-        memcpy(nonce + 4, out.data() + 32, 2);
-        memcpy(nonce + 6, out.data() + 24, 4);
+        memcpy(nonce + 4, out.data() + 40, 8);
         bytes cipher(payload.size() + POTR_CRYPTO_TAG_SIZE);
         size_t len = cipher.size();
         EXPECT_EQ(CPLAT_OK, cplat_crypto_encrypt(cipher.data(), &len, payload.data(), payload.size(), key, nonce,
@@ -657,6 +658,51 @@ TEST_F(tcpMultipathTest, reconnect_path_and_finish_in_order)
     std::lock_guard<std::mutex> lock(s_mutex);
     EXPECT_EQ(first, s_received[1]);  // [確認_正常系] - s_received[1] が first と一致すること。
     EXPECT_EQ(second, s_received[2]); // [確認_正常系] - s_received[2] が second と一致すること。
+}
+// [サブ手順参照 名前=tcpMultipathTest.TearDown]
+
+// TCP の残存経路で保持 DATA を送り直しても重複配信やストリーム切断を起こさないことの確認
+// [サブ手順参照 名前=tcpMultipathTest.SetUp]
+TEST_F(tcpMultipathTest, retained_window_replay_on_remaining_path_preserves_stream)
+{
+    // Arrange
+    // [サブ手順参照 名前=tcpMultipathTest.open_receiver]
+    open_receiver(false, false, true);
+    const bytes first = {'a'};
+    const bytes second = {'b'};
+    const bytes third = {'c'};
+    // Pre-Assert
+    // Act
+    // [サブ手順参照 名前=tcpMultipathTest.send_packet]
+    // [サブ手順参照 名前=tcpMultipathTest.packet]
+    send_packet(0, data_packet(1, first, false));
+    bool actual_ret_first = wait_for([] { return s_received.size() == 2; });
+    // [手順] - 旧グループ相当の経路で通番 1 の配信を待つ。
+    ASSERT_TRUE(actual_ret_first); // [状態確認] - 旧経路の DATA を配信できること。
+    cplat_socket_shutdown(sockets[0]);
+    // [手順] - 旧経路を切断し、通番 2 は旧経路へ書き込まない。
+    // [サブ手順参照 名前=tcpMultipathTest.send_packet]
+    // [サブ手順参照 名前=tcpMultipathTest.packet]
+    send_packet(1, data_packet(0, bytes{'s'}, false));
+    // [サブ手順参照 名前=tcpMultipathTest.send_packet]
+    // [サブ手順参照 名前=tcpMultipathTest.packet]
+    send_packet(1, data_packet(1, first, false));
+    // [サブ手順参照 名前=tcpMultipathTest.send_packet]
+    // [サブ手順参照 名前=tcpMultipathTest.packet]
+    send_packet(1, data_packet(2, second, false));
+    // [サブ手順参照 名前=tcpMultipathTest.send_packet]
+    // [サブ手順参照 名前=tcpMultipathTest.packet]
+    send_packet(1, data_packet(3, third, false));
+    // [手順] - 新グループ相当の経路で直近 3 通番を送り直した後、新しい通番 3 を書き込む。
+    bool actual_ret_replayed = wait_for([] { return s_received.size() == 4; });
+    // [手順] - 残存経路からの配信完了を待つ。
+    // Assert
+    ASSERT_TRUE(actual_ret_replayed); // [確認_正常系] - 保持範囲内の欠番を補って配信を続けること。
+    std::lock_guard<std::mutex> lock(s_mutex);
+    EXPECT_EQ(first, s_received[1]); // [確認_正常系] - 受信済み通番を二重に配信しないこと。
+    EXPECT_EQ(second, s_received[2]); // [確認_正常系] - 欠けた通番を順番どおりに配信すること。
+    EXPECT_EQ(third, s_received[3]); // [確認_正常系] - 新しい DATA をその後に配信すること。
+    EXPECT_EQ(0U, s_disconnects); // [確認_正常系] - ストリーム全体を論理切断しないこと。
 }
 // [サブ手順参照 名前=tcpMultipathTest.TearDown]
 #endif

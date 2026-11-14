@@ -102,16 +102,13 @@ receiver:
 
 ## 暗号化時の nonce 規約
 
-暗号化 control packet の nonce は 12 バイトで、構成は以下です。
+暗号化パケット (FIN および FIN_ACK を含む) の nonce は 12 バイトで、構成は以下です。
 
 ```text
-[session_id:4B][flags:2B][seq_or_ack_num:4B][padding:2B]
+[session_id: 4B NBO][tx_counter: 8B NBO]
 ```
 
-- DATA / PING / FIN は `seq_num` を使用します。
-- NACK / REJECT / FIN_ACK は `ack_num` を使用します。
-
-したがって `FIN_ACK` を追加したことで、暗号化 control packet の検証側も `ack_num` ベースで nonce を計算する必要があります。
+FIN、FIN_ACK のいずれのパケットも送出ごとに `tx_counter` を採番し、72 バイトのヘッダー全体を AAD として保護します。
 
 ## シーケンス
 

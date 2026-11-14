@@ -27,6 +27,7 @@
 #include <porter/infra/potr_send_queue.h>
 #include <cplat/compress/compress.h>
 #include <cplat/runtime/memory_lock.h>
+#include <cplat/net/byteorder.h>
 #include <porter/infra/potr_trace.h>
 
 /*
@@ -158,6 +159,21 @@ static int send_impl(potr_context *handle, potr_peer_id peer_id, const void *dat
         ctx->service.type != POTR_TYPE_UNICAST_BIDIR_N1 && ctx->service.type != POTR_TYPE_TCP_BIDIR)
     {
         return POTR_ERR_UNSUPPORTED;
+    }
+
+    if (ctx->service.auth == POTR_AUTH_CERT && !ctx->is_multi_peer)
+    {
+        potr_packet packet = {0};
+        uint8_t key[POTR_CRYPTO_KEY_SIZE] = {0};
+        int ready;
+
+        packet.flags = cplat_hton16(POTR_FLAG_DATA);
+        ready = potr_internal_certificate_key(ctx, &ctx->tx_session, &packet, 1, key);
+        cplat_secure_zero(key, sizeof(key));
+        if (ready != POTR_OK)
+        {
+            return POTR_ERR_DISCONNECTED;
+        }
     }
 
     /*

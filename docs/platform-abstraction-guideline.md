@@ -7,8 +7,13 @@
 porter の製品コード (`prod/libsrc/porter/`、`prod/include/`、`prod/include_internal/`) に `PLATFORM_*` による分岐を置きません。
 
 > [!IMPORTANT]
-> OS 差異の吸収は cplat の責務であり、porter は cplat が提供する OS 非依存の API だけを呼び出します。
+> OS 差異の吸収は cplat の責務であり、porter は OS 依存の処理について cplat が提供する OS 非依存の API だけを呼び出します。
 > 新しい OS 分岐が必要になった場合は、porter 側に実装するのではなく cplat の対応するカテゴリを拡張してください。
+
+## 外部ライブラリの直接利用
+
+API に OS 差異のない外部ライブラリ (`cjson`、`OpenSSL` など) は、cplat を経由せず porter が直接利用します。  
+OpenSSL を呼び出す処理は porter 内部の 1 つのモジュールに集約し、内部ヘッダー (`prod/include_internal/`) には OpenSSL の型を出しません。cplat と porter は同じ OpenSSL 共有ライブラリを利用し、両者の間で受け渡すのは鍵などのバイト列のみとして OpenSSL のオブジェクトを受け渡しません。
 
 porter は通信に `cplat` の `net` カテゴリを使用し、OS のソケット API (`socket`、`bind`、`listen`、`accept`、`connect`、`getsockopt`、`setsockopt`、`sendto`、`recvfrom`、`poll`、`select` など) を直接呼び出しません。
 

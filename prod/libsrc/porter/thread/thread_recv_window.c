@@ -17,7 +17,6 @@
 #include <cplat/base/platform.h>
 #include <porter/infra/potr_send_queue.h>
 #include <cplat/clock/timespec.h>
-#include <cplat/crypto/crypto.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
@@ -26,6 +25,7 @@
 #include <porter/porter_const.h>
 #include <porter/porter_result.h>
 #include <porter/protocol/packet.h>
+#include <porter/protocol/packet_seal.h>
 #include <porter/protocol/seqnum.h>
 #include <porter/protocol/window.h>
 #include <porter/potr_context.h>
@@ -37,48 +37,6 @@
 /** NACK 重複抑制の時間窓 [ms]。この時間内の同一 ack_num の NACK は破棄する。 */
 #define POTR_NACK_DEDUP_MS 200U
 
-static int build_ctrl_pkt_wire(const potr_context *ctx, potr_packet *pkt, uint8_t *wire_buf, size_t *wire_len)
-{
-    /*
-     * 制御パケットはペイロードを持たない。暗号化する場合は平文長 0 で暗号化し、GCM タグだけをペイロードとして格納する。
-     * ヘッダーは平文のまま送信し、AAD として改ざんを検出する。
-     */
-    if (ctx->service.encrypt_enabled)
-    {
-        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t enc_out = POTR_CRYPTO_TAG_SIZE; /* 呼び出し時は出力先の容量、復帰後は書き込んだバイト数 */
-
-        pkt->flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
-        pkt->payload_len = cplat_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
-
-        /*
-         * nonce は session_id、flags、通番の順に詰め、残り 2 [byte] を 0 で埋める。
-         * 受信側のタグ検証 (thread_recv_validate.c) や他の送信経路も同じ配置で nonce を組み立てる。
-         */
-        memcpy(nonce, &pkt->session_id, 4);
-        memcpy(nonce + 4, &pkt->flags, 2);
-        memcpy(nonce + 6, &pkt->ack_num, 4); /* NACK と REJECT は対象通番を ack_num に持つ */
-        memset(nonce + 10, 0, 2);
-
-        memcpy(wire_buf, pkt, POTR_PACKET_HEADER_SIZE);
-
-        if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                                 wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
-        {
-            /* cplat の暗号化失敗には、porter の分類へ変換できる詳細コードがない。 */
-            return POTR_ERR_UNKNOWN;
-        }
-
-        *wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
-        return POTR_OK;
-    }
-
-    memcpy(wire_buf, pkt, POTR_PACKET_HEADER_SIZE);
-    *wire_len = potr_internal_packet_wire_size(pkt);
-
-    return POTR_OK;
-}
-
 static void fill_own_session_hdr(const thread_recv_slot *slot, potr_internal_packet_session_hdr *shdr)
 {
     shdr->service_id = slot->ctx->service.service_id;
@@ -86,52 +44,45 @@ static void fill_own_session_hdr(const thread_recv_slot *slot, potr_internal_pac
     session_ts_to_hdr(slot->session_ts, &shdr->session_tv_sec, &shdr->session_tv_nsec);
 }
 
-static void slot_send_wire_to_dests(thread_recv_slot *slot, const uint8_t *wire_buf, size_t wire_len)
+static void slot_send_packet(thread_recv_slot *slot, const potr_packet *packet)
 {
     potr_context *ctx = slot->ctx;
+    potr_internal_tx_session *session = &ctx->tx_session;
+    int count = ctx->n_path;
+    uint8_t paths = UINT8_MAX;
     int i;
 
-    /*
-     * 制御パケットと再送データの送信失敗は経路上の欠落と同様に扱い、ここでは再試行しない。
-     * このため cplat_socket_sendto() の戻り値は意図的に破棄する。
-     */
     if (slot->peer != NULL)
     {
-        /* N:1 ではピアの送信先を受信時に経路ごとへ学習するため、未学習の経路はスキップする。 */
-        for (i = 0; i < (int)POTR_MAX_PATH; i++)
-        {
-            size_t sent = 0;
-
-            if (endpoint_is_unset(&slot->dest_addr[i]))
-            {
-                continue;
-            }
-
-            (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &slot->dest_addr[i], &sent, NULL);
-        }
-
-        return;
+        session = &slot->peer->tx_session;
+        count = (int)POTR_MAX_PATH;
     }
+    if ((cplat_ntoh16(packet->flags) & (POTR_FLAG_DATA | POTR_FLAG_REJECT)) != 0U)
+    {
+        potr_internal_path_group_result selection;
 
-    for (i = 0; i < ctx->n_path; i++)
+        if (potr_internal_path_group_select(ctx, slot->peer, &selection) != POTR_OK)
+        {
+            return;
+        }
+        paths = selection.selected_paths;
+    }
+    for (i = 0; i < count; i++)
     {
         size_t sent = 0;
+        size_t wire_len = POTR_PACKET_HEADER_SIZE + ctx->global.max_payload;
 
-        (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &slot->dest_addr[i], &sent, NULL);
+        if ((paths & (uint8_t)(1U << i)) == 0U ||
+            (slot->peer != NULL && endpoint_is_unset(&slot->dest_addr[i])))
+        {
+            continue;
+        }
+        if (potr_internal_packet_seal_for_context(ctx, session, packet, ctx->recv_buf, &wire_len) != POTR_OK)
+        {
+            return;
+        }
+        (void)cplat_socket_sendto(ctx->sock[i], ctx->recv_buf, wire_len, &slot->dest_addr[i], &sent, NULL);
     }
-}
-
-static void slot_send_ctrl(thread_recv_slot *slot, potr_packet *pkt)
-{
-    uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
-    size_t wire_len;
-
-    if (build_ctrl_pkt_wire(slot->ctx, pkt, wire_buf, &wire_len) != POTR_OK)
-    {
-        return;
-    }
-
-    slot_send_wire_to_dests(slot, wire_buf, wire_len);
 }
 
 static void slot_send_nack(thread_recv_slot *slot, uint32_t nack_seq)
@@ -153,7 +104,7 @@ static void slot_send_nack(thread_recv_slot *slot, uint32_t nack_seq)
     /* N:1 と POTR_TYPE_UNICAST_BIDIR は、slot->dest_addr に設定済みの送信先へ返送する。 */
     if (slot->peer != NULL || ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
     {
-        slot_send_ctrl(slot, &nack_pkt);
+        slot_send_packet(slot, &nack_pkt);
         return;
     }
 
@@ -162,11 +113,6 @@ static void slot_send_nack(thread_recv_slot *slot, uint32_t nack_seq)
      * 返送先のポートは設定値の src_port を優先し、0 なら受信時に学習した peer_port を使う。
      * どちらも未確定の経路には返送できないためスキップする。
      */
-    if (build_ctrl_pkt_wire(ctx, &nack_pkt, wire_buf, &wire_len) != POTR_OK)
-    {
-        return;
-    }
-
     for (i = 0; i < ctx->n_path; i++)
     {
         cplat_ipv4_endpoint dest = {0};
@@ -188,7 +134,16 @@ static void slot_send_nack(thread_recv_slot *slot, uint32_t nack_seq)
         }
 
         dest.address = ctx->src_addr_resolved[i];
+        if (dest.address == 0U)
+        {
+            dest.address = ctx->peer_address[i];
+        }
         dest.port = port;
+        wire_len = sizeof(wire_buf);
+        if (potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &nack_pkt, wire_buf, &wire_len) != POTR_OK)
+        {
+            return;
+        }
         (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &dest, &sent, NULL);
     }
 }
@@ -205,7 +160,7 @@ static void slot_send_reject(thread_recv_slot *slot, uint32_t seq_num)
         return;
     }
 
-    slot_send_ctrl(slot, &reject_pkt);
+    slot_send_packet(slot, &reject_pkt);
 }
 
 static int reorder_gap_ready(thread_recv_slot *slot, uint32_t nack_num)
@@ -404,20 +359,19 @@ static void slot_retransmit_or_reject(thread_recv_slot *slot, uint32_t ack_num)
 {
     potr_context *ctx = slot->ctx;
     potr_packet resend_pkt;
-    size_t wire_len = 0;
     int get_result;
 
     /*
      * 送信ウィンドウは送信スレッドと共有する。送信スレッドを待たせず、かつ解放後の上書きも防ぐため、
-     * ロック中は ctx->recv_buf へのコピーだけを行い、ソケット送信はロック解放後に行う。
+     * ロック中は受信スレッド専用の復号バッファーへ平文をコピーし、ロック解放後に封緘して送信する。
+     * NACK は平文ペイロードを持たないため、復号バッファーの再利用は受信内容と競合しない。
      */
     cplat_local_lock_lock(slot->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
     get_result = potr_internal_window_send_get(slot->send_window, ack_num, &resend_pkt);
     if (get_result == POTR_OK)
     {
-        wire_len = potr_internal_packet_wire_size(&resend_pkt);
-        memcpy(ctx->recv_buf, &resend_pkt, POTR_PACKET_HEADER_SIZE);
-        memcpy(ctx->recv_buf + POTR_PACKET_HEADER_SIZE, resend_pkt.payload, wire_len - POTR_PACKET_HEADER_SIZE);
+        memcpy(ctx->recv_crypto_buf, resend_pkt.payload, cplat_ntoh16(resend_pkt.payload_len));
+        resend_pkt.payload = ctx->recv_crypto_buf;
     }
 
     cplat_local_lock_unlock(slot->send_window_mutex);
@@ -426,7 +380,7 @@ static void slot_retransmit_or_reject(thread_recv_slot *slot, uint32_t ack_num)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: peer=%u NACK seq=%u -> retransmit",
                    ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)ack_num);
-        slot_send_wire_to_dests(slot, ctx->recv_buf, wire_len);
+        slot_send_packet(slot, &resend_pkt);
     }
     else
     {
@@ -679,7 +633,18 @@ void thread_recv_window_scan_ping_gap(thread_recv_slot *slot, const potr_packet 
     /*
      * 1:1 の通常モードでは、next_seq から PING の seq_num の手前まで未着の通番を順に走査して NACK を送る。
      * 待機期限に達していない欠番に当たった時点で走査を打ち切り、残りは期限後の判定に回す。
+     * 既に next_seq が進んでいる古い PING では走査しない。
      */
+    if (pkt->seq_num == next_seq)
+    {
+        *slot->reorder_pending = 0;
+        return;
+    }
+    if ((int32_t)(pkt->seq_num - next_seq) < 0)
+    {
+        return;
+    }
+
     {
         uint32_t scan_seq = next_seq;
 

@@ -59,14 +59,20 @@
                                        *   POTR_FLAG_DATA と組み合わせる場合: [ヘッダー][暗号文: packed_len B][GCM 認証タグ: 16B]。\n
                                        *   POTR_FLAG_PING と組み合わせる場合: [ヘッダー][暗号文: POTR_MAX_PATH B][GCM 認証タグ: 16B]。\n
                                        *   その他 (NACK/REJECT/FIN/FIN_ACK): ペイロードなし (平文 0B) の GCM 認証タグのみ (16B)。\n
-                                       *   いずれの場合もヘッダー全体が AAD として認証される。\n
-                                       *   Nonce (12B) = session_id (4B NBO) + flags (2B NBO) + seq_or_ack_num (4B NBO) + padding (2B 0x00)。\n
-                                       *   flags には本フラグを含んだ実際の送信フラグ値を使用します。\n
-                                       *   seq_or_ack_num は DATA/PING/FIN の場合 seq_num、NACK/REJECT/FIN_ACK の場合 ack_num。 */
+                                       *   いずれの場合も 72 [byte]のヘッダー全体が AAD として認証されます。\n
+                                       *   Nonce (12B) = session_id (4B NBO) + tx_counter (8B NBO)。\n
+                                       *   経路ごとの複製、再送と制御パケットも送出ごとに tx_counter を採番します。 */
 #define POTR_FLAG_FIN_TARGET_VALID \
     0x0040U /**< FIN の ack_num が有効な受信完了目標 next_seq を表すことを示すフラグ。未設定時の FIN は no-data FIN として扱い、ack_num は無視します。 */
 #define POTR_FLAG_FIN_ACK \
     0x0080U /**< FIN 処理完了応答パケットであることを示すフラグ。ack_num に完了した fin_target_seq を格納します。 */
+#define POTR_FLAG_REPORT \
+    0x0100U /**< 受信報告パケット。受信者自身のセッション識別子を使い、seq_num と ack_num は 0。ペイロードは POTR_MAX_PATH バイトの経路受信状態 (POTR_PING_STATE_*)。暗号化有効時は PING と同じ方式で保護します。 */
+#define POTR_FLAG_HANDSHAKE \
+    0x0200U /**< 相互認証と鍵確立のための TLS / DTLS ハンドシェイクのバイト列をペイロードに格納するパケット。封緘は鍵なしの平文です。 */
+#define POTR_FLAG_KEY \
+    0x0400U /**< 一対多通信のグループ鍵を配布するパケット。受信者の証明書を検証した後、受信者用の鍵でグループ鍵を暗号化して送ります。 */
+
 /** @} */
 
 /** @defgroup POTR_ELEM_FLAG ペイロード エレメント フラグ (パック コンテナー内エレメント ヘッダー.flags)
@@ -94,7 +100,7 @@
  *  @ingroup        POTR_PROTOCOL
  *  @{
  */
-#define POTR_PROTOCOL_VERSION 1U /**< 現行の porter ワイヤー プロトコル バージョン。 */
+#define POTR_PROTOCOL_VERSION 2U /**< 現行の porter ワイヤー プロトコル バージョン。 */
 /** @} */
 
 /** @defgroup POTR_DEFAULT デフォルト値
@@ -141,7 +147,7 @@
 #define POTR_CRYPTO_KEY_SIZE \
     32U /**< AES-256-GCM 鍵サイズ [byte]。設定ファイルの encrypt_key に 64 文字 hex で指定します。 */
 #define POTR_CRYPTO_NONCE_SIZE \
-    12U /**< AES-256-GCM ノンス サイズ [byte]。session_id (4B NBO) + flags (2B NBO) + seq_or_ack_num (4B NBO) + padding (2B 0x00) で構成します。 */
+    12U /**< AES-256-GCM ノンス サイズ [byte]。session_id (4B NBO) + tx_counter (8B NBO) で構成し、72 [byte]のヘッダー全体を AAD に使用します。 */
 #define POTR_CRYPTO_TAG_SIZE 16U /**< AES-256-GCM 認証タグ サイズ [byte]。暗号文の直後に付加します。 */
 /** @} */
 
@@ -154,8 +160,10 @@
  *  @{
  */
 #define POTR_MAX_ADDR_LEN 64U /**< アドレス文字列の最大長 (バイト、終端 NUL を含む)。 */
+#define POTR_UDP_MAX_DATAGRAM_PAYLOAD 65507U /**< IPv4 UDP データグラムの最大ペイロード長 [byte]。65535 - IP20 - UDP8。 */
+#define POTR_PACKET_HEADER_WIRE_SIZE 72U /**< 外側パケットのワイヤー ヘッダー長 [byte]。 */
 #define POTR_MAX_PAYLOAD \
-    65507U /**< ペイロードの最大長 [byte]。UDP 最大ペイロード (65535 - IP20 - UDP8)。max_payload 設定値のバリデーション上限として使用します。 */
+    (POTR_UDP_MAX_DATAGRAM_PAYLOAD - POTR_PACKET_HEADER_WIRE_SIZE) /**< ペイロードの最大長 [byte]。max_payload 設定値の検査上限。 */
 #define POTR_MAX_WINDOW_SIZE \
     256U /**< ウィンドウ サイズの最大値 (パケット数)。window_size 設定値のバリデーション上限として使用します。 */
 #define POTR_MAX_SERVICES \
@@ -166,7 +174,8 @@
     1024U /**< 非同期送信キューの最大エントリ数のデフォルト値。設定ファイルの send_queue_depth で変更可能。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。 */
 #define POTR_PAYLOAD_ELEM_HDR_SIZE \
     6U /**< パック コンテナー内ペイロード エレメントのヘッダー サイズ [byte]。flags (2): POTR_FLAG_MORE_FRAG / POTR_FLAG_COMPRESSED を格納 + payload_len (4): uint32_t (NBO)。通番は外側パケットで管理するためペイロード エレメントには含まない。 */
-#define POTR_MAX_PATH 4U /**< マルチパスの最大パス数。 */
+#define POTR_MAX_PATH 8U /**< マルチパスの最大パス数。 */
+#define POTR_MAX_PATH_GROUP 4U /**< 経路の優先グループ番号の最大値。番号が小さいほど優先度が高い。 */
 /** @} */
 
 /** @defgroup POTR_PING_STATE PING 受信状態 (PING ペイロードの各パス フィールド値)

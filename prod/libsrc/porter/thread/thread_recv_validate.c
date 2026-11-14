@@ -12,209 +12,88 @@
  */
 
 #include <string.h>
+#include <cplat/runtime/memory_lock.h>
 #include <inttypes.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/protocol/packet.h>
+#include <porter/protocol/packet_seal.h>
 #include <porter/infra/potr_trace.h>
-#include <cplat/crypto/crypto.h>
 #include <cplat/net/byteorder.h>
 
 #include "thread_recv_validate.h"
-
-/* 認証不成立と内部処理失敗を通信側でも区別する。 */
-static int authentication_result(const int ret)
-{
-    if (ret == CPLAT_ERR_AUTHENTICATION_FAILED)
-    {
-        return POTR_ERR_PROTOCOL;
-    }
-    if (ret == CPLAT_ERR_OUT_OF_MEMORY)
-    {
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-    if (ret == CPLAT_ERR_INVALID_ARGUMENT || ret == CPLAT_ERR_BUFFER_TOO_SMALL || ret == CPLAT_ERR_OUT_OF_RANGE)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-    /* 他の分類へ写せない backend の失敗は、内部障害として通知する。 */
-    return POTR_ERR_UNKNOWN;
-}
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const uint8_t *wire_hdr,
                                     const char *log_prefix, int path_idx)
 {
-    /*
-     * 暗号化を要求するサービスは、ENCRYPTED のないパケットを破棄する。
-     * 暗号化を要求しないサービスは、平文のパケットを受理する。
-     * 正本は app/porter/docs/config.md の「encrypt_key の詳細」節である。
-     */
-    if (!(pkt->flags & POTR_FLAG_ENCRYPTED))
+    uint8_t dummy[1];
+    uint8_t *plaintext = ctx->recv_crypto_buf;
+    size_t capacity = ctx->crypto_buf_size;
+    const uint8_t *key = NULL;
+    uint8_t derived_key[POTR_CRYPTO_KEY_SIZE] = {0};
+    int ret;
+
+    if (pkt->flags & (POTR_FLAG_HANDSHAKE | POTR_FLAG_KEY))
     {
-        if (!ctx->service.encrypt_enabled)
-        {
-            return POTR_OK;
-        }
-
-        if (path_idx >= 0)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "%s[service_id=%" PRId64 " path=%d]: missing ENCRYPTED flag, dropping flags=0x%04x", log_prefix,
-                       ctx->service.service_id, path_idx, (unsigned)pkt->flags);
-        }
-        else
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "%s[service_id=%" PRId64 "]: missing ENCRYPTED flag, dropping flags=0x%04x", log_prefix,
-                       ctx->service.service_id, (unsigned)pkt->flags);
-        }
-
         return POTR_ERR_PROTOCOL;
     }
-
-    /*
-     * DATA と PING は暗号文のペイロードを復号する。
-     * AAD には受信ヘッダー wire_hdr を使い、ヘッダーの改ざんを検出する。
-     * 正本は app/porter/docs/config.md の「encrypt_key の詳細」節である。
-     * 解析済みフィールドはホスト バイト オーダーなので、ノンスへ詰める前にネットワーク バイト オーダーへ戻す。
-     * ノンスは session_id、flags、seq_num、2 [byte] の 0 の順で、flags は ENCRYPTED を含んだ送信時の値である。
-     * 正本は app/porter/docs/config.md の「ノンス構成」節である。
-     */
-    if ((pkt->flags & POTR_FLAG_ENCRYPTED) && (pkt->flags & (POTR_FLAG_DATA | POTR_FLAG_PING)))
+    if (ctx->service.auth == POTR_AUTH_CERT)
     {
-        int decrypt_ret;
-        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t dec_len = ctx->crypto_buf_size; /* 呼び出し時は出力先の容量、復帰後は平文のバイト数 */
-        uint32_t sid_nbo = cplat_hton32(pkt->session_id);
-        uint16_t flags_nbo = cplat_hton16((uint16_t)pkt->flags);
-        uint32_t seq_nbo = cplat_hton32(pkt->seq_num);
-
-        memcpy(nonce, &sid_nbo, 4);
-        memcpy(nonce + 4, &flags_nbo, 2);
-        memcpy(nonce + 6, &seq_nbo, 4);
-        memset(nonce + 10, 0, 2);
-
-        if (pkt->payload_len < POTR_CRYPTO_TAG_SIZE)
+        if (!(pkt->flags & POTR_FLAG_ENCRYPTED))
         {
             return POTR_ERR_PROTOCOL;
         }
-        decrypt_ret = cplat_crypto_decrypt(ctx->recv_crypto_buf, &dec_len, pkt->payload, pkt->payload_len,
-                                           ctx->service.encrypt_key, nonce, wire_hdr, POTR_PACKET_HEADER_SIZE);
-        if (decrypt_ret != CPLAT_OK)
+        ret = potr_internal_certificate_key(ctx, NULL, pkt, 0, derived_key);
+        if (ret != POTR_OK)
         {
-            if (path_idx >= 0)
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 " path=%d]: decrypt failed seq=%u",
-                           log_prefix, ctx->service.service_id, path_idx, (unsigned)pkt->seq_num);
-            }
-            else
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "%s[service_id=%" PRId64 "]: decrypt failed seq=%u", log_prefix,
-                           ctx->service.service_id, (unsigned)pkt->seq_num);
-            }
-
-            return authentication_result(decrypt_ret);
+            cplat_secure_zero(derived_key, sizeof(derived_key));
+            return ret;
         }
+        key = derived_key;
+    }
+    else if (ctx->service.encrypt_enabled || (pkt->flags & POTR_FLAG_ENCRYPTED))
+    {
+        key = ctx->service.encrypt_key;
+    }
+    if (!(pkt->flags & (POTR_FLAG_DATA | POTR_FLAG_PING | POTR_FLAG_REPORT)))
+    {
+        plaintext = dummy;
+        capacity = sizeof(dummy);
+    }
+    ret = potr_internal_packet_open(pkt, wire_hdr, key, plaintext, capacity);
+    cplat_secure_zero(derived_key, sizeof(derived_key));
+    if (ret != POTR_OK)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                   "%s[service_id=%" PRId64 " path=%d]: authentication failed result=%d",
+                   log_prefix, ctx->service.service_id, path_idx, ret);
+    }
+    return ret;
+}
 
-        /*
-         * 解析直後の payload はワイヤ上の暗号文を指す。
-         * 復号した平文は認証タグを含まず、ctx の復号バッファーにあるので payload を付け替える。
-         */
-        pkt->payload = ctx->recv_crypto_buf;
-        pkt->payload_len = (uint16_t)dec_len;
-        pkt->flags = (uint16_t)(pkt->flags & ~POTR_FLAG_ENCRYPTED);
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int thread_recv_replay_packet(potr_internal_replay_window *window, const potr_packet *packet,
+                               const uint8_t *wire_header)
+{
+    uint16_t flags;
+    int ret;
+
+    memcpy(&flags, wire_header + 32U, sizeof(flags));
+    if (!(cplat_ntoh16(flags) & POTR_FLAG_ENCRYPTED))
+    {
         return POTR_OK;
     }
-
-    /*
-     * DATA と PING 以外の暗号化パケットは、ペイロードが認証タグだけである。
-     * 長さが違えば破棄する。
-     */
-    if (pkt->payload_len != POTR_CRYPTO_TAG_SIZE)
+    ret = potr_internal_replay_window_accept(window, packet);
+    if (ret != POTR_OK)
     {
-        if (path_idx >= 0)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "%s[service_id=%" PRId64 " path=%d]: encrypted control pkt bad len=%u flags=0x%04x", log_prefix,
-                       ctx->service.service_id, path_idx, (unsigned)pkt->payload_len, (unsigned)pkt->flags);
-        }
-        else
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "%s[service_id=%" PRId64 "]: encrypted control pkt bad len=%u flags=0x%04x", log_prefix,
-                       ctx->service.service_id, (unsigned)pkt->payload_len, (unsigned)pkt->flags);
-        }
-
-        return POTR_ERR_PROTOCOL;
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                   "replay: dropping session=%u counter=%" PRIu64,
+                   (unsigned)packet->session_id, packet->tx_counter);
     }
-
-    {
-        /*
-         * 平文長が 0 でも cplat_crypto_decrypt() は出力先に NULL を受け付けないため、dummy を渡す。
-         * AAD には受信ヘッダー wire_hdr を使い、ヘッダーの改ざんを検出する。
-         * 正本は app/porter/docs/config.md の「encrypt_key の詳細」節である。
-         * NACK、REJECT、FIN_ACK は対象通番を ack_num に持つ。それ以外は seq_num をノンスに使う。
-         * 解析済みフィールドはホスト バイト オーダーなので、詰める前にネットワーク バイト オーダーへ戻す。
-         * ノンスは session_id、flags、通番、2 [byte] の 0 の順で、flags は ENCRYPTED を含んだ送信時の値である。
-         * 正本は app/porter/docs/config.md の「ノンス構成」節である。
-         */
-        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        int decrypt_ret;
-        uint8_t dummy[1];
-        size_t dummy_len = sizeof(dummy); /* 呼び出し時は出力先の容量、復帰後は平文のバイト数 */
-        uint32_t val;
-        uint32_t sid_nbo = cplat_hton32(pkt->session_id);
-        uint16_t flags_nbo = cplat_hton16((uint16_t)pkt->flags);
-        uint32_t val_nbo;
-
-        if ((pkt->flags & (POTR_FLAG_NACK | POTR_FLAG_REJECT | POTR_FLAG_FIN_ACK)) != 0)
-        {
-            val = pkt->ack_num;
-        }
-        else
-        {
-            val = pkt->seq_num;
-        }
-
-        val_nbo = cplat_hton32(val);
-
-        memcpy(nonce, &sid_nbo, 4);
-        memcpy(nonce + 4, &flags_nbo, 2);
-        memcpy(nonce + 6, &val_nbo, 4);
-        memset(nonce + 10, 0, 2);
-
-        decrypt_ret = cplat_crypto_decrypt(dummy, &dummy_len, pkt->payload, POTR_CRYPTO_TAG_SIZE,
-                                           ctx->service.encrypt_key, nonce, wire_hdr, POTR_PACKET_HEADER_SIZE);
-        if (decrypt_ret != CPLAT_OK)
-        {
-            if (path_idx >= 0)
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                           "%s[service_id=%" PRId64 " path=%d]: tag verification failed flags=0x%04x", log_prefix,
-                           ctx->service.service_id, path_idx, (unsigned)pkt->flags);
-            }
-            else
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                           "%s[service_id=%" PRId64 "]: tag verification failed flags=0x%04x", log_prefix,
-                           ctx->service.service_id, (unsigned)pkt->flags);
-            }
-
-            return authentication_result(decrypt_ret);
-        }
-    }
-
-    /*
-     * 制御パケットのワイヤ上のペイロードは認証タグだけであり、平文はない。
-     * 検証後は payload を外す。
-     */
-    pkt->flags = (uint16_t)(pkt->flags & ~POTR_FLAG_ENCRYPTED);
-    pkt->payload_len = 0;
-    pkt->payload = NULL;
-
-    return POTR_OK;
+    return ret;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -241,6 +120,23 @@ int thread_recv_check_src_addr(const potr_context *ctx, const cplat_ipv4_endpoin
         }
 
         return 1;
+    }
+
+    if (ctx->role == POTR_ROLE_SENDER && is_oneway_udp_type(ctx->service.type) &&
+        (!is_raw_type(ctx->service.type) || ctx->service.auth == POTR_AUTH_CERT))
+    {
+        if (raw_base_type(ctx->service.type) != POTR_TYPE_UNICAST)
+        {
+            return 1;
+        }
+        for (i = 0; i < ctx->n_path; i++)
+        {
+            if (sender->address == ctx->dst_addr_resolved[i])
+            {
+                return 1;
+            }
+        }
+        return 0;
     }
 
     /* 1:1 双方向では、役割に応じた相手アドレスを照合する。 */

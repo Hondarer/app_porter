@@ -67,8 +67,15 @@ static int generate_session(potr_context *ctx)
         return ret;
     }
 
-    cplat_atomic_store_u64(&ctx->last_ping_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
-    cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
+    potr_internal_tx_session_init(&ctx->tx_session);
+    for (size_t path_idx = 0U; path_idx < POTR_MAX_PATH; path_idx++)
+    {
+        cplat_atomic_store_u64(&ctx->last_ping_send_ms[path_idx], 0U, CPLAT_MEMORY_ORDER_RELAXED);
+    }
+    for (size_t path_idx = 0U; path_idx < POTR_MAX_PATH; path_idx++)
+    {
+        cplat_atomic_store_u64(&ctx->last_valid_data_send_ms[path_idx], 0U, CPLAT_MEMORY_ORDER_RELAXED);
+    }
 
     return CPLAT_OK;
 }
@@ -131,6 +138,42 @@ static int open_validate_callback(const potr_context *ctx, potr_role role, potr_
  */
 static int open_validate_config(potr_context *ctx)
 {
+    size_t path_idx;
+
+    for (path_idx = 0; path_idx < POTR_MAX_PATH; path_idx++)
+    {
+        if (ctx->service.path_group[path_idx] > POTR_MAX_PATH_GROUP)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                       "potr_service_open: service_id=%" PRId64 " invalid path_group%u=%u",
+                       ctx->service.service_id, (unsigned)(path_idx + 1U),
+                       (unsigned)ctx->service.path_group[path_idx]);
+            return POTR_ERR_INVALID_ARGUMENT;
+        }
+    }
+
+    if (is_raw_type(ctx->service.type))
+    {
+        for (path_idx = 0; path_idx < POTR_MAX_PATH; path_idx++)
+        {
+            if (ctx->service.path_group[path_idx] > 1U)
+            {
+                POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                           "potr_service_open: path_group is ignored in RAW mode (service_id=%" PRId64 ")",
+                           ctx->service.service_id);
+                break;
+            }
+        }
+    }
+
+    for (path_idx = 0; path_idx < POTR_MAX_PATH; path_idx++)
+    {
+        if (ctx->service.path_group[path_idx] == 0U)
+        {
+            ctx->service.path_group[path_idx] = 1U;
+        }
+    }
+
     /* max_payload の許容範囲の正本は app/porter/docs/config.md の「global オブジェクト」節である。 */
     if (ctx->global.max_payload < 64U || ctx->global.max_payload > POTR_MAX_PAYLOAD)
     {
@@ -237,7 +280,7 @@ static int alloc_context_buffers(potr_context *ctx)
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
-    ctx->crypto_buf_size = ctx->global.max_payload + POTR_CRYPTO_TAG_SIZE;
+    ctx->crypto_buf_size = POTR_PACKET_HEADER_SIZE + ctx->global.max_payload + POTR_CRYPTO_TAG_SIZE;
     ctx->crypto_buf = (uint8_t *)cplat_malloc(ctx->crypto_buf_size);
     if (ctx->crypto_buf == NULL)
     {
@@ -515,6 +558,7 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
 
     memcpy(&ctx->global, global, sizeof(potr_global_config));
     memcpy(&ctx->service, service, sizeof(potr_service_def));
+    ctx->role = role;
 
     /* 型が確定した後に、SENDER と callback の整合性と設定値を検証する。 */
     result = open_validate_callback(ctx, role, callback);
@@ -523,6 +567,13 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         result = open_validate_config(ctx);
     }
 
+    if (result != POTR_OK)
+    {
+        ctx_cleanup(ctx);
+        return result;
+    }
+
+    result = potr_internal_certificate_initialize(ctx, service);
     if (result != POTR_OK)
     {
         ctx_cleanup(ctx);
@@ -561,6 +612,12 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
                    ctx->service.service_id);
         ctx_cleanup(ctx);
         return POTR_ERR_UNKNOWN;
+    }
+
+    if (cplat_clock_get_monotonic_ms(&ctx->started_ms) != CPLAT_OK)
+    {
+        ctx_cleanup(ctx);
+        return POTR_ERR_IO;
     }
 
     result = alloc_context_buffers(ctx);

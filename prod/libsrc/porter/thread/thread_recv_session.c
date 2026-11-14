@@ -17,6 +17,7 @@
 #include <porter/infra/potr_send_queue.h>
 #include <porter/porter_const.h>
 #include <porter/protocol/packet.h>
+#include <porter/protocol/packet_seal.h>
 #include <porter/protocol/window.h>
 #include <porter/potr_path_event.h>
 #include <porter/infra/potr_trace.h>
@@ -38,7 +39,12 @@ static void slot_clear_pending_fin(thread_recv_slot *slot)
 int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
 {
     potr_context *ctx = slot->ctx;
+    potr_internal_replay_window *replay_window = &ctx->replay_window;
 
+    if (slot->peer != NULL)
+    {
+        replay_window = &slot->peer->replay_window;
+    }
     if (!*slot->peer_session_known)
     {
         /*
@@ -50,6 +56,10 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
          * FIN/タイムアウト後は送信者が同一セッションのまま任意の seq から
          * 再開する可能性があるため pkt->seq_num を使用する。
          */
+        if (ctx->service.encrypt_enabled)
+        {
+            potr_internal_replay_window_prepare(replay_window, pkt);
+        }
         *slot->peer_session_id = pkt->session_id;
         session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, slot->peer_session_ts);
         *slot->peer_session_known = 1;
@@ -118,6 +128,10 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
      * 送信済みの seq に直接同期し、不要な NACK/REJECT サイクルを発生させない。
      * 送信者を先に起動して受信者が後から参加した場合も同様に機能する。
      */
+    if (ctx->service.encrypt_enabled)
+    {
+        potr_internal_replay_window_prepare(replay_window, pkt);
+    }
     *slot->peer_session_id = pkt->session_id;
     *slot->peer_session_ts = pkt_session_ts;
     *slot->reorder_pending = 0;
@@ -222,6 +236,8 @@ void thread_recv_sync_path_state(thread_recv_slot *slot)
         potr_internal_sync_peer_path_state_locked(slot->peer, next_states, &prepared);
         potr_internal_emit_peer_path_events_locked(ctx, slot->peer, &prepared);
         cplat_local_lock_unlock(ctx->callback_mutex);
+        potr_internal_path_group_result selection;
+        (void)potr_internal_path_group_select(ctx, slot->peer, &selection);
         return;
     }
 
@@ -242,6 +258,8 @@ void thread_recv_sync_path_state(thread_recv_slot *slot)
     potr_internal_sync_service_path_state_locked(ctx, next_states, &prepared);
     potr_internal_emit_service_path_events_locked(ctx, &prepared);
     cplat_local_lock_unlock(ctx->callback_mutex);
+    potr_internal_path_group_result selection;
+    (void)potr_internal_path_group_select(ctx, NULL, &selection);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -268,6 +286,7 @@ void thread_recv_learn_sender_path(thread_recv_slot *slot, int path_idx, const c
     }
 
     ctx->peer_port[path_idx] = sender->port;
+    ctx->peer_address[path_idx] = sender->address;
 
     if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
     {

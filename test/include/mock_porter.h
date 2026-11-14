@@ -34,9 +34,20 @@ extern "C"
 #include "../../prod/libsrc/porter/thread/thread_connect_prepare.h"
 #include "../../prod/libsrc/porter/thread/thread_recv_window.h"
 #include "../../prod/libsrc/porter/thread/thread_recv_health.h"
+#include "../../prod/libsrc/porter/thread/thread_recv_report.h"
 }
 
 #if defined(COMPILER_MSVC)
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_certificate_connect")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_certificate_key")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_certificate_tick")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_certificate_receive")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_certificate_dispose")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_certificate_state_dispose")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_certificate_initialize")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_path_group_select")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_receiver_accept")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_report_tick")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_peer_find_by_id")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_peer_send_fin")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_peer_free")
@@ -47,6 +58,7 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_api_context_has_threads")
     #pragma comment(linker, "/INCLUDE:_mock_impl_api_open_paths_by_type")
     #pragma comment(linker, "/INCLUDE:_mock_impl_api_setup_dest_addr")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_callback_emit")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_callback_mutex_dispose")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_callback_mutex_init")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_comm_recv_thread_start")
@@ -105,9 +117,11 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_window_init")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_window_recv_pop")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_window_recv_push")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_window_send_get")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_window_send_push")
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_apply_remote_path_ping_state")
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_authenticate_packet")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_replay_packet")
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_check_src_addr")
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_disconnect_peer_all_paths")
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_disconnect_service_all_paths")
@@ -161,6 +175,8 @@ class Mock_porter
     MOCK_METHOD(int, api_context_has_threads, (const potr_context *ctx));
     MOCK_METHOD(int, api_open_paths_by_type, (potr_context * ctx, potr_role role));
     MOCK_METHOD(int, api_setup_dest_addr, (potr_context * ctx, potr_role role));
+    MOCK_METHOD(void, potr_internal_callback_emit,
+                (potr_context * ctx, potr_peer_id peer_id, potr_event event, const void *data, size_t len));
     MOCK_METHOD(void, potr_internal_callback_mutex_dispose, (potr_context * ctx));
     MOCK_METHOD(int, potr_internal_callback_mutex_init, (potr_context * ctx));
     MOCK_METHOD(int, potr_internal_comm_recv_thread_start, (potr_context * ctx));
@@ -229,7 +245,7 @@ class Mock_porter
     MOCK_METHOD(int, potr_internal_tcp_recv_thread_start, (potr_context * ctx, int path_idx));
     MOCK_METHOD(int, potr_internal_tcp_recv_thread_stop, (potr_context * ctx, int path_idx));
     MOCK_METHOD(int, potr_internal_tcp_send_control_packet,
-                (const potr_context *ctx, potr_packet *pkt, uint32_t nonce_val));
+                (potr_context *ctx, const potr_packet *pkt));
     MOCK_METHOD(int, potr_internal_tcp_send_ping_now, (potr_context * ctx, int path_idx));
     MOCK_METHOD(int, potr_internal_tcp_announce_ping_state_locked, (potr_context * ctx, int path_idx));
     MOCK_METHOD(void, potr_internal_window_dispose, (potr_internal_window * win));
@@ -237,10 +253,14 @@ class Mock_porter
                 (potr_internal_window * win, uint32_t initial_seq, uint16_t window_size, uint16_t max_payload));
     MOCK_METHOD(int, potr_internal_window_recv_pop, (potr_internal_window * win, potr_packet *packet));
     MOCK_METHOD(int, potr_internal_window_recv_push, (potr_internal_window * win, const potr_packet *packet));
+    MOCK_METHOD(int, potr_internal_window_send_get,
+                (const potr_internal_window *win, uint32_t seq_num, potr_packet *packet_out));
     MOCK_METHOD(int, potr_internal_window_send_push, (potr_internal_window * win, const potr_packet *packet));
     MOCK_METHOD(void, thread_recv_apply_remote_path_ping_state, (uint8_t *dst, const uint8_t *src, size_t count));
     MOCK_METHOD(int, thread_recv_authenticate_packet,
                 (potr_context * ctx, potr_packet *pkt, const uint8_t *wire_hdr, const char *log_prefix, int path_idx));
+    MOCK_METHOD(int, thread_recv_replay_packet,
+                (potr_internal_replay_window *window, const potr_packet *packet, const uint8_t *wire_header));
     MOCK_METHOD(int, thread_recv_check_src_addr, (const potr_context *ctx, const cplat_ipv4_endpoint *sender));
     MOCK_METHOD(void, thread_recv_disconnect_peer_all_paths, (potr_context * ctx, potr_internal_peer_context *peer));
     MOCK_METHOD(void, thread_recv_disconnect_service_all_paths, (potr_context * ctx));
@@ -298,6 +318,25 @@ class Mock_porter
     MOCK_METHOD(void, thread_recv_health_check_service, (thread_recv_slot * slot));
 
     MOCK_METHOD(void, thread_recv_health_wake_tcp, (potr_context * ctx, int path_idx, int state_changed));
+
+    MOCK_METHOD(int, potr_internal_path_group_select,
+                (potr_context *, potr_internal_peer_context *, potr_internal_path_group_result *));
+    MOCK_METHOD(int, potr_internal_receiver_accept, (potr_context *, const potr_packet *, const uint8_t *));
+    MOCK_METHOD(int, thread_recv_report_tick, (potr_context *, uint64_t));
+
+    MOCK_METHOD(int, potr_internal_certificate_initialize, (potr_context *ctx, const potr_service_def *service));
+
+    MOCK_METHOD(void, potr_internal_certificate_state_dispose, (potr_internal_certificate_state *state));
+
+    MOCK_METHOD(void, potr_internal_certificate_dispose, (potr_context *ctx));
+
+    MOCK_METHOD(int, potr_internal_certificate_receive, (potr_context *ctx, potr_packet *packet, const uint8_t *wire_header, const cplat_ipv4_endpoint *sender, int path_idx));
+
+    MOCK_METHOD(void, potr_internal_certificate_tick, (potr_context *ctx, uint64_t now_ms));
+
+    MOCK_METHOD(int, potr_internal_certificate_key, (potr_context *ctx, const potr_internal_tx_session *session, const potr_packet *packet, int sending, uint8_t *key));
+
+    MOCK_METHOD(int, potr_internal_certificate_connect, (potr_context *ctx, cplat_socket socket, const potr_packet *first));
 
     Mock_porter();
     virtual ~Mock_porter();

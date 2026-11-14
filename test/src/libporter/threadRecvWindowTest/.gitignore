@@ -1,4 +1,5 @@
 /packet.c
+/packet_seal.c
 /potr_notify.c
 /potr_path_event.c
 /potr_send_queue.c

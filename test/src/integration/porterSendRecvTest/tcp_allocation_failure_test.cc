@@ -18,7 +18,7 @@ constexpr size_t payload_size = 512;
 constexpr size_t message_size = 8192;
 constexpr size_t wire_size = offsetof(potr_packet, payload) + payload_size;
 constexpr size_t compress_size = CPLAT_COMPRESS_HEADER_SIZE + message_size + 64;
-constexpr size_t crypto_size = payload_size + POTR_CRYPTO_TAG_SIZE;
+constexpr size_t crypto_size = wire_size + POTR_CRYPTO_TAG_SIZE;
 
 struct allocation_probe
 {

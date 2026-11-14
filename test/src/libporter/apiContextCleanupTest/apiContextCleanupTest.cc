@@ -170,3 +170,40 @@ TEST(apiContextCleanupTest, closes_remaining_sockets_and_disposes_peer_table)
     EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_listen_sock[2]); // [確認_正常系] - listen ソケットを INVALID にすること。
     EXPECT_EQ(nullptr, ctx.peers);                           // [確認_正常系] - ピアテーブルを NULL にすること。
 }
+
+// 返送元セッションごとのリプレイ記録を停止後に一度ずつ解放することの確認
+TEST(apiContextCleanupTest, frees_return_source_replay_records_once)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    auto *first = static_cast<potr_internal_receiver *>(calloc(1, sizeof(potr_internal_receiver)));
+    auto *second = static_cast<potr_internal_receiver *>(calloc(1, sizeof(potr_internal_receiver)));
+    ASSERT_NE(nullptr, first); // [状態確認] - 先頭の記録を確保できること。
+    ASSERT_NE(nullptr, second); // [状態確認] - 後続の記録を確保できること。
+    first->next = second;
+    ctx.receivers = first;
+    for (size_t i = 0; i < POTR_MAX_PATH; i++)
+    {
+        ctx.sock[i] = CPLAT_INVALID_SOCKET;
+        ctx.tcp_conn_fd[i] = CPLAT_INVALID_SOCKET;
+        ctx.tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
+    }
+    // [状態] - 2 セッションの記録を持つ停止済みコンテキストを用意する。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_free(nullptr)).Times(2);
+    // [Pre-Assert確認_正常系] - 未確保の送信バッファーを各破棄で 1 回ずつ解放へ渡すこと。
+    EXPECT_CALL(mock_cplat, cplat_free(first)).Times(1).WillOnce(Invoke(delegate_real_cplat_free));
+    // [Pre-Assert確認_正常系] - 先頭の記録を 1 回だけ解放すること。
+    // [Pre-Assert手順] - 確保した記録を解放する。
+    EXPECT_CALL(mock_cplat, cplat_free(second)).Times(1).WillOnce(Invoke(delegate_real_cplat_free));
+    // [Pre-Assert確認_正常系] - 後続の記録を 1 回だけ解放すること。
+    // [Pre-Assert手順] - 確保した記録を解放する。
+    // Act
+    api_context_dispose_resources(&ctx);
+    api_context_dispose_resources(&ctx);
+    // [手順] - 共通資源の破棄を 2 回呼び出す。
+    // Assert
+    EXPECT_EQ(nullptr, ctx.receivers); // [確認_正常系] - 所有する記録が残らないこと。
+}

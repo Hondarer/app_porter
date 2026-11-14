@@ -21,7 +21,7 @@
 
 int potr_service_get_type(const char *config_path, int64_t service_id, potr_type *type)
 {
-    potr_service_def def;
+    potr_internal_config_service owned = {0};
     int result;
 
     if (config_path == NULL || type == NULL)
@@ -29,13 +29,14 @@ int potr_service_get_type(const char *config_path, int64_t service_id, potr_type
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    result = potr_internal_config_load_service(config_path, service_id, &def);
+    result = potr_internal_config_load_service(config_path, service_id, &owned);
     if (result != POTR_OK)
     {
         return result;
     }
 
-    *type = def.type;
+    *type = owned.definition.type;
+    potr_internal_config_service_dispose(&owned);
 
     return POTR_OK;
 }

@@ -27,7 +27,7 @@ int potr_service_open_from_config(const char *config_path, int64_t service_id, p
                                   potr_context **handle)
 {
     potr_global_config global;
-    potr_service_def service;
+    potr_internal_config_service owned = {0};
     const char *config_label;
     int result;
 
@@ -61,7 +61,7 @@ int potr_service_open_from_config(const char *config_path, int64_t service_id, p
         return result;
     }
 
-    result = potr_internal_config_load_service(config_path, service_id, &service);
+    result = potr_internal_config_load_service(config_path, service_id, &owned);
     if (result != POTR_OK)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open_from_config: service_id=%" PRId64 " not found in '%s'",
@@ -69,9 +69,10 @@ int potr_service_open_from_config(const char *config_path, int64_t service_id, p
         return result;
     }
 
-    result = potr_service_open(&global, &service, role, callback, handle);
+    result = potr_service_open(&global, &owned.definition, role, callback, handle);
+    potr_internal_config_service_dispose(&owned);
 
-    cplat_secure_zero(&service, sizeof(service)); /* service は AES 鍵を平文で保持するため、復帰前に消去する */
+    cplat_secure_zero(&owned.definition, sizeof(owned.definition)); /* service は AES 鍵を平文で保持するため、復帰前に消去する */
 
     return result;
 }

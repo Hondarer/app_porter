@@ -1,3 +1,5 @@
+/packet.c
+/packet_seal.c
 /potr_handle.c
 /potr_notify.c
 /potr_send_queue_abort.c

@@ -22,7 +22,14 @@
 #include <porter/protocol/packet.h>
 #include <cplat/net/byteorder.h>
 
-/* packet.h で公開した POTR_PACKET_HEADER_SIZE をそのまま使用する。 */
+_Static_assert(POTR_PACKET_HEADER_SIZE == POTR_PACKET_HEADER_WIRE_SIZE, "porter: packet header wire size mismatch");
+_Static_assert(offsetof(potr_packet, tx_counter) == 40U, "porter: tx_counter offset mismatch");
+_Static_assert(offsetof(potr_packet, tx_tv_sec) == 48U, "porter: tx_tv_sec offset mismatch");
+_Static_assert(offsetof(potr_packet, tx_tv_nsec) == 56U, "porter: tx_tv_nsec offset mismatch");
+_Static_assert(offsetof(potr_packet, reserved) == 60U, "porter: reserved offset mismatch");
+_Static_assert(offsetof(potr_packet, tx_mono_ns) == 64U, "porter: tx_mono_ns offset mismatch");
+_Static_assert(POTR_PACKET_PAYLOAD_LEN_OFFSET == offsetof(potr_packet, payload_len),
+               "porter: payload length offset mismatch");
 
 /**
  *  @brief          64 ビット値をホスト バイト オーダーからネットワーク バイト オーダーへ変換します。
@@ -92,10 +99,6 @@ int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_pac
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
-/**
- *  @details
- *  暗号化時はヘルス チェック スレッドが wire_buf にコピー後に cplat_crypto_encrypt を適用します。
- */
 int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
                                     const uint8_t *health_payload, uint16_t health_payload_len)
 {
@@ -302,6 +305,16 @@ int potr_internal_packet_parse(potr_packet *packet, const void *buf, size_t buf_
     packet->payload_len = cplat_ntoh16(tmp16);
     memcpy(&tmp32, b + 36, 4);
     packet->protocol_version = cplat_ntoh32(tmp32);
+    memcpy(&tmp64, b + 40, 8);
+    packet->tx_counter = ntoh64(tmp64);
+    memcpy(&tmp64, b + 48, 8);
+    packet->tx_tv_sec = (int64_t)ntoh64(tmp64);
+    memcpy(&tmp32, b + 56, 4);
+    packet->tx_tv_nsec = (int32_t)cplat_ntoh32(tmp32);
+    memcpy(&tmp32, b + 60, 4);
+    packet->reserved = cplat_ntoh32(tmp32);
+    memcpy(&tmp64, b + 64, 8);
+    packet->tx_mono_ns = ntoh64(tmp64);
 
     if (packet->protocol_version != POTR_PROTOCOL_VERSION || packet->payload_len > POTR_MAX_PAYLOAD ||
         (size_t)packet->payload_len + POTR_PACKET_HEADER_SIZE > buf_len)

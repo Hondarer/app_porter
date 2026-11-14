@@ -22,7 +22,6 @@
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
-#include <cplat/crypto/crypto.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
@@ -36,6 +35,7 @@
 #include <porter/potr_path_event.h>
 #include <porter/potr_peer_table.h>
 #include <porter/protocol/packet.h>
+#include <porter/protocol/packet_seal.h>
 #include <porter/protocol/window.h>
 #include <porter/thread/potr_connect_thread.h>
 #include <porter/thread/potr_health_thread.h>
@@ -76,57 +76,21 @@ static void send_fin(potr_context *ctx)
         fin_pkt.ack_num = cplat_hton32(wire_target_seq);
     }
 
-    if (ctx->service.encrypt_enabled)
+    for (i = 0; i < ctx->n_path; i++)
     {
         uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
-        uint8_t nonce[POTR_CRYPTO_NONCE_SIZE];
-        size_t enc_out = POTR_CRYPTO_TAG_SIZE;
+        size_t sent = 0;
 
-        fin_pkt.flags |= cplat_hton16(POTR_FLAG_ENCRYPTED);
-        fin_pkt.payload_len = cplat_hton16((uint16_t)POTR_CRYPTO_TAG_SIZE);
-
-        /* ノンス: session_id (4 [byte]) + flags (2 [byte], FIN|ENCRYPTED NBO) + 0 (4 [byte]) + padding (2 [byte])。 */
-        memcpy(nonce, &fin_pkt.session_id, 4);
-        memcpy(nonce + 4, &fin_pkt.flags, 2);
-        memset(nonce + 6, 0, 4);
-        memset(nonce + 10, 0, 2);
-
-        memcpy(wire_buf, &fin_pkt, POTR_PACKET_HEADER_SIZE);
-
-        if (cplat_crypto_encrypt(wire_buf + POTR_PACKET_HEADER_SIZE, &enc_out, NULL, 0, ctx->service.encrypt_key, nonce,
-                                 wire_buf, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
+        if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+        {
+            continue;
+        }
+        wire_len = sizeof(wire_buf);
+        if (potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &fin_pkt, wire_buf, &wire_len) != POTR_OK)
         {
             return;
         }
-
-        wire_len = POTR_PACKET_HEADER_SIZE + enc_out;
-
-        for (i = 0; i < ctx->n_path; i++)
-        {
-            size_t sent = 0;
-
-            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
-            {
-                continue;
-            }
-            (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
-        }
-    }
-    else
-    {
-        wire_len = potr_internal_packet_wire_size(&fin_pkt);
-
-        for (i = 0; i < ctx->n_path; i++)
-        {
-            size_t sent = 0;
-
-            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
-            {
-                continue;
-            }
-            (void)cplat_socket_sendto(ctx->sock[i], (const uint8_t *)&fin_pkt, wire_len, &ctx->dest_addr[i], &sent,
-                                      NULL);
-        }
+        (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
     }
 }
 
@@ -166,7 +130,7 @@ static int send_tcp_fin(potr_context *ctx, uint32_t fin_target_seq)
     fin_pkt.flags |= cplat_hton16(POTR_FLAG_FIN_TARGET_VALID);
     fin_pkt.ack_num = cplat_hton32(fin_target_seq);
 
-    return potr_internal_tcp_send_control_packet(ctx, &fin_pkt, 0U);
+    return potr_internal_tcp_send_control_packet(ctx, &fin_pkt);
 }
 
 static void reset_tcp_close_wait(potr_context *ctx)
@@ -368,8 +332,14 @@ static int close_impl(potr_context *handle)
         }
     }
 
-    cplat_atomic_store_u64(&ctx->last_ping_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
-    cplat_atomic_store_u64(&ctx->last_valid_data_send_ms, 0U, CPLAT_MEMORY_ORDER_RELAXED);
+    for (size_t path_idx = 0U; path_idx < POTR_MAX_PATH; path_idx++)
+    {
+        cplat_atomic_store_u64(&ctx->last_ping_send_ms[path_idx], 0U, CPLAT_MEMORY_ORDER_RELAXED);
+    }
+    for (size_t path_idx = 0U; path_idx < POTR_MAX_PATH; path_idx++)
+    {
+        cplat_atomic_store_u64(&ctx->last_valid_data_send_ms[path_idx], 0U, CPLAT_MEMORY_ORDER_RELAXED);
+    }
 
     /* 送信スレッドを停止してキューを破棄する (送信者のみ)。 */
     if (ctx->send_thread != NULL)

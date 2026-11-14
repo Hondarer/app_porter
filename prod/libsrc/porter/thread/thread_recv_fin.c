@@ -55,7 +55,7 @@ static int send_tcp_fin_ack(potr_context *ctx, uint32_t fin_target_seq)
         return result;
     }
 
-    return potr_internal_tcp_send_control_packet(ctx, &fin_ack_pkt, fin_target_seq);
+    return potr_internal_tcp_send_control_packet(ctx, &fin_ack_pkt);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

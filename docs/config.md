@@ -46,7 +46,7 @@ JSON 数値の `-0` は数値の 0 として扱います。
 | キー | 型 | 既定値 | 説明 |
 |---|---|---|---|
 | `window_size` | uint16 | 16 | スライディング ウィンドウ サイズ (2〜256) |
-| `max_payload` | uint16 | 1,400 | DATA パケットのペイロード上限バイト数 (64〜65507) |
+| `max_payload` | uint16 | 1,400 | DATA パケットのペイロード上限バイト数 (64〜65,435) |
 | `max_message_size` | uint32 | 65,535 | 1 回の potr_service_send で送信できる最大メッセージ長 (バイト)。フラグメント化により max_payload を超えるメッセージを送受信できます。 |
 | `send_queue_depth` | uint32 | 1,024 | 非同期送信キューの最大エントリ数。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。 |
 | `udp_health_interval_ms` | uint32 | 3,000 | UDP 通信種別の PING 送信判定間隔 (ms)。片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時に PING を送信し、双方向 UDP は設定周期ごとに PING を送信します。0 でヘルス チェック送信を無効化。双方向 UDP は定周期 PING の送受信で `CONNECTED` を成立させるため、実効 `health_interval_ms` が 0 のままでは接続確立しません。 |
@@ -139,12 +139,15 @@ Table: ヘルス チェック設定値とその効果
 |---|---|---|---|
 | `type` | 文字列 | 必須 | `unicast` / `multicast` / `broadcast` / `unicast_raw` / `multicast_raw` / `broadcast_raw` / `unicast_bidir` / `unicast_bidir_n1` / `tcp` / `tcp_bidir` |
 | `dst_port` | uint16 | 必須 | 宛先ポート番号。サービス ID とは独立して指定します。 |
-| `src_addr1` | 文字列 | 条件付き | 通常は送信元 bind アドレスまたは受信側の送信元 IP フィルター。`unicast_bidir` では SENDER・RECEIVER ともに省略可能 (各役割の省略時動作は後述) |
-| `src_port` | uint16 | 省略可 | 送信者の送信元 bind ポート (0 = OS が自動選定) |
+| `src_addr1` 〜 `src_addr8` | 文字列 | 条件付き | 通常は送信元 bind アドレスまたは受信側の送信元 IP フィルター。`unicast_bidir` では SENDER・RECEIVER ともに省略可能 (各役割の省略時動作は後述) |
+| `src_port` | uint16 | 省略可 | 送信者の送信元 bind ポート (0 = OS が自動選定)。証明書方式 (`auth = "cert"`) の片方向通信 (`unicast` / `multicast` / `broadcast` と各 RAW モード) の送信者では 0 以外の指定が必須 |
+| `path_group1` 〜 `path_group8` | uint8 | 省略可 | 各経路の優先グループ番号 (1〜4、既定値 `1`)。番号が小さいほど優先度が高い。範囲外の値は設定エラー |
+| `group_failback_ms` | uint32 | 省略可 | 上位グループの回復を判定するまでの時間 (ms、既定値 `0`)。`0` の場合は実効 `health_timeout_ms` と同じ値を使用 |
 | `health_interval_ms` | uint32 | 省略可 | グローバルの `udp_health_interval_ms` または `tcp_health_interval_ms` をサービス単位でオーバーライドします。 |
 | `health_timeout_ms`  | uint32 | 省略可 | グローバルの `udp_health_timeout_ms` または `tcp_health_timeout_ms` をサービス単位でオーバーライドします。 |
 | `pack_wait_ms` | uint32 | 省略可 | パッキング待機時間 (ミリ秒)。0 で即時送信 |
-| `encrypt_key` | 文字列 | 省略可 | AES-256-GCM 事前共有鍵。以下の 2 形式を受け付けます:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列で指定<br>**② パスフレーズ**: 上記以外の任意の文字列を指定すると SHA-256 で 32 バイト鍵に変換します。省略時は暗号化なし |
+| `auth` | 文字列 | 省略可 | 認証・暗号方式。`"psk"` (既定値、事前共有鍵方式) または `"cert"` (証明書方式) |
+| `encrypt_key` | 文字列 | 省略可 | `auth = "psk"` 時の AES-256-GCM 事前共有鍵。以下の 2 形式を受け付けます:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列で指定<br>**② パスフレーズ**: 上記以外の任意の文字列を指定すると SHA-256 で 32 バイト鍵に変換します。省略時は暗号化なし |
 
 Table: 全通信種別共通のサービス設定項目
 
@@ -182,7 +185,8 @@ RAW モードは通常モード (`unicast` / `multicast` / `broadcast`) と同�
 
 Table: 通常モードと RAW モードの機能比較
 
-RAW モードでもスライディング ウィンドウによる **順序整列** と **セッション管理** は有効です。
+RAW モードでもスライディング ウィンドウによる **順序整列** と **セッション管理** は有効です。  
+RAW モードに `path_group1` 〜 `path_group8` を設定した場合は、グループ設定を無視して全経路へ送信し、警告をログに記録します。
 
 ### unicast_bidir 専用フィールド
 
@@ -244,7 +248,7 @@ Table: TCP 通信で無視される UDP 専用設定項目
 
 ### TCP マルチパス設定
 
-`dst_addr1` 〜 `dst_addr4` (最大 4 エントリ) に接続先アドレスを設定すると、各エントリに対して独立した TCP 接続 (path) が確立されます。  
+`dst_addr1` 〜 `dst_addr8` (最大 8 エントリ) に接続先アドレスを設定すると、各エントリに対して独立した TCP 接続 (path) が確立されます。  
 エントリが 1 つのみの場合は単一接続として動作します。
 
 ```jsonc
@@ -305,12 +309,12 @@ Table: broadcast 専用の設定項目
 |---|---|
 | **形式① hex 鍵** | 256 ビット鍵を 16 進数文字列 (64 文字、英数字) で記述します。 |
 | **形式② パスフレーズ** | 64 文字 hex 以外の任意の文字列。SHA-256 ハッシュで 32 バイト鍵を自動導出します。 |
-| 暗号化範囲 | DATA パケットのペイロード部分を AES-256-GCM で暗号化します。ヘッダー 40 バイトは平文 |
-| AAD | ヘッダー 40 バイトを追加認証データ (AAD) として使用するため、ヘッダー改ざんも検知します。 |
+| 暗号化範囲 | DATA、PING、REPORT (受信報告)、KEY (グループ鍵配布) パケットのペイロード部分を AES-256-GCM で暗号化します。ヘッダー 72 バイトは平文です。 |
+| AAD | ヘッダー 72 バイト全体を追加認証データ (AAD) として使用するため、ヘッダー改ざんも検知します。 |
 | 認証タグ (DATA) | 16 バイトの GCM 認証タグを暗号文末尾に付与します。実効ペイロードが `max_payload - 16` バイトに減少します。 |
-| 認証タグ (その他) | PING / NACK / REJECT / FIN / FIN_ACK は平文ペイロードが 0 バイトだが、AAD (ヘッダー 40B) に対して 16 バイトの GCM 認証タグのみを付与します。ヘッダー改ざんを検知できます。 |
+| 認証タグ (その他) | PING / REPORT / KEY はペイロード暗号文の末尾に 16 バイトの GCM 認証タグを付与します。NACK / REJECT / FIN / FIN_ACK は平文ペイロードが 0 バイトであり、AAD (ヘッダー 72B) に対して 16 バイトの GCM 認証タグのみを付与してヘッダー改ざんを検知します。 |
 | 双方一致 | 送信者・受信者ともに同一の `encrypt_key` を設定する必要があります。 |
-| 受信要件 | `encrypt_key` を設定した受信側は `POTR_FLAG_ENCRYPTED` 付きパケットのみ受理します。平文パケット、およびタグ検証失敗パケットは破棄します。 |
+| 受信要件 | 暗号化が有効な受信側は `POTR_FLAG_ENCRYPTED` 付きパケットのみ受理します。平文パケット、およびタグ検証失敗パケットは破棄します。 |
 | マルチキャスト | 受信者全員が同一の `encrypt_key` を持っていれば動作します。 |
 
 Table: 暗号化鍵の指定形式と仕様
@@ -320,15 +324,13 @@ Table: 暗号化鍵の指定形式と仕様
 GCM ノンス (12 バイト) は以下の構成です。
 
 ```
-[session_id: 4B NBO][flags: 2B NBO][seq_or_ack_num: 4B NBO][padding: 2B 0x00]
+[session_id: 4B NBO][tx_counter: 8B NBO]
 ```
 
 | フィールド | バイト | 内容 |
 |---|---|---|
 | `session_id` | 4 | 送信元の自セッション ID (ネットワーク バイト オーダー) |
-| `flags` | 2 | `POTR_FLAG_ENCRYPTED` を含む実際の送信フラグ値 (NBO) |
-| `seq_or_ack_num` | 4 | DATA/PING/FIN は `seq_num`、NACK/REJECT/FIN_ACK は `ack_num` (NBO) |
-| padding | 2 | 0x0000 固定 |
+| `tx_counter` | 8 | セッションごとの送出通番 (ネットワーク バイト オーダー)。経路ごとの複製や制御パケットも含め、送出ごとに 1 増える |
 
 Table: GCM ノンスのフィールド構成
 
@@ -342,12 +344,51 @@ Table: GCM ノンスのフィールド構成
 | REJECT (暗号化あり) | `0x0028` (REJECT \| ENCRYPTED) |
 | FIN (暗号化あり) | `0x0030` (FIN \| ENCRYPTED) |
 | FIN_ACK (暗号化あり) | `0x00A0` (FIN_ACK \| ENCRYPTED) |
+| REPORT (暗号化あり) | `0x0120` (REPORT \| ENCRYPTED) |
+| HANDSHAKE | `0x0200` (HANDSHAKE) |
+| KEY (暗号化あり) | `0x0420` (KEY \| ENCRYPTED) |
 
 Table: パケット種別別の flags 値一覧
 
+### 証明書方式 (auth = "cert")
+
+`auth` に `"cert"` を指定すると、事前共有鍵 (`encrypt_key`) ではなく X.509 証明書による相互認証と、TLS 1.3 (TCP) / DTLS 1.2 (UDP) のハンドシェイクで確立した鍵による通信保護を行います。証明書方式では暗号化が必須となり、平文の通信は受理しません。
+
+| キー | 型 | 必須 | 既定値 | 説明 |
+|---|---|---|---|---|
+| `auth` | 文字列 | 省略可 | `"psk"` | `"psk"` (事前共有鍵方式) または `"cert"` (証明書方式) |
+| `cert_file` | 文字列 | `auth = "cert"` で必須 | — | 自端の証明書ファイル (PEM 形式) |
+| `key_file` | 文字列 | `auth = "cert"` で必須 | — | 自端の秘密鍵ファイル (PEM 形式) |
+| `ca_file` | 文字列 | 条件付き必須 | — | 信頼する CA の証明書ファイル (PEM 形式、複数可) |
+| `pinned_certs` | 文字列の配列 | 条件付き必須 | — | 直接登録する相手の証明書ファイル (PEM 形式のパス配列) |
+| `crl_file` | 文字列 | 省略可 | — | 失効リスト ファイル (PEM 形式) |
+| `peer_names` | 文字列の配列 | `ca_file` 指定時必須 | — | CA で検証する相手の名前。証明書の SAN の DNS 名または URI と照合する |
+
+Table: 証明書方式のサービス設定項目
+
+`ca_file` と `pinned_certs` は少なくとも一方の指定が必要です。`ca_file` を指定した場合、`peer_names` は必須であり、省略すると設定エラーになります。  
+証明書、秘密鍵、CRL は `potr_service_open()` / `potr_service_open_from_config()` 時に 1 回だけ読み込みます。証明書や CRL を更新して反映するには、サービスを開き直す必要があります。
+
+証明書方式では、全通信種別で両端が互いの証明書を検証するため、受信者も `cert_file` と `key_file` を持ちます。また、返送経路を使ってハンドシェイクを行うため、片方向通信および RAW モードでも返送経路を前提とします。片方向通信 (`unicast`、`multicast`、`broadcast` と各 RAW モード) の送信者では、受信者が送信者のユニキャスト アドレスとポートに対してハンドシェイクを開始するため、`src_port` を 0 以外に固定する必要があります (`src_port = 0` または省略は設定エラー)。
+
+相手の証明書の検証に失敗した場合、その相手との通信を確立せずに理由をログへ記録して再試行します。UDP で実効 `health_interval_ms` が 0 の場合も、認証の再試行は UDP の既定の監視間隔 (`POTR_DEFAULT_UDP_HEALTH_INTERVAL_MS` = 3,000 ms) で行います。
+
+`potr_service_open()` へ直接渡す `potr_service_def` では、次のメンバーで同じ設定を指定します (構造体を 0 で初期化した場合は `POTR_AUTH_PSK` となり、事前共有鍵方式として動作します)。
+
+| メンバー | 型 | 対応するキー |
+|---|---|---|
+| `auth` | `potr_auth` (`POTR_AUTH_PSK = 0`、`POTR_AUTH_CERT = 1`) | `auth` |
+| `cert_file`、`key_file`、`ca_file`、`crl_file` | `const char *` | 同名のキー (`crl_file` 省略時は `NULL`) |
+| `pinned_certs`、`pinned_cert_count` | `const char *const *`、`size_t` | `pinned_certs` |
+| `peer_names`、`peer_name_count` | `const char *const *`、`size_t` | `peer_names` (`ca_file` 指定時は 1 以上) |
+
+Table: 証明書方式の設定を渡す `potr_service_def` のメンバー
+
+これらのポインターおよび配列内の文字列は `potr_service_open()` の呼び出し中だけ参照し、porter は保持しません。
+
 ### アドレスの指定形式と DNS 解決
 
-`src_addr1` 〜 `src_addr4`、`dst_addr1` 〜 `dst_addr4` には以下のいずれかを指定できます。
+`src_addr1` 〜 `src_addr8`、`dst_addr1` 〜 `dst_addr8` には以下のいずれかを指定できます。
 
 - **IPv4 アドレス** (例: `192.168.1.10`)
 - **DNS で解決できるホスト名** (例: `receiver.local`)
@@ -545,30 +586,51 @@ RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を
 
 Table: 用途別の推奨通信種別
 
-## マルチパス設定
+## マルチパスと優先グループ設定
 
-最大 4 経路を並列に設定できます。  
-各経路は独立した UDP ソケットを持ちます。
+最大 8 経路 (`src_addr1` 〜 `src_addr8`、`dst_addr1` 〜 `dst_addr8`) を設定できます。  
+各経路は独立したソケットを持ち、`path_group1` 〜 `path_group8` によって優先グループ番号 (1〜4、既定値 1) に割り当てられます。番号が小さいほど優先度が高く、送信者は到達可能な最上位グループの経路だけに DATA と再送パケットを送ります。すべての経路が同じグループ (または `path_group` 省略) の場合は、全経路へ同時に送信されます。
 
 ```jsonc
-// マルチパス設定の例
+// マルチパスと優先グループ設定の例
 {
   "services": {
     "1001": {
       "type": "unicast",
       "src_addr1": "192.168.1.20",
       "dst_addr1": "192.168.1.10",
-      "dst_port": 5001,
+      "path_group1": 1,
       "src_addr2": "10.0.0.20",
       "dst_addr2": "10.0.0.10",
+      "path_group2": 2,
       "src_addr3": "172.16.0.20",
-      "dst_addr3": "172.16.0.10"
+      "dst_addr3": "172.16.0.10",
+      "path_group3": 2,
+      "group_failback_ms": 5000,
+      "dst_port": 5001
     }
   }
 }
 ```
 
-マルチパスを使用すると、DATA・PING・再送パケットがすべての経路へ同時送信されます。
+PING、ハンドシェイク、鍵配布、FIN、FIN_ACK は、待機グループの監視や制御のため全グループの全経路へ送出します。また、グループ番号に欠番がある構成 (グループ 1 とグループ 3 のみなど) も受け付け、経路のないグループは選択対象から外します。
+
+## 設定エラーの条件
+
+次のいずれかに該当する場合、`potr_service_open_from_config()` および `potr_service_open()` は設定エラーとして `POTR_ERR_INVALID_ARGUMENT` (証明書や鍵ファイルなどの読み込みに失敗した場合は `POTR_ERR_IO`) を返します。
+
+| 区分 | エラーとなる条件 |
+|---|---|
+| グローバル設定 | `max_payload` が `64` 未満、または `POTR_MAX_PAYLOAD` (`65,435`) を超える |
+| 経路数 | 9 番目以降の経路キー (`src_addr9`、`dst_addr9`、`path_group9` など) が指定されている |
+| 優先グループ | `path_group1` 〜 `path_group8` に `1` 〜 `4` の範囲外の値 (`0` や `5` 以上) が指定されている (設定ファイル読み込み時) |
+| 証明書方式 (`auth = "cert"`) | `cert_file` または `key_file` が未指定、秘密鍵と証明書が一致しない、またはファイル読み込みに失敗した (`POTR_ERR_IO`) |
+| 証明書方式の検証先 | `ca_file` と `pinned_certs` のどちらも指定されていない |
+| 証明書方式の相手名 | `ca_file` が指定されているのに `peer_names` が省略または空である |
+| 証明書方式の片方向送信者 | `unicast`、`multicast`、`broadcast` (各 RAW モードを含む) の送信者 (`POTR_ROLE_SENDER`) で `src_port` が `0` または省略されている |
+| 認証方式の指定値 | `auth` に `"psk"` と `"cert"` 以外の文字列が指定されている |
+
+Table: 主な設定エラーの条件一覧
 
 ## サンプル設定ファイル
 

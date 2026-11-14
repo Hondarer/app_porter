@@ -137,7 +137,7 @@ TEST(potrServiceCloseTest, tcp_close_without_active_path_after_data_returns_disc
     // [Pre-Assert確認_正常系] - ハンドル管理用ロックの取得も許可する。
     EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex, _)).Times(AtLeast(1));
     // [Pre-Assert確認_正常系] - 送信済み状態を send_window_mutex の保護下で取得すること。
-    EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).Times(0);
     // [Pre-Assert確認_異常系] - 切断済みのため FIN を送信しないこと。
     // Act
     int actual_ret = potr_service_close(owned_handle.get()); // [手順] - 全パス切断後の TCP サービスを閉じる。

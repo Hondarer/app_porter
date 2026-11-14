@@ -27,11 +27,26 @@
  *  @return         成功時は POTR_OK、受信形式不正または認証失敗時は POTR_ERR_PROTOCOL を返します。
  *                  メモリ不足は POTR_ERR_OUT_OF_MEMORY、ローカルの引数・容量・範囲の不整合は
  *                  POTR_ERR_INVALID_ARGUMENT、その他の内部失敗は POTR_ERR_UNKNOWN です。
- *  @note           ポインター引数に NULL は許可しません。所有権は移動しません。
+ *                  証明書方式で鍵が未確立、または相手セッションが一致しない場合は POTR_ERR_DISCONNECTED。
+ *  @note           証明書方式は平文を拒否し、確立した受信鍵またはグループ鍵で開封します。
+ *                  HANDSHAKE と KEY は専用の処理で消費し、本関数では拒否します。
+ *                  ポインター引数に NULL は許可しません。所有権は移動しません。
  *                  同じ ctx の復号バッファーを並行して使用しないでください。
  */
 int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const uint8_t *wire_hdr,
                                     const char *log_prefix, int path_idx);
+
+/**
+ *  @brief          認証済みパケットをリプレイ窓で検査します。
+ *  @param[in,out]  window 相手セッションの受信記録。NULL は許可しません。
+ *  @param[in]      packet 認証済みの解析結果。NULL は許可しません。
+ *  @param[in]      wire_header 受信ヘッダー 72 [byte]。NULL は許可しません。
+ *  @return         受理時は POTR_OK、リプレイまたは窓外のときは POTR_ERR_PROTOCOL です。
+ *  @note           平文は検査・記録しません。所有権は移動しません。
+ *                  TCP は tcp_recv_mutex、N:1 は peers_mutex、UDP は単一受信スレッドで排他します。
+ */
+int thread_recv_replay_packet(potr_internal_replay_window *window, const potr_packet *packet,
+                               const uint8_t *wire_header);
 
 /**
  * @brief UDP パケットの送信元を設定済みの相手アドレスと照合します。

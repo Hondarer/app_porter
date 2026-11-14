@@ -165,7 +165,14 @@ static void reset_all_paths_disconnected(potr_context *ctx)
         cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
     }
 
+    if (ctx->service.auth == POTR_AUTH_CERT)
+    {
+        cplat_local_lock_lock(ctx->certificate_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        potr_internal_certificate_state_dispose(&ctx->certificate);
+        cplat_local_lock_unlock(ctx->certificate_mutex);
+    }
     ctx->peer_session_known = 0;
+    memset(&ctx->replay_window, 0, sizeof(ctx->replay_window));
     ctx->frag_buf_len = 0;
     ctx->frag_compressed = 0;
     ctx->pending_fin = 0;
@@ -185,8 +192,11 @@ static void reset_all_paths_disconnected(potr_context *ctx)
     }
 
     memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
-    memset((void *)ctx->path_logical_alive, 0, sizeof(ctx->path_logical_alive));
+    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    memset(ctx->path_logical_alive, 0, sizeof(ctx->path_logical_alive));
+    memset(&ctx->path_group_state, 0, sizeof(ctx->path_group_state));
     cplat_atomic_store_i32(&ctx->health_alive, 0, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_local_lock_unlock(ctx->callback_mutex);
     ctx->tcp_accepted_session_known = 0;
     cplat_local_lock_unlock(ctx->tcp_state_mutex);
     cplat_local_lock_unlock(ctx->tcp_recv_mutex);
@@ -272,16 +282,29 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
 
         uint64_t connected_time;
 
+        cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        if (potr_internal_certificate_connect(ctx, sock, NULL) != POTR_OK)
+        {
+            cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+            cplat_socket_close(sock);
+            if (ctx->service.reconnect_interval_ms == 0U)
+            {
+                break;
+            }
+            reconnect_wait(ctx, path_idx, (int)ctx->service.reconnect_interval_ms);
+            continue;
+        }
+
         if (cplat_clock_get_monotonic_ms(&connected_time) != CPLAT_OK)
         {
             cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
             potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+            cplat_local_lock_unlock(ctx->tcp_recv_mutex);
             cplat_socket_close(sock);
             return;
         }
 
         /* 0→1 の初期化を完了してから接続を公開する。 */
-        cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
         cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
         active_count = cplat_atomic_fetch_add_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL) + 1;
         if (active_count == 1)
@@ -467,18 +490,32 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
 
             uint64_t connected_time;
 
+            cplat_local_lock_lock(ctx->session_establish_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
+
+            if (ctx->service.auth == POTR_AUTH_CERT && pkt.flags == POTR_FLAG_HANDSHAKE)
+            {
+                if (potr_internal_certificate_connect(ctx, conn, &pkt) != POTR_OK ||
+                    thread_connect_read_first_packet(conn, ctx->tcp_first_pkt_buf[path_idx],
+                        POTR_PACKET_HEADER_SIZE + ctx->global.max_payload, &pkt_len, (int)first_pkt_timeout_ms) != POTR_OK ||
+                    potr_internal_packet_parse(&pkt, ctx->tcp_first_pkt_buf[path_idx], pkt_len) != POTR_OK)
+                {
+                    cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+                    cplat_local_lock_unlock(ctx->session_establish_mutex);
+                    cplat_socket_close(conn);
+                    continue;
+                }
+            }
+
             if (cplat_clock_get_monotonic_ms(&connected_time) != CPLAT_OK)
             {
                 cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
                 potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+                cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+                cplat_local_lock_unlock(ctx->session_establish_mutex);
                 cplat_socket_close(conn);
                 return;
             }
-
-            /* session_establish_mutex 下でセッション判定と状態更新を行う。 */
-            cplat_local_lock_lock(ctx->session_establish_mutex, CPLAT_SYNC_WAIT_FOREVER);
-
-            cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
 
             if (pkt.service_id != ctx->service.service_id ||
                 thread_recv_authenticate_packet(ctx, &pkt, ctx->tcp_first_pkt_buf[path_idx], "tcp_accept", path_idx) !=
@@ -499,6 +536,18 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                            "connect_thread[service_id=%" PRId64 " path=%d]: "
                            "old session rejected (known_id=%u pkt_id=%u)",
                            ctx->service.service_id, path_idx, ctx->tcp_accepted_session_id, pkt.session_id);
+                cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+                cplat_local_lock_unlock(ctx->session_establish_mutex);
+                cplat_socket_close(conn);
+                continue;
+            }
+
+            if (ctx->service.encrypt_enabled && !ctx->tcp_accepted_session_known)
+            {
+                potr_internal_replay_window_prepare(&ctx->replay_window, &pkt);
+            }
+            if (thread_recv_replay_packet(&ctx->replay_window, &pkt, ctx->tcp_first_pkt_buf[path_idx]) != POTR_OK)
+            {
                 cplat_local_lock_unlock(ctx->tcp_recv_mutex);
                 cplat_local_lock_unlock(ctx->session_establish_mutex);
                 cplat_socket_close(conn);

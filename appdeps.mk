@@ -1,2 +1,2 @@
 # 利用側の定義: この app が直接利用する app を指定する。
-APP_DEPS := cplat cjson
+APP_DEPS := cplat cjson openssl

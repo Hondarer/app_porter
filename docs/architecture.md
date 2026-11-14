@@ -217,7 +217,7 @@ TCP では接続確立・再接続を担う **connect スレッド** (RECEIVER �
 
 #### TCP SENDER のスレッド
 
-path 数 N (最大 `POTR_MAX_PATH = 4`) の例。各 path に独立した connect・recv・health スレッドが起動します。  
+path 数 N (最大 `POTR_MAX_PATH = 8`) の例。各 path に独立した connect・recv・health スレッドが起動します。  
 送信スレッドは 1 本だけ起動し、全アクティブ path への送信を担います。
 
 ```mermaid
@@ -588,9 +588,10 @@ Table: プラットフォーム抽象化の型と定義
 [送信スレッド] --- キューから pop
  |               複数エレメントを 1 パケットにパッキング
  |               seq_num 付与・送信ウィンドウに登録
- |               encrypt_key が設定されている場合: AES-256-GCM 暗号化
+ |               送出経路ごとに tx_counter 採番・送信時刻を取得
+ |               暗号化有効時: AES-256-GCM 暗号化 (nonce = session_id + tx_counter)
  ▼
-[UDP sendto] --- 全パス (最大 4 経路) に並列送信
+[UDP sendto] --- 選択中グループのパスへ送信 (最大 8 経路、切り戻し中は 2 グループ)
 ```
 
 ### 受信フロー
@@ -600,35 +601,87 @@ Table: プラットフォーム抽象化の型と定義
  |
 [検証] --- service_id 照合 → 不一致は破棄
  |         送信元 IP フィルタ → 不一致は破棄
- |         encrypt_key 設定時は POTR_FLAG_ENCRYPTED 必須
- |         AES-256-GCM 復号・認証タグ検証
+ |         暗号化有効時は POTR_FLAG_ENCRYPTED 必須 (未認証状態では HANDSHAKE 以外を破棄)
+ |         AES-256-GCM 復号・認証タグ検証 (AAD = 72 バイト ヘッダー全体)
  |         (平文・認証失敗パケットは即座に破棄)
+ |         リプレイ対策: 送信元セッションごとの直近 256 個の tx_counter を照合 (既出・範囲外は破棄)
  |         セッション識別 → 旧セッションは破棄、新セッションはウィンドウリセット
  |
 [種別振り分け]
- +- DATA --→ 受信ウィンドウへ格納
- |            【通常モード】欠番検出 → NACK 送出 → 再送待機
- |                          (reorder_timeout_ms > 0 の場合: 待機タイマー開始 → 期限後に NACK)
- |            【RAW モード】欠番検出 → DISCONNECTED 発火 → ウィンドウリセット
- |                          (reorder_timeout_ms > 0 の場合: 待機タイマー開始 → 期限後に DISCONNECTED)
- |            ↓ 連続した通番が揃った段階で順番に取り出し
- |           フラグメント結合・展開
- |            ↓
- |           コールバック POTR_EVENT_DATA
+ +- DATA      --→ 受信ウィンドウへ格納
+ |                 【通常モード】欠番検出 → NACK 送出 → 再送待機
+ |                               (reorder_timeout_ms > 0 の場合: 待機タイマー開始 → 期限後に NACK)
+ |                 【RAW モード】欠番検出 → DISCONNECTED 発火 → ウィンドウリセット
+ |                               (reorder_timeout_ms > 0 の場合: 待機タイマー開始 → 期限後に DISCONNECTED)
+ |                 ↓ 連続した通番が揃った段階で順番に取り出し
+ |                フラグメント結合・展開
+ |                 ↓
+ |                コールバック POTR_EVENT_DATA
  |
- +- PING --→ 最終受信時刻を更新 (返信なし)
- |            【通常モード】seq_num を上限に欠番を一括 NACK
- |                          (reorder_timeout_ms > 0 の場合: 各欠番にタイマー確認を適用)
- |            【RAW モード】seq_num > next_seq の場合 DISCONNECTED 発火 → ウィンドウリセット
- |                          (reorder_timeout_ms > 0 の場合: 待機タイマー開始 → 期限後に DISCONNECTED)
+ +- PING      --→ 最終受信時刻を更新 (双方向は応答 PING 送出、片方向は返信なし)
+ |                 【通常モード】seq_num を上限に欠番を一括 NACK
+ |                               (reorder_timeout_ms > 0 の場合: 各欠番にタイマー確認を適用)
+ |                 【RAW モード】seq_num > next_seq の場合 DISCONNECTED 発火 → ウィンドウリセット
+ |                               (reorder_timeout_ms > 0 の場合: 待機タイマー開始 → 期限後に DISCONNECTED)
  |
- +- FIN  --→ 必要なら pending_fin\n           target 到達後に POTR_EVENT_DISCONNECTED 発火\n(TCP は FIN_ACK 返送)
+ +- REPORT    --→ 片方向・一対多の送信者が受信者ごとの経路状態を更新 (優先グループ判定に使用)
  |
- +- NACK --→ 送信ウィンドウから該当パケットを検索
- |            存在すれば再送 / 存在しなければ REJECT 送出
+ +- HANDSHAKE --→ 証明書方式の OpenSSL メモリ BIO へ投入し、応答があれば全経路へ送出
  |
- +- REJECT -→ POTR_EVENT_DISCONNECTED 発火 (受信者側)
+ +- KEY       --→ 一対多の証明書方式で受信者がグループ鍵を復号して適用
+ |
+ +- FIN       --→ 必要なら pending_fin
+ |                target 到達後に POTR_EVENT_DISCONNECTED 発火 (TCP は FIN_ACK 返送)
+ |
+ +- NACK      --→ 送信ウィンドウから該当パケットを検索
+ |                 存在すれば選択中グループの経路へ再送 / 存在しなければ REJECT 送出
+ |
+ +- REJECT    --→ POTR_EVENT_DISCONNECTED 発火 (受信者側)
 ```
+
+## 優先グループによる送信先の切り替え
+
+各経路には `path_group1` 〜 `path_group8` によって優先グループ番号 (1〜4、`POTR_MAX_PATH_GROUP = 4`) を割り当てます。番号が小さいほど優先度が高く、送信者は DATA と再送パケットの送信先として到達可能な最上位グループを選択します。
+
+- グループ内に到達可能な経路が 1 つ以上あれば、そのグループは到達可能です (一対多では報告中の全受信者について 1 つ以上届く経路がある場合に到達可能とみなします)。
+- 選択中のグループが到達不能になった場合は、到達可能な最上位グループへ切り替えます。TCP では切り替え前の欠番を防ぐため、保持している直近 `window_size` 個の送信済み DATA を通番順に新グループへ送り直します。
+- より上位のグループが回復した後は、`group_failback_ms` (0 の場合は実効 `health_timeout_ms`) の間だけ上位グループと選択中グループの両方へ二重送信し、安定して到達可能であれば上位グループのみへ切り戻します。
+- RAW モード、ヘルス チェック無効、または片方向で受信報告を 1 件も受け取っていない状態 (起動後 `health_timeout_ms` 経過後を含む) では、全グループの全経路へ送信します。
+- PING、FIN、FIN_ACK、ハンドシェイク、鍵配布は待機グループの監視や制御のため常に全グループの全経路へ送出します。
+
+## 証明書方式 (auth = "cert") の認証と鍵確立
+
+証明書方式では、OS 差異のない OpenSSL を porter が直接呼び出して X.509 証明書の検証とハンドシェイクを行います。OpenSSL を呼び出す処理は porter 内部の 1 つのモジュールに集約し、内部ヘッダーには OpenSSL の型を出しません。
+
+- UDP の全通信種別では DTLS 1.2、TCP (`tcp`、`tcp_bidir`) では TLS 1.3 を使用し、OpenSSL のメモリ BIO を使って生成したバイト列を `POTR_FLAG_HANDSHAKE` パケットのペイロードとして送受信します。
+- 暗号の組は ECDHE と AES-256-GCM に限定して前方秘匿性を確保し、両端が互いの証明書を検証します (`ca_file` + `peer_names` + 任意 `crl_file`、または `pinned_certs`)。
+- ハンドシェイク完了後、RFC 5705 (DTLS 1.2) / RFC 8446 7.5 節 (TLS 1.3) の鍵導出機能 (ラベル `EXPORTER-porter-v2`、文脈に両端のセッション識別子) で 64 バイトを導出し、方向ごとの 32 バイトの鍵に分割します。以後のデータ保護には cplat の AES-256-GCM API を使用します。
+- 一対多 (`multicast`、`broadcast`) では、受信者が送信者のユニキャスト アドレスとポートへハンドシェイクを行い、送信者はセッションごとに生成した 32 バイトのグループ鍵を受信者用の鍵で暗号化して `POTR_FLAG_KEY` で配布します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as 送信者<br>(multicast / broadcast)
+    participant R as 受信者<br>(cert 方式)
+
+    Note over S,R: 1:1 / TCP では最初に完了した経路の鍵を全経路で共有
+
+    R->>S: POTR_FLAG_HANDSHAKE (クライアント Hello)
+    S->>R: POTR_FLAG_HANDSHAKE (サーバー Hello・証明書)
+    R->>S: POTR_FLAG_HANDSHAKE (証明書・検証完了)
+    S->>R: POTR_FLAG_HANDSHAKE (ハンドシェイク完了)
+
+    Note over S,R: EXPORTER-porter-v2 から方向別の鍵を導出
+
+    opt 一対多 (multicast / broadcast)
+        S->>R: POTR_FLAG_KEY (受信者用の鍵でグループ鍵を暗号化して配布)
+    end
+
+    S->>R: POTR_FLAG_DATA / POTR_FLAG_PING (グループ鍵または送信方向鍵で保護)
+    R->>S: POTR_FLAG_REPORT / POTR_FLAG_NACK (受信者ごとの鍵または受信方向鍵で保護)
+```
+
+CodeBlock: 証明書方式のハンドシェイクと鍵確立の流れ
 
 ## 型定数
 
@@ -689,7 +742,7 @@ potr_service_open_from_config("porter-services.jsonc", 4020, POTR_ROLE_RECEIVER,
 | 監視方法 | `last_recv_ts` | PING 応答タイムアウト | PING 応答タイムアウト | `last_recv_ts` |
 | src_port | 省略可 (SENDER)/ 必須 (RECEIVER) | 無視 | 無視 | 1:1 は省略可、N:1 では送信元ポート フィルターとして任意 |
 | 自動再接続 | なし | ○ (SENDER) | ○ (SENDER) | なし |
-| マルチパス | ○ (最大 4 経路) | ○ (最大 4 経路) | ○ (最大 4 経路) | ○ (最大 4 経路) |
+| マルチパス | ○ (最大 8 経路) | ○ (最大 8 経路) | ○ (最大 8 経路) | ○ (最大 8 経路) |
 | コールバック | RECEIVER 必須 | RECEIVER 必須 (SENDER 任意) | 両端必須 | 両端必須 (N:1 は `peer_id` 付き) |
 
 Table: 通信種別ごとの特性比較
@@ -702,7 +755,7 @@ Table: 通信種別ごとの特性比較
 
 | 機能ブロック | UDP | TCP | 備考 |
 |---|---|---|---|
-| `flush_packed()` | ✅ | ✅ | `is_tcp` フラグで送信部分を分岐。TCP は全アクティブ path にループ送信 |
+| `flush_packed()` | ✅ | ✅ | `is_tcp` フラグで送信部分を分岐。TCP は選択中のグループのアクティブ path にループ送信 |
 | `health_thread_func()` | ✅ | ✅ | `is_tcp_type()` で分岐済み |
 | `deliver_payload_elem()` | ✅ | ✅ | 完全共有 |
 | `potr_internal_packet_parse()` | ✅ | ✅ | 完全共有 |

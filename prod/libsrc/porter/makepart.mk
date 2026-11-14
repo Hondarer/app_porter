@@ -1,5 +1,5 @@
 # ライブラリの指定
-LIBS += cplat cjson_app
+LIBS += cplat cjson_app ssl_app crypto_app
 
 ifdef PLATFORM_WINDOWS
     # DLL エクスポート定義

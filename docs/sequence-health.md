@@ -15,7 +15,7 @@ TCP の受信状態が変化した場合は、定周期 health が稼働して�
 
 ## ヘルス チェック (正常疎通)
 
-ヘルス チェックが有効な場合の PING 送信です。片方向 type 1-6 は open 直後の即時 PING を行わず、最後の `PING` または有効 `DATA` 送信から `health_interval_ms` 経過したときだけ PING を送信します。双方向 UDP では従来どおり定周期 PING と、`path_ping_state[]` 変化時の割り込み PING を送出します。双方向 UDP はこの PING 往復で `CONNECTED` するため、実効 `health_interval_ms = 0` のままでは接続確立しません。
+ヘルス チェックが有効な場合の PING 送信です。片方向 type 1-6 は open 直後の即時 PING を行わず、経路ごとに「最後の `PING` または有効 `DATA` 送信」から `health_interval_ms` 経過したときに PING を送信します (待機グループの経路にも DATA が流れない間に PING が送出されます)。双方向 UDP では定周期 PING と、`path_ping_state[]` 変化時の割り込み PING を送出します。双方向 UDP はこの PING 往復で `CONNECTED` するため、実効 `health_interval_ms = 0` のままでは接続確立しません。
 
 ```mermaid
 sequenceDiagram
@@ -26,9 +26,9 @@ sequenceDiagram
 
     Note over HT: health_interval_ms = 3000ms<br>片方向は初回も 3000ms 待機
 
-    HT->>HT: 最後の PING / DATA 送信から<br>3000ms 待機
+    HT->>HT: 経路ごとに最後の PING / DATA 送信から<br>3000ms 待機
     Note over HT: send_window.next_seq を読み取る<br>(ウィンドウには登録しない)
-    HT->>UDP: PING[seq=N] 送信 (全パス)
+    HT->>UDP: PING[seq=N] 送信 (期限を迎えた経路)
 
     UDP->>RRT: PING[seq=N] 受信
     RRT->>RRT: last_recv_tv を更新<br>(タイムアウトカウンタリセット)
@@ -36,12 +36,45 @@ sequenceDiagram
     RRT->>RRT: next_seq〜N-1 を全スキャン<br>欠番を一括 NACK する
     Note over RRT: 欠番なければ返信なし
 
-    HT->>HT: DATA が送信されたら期限を延長する<br>送信が停止したら 3000ms 後に PING
+    HT->>HT: DATA が送信されたらその経路の期限を延長する<br>待機経路は 3000ms ごとに PING
 
-    Note over HT, UDP: 片方向は recent DATA により PING を抑止する<br>双方向系は従来どおり定周期 + 割り込み送信
+    Note over HT, UDP: 片方向は経路ごとに recent DATA で PING を抑止する<br>双方向系は定周期 + 割り込み送信
 ```
 
 Figure: ヘルス チェック (正常疎通)
+
+## 受信報告による片方向の経路把握
+
+通常モードの片方向・一対多 (`unicast`、`multicast`、`broadcast`) では、受信者が全経路から送信者へ受信報告 (`POTR_FLAG_REPORT`) を送り、送信者が優先グループの到達判定を行います。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as 送信者<br>(グループ1選択中)
+    participant P1 as 経路1 (グループ1)
+    participant P2 as 経路2 (グループ2)
+    participant R as 受信者<br>(通常モード)
+
+    S->>P1: DATA (選択中グループ1)
+    P1->>R: DATA 受信 → path[0] = NORMAL
+    S->>P2: PING (待機グループも監視)
+    P2->>R: PING 受信 → path[1] = NORMAL
+
+    Note over R: health_interval_ms ごと<br>(1:N は 100%〜150% でジッタ)
+    R->>S: POTR_FLAG_REPORT (全経路へ送信)<br>ペイロード: [NORMAL, NORMAL, ...]
+
+    Note over P1: 経路1が断線
+    S--xP1: DATA / PING 到達せず
+    S->>P2: PING (待機グループ)
+    P2->>R: PING 受信
+
+    R->>R: path[0] タイムアウト → ABNORMAL
+    R->>S: POTR_FLAG_REPORT<br>ペイロード: [ABNORMAL, NORMAL, ...]
+    S->>S: グループ1到達不能を検出し<br>グループ2へ切り替え
+    S->>P2: DATA (新グループ2へ送信)
+```
+
+CodeBlock: 受信報告による片方向の経路把握と切り替え
 
 ## ヘルス チェック タイムアウト
 

@@ -25,6 +25,30 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, thread_recv_health_check_peers(_)).WillByDefault(Return());
     ON_CALL(*this, thread_recv_health_check_service(_)).WillByDefault(Return());
     ON_CALL(*this, thread_recv_health_wake_tcp(_, _, _)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_path_group_select(_, _, _))
+        .WillByDefault([](potr_context *, potr_internal_peer_context *, potr_internal_path_group_result *selection) {
+            *selection = {};
+            selection->data_paths = UINT8_MAX;
+            selection->selected_paths = UINT8_MAX;
+            return POTR_OK;
+        });
+    ON_CALL(*this, potr_internal_receiver_accept(_, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, thread_recv_report_tick(_, _)).WillByDefault(Return(POTR_OK));
+
+    ON_CALL(*this, potr_internal_certificate_initialize(_, _)).WillByDefault(Return(POTR_OK));
+
+    ON_CALL(*this, potr_internal_certificate_state_dispose(_)).WillByDefault(Return());
+
+    ON_CALL(*this, potr_internal_certificate_dispose(_)).WillByDefault(Return());
+
+    ON_CALL(*this, potr_internal_certificate_receive(_, _, _, _, _)).WillByDefault(Return(POTR_ERR_NOT_FOUND));
+
+    ON_CALL(*this, potr_internal_certificate_tick(_, _)).WillByDefault(Return());
+
+    ON_CALL(*this, potr_internal_certificate_key(_, _, _, _, _)).WillByDefault(Return(POTR_ERR_DISCONNECTED));
+
+    ON_CALL(*this, potr_internal_certificate_connect(_, _, _)).WillByDefault(Return(POTR_OK));
+
     // peer table
     ON_CALL(*this, potr_internal_peer_find_by_id(_, _)).WillByDefault(Return(nullptr));
     ON_CALL(*this, potr_internal_peer_send_fin(_, _)).WillByDefault(Return());
@@ -39,6 +63,7 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, api_context_has_threads(_)).WillByDefault(Return(0));
     ON_CALL(*this, api_open_paths_by_type(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, api_setup_dest_addr(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_callback_emit(_, _, _, _, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_callback_mutex_dispose(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_callback_mutex_init(_)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_comm_recv_thread_start(_)).WillByDefault(Return(0));
@@ -90,16 +115,18 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_tcp_health_thread_wake_all(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_tcp_recv_thread_start(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_tcp_recv_thread_stop(_, _)).WillByDefault(Return(0));
-    ON_CALL(*this, potr_internal_tcp_send_control_packet(_, _, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_tcp_send_control_packet(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_tcp_send_ping_now(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_tcp_announce_ping_state_locked(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_window_dispose(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_window_init(_, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_window_recv_pop(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_window_recv_push(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_window_send_get(_, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_window_send_push(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, thread_recv_apply_remote_path_ping_state(_, _, _)).WillByDefault(Return());
     ON_CALL(*this, thread_recv_authenticate_packet(_, _, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(*this, thread_recv_replay_packet(_, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, thread_recv_check_src_addr(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, thread_recv_disconnect_peer_all_paths(_, _)).WillByDefault(Return());
     ON_CALL(*this, thread_recv_disconnect_service_all_paths(_)).WillByDefault(Return());

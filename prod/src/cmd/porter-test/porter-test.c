@@ -192,10 +192,9 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
     case POTR_EVENT_PATH_DISCONNECTED:
     {
         const char *event_str;
-        int path_state0;
-        int path_state1;
-        int path_state2;
-        int path_state3;
+        char states[POTR_MAX_PATH * 12U + 1U] = {0};
+        size_t offset = 0U;
+        size_t i;
 
         path_states = (const int *)data;
         path_idx = (int)len;
@@ -209,24 +208,31 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
             event_str = "DISCONNECTED";
         }
 
-        if (path_states != NULL)
+        for (i = 0; i < POTR_MAX_PATH; i++)
         {
-            path_state0 = path_states[0];
-            path_state1 = path_states[1];
-            path_state2 = path_states[2];
-            path_state3 = path_states[3];
-        }
-        else
-        {
-            path_state0 = 0;
-            path_state1 = 0;
-            path_state2 = 0;
-            path_state3 = 0;
+            const char *separator = ",";
+            int state = 0;
+            int written;
+
+            if (i == 0U)
+            {
+                separator = "";
+            }
+            if (path_states != NULL)
+            {
+                state = path_states[i];
+            }
+            written = cplat_snprintf(states + offset, sizeof(states) - offset, "%s%d", separator, state);
+            if (written < 0 || (size_t)written >= sizeof(states) - offset)
+            {
+                break;
+            }
+            offset += (size_t)written;
         }
 
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                   "[サービス %" PRId64 "] path[%d] %s states={%d,%d,%d,%d}\n", service_id, path_idx,
-                                   event_str, path_state0, path_state1, path_state2, path_state3);
+                                   "[サービス %" PRId64 "] path[%d] %s states={%s}\n", service_id, path_idx,
+                                   event_str, states);
         break;
     }
 

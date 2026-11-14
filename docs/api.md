@@ -44,7 +44,8 @@ Table: PATH イベント時のコールバック引数の意味
 Table: potr_service_send の戻り値一覧
 
 `POTR_ERR_DISCONNECTED` は「送信先が論理的に CONNECTED していない」ことを示します。  
-片方向 type 1-6 は受信側が有効な `PING` または `DATA` を契機に CONNECTED しますが、送信側はその状態を観測できないため、本戻り値の対象外です。
+双方向通信 (`unicast_bidir`、`unicast_bidir_n1`) と TCP (`tcp`、`tcp_bidir`) では、全グループ不達は全経路の切断と同じ論理切断として扱い、`potr_service_send()` は `POTR_ERR_DISCONNECTED` を返します。  
+片方向 (`unicast`、RAW モード) と一対多 (`multicast`、`broadcast`) では、全グループ不達の場合でも `potr_service_send()` は `POTR_ERR_DISCONNECTED` を返さず成功し、全グループの全経路へ送信します。一部の受信者の停止が他の受信者への送信を止めないようにするためです。
 
 ヘッダー定義と引数条件の正本は `app/porter/prod/include/porter.h` および Doxygen 出力を参照してください。
 
@@ -84,6 +85,26 @@ Table: 受信コールバック内から呼び出した場合の動作
 Table: サービス開始 API の入力と用途の使い分け
 
 `potr_service_open_from_config()` の実装は構成ファイルを解析して構造体を構築し、`potr_service_open()` に委譲します。
+
+#### potr_service_def の証明書方式設定
+
+`potr_service_def` を 0 初期化した場合、`auth` は `POTR_AUTH_PSK` (事前共有鍵方式) になります。証明書方式 (`POTR_AUTH_CERT`) を使用する場合は、次のメンバーを設定して `potr_service_open()` へ渡します。
+
+| メンバー | 型 | 内容 |
+|---|---|---|
+| `auth` | `potr_auth` | `POTR_AUTH_PSK` (0: 事前共有鍵方式) または `POTR_AUTH_CERT` (1: 証明書方式) |
+| `cert_file` | `const char *` | 自端の証明書ファイル (PEM 形式)。`POTR_AUTH_CERT` で必須 |
+| `key_file` | `const char *` | 自端の秘密鍵ファイル (PEM 形式)。`POTR_AUTH_CERT` で必須 |
+| `ca_file` | `const char *` | 信頼する CA の証明書ファイル (PEM 形式)。`pinned_certs` との少なくとも一方が必須 |
+| `crl_file` | `const char *` | 失効リスト ファイル (PEM 形式)。省略時は `NULL` |
+| `pinned_certs` | `const char *const *` | 直接登録する相手の証明書ファイル (PEM 形式) のパス配列 |
+| `pinned_cert_count` | `size_t` | `pinned_certs` の要素数 |
+| `peer_names` | `const char *const *` | CA 検証で証明書の SAN (DNS 名または URI) と照合する相手名の配列 |
+| `peer_name_count` | `size_t` | `peer_names` の要素数。`ca_file` 指定時は 1 以上が必須 |
+
+Table: 証明書方式の設定を渡す `potr_service_def` のメンバー
+
+これらのポインターおよび配列内の文字列は `potr_service_open()` の呼び出し中だけ参照し、porter は保持しません (証明書、秘密鍵、CRL は open 時に 1 回だけ読み込みます)。
 
 ### ハンドルとスレッドの対応
 
