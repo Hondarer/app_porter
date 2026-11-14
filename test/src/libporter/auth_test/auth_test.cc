@@ -109,7 +109,8 @@ struct auth_pair
             {
                 return;
             }
-            report.largest_output = std::max(report.largest_output, length);
+            // windows.h の関数形式マクロ max に展開されないよう、関数名を括弧で囲む。
+            report.largest_output = (std::max)(report.largest_output, length);
             ++report.delivered;
             report.result = potr_internal_auth_session_receive(to, output.data(), length, &state);
             if (report.result != POTR_OK || state == POTR_INTERNAL_AUTH_STATE_FAILED)
