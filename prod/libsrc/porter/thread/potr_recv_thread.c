@@ -198,7 +198,6 @@ static void recv_thread_func(void *arg)
     potr_context *ctx = (potr_context *)arg;
     uint8_t *buf = ctx->recv_buf; /* POTR_PACKET_HEADER_SIZE + max_payload [byte] */
     potr_packet pkt;
-    cplat_ipv4_endpoint sender_addr;
     uint32_t poll_ms;
     thread_recv_slot svc_slot; /* 1:1 モード用スロット (フィールド位置は不変のため 1 回だけ構成) */
 
@@ -317,7 +316,7 @@ static void recv_thread_func(void *arg)
                 continue;
             }
 
-            memset(&sender_addr, 0, sizeof(sender_addr));
+            cplat_ipv4_endpoint sender_addr = {0};
 
             recv_result = cplat_socket_recvfrom(ctx->sock[i], buf, POTR_PACKET_HEADER_SIZE + ctx->global.max_payload,
                                                 &sender_addr, &recv_len, NULL);
