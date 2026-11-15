@@ -74,7 +74,7 @@
 
 - `261109-porter-path-priority-timestamp-auth-backlog.md` (整理済み) の BL-003 と BL-004
 - `261109-porter-path-priority-timestamp-auth-design.md` の受入条件 (検証環境の行)
-- `app/general/docs/prompts/current/261114-windows-real-machine-verification-discussion.md` (版 5)、同 backlog (並行案件。未コミット)
+- `app/general/docs/prompts/past/261114-windows-real-machine-verification-discussion.md` (版 5)、同 backlog (並行案件。未コミット)
 - `app/cplat` `dd93136b`、`app/porter` `6796b6f`、`app/openssl` `9b2daca`、`framework/testfw` `dbccc80` (2026-11-14 20:11 JST 時点の作業ツリー)
 
 ### 調査で確認した事実 (2026-11-14 20:11 JST、この作業ツリー)
