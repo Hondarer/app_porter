@@ -1,8 +1,10 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新エージェント: Codex / セッション ID: 特定できず
-上流文書: `261114-porter-windows-verification-clock-unify-discussion.md`、`261114-porter-windows-verification-clock-unify-design.md`、`261109-porter-path-priority-timestamp-auth-backlog.md`
+最終更新日時: 2026-11-15 14:57:17 JST
+最終更新エージェント: codex (Sol、移管元の参照更新)
+稼働 OS: Windows
+上流文書: `261114-porter-windows-verification-clock-unify-discussion.md`、`261114-porter-windows-verification-clock-unify-design.md`、`../past/261109-porter-path-priority-timestamp-auth-backlog.md`
 再開手順: agree-before-implement スキルを読み、各課題の根拠と上流の判断を確認してください。技術仕様を選択する場合は新しい検討用 Markdown で合意を得てください。
 -->
 

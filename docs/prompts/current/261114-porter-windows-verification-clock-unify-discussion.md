@@ -1,8 +1,10 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 検討用 Markdown (discussion)
-最終更新エージェント: codex / セッション ID: 特定できず
-上流文書: `261109-porter-path-priority-timestamp-auth-backlog.md` の BL-003 と BL-004 (過去 backlog。継続作業の元)。
+最終更新日時: 2026-11-15 14:57:17 JST
+最終更新エージェント: codex (Sol、移管元の参照更新)
+稼働 OS: Windows
+上流文書: `../past/261109-porter-path-priority-timestamp-auth-backlog.md` の BL-003 と BL-004 (過去 backlog。継続作業の元)。
 下流文書: `261114-porter-windows-verification-clock-unify-design.md` (最終仕様)、`261114-porter-windows-verification-clock-unify-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
 再開手順: このファイルを開いたエージェントは、作業の前に agree-before-implement スキルを読み込んでください。ユーザーが編集した最新版を読み直し、作業 WBS の `← **CURRENT**` の項目から再開します。最終更新エージェントのセッション情報が参照可能であれば再開時のコンテキストとして利用し、別エージェントからの引き継ぎや担当変更によりセッションが見つからない場合も異常とせず、文書の記載から継続してください。`← **CURRENT**` の項目は処理が中止された項目である場合があり、どこまで進んでいたかは文書だけでは分かりません。対象成果物の内容を確認して実施済みの範囲を特定してから、作業を再開してください。`← **CURRENT**` がなく、作業 WBS がすべて完了 (✅) であれば、この案件の合意フローは完了しています。
 -->
@@ -44,7 +46,7 @@
     - ✅ 4.4. BL-004: Linux と Windows の間の `porter-test` による相互接続確認 (PSK と証明書、6 種の通信種別)。10/12 の組み合わせで送受信を確認。マルチキャスト 2 件はユーザー判断により今回は修正せず、新規 backlog の BL-001 へ移管
     - ✅ 4.5. BL-003: 正本ドキュメントおよびコード コメントへの知見の反映、変更した Markdown の `text_style_jp.py` と `check_functional_spec.py` の確認
     - ✅ 4.6. BL-003 と Windows 検証範囲の受入条件への適合確認 (残課題を backlog に移管)
-    - ✅ 4.7. 過去 backlog (`261109-porter-path-priority-timestamp-auth-backlog.md`) の BL-003 と BL-004 の経緯、検証結果、残課題を更新
+    - ✅ 4.7. 過去 backlog (`../past/261109-porter-path-priority-timestamp-auth-backlog.md`) の BL-003 と BL-004 の経緯、検証結果、残課題を更新
     - ✅ 4.8. Q-011 の判断を記録し、未解決事項を案件 backlog へ移管
 - ✅ 5. 成果物の承認の受付 (第 3 ゲート)
     - ✅ 5.1. 成果物・検証結果・残課題の提示
@@ -72,8 +74,8 @@
 
 参照資料と版:
 
-- `261109-porter-path-priority-timestamp-auth-backlog.md` (整理済み) の BL-003 と BL-004
-- `261109-porter-path-priority-timestamp-auth-design.md` の受入条件 (検証環境の行)
+- `../past/261109-porter-path-priority-timestamp-auth-backlog.md` (整理済み) の BL-003 と BL-004
+- `../past/261109-porter-path-priority-timestamp-auth-design.md` の受入条件 (検証環境の行)
 - `app/general/docs/prompts/past/261114-windows-real-machine-verification-discussion.md` (版 5)、同 backlog (並行案件。未コミット)
 - `app/cplat` `dd93136b`、`app/porter` `6796b6f`、`app/openssl` `9b2daca`、`framework/testfw` `dbccc80` (2026-11-14 20:11 JST 時点の作業ツリー)
 
