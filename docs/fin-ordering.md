@@ -79,7 +79,7 @@ FIN.flags に FIN_TARGET_VALID があり recv_window.next_seq == FIN.ack_num
 FIN.flags に FIN_TARGET_VALID があり recv_window.next_seq != FIN.ack_num
   → pending_fin = true, fin_target_seq = FIN.ack_num
   → セッション状態はリセットしない
-  → 後着 DATA / skip で next_seq が追い付くのを待つ
+  → 後着 DATA で next_seq が追い付くのを待つ
 ```
 
 `pending_fin` 中は既存の NACK / REJECT / reorder timeout の仕組みがそのまま働きます。
@@ -152,8 +152,8 @@ FIN_TARGET_VALID なし
 | シナリオ | 解消パス |
 |---|---|
 | 欠番 DATA が後着 | `potr_internal_window_recv_push()` → `drain_recv_window()` 末尾で `pending_fin` 解消 |
-| UDP で送信側が NACK に REJECT で応答 | `potr_internal_window_recv_skip()` 後の `drain_recv_window()` で解消 |
-| `reorder_timeout_ms` タイムアウト | `potr_internal_window_recv_skip()` 後の `drain_recv_window()` で解消 |
+| UDP で送信側が NACK に REJECT で応答 | `thread_recv_fin_fire()` で FIN を直ちに発火して解消 |
+| `reorder_timeout_ms` タイムアウト | NACK を再送し、REJECT またはヘルス チェックで解消 |
 | TCP close wait 中に FIN_ACK 未着 | `tcp_close_timeout_ms` 超過で強制 close、`potr_service_close()` は `POTR_ERR_TIMEOUT` |
 | `send_window.next_seq` が wrap して 0 | `FIN_TARGET_VALID` の有無で no-data FIN と区別するため問題なし |
 

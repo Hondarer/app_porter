@@ -384,7 +384,7 @@ static void slot_retransmit_or_reject(thread_recv_slot *slot, uint32_t ack_num)
     }
     else
     {
-        /* 送信ウィンドウから外れた通番は再送できないため、REJECT で受信側に欠番のスキップを求める。 */
+        /* 送信ウィンドウから外れた通番は再送できないため、REJECT で受信側に再送不能を通知する。 */
         POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
                    "recv[service_id=%" PRId64 "]: peer=%u NACK seq=%u not in window -> REJECT", ctx->service.service_id,
                    (unsigned)slot->peer_id, (unsigned)ack_num);
@@ -400,9 +400,11 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
     uint32_t nack_num;
     uint32_t stretch;
     int is_raw = is_raw_type(ctx->service.type);
+    int push_ret;
 
     /* 受信ウィンドウへ投入する。 */
-    if (potr_internal_window_recv_push(slot->recv_window, pkt) != POTR_OK)
+    push_ret = potr_internal_window_recv_push(slot->recv_window, pkt);
+    if (push_ret != POTR_OK)
     {
         /*
          * RAW は再送を行わないため、ウィンドウが満杯になった時点でセッション切断として扱う。
@@ -428,10 +430,29 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
         else
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                       "recv[service_id=%" PRId64 "]: peer=%u recv_window full (100%%), dropping seq=%u"
+                       "recv[service_id=%" PRId64 "]: peer=%u seq=%u out of recv_window, dropping"
                        " (base_seq=%u window_size=%u)",
                        ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)pkt->seq_num,
                        (unsigned)slot->recv_window->base_seq, (unsigned)slot->recv_window->window_size);
+
+            /*
+             * 受信ウィンドウより先の通番が届いた時点で、next_seq から先が欠落している。
+             * パケットを捨てたままにせず next_seq の NACK を送り、送信側に再送または REJECT 判定を促す。
+             */
+            if (push_ret == POTR_ERR_OUT_OF_WINDOW &&
+                (int32_t)(pkt->seq_num - slot->recv_window->base_seq) >= (int32_t)slot->recv_window->window_size)
+            {
+                uint32_t next_seq = slot->recv_window->next_seq;
+
+                if (slot_gap_ready(slot, next_seq) != 0)
+                {
+                    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                               "recv[service_id=%" PRId64 "]: peer=%u NACK seq=%u (out of window)",
+                               ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)next_seq);
+                    slot_send_nack(slot, next_seq);
+                }
+            }
+
             return;
         }
     }
@@ -521,10 +542,19 @@ void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt
                                   const cplat_ipv4_endpoint *sender)
 {
     potr_context *ctx = slot->ctx;
+    uint32_t next_seq;
 
     /* RAW は NACK を送らないため、REJECT を受ける状況がない。 */
     if (is_raw_type(ctx->service.type))
     {
+        return;
+    }
+
+    if (*slot->peer_session_known == 0)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                   "recv[service_id=%" PRId64 "]: peer=%u REJECT ignored seq=%u (session unknown)",
+                   ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)pkt->ack_num);
         return;
     }
 
@@ -533,19 +563,46 @@ void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt
         return;
     }
 
+    /*
+     * 一対多では他の受信者向けの REJECT も届き、再送要求の反復で同じ REJECT が複数回届くこともある。
+     * 自スロットの next_seq より前または受信ウィンドウ内で既に受信済みの通番は無視し、不要な切断を防ぐ。
+     */
+    next_seq = slot->recv_window->next_seq;
+    if ((int32_t)(pkt->ack_num - next_seq) < 0 ||
+        potr_internal_window_recv_has_packet(slot->recv_window, pkt->ack_num) != 0)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                   "recv[service_id=%" PRId64 "]: peer=%u REJECT ignored seq=%u (next_seq=%u)",
+                   ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)pkt->ack_num, (unsigned)next_seq);
+        return;
+    }
+
     thread_recv_learn_sender_path(slot, path_idx, sender);
 
-    if (slot->peer == NULL)
+    if (slot->peer != NULL)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
-                   "recv[service_id=%" PRId64 "]: REJECT received seq=%u"
-                   " (packet unrecoverable)",
+                   "recv[service_id=%" PRId64 "]: peer=%u REJECT received seq=%u (packet unrecoverable)",
+                   ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)pkt->ack_num);
+    }
+    else
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                   "recv[service_id=%" PRId64 "]: REJECT received seq=%u (packet unrecoverable)",
                    ctx->service.service_id, (unsigned)pkt->ack_num);
     }
 
+    /* 保留中の FIN は欠番が埋まらなければ目標通番へ到達しないため、直ちに FIN を発火して終了する。 */
+    if (*slot->pending_fin != 0)
+    {
+        thread_recv_fin_fire(slot, *slot->fin_target_seq);
+        return;
+    }
+
     /*
-     * 送信側が再送できないと通知した欠番は、データの欠落として確定する。
-     * 欠落を利用者へ通知するため、全経路を切断状態にしてから欠番をスキップして後続を配信する。
+     * 1 通番ずつのスキップでは大きく遅れた受信側が送信側の保持範囲へ追い付けない。
+     * 全経路の切断を通知したうえで受信状態を破棄し、次に届く DATA または PING の通番で受信ウィンドウを再初期化する。
+     * last_recv_ts は送信側の生存を示すため維持する。
      */
     thread_recv_set_all_path_ping_states(slot->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
     memset(slot->remote_path_ping_state, 0, POTR_MAX_PATH);
@@ -559,9 +616,11 @@ void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt
         thread_recv_disconnect_service_all_paths(ctx);
     }
 
+    potr_internal_window_recv_reset(slot->recv_window, 0U);
+    *slot->frag_buf_len = 0U;
+    *slot->frag_compressed = 0;
     *slot->reorder_pending = 0;
-    potr_internal_window_recv_skip(slot->recv_window, pkt->ack_num);
-    slot_drain_recv_window(slot);
+    *slot->peer_session_known = 0;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

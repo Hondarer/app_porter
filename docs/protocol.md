@@ -411,6 +411,10 @@ evict された通番に対して後から NACK が到着した場合、その�
 期待する通番より大きい通番のパケット (追い越し) もウィンドウ内に保持します。  
 ウィンドウの先頭から連続した通番のパケットが揃ったところで、上位層へ順番に渡します。
 
+受信ウィンドウの範囲外のパケットを受信した場合 (RAW モードを除く)、そのパケットは破棄します。  
+破棄したパケットの通番が受信ウィンドウより先にある場合は、先頭の欠番 (`recv_window.next_seq`) から先が欠落しているため、リオーダー待ちの期限判定を経て `recv_window.next_seq` の NACK を送出し、送信側へ再送または REJECT 判定を促します。  
+配信済みの古い通番の場合は、NACK を送出しません。
+
 ### 欠番検出と NACK 送出 (通常モード)
 
 受信ウィンドウが、期待する通番より大きい通番のパケットを受け取った場合、欠番が生じています。  
@@ -504,13 +508,17 @@ RAW モードでは再送制御を行いません。送信ウィンドウへの�
 
 ### REJECT の役割
 
-送信者が REJECT を返却する状況は、受信者が送信ウィンドウから evict 済みの通番を要求した場合です。
+送信者が REJECT を返却する状況は、受信者が送信ウィンドウから evict 済みの通番を要求した場合です。  
+受信者は REJECT の `ack_num` が自身の欠番に当たるかを `recv_window.next_seq` と比較して判定します。
 
-受信者は REJECT を受信すると:
+- `ack_num` が `recv_window.next_seq` より前 (配信済み) または受信ウィンドウ内ですでに受信済みの場合は、自身の欠番ではないため無視します (一対多で他の受信者向け REJECT を受けた場合や、再送要求の反復による重複を含みます)。
+- `ack_num` が `recv_window.next_seq` 以降で未受信、または受信ウィンドウより先の場合は、再送不能の欠落として処理します。
 
-1. 直ちに `POTR_EVENT_DISCONNECTED` を発火します。
-2. 欠落した通番をスキップし、次の通番から処理を再開できる状態になります。
-3. 次のパケットが到着した時点で `POTR_EVENT_CONNECTED` を発火します。
+自身の欠番に対する REJECT を処理する場合、受信者は次の順に動作します。
+
+1. FIN を保留中 (`pending_fin` が 1) の場合は、目標通番までのデータを揃えられないため、`thread_recv_fin_fire()` で直ちに FIN を発火して終了します。
+2. FIN を保留していない場合は、全経路を切断状態にして `POTR_EVENT_DISCONNECTED` を発火し、受信の状態 (受信ウィンドウの保持内容、フラグメント途中の状態、リオーダー待ち、`peer_session_known`) を破棄します。`last_recv_ts` は送信側の生存を示すため維持します。
+3. 次に届いた DATA または PING を新しいセッションとして採用し (`thread_recv_session_adopt()`)、その通番で受信ウィンドウを初期化して受信を再開します。
 
 ## FIN と DATA の順序保証
 
@@ -537,7 +545,7 @@ wrap 後は `FIN.ack_num = 0` も通常の有効値です。`ack_num = 0` を no
   FIN_TARGET_VALID == 1
     recv_window.next_seq == ack_num → 即 DISCONNECTED (ウィンドウ追い付き済み)
     recv_window.next_seq != ack_num → pending_fin = true (DATA 待ち)
-                                      後続 DATA pop / skip のたびに再判定
+                                      後続 DATA の pop のたびに再判定
 ```
 
 ### ペンディング中のエッジ ケース
@@ -547,8 +555,8 @@ FIN をペンディング中に期待する DATA が届かない場合、以下�
 | シナリオ | 解消パス |
 |---|---|
 | 欠番 DATA が後着した | 正常に `drain_recv_window()` → `pending_fin` 解消 |
-| 送信者が NACK に REJECT で応答 | `potr_internal_window_recv_skip()` → `drain_recv_window()` → `pending_fin` 解消 |
-| `reorder_timeout_ms` タイムアウト後 | `potr_internal_window_recv_skip()` → 同上 |
+| 送信者が NACK に REJECT で応答 | `thread_recv_fin_fire()` で FIN を直ちに発火して解消 |
+| `reorder_timeout_ms` タイムアウト後 | NACK を再送し、REJECT またはヘルス チェックで解消 |
 | `health_timeout_ms` タイムアウト | ヘルス チェックが `DISCONNECTED` を発火 (既存フォールバック) |
 
 Table: FIN ペンディング中のエッジ ケースと解消パス

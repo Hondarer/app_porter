@@ -587,36 +587,6 @@ TEST_F(windowTest, recvHasPacketReturnsFalseForUnavailableWindow)
 }
 // [サブ手順参照 名前=windowTest.TearDown]
 
-// skip が next_seq と一致する通番のときのみウィンドウを前進させることの確認
-// [サブ手順参照 名前=windowTest.SetUp]
-TEST_F(windowTest, recvSkipAdvancesOnlyOnNextSeq)
-{
-    // Arrange
-    ASSERT_EQ(POTR_OK, potr_internal_window_init(&win, 10U, 4U, 16U)); // [状態] - base_seq を 10 とする。
-    // [状態確認] - potr_internal_window_init() の戻り値が POTR_OK であること。
-
-    // Pre-Assert
-
-    // Act
-    potr_internal_window_recv_skip(
-        &win, 99U); // [手順] - next_seq と一致しない通番を指定して potr_internal_window_recv_skip() を呼び出す。
-    uint32_t next_after_mismatch = win.next_seq;
-    potr_internal_window_recv_skip(
-        &win, 10U); // [手順] - next_seq と一致する通番を指定して potr_internal_window_recv_skip() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(
-        10U,
-        next_after_mismatch); // [確認_正常系] - next_after_mismatch が 10U であること。(不一致の skip では next_seq が前進しないことの確認)
-    EXPECT_EQ(
-        11U,
-        win.next_seq); // [確認_正常系] - win.next_seq が 11U であること。(一致した skip で next_seq が前進することの確認)
-    EXPECT_EQ(
-        11U,
-        win.base_seq); // [確認_正常系] - win.base_seq が 11U であること。(一致した skip で base_seq が前進することの確認)
-}
-// [サブ手順参照 名前=windowTest.TearDown]
-
 // reset が全スロットを無効化し base_seq および next_seq を新基点に設定することの確認
 // [サブ手順参照 名前=windowTest.SetUp]
 TEST_F(windowTest, recvResetClearsSlotsAndSetsNewBase)

@@ -288,15 +288,17 @@ sequenceDiagram
     ST->>UDP: REJECT[ack_num=0] 送信
 
     UDP->>RRT: REJECT[ack_num=0] 受信
+    RRT->>RRT: ack_num=0 が自スロットの欠番か判定
 
     RRT->>NQ: 通知内容を保持して登録
     NQ->>NT: 登録順に取り出す
     NT->>RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
-    RRT->>RRT: 欠落 seq=0 をスキップ<br>次の通番 seq=1 から再開
+    RRT->>RRT: 受信の状態を破棄<br>(受信ウィンドウ、フラグメント、リオーダー、セッション既知状態)
 
-    Note over RRT: 次のパケット到着で復帰
+    Note over RRT: 次に届いたパケットで受信ウィンドウを初期化して復帰
 
     UDP->>RRT: DATA[seq=17] 受信
+    RRT->>RRT: 新セッションとして採用し<br>seq=17 で受信ウィンドウを初期化
     RRT->>NQ: 通知内容を保持して登録
     NQ->>NT: 登録順に取り出す
     NT->>RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_CONNECTED, NULL, 0)

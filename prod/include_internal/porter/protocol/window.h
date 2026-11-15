@@ -143,16 +143,6 @@ extern "C"
     extern int potr_internal_window_recv_has_packet(const potr_internal_window *win, uint32_t seq_num);
 
     /**
-     *  @brief          受信ウィンドウで指定通番をスキップして次の通番へ前進させます。
-     *  @param[in,out]  win     受信ウィンドウ構造体へのポインター。
-     *  @param[in]      seq_num スキップする通番。next_seq と一致する場合のみ動作します。
-     *
-     *  REJECT 受信時に欠落パケットを「配信済み」として扱い、後続パケットの配信を
-     *  継続するために使用します。seq_num が next_seq と一致しない場合は何もしません。
-     */
-    extern void potr_internal_window_recv_skip(potr_internal_window *win, uint32_t seq_num);
-
-    /**
      *  @brief          受信ウィンドウを新しい基点通番でリセットします。
      *  @param[in,out]  win          受信ウィンドウ構造体へのポインター。
      *  @param[in]      new_base_seq リセット後の基点通番 (次に期待する通番)。

@@ -119,9 +119,9 @@ extern "C"
      *  @param[in]      seq_num     再送不能な通番。ack_num フィールドに格納します。
      *  @return         成功時は POTR_OK、引数が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
      *
-     *  受信者から NACK を受け取ったが、送信ウィンドウに該当パケットが存在しない場合に
-     *  送信者が返すパケットです。受信者はこのパケットを受け取ると即時 DISCONNECTED を
-     *  発火し、欠落通番をスキップして後続パケットの配信を継続します。
+     *  受信者から NACK を受け取ったが、送信ウィンドウに該当パケットが存在しない場合に送信者が返すパケットです。\n
+     *  受信者は通知された通番が自身の欠番に当たる場合に切断を通知して受信の状態を破棄し、次に届いたパケットから受信を再開します。\n
+     *  FIN を保留中の場合は、即時に FIN を発火して終了します。
      */
     extern int potr_internal_packet_build_reject(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
                                                  uint32_t seq_num);

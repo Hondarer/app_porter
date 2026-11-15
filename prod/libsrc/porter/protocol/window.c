@@ -271,23 +271,6 @@ int potr_internal_window_recv_pop(potr_internal_window *win, potr_packet *packet
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void potr_internal_window_recv_skip(potr_internal_window *win, uint32_t seq_num)
-{
-    uint16_t idx;
-
-    if (win == NULL || win->next_seq != seq_num)
-    {
-        return;
-    }
-
-    idx = win_index(win, seq_num);
-    win->valid[idx] = 0; /* 設定されている場合も無効化 */
-    win_advance_base(win);
-    win->next_seq++;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
 int potr_internal_window_recv_needs_nack(const potr_internal_window *win, uint32_t *nack_num)
 {
     uint16_t i;
