@@ -1,10 +1,11 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-15 15:05:13 JST
-最終更新エージェント: agy (a04265f5-09bd-498a-84d5-5addac4f30a7、BL-002 クローズ)
+最終更新日時: 2026-11-15 21:55:00 JST
+最終更新エージェント: claude code / セッション ID: session_01KJc53SKi4E2GpcLq8ibyKp (BL-003 の原因特定とクローズ、BL-001 の対策案件の記録)
 稼働 OS: Windows
 上流文書: `261114-porter-windows-verification-clock-unify-discussion.md`、`261114-porter-windows-verification-clock-unify-design.md`、`../past/261109-porter-path-priority-timestamp-auth-backlog.md`
+継続作業: BL-001 は `261115-porter-multicast-src-contract-discussion.md` で対策を検討中です。
 再開手順: agree-before-implement スキルを読み、各課題の根拠と上流の判断を確認してください。技術仕様を選択する場合は新しい検討用 Markdown で合意を得てください。
 -->
 
@@ -24,9 +25,9 @@
 
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
-| BL-001 | マルチキャスト受信 NIC と許可送信元の設定契約を解決する | 作業中摘出 | 高 / 高 | 未着手 |
+| BL-001 | マルチキャスト受信 NIC と許可送信元の設定契約を解決する | 作業中摘出 | 高 / 高 | 対策検討中 (`261115-porter-multicast-src-contract-discussion.md`) |
 | BL-002 | Windows 仮想環境で時計取得コストを計測する | 過去 backlog からの転記 | 低 / 低 | クローズ (対応不要) |
-| BL-003 | certificateTest make 構成時の unexpected EOF stderr の原因を特定する | 作業中摘出 | 中 / 低 | 未着手 |
+| BL-003 | certificateTest make 構成時の unexpected EOF stderr の原因を特定する | 作業中摘出 | 中 / 低 | 対応済み (makefw `f6a1367` で解消済みを確認) |
 
 ## BL-001 マルチキャスト受信 NIC と許可送信元の設定契約を解決する
 
@@ -41,6 +42,7 @@
 
 - **摘出契機**: BL-004 の Windows/WSL 相互接続試験。
 - **今回の見送り理由**: ユーザーは「backlog に回す」と判断しました。今回の設定、実装、機能仕様の変更は行いません。
+- **継続作業 (2026-11-15)**: `261115-porter-multicast-src-contract-discussion.md` で対策の検討を始めました。追加調査で、マルチキャスト受信側の `src_addr` は NIC 指定と送信元照合に加えて、NACK、受信報告、証明書認証の返送先にも使われていることを確認しました。
 - **未採用案**: discussion Q-011 の A (NIC 指定と許可送信元 IP を別設定にする) は推奨として提示しましたが、採用されていません。B (マルチキャスト受信側で送信元照合をしない) も未採用です。いずれも次回の合意なしに実装しません。
 - **影響範囲**: `app/porter/docs/config.md`、`app/porter/docs/functional-spec/transport.md` の `POTR-TRANSPORT-QUAL-001`、`api_open_paths_multicast()`、`thread_recv_check_src_addr()`、PSK/証明書の相互接続。
 - **放置した場合のリスク**: 異なる NIC を通るマルチキャスト送信元が受信フィルターで破棄され、対象環境でマルチキャスト通信が成立しない可能性があります。
@@ -90,6 +92,12 @@
 
 - **恒久対応案**: 再現コマンドを起点に make の parse-time 展開と shell 呼び出しを特定し、原因を確認したうえで最小修正と対象 make の再検証を行います。
 - **参考情報**: discussion の BL-004 進行状況、上記の再現コマンド。
+
+### 経緯と対処 (2026-11-15)
+
+- **原因**: 記録時点 (porter `93ced44`、2026-11-15 07:44) の makefw の `_collect_srcs.mk` は、Windows で外部ソースを判定する `EXTERNAL_SRCS` を、ソース一覧を `$(foreach)` で展開した 1 つの `$(shell ...)` コマンドで求めていました。certificateTest は `ADD_SRCS` で porter のソース 46 件を取り込むため、このコマンドが約 9,900 文字になり、途中で切り詰められて shell の構文エラーになっていました。
+- **確認方法**: 旧判定を現在のソース一覧で再評価する補助 makefile を `-f` で追加読み込みし、件数を変えて実行しました。コマンド長 8,119 文字 (38 件) では成功し、9,004 文字 (42 件) 以上で `unexpected EOF while looking for matching` が出ました。約 8[KiB] を境に切り詰められていると判断しました。旧判定はエラー時に `EXTERNAL_SRCS` が空になるため、外部ソースの更新追跡からも漏れていました。
+- **対処**: makefw `f6a1367` (2026-11-15 13:43、「リンク構成追跡と MSVC 警告割り当て・外部ソース分類を修正する」) が、ソース一覧を shell コマンドへ展開しない判定 (`_path_functions.mk` の `_makefw_source_dirs_of_kind` など) に置き換えており、この問題は解消済みです。現在の作業ツリーでは、上記の再現コマンドを PowerShell と bash の両方から実行し、stderr が出ないことを確認しました。porter 側の追加変更はありません。
 
 ## 今回は新規課題にしない確認事項
 
