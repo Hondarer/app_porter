@@ -15,7 +15,7 @@
 ## 目的と範囲
 
 porter のハンドル寿命管理の改修 (専用通知スレッド、通知キュー、ハンドル制御情報の保持) について、改修時に未確認だった性能を測定し、受入判断の材料をそろえます。  
-対象は過去 backlog `261107-porter-handle-lifecycle-backlog.md` の BL-001 に挙げた次の 5 項目です。
+対象は過去 backlog `../past/261107-porter-handle-lifecycle-backlog.md` の BL-001 に挙げた次の 5 項目です。
 
 - N:1 のコールバック内返信と外部スレッド返信の比較
 - 低速コールバック時の通知遅延、ピーク メモリ、通知消費後の保持メモリ
@@ -171,8 +171,8 @@ Table: セッションごとの担当
 
 - 検証記録 `261115-porter-handle-lifecycle-perf-validation.md` を作成します。対象コミット、ビルド設定、各条件の負荷の内容、ウォーム アップと反復回数、結果の要約、測定の限界を記載します。測定プログラムを残さないため、再現に必要な条件はこの文書に文章で残します。
 - 条件ごとの数値を `261115-porter-handle-lifecycle-perf.csv` に記録します。列は OS、版、条件 ID、条件パラメーター、指標名、5 回の最小・中央値・最大とします。
-- 過去 backlog `261107-porter-handle-lifecycle-backlog.md` の BL-001 には、状態と、本案件での対処の経緯を追記します。
-- 元案件の検証記録 `261107-porter-handle-lifecycle-validation.md` には、本案件の検証記録への案内を追記します。既存の記載は変更しません。
+- 過去 backlog `../past/261107-porter-handle-lifecycle-backlog.md` の BL-001 には、状態と、本案件での対処の経緯を追記します。
+- 元案件の検証記録 `../past/261107-porter-handle-lifecycle-validation.md` には、本案件の検証記録への案内を追記します。既存の記載は変更しません。
 - 作業中に見送った事項や新たな気付きは、本案件の残課題一覧 `261115-porter-handle-lifecycle-perf-backlog.md` に記録します。
 
 ## 正本とコード コメントへの反映計画

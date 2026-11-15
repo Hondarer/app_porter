@@ -59,5 +59,5 @@ TCP の終了時エラーを再確認し、測定条件の問題か製品の問�
 2026-11-15 に、継続案件 `261115-porter-handle-lifecycle-perf` で対処しました。  
 Windows/MSVC と Linux (WSL2)/GCC の両方で、改修前版 `9e55a0c` と現行版を、各条件 5 回ずつ測定しました。測定項目は N:1 返信、低速コールバック、open/close 反復、UDP と TCP の遅延分布です。  
 TCP の終了時エラーは 3 つに切り分けました。このうち TCP 双方向の連続 close のタイムアウトは製品不具合として修正しました (cplat `fd903dc1`、porter `6e9002c`)。残り 2 つは改修前版の既存不具合です。  
-結果は [検証記録](261115-porter-handle-lifecycle-perf-validation.md) と [CSV](261115-porter-handle-lifecycle-perf.csv) にあります。  
-測定で見つかった別の問題は、[継続案件の残課題](261115-porter-handle-lifecycle-perf-backlog.md) の BL-001〜BL-003 に記録しました。
+結果は [検証記録](../current/261115-porter-handle-lifecycle-perf-validation.md) と [CSV](../current/261115-porter-handle-lifecycle-perf.csv) にあります。  
+測定で見つかった別の問題は、[継続案件の残課題](../current/261115-porter-handle-lifecycle-perf-backlog.md) の BL-001〜BL-003 に記録しました。
