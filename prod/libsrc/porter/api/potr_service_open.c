@@ -253,6 +253,8 @@ static int alloc_context_buffers(potr_context *ctx)
     }
 
     ctx->send_has_data = 0;
+    cplat_atomic_store_i32(&ctx->tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx->tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
     result = potr_internal_window_init(&ctx->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
     if (result != POTR_OK)
     {

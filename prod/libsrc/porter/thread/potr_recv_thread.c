@@ -530,7 +530,13 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
 
         if (fin_action == THREAD_RECV_FIN_FIRE)
         {
+            /*
+             * 1:1 TCP の受信ループ終了に伴い相手の正常 FIN 受理を記録し、
+             * FIN_ACK 返信後に受信スレッドを終了して接続管理スレッドへ経路後処理を委ねる。
+             */
+            cplat_atomic_store_i32(&ctx->tcp_peer_fin_received, 1, CPLAT_MEMORY_ORDER_RELEASE);
             thread_recv_fin_fire(svc_slot, fin_target_seq);
+            return POTR_ERR_EOF;
         }
 
         return POTR_OK;
@@ -651,7 +657,10 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
 
             if (should_fire_fin)
             {
+                /* 保留していた FIN を発動したため、相手 FIN 受理を記録して受信ループを終了する。 */
+                cplat_atomic_store_i32(&ctx->tcp_peer_fin_received, 1, CPLAT_MEMORY_ORDER_RELEASE);
                 thread_recv_fin_fire(svc_slot, fin_target_seq);
+                return POTR_ERR_EOF;
             }
         }
     }

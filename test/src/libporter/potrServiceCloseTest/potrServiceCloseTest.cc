@@ -171,3 +171,217 @@ TEST(potrServiceCloseTest, incomplete_join_retains_shared_resources)
     // Assert
     EXPECT_EQ(POTR_ERR_UNKNOWN, actual_ret); // [確認_異常系] - 終了待ち失敗を成功としないこと。
 }
+
+// 相手 FIN 受理済み・送信済みデータあり・FIN 受理後の送信なしなら FIN を送らず POTR_OK を返すことの確認
+TEST(potrServiceCloseTest, tcp_close_after_peer_fin_without_post_fin_send_returns_ok)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.send_has_data = 1; // [状態] - 相手 FIN 受理前には現セッションで DATA を送信済みとする。
+    cplat_atomic_store_i32(&ctx.send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
+    ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex, _)).Times(AtLeast(1));
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 相手 FIN 受理済みのため FIN を送信しないこと。
+    EXPECT_CALL(mock_cplat, cplat_condvar_wait(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - FIN_ACK 待機を行わないこと。
+
+    // Act
+    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - 相手 FIN 受理済みのサービスを閉じる。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - POTR_OK を返すこと。
+
+    // Cleanup
+    delegate_real_cplat_local_lock_dispose(ctx.send_window_mutex);
+}
+
+// 相手 FIN 受理済みかつ FIN 受理後の送信ありなら FIN を送らず POTR_ERR_DISCONNECTED を返すことの確認
+TEST(potrServiceCloseTest, tcp_close_after_peer_fin_with_post_fin_send_returns_disconnected)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.send_has_data = 1;
+    cplat_atomic_store_i32(&ctx.send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
+    ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex, _)).Times(AtLeast(1));
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).Times(0);
+    // [Pre-Assert確認_異常系] - 相手 FIN 受理済みのため FIN を送信しないこと。
+    EXPECT_CALL(mock_cplat, cplat_condvar_wait(_, _, _)).Times(0);
+    // [Pre-Assert確認_異常系] - FIN_ACK 待機を行わないこと。
+
+    // Act
+    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - 相手 FIN 受理後に DATA を送信したサービスを閉じる。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret); // [確認_異常系] - 切断エラーを返すこと。
+
+    // Cleanup
+    delegate_real_cplat_local_lock_dispose(ctx.send_window_mutex);
+}
+
+// 相手 FIN 未受理で FIN_ACK 待機中に全経路が切断された場合、has_data == 0 なら即時 POTR_OK を返すことの確認
+TEST(potrServiceCloseTest, tcp_close_returns_ok_immediately_when_paths_drop_during_wait_without_data)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    int close_lock_token = 0;
+    int close_cv_token = 0;
+    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.global.tcp_close_timeout_ms = 5000U;
+    ctx.send_has_data = 0;
+    ctx.tcp_close_mutex = reinterpret_cast<cplat_local_lock *>(&close_lock_token);
+    ctx.tcp_close_cv = reinterpret_cast<cplat_condvar *>(&close_cv_token);
+    cplat_atomic_store_i32(&ctx.send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
+    ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(_)).Times(AnyNumber());
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).WillOnce(Return(POTR_OK));
+    // [Pre-Assert確認_正常系] - FIN を 1 回送信すること。
+    EXPECT_CALL(mock_cplat, cplat_condvar_wait(ctx.tcp_close_cv, ctx.tcp_close_mutex, 5000))
+        .WillOnce(
+            [&ctx](cplat_condvar *, cplat_local_lock *, int)
+            {
+                cplat_atomic_store_i32(&ctx.tcp_active_paths, 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_OK;
+            });
+    // [Pre-Assert確認_正常系] - 起床時に全経路切断済みなら 1 回の待機でループを終了しタイムアウトまで待たないこと。
+
+    // Act
+    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - has_data == 0 で待機中に全経路が切断された場合を再現して閉じる。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - POTR_OK を返すこと。
+
+    // Cleanup
+    delegate_real_cplat_local_lock_dispose(ctx.send_window_mutex);
+}
+
+// 相手 FIN 未受理で FIN_ACK 待機中に全経路が切断された場合、has_data != 0 なら即時 POTR_ERR_DISCONNECTED を返すことの確認
+TEST(potrServiceCloseTest, tcp_close_returns_disconnected_immediately_when_paths_drop_during_wait_with_data)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    int close_lock_token = 0;
+    int close_cv_token = 0;
+    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.global.tcp_close_timeout_ms = 5000U;
+    ctx.send_has_data = 1;
+    ctx.tcp_close_mutex = reinterpret_cast<cplat_local_lock *>(&close_lock_token);
+    ctx.tcp_close_cv = reinterpret_cast<cplat_condvar *>(&close_cv_token);
+    cplat_atomic_store_i32(&ctx.send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
+    ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(_)).Times(AnyNumber());
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).WillOnce(Return(POTR_OK));
+    // [Pre-Assert確認_正常系] - FIN を 1 回送信すること。
+    EXPECT_CALL(mock_cplat, cplat_condvar_wait(ctx.tcp_close_cv, ctx.tcp_close_mutex, 5000))
+        .WillOnce(
+            [&ctx](cplat_condvar *, cplat_local_lock *, int)
+            {
+                cplat_atomic_store_i32(&ctx.tcp_active_paths, 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_OK;
+            });
+    // [Pre-Assert確認_異常系] - 起床時に全経路切断済みなら 1 回の待機でループを終了しタイムアウトまで待たないこと。
+
+    // Act
+    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - has_data != 0 で待機中に全経路が切断された場合を再現して閉じる。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret); // [確認_異常系] - POTR_ERR_DISCONNECTED を返すこと。
+
+    // Cleanup
+    delegate_real_cplat_local_lock_dispose(ctx.send_window_mutex);
+}
+
+// FIN_ACK 待機中に相手 FIN 受理と全経路切断が起きた場合、FIN 受理後の送信なしなら has_data != 0 でも即時 POTR_OK を返すことの確認
+TEST(potrServiceCloseTest, tcp_close_returns_ok_immediately_when_peer_fin_and_paths_drop_during_wait)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    int close_lock_token = 0;
+    int close_cv_token = 0;
+    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.global.tcp_close_timeout_ms = 5000U;
+    ctx.send_has_data = 1;
+    ctx.tcp_close_mutex = reinterpret_cast<cplat_local_lock *>(&close_lock_token);
+    ctx.tcp_close_cv = reinterpret_cast<cplat_condvar *>(&close_cv_token);
+    cplat_atomic_store_i32(&ctx.send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
+    ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(_)).Times(AnyNumber());
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).WillOnce(Return(POTR_OK));
+    // [Pre-Assert確認_正常系] - FIN を 1 回送信すること。
+    EXPECT_CALL(mock_cplat, cplat_condvar_wait(ctx.tcp_close_cv, ctx.tcp_close_mutex, 5000))
+        .WillOnce(
+            [&ctx](cplat_condvar *, cplat_local_lock *, int)
+            {
+                cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 1, CPLAT_MEMORY_ORDER_RELEASE);
+                cplat_atomic_store_i32(&ctx.tcp_active_paths, 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_OK;
+            });
+    // [Pre-Assert確認_正常系] - 起床時に相手 FIN 受理かつ全経路切断済みなら 1 回の待機で終了すること。
+
+    // Act
+    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - 待機中に相手 FIN 受理と全経路切断が起きた場合を再現して閉じる。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - POTR_OK を返すこと。
+
+    // Cleanup
+    delegate_real_cplat_local_lock_dispose(ctx.send_window_mutex);
+}

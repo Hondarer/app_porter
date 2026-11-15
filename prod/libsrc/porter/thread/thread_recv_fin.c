@@ -108,9 +108,11 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
         return;
     }
 
-    /* TCP では相手端へ FIN_ACK を送信する。 */
+    /* TCP では FIN_ACK 送信前に相手 FIN 受理を記録し、相手端へ FIN_ACK を送信する。 */
     if (ctx->service.type == POTR_TYPE_TCP || ctx->service.type == POTR_TYPE_TCP_BIDIR)
     {
+        cplat_atomic_store_i32(&ctx->tcp_peer_fin_received, 1, CPLAT_MEMORY_ORDER_RELEASE);
+
         if (send_tcp_fin_ack(ctx, fin_target_seq) == POTR_OK)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "tcp_recv[service_id=%" PRId64 "]: FIN_ACK sent ack=%u",

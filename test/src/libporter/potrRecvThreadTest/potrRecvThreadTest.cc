@@ -298,3 +298,76 @@ TEST_F(potrRecvThreadTcpDataTest, duplicate_data_is_skipped_and_reading_continue
     // [確認_正常系] - 読み取り失敗で受信ループが終了し、実行フラグが 0 であること。
 }
 // [サブ手順参照 名前=potrRecvThreadTcpDataTest.TearDown]
+
+// 1:1 TCP で即時 FIN を受理して FIN_ACK を送信した後、受信ループを終了することの確認
+// [サブ手順参照 名前=potrRecvThreadTcpDataTest.SetUp]
+TEST_F(potrRecvThreadTcpDataTest, fin_fire_stops_tcp_recv_loop)
+{
+    // Arrange
+    potr_packet pkt = {};
+    pkt.flags = POTR_FLAG_FIN;
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_packet_parse(_, _, _))
+        .WillOnce(DoAll(SetArgPointee<0>(pkt), Return(POTR_OK)));
+    // [Pre-Assert確認_正常系] - 先読みした FIN パケットを 1 回解析すること。
+    EXPECT_CALL(mock_porter, thread_recv_fin_on_packet(_, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(7U), Return(THREAD_RECV_FIN_FIRE)));
+    // [Pre-Assert確認_正常系] - FIN パケットを即時発動として判定すること。
+    EXPECT_CALL(mock_porter, thread_recv_fin_fire(_, 7U)).Times(1);
+    // [Pre-Assert確認_正常系] - FIN 発動処理 (FIN_ACK 送信等) を 1 回呼び出すこと。
+    EXPECT_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - FIN 発動後は次のパケット読み取りを行わず受信ループを終了すること。
+
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_tcp_recv_thread_start(&ctx, 0)); // [手順] - 受信処理を準備する。
+    // [状態確認] - potr_internal_tcp_recv_thread_start() の戻り値が POTR_OK であること。
+    ASSERT_NE(nullptr, entry); // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);          // [手順] - 受信ループを同じスレッドで同期実行する。
+
+    // Assert
+    EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.tcp_peer_fin_received, CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_正常系] - 相手の正常 FIN 受理フラグが 1 になること。
+    EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.running[0], CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_正常系] - 受信スレッド動作フラグが 0 になること。
+}
+// [サブ手順参照 名前=potrRecvThreadTcpDataTest.TearDown]
+
+// 1:1 TCP で保留 FIN が DATA 到達により発動した後、受信ループを終了することの確認
+// [サブ手順参照 名前=potrRecvThreadTcpDataTest.SetUp]
+TEST_F(potrRecvThreadTcpDataTest, pending_fin_triggered_by_data_stops_tcp_recv_loop)
+{
+    // Arrange
+    potr_packet pkt = {};
+    pkt.flags = POTR_FLAG_DATA;
+    pkt.seq_num = 1U;
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_packet_parse(_, _, _))
+        .WillOnce(DoAll(SetArgPointee<0>(pkt), Return(POTR_OK)));
+    // [Pre-Assert確認_正常系] - 先読みした DATA パケットを 1 回解析すること。
+    EXPECT_CALL(mock_porter, potr_internal_window_recv_push(&ctx.recv_window, _)).WillOnce(Return(POTR_OK));
+    // [Pre-Assert確認_正常系] - 受信ウィンドウへの投入が成功すること。
+    EXPECT_CALL(mock_porter, potr_internal_window_recv_pop(&ctx.recv_window, _)).WillOnce(Return(POTR_ERR_NOT_FOUND));
+    // [Pre-Assert確認_正常系] - 取り出す連続 DATA がない状態で保留 FIN 判定へ進むこと。
+    EXPECT_CALL(mock_porter, thread_recv_fin_pending_reached(_, _))
+        .WillOnce(DoAll(SetArgPointee<1>(2U), Return(1)));
+    // [Pre-Assert確認_正常系] - 保留 FIN の target 通番に追いついたと判定すること。
+    EXPECT_CALL(mock_porter, thread_recv_fin_fire(_, 2U)).Times(1);
+    // [Pre-Assert確認_正常系] - 保留 FIN の発動処理を 1 回呼び出すこと。
+    EXPECT_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 保留 FIN 発動後は次のパケット読み取りを行わず受信ループを終了すること。
+
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_tcp_recv_thread_start(&ctx, 0)); // [手順] - 受信処理を準備する。
+    // [状態確認] - potr_internal_tcp_recv_thread_start() の戻り値が POTR_OK であること。
+    ASSERT_NE(nullptr, entry); // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);          // [手順] - 受信ループを同じスレッドで同期実行する。
+
+    // Assert
+    EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.tcp_peer_fin_received, CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_正常系] - 相手の正常 FIN 受理フラグが 1 になること。
+    EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.running[0], CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_正常系] - 受信スレッド動作フラグが 0 になること。
+}
+// [サブ手順参照 名前=potrRecvThreadTcpDataTest.TearDown]

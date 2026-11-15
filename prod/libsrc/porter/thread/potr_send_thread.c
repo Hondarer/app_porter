@@ -212,6 +212,18 @@ static int tcp_write_all_paths(potr_context *ctx, const potr_packet *packet, uin
 
     if (sent_any)
     {
+        /*
+         * DATA をソケットへ書き込んだ後に tcp_peer_fin_received を ACQUIRE で確認する。
+         * 受信スレッドは tcp_peer_fin_received = 1 を RELEASE で設定した後に tcp_send_mutex[i] を取得して
+         * FIN_ACK を書き込み、tcp_write_path() は同じ tcp_send_mutex[i] の下で DATA を書き込む。
+         * このため、DATA 書き込み後の ACQUIRE 読み込みが 0 であれば、FIN_ACK はまだそのソケットへ書かれておらず、
+         * 当該 DATA より後に書かれる (または書き込まれない) ことが保証される。
+         */
+        if (cplat_atomic_load_i32(&ctx->tcp_peer_fin_received, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+        {
+            cplat_atomic_store_i32(&ctx->tcp_sent_after_peer_fin, 1, CPLAT_MEMORY_ORDER_RELEASE);
+        }
+
         return POTR_OK;
     }
 

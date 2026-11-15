@@ -334,7 +334,8 @@ extern "C"
      *  @retval         POTR_ERR_INVALID_HANDLE ハンドルが未登録または終了済みです。
      *  @retval         POTR_OK                    サービスを閉じました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  handle が NULL です。
-     *  @retval         POTR_ERR_DISCONNECTED      データ送信後に全 TCP パスが切断されています。
+     *  @retval         POTR_ERR_DISCONNECTED      送信済みデータがある状態で相手 FIN 未受理のまま全 TCP パスが切断されているか、
+     *                                             相手端の正常な FIN 受理後に DATA を送信しました。
      *  @retval         POTR_ERR_TIMEOUT           TCP close 待機が tcp_close_timeout_ms を超過しました。
      *  @retval         POTR_ERR_IO                TCP FIN の送信に失敗しました。
      *  @retval         POTR_ERR_UNSUPPORTED       同一サービスの受信コールバック内から呼び出しました。handle は有効なままです。
@@ -351,8 +352,13 @@ extern "C"
      *  UDP 通信種別の送信者 (POTR_ROLE_SENDER) が本関数を呼び出した場合は、POTR_FLAG_FIN パケットが送信されます。\n
      *  TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) では、送信キューの drain 完了後に
      *  protocol-level の POTR_FLAG_FIN / POTR_FLAG_FIN_ACK を交換してからソケットを閉じます。\n
-     *  TCP close 待機は global 設定 tcp_close_timeout_ms の範囲で行い、タイムアウト時は強制 close して
-     *  POTR_ERR_TIMEOUT を返します。\n
+     *  既に相手端の正常な POTR_FLAG_FIN を受理済みの場合は FIN 送信と FIN_ACK 待機を行わず、
+     *  相手 FIN 受理後にソケットへ書き込んだ DATA がなければ POTR_OK、あれば POTR_ERR_DISCONNECTED を返します。\n
+     *  TCP close 待機は global 設定 tcp_close_timeout_ms の範囲で行い、
+     *  待機中に全 TCP パスが切断された場合はタイムアウトを待たずに復帰して
+     *  (相手 FIN 受理済みなら受理後の DATA 送信がなければ POTR_OK・あれば POTR_ERR_DISCONNECTED、
+     *  未受理なら現セッションの送信済みデータがなければ POTR_OK・あれば POTR_ERR_DISCONNECTED)、
+     *  タイムアウト時は強制 close して POTR_ERR_TIMEOUT を返します。\n
      *  いずれの場合も、相手側では POTR_EVENT_DISCONNECTED が発火します。
      *
      *  @attention      受付停止前の API と登録済み通知の完了を待ってから通信資源を解放します。\n

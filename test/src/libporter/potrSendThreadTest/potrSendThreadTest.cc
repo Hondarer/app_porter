@@ -394,3 +394,72 @@ TEST_F(potrSendThreadTcpTest, encrypted_packet_packing_reserves_tag_capacity)
     // [確認_正常系] - 暗号化する平文長が最大ペイロードから認証タグ長を引いた値を超えないこと。
 }
 // [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]
+
+// TCP の DATA 書き込み成功時に tcp_peer_fin_received == 1 なら tcp_sent_after_peer_fin が 1 になることの確認
+// [サブ手順参照 名前=potrSendThreadTcpTest.SetUp]
+TEST_F(potrSendThreadTcpTest, data_write_after_peer_fin_sets_sent_after_peer_fin)
+{
+    // Arrange
+    cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - DATA の書き込みを 1 回行うこと。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpTest.runOneEntry]
+    int actual_ret = runOneEntry();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.tcp_sent_after_peer_fin, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 相手 FIN 受理後の送信フラグが 1 になること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]
+
+// TCP の DATA 書き込み成功時に tcp_peer_fin_received == 0 なら tcp_sent_after_peer_fin が 0 のままであることの確認
+// [サブ手順参照 名前=potrSendThreadTcpTest.SetUp]
+TEST_F(potrSendThreadTcpTest, data_write_before_peer_fin_keeps_sent_after_peer_fin_zero)
+{
+    // Arrange
+    cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - DATA の書き込みを 1 回行うこと。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpTest.runOneEntry]
+    int actual_ret = runOneEntry();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.tcp_sent_after_peer_fin, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 相手 FIN 未受理のため送信フラグが 0 のままであること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]
+
+// TCP の DATA 書き込み失敗時は tcp_peer_fin_received == 1 でも tcp_sent_after_peer_fin が 0 のままであることの確認
+// [サブ手順参照 名前=potrSendThreadTcpTest.SetUp]
+TEST_F(potrSendThreadTcpTest, data_write_failure_keeps_sent_after_peer_fin_zero)
+{
+    // Arrange
+    cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_ERR_UNKNOWN));
+    // [Pre-Assert確認_異常系] - DATA の書き込みに失敗すること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpTest.runOneEntry]
+    int actual_ret = runOneEntry();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.tcp_sent_after_peer_fin, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_異常系] - 書き込み失敗時は送信フラグが 0 のままであること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]

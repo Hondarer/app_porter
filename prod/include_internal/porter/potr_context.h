@@ -378,6 +378,10 @@ struct potr_context
     int tcp_close_ack_received; /**< 期待する FIN_ACK を受信済みか。tcp_close_mutex の下でだけ読み書きします。 */
     uint32_t tcp_close_wait_target_seq; /**< 待機中の FIN target 通番。 */
     uint32_t tcp_close_ack_seq;         /**< 受信済み FIN_ACK の ack_num。 */
+    cplat_atomic_i32
+        tcp_peer_fin_received;          /**< 1:1 TCP で相手の正常 FIN を受理済みか。アトミックに読み書きします。 */
+    cplat_atomic_i32
+        tcp_sent_after_peer_fin;        /**< 1:1 TCP で相手 FIN 受理後に DATA を送信したか。アトミックに読み書きします。 */
 
     /* 受信者: リオーダー バッファー タイムアウト管理 (reorder_timeout_ms > 0 のときのみ使用) */
     int reorder_pending;                /**< リオーダー待機中か (1: 待機中、0: 待機なし)。 */

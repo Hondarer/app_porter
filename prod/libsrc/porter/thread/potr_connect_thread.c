@@ -135,6 +135,8 @@ static void reset_connection_state(potr_context *ctx)
     ctx->frag_buf_len = 0;
     ctx->frag_compressed = 0;
     ctx->pending_fin = 0;
+    cplat_atomic_store_i32(&ctx->tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_i32(&ctx->tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELEASE);
 }
 
 /*
@@ -200,6 +202,14 @@ static void reset_all_paths_disconnected(potr_context *ctx)
     ctx->tcp_accepted_session_known = 0;
     cplat_local_lock_unlock(ctx->tcp_state_mutex);
     cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+
+    if (ctx->tcp_close_mutex != NULL && ctx->tcp_close_cv != NULL)
+    {
+        /* close の FIN_ACK 待機中に全経路が切断された場合、待機スレッドを起床させる。 */
+        cplat_local_lock_lock(ctx->tcp_close_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_condvar_broadcast(ctx->tcp_close_cv);
+        cplat_local_lock_unlock(ctx->tcp_close_mutex);
+    }
 }
 
 /*
@@ -585,7 +595,13 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             /* TCP_SESSION_SAME の場合は reset 不要 (セッション継続)。 */
 
             cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
-            (void)cplat_atomic_fetch_add_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL);
+            active_count = cplat_atomic_fetch_add_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL) + 1;
+            if (active_count == 1)
+            {
+                cplat_atomic_store_i32(&ctx->tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELEASE);
+                cplat_atomic_store_i32(&ctx->tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELEASE);
+            }
+
             ctx->tcp_conn_fd[path_idx] = conn;
             cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], connected_time, CPLAT_MEMORY_ORDER_RELAXED);
             ctx->tcp_first_pkt_len[path_idx] = pkt_len; /* 先読みバッファー有効化 */

@@ -592,3 +592,201 @@ TEST_F(handleConcurrencyTest, close_waits_for_running_callback_and_rejects_callb
     EXPECT_EQ(POTR_OK, actual_ret_close); // [確認_正常系] - コールバック完了後に資源を回収すること。
 }
 // [サブ手順参照 名前=handleConcurrencyTest.TearDown]
+
+// TCP_BIDIR で送受信後に送信側→受信側の順で待ちなし連続 close してもタイムアウトせず成功することの確認
+// [サブ手順参照 名前=handleConcurrencyTest.SetUp]
+TEST_F(handleConcurrencyTest, tcp_bidir_consecutive_close_sender_then_receiver)
+{
+    // Arrange
+    // [サブ手順参照 名前=handleConcurrencyTest.open_tcp_pair]
+    ASSERT_NO_FATAL_FAILURE(open_tcp_pair(19937));
+    potr_context *client = clients[0];
+    potr_context *srv = server;
+    const uint8_t payload[16] = {1U, 2U, 3U, 4U};
+    ASSERT_EQ(POTR_OK, potr_service_send(client, POTR_PEER_NA, payload, sizeof(payload), POTR_SEND_BLOCKING));
+    ASSERT_TRUE(wait_for([] { return s_received.size() == 1U; }));
+    // [状態確認] - 送信したメッセージを受信側が受け取ったこと。
+
+    // Pre-Assert
+
+    // Act
+    auto start = std::chrono::steady_clock::now();
+    int ret_client = potr_service_close(client); // [手順] - 送信側を先に閉じる。
+    int ret_server = potr_service_close(srv);    // [手順] - 待ち時間なしで続けて受信側を閉じる。
+    auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    clients.clear();
+    server = nullptr;
+    s_server = nullptr;
+
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_client); // [確認_正常系] - 送信側の potr_service_close() が POTR_OK を返すこと。
+    EXPECT_EQ(POTR_OK, ret_server); // [確認_正常系] - 受信側の potr_service_close() が POTR_OK を返すこと。
+    EXPECT_LT(elapsed_ms, 3000);    // [確認_正常系] - 連続 close の所要時間が tcp_close_timeout_ms (3000 ms) 未満であること。
+}
+// [サブ手順参照 名前=handleConcurrencyTest.TearDown]
+
+// TCP_BIDIR で送受信後に受信側→送信側の順で待ちなし連続 close してもタイムアウトせず成功することの確認
+// [サブ手順参照 名前=handleConcurrencyTest.SetUp]
+TEST_F(handleConcurrencyTest, tcp_bidir_consecutive_close_receiver_then_sender)
+{
+    // Arrange
+    static std::atomic<int> s_client_data_count(0);
+    s_client_data_count.store(0);
+    auto bidir_client_cb = +[](int64_t sid, potr_peer_id pid, potr_event ev, const void *data, size_t len)
+    {
+        if (ev == POTR_EVENT_DATA)
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            s_client_data_count.fetch_add(1);
+            s_cv.notify_all();
+        }
+        else
+        {
+            client_callback(sid, pid, ev, data, len);
+        }
+    };
+    potr_global_config global = make_global();
+    potr_service_def service = make_tcp_service(19938);
+    potr_context *client = nullptr;
+    ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_RECEIVER, record_callback, &server));
+    ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_SENDER, bidir_client_cb, &client));
+    clients.push_back(client);
+    ASSERT_TRUE(wait_for([] { return s_client_connected && !s_connected_peers.empty(); }));
+    // [状態確認] - 送受信双方の TCP_BIDIR ハンドルが CONNECTED になったこと。
+    potr_context *srv = server;
+    const uint8_t payload[16] = {5U, 6U, 7U, 8U};
+    ASSERT_EQ(POTR_OK, potr_service_send(srv, POTR_PEER_NA, payload, sizeof(payload), POTR_SEND_BLOCKING));
+    ASSERT_TRUE(wait_for([] { return s_client_data_count.load() == 1; }));
+    // [状態確認] - 受信側 (TCP_BIDIR サーバー) から送ったメッセージを送信側が受け取ったこと。
+
+    // Pre-Assert
+
+    // Act
+    auto start = std::chrono::steady_clock::now();
+    int ret_server = potr_service_close(srv);    // [手順] - 先に TCP_BIDIR サーバー側を閉じる。
+    int ret_client = potr_service_close(client); // [手順] - 待ち時間なしで続けてクライアント側を閉じる。
+    auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    clients.clear();
+    server = nullptr;
+    s_server = nullptr;
+
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_server); // [確認_正常系] - 先に閉じた側の potr_service_close() が POTR_OK を返すこと。
+    EXPECT_EQ(POTR_OK, ret_client); // [確認_正常系] - 後から閉じた側の potr_service_close() が POTR_OK を返すこと。
+    EXPECT_LT(elapsed_ms, 3000);    // [確認_正常系] - 連続 close の所要時間が tcp_close_timeout_ms (3000 ms) 未満であること。
+}
+// [サブ手順参照 名前=handleConcurrencyTest.TearDown]
+
+// TCP_BIDIR で両端がそれぞれ DATA を送受信した後に送信側→受信側の順で待ちなし連続 close しても両方 POTR_OK かつタイムアウト未満であることの確認
+// [サブ手順参照 名前=handleConcurrencyTest.SetUp]
+TEST_F(handleConcurrencyTest, tcp_bidir_both_send_consecutive_close_sender_then_receiver)
+{
+    // Arrange
+    static std::atomic<int> s_client_data_count(0);
+    s_client_data_count.store(0);
+    auto bidir_client_cb = +[](int64_t sid, potr_peer_id pid, potr_event ev, const void *data, size_t len)
+    {
+        if (ev == POTR_EVENT_DATA)
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            s_client_data_count.fetch_add(1);
+            s_cv.notify_all();
+        }
+        else
+        {
+            client_callback(sid, pid, ev, data, len);
+        }
+    };
+    potr_global_config global = make_global();
+    potr_service_def service = make_tcp_service(19939);
+    potr_context *client = nullptr;
+    ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_RECEIVER, record_callback, &server));
+    ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_SENDER, bidir_client_cb, &client));
+    clients.push_back(client);
+    ASSERT_TRUE(wait_for([] { return s_client_connected && !s_connected_peers.empty(); }));
+    // [状態確認] - 送受信双方の TCP_BIDIR ハンドルが CONNECTED になったこと。
+    potr_context *srv = server;
+    const uint8_t payload_c2s[16] = {1U, 2U, 3U, 4U};
+    const uint8_t payload_s2c[16] = {5U, 6U, 7U, 8U};
+    ASSERT_EQ(POTR_OK, potr_service_send(client, POTR_PEER_NA, payload_c2s, sizeof(payload_c2s), POTR_SEND_BLOCKING));
+    ASSERT_TRUE(wait_for([] { return s_received.size() == 1U; }));
+    ASSERT_EQ(POTR_OK, potr_service_send(srv, POTR_PEER_NA, payload_s2c, sizeof(payload_s2c), POTR_SEND_BLOCKING));
+    ASSERT_TRUE(wait_for([] { return s_client_data_count.load() == 1; }));
+    // [状態確認] - 両端がそれぞれ DATA を送受信したこと。
+
+    // Pre-Assert
+
+    // Act
+    auto start = std::chrono::steady_clock::now();
+    int ret_client = potr_service_close(client); // [手順] - 送信側を先に閉じる。
+    int ret_server = potr_service_close(srv);    // [手順] - 待ち時間なしで続けて受信側を閉じる。
+    auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    clients.clear();
+    server = nullptr;
+    s_server = nullptr;
+
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_client); // [確認_正常系] - 先に閉じた側の potr_service_close() が POTR_OK を返すこと。
+    EXPECT_EQ(POTR_OK, ret_server); // [確認_正常系] - 後から閉じた側の potr_service_close() が POTR_OK を返すこと。
+    EXPECT_LT(elapsed_ms, 3000);    // [確認_正常系] - 連続 close の所要時間が tcp_close_timeout_ms (3000 ms) 未満であること。
+}
+// [サブ手順参照 名前=handleConcurrencyTest.TearDown]
+
+// TCP_BIDIR で両端がそれぞれ DATA を送受信した後に受信側→送信側の順で待ちなし連続 close しても両方 POTR_OK かつタイムアウト未満であることの確認
+// [サブ手順参照 名前=handleConcurrencyTest.SetUp]
+TEST_F(handleConcurrencyTest, tcp_bidir_both_send_consecutive_close_receiver_then_sender)
+{
+    // Arrange
+    static std::atomic<int> s_client_data_count(0);
+    s_client_data_count.store(0);
+    auto bidir_client_cb = +[](int64_t sid, potr_peer_id pid, potr_event ev, const void *data, size_t len)
+    {
+        if (ev == POTR_EVENT_DATA)
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            s_client_data_count.fetch_add(1);
+            s_cv.notify_all();
+        }
+        else
+        {
+            client_callback(sid, pid, ev, data, len);
+        }
+    };
+    potr_global_config global = make_global();
+    potr_service_def service = make_tcp_service(19940);
+    potr_context *client = nullptr;
+    ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_RECEIVER, record_callback, &server));
+    ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_SENDER, bidir_client_cb, &client));
+    clients.push_back(client);
+    ASSERT_TRUE(wait_for([] { return s_client_connected && !s_connected_peers.empty(); }));
+    // [状態確認] - 送受信双方の TCP_BIDIR ハンドルが CONNECTED になったこと。
+    potr_context *srv = server;
+    const uint8_t payload_c2s[16] = {1U, 2U, 3U, 4U};
+    const uint8_t payload_s2c[16] = {5U, 6U, 7U, 8U};
+    ASSERT_EQ(POTR_OK, potr_service_send(client, POTR_PEER_NA, payload_c2s, sizeof(payload_c2s), POTR_SEND_BLOCKING));
+    ASSERT_TRUE(wait_for([] { return s_received.size() == 1U; }));
+    ASSERT_EQ(POTR_OK, potr_service_send(srv, POTR_PEER_NA, payload_s2c, sizeof(payload_s2c), POTR_SEND_BLOCKING));
+    ASSERT_TRUE(wait_for([] { return s_client_data_count.load() == 1; }));
+    // [状態確認] - 両端がそれぞれ DATA を送受信したこと。
+
+    // Pre-Assert
+
+    // Act
+    auto start = std::chrono::steady_clock::now();
+    int ret_server = potr_service_close(srv);    // [手順] - 先に受信側を閉じる。
+    int ret_client = potr_service_close(client); // [手順] - 待ち時間なしで続けて送信側を閉じる。
+    auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    clients.clear();
+    server = nullptr;
+    s_server = nullptr;
+
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_server); // [確認_正常系] - 先に閉じた側の potr_service_close() が POTR_OK を返すこと。
+    EXPECT_EQ(POTR_OK, ret_client); // [確認_正常系] - 後から閉じた側の potr_service_close() が POTR_OK を返すこと。
+    EXPECT_LT(elapsed_ms, 3000);    // [確認_正常系] - 連続 close の所要時間が tcp_close_timeout_ms (3000 ms) 未満であること。
+}
+// [サブ手順参照 名前=handleConcurrencyTest.TearDown]
