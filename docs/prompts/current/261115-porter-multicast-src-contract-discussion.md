@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 検討用 Markdown (discussion)
-最終更新日時: 2026-11-15 22:25:00 JST
+最終更新日時: 2026-11-16 04:10:00 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53SKi4E2GpcLq8ibyKp
 稼働 OS: Windows
 上流文書: `261114-porter-windows-verification-clock-unify-backlog.md` (BL-001 の対策元)、`261114-porter-windows-verification-clock-unify-discussion.md` (Q-011)。削除されている場合があります。
@@ -17,9 +17,9 @@
 
 検討 ID: 261115-porter-multicast-src-contract
 
-版: 3
+版: 5
 
-状態: 合意済み (版 3、第 1 ゲート通過)
+状態: 合意済み (版 5、追加範囲の第 1 ゲート通過。版 3 の合意内容は実装済み)
 
 ## 作業 WBS と進捗管理
 
@@ -50,7 +50,13 @@
     - ✅ 4.7. サンプル設定 `app/porter/prod/sample-config/porter-services.jsonc` への別ホスト構成例 (サービス `2003`) の追加
     - ✅ 4.8. 正本ドキュメントおよびコード コメントへの永続的知見の反映
     - ✅ 4.9. 局所テストおよび機械的検証 (`text_style_jp.py`、Windows/MSVC で対象 3 テスト ディレクトリの `make test` が失敗 0)
-    - 🔄 4.10a. コミット、プッシュ、CI の結果確認 (第 2 ゲートの承認条件) ← **CURRENT**
+    - 🔄 4.10a. コミット、プッシュ、CI の結果確認 (第 2 ゲートの承認条件)。porter `ebb79c2` の CI run 43727490184 は ol9 で不定期失敗 (attempt 1: handleConcurrencyTest、attempt 2: mock_cplat の並列ビルド)。attempt 3 を実行中
+    - 🔄 4.13. 追加範囲: 案件 backlog BL-001 (handleConcurrencyTest の接続待ち) の調査と対策 ([Q-006](#q-006-ciの不定期失敗テストを本案件の範囲に加えるか) で範囲に追加)
+        - ✅ 4.13.1. 原因の調査 (結果は [Q-007](#q-007-handleconcurrencytestの接続待ちの直し方) の Context)
+        - ✅ 4.13.2. 対策方針の確認 ([Q-007](#q-007-handleconcurrencytestの接続待ちの直し方) で A に決定、版 5 で第 1 ゲート通過)
+        - ✅ 4.13.3. 最終仕様 (design.md) への追記と、追記部分の承認の受付 (第 2 ゲート)。2026-11-16 に Tetsuo Honda から「承認」を受領
+        - ✅ 4.13.4. `app/porter/test/src/integration/porterSendRecvTest/handleConcurrencyTest.cc` の修正 (grok へ委譲)。Windows/MSVC で `porterSendRecvTest` 36 件成功、`handleConcurrencyTest` 10 件を 5 回繰り返して失敗 0
+        - 🔄 4.13.5. コミット、プッシュ、CI の結果確認と、案件 backlog BL-001 の状態更新 ← **CURRENT**
     - ⏸️ 4.10. ユーザーの環境での PSK と証明書の Windows/WSL 相互接続 12 組み合わせの再実施 ([Q-004](#q-004-受入試験の範囲))
     - ⏸️ 4.11. 受入条件への適合確認 (全完確認)
     - ⏸️ 4.12. 残課題一覧 (`261115-porter-multicast-src-contract-backlog.md`) の再構築と整理、および過去 backlog BL-001 の経緯・対処の更新
@@ -124,6 +130,8 @@ broadcast の受信側は `INADDR_ANY` で bind し、`src_addr` を送信側の
 | [Q-003](#q-003-参加nicを省略したときの動作) | 参加 NIC を省略したときの動作 | 解決済み (A) | [Q-002](#q-002-受信側の参加nicを表す設定) |
 | [Q-004](#q-004-受入試験の範囲) | 受入試験の範囲 | 解決済み (A) | なし |
 | [Q-005](#q-005-受信側のdst_addrだけがある経路の扱い) | 受信側の dst_addr だけがある経路の扱い | 解決済み (A) | [Q-002](#q-002-受信側の参加nicを表す設定)、[Q-003](#q-003-参加nicを省略したときの動作) |
+| [Q-006](#q-006-ciの不定期失敗テストを本案件の範囲に加えるか) | CI の不定期失敗テストを本案件の範囲に加えるか | 解決済み (A) | 案件 backlog BL-001 |
+| [Q-007](#q-007-handleconcurrencytestの接続待ちの直し方) | handleConcurrencyTest の接続待ちの直し方 | 解決済み (A) | [Q-006](#q-006-ciの不定期失敗テストを本案件の範囲に加えるか) |
 
 ## 明確化のための確認項目
 
@@ -386,6 +394,118 @@ A の選択を確認しました。経路は `src_addrN` が空の最初の経�
 **Related**
 
 [Q-002](#q-002-受信側の参加nicを表す設定)、[Q-003](#q-003-参加nicを省略したときの動作)
+
+### Q-006 CI の不定期失敗テストを本案件の範囲に加えるか
+
+**Status**
+
+解決済み
+
+**Question**
+
+CI run 43727490184 (attempt 1) の ol9 で失敗した `handleConcurrencyTest.close_waits_for_running_callback_and_rejects_callback_send` の調査と対策を、本案件の範囲に加えますか。
+
+**Context**
+
+BL-001 の実装をプッシュした後の CI で、`unicast_bidir_n1` の結合テストが `POTR_ERR_DISCONNECTED` (-20) で 1 回失敗しました。本案件の変更とは関係しない不定期な失敗として、案件 backlog の BL-001 に記録していました。同じ CI の attempt 2 では、別の不定期失敗 (mock_cplat の並列ビルド、案件 backlog の BL-002) も起きています。
+
+**Answer**
+
+選択方式: 単一選択
+
+- [x] A: 案件 backlog の BL-001 (handleConcurrencyTest) を本案件で調査・対策します。BL-002 (mock_cplat の並列ビルド) は対象外です。
+- [ ] B: 本案件の範囲に加えず、別案件にします。
+- [ ] C: その他
+
+その他の回答 / 補足:
+
+回答者: Tetsuo Honda (2026-11-16 の対話で「BL-001 は本案件で調査対策したい」と回答。対話からの転記)
+
+**Assessment**
+
+本案件の範囲に、案件 backlog BL-001 の調査と対策を加えます。BL-002 は、ユーザーが本案件の対象として挙げていないため対象外のままとし、扱いは別途確認します。調査の結果と対策方針の選択は [Q-007](#q-007-handleconcurrencytestの接続待ちの直し方) で確認します。
+
+**Related**
+
+[Q-007](#q-007-handleconcurrencytestの接続待ちの直し方)、案件 backlog `261115-porter-multicast-src-contract-backlog.md` の BL-001
+
+### Q-007 handleConcurrencyTest の接続待ちの直し方
+
+**Status**
+
+解決済み
+
+**Question**
+
+`handleConcurrencyTest` の接続待ちの不足を、どの範囲で直しますか。
+
+**Context**
+
+調査の結果、原因はテスト側にあると判断しました。
+
+- `unicast_bidir` のクライアントは、相手が返した PING 応答を受けて初めて CONNECTED になります ([config.md](../../config.md#L121))。サーバー (`unicast_bidir_n1`) は、クライアントの PING を受けた時点でそのピアを CONNECTED にします。そのため、サーバー側の CONNECTED が、クライアント側より先になります。
+- 準備処理 `open_n1()` ([handleConcurrencyTest.cc](../../../test/src/integration/porterSendRecvTest/handleConcurrencyTest.cc#L244-L263)) は、サーバー側の `s_connected_peers` だけを待ちます。
+- 失敗したテスト (同ファイル 556 行目) は、`open_n1()` の直後にクライアントから送信します。クライアントがまだ CONNECTED でなければ `POTR_ERR_DISCONNECTED` になります。
+- 同じ `open_n1()` を使う `n1_callback_supports_send_and_disconnect` は、`open_n1()` の後に `wait_for([] { return s_client_connected; })` でクライアントの CONNECTED を待っているため、この競合がありません (同ファイル 461 行目)。
+- `open_n1()` を使う残り 1 件 (`n1_disconnect_peers_while_sending`、クライアント 4 つ) は、クライアントから送信しないため影響を受けません。
+- 今のクライアント側の記録は `bool s_client_connected` の 1 つだけで、クライアントが複数あるときに全員分を数えられません。
+
+製品コードの挙動 (CONNECTED になる順序) は `config.md` の仕様どおりであり、変更は不要と判断しています。
+
+どちらの案もテスト コードだけの変更です。通常運用の N:1 では、N 側のクライアントが随時接続・切断し、全クライアントが接続済みである必要はありません。その仕様は変えません。待ち合わせるのは、テストの準備で開いたクライアント (`open_n1()` の `n_clients` 個) が、サーバー側とクライアント側の両方で通信を確立したことだけです。`max_peers` (上限 8) までの接続を待つわけではありません。
+
+```cpp
+// 案 A: open_n1() で、全クライアントの CONNECTED も待つ (クライアントの CONNECTED 数を数える)
+void client_callback(int64_t, potr_peer_id, potr_event event, const void *, size_t)
+{
+    std::lock_guard<std::mutex> lock(s_mutex);
+    if (event == POTR_EVENT_CONNECTED)
+    {
+        s_client_connected = true;
+        ++s_client_connected_count;
+    }
+    else if (event == POTR_EVENT_DISCONNECTED)
+    {
+        s_client_connected = false;
+        --s_client_connected_count;
+    }
+    s_cv.notify_all();
+}
+// open_n1() の末尾
+ASSERT_TRUE(wait_for([n_clients] { return s_client_connected_count == n_clients; }));
+```
+
+```cpp
+// 案 B: 失敗したテストだけに、461 行目と同じクライアントの CONNECTED 待ちを加える
+ASSERT_NO_FATAL_FAILURE(open_n1(19936, 1, gated_callback));
+ASSERT_TRUE(wait_for([] { return s_client_connected; }));
+```
+
+**Answer**
+
+選択方式: 単一選択
+
+- [x] A: (推奨) `open_n1()` で、サーバー側に加えて全クライアントの CONNECTED も待つようにします。クライアントの CONNECTED 数を数える変数を追加します。
+- [ ] B: 失敗したテストだけに、クライアントの CONNECTED 待ちを加えます。
+- [ ] C: その他
+- [ ] X: 意図不明 (詳細な質問内容に再生成すること)
+
+その他の回答 / 補足:
+
+**Recommendation**
+
+推奨: A  
+理由: `open_n1()` の完了が「両側が送信できる状態」を意味するようになり、今後 `open_n1()` の直後にクライアントから送るテストを追加しても同じ競合が起きません。変更はテスト ファイル 1 つに収まります。B は変更が最小ですが、同じ競合を各テストで個別に避ける必要が残ります。
+
+回答者: Tetsuo Honda (2026-11-16 に検討用 Markdown へ記入。回答前に対話で「テストの準備にあたってのみ、1:N の全数が通信確立していることを待ち合わせる」という解釈を確認済み)
+
+**Assessment**
+
+A の選択を確認しました。`handleConcurrencyTest.cc` の `open_n1()` で、サーバー側の `s_connected_peers` に加えて、クライアント側の CONNECTED 数が `n_clients` に達するまで待ちます。数は `client_callback()` の CONNECTED で増やし、DISCONNECTED で減らします。テストごとに 0 から数えるため、`SetUp()` で 0 に戻します。既存の `s_client_connected` は他のテストが使うため残します。製品コードと通常運用の N:1 の仕様は変えません。追加範囲の論点はこれで解決し、最終仕様への追記に進みます。
+
+**Related**
+
+[Q-006](#q-006-ciの不定期失敗テストを本案件の範囲に加えるか)
 
 ## 対象成果物と合意版
 

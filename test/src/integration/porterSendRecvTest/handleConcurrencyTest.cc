@@ -30,6 +30,7 @@ std::condition_variable s_cv;
 std::vector<bytes> s_received;
 std::set<potr_peer_id> s_connected_peers;
 bool s_client_connected = false;
+int s_client_connected_count = 0;
 
 /* コールバック内からの API 呼び出しの記録 */
 potr_context *s_server = nullptr;
@@ -87,10 +88,12 @@ void client_callback(int64_t, potr_peer_id, potr_event event, const void *, size
     if (event == POTR_EVENT_CONNECTED)
     {
         s_client_connected = true;
+        ++s_client_connected_count;
     }
     else if (event == POTR_EVENT_DISCONNECTED)
     {
         s_client_connected = false;
+        --s_client_connected_count;
     }
     s_cv.notify_all();
 }
@@ -200,6 +203,7 @@ class handleConcurrencyTest : public Test
         s_received.clear();
         s_connected_peers.clear();
         s_client_connected = false;
+        s_client_connected_count = 0;
         s_server = nullptr;
         s_reentry_done = false;
         s_reentry_send = POTR_OK;
@@ -259,6 +263,8 @@ class handleConcurrencyTest : public Test
         }
         ASSERT_TRUE(wait_for([n_clients] { return (int)s_connected_peers.size() == n_clients; }));
         // [状態確認] - サーバーで全クライアントが CONNECTED になるまで待つ wait_for() の戻り値が true であること。
+        ASSERT_TRUE(wait_for([n_clients] { return s_client_connected_count == n_clients; }));
+        // [状態確認] - クライアント側の CONNECTED 数が n_clients に達するまで待つ wait_for() の戻り値が true であること。
     }
     // [サブ手順終了]
 };

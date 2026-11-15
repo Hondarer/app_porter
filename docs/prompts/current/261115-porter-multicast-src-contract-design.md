@@ -1,10 +1,10 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 最終仕様 (design)
-最終更新日時: 2026-11-15 22:25:00 JST
+最終更新日時: 2026-11-16 04:40:00 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53SKi4E2GpcLq8ibyKp
 稼働 OS: Windows
-上流文書: `261115-porter-multicast-src-contract-discussion.md` (検討用 Markdown、合意版 3)。削除されている場合があります。
+上流文書: `261115-porter-multicast-src-contract-discussion.md` (検討用 Markdown、合意版 5)。削除されている場合があります。
 再開手順: このファイルを開いたエージェントは、作業の前に agree-before-implement スキルを読み込んでください。上流文書が存在する場合は、上流文書の再開手順に従って進行位置を確認し、判断の経緯を上流文書の Q&A で確認します。存在しない場合は、この文書を単体の最終仕様として扱います。最終更新エージェントのセッション情報や稼働 OS・最終更新日時が参照可能であれば再開時のコンテキストや環境差分の把握に利用し、別エージェントや別環境・別 OS からの引き継ぎ、担当変更によりセッションが見つからない場合も異常とせず、文書の記載から継続してください。
 -->
 
@@ -94,6 +94,25 @@ Table: 追加・更新する単体テスト
 Table: 正本とコード コメントへの反映計画
 
 機能仕様 `docs/functional-spec/transport.md` は変更しません。`POTR-TRANSPORT-QUAL-001` は、今回の変更でマルチキャストでも満たされます。
+
+## 結合テストの接続待ちの修正
+
+CI で不定期に失敗した結合テスト `handleConcurrencyTest` の準備処理を直します。対象は `app/porter/test/src/integration/porterSendRecvTest/handleConcurrencyTest.cc` だけで、製品コードは変えません。
+
+`unicast_bidir` のクライアントは、サーバーが返した PING 応答を受けて CONNECTED になります。サーバー (`unicast_bidir_n1`) は、クライアントの PING を受けた時点でそのピアを CONNECTED にします。このため、サーバー側の CONNECTED はクライアント側より先になります。準備処理 `open_n1()` はサーバー側だけを待っていたため、直後にクライアントから送るテストが `POTR_ERR_DISCONNECTED` で失敗することがありました。
+
+| 対象 | 変更 |
+| --- | --- |
+| クライアント側の記録 | クライアントの CONNECTED 数を数える変数を追加します。`client_callback()` の CONNECTED で 1 増やし、DISCONNECTED で 1 減らします。既存の `s_client_connected` は残します。 |
+| `SetUp()` | 追加した数を 0 に戻します。 |
+| `open_n1()` | サーバー側で全クライアントが CONNECTED になる待ちに加えて、クライアント側の CONNECTED 数が `n_clients` に達するまで待ちます。待ち時間の上限は既存の `wait_for()` の既定値 (10 秒) とします。 |
+
+Table: handleConcurrencyTest の変更
+
+> [!NOTE]
+> 通常運用の N:1 では、N 側のクライアントが随時接続・切断し、全クライアントが接続済みである必要はありません。この修正は、テストの準備で開いた `n_clients` 個のクライアントが両側で通信を確立したことを待つだけで、`max_peers` までの接続は待ちません。
+
+受入条件として、`porterSendRecvTest` が CI の全ジョブ (Windows、ol8、ol9、ol10) で成功することを確認します。
 
 ## 完了後の記録
 
