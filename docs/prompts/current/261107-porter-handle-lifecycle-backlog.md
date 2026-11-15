@@ -1,7 +1,9 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新エージェント: Codex
+最終更新日時: 2026-11-15 20:50:00 JST
+最終更新エージェント: claude code (継続案件 261115-porter-handle-lifecycle-perf で BL-001 の経緯と対処を追記)
+稼働 OS: Windows
 上流文書: 261107-porter-handle-lifecycle-design.md、261107-porter-handle-lifecycle-discussion.md
 再開手順: 別案件として着手し、この記録を保持して状態と対処経緯を更新してください。
 -->
@@ -14,7 +16,7 @@
 
 | 課題 ID | 題名 | 区分 | 状態 |
 | --- | --- | --- | --- |
-| BL-001 | 追加性能評価の実施 | 受入時見送り | 未着手 |
+| BL-001 | 追加性能評価の実施 | 受入時見送り | 対応済み (継続作業で更新) |
 
 Table: 別件へ引き継ぐ性能評価
 
@@ -52,3 +54,10 @@ TCP の終了時エラーを再確認し、測定条件の問題か製品の問�
 
 参考: [既存検証記録](261107-porter-handle-lifecycle-validation.md)
 
+### 継続作業での経緯と対処
+
+2026-11-15 に、継続案件 `261115-porter-handle-lifecycle-perf` で対処しました。  
+Windows/MSVC と Linux (WSL2)/GCC の両方で、改修前版 `9e55a0c` と現行版を、各条件 5 回ずつ測定しました。測定項目は N:1 返信、低速コールバック、open/close 反復、UDP と TCP の遅延分布です。  
+TCP の終了時エラーは 3 つに切り分けました。このうち TCP 双方向の連続 close のタイムアウトは製品不具合として修正しました (cplat `fd903dc1`、porter `6e9002c`)。残り 2 つは改修前版の既存不具合です。  
+結果は [検証記録](261115-porter-handle-lifecycle-perf-validation.md) と [CSV](261115-porter-handle-lifecycle-perf.csv) にあります。  
+測定で見つかった別の問題は、[継続案件の残課題](261115-porter-handle-lifecycle-perf-backlog.md) の BL-001〜BL-003 に記録しました。
