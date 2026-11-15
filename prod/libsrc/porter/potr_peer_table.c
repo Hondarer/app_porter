@@ -125,7 +125,7 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
     }
 
     /* 現セッションで DATA を送っている場合のみ FIN target を有効化する。 */
-    cplat_local_lock_lock(peer->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(peer->send_window_mutex);
     wire_target_seq = peer->send_window.next_seq;
     has_data = peer->send_has_data;
     cplat_local_lock_unlock(peer->send_window_mutex);
@@ -242,7 +242,7 @@ void potr_internal_peer_table_send_fin(potr_context *ctx)
 {
     int i;
 
-    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->peers_mutex);
 
     for (i = 0; i < ctx->max_peers; i++)
     {
@@ -453,7 +453,7 @@ void potr_internal_peer_free(potr_context *ctx, potr_internal_peer_context *peer
 
     if (ctx->service.auth == POTR_AUTH_CERT)
     {
-        cplat_local_lock_lock(ctx->certificate_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->certificate_mutex);
         potr_internal_certificate_state_dispose(&peer->certificate);
         cplat_local_lock_unlock(ctx->certificate_mutex);
     }

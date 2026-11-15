@@ -194,7 +194,7 @@ RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送信せず `POTR_EV
 
 ### タイムアウト検出 (受信スレッド)
 
-受信スレッドは `cplat_socket_wait_readable_multi()` の待ち時間を `health_timeout_ms / 3` に設定し、定期的に `check_health_timeout()` (1:1) または `n1_check_health_timeout()` (N:1) を呼び出します。
+受信スレッドは `cplat_socket_timed_wait_readable_multi()` の待ち時間を `health_timeout_ms / 3` に設定し、定期的に `check_health_timeout()` (1:1) または `n1_check_health_timeout()` (N:1) を呼び出します。
 
 タイムアウト判定は CLOCK_MONOTONIC を使用します。
 

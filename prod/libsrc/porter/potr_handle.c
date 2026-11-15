@@ -60,7 +60,7 @@ static struct potr_internal_handle *lookup(potr_context *handle)
         return NULL;
     }
 
-    cplat_local_lock_lock(s_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(s_mutex);
 
     if (s_capacity != 0U)
     {
@@ -111,7 +111,7 @@ int potr_internal_handle_prepare(potr_context *ctx)
         return POTR_ERR_UNKNOWN;
     }
 
-    cplat_local_lock_lock(s_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(s_mutex);
 
     if (s_count == s_capacity)
     {
@@ -197,7 +197,7 @@ void potr_internal_handle_discard(potr_context *ctx)
     }
 
     entry = ctx->handle_owner;
-    cplat_local_lock_lock(s_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(s_mutex);
     link = &s_buckets[bucket_for(entry, s_capacity)];
     while (*link != entry)
     {
@@ -231,7 +231,7 @@ int potr_internal_handle_acquire(potr_context *handle, potr_context **ctx)
         return POTR_ERR_INVALID_HANDLE;
     }
 
-    cplat_local_lock_lock(entry->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(entry->mutex);
 
     if (entry->ctx == NULL)
     {
@@ -268,7 +268,7 @@ void potr_internal_handle_release(potr_context *ctx)
     }
 
     entry = ctx->handle_owner;
-    cplat_local_lock_lock(entry->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(entry->mutex);
     --entry->refs;
 
     if (entry->refs == 0U)
@@ -297,7 +297,7 @@ int potr_internal_handle_begin_close(potr_context *handle, potr_context **ctx)
         return POTR_ERR_INVALID_HANDLE;
     }
 
-    cplat_local_lock_lock(entry->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(entry->mutex);
 
     if (entry->ctx == NULL)
     {
@@ -318,7 +318,7 @@ int potr_internal_handle_begin_close(potr_context *handle, potr_context **ctx)
 
         while (entry->refs != 0U)
         {
-            cplat_condvar_wait(entry->idle, entry->mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_condvar_wait(entry->idle, entry->mutex);
         }
 
         *ctx = entry->ctx;
@@ -342,7 +342,7 @@ void potr_internal_handle_end_close(potr_context *ctx, int closed)
     }
 
     entry = ctx->handle_owner;
-    cplat_local_lock_lock(entry->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(entry->mutex);
 
     if (closed != 0)
     {

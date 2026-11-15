@@ -533,10 +533,10 @@ int potr_internal_certificate_receive(potr_context *ctx, potr_packet *packet, co
     }
     if (ctx->is_multi_peer)
     {
-        cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->peers_mutex);
     }
-    cplat_local_lock_lock(ctx->certificate_mutex, CPLAT_SYNC_WAIT_FOREVER);
-    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->certificate_mutex);
+    cplat_local_lock_lock(ctx->callback_mutex);
     if (ctx->is_multi_peer)
     {
         peer = find_peer(ctx, packet);
@@ -636,7 +636,7 @@ int potr_internal_certificate_receive(potr_context *ctx, potr_packet *packet, co
         /* ピアの通信状態は相互認証が完了してから生成します。 */
         cplat_local_lock_unlock(ctx->callback_mutex);
         peer = potr_internal_peer_create(ctx, sender, path_idx);
-        cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->callback_mutex);
         if (peer != NULL)
         {
             peer->session_id = state->local_identifier;
@@ -704,10 +704,10 @@ void potr_internal_certificate_tick(potr_context *ctx, uint64_t now_ms)
     state = &ctx->certificate;
     if (ctx->is_multi_peer)
     {
-        cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->peers_mutex);
     }
-    cplat_local_lock_lock(ctx->certificate_mutex, CPLAT_SYNC_WAIT_FOREVER);
-    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->certificate_mutex);
+    cplat_local_lock_lock(ctx->callback_mutex);
     if (is_client(ctx))
     {
         tick_session(ctx, state);
@@ -807,8 +807,8 @@ int potr_internal_certificate_key(potr_context *ctx, const potr_internal_tx_sess
     {
         flags = cplat_ntoh16(flags);
     }
-    cplat_local_lock_lock(ctx->certificate_mutex, CPLAT_SYNC_WAIT_FOREVER);
-    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->certificate_mutex);
+    cplat_local_lock_lock(ctx->callback_mutex);
     if (ctx->is_multi_peer)
     {
         state = NULL;
@@ -867,7 +867,7 @@ static int read_stream_bytes(potr_context *ctx, cplat_socket socket, uint8_t *by
     while (used < length)
     {
         uint64_t now_ms;
-        int ready;
+        int wait_result;
         size_t received;
 
         if (cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
@@ -882,13 +882,14 @@ static int read_stream_bytes(potr_context *ctx, cplat_socket socket, uint8_t *by
         {
             return POTR_ERR_TIMEOUT;
         }
-        if (cplat_socket_wait_readable(socket, 100, &ready, NULL) != CPLAT_OK)
-        {
-            return POTR_ERR_IO;
-        }
-        if (!ready)
+        wait_result = cplat_socket_timed_wait_readable(socket, 100, NULL);
+        if (wait_result == CPLAT_ERR_TIMEOUT)
         {
             continue;
+        }
+        if (wait_result != CPLAT_OK)
+        {
+            return POTR_ERR_IO;
         }
         if (cplat_socket_recv(socket, bytes + used, length - used, &received, NULL) != CPLAT_OK || received == 0U)
         {
@@ -959,7 +960,7 @@ int potr_internal_certificate_connect(potr_context *ctx, cplat_socket socket, co
     {
         return POTR_ERR_OUT_OF_MEMORY;
     }
-    cplat_local_lock_lock(ctx->certificate_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->certificate_mutex);
     if (state->established)
     {
         if (first == NULL)

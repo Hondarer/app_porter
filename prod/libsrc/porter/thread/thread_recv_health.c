@@ -61,7 +61,7 @@ void thread_recv_health_check_peers(potr_context *ctx)
         return;
     }
 
-    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->peers_mutex);
 
     for (i = 0; i < ctx->max_peers; i++)
     {

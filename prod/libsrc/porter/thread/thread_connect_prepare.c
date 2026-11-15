@@ -44,18 +44,19 @@
 int thread_connect_read_first_packet(const cplat_socket fd, uint8_t *buf, const size_t max_buf, size_t *len_out,
                                      const int timeout_ms)
 {
-    int ready = 0;
+    int wait_result;
     uint16_t wire_payload_len;
     cplat_error detail;
 
     /* 読み取り可能になるまでタイムアウト付きで待機する。 */
-    if (cplat_socket_wait_readable(fd, timeout_ms, &ready, &detail) != CPLAT_OK)
-    {
-        return potr_internal_result_from_error(&detail);
-    }
-    if (!ready)
+    wait_result = cplat_socket_timed_wait_readable(fd, timeout_ms, &detail);
+    if (wait_result == CPLAT_ERR_TIMEOUT)
     {
         return POTR_ERR_TIMEOUT;
+    }
+    if (wait_result != CPLAT_OK)
+    {
+        return potr_internal_result_from_error(&detail);
     }
 
     /* 固定長ヘッダーを読み取る。 */
@@ -224,21 +225,19 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
                cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             uint32_t poll_ms = timeout_ms - elapsed_ms;
-            int wait_ready = 0;
             int wait_result;
             if (poll_ms > 100U)
             {
                 poll_ms = 100U;
             }
-            wait_result = cplat_socket_wait_writable(sock, (int)poll_ms, &wait_ready, NULL);
-            if (wait_result != CPLAT_OK)
-            {
-                break;
-            }
-
-            if (wait_ready)
+            wait_result = cplat_socket_timed_wait_writable(sock, (int)poll_ms, NULL);
+            if (wait_result == CPLAT_OK)
             {
                 ready = 1;
+                break;
+            }
+            if (wait_result != CPLAT_ERR_TIMEOUT)
+            {
                 break;
             }
 

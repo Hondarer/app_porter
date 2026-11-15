@@ -65,7 +65,7 @@ static void send_fin(potr_context *ctx)
      * 現セッションで DATA を送っている場合のみ FIN target を有効化する。
      * ack_num は send_window.next_seq をそのまま運び、0 も通常値として扱う。
      */
-    cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->send_window_mutex);
     wire_target_seq = ctx->send_window.next_seq;
     has_data = ctx->send_has_data;
     cplat_local_lock_unlock(ctx->send_window_mutex);
@@ -98,7 +98,7 @@ static uint32_t get_fin_target_seq(potr_context *ctx, int *has_data)
 {
     uint32_t wire_target_seq;
 
-    cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->send_window_mutex);
     wire_target_seq = ctx->send_window.next_seq;
 
     if (has_data != NULL)
@@ -144,7 +144,7 @@ static void reset_tcp_close_wait(potr_context *ctx)
         return;
     }
 
-    cplat_local_lock_lock(ctx->tcp_close_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->tcp_close_mutex);
     ctx->tcp_close_waiting_ack = 0;
     ctx->tcp_close_ack_received = 0;
     ctx->tcp_close_wait_target_seq = 0U;
@@ -154,7 +154,7 @@ static void reset_tcp_close_wait(potr_context *ctx)
 
 static void begin_tcp_close_wait(potr_context *ctx, uint32_t fin_target_seq)
 {
-    cplat_local_lock_lock(ctx->tcp_close_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->tcp_close_mutex);
     ctx->tcp_close_waiting_ack = 1;
     ctx->tcp_close_ack_received = 0;
     ctx->tcp_close_wait_target_seq = fin_target_seq;
@@ -187,7 +187,7 @@ static int wait_for_tcp_close_ack(potr_context *ctx, int timeout_ms, int has_dat
         return POTR_OK;
     }
 
-    cplat_local_lock_lock(ctx->tcp_close_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->tcp_close_mutex);
 
     while (ctx->tcp_close_waiting_ack && !ctx->tcp_close_ack_received)
     {
@@ -196,7 +196,7 @@ static int wait_for_tcp_close_ack(potr_context *ctx, int timeout_ms, int has_dat
             break;
         }
 
-        wait_result = cplat_condvar_wait(ctx->tcp_close_cv, ctx->tcp_close_mutex, timeout_ms);
+        wait_result = cplat_condvar_timed_wait(ctx->tcp_close_cv, ctx->tcp_close_mutex, timeout_ms);
         if (wait_result != CPLAT_OK)
         {
             if (wait_result == CPLAT_ERR_TIMEOUT)

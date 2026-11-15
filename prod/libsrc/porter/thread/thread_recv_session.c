@@ -182,7 +182,7 @@ void thread_recv_disconnect_service_all_paths(potr_context *ctx)
     potr_internal_prepared_path_events prepared;
 
     potr_internal_zero_path_states(next_states);
-    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->callback_mutex);
     potr_internal_sync_service_path_state_locked(ctx, next_states, &prepared);
     potr_internal_emit_service_path_events_locked(ctx, &prepared);
     cplat_local_lock_unlock(ctx->callback_mutex);
@@ -196,7 +196,7 @@ void thread_recv_disconnect_peer_all_paths(potr_context *ctx, potr_internal_peer
     potr_internal_prepared_path_events prepared;
 
     potr_internal_zero_path_states(next_states);
-    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->callback_mutex);
     potr_internal_sync_peer_path_state_locked(peer, next_states, &prepared);
     potr_internal_emit_peer_path_events_locked(ctx, peer, &prepared);
     cplat_local_lock_unlock(ctx->callback_mutex);
@@ -232,7 +232,7 @@ void thread_recv_sync_path_state(thread_recv_slot *slot)
     if (slot->peer != NULL)
     {
         potr_internal_copy_bidir_n1_path_states(slot->peer, next_states);
-        cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->callback_mutex);
         potr_internal_sync_peer_path_state_locked(slot->peer, next_states, &prepared);
         potr_internal_emit_peer_path_events_locked(ctx, slot->peer, &prepared);
         cplat_local_lock_unlock(ctx->callback_mutex);
@@ -254,7 +254,7 @@ void thread_recv_sync_path_state(thread_recv_slot *slot)
         potr_internal_copy_oneway_path_states(ctx, next_states);
     }
 
-    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->callback_mutex);
     potr_internal_sync_service_path_state_locked(ctx, next_states, &prepared);
     potr_internal_emit_service_path_events_locked(ctx, &prepared);
     cplat_local_lock_unlock(ctx->callback_mutex);

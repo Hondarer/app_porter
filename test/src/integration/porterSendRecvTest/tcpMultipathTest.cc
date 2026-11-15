@@ -246,11 +246,8 @@ class tcpMultipathTest : public Test
             }
         }
         // PING に対する応答の受信で、両経路の開始を待ちます。
-        int ready = 0;
-        ASSERT_EQ(CPLAT_OK, cplat_socket_wait_readable(sockets[1], 5000, &ready, nullptr));
-        // [状態確認] - cplat_socket_wait_readable() の戻り値が CPLAT_OK であること。
-        ASSERT_EQ(1, ready);
-        // [状態確認] - ready が 1 であること。
+        ASSERT_EQ(CPLAT_OK, cplat_socket_timed_wait_readable(sockets[1], 5000, nullptr));
+        // [状態確認] - cplat_socket_timed_wait_readable() の戻り値が CPLAT_OK であること。
         // 応答 PING は accept スレッドの bootstrap 送信でも発生するため、読み取り可能なだけでは
         // 受信スレッドが先読み PING を処理し終えた証拠になりません。両経路の PATH_CONNECTED を
         // 待ち、各経路の受信スレッドが次のヘッダー読み取りへ進んだことを確認します。

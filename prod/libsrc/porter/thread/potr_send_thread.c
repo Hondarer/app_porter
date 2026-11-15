@@ -88,7 +88,7 @@ static int tcp_write_path(potr_context *ctx, int path_idx, const potr_packet *pa
     int result = POTR_ERR_DISCONNECTED;
     size_t wire_len = ctx->crypto_buf_size;
 
-    cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx]);
 
     if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
     {
@@ -150,7 +150,7 @@ static int tcp_write_all_paths(potr_context *ctx, const potr_packet *packet, uin
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        int writable = 0;
+        int writable = 1;
 
         if ((paths & (uint8_t)(1U << i)) == 0U || ctx->tcp_conn_fd[i] == CPLAT_INVALID_SOCKET)
         {
@@ -158,9 +158,9 @@ static int tcp_write_all_paths(potr_context *ctx, const potr_packet *packet, uin
         }
 
         /* 送信バッファーの空きを確認する (非ブロッキング)。確認できない場合は書き込みの結果で判定する。 */
-        if (cplat_socket_wait_writable(ctx->tcp_conn_fd[i], CPLAT_SOCKET_NO_WAIT, &writable, NULL) != CPLAT_OK)
+        if (cplat_socket_timed_wait_writable(ctx->tcp_conn_fd[i], CPLAT_NO_WAIT, NULL) == CPLAT_ERR_TIMEOUT)
         {
-            writable = 1;
+            writable = 0;
         }
 
         if (writable)
@@ -255,7 +255,7 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
     session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
     /* send_window へのアクセスを排他制御する (送信スレッド・ヘルス チェック スレッド・受信スレッドが競合)。 */
-    cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->send_window_mutex);
 
     result = potr_internal_path_group_select(ctx, NULL, &selection);
     if (result != POTR_OK || selection.disconnected)
@@ -301,7 +301,7 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
                     return result;
                 }
             }
-            cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->callback_mutex);
             if (ctx->path_group_state.resend_group == selection.next_group)
             {
                 ctx->path_group_state.resend_group = 0U;
@@ -402,7 +402,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
     shdr.session_id = peer->session_id;
     session_ts_to_hdr(&peer->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
 
-    cplat_local_lock_lock(peer->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(peer->send_window_mutex);
 
     if (potr_internal_path_group_select(ctx, peer, &selection) != POTR_OK || selection.disconnected)
     {
@@ -469,7 +469,7 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
      * 受信スレッド、ヘルス チェック スレッド、potr_peer_disconnect がピアを解放すると、
      * 同じスロットのウィンドウと mutex は破棄または別ピアへ再利用されるためである。
      */
-    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->peers_mutex);
     peer_exists = (potr_internal_peer_find_by_id(ctx, target_peer_id) != NULL);
     cplat_local_lock_unlock(ctx->peers_mutex);
 
@@ -532,7 +532,7 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
      * ヘルス チェック スレッドの N:1 PING 送信と同じく、ロック順は
      * peers_mutex -> peer->send_window_mutex とする。
      */
-    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->peers_mutex);
     peer = potr_internal_peer_find_by_id(ctx, target_peer_id);
     if (peer != NULL)
     {
@@ -785,10 +785,7 @@ void potr_internal_send_thread_stop(potr_context *ctx)
     cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
     potr_internal_send_queue_shutdown(&ctx->send_queue);
 
-    if (cplat_thread_join(ctx->send_thread, CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
-    {
-        return;
-    }
+    cplat_thread_join(ctx->send_thread);
 
     ctx->send_thread = NULL;
     cplat_local_lock_dispose(ctx->send_window_mutex);

@@ -125,12 +125,12 @@ TEST_F(potrNotifyTest, allocation_failure_uses_reserved_error_and_wakes_senders)
     NiceMock<Mock_cplat> mock_cplat;
     ON_CALL(mock_cplat, cplat_malloc(_)).WillByDefault(Return(nullptr));
     // [状態] - 通知領域の追加確保を失敗させる。
-    ON_CALL(mock_cplat, cplat_condvar_wait(ctx.send_queue.progress, ctx.send_queue.mutex, _))
+    ON_CALL(mock_cplat, cplat_condvar_wait(ctx.send_queue.progress, ctx.send_queue.mutex))
         .WillByDefault(
-            [&](cplat_condvar *cv, cplat_local_lock *mutex, int timeout)
+            [&](cplat_condvar *cv, cplat_local_lock *mutex)
             {
                 waiter_entered.store(true);
-                return delegate_real_cplat_condvar_wait(cv, mutex, timeout);
+                delegate_real_cplat_condvar_wait(cv, mutex);
             });
     // [状態] - チケット待機へ入った時点を記録する。
     // Pre-Assert

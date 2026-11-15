@@ -48,7 +48,7 @@ int potr_internal_path_group_select(potr_context *ctx, potr_internal_peer_contex
     {
         if (is_tcp_type(ctx->service.type))
         {
-            cplat_local_lock_lock(ctx->tcp_send_mutex[i], CPLAT_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->tcp_send_mutex[i]);
             input.available[i] = (uint8_t)(ctx->tcp_conn_fd[i] != CPLAT_INVALID_SOCKET);
             cplat_local_lock_unlock(ctx->tcp_send_mutex[i]);
         }
@@ -58,7 +58,7 @@ int potr_internal_path_group_select(potr_context *ctx, potr_internal_peer_contex
                 (peer == NULL || !endpoint_is_unset(&peer->dest_addr[i])));
         }
     }
-    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->callback_mutex);
     if (peer != NULL)
     {
         state = &peer->path_group_state;

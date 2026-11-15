@@ -137,7 +137,7 @@ static void push_locked(potr_internal_send_queue *q, potr_peer_id peer_id, uint1
 int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags,
                                   const void *payload, uint16_t payload_len, uint64_t *ticket)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
 
     if (q->count + q->inflight >= q->depth)
     {
@@ -164,7 +164,7 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
                                        const void *payload, uint16_t payload_len, cplat_atomic_i32 *running,
                                        uint64_t *ticket)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
 
     /*
      * count + inflight < depth が保証されるまで待機する。
@@ -178,7 +178,7 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
             return POTR_ERR_CANCELED;
         }
 
-        cplat_condvar_wait(q->not_full, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_condvar_wait(q->not_full, q->mutex);
     }
 
     if (q->failure != POTR_OK)
@@ -199,7 +199,7 @@ int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id
 int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payload_elem *item_out,
                                  cplat_atomic_i32 *running)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
 
     while (q->failure == POTR_OK && q->count == 0)
     {
@@ -209,7 +209,7 @@ int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payl
             return POTR_ERR_CANCELED;
         }
 
-        cplat_condvar_wait(q->not_empty, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_condvar_wait(q->not_empty, q->mutex);
     }
 
     if (q->failure != POTR_OK)
@@ -237,7 +237,7 @@ int potr_internal_send_queue_pop(potr_internal_send_queue *q, potr_internal_payl
 
 int potr_internal_send_queue_peek(potr_internal_send_queue *q, potr_internal_payload_elem *item_out)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
 
     if (q->count == 0)
     {
@@ -264,11 +264,11 @@ int potr_internal_send_queue_peek(potr_internal_send_queue *q, potr_internal_pay
 int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_internal_payload_elem *item_out,
                                         int timeout_ms)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
 
     if (q->count == 0)
     {
-        cplat_condvar_wait(q->not_empty, q->mutex, timeout_ms);
+        cplat_condvar_timed_wait(q->not_empty, q->mutex, timeout_ms);
     }
 
     if (q->count == 0)
@@ -295,7 +295,7 @@ int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_intern
 
 int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_payload_elem *item_out)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
 
     if (q->count == 0)
     {
@@ -348,7 +348,7 @@ static void complete_locked(potr_internal_send_queue *q)
 
 void potr_internal_send_queue_complete(potr_internal_send_queue *q)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
     complete_locked(q);
     cplat_local_lock_unlock(q->mutex);
 }
@@ -357,7 +357,7 @@ void potr_internal_send_queue_complete(potr_internal_send_queue *q)
 
 void potr_internal_send_queue_complete_failed(potr_internal_send_queue *q, int error)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
 
     /* 完了数に 1 を足した番号が、これから完了するエントリの番号である。 */
     q->failed_seq = q->completed_seq + 1U;
@@ -370,11 +370,11 @@ void potr_internal_send_queue_complete_failed(potr_internal_send_queue *q, int e
 
 void potr_internal_send_queue_wait_drained(potr_internal_send_queue *q)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
 
     while (q->failure == POTR_OK && (q->count > 0U || q->inflight > 0U))
     {
-        cplat_condvar_wait(q->drained, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_condvar_wait(q->drained, q->mutex);
     }
 
     cplat_local_lock_unlock(q->mutex);
@@ -384,11 +384,11 @@ void potr_internal_send_queue_wait_drained(potr_internal_send_queue *q)
 
 void potr_internal_send_queue_wait_ticket(potr_internal_send_queue *q, uint64_t ticket)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
 
     while (q->failure == POTR_OK && q->completed_seq < ticket)
     {
-        cplat_condvar_wait(q->progress, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_condvar_wait(q->progress, q->mutex);
     }
 
     cplat_local_lock_unlock(q->mutex);
@@ -400,7 +400,7 @@ int potr_internal_send_queue_ticket_result(potr_internal_send_queue *q, uint64_t
 {
     int result = POTR_OK;
 
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
 
     if (q->failed_seq != 0U && q->failed_seq >= first_ticket)
     {
@@ -416,7 +416,7 @@ int potr_internal_send_queue_ticket_result(potr_internal_send_queue *q, uint64_t
 
 void potr_internal_send_queue_lock_push(potr_internal_send_queue *q)
 {
-    cplat_local_lock_lock(q->push_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->push_mutex);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -430,7 +430,7 @@ void potr_internal_send_queue_unlock_push(potr_internal_send_queue *q)
 
 void potr_internal_send_queue_shutdown(potr_internal_send_queue *q)
 {
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
     cplat_condvar_broadcast(q->not_empty);
     cplat_condvar_broadcast(q->not_full);
     cplat_local_lock_unlock(q->mutex);

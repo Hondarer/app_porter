@@ -81,7 +81,7 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
     int is_new_peer = 0;
     thread_recv_slot peer_slot;
 
-    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->peers_mutex);
     if (thread_recv_authenticate_packet(ctx, pkt, wire_hdr, "recv", -1) != POTR_OK)
     {
         cplat_local_lock_unlock(ctx->peers_mutex);
@@ -268,7 +268,18 @@ static void recv_thread_func(void *arg)
         {
             wait_ms = (uint32_t)(ctx->next_report_ms - now_ms);
         }
-        poll_result = cplat_socket_wait_readable_multi(ctx->sock, (size_t)ctx->n_path, (int)wait_ms, ready, &detail);
+        poll_result =
+            cplat_socket_timed_wait_readable_multi(ctx->sock, (size_t)ctx->n_path, (int)wait_ms, ready, &detail);
+        if (poll_result == CPLAT_ERR_TIMEOUT)
+        {
+            if (!ctx->is_multi_peer && ctx->global.reorder_timeout_ms > 0U &&
+                (ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR))
+            {
+                thread_recv_window_check_reorder_timeout(&svc_slot);
+            }
+
+            continue;
+        }
         if (poll_result != CPLAT_OK)
         {
             if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
@@ -278,28 +289,6 @@ static void recv_thread_func(void *arg)
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv[service_id=%" PRId64 "]: socket poll failed: rc=%d",
                        ctx->service.service_id, poll_result);
             break;
-        }
-
-        int has_ready = 0;
-
-        for (i = 0; i < ctx->n_path; ++i)
-        {
-            if (ready[i] != 0U)
-            {
-                has_ready = 1;
-                break;
-            }
-        }
-
-        if (!has_ready)
-        {
-            if (!ctx->is_multi_peer && ctx->global.reorder_timeout_ms > 0U &&
-                (ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR))
-            {
-                thread_recv_window_check_reorder_timeout(&svc_slot);
-            }
-
-            continue;
         }
 
         for (i = 0; i < ctx->n_path; i++)
@@ -404,14 +393,17 @@ static void recv_thread_func(void *arg)
  */
 static int tcp_wait_readable(cplat_socket fd, int wait_ms)
 {
-    int ready = 0;
-
-    if (cplat_socket_wait_readable(fd, wait_ms, &ready, NULL) != CPLAT_OK)
+    int rc = cplat_socket_timed_wait_readable(fd, wait_ms, NULL);
+    if (rc == CPLAT_OK)
     {
-        return -1;
+        return 1;
+    }
+    if (rc == CPLAT_ERR_TIMEOUT)
+    {
+        return 0;
     }
 
-    return ready;
+    return -1;
 }
 
 /*
@@ -501,7 +493,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
         uint32_t fin_target_seq = pkt.ack_num;
         int fin_action;
 
-        cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->recv_window_mutex);
 
         if (!thread_recv_session_adopt(svc_slot, &pkt))
         {
@@ -557,7 +549,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
             return POTR_ERR_IO;
         }
 
-        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->tcp_state_mutex);
         cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], ping_time, CPLAT_MEMORY_ORDER_RELAXED);
         ping_state_changed = thread_recv_set_path_ping_state(&ctx->path_ping_state[path_idx], POTR_PING_STATE_NORMAL);
 
@@ -578,7 +570,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
             int should_fire_fin = 0;
             int pushed;
 
-            cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->recv_window_mutex);
 
             if (!thread_recv_session_adopt(svc_slot, &pkt))
             {
@@ -628,7 +620,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
                        ctx->service.service_id, path_idx, (unsigned)pkt.seq_num, (unsigned)pkt.payload_len);
 
             /* 順序整列済みパケットをポップして配信する。 */
-            cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->recv_window_mutex);
 
             {
                 potr_packet out;
@@ -644,7 +636,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
                         thread_recv_slot_deliver_payload_elem(svc_slot, &elem);
                     }
 
-                    cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+                    cplat_local_lock_lock(ctx->recv_window_mutex);
                 }
 
                 if (thread_recv_fin_pending_reached(svc_slot, &fin_target_seq))
@@ -795,7 +787,7 @@ static void tcp_recv_thread_func(void *arg)
                                    "tcp_recv[service_id=%" PRId64 " path=%d]: PING timeout"
                                    " (%llu ms), disconnecting",
                                    ctx->service.service_id, path_idx, (unsigned long long)elapsed);
-                        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
+                        cplat_local_lock_lock(ctx->tcp_state_mutex);
                         ping_state_changed =
                             thread_recv_set_path_ping_state(&ctx->path_ping_state[path_idx], POTR_PING_STATE_ABNORMAL);
                         thread_recv_sync_path_state(&svc_slot);
@@ -845,7 +837,7 @@ static void tcp_recv_thread_func(void *arg)
             }
         } /* else (先読みバッファーなし) ここまで */
 
-        cplat_local_lock_lock(ctx->tcp_recv_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->tcp_recv_mutex);
 
         if (cplat_atomic_load_i32(&ctx->running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
@@ -924,10 +916,7 @@ int potr_internal_comm_recv_thread_stop(potr_context *ctx)
 
     if (ctx->recv_thread[0] != NULL)
     {
-        if (cplat_thread_join(ctx->recv_thread[0], CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
-        {
-            return POTR_ERR_UNKNOWN;
-        }
+        cplat_thread_join(ctx->recv_thread[0]);
 
         ctx->recv_thread[0] = NULL;
     }
@@ -979,10 +968,7 @@ int potr_internal_tcp_recv_thread_stop(potr_context *ctx, int path_idx)
 
     if (ctx->recv_thread[path_idx] != NULL)
     {
-        if (cplat_thread_join(ctx->recv_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
-        {
-            return POTR_ERR_UNKNOWN;
-        }
+        cplat_thread_join(ctx->recv_thread[path_idx]);
 
         ctx->recv_thread[path_idx] = NULL;
     }

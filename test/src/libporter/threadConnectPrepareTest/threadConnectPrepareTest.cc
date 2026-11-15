@@ -178,11 +178,10 @@ TEST(threadConnectPrepareTest, first_packet_empty)
     uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
     size_t len = 999;
     int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_wait_readable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
         .WillByDefault(
-            [](cplat_socket, int, int *out, cplat_error *)
+            [](cplat_socket, int, cplat_error *)
             {
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
@@ -222,11 +221,10 @@ TEST(threadConnectPrepareTest, first_packet_payload)
     uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
     size_t len = 999;
     int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_wait_readable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
         .WillByDefault(
-            [](cplat_socket, int, int *out, cplat_error *)
+            [](cplat_socket, int, cplat_error *)
             {
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
@@ -266,12 +264,11 @@ TEST(threadConnectPrepareTest, first_packet_timeout)
     uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
     size_t len = 999;
     int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_wait_readable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
         .WillByDefault(
-            [](cplat_socket, int, int *out, cplat_error *)
+            [](cplat_socket, int, cplat_error *)
             {
-                *out = 0;
-                return CPLAT_OK;
+                return CPLAT_ERR_TIMEOUT;
             });
     ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
     ON_CALL(mock_porter, potr_internal_result_from_socket_result(_, _)).WillByDefault(Return(POTR_ERR_IO));
@@ -309,11 +306,10 @@ TEST(threadConnectPrepareTest, first_packet_wait_error)
     uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
     size_t len = 999;
     int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_wait_readable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
         .WillByDefault(
-            [](cplat_socket, int, int *out, cplat_error *)
+            [](cplat_socket, int, cplat_error *)
             {
-                *out = 0;
                 return CPLAT_ERR_UNKNOWN;
             });
     ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
@@ -352,11 +348,10 @@ TEST(threadConnectPrepareTest, first_packet_header_eof)
     uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
     size_t len = 999;
     int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_wait_readable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
         .WillByDefault(
-            [](cplat_socket, int, int *out, cplat_error *)
+            [](cplat_socket, int, cplat_error *)
             {
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
@@ -395,11 +390,10 @@ TEST(threadConnectPrepareTest, first_packet_payload_error)
     uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
     size_t len = 999;
     int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_wait_readable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
         .WillByDefault(
-            [](cplat_socket, int, int *out, cplat_error *)
+            [](cplat_socket, int, cplat_error *)
             {
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
@@ -438,11 +432,10 @@ TEST(threadConnectPrepareTest, first_packet_oversize)
     uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
     size_t len = 999;
     int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_wait_readable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
         .WillByDefault(
-            [](cplat_socket, int, int *out, cplat_error *)
+            [](cplat_socket, int, cplat_error *)
             {
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
@@ -492,12 +485,11 @@ TEST(threadConnectPrepareTest, connect_open_failure)
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
         .WillByDefault(
-            [&](cplat_socket, int timeout, int *out, cplat_error *)
+            [&](cplat_socket, int timeout, cplat_error *)
             {
                 waits.push_back(timeout);
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
@@ -530,12 +522,11 @@ TEST(threadConnectPrepareTest, connect_bind_failure)
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
     ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
         .WillByDefault(
-            [&](cplat_socket, int timeout, int *out, cplat_error *)
+            [&](cplat_socket, int timeout, cplat_error *)
             {
                 waits.push_back(timeout);
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
@@ -568,12 +559,11 @@ TEST(threadConnectPrepareTest, connect_blocking_failure)
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
         .WillByDefault(
-            [&](cplat_socket, int timeout, int *out, cplat_error *)
+            [&](cplat_socket, int timeout, cplat_error *)
             {
                 waits.push_back(timeout);
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
@@ -606,12 +596,11 @@ TEST(threadConnectPrepareTest, connect_blocking_success)
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
         .WillByDefault(
-            [&](cplat_socket, int timeout, int *out, cplat_error *)
+            [&](cplat_socket, int timeout, cplat_error *)
             {
                 waits.push_back(timeout);
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
@@ -644,12 +633,11 @@ TEST(threadConnectPrepareTest, connect_immediate_success)
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
         .WillByDefault(
-            [&](cplat_socket, int timeout, int *out, cplat_error *)
+            [&](cplat_socket, int timeout, cplat_error *)
             {
                 waits.push_back(timeout);
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
@@ -682,12 +670,11 @@ TEST(threadConnectPrepareTest, connect_connect_failure)
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
         .WillByDefault(
-            [&](cplat_socket, int timeout, int *out, cplat_error *)
+            [&](cplat_socket, int timeout, cplat_error *)
             {
                 waits.push_back(timeout);
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
@@ -720,13 +707,12 @@ TEST(threadConnectPrepareTest, connect_deadline)
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_IN_PROGRESS));
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
         .WillByDefault(
-            [&](cplat_socket, int timeout, int *out, cplat_error *)
+            [&](cplat_socket, int timeout, cplat_error *)
             {
                 waits.push_back(timeout);
-                *out = 0;
-                return CPLAT_OK;
+                return CPLAT_ERR_TIMEOUT;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
     // [状態] - 接続の段階と停止フラグを指定する。
@@ -759,12 +745,11 @@ TEST(threadConnectPrepareTest, connect_stopped)
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_IN_PROGRESS));
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
         .WillByDefault(
-            [&](cplat_socket, int timeout, int *out, cplat_error *)
+            [&](cplat_socket, int timeout, cplat_error *)
             {
                 waits.push_back(timeout);
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
@@ -798,12 +783,11 @@ TEST(threadConnectPrepareTest, connect_wait_failure)
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_IN_PROGRESS));
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
         .WillByDefault(
-            [&](cplat_socket, int timeout, int *out, cplat_error *)
+            [&](cplat_socket, int timeout, cplat_error *)
             {
                 waits.push_back(timeout);
-                *out = 0;
                 return CPLAT_ERR_UNKNOWN;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
@@ -836,12 +820,11 @@ TEST(threadConnectPrepareTest, connect_pending_failure)
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_IN_PROGRESS));
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
         .WillByDefault(
-            [&](cplat_socket, int timeout, int *out, cplat_error *)
+            [&](cplat_socket, int timeout, cplat_error *)
             {
                 waits.push_back(timeout);
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
@@ -874,12 +857,11 @@ TEST(threadConnectPrepareTest, connect_poll_success)
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_IN_PROGRESS));
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
         .WillByDefault(
-            [&](cplat_socket, int timeout, int *out, cplat_error *)
+            [&](cplat_socket, int timeout, cplat_error *)
             {
                 waits.push_back(timeout);
-                *out = 1;
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));

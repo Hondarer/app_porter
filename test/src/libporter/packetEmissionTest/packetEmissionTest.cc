@@ -166,17 +166,16 @@ TEST(packetEmissionTest, tcp_locks_cover_sealing_and_writing_on_each_path)
         ASSERT_EQ(CPLAT_OK, delegate_real_cplat_local_lock_create(&ctx.tcp_send_mutex[i]));
         // [状態確認] - 経路ごとのロックを作成できること。
     }
-    ON_CALL(mock_cplat, cplat_local_lock_lock(_, _)).WillByDefault([&](cplat_local_lock *lock, int timeout) {
-        int actual_ret = delegate_real_cplat_local_lock_lock(lock, timeout);
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault([&](cplat_local_lock *lock) {
+        delegate_real_cplat_local_lock_lock(lock);
         locked.insert(lock);
-        return actual_ret;
     }); // [状態] - ロック保持を記録する。
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault([&](cplat_local_lock *lock) {
         locked.erase(lock);
-        return delegate_real_cplat_local_lock_unlock(lock);
+        delegate_real_cplat_local_lock_unlock(lock);
     }); // [状態] - ロック解除を記録する。
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
-        .WillByDefault(DoAll(SetArgPointee<2>(1), Return(CPLAT_OK)));
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
+        .WillByDefault(Return(CPLAT_OK));
     // [状態] - 2 経路とも書き込み可能とする。
     potr_internal_tx_session_init(&ctx.tx_session);
     // Pre-Assert
@@ -505,8 +504,8 @@ TEST(packetEmissionTest, tcp_failover_replays_retained_window_before_new_data)
     }
     ASSERT_EQ(POTR_OK, potr_internal_window_init(&ctx.send_window, 0, 3, 128));
     // [状態確認] - 直近 3 通番のウィンドウを用意できること。
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(_, _, _, _))
-        .WillByDefault(DoAll(SetArgPointee<2>(1), Return(CPLAT_OK)));
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
+        .WillByDefault(Return(CPLAT_OK));
     potr_internal_tx_session_init(&ctx.tx_session);
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _)).Times(11)

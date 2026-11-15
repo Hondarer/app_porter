@@ -334,7 +334,7 @@ TEST(certificate_group_test, isolates_receiver_authentication_failure)
     bool actual_delivered = send_until_delivered(sending.value, 1U, std::chrono::seconds(10)); // [手順] - 不正な受信者の認証と並行してグループ DATA を送信する。
     ASSERT_EQ(POTR_OK, potr_internal_handle_acquire(rejecting.value,
         &rejected_context)); // [状態確認] - 不正な受信者の鍵の状態を参照する。
-    cplat_local_lock_lock(rejected_context->certificate_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(rejected_context->certificate_mutex);
     int rejected_established = rejected_context->certificate.established;
     int rejected_group_key = rejected_context->group_key_known;
     cplat_local_lock_unlock(rejected_context->certificate_mutex);
@@ -446,7 +446,7 @@ TEST(certificate_group_test, retries_handshake_until_group_key_is_available)
         &sending.value)); // [状態確認] - 送信者を開始する。
     ASSERT_TRUE(send_until_delivered(sending.value, 1U, std::chrono::seconds(10))); // [状態確認] - グループ鍵を取得して DATA を受信する。
     ASSERT_EQ(POTR_OK, potr_internal_handle_acquire(receiving.value, &context)); // [状態確認] - 受信者のグループ鍵を参照する。
-    cplat_local_lock_lock(context->certificate_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(context->certificate_mutex);
     context->group_key_known = 0;
     cplat_secure_zero(context->group_key, sizeof(context->group_key)); // [状態] - KEY が届かずグループ鍵を持たない状態にする。
     cplat_local_lock_unlock(context->certificate_mutex);

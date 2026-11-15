@@ -108,7 +108,7 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
     {
         return POTR_ERR_IO;
     }
-    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->callback_mutex);
     (void)potr_internal_receiver_groups_locked(ctx, now_ms);
     for (receiver = ctx->receivers; receiver != NULL; receiver = receiver->next)
     {

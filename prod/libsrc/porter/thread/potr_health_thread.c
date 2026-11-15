@@ -63,7 +63,7 @@ static void signal_health_thread(potr_context *ctx, int path_idx)
         return;
     }
 
-    cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->health_mutex[path_idx]);
 
     if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
@@ -85,12 +85,12 @@ static void health_sleep(potr_context *ctx, int path_idx, uint32_t interval_ms)
         return;
     }
 
-    cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->health_mutex[path_idx]);
 
     if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
         /* interval_ms は PING 間隔の設定値。実用範囲は INT_MAX 以下。 */
-        cplat_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], (int)interval_ms);
+        cplat_condvar_timed_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], (int)interval_ms);
     }
 
     cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
@@ -242,8 +242,8 @@ static int tcp_send_ping_packet(potr_context *ctx, int path_idx)
         return POTR_ERR_DISCONNECTED;
     }
 
-    cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
-    cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->send_window_mutex);
+    cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx]);
     send_result = tcp_write_ping_locked(ctx, path_idx, 1);
     cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
     cplat_local_lock_unlock(ctx->send_window_mutex);
@@ -309,7 +309,7 @@ static void health_thread_func(void *arg)
             /* N:1 モード: アクティブ全ピアへ PING を送信する。 */
             int i;
 
-            cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->peers_mutex);
 
             for (i = 0;
                  i < ctx->max_peers && cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) != 0;
@@ -331,7 +331,7 @@ static void health_thread_func(void *arg)
                 peer_shdr.session_id = ctx->peers[i].session_id;
                 session_ts_to_hdr(&ctx->peers[i].session_ts, &peer_shdr.session_tv_sec, &peer_shdr.session_tv_nsec);
 
-                cplat_local_lock_lock(ctx->peers[i].send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+                cplat_local_lock_lock(ctx->peers[i].send_window_mutex);
                 seq = ctx->peers[i].send_window.next_seq;
 
                 /* N:1 (UNICAST_BIDIR_N1) は双方向 PING。ピアごとの自端パス受信状態をペイロードに設定する。 */
@@ -392,7 +392,7 @@ static void health_thread_func(void *arg)
                 memset(health_states, POTR_PING_STATE_UNDEFINED, POTR_MAX_PATH);
             }
 
-            cplat_local_lock_lock(ctx->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->send_window_mutex);
             seq = ctx->send_window.next_seq;
             build_result =
                 potr_internal_packet_build_ping(&ping_pkt, &shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
@@ -574,14 +574,11 @@ int potr_internal_health_thread_stop(potr_context *ctx)
 
     cplat_atomic_store_i32(&ctx->health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
 
-    cplat_local_lock_lock(ctx->health_mutex[0], CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->health_mutex[0]);
     cplat_condvar_signal(ctx->health_wakeup[0]);
     cplat_local_lock_unlock(ctx->health_mutex[0]);
 
-    if (cplat_thread_join(ctx->health_thread[0], CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
-    {
-        return POTR_ERR_UNKNOWN;
-    }
+    cplat_thread_join(ctx->health_thread[0]);
 
     ctx->health_thread[0] = NULL;
 
@@ -616,12 +613,12 @@ int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx)
         return POTR_OK;
     }
 
-    cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->health_mutex[path_idx]);
 
     /* 前のスレッドの回収が終わるまで、同じ path のハンドルを再利用しない。 */
     while (ctx->health_stopping[path_idx] != 0)
     {
-        cplat_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+        cplat_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx]);
     }
 
     if (cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
@@ -672,12 +669,12 @@ int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
         return POTR_OK;
     }
 
-    cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->health_mutex[path_idx]);
 
     /* close と接続管理の停止要求が重なっても、join を実行する呼び出しは 1 つにする。 */
     while (ctx->health_stopping[path_idx] != 0)
     {
-        cplat_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+        cplat_condvar_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx]);
     }
 
     if (ctx->health_thread[path_idx] == NULL)
@@ -692,24 +689,14 @@ int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
     cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
 
     /* health 自身も health_mutex を取得するため、ロックを保持したまま終了を待たない。 */
-    int ret = cplat_thread_join(ctx->health_thread[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    cplat_thread_join(ctx->health_thread[path_idx]);
 
-    cplat_local_lock_lock(ctx->health_mutex[path_idx], CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->health_mutex[path_idx]);
 
-    if (ret == CPLAT_OK)
-    {
-        ctx->health_thread[path_idx] = NULL;
-    }
-
+    ctx->health_thread[path_idx] = NULL;
     ctx->health_stopping[path_idx] = 0;
     cplat_condvar_broadcast(ctx->health_wakeup[path_idx]);
     cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
-
-    if (ret != CPLAT_OK)
-    {
-        /* cplat の終了待ち失敗には、porter の分類へ変換できる詳細コードがない。 */
-        return POTR_ERR_UNKNOWN;
-    }
 
     return POTR_OK;
 }

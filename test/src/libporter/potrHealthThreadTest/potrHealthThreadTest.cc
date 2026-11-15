@@ -93,8 +93,7 @@ TEST(potrHealthThreadTest, udp_stop_joins_once)
     (void)potr_internal_health_thread_start(&ctx);
     cplat_atomic_store_i32(&ctx.health_running[0], 0, CPLAT_MEMORY_ORDER_RELAXED);
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.health_thread[0], CPLAT_SYNC_WAIT_FOREVER))
-        .WillOnce(Return(CPLAT_OK));
+    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.health_thread[0])).WillOnce(Return());
     // [Pre-Assert確認_正常系] - 稼働終了後のハンドルを 1 回だけ join すること。
     // [Pre-Assert手順] - join 成功を返す。
     // Act
@@ -127,8 +126,7 @@ TEST(potrHealthThreadTest, tcp_stop_joins_once)
     (void)potr_internal_tcp_health_thread_start(&ctx, 1);
     cplat_atomic_store_i32(&ctx.health_running[1], 0, CPLAT_MEMORY_ORDER_RELAXED);
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.health_thread[1], CPLAT_SYNC_WAIT_FOREVER))
-        .WillOnce(Return(CPLAT_OK));
+    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.health_thread[1])).WillOnce(Return());
     // [Pre-Assert確認_正常系] - 稼働終了後のハンドルを 1 回だけ join すること。
     // [Pre-Assert手順] - join 成功を返す。
     // Act
@@ -180,26 +178,25 @@ TEST(potrHealthThreadTest, concurrent_tcp_stop_waits_for_single_join)
     delegate_real_cplat_local_lock_create(&ctx.health_mutex[0]);
     delegate_real_cplat_condvar_create(&ctx.health_wakeup[0]);
     ctx.health_thread[0] = reinterpret_cast<cplat_thread *>(&token);
-    ON_CALL(mock_cplat, cplat_thread_join(_, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
-    ON_CALL(mock_cplat, cplat_condvar_wait(ctx.health_wakeup[0], ctx.health_mutex[0], CPLAT_SYNC_WAIT_FOREVER))
+    ON_CALL(mock_cplat, cplat_thread_join(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_condvar_wait(ctx.health_wakeup[0], ctx.health_mutex[0]))
         .WillByDefault(
-            [&](cplat_condvar *cv, cplat_local_lock *mutex, int timeout_ms)
+            [&](cplat_condvar *cv, cplat_local_lock *mutex)
             {
                 if (!wait_recorded.exchange(true))
                 {
                     stop_waiting.set_value();
                 }
-                return delegate_real_cplat_condvar_wait(cv, mutex, timeout_ms);
+                delegate_real_cplat_condvar_wait(cv, mutex);
             }); // [状態] - 後続の停止要求が条件変数で待機する位置を記録し、実際の待機へ委譲する。
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.health_thread[0], CPLAT_SYNC_WAIT_FOREVER))
+    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.health_thread[0]))
         .WillOnce(
-            [&](cplat_thread *, int)
+            [&](cplat_thread *)
             {
                 join_entered.set_value();
                 join_gate.wait();
-                return CPLAT_OK;
             });
     // [Pre-Assert確認_正常系] - 並行する停止要求からの join が合計 1 回であること。
     // [Pre-Assert手順] - join の復帰をテスト本体が許可するまで待たせる。
@@ -228,42 +225,6 @@ TEST(potrHealthThreadTest, concurrent_tcp_stop_waits_for_single_join)
     EXPECT_EQ(POTR_OK, first_ret);                         // [確認_正常系] - 先行要求が成功すること。
     EXPECT_EQ(POTR_OK, second_ret);                        // [確認_正常系] - 後続要求も成功すること。
     EXPECT_EQ(nullptr, ctx.health_thread[0]);              // [確認_正常系] - 回収後のハンドルが NULL であること。
-
-    // Cleanup
-    delegate_real_cplat_condvar_dispose(ctx.health_wakeup[0]);
-    delegate_real_cplat_local_lock_dispose(ctx.health_mutex[0]);
-}
-
-// TCP health の終了待ち失敗後も、ハンドルを保持して停止を再試行できることの確認
-TEST(potrHealthThreadTest, tcp_stop_failure_retains_handle_for_retry)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    int token = 0;
-    cplat_thread *handle = reinterpret_cast<cplat_thread *>(&token);
-    ctx.health_thread[0] = handle;
-    delegate_real_cplat_local_lock_create(&ctx.health_mutex[0]);
-    delegate_real_cplat_condvar_create(&ctx.health_wakeup[0]);
-
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_thread_join(handle, CPLAT_SYNC_WAIT_FOREVER))
-        .WillOnce(Return(CPLAT_ERR_UNKNOWN))
-        .WillOnce(Return(CPLAT_OK));
-    // [Pre-Assert確認_異常系] - 同じハンドルで join を再試行すること。
-    // [Pre-Assert手順] - 最初の終了待ちを失敗させ、再試行を成功させる。
-
-    // Act
-    int first_ret = potr_internal_tcp_health_thread_stop(&ctx, 0);  // [手順] - 最初の停止を呼ぶ。
-    cplat_thread *retained = ctx.health_thread[0];                  // [手順] - 失敗後の所有ハンドルを取得する。
-    int second_ret = potr_internal_tcp_health_thread_stop(&ctx, 0); // [手順] - 停止を再試行する。
-
-    // Assert
-    EXPECT_EQ(POTR_ERR_UNKNOWN, first_ret);   // [確認_異常系] - 終了待ち失敗を返すこと。
-    EXPECT_EQ(handle, retained);              // [確認_異常系] - 失敗時はハンドルを保持すること。
-    EXPECT_EQ(POTR_OK, second_ret);           // [確認_正常系] - 再試行が成功すること。
-    EXPECT_EQ(nullptr, ctx.health_thread[0]); // [確認_正常系] - 成功後のハンドルが NULL であること。
 
     // Cleanup
     delegate_real_cplat_condvar_dispose(ctx.health_wakeup[0]);

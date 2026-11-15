@@ -52,11 +52,11 @@ static void notify_thread(void *arg)
         potr_internal_notice *node;
         potr_internal_notice *returned = NULL;
         potr_internal_notice *returned_tail = NULL;
-        cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(q->mutex);
 
         while (q->head == NULL && q->sealed == 0)
         {
-            cplat_condvar_wait(q->ready, q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_condvar_wait(q->ready, q->mutex);
         }
 
         node = q->head;
@@ -105,7 +105,7 @@ static void notify_thread(void *arg)
 
         if (returned_tail != NULL)
         {
-            cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(q->mutex);
             returned_tail->next = q->free_nodes;
             q->free_nodes = returned;
             cplat_local_lock_unlock(q->mutex);
@@ -184,15 +184,12 @@ int potr_internal_notify_stop(potr_context *ctx)
     }
 
     /* 生成元の停止後に登録を締め切り、登録済み通知の配送が終わるまで資源を保持する。 */
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
     q->sealed = 1;
     cplat_condvar_broadcast(q->ready);
     cplat_local_lock_unlock(q->mutex);
 
-    if (cplat_thread_join(q->thread, CPLAT_SYNC_WAIT_FOREVER) != CPLAT_OK)
-    {
-        return POTR_ERR_UNKNOWN;
-    }
+    cplat_thread_join(q->thread);
 
     node = q->free_nodes;
     while (node != NULL)
@@ -252,7 +249,7 @@ void potr_internal_notify_enqueue(potr_context *ctx, potr_peer_id peer_id, potr_
         return;
     }
 
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
 
     if (q->sealed != 0 || q->error_code != POTR_OK)
     {

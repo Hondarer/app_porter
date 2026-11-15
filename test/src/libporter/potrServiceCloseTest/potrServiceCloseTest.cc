@@ -163,9 +163,9 @@ TEST(potrServiceCloseTest, tcp_close_without_active_path_after_data_returns_disc
     delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_)).Times(AnyNumber());
     // [Pre-Assert確認_正常系] - ハンドル管理用ロックの取得も許可する。
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex, _)).Times(AtLeast(1));
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex)).Times(AtLeast(1));
     // [Pre-Assert確認_正常系] - 送信済み状態を send_window_mutex の保護下で取得すること。
     EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).Times(0);
     // [Pre-Assert確認_異常系] - 切断済みのため FIN を送信しないこと。
@@ -221,11 +221,11 @@ TEST(potrServiceCloseTest, tcp_close_after_peer_fin_without_post_fin_send_return
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex, _)).Times(AtLeast(1));
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex)).Times(AtLeast(1));
     EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).Times(0);
     // [Pre-Assert確認_正常系] - 相手 FIN 受理済みのため FIN を送信しないこと。
-    EXPECT_CALL(mock_cplat, cplat_condvar_wait(_, _, _)).Times(0);
+    EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - FIN_ACK 待機を行わないこと。
 
     // Act
@@ -257,11 +257,11 @@ TEST(potrServiceCloseTest, tcp_close_after_peer_fin_with_post_fin_send_returns_d
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex, _)).Times(AtLeast(1));
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex)).Times(AtLeast(1));
     EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).Times(0);
     // [Pre-Assert確認_異常系] - 相手 FIN 受理済みのため FIN を送信しないこと。
-    EXPECT_CALL(mock_cplat, cplat_condvar_wait(_, _, _)).Times(0);
+    EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, _)).Times(0);
     // [Pre-Assert確認_異常系] - FIN_ACK 待機を行わないこと。
 
     // Act
@@ -298,11 +298,17 @@ TEST(potrServiceCloseTest, tcp_close_returns_ok_immediately_when_paths_drop_duri
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_)).Times(AnyNumber());
     EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(_)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.tcp_close_mutex)).WillRepeatedly(Return());
+    // [Pre-Assert確認_正常系] - cplat_local_lock_lock() が ctx.tcp_close_mutex を指定して任意の回数呼び出されること。
+    // [Pre-Assert手順] - cplat_local_lock_lock() から、本物でないトークンであるため実関数へ委譲せず戻る。
+    EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(ctx.tcp_close_mutex)).WillRepeatedly(Return());
+    // [Pre-Assert確認_正常系] - cplat_local_lock_unlock() が ctx.tcp_close_mutex を指定して任意の回数呼び出されること。
+    // [Pre-Assert手順] - cplat_local_lock_unlock() から、本物でないトークンであるため実関数へ委譲せず戻る。
     EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).WillOnce(Return(POTR_OK));
     // [Pre-Assert確認_正常系] - FIN を 1 回送信すること。
-    EXPECT_CALL(mock_cplat, cplat_condvar_wait(ctx.tcp_close_cv, ctx.tcp_close_mutex, 5000))
+    EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(ctx.tcp_close_cv, ctx.tcp_close_mutex, 5000))
         .WillOnce(
             [&ctx](cplat_condvar *, cplat_local_lock *, int)
             {
@@ -345,11 +351,17 @@ TEST(potrServiceCloseTest, tcp_close_returns_disconnected_immediately_when_paths
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_)).Times(AnyNumber());
     EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(_)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.tcp_close_mutex)).WillRepeatedly(Return());
+    // [Pre-Assert確認_正常系] - cplat_local_lock_lock() が ctx.tcp_close_mutex を指定して任意の回数呼び出されること。
+    // [Pre-Assert手順] - cplat_local_lock_lock() から、本物でないトークンであるため実関数へ委譲せず戻る。
+    EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(ctx.tcp_close_mutex)).WillRepeatedly(Return());
+    // [Pre-Assert確認_正常系] - cplat_local_lock_unlock() が ctx.tcp_close_mutex を指定して任意の回数呼び出されること。
+    // [Pre-Assert手順] - cplat_local_lock_unlock() から、本物でないトークンであるため実関数へ委譲せず戻る。
     EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).WillOnce(Return(POTR_OK));
     // [Pre-Assert確認_正常系] - FIN を 1 回送信すること。
-    EXPECT_CALL(mock_cplat, cplat_condvar_wait(ctx.tcp_close_cv, ctx.tcp_close_mutex, 5000))
+    EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(ctx.tcp_close_cv, ctx.tcp_close_mutex, 5000))
         .WillOnce(
             [&ctx](cplat_condvar *, cplat_local_lock *, int)
             {
@@ -392,11 +404,17 @@ TEST(potrServiceCloseTest, tcp_close_returns_ok_immediately_when_peer_fin_and_pa
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_)).Times(AnyNumber());
     EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(_)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.tcp_close_mutex)).WillRepeatedly(Return());
+    // [Pre-Assert確認_正常系] - cplat_local_lock_lock() が ctx.tcp_close_mutex を指定して任意の回数呼び出されること。
+    // [Pre-Assert手順] - cplat_local_lock_lock() から、本物でないトークンであるため実関数へ委譲せず戻る。
+    EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(ctx.tcp_close_mutex)).WillRepeatedly(Return());
+    // [Pre-Assert確認_正常系] - cplat_local_lock_unlock() が ctx.tcp_close_mutex を指定して任意の回数呼び出されること。
+    // [Pre-Assert手順] - cplat_local_lock_unlock() から、本物でないトークンであるため実関数へ委譲せず戻る。
     EXPECT_CALL(mock_porter, potr_internal_tcp_send_control_packet(_, _)).WillOnce(Return(POTR_OK));
     // [Pre-Assert確認_正常系] - FIN を 1 回送信すること。
-    EXPECT_CALL(mock_cplat, cplat_condvar_wait(ctx.tcp_close_cv, ctx.tcp_close_mutex, 5000))
+    EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(ctx.tcp_close_cv, ctx.tcp_close_mutex, 5000))
         .WillOnce(
             [&ctx](cplat_condvar *, cplat_local_lock *, int)
             {

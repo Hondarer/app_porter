@@ -59,7 +59,7 @@ static int disconnect_impl(potr_context *handle, potr_peer_id peer_id)
         return POTR_ERR_UNSUPPORTED;
     }
 
-    cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->peers_mutex);
 
     {
         potr_internal_peer_context *peer = potr_internal_peer_find_by_id(ctx, peer_id);
@@ -84,7 +84,7 @@ static int disconnect_impl(potr_context *handle, potr_peer_id peer_id)
             potr_internal_prepared_path_events prepared;
 
             potr_internal_zero_path_states(next_states);
-            cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->callback_mutex);
             potr_internal_sync_peer_path_state_locked(peer, next_states, &prepared);
             potr_internal_emit_peer_path_events_locked(ctx, peer, &prepared);
             cplat_local_lock_unlock(ctx->callback_mutex);

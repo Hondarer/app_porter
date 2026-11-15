@@ -335,7 +335,7 @@ TEST(threadRecvHealthTest, peers_disabled)
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
     InSequence sequence;
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex, CPLAT_SYNC_WAIT_FOREVER))
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex))
         .Times(0); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
     EXPECT_CALL(mock_porter, potr_internal_peer_path_clear(&ctx, &peer, 0))
         .Times(0); // [Pre-Assert確認_正常系] - 期限に達したパスだけを解除すること。
@@ -386,9 +386,9 @@ TEST(threadRecvHealthTest, peers_before)
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
     InSequence sequence;
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex, CPLAT_SYNC_WAIT_FOREVER))
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
     // [Pre-Assert手順] - ロック取得成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_peer_path_clear(&ctx, &peer, 0))
         .Times(0); // [Pre-Assert確認_正常系] - 期限に達したパスだけを解除すること。
@@ -400,7 +400,7 @@ TEST(threadRecvHealthTest, peers_before)
         .Times(0); // [Pre-Assert確認_正常系] - 切断したピアを解放すること。
     EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
     // [Pre-Assert手順] - ロック解放成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_health_thread_wake(&ctx))
         .Times(0); // [Pre-Assert確認_正常系] - ロック解放後に変化を通知すること。
@@ -441,9 +441,9 @@ TEST(threadRecvHealthTest, peers_at_deadline)
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
     InSequence sequence;
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex, CPLAT_SYNC_WAIT_FOREVER))
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
     // [Pre-Assert手順] - ロック取得成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_peer_path_clear(&ctx, &peer, 0))
         .Times(1); // [Pre-Assert確認_正常系] - 期限に達したパスだけを解除すること。
@@ -455,7 +455,7 @@ TEST(threadRecvHealthTest, peers_at_deadline)
         .Times(1); // [Pre-Assert確認_正常系] - 切断したピアを解放すること。
     EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
     // [Pre-Assert手順] - ロック解放成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_health_thread_wake(&ctx))
         .Times(1); // [Pre-Assert確認_正常系] - ロック解放後に変化を通知すること。
@@ -496,9 +496,9 @@ TEST(threadRecvHealthTest, peers_after_deadline)
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
     InSequence sequence;
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex, CPLAT_SYNC_WAIT_FOREVER))
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
     // [Pre-Assert手順] - ロック取得成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_peer_path_clear(&ctx, &peer, 0))
         .Times(1); // [Pre-Assert確認_正常系] - 期限に達したパスだけを解除すること。
@@ -510,7 +510,7 @@ TEST(threadRecvHealthTest, peers_after_deadline)
         .Times(1); // [Pre-Assert確認_正常系] - 切断したピアを解放すること。
     EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
     // [Pre-Assert手順] - ロック解放成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_health_thread_wake(&ctx))
         .Times(1); // [Pre-Assert確認_正常系] - ロック解放後に変化を通知すること。
@@ -551,9 +551,9 @@ TEST(threadRecvHealthTest, peers_inactive_peer)
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
     InSequence sequence;
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex, CPLAT_SYNC_WAIT_FOREVER))
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
     // [Pre-Assert手順] - ロック取得成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_peer_path_clear(&ctx, &peer, 0))
         .Times(0); // [Pre-Assert確認_正常系] - 期限に達したパスだけを解除すること。
@@ -565,7 +565,7 @@ TEST(threadRecvHealthTest, peers_inactive_peer)
         .Times(0); // [Pre-Assert確認_正常系] - 切断したピアを解放すること。
     EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
     // [Pre-Assert手順] - ロック解放成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_health_thread_wake(&ctx))
         .Times(0); // [Pre-Assert確認_正常系] - ロック解放後に変化を通知すること。
@@ -606,9 +606,9 @@ TEST(threadRecvHealthTest, peers_dead_peer)
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
     InSequence sequence;
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex, CPLAT_SYNC_WAIT_FOREVER))
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
     // [Pre-Assert手順] - ロック取得成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_peer_path_clear(&ctx, &peer, 0))
         .Times(0); // [Pre-Assert確認_正常系] - 期限に達したパスだけを解除すること。
@@ -620,7 +620,7 @@ TEST(threadRecvHealthTest, peers_dead_peer)
         .Times(0); // [Pre-Assert確認_正常系] - 切断したピアを解放すること。
     EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
     // [Pre-Assert手順] - ロック解放成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_health_thread_wake(&ctx))
         .Times(0); // [Pre-Assert確認_正常系] - ロック解放後に変化を通知すること。
@@ -661,9 +661,9 @@ TEST(threadRecvHealthTest, peers_path_only)
     // [状態] - ピアとパスの受信時刻、監視状態を指定する。
     // Pre-Assert
     InSequence sequence;
-    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex, CPLAT_SYNC_WAIT_FOREVER))
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 有効時だけピアのロックを取得すること。
     // [Pre-Assert手順] - ロック取得成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_peer_path_clear(&ctx, &peer, 0))
         .Times(1); // [Pre-Assert確認_正常系] - 期限に達したパスだけを解除すること。
@@ -675,7 +675,7 @@ TEST(threadRecvHealthTest, peers_path_only)
         .Times(0); // [Pre-Assert確認_正常系] - 切断したピアを解放すること。
     EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(ctx.peers_mutex))
         .Times(1)
-        .WillRepeatedly(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
+        .WillRepeatedly(Return()); // [Pre-Assert確認_正常系] - 起床前にロックを解放すること。
     // [Pre-Assert手順] - ロック解放成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_health_thread_wake(&ctx))
         .Times(1); // [Pre-Assert確認_正常系] - ロック解放後に変化を通知すること。

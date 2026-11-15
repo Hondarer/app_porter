@@ -128,7 +128,7 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
     /* サービス全経路を切断し、PING 受信状態を不定に戻す。 */
     if (is_tcp_type(ctx->service.type))
     {
-        cplat_local_lock_lock(ctx->tcp_state_mutex, CPLAT_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->tcp_state_mutex);
         thread_recv_set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
         memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
         thread_recv_disconnect_service_all_paths(ctx);
@@ -147,7 +147,7 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
     ctx->peer_session_known = 0;
     ctx->reorder_pending = 0;
     ctx->last_recv_ts.tv_sec = 0;
-    cplat_local_lock_lock(ctx->recv_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->recv_window_mutex);
     potr_internal_window_init(&ctx->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
     cplat_local_lock_unlock(ctx->recv_window_mutex);
 }
@@ -156,7 +156,7 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
 
 void thread_recv_fin_on_ack(potr_context *ctx, uint32_t ack_num)
 {
-    cplat_local_lock_lock(ctx->tcp_close_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->tcp_close_mutex);
 
     if (ctx->tcp_close_waiting_ack && ctx->tcp_close_wait_target_seq == ack_num && !ctx->tcp_close_ack_received)
     {

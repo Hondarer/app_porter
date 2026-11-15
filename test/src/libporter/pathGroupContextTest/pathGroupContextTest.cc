@@ -45,8 +45,8 @@ TEST(pathGroupContextTest, n1_peers_select_independently)
     peers[1].path_logical_alive[1] = 1;
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_))
         .WillByDefault(DoAll(SetArgPointee<0>(1000), Return(CPLAT_OK)));
-    ON_CALL(mock_cplat, cplat_local_lock_lock(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 2 ピアの異なる論理接続状態を用意し、単一スレッドで判定する。
     // Pre-Assert
     EXPECT_CALL(mock_porter, potr_internal_callback_emit(_, _, _, _, _)).Times(0);

@@ -47,8 +47,6 @@ extern "C"
     /**
      *  @brief          非 TCP ヘルス チェック スレッドを停止します。
      *  @note           生成済みハンドルの終了待ち後、ハンドルと UDP 同期資源を NULL へ戻します。
-     *                  待機失敗時は資源を保持します。
-     *  @retval         POTR_ERR_UNKNOWN           終了待ちに失敗しました。
      *  @param[in,out]  ctx セッション コンテキスト。
      *  @retval         POTR_OK                    停止に成功したか、停止済みです。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx が NULL です。
@@ -107,10 +105,8 @@ extern "C"
 
     /**
      *  @brief          TCP ヘルス チェック スレッドを停止します。
-     *  @note           終了待ち成功後にハンドルを NULL へ戻します。同期資源の所有権はサービスに残ります。
+     *  @note           終了待ち後にハンドルを NULL へ戻します。同期資源の所有権はサービスに残ります。
      *                  同じ path への起動・停止要求と同期し、並行する停止要求は終了待ちの完了を待ちます。
-     *                  終了待ち失敗時はハンドルを保持し、停止を再試行できます。
-     *  @retval         POTR_ERR_UNKNOWN           終了待ちに失敗しました。
      *  @param[in,out]  ctx      セッション コンテキスト。
      *  @param[in]      path_idx パス インデックス (0 〜 n_path-1)。
      *  @retval         POTR_OK                    停止に成功したか、停止済みです。

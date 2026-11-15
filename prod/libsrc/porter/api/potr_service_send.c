@@ -299,7 +299,7 @@ static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t
                 return POTR_ERR_OUT_OF_MEMORY;
             }
 
-            cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->peers_mutex);
 
             for (i = 0; i < ctx->max_peers; i++)
             {
@@ -338,7 +338,7 @@ static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t
         {
             /* 指定ピアへ送信する。存在確認と接続確認だけを mutex で保護し、送信は mutex の外で行う。 */
             int peer_alive;
-            cplat_local_lock_lock(ctx->peers_mutex, CPLAT_SYNC_WAIT_FOREVER);
+            cplat_local_lock_lock(ctx->peers_mutex);
 
             {
                 potr_internal_peer_context *peer = potr_internal_peer_find_by_id(ctx, peer_id);

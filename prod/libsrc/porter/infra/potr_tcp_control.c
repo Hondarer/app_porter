@@ -50,7 +50,7 @@ int potr_internal_tcp_send_control_packet(potr_context *ctx, const potr_packet *
 
         attempted = 1;
 
-        cplat_local_lock_lock(ctx->tcp_send_mutex[i], CPLAT_SYNC_WAIT_FOREVER);
+        cplat_local_lock_lock(ctx->tcp_send_mutex[i]);
         wire_len = sizeof(wire_buf);
         int ret = potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, pkt, wire_buf, &wire_len);
         if (ret == POTR_OK)

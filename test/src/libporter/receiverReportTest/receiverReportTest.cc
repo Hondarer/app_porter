@@ -46,8 +46,8 @@ TEST(receiverReportTest, register_update_and_require_every_receiver)
         *out = now_ms;
         return CPLAT_OK;
     }); // [状態] - 報告の到着時刻を制御する。
-    ON_CALL(mock_cplat, cplat_local_lock_lock(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
     uint8_t groups_before = 0;
     uint8_t groups_after = 0;
@@ -111,8 +111,8 @@ TEST(receiverReportTest, limit_expiry_and_oldest_entry_reuse)
         *out = now_ms;
         return CPLAT_OK;
     }); // [状態] - 報告の到着時刻を制御する。
-    ON_CALL(mock_cplat, cplat_local_lock_lock(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
     potr_internal_receiver *first = nullptr;
     potr_internal_receiver *second = nullptr;
@@ -177,8 +177,8 @@ TEST(receiverReportTest, departed_receiver_excluded_but_replay_retained)
         *out = now_ms;
         return CPLAT_OK;
     }); // [状態] - 報告の到着時刻を制御する。
-    ON_CALL(mock_cplat, cplat_local_lock_lock(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
     uint16_t encrypted = cplat_hton16(POTR_FLAG_ENCRYPTED | POTR_FLAG_REPORT);
     std::memcpy(wire + 32, &encrypted, sizeof(encrypted));
@@ -246,8 +246,8 @@ TEST(receiverReportTest, nack_and_report_share_replay_window)
         *out = now_ms;
         return CPLAT_OK;
     }); // [状態] - 報告の到着時刻を制御する。
-    ON_CALL(mock_cplat, cplat_local_lock_lock(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
     uint16_t encrypted = cplat_hton16(POTR_FLAG_ENCRYPTED);
     std::memcpy(wire + 32, &encrypted, sizeof(encrypted));
@@ -305,8 +305,8 @@ TEST(receiverReportTest, malformed_report_does_not_register)
         *out = now_ms;
         return CPLAT_OK;
     }); // [状態] - 報告の到着時刻を制御する。
-    ON_CALL(mock_cplat, cplat_local_lock_lock(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
     // Pre-Assert
     // Act

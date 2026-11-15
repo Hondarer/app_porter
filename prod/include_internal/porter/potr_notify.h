@@ -21,7 +21,7 @@ extern "C"
     /**
      *  @brief          通知をすべて実行して停止します。
      *  @param[in,out]  ctx 生成元が停止済みのコンテキスト。
-     *  @return         POTR_OK、POTR_ERR_INVALID_ARGUMENT、POTR_ERR_OUT_OF_MEMORY または POTR_ERR_UNKNOWN。
+     *  @return         POTR_OK または POTR_ERR_INVALID_ARGUMENT。
      */
     int potr_internal_notify_stop(potr_context *ctx);
 

@@ -366,7 +366,7 @@ static void slot_retransmit_or_reject(thread_recv_slot *slot, uint32_t ack_num)
      * ロック中は受信スレッド専用の復号バッファーへ平文をコピーし、ロック解放後に封緘して送信する。
      * NACK は平文ペイロードを持たないため、復号バッファーの再利用は受信内容と競合しない。
      */
-    cplat_local_lock_lock(slot->send_window_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(slot->send_window_mutex);
     get_result = potr_internal_window_send_get(slot->send_window, ack_num, &resend_pkt);
     if (get_result == POTR_OK)
     {

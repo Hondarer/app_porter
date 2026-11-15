@@ -22,7 +22,7 @@ TEST(potrRecvThreadTest, udp_create_failure)
     potr_context ctx = {};
     ON_CALL(mock_cplat, cplat_thread_create(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_thread_join(_, _)).Times(0);
+    EXPECT_CALL(mock_cplat, cplat_thread_join(_)).Times(0);
     // [Pre-Assert確認_異常系] - 未生成のスレッドを join しないこと。
 
     // Act
@@ -43,7 +43,7 @@ TEST(potrRecvThreadTest, udp_stop_joins_finished_thread_once)
     int token = 0;
     ctx.recv_thread[0] = reinterpret_cast<cplat_thread *>(&token);
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.recv_thread[0], CPLAT_SYNC_WAIT_FOREVER)).WillOnce(Return(CPLAT_OK));
+    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.recv_thread[0])).WillOnce(Return());
     // [Pre-Assert確認_正常系] - 生成済み recv を 1 回だけ join すること。
     // [Pre-Assert手順] - join 成功を返す。
     // Act
@@ -63,7 +63,7 @@ TEST(potrRecvThreadTest, tcp_create_failure)
     potr_context ctx = {};
     ON_CALL(mock_cplat, cplat_thread_create(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_thread_join(_, _)).Times(0);
+    EXPECT_CALL(mock_cplat, cplat_thread_join(_)).Times(0);
     // [Pre-Assert確認_異常系] - 未生成のスレッドを join しないこと。
 
     // Act
@@ -84,7 +84,7 @@ TEST(potrRecvThreadTest, tcp_stop_joins_finished_thread_once)
     int token = 0;
     ctx.recv_thread[0] = reinterpret_cast<cplat_thread *>(&token);
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.recv_thread[0], CPLAT_SYNC_WAIT_FOREVER)).WillOnce(Return(CPLAT_OK));
+    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.recv_thread[0])).WillOnce(Return());
     // [Pre-Assert確認_正常系] - 生成済み recv を 1 回だけ join すること。
     // [Pre-Assert手順] - join 成功を返す。
     // Act
@@ -117,13 +117,13 @@ TEST(potrRecvThreadTest, poll_timeout_calls_service_monitor)
             });
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
         .WillByDefault([](thread_recv_slot *slot, potr_context *context) { slot->ctx = context; });
-    ON_CALL(mock_cplat, cplat_socket_wait_readable_multi(_, _, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
         .WillByDefault(
             [&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *)
             {
                 ready[0] = 0;
                 cplat_atomic_store_i32(&ctx.running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-                return CPLAT_OK;
+                return CPLAT_ERR_TIMEOUT;
             });
     // [状態] - スレッド本体を捕捉し、1 回の poll タイムアウト後に終了させる。
     // Pre-Assert
@@ -161,13 +161,13 @@ TEST(potrRecvThreadTest, poll_timeout_calls_peer_monitor)
             });
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
         .WillByDefault([](thread_recv_slot *slot, potr_context *context) { slot->ctx = context; });
-    ON_CALL(mock_cplat, cplat_socket_wait_readable_multi(_, _, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
         .WillByDefault(
             [&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *)
             {
                 ready[0] = 0;
                 cplat_atomic_store_i32(&ctx.running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-                return CPLAT_OK;
+                return CPLAT_ERR_TIMEOUT;
             });
     // [状態] - スレッド本体を捕捉し、1 回の poll タイムアウト後に終了させる。
     // Pre-Assert

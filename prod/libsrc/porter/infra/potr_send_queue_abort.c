@@ -15,7 +15,7 @@ void potr_internal_send_queue_abort(potr_internal_send_queue *q, int error)
         return;
     }
 
-    cplat_local_lock_lock(q->mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(q->mutex);
     q->failure = error;
     cplat_condvar_broadcast(q->not_empty);
     cplat_condvar_broadcast(q->not_full);

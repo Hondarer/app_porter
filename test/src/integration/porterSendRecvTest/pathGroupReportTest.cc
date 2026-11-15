@@ -127,8 +127,7 @@ TEST_F(pathGroupReportTest, receiver_reports_select_reachable_group)
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
     while (std::chrono::steady_clock::now() < deadline)
     {
-        int ready = 0;
-        if (cplat_socket_wait_readable(observer, 10, &ready, nullptr) == CPLAT_OK && ready)
+        if (cplat_socket_timed_wait_readable(observer, 10, nullptr) == CPLAT_OK)
         {
             uint8_t wire[2048] = {};
             size_t received = 0;

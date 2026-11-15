@@ -60,12 +60,11 @@ TEST(potrConnectThreadTest, lock_failure_1_rolls_back)
                 *out = reinterpret_cast<cplat_thread *>(&tokens[creates++]);
                 return CPLAT_OK;
             });
-    ON_CALL(mock_cplat, cplat_thread_join(_, _))
+    ON_CALL(mock_cplat, cplat_thread_join(_))
         .WillByDefault(
-            [&](cplat_thread *, int)
+            [&](cplat_thread *)
             {
                 joins++;
-                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_free(_))
         .WillByDefault(
@@ -139,12 +138,11 @@ TEST(potrConnectThreadTest, buffer_failure_1_rolls_back)
                 *out = reinterpret_cast<cplat_thread *>(&tokens[creates++]);
                 return CPLAT_OK;
             });
-    ON_CALL(mock_cplat, cplat_thread_join(_, _))
+    ON_CALL(mock_cplat, cplat_thread_join(_))
         .WillByDefault(
-            [&](cplat_thread *, int)
+            [&](cplat_thread *)
             {
                 joins++;
-                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_free(_))
         .WillByDefault(
@@ -218,12 +216,11 @@ TEST(potrConnectThreadTest, buffer_failure_2_rolls_back)
                 *out = reinterpret_cast<cplat_thread *>(&tokens[creates++]);
                 return CPLAT_OK;
             });
-    ON_CALL(mock_cplat, cplat_thread_join(_, _))
+    ON_CALL(mock_cplat, cplat_thread_join(_))
         .WillByDefault(
-            [&](cplat_thread *, int)
+            [&](cplat_thread *)
             {
                 joins++;
-                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_free(_))
         .WillByDefault(
@@ -298,12 +295,11 @@ TEST(potrConnectThreadTest, thread_failure_1_rolls_back)
                 *out = reinterpret_cast<cplat_thread *>(&tokens[creates++]);
                 return CPLAT_OK;
             });
-    ON_CALL(mock_cplat, cplat_thread_join(_, _))
+    ON_CALL(mock_cplat, cplat_thread_join(_))
         .WillByDefault(
-            [&](cplat_thread *, int)
+            [&](cplat_thread *)
             {
                 joins++;
-                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_free(_))
         .WillByDefault(
@@ -378,12 +374,11 @@ TEST(potrConnectThreadTest, thread_failure_2_rolls_back)
                 *out = reinterpret_cast<cplat_thread *>(&tokens[creates++]);
                 return CPLAT_OK;
             });
-    ON_CALL(mock_cplat, cplat_thread_join(_, _))
+    ON_CALL(mock_cplat, cplat_thread_join(_))
         .WillByDefault(
-            [&](cplat_thread *, int)
+            [&](cplat_thread *)
             {
                 joins++;
-                return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_free(_))
         .WillByDefault(
@@ -435,8 +430,7 @@ TEST(potrConnectThreadTest, stop_joins_finished_thread_and_disposes_preparation)
     delegate_real_cplat_local_lock_create(&ctx.session_establish_mutex);
     ctx.tcp_first_pkt_buf[0] = (uint8_t *)malloc(POTR_PACKET_HEADER_SIZE + 64);
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.connect_thread[0], CPLAT_SYNC_WAIT_FOREVER))
-        .WillOnce(Return(CPLAT_OK));
+    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.connect_thread[0])).WillOnce(Return());
     // [Pre-Assert確認_正常系] - 稼働フラグが 0 の生成済み connect を 1 回だけ join すること。
     // [Pre-Assert手順] - join 成功を返す。
     // Act
@@ -470,8 +464,8 @@ TEST(potrConnectThreadTest, sender_calls_preparation_without_publishing_failed_s
                 entry_arg = arg;
                 return CPLAT_OK;
             });
-    ON_CALL(mock_cplat, cplat_local_lock_lock(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 管理スレッド本体を実スレッドを生成せずに捕捉する。
     // Pre-Assert
     EXPECT_CALL(mock_porter, thread_connect_with_timeout(&ctx, 0))

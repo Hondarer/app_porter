@@ -61,7 +61,7 @@ TEST(potrSendThreadTest, stop_joins_finished_thread_once)
     ctx.send_thread = reinterpret_cast<cplat_thread *>(&token);
     delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.send_thread, CPLAT_SYNC_WAIT_FOREVER)).WillOnce(Return(CPLAT_OK));
+    EXPECT_CALL(mock_cplat, cplat_thread_join(ctx.send_thread)).WillOnce(Return());
     // [Pre-Assert確認_正常系] - 生成済み send を 1 回だけ join すること。
     // [Pre-Assert手順] - join 成功を返す。
     // Act
@@ -148,9 +148,8 @@ class potrSendThreadTcpTest : public Test
             .WillByDefault(Return(POTR_ERR_EMPTY)); // [状態] - 追加のエントリはないものとする。
         ON_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
             .WillByDefault(Return(POTR_ERR_CANCELED));
-        ON_CALL(mock_cplat, cplat_socket_wait_writable(conn_fd, CPLAT_SOCKET_NO_WAIT, _, _))
-            .WillByDefault(
-                DoAll(SetArgPointee<2>(1), Return(CPLAT_OK))); // [状態] - 送信バッファーに空きがあるものとする。
+        ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(conn_fd, CPLAT_NO_WAIT, _))
+            .WillByDefault(Return(CPLAT_OK)); // [状態] - 送信バッファーに空きがあるものとする。
         ON_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _))
             .WillByDefault(Return(CPLAT_OK)); // [状態] - 書き込みは成功するものとする。
     }
@@ -222,8 +221,8 @@ TEST_F(potrSendThreadTcpTest, announces_path_state_before_data)
 TEST_F(potrSendThreadTcpTest, full_single_path_writes_instead_of_dropping)
 {
     // Arrange
-    ON_CALL(mock_cplat, cplat_socket_wait_writable(conn_fd, CPLAT_SOCKET_NO_WAIT, _, _))
-        .WillByDefault(DoAll(SetArgPointee<2>(0), Return(CPLAT_OK))); // [状態] - 送信バッファーに空きがないものとする。
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(conn_fd, CPLAT_NO_WAIT, _))
+        .WillByDefault(Return(CPLAT_ERR_TIMEOUT)); // [状態] - 送信バッファーに空きがないものとする。
 
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_OK));

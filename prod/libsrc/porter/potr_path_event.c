@@ -135,7 +135,7 @@ void potr_internal_callback_emit(potr_context *ctx, potr_peer_id peer_id, potr_e
         return;
     }
 
-    cplat_local_lock_lock(ctx->callback_mutex, CPLAT_SYNC_WAIT_FOREVER);
+    cplat_local_lock_lock(ctx->callback_mutex);
     potr_internal_callback_emit_locked(ctx, peer_id, event, data, len);
     cplat_local_lock_unlock(ctx->callback_mutex);
 }
