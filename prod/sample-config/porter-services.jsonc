@@ -118,6 +118,15 @@
       "multicast_group": "239.0.0.2",
       "ttl": 1
     },
+    // 別ホスト間のマルチキャスト: 送信側は src_addr1、受信側の参加 NIC は dst_addr1。
+    "2003": {
+      "type": "multicast",
+      "src_addr1": "192.168.1.10",
+      "dst_addr1": "192.168.1.20",
+      "dst_port": 6003,
+      "multicast_group": "239.0.0.3",
+      "ttl": 1
+    },
     // ブロードキャスト: 同一ネットワークへ送信。
     "3001": {
       "type": "broadcast",

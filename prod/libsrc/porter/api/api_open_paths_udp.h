@@ -32,6 +32,11 @@ int api_open_paths_unicast(potr_context *ctx, potr_role role);
  *  @param[in,out]  ctx             設定済みコンテキスト。NULL は許可しません。
  *  @param[in]      role            検証済みの送受信役割。
  *  @return         成功時 POTR_OK、失敗時 POTR_ERR_*。
+ *  @note           経路は src_addr が空の位置で列挙を終えます。dst_addr だけの経路は使いません。
+ *  @note           受信側の参加 NIC は、dst_addr が空でなければその解決値、空なら src_addr の解決値です。
+ *                  送信側の参加 NIC は src_addr の解決値です。送信側は dst_addr を解決しません。
+ *  @note           決めた NIC はグループ参加に使い、離脱のため multicast_if_resolved へ保持します。
+ *                  dst_addr の解決に失敗した場合は、解決関数の結果を返します。
  *  @note           格納済みソケットは途中失敗時も ctx が所有し、呼び出し側が回収します。
  *  @par            スレッド セーフ
  *                  起動前に、同じ ctx へのアクセスを直列化して呼びます。

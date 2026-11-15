@@ -656,3 +656,258 @@ TEST(apiOpenPathsUdpTest, resolution_failure_precedes_socket_creation)
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - アドレスの結果分類を保持すること。
     EXPECT_EQ(0, ctx.n_path);                         // [確認_異常系] - 未完成の経路を数えないこと。
 }
+
+// 受信側が dst_addr1 の解決値でグループに参加することの確認
+TEST(apiOpenPathsUdpTest, multicast_receiver_joins_with_dst_addr)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *host, uint32_t *out)
+            {
+                if (std::strcmp(host, "dst") == 0)
+                {
+                    *out = 77U;
+                }
+                else
+                {
+                    *out = 42U;
+                }
+                return POTR_OK;
+            }); // [状態] - src は 42U、dst は 77U に解決する。
+    ON_CALL(mock_porter, api_paths_parse_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            }); // [状態] - グループ アドレスの解析を成功させる。
+    potr_context ctx = {};
+    ctx.service.dst_port = 1234;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.dst_addr[0], "dst", sizeof("dst"));
+    std::memcpy(ctx.service.multicast_group, "239.1.2.3", sizeof("239.1.2.3"));
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(9);
+                return CPLAT_OK;
+            }); // [状態] - ソケット生成を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - bind を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - グループ参加を成功させる。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, 77U, _)).Times(1);
+    // [Pre-Assert確認_正常系] - cplat_socket_join_multicast_group() が 77U を指定して 1 回呼び出されること。
+    EXPECT_CALL(mock_cplat, cplat_socket_close(_)).Times(0);
+    // [Pre-Assert確認_正常系] - 未登録ソケットを閉じないこと。
+    // Act
+    int actual_ret = api_open_paths_multicast(&ctx, POTR_ROLE_RECEIVER); // [手順] - 受信側の経路を準備する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);                 // [確認_正常系] - api_open_paths_multicast() の戻り値が POTR_OK であること。
+    EXPECT_EQ(1, ctx.n_path);                       // [確認_正常系] - ctx.n_path が 1 であること。
+    EXPECT_EQ(77U, ctx.multicast_if_resolved[0]);   // [確認_正常系] - ctx.multicast_if_resolved[0] が 77U であること。(dst_addr1 の解決値を参加 NIC として保持したことの確認)
+    EXPECT_EQ(42U, ctx.src_addr_resolved[0]);       // [確認_正常系] - ctx.src_addr_resolved[0] が 42U であること。(送信元の照合値を変えていないことの確認)
+}
+
+// 受信側が dst_addr1 を省略したとき src_addr1 の解決値でグループに参加することの確認
+TEST(apiOpenPathsUdpTest, multicast_receiver_joins_with_src_addr_when_dst_omitted)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            }); // [状態] - アドレス解決を 42U で成功させる。
+    ON_CALL(mock_porter, api_paths_parse_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            }); // [状態] - グループ アドレスの解析を成功させる。
+    potr_context ctx = {};
+    ctx.service.dst_port = 1234;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.multicast_group, "239.1.2.3", sizeof("239.1.2.3"));
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(9);
+                return CPLAT_OK;
+            }); // [状態] - ソケット生成を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - bind を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - グループ参加を成功させる。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, 42U, _)).Times(1);
+    // [Pre-Assert確認_正常系] - cplat_socket_join_multicast_group() が 42U を指定して 1 回呼び出されること。
+    // Act
+    int actual_ret = api_open_paths_multicast(&ctx, POTR_ROLE_RECEIVER); // [手順] - 受信側の経路を準備する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);               // [確認_正常系] - api_open_paths_multicast() の戻り値が POTR_OK であること。
+    EXPECT_EQ(1, ctx.n_path);                     // [確認_正常系] - ctx.n_path が 1 であること。
+    EXPECT_EQ(42U, ctx.multicast_if_resolved[0]); // [確認_正常系] - ctx.multicast_if_resolved[0] が 42U であること。(省略時に src_addr1 の解決値を参加 NIC としたことの確認)
+}
+
+// 送信側は dst_addr1 があっても src_addr1 の解決値でグループに参加することの確認
+TEST(apiOpenPathsUdpTest, multicast_sender_joins_with_src_addr)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *host, uint32_t *out)
+            {
+                if (std::strcmp(host, "dst") == 0)
+                {
+                    *out = 77U;
+                }
+                else
+                {
+                    *out = 42U;
+                }
+                return POTR_OK;
+            }); // [状態] - src は 42U、dst は 77U に解決する。
+    ON_CALL(mock_porter, api_paths_parse_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            }); // [状態] - グループ アドレスの解析を成功させる。
+    potr_context ctx = {};
+    ctx.service.dst_port = 1234;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.dst_addr[0], "dst", sizeof("dst"));
+    std::memcpy(ctx.service.multicast_group, "239.1.2.3", sizeof("239.1.2.3"));
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(9);
+                return CPLAT_OK;
+            }); // [状態] - ソケット生成を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - bind を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - グループ参加を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_set_multicast_interface(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - 送信インターフェイスの設定を成功させる。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, 42U, _)).Times(1);
+    // [Pre-Assert確認_正常系] - cplat_socket_join_multicast_group() が 42U を指定して 1 回呼び出されること。
+    EXPECT_CALL(mock_porter, api_paths_resolve_ipv4(_, _)).Times(1);
+    // [Pre-Assert確認_正常系] - api_paths_resolve_ipv4() が 1 回呼び出されること。(dst_addr1 を解決しないことの確認)
+    // Act
+    int actual_ret = api_open_paths_multicast(&ctx, POTR_ROLE_SENDER); // [手順] - 送信側の経路を準備する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);               // [確認_正常系] - api_open_paths_multicast() の戻り値が POTR_OK であること。
+    EXPECT_EQ(1, ctx.n_path);                     // [確認_正常系] - ctx.n_path が 1 であること。
+    EXPECT_EQ(42U, ctx.multicast_if_resolved[0]); // [確認_正常系] - ctx.multicast_if_resolved[0] が 42U であること。(送信側が src_addr1 の解決値を参加 NIC としたことの確認)
+}
+
+// dst_addr2 だけの経路を列挙しないことの確認
+TEST(apiOpenPathsUdpTest, multicast_ignores_dst_only_path)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *host, uint32_t *out)
+            {
+                if (std::strcmp(host, "dst2") == 0)
+                {
+                    *out = 77U;
+                }
+                else
+                {
+                    *out = 42U;
+                }
+                return POTR_OK;
+            }); // [状態] - src は 42U、dst2 は 77U に解決する。
+    ON_CALL(mock_porter, api_paths_parse_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            }); // [状態] - グループ アドレスの解析を成功させる。
+    potr_context ctx = {};
+    ctx.service.dst_port = 1234;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.dst_addr[1], "dst2", sizeof("dst2"));
+    std::memcpy(ctx.service.multicast_group, "239.1.2.3", sizeof("239.1.2.3"));
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(9);
+                return CPLAT_OK;
+            }); // [状態] - ソケット生成を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - bind を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - グループ参加を成功させる。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, 42U, _)).Times(1);
+    // [Pre-Assert確認_正常系] - cplat_socket_join_multicast_group() が 42U を指定して 1 回呼び出されること。
+    EXPECT_CALL(mock_porter, api_paths_resolve_ipv4(_, _)).Times(1);
+    // [Pre-Assert確認_正常系] - api_paths_resolve_ipv4() が 1 回呼び出されること。(dst_addr2 だけの経路を解決しないことの確認)
+    // Act
+    int actual_ret = api_open_paths_multicast(&ctx, POTR_ROLE_RECEIVER); // [手順] - 受信側の経路を準備する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - api_open_paths_multicast() の戻り値が POTR_OK であること。
+    EXPECT_EQ(1, ctx.n_path);       // [確認_正常系] - ctx.n_path が 1 であること。(dst_addr2 だけの経路を数えないことの確認)
+}
+
+// 受信側で dst_addr1 の解決に失敗したとき open が失敗することの確認
+TEST(apiOpenPathsUdpTest, multicast_receiver_dst_resolution_failure)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *host, uint32_t *out)
+            {
+                if (std::strcmp(host, "dst") == 0)
+                {
+                    return POTR_ERR_INVALID_ARGUMENT;
+                }
+                *out = 42U;
+                return POTR_OK;
+            }); // [状態] - src の解決は成功させ、dst の解決は失敗させる。
+    ON_CALL(mock_porter, api_paths_parse_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            }); // [状態] - グループ アドレスの解析を成功させる。
+    potr_context ctx = {};
+    ctx.service.dst_port = 1234;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.dst_addr[0], "dst", sizeof("dst"));
+    std::memcpy(ctx.service.multicast_group, "239.1.2.3", sizeof("239.1.2.3"));
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_open(_, _, _)).Times(0);
+    // [Pre-Assert確認_異常系] - 解決失敗後にソケットを生成しないこと。
+    // Act
+    int actual_ret = api_open_paths_multicast(&ctx, POTR_ROLE_RECEIVER); // [手順] - 受信側の経路を準備する。
+    // Assert
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - api_open_paths_multicast() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。(解決関数の結果を返したことの確認)
+    EXPECT_EQ(0, ctx.n_path);                         // [確認_異常系] - ctx.n_path が 0 であること。
+}

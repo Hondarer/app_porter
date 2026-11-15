@@ -139,7 +139,8 @@ Table: ヘルス チェック設定値とその効果
 |---|---|---|---|
 | `type` | 文字列 | 必須 | `unicast` / `multicast` / `broadcast` / `unicast_raw` / `multicast_raw` / `broadcast_raw` / `unicast_bidir` / `unicast_bidir_n1` / `tcp` / `tcp_bidir` |
 | `dst_port` | uint16 | 必須 | 宛先ポート番号。サービス ID とは独立して指定します。 |
-| `src_addr1` 〜 `src_addr8` | 文字列 | 条件付き | 通常は送信元 bind アドレスまたは受信側の送信元 IP フィルター。`unicast_bidir` では SENDER・RECEIVER ともに省略可能 (各役割の省略時動作は後述) |
+| `src_addr1` 〜 `src_addr8` | 文字列 | 条件付き | 通常は送信元 bind アドレスまたは受信側の送信元 IP フィルター。マルチキャストでは、送信側のグループ参加 NIC と `IP_MULTICAST_IF`、受信側の許可する送信元と NACK などの返送先。受信側は `dst_addrN` を省略した経路の参加 NIC にも使う。`unicast_bidir` では SENDER・RECEIVER ともに省略可能 (各役割の省略時動作は後述) |
+| `dst_addr1` 〜 `dst_addr8` | 文字列 | 条件付き | unicast では送信先または受信側の bind アドレス。マルチキャストの受信側ではグループ参加に使う NIC。省略時は同じ番号の `src_addr` を使う。マルチキャストの送信側では使わない |
 | `src_port` | uint16 | 省略可 | 送信者の送信元 bind ポート (0 = OS が自動選定)。証明書方式 (`auth = "cert"`) の片方向通信 (`unicast` / `multicast` / `broadcast` と各 RAW モード) の送信者では 0 以外の指定が必須 |
 | `path_group1` 〜 `path_group8` | uint8 | 省略可 | 各経路の優先グループ番号 (1〜4、既定値 `1`)。番号が小さいほど優先度が高い。範囲外の値は設定エラー |
 | `group_failback_ms` | uint32 | 省略可 | 上位グループの回復を判定するまでの時間 (ms、既定値 `0`)。`0` の場合は実効 `health_timeout_ms` と同じ値を使用 |
@@ -502,12 +503,12 @@ Table: unicast_bidir_n1 (N:1) のソケット動作仕様
 sequenceDiagram
     autonumber
     participant S as 送信者<br>src_addr
-    participant RA as 受信者 A<br>src_addr_A
-    participant RB as 受信者 B<br>src_addr_B
+    participant RA as 受信者 A<br>dst_addr_A
+    participant RB as 受信者 B<br>dst_addr_B
 
-    Note over S: bind(INADDR_ANY, src_port)<br>IP_MULTICAST_IF = src_addr1
-    Note over RA: bind(INADDR_ANY, dst_port)<br>グループ参加: src_addr_A
-    Note over RB: bind(INADDR_ANY, dst_port)<br>グループ参加: src_addr_B
+    Note over S: bind(INADDR_ANY, src_port)<br>IP_MULTICAST_IF = src_addr1<br>グループ参加: src_addr1
+    Note over RA: bind(INADDR_ANY, dst_port)<br>グループ参加: dst_addr_A (省略時 src_addr_A)
+    Note over RB: bind(INADDR_ANY, dst_port)<br>グループ参加: dst_addr_B (省略時 src_addr_B)
 
     S->>RA: sendto(multicast_group, dst_port)<br>DATA / PING
     S->>RB: sendto(multicast_group, dst_port)<br>DATA / PING
@@ -520,11 +521,24 @@ Figure: multicast のソケット bind / sendto
 |---|---|---|
 | bind アドレス | `INADDR_ANY` | `INADDR_ANY` |
 | bind ポート | `src_port` (0 = OS 自動) | `dst_port` |
-| マルチキャスト設定 | `IP_MULTICAST_IF = src_addr1` | グループ参加: `src_addr1` (NIC 指定) |
+| マルチキャスト設定 | `IP_MULTICAST_IF = src_addrN` <br>グループ参加: `src_addrN` | グループ参加: `dst_addrN` (省略時 `src_addrN`) |
 | 送信先 | `multicast_group:dst_port` | — |
-| 送信元フィルター | — | `src_addr1` |
+| 送信元フィルター | — | `src_addrN` |
+| NACK の返送先 | — | `src_addrN` |
 
 Table: multicast (1:N) のソケット動作仕様
+
+送信側と受信側が別のホストにある場合は、`src_addrN` に送信側のアドレスを、`dst_addrN` に受信側の参加 NIC を指定します。次の例は、送信側 `192.168.1.10`、受信側の NIC `192.168.1.20` です。
+
+```jsonc
+"2002": {
+  "type": "multicast",
+  "src_addr1": "192.168.1.10",
+  "dst_addr1": "192.168.1.20",
+  "dst_port": 6002,
+  "multicast_group": "239.0.0.2"
+}
+```
 
 ### broadcast (1:N 通信)
 
@@ -569,10 +583,15 @@ RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を
 
 受信スレッドは通信種別とモードに応じて送信元を検査します。
 
-- `unicast` / `multicast` / `broadcast`: `src_addr1` を用いて送信元 IP アドレスを照合します
+- `unicast` / `broadcast`: `src_addr1` を用いて送信元 IP アドレスを照合します
+- `multicast` / `multicast_raw`: `src_addrN` を用いて送信元 IP アドレスを照合します。照合はグループ参加 NIC とは独立しています
 - `unicast_bidir` (src_addr1 指定): `src_addr1` で送信元 IP アドレスを照合します
 - `unicast_bidir` (src_addr1 省略・RECEIVER 動的学習): 学習前は全パケットを受理、学習後は学習済みアドレスから受信します。セッション追跡により 1:1 が保証されます
 - `unicast_bidir_n1`: `src_addr1` は照合しません。`src_port` が 0 以外のときのみ送信元ポートを照合します
+
+マルチキャスト (`multicast` と `multicast_raw`) の受信側は、送信元の照合に `src_addrN` を使います。グループ参加に使う NIC は `dst_addrN` で、省略した経路は `src_addrN` で参加します。NACK、受信報告、証明書認証の返送先も `src_addrN` です。
+
+経路は 1 から順に列挙し、`src_addrN` が空の最初の経路で列挙を終えます。`src_addrN` がなく `dst_addrN` だけがある経路は使いません。この規則は、ほかの UDP 通信種別の経路の列挙と同じです。
 
 一致しないパケットはアプリケーション層で破棄します。
 

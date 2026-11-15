@@ -1,11 +1,11 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-15 21:55:00 JST
-最終更新エージェント: claude code / セッション ID: session_01KJc53SKi4E2GpcLq8ibyKp (BL-003 の原因特定とクローズ、BL-001 の対策案件の記録)
+最終更新日時: 2026-11-15 22:45:00 JST
+最終更新エージェント: claude code / セッション ID: session_01KJc53SKi4E2GpcLq8ibyKp (BL-001 の対策方針の確定と対応開始の記録)
 稼働 OS: Windows
 上流文書: `261114-porter-windows-verification-clock-unify-discussion.md`、`261114-porter-windows-verification-clock-unify-design.md`、`../past/261109-porter-path-priority-timestamp-auth-backlog.md`
-継続作業: BL-001 は `261115-porter-multicast-src-contract-discussion.md` で対策を検討中です。
+下流文書: BL-001 の継続案件 `261115-porter-multicast-src-contract-discussion.md` (検討 ID: 261115-porter-multicast-src-contract)、`261115-porter-multicast-src-contract-design.md` (最終仕様)。削除されている場合があります。
 再開手順: agree-before-implement スキルを読み、各課題の根拠と上流の判断を確認してください。技術仕様を選択する場合は新しい検討用 Markdown で合意を得てください。
 -->
 
@@ -25,7 +25,7 @@
 
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
-| BL-001 | マルチキャスト受信 NIC と許可送信元の設定契約を解決する | 作業中摘出 | 高 / 高 | 対策検討中 (`261115-porter-multicast-src-contract-discussion.md`) |
+| BL-001 | マルチキャスト受信 NIC と許可送信元の設定契約を解決する | 作業中摘出 | 高 / 高 | 対応中 (`261115-porter-multicast-src-contract-design.md`) |
 | BL-002 | Windows 仮想環境で時計取得コストを計測する | 過去 backlog からの転記 | 低 / 低 | クローズ (対応不要) |
 | BL-003 | certificateTest make 構成時の unexpected EOF stderr の原因を特定する | 作業中摘出 | 中 / 低 | 対応済み (makefw `f6a1367` で解消済みを確認) |
 
@@ -43,6 +43,10 @@
 - **摘出契機**: BL-004 の Windows/WSL 相互接続試験。
 - **今回の見送り理由**: ユーザーは「backlog に回す」と判断しました。今回の設定、実装、機能仕様の変更は行いません。
 - **継続作業 (2026-11-15)**: `261115-porter-multicast-src-contract-discussion.md` で対策の検討を始めました。追加調査で、マルチキャスト受信側の `src_addr` は NIC 指定と送信元照合に加えて、NACK、受信報告、証明書認証の返送先にも使われていることを確認しました。
+- **対策方針の確定 (2026-11-15)**: 継続案件の Q-001 から Q-005 で、次の方針に合意しました。最終仕様は `261115-porter-multicast-src-contract-design.md` です。最終仕様は条件付きで承認され、他セッションからの進行許可を受けて実装に着手しました。
+    - `POTR-TRANSPORT-QUAL-001` はマルチキャストでも維持し、受信側は `src_addrN` で送信元を照合します。NACK などの返送先も `src_addrN` のままです。
+    - 受信側のグループ参加 NIC は `dst_addrN` で表し、省略時は従来どおり `src_addrN` の NIC で参加します。`dst_addrN` だけの経路は使いません。
+    - 受入条件は、単体テストと、PSK と証明書の Windows/WSL 相互接続 12 組み合わせの全件成功です。
 - **未採用案**: discussion Q-011 の A (NIC 指定と許可送信元 IP を別設定にする) は推奨として提示しましたが、採用されていません。B (マルチキャスト受信側で送信元照合をしない) も未採用です。いずれも次回の合意なしに実装しません。
 - **影響範囲**: `app/porter/docs/config.md`、`app/porter/docs/functional-spec/transport.md` の `POTR-TRANSPORT-QUAL-001`、`api_open_paths_multicast()`、`thread_recv_check_src_addr()`、PSK/証明書の相互接続。
 - **放置した場合のリスク**: 異なる NIC を通るマルチキャスト送信元が受信フィルターで破棄され、対象環境でマルチキャスト通信が成立しない可能性があります。

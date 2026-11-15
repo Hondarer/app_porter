@@ -15,6 +15,36 @@
 
 using namespace testing;
 
+// マルチキャストの close で、参加時に保持した NIC を指定してグループから離脱することの確認
+TEST(potrServiceCloseTest, multicast_close_leaves_joined_interface)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.n_path = 1;
+    ctx.sock[0] = static_cast<cplat_socket>(9);
+    ctx.multicast_if_resolved[0] = 77U;
+    ctx.src_addr_resolved[0] = 42U;
+    std::memcpy(ctx.service.multicast_group, "239.0.0.2", sizeof("239.0.0.2"));
+    ON_CALL(mock_cplat, cplat_socket_leave_multicast_group(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - グループ離脱を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_close(_)).WillByDefault(Return());
+    // [状態] - ソケットのクローズを実ソケットへ渡さない。
+    ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return());
+    // [状態] - スタック上のコンテキストを解放しない。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_leave_multicast_group(static_cast<cplat_socket>(9), _, 77U, nullptr)).Times(1);
+    // [Pre-Assert確認_正常系] - cplat_socket_leave_multicast_group() が 77U を指定して 1 回呼び出されること。
+    // Act
+    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - マルチキャスト サービスを終了する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_service_close() の戻り値が POTR_OK であること。
+}
+
 // UDP 通常終了で停止手順の後に共通解放と本体解放を呼ぶことの確認
 TEST(potrServiceCloseTest, udp_stop_precedes_shared_cleanup)
 {

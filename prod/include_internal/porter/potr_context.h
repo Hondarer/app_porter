@@ -309,6 +309,8 @@ struct potr_context
     /* 解決済みアドレス (各パス分、ネットワーク バイト オーダー) */
     uint32_t src_addr_resolved[POTR_MAX_PATH]; /**< 解決済み送信元 IPv4 アドレス。 */
     uint32_t dst_addr_resolved[POTR_MAX_PATH]; /**< 解決済み宛先 IPv4 アドレス (unicast のみ)。 */
+    uint32_t multicast_if_resolved
+        [POTR_MAX_PATH]; /**< マルチキャストのグループ参加に使った NIC の解決済み IPv4 アドレス。 */
     cplat_ipv4_endpoint dest_addr
         [POTR_MAX_PATH]; /**< 送信先エンドポイント (送信者が sendto に使用)。未使用スロットは endpoint_is_unset() が真。 */
     uint32_t _pad_tx_session; /**< パディング (tx_session を 8 [byte] 境界に揃える)。 */

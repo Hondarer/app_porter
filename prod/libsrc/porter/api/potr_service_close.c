@@ -499,9 +499,16 @@ static int close_impl(potr_context *handle)
             {
                 uint32_t group_addr;
 
+                /*
+                 * 離脱には参加時と同じ NIC を渡す。
+                 * 別のインターフェイスでは、参加したメンバーシップと一致せず離脱できない。
+                 * see: https://man7.org/linux/man-pages/man7/ip.7.html
+                 * see: https://learn.microsoft.com/en-us/windows/win32/winsock/ipproto-ip-socket-options
+                 */
                 if (cplat_ipv4_parse(ctx->service.multicast_group, &group_addr) == CPLAT_OK)
                 {
-                    (void)cplat_socket_leave_multicast_group(ctx->sock[i], group_addr, ctx->src_addr_resolved[i], NULL);
+                    (void)cplat_socket_leave_multicast_group(ctx->sock[i], group_addr, ctx->multicast_if_resolved[i],
+                                                             NULL);
                 }
             }
 

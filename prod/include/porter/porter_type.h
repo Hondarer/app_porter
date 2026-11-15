@@ -144,13 +144,13 @@ typedef struct potr_service_def
     char broadcast_addr
         [POTR_MAX_ADDR_LEN]; /**< ブロードキャスト宛先アドレス。省略時は 255.255.255.255。(broadcast のみ) */
 
-    /* マルチパス対応 (src_addr は全通信種別、dst_addr は unicast のみ有効) */
+    /* マルチパス対応 (src_addr は全通信種別。dst_addr は unicast と、マルチキャスト受信側の参加 NIC) */
     char src_addr
         [POTR_MAX_PATH]
-        [POTR_MAX_ADDR_LEN]; /**< 送信元アドレス [0]=src_addr1 〜 [7]=src_addr8。送信者は bind / 送信インターフェイス、受信者は送信元フィルター。(全通信種別で必須) */
+        [POTR_MAX_ADDR_LEN]; /**< 送信元アドレス [0]=src_addr1 〜 [7]=src_addr8。送信者は bind / 送信インターフェイス、受信者は送信元フィルター (全通信種別)。マルチキャストの送信者はグループ参加と IP_MULTICAST_IF、受信者は許可する送信元と NACK などの返送先。受信者は dst_addr を省略した経路の参加 NIC にも使う。 */
     char dst_addr
         [POTR_MAX_PATH]
-        [POTR_MAX_ADDR_LEN]; /**< 宛先アドレス [0]=dst_addr1 〜 [7]=dst_addr8。送信者は送信先、受信者は bind アドレス。(unicast のみ) */
+        [POTR_MAX_ADDR_LEN]; /**< 宛先アドレス [0]=dst_addr1 〜 [7]=dst_addr8。unicast の送信者は送信先、受信者は bind アドレス。マルチキャストの受信者はグループ参加 NIC で、省略時は同じ番号の src_addr を使う。マルチキャストの送信者は使わない。 */
 
     uint8_t path_group[POTR_MAX_PATH]; /**< 各経路の優先グループ番号。1〜POTR_MAX_PATH_GROUP。設定ファイルでの省略時と直接指定時の 0 は 1 として扱います。 */
     uint32_t group_failback_ms; /**< 上位グループの回復判定時間 [ms]。0 = 実効 health_timeout_ms を使用。 */

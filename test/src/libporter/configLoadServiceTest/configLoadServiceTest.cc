@@ -1167,3 +1167,38 @@ INSTANTIATE_TEST_SUITE_P(invalid_values, certificate_config_rejection_test, Valu
     certificate_config_case{"\"ca_file\":\"\""}, certificate_config_case{"\"crl_file\":false"},
     certificate_config_case{"\"pinned_certs\":\"peer.pem\""}, certificate_config_case{"\"pinned_certs\":[\"peer.pem\",2]"},
     certificate_config_case{"\"peer_names\":{}"}, certificate_config_case{"\"peer_names\":[null]"}));
+
+// マルチキャストのサービス定義から dst_addr1 を読み込むことの確認
+TEST(configLoadServiceTest, loads_multicast_dst_addr)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines(
+        {R"({"services":{"42":{"type":"multicast","src_addr1":"192.168.1.10","dst_addr1":"192.168.1.20","dst_port":6002,"multicast_group":"239.0.0.2"}}})"});
+    service_configuration owned;
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            }));
+    // [状態] - マルチキャストのサービス定義を返す読み込みモックを用意する。
+    // Pre-Assert
+    // Act
+    int actual_ret =
+        potr_internal_config_load_service("config.conf", 42, &owned); // [手順] - マルチキャストのサービス 42 を読み込む。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_config_load_service() の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_TYPE_MULTICAST,
+              owned.definition.type); // [確認_正常系] - owned.definition.type が POTR_TYPE_MULTICAST であること。
+    EXPECT_STREQ("192.168.1.10",
+                 owned.definition.src_addr[0]); // [確認_正常系] - owned.definition.src_addr[0] が "192.168.1.10" であること。
+    EXPECT_STREQ("192.168.1.20",
+                 owned.definition.dst_addr[0]); // [確認_正常系] - owned.definition.dst_addr[0] が "192.168.1.20" であること。
+    EXPECT_STREQ(
+        "239.0.0.2",
+        owned.definition.multicast_group); // [確認_正常系] - owned.definition.multicast_group が "239.0.0.2" であること。
+}

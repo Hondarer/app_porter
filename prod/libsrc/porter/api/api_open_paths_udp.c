@@ -59,10 +59,10 @@ static cplat_socket open_socket_unicast(const uint32_t bind_addr, const uint16_t
 
 /*
  * マルチキャスト ソケットを作成して bind・グループ参加する。
- * src_if: 使用するローカル インターフェイス (INADDR_ANY = OS 自動選択)。
+ * join_if: グループ参加と、送信者の送信インターフェイスに使うアドレス (INADDR_ANY = OS 自動選択)。
  * is_receiver: 1 = 受信者、0 = 送信者。
  */
-static cplat_socket open_socket_multicast(const potr_service_def *def, const uint32_t src_if, const int is_receiver)
+static cplat_socket open_socket_multicast(const potr_service_def *def, const uint32_t join_if, const int is_receiver)
 {
     cplat_socket sock;
     cplat_ipv4_endpoint addr = {0};
@@ -107,7 +107,7 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, const uin
         return CPLAT_INVALID_SOCKET;
     }
 
-    if (cplat_socket_join_multicast_group(sock, group_addr, src_if, &detail) != CPLAT_OK)
+    if (cplat_socket_join_multicast_group(sock, group_addr, join_if, &detail) != CPLAT_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "join_multicast_group failed");
         cplat_socket_close(sock);
@@ -117,7 +117,7 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, const uin
     /* 送信者: マルチキャスト送信インターフェイスを設定する。 */
     if (!is_receiver)
     {
-        (void)cplat_socket_set_multicast_interface(sock, src_if, NULL);
+        (void)cplat_socket_set_multicast_interface(sock, join_if, NULL);
     }
 
     return sock;
@@ -249,7 +249,7 @@ int api_open_paths_unicast(potr_context *ctx, const potr_role role)
     return POTR_OK;
 }
 
-/* MULTICAST: src_addr ごとにグループ参加済みソケットを作成する。 */
+/* MULTICAST: 経路ごとに参加 NIC を決め、グループ参加済みソケットを作成する。 */
 /* Doxygen コメントは、ヘッダーに記載 */
 int api_open_paths_multicast(potr_context *ctx, const potr_role role)
 {
@@ -261,8 +261,15 @@ int api_open_paths_multicast(potr_context *ctx, const potr_role role)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
+    /*
+     * 経路は src_addr が空の位置で列挙を終える。dst_addr だけの経路は使わない。
+     * 受信側の参加 NIC は、dst_addr が空でなければその解決値、空なら src_addr の解決値とする。
+     * 送信側は src_addr の解決値を参加 NIC とし、dst_addr は解決しない。
+     */
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
+        uint32_t join_if;
+
         if (ctx->service.src_addr[i][0] == '\0')
         {
             break;
@@ -274,7 +281,21 @@ int api_open_paths_multicast(potr_context *ctx, const potr_role role)
             return result;
         }
 
-        ctx->sock[i] = open_socket_multicast(&ctx->service, ctx->src_addr_resolved[i], role == POTR_ROLE_RECEIVER);
+        if (role == POTR_ROLE_RECEIVER && ctx->service.dst_addr[i][0] != '\0')
+        {
+            result = api_paths_resolve_ipv4(ctx->service.dst_addr[i], &join_if);
+            if (result != POTR_OK)
+            {
+                return result;
+            }
+        }
+        else
+        {
+            join_if = ctx->src_addr_resolved[i];
+        }
+
+        ctx->multicast_if_resolved[i] = join_if;
+        ctx->sock[i] = open_socket_multicast(&ctx->service, join_if, role == POTR_ROLE_RECEIVER);
         if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
