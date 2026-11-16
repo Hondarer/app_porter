@@ -1,6 +1,11 @@
 #include <cplat/base/platform.h>
 #if defined(PLATFORM_WINDOWS)
+    // C++17 の std::byte と Windows SDK の byte が衝突するため、std::byte を定義しない。
+    // see: https://github.com/microsoft/STL/blob/main/stl/inc/yvals_core.h
     #define _HAS_STD_BYTE 0
+    #include <winsock2.h>
+#elif defined(PLATFORM_LINUX)
+    #include <errno.h>
 #endif
 #include <testfw.h>
 #include <mock_cplat.h>
@@ -941,4 +946,52 @@ TEST(threadConnectPrepareTest, source_port_mismatch)
     int actual_ret = thread_connect_peer_allowed(&ctx, 0, &peer); // [手順] - 接続元を照合する。
     // Assert
     EXPECT_EQ(0, actual_ret); // [確認_正常系] - 設定された条件で採用可否を返すこと。
+}
+
+// TCP と TCP_BIDIR の接続、および再接続が同じ準備関数を使うことの確認
+TEST(threadConnectPrepareTest, connect_nodelay_failure_continues)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.connect_timeout_ms = 0;
+    ctx.service.src_port = 0;
+    ctx.service.service_id = 11;
+    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(7);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - ブロッキング接続と、接続前の TCP_NODELAY 失敗を指定する。
+    // Pre-Assert
+    cplat_error nodelay_failure = {};
+    nodelay_failure.result = CPLAT_ERR_UNKNOWN;
+#if defined(PLATFORM_LINUX)
+    nodelay_failure.domain = CPLAT_ERROR_DOMAIN_SOCKET_ERRNO;
+    nodelay_failure.code = (unsigned long)ENOPROTOOPT;
+#elif defined(PLATFORM_WINDOWS)
+    nodelay_failure.domain = CPLAT_ERROR_DOMAIN_WINSOCK;
+    nodelay_failure.code = (unsigned long)WSAENOPROTOOPT;
+#endif
+    {
+        InSequence order;
+        EXPECT_CALL(mock_cplat, cplat_socket_set_nodelay(static_cast<cplat_socket>(7), 1, _))
+            .WillOnce(DoAll(SetArgPointee<2>(nodelay_failure), Return(CPLAT_ERR_UNKNOWN)));
+        // [Pre-Assert確認_異常系] - 接続の前に TCP_NODELAY の有効化を 1 回要求すること。
+        // [Pre-Assert手順] - detail_out へ、Linux は SOCKET_ERRNO と ENOPROTOOPT、Windows は WINSOCK と WSAENOPROTOOPT、結果は CPLAT_ERR_UNKNOWN を書き、CPLAT_ERR_UNKNOWN を返す。
+        EXPECT_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillOnce(Return(CPLAT_OK));
+        // [Pre-Assert確認_正常系] - TCP_NODELAY の失敗後も接続を続けること。
+        // [Pre-Assert手順] - 接続成功を返す。
+    }
+    EXPECT_CALL(mock_cplat, cplat_socket_close(_)).Times(0);
+    // [Pre-Assert確認_正常系] - 設定失敗ではソケットを閉じないこと。
+    // Act
+    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
+    // Assert
+    EXPECT_EQ(static_cast<cplat_socket>(7), actual_ret); // [確認_正常系] - 成功したソケットの所有権を返すこと。
 }

@@ -148,6 +148,23 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
 
     (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
+    /*
+     * 接続の開始前に Nagle を抑止する。TCP_NODELAY はソケットのオプションであり、
+     * Windows の setsockopt は任意の状態のソケットへ設定できる。
+     * Linux の tcp(7) も、このオプションに接続済みであることを要求していない。
+     * listen 側からの継承には依存せず、接続するソケットごとに設定する。
+     * 失敗しても接続は続ける。この設定は送信の遅れを縮めるためのもので、データの整合や認証は変えない。
+     * see: https://man7.org/linux/man-pages/man7/tcp.7.html
+     * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-setsockopt
+     * see: https://learn.microsoft.com/en-us/windows/win32/winsock/ipproto-tcp-socket-options
+     */
+    if (cplat_socket_set_nodelay(sock, 1, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_WARNING, &detail,
+                                  "connect_thread[service_id=%" PRId64 " path=%d]: TCP_NODELAY failed",
+                                  ctx->service.service_id, path_idx);
+    }
+
     if (ctx->service.src_addr[path_idx][0] != '\0' || ctx->service.src_port != 0)
     {
         cplat_ipv4_endpoint bind_addr = {0};

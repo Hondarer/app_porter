@@ -1,6 +1,11 @@
 #include <cplat/base/platform.h>
 #if defined(PLATFORM_WINDOWS)
+    // C++17 の std::byte と Windows SDK の byte が衝突するため、std::byte を定義しない。
+    // see: https://github.com/microsoft/STL/blob/main/stl/inc/yvals_core.h
     #define _HAS_STD_BYTE 0
+    #include <winsock2.h>
+#elif defined(PLATFORM_LINUX)
+    #include <errno.h>
 #endif
 #include <testfw.h>
 #include <mock_cplat.h>
@@ -483,4 +488,85 @@ TEST(potrConnectThreadTest, sender_calls_preparation_without_publishing_failed_s
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret);                      // [確認_正常系] - 管理処理の準備に成功すること。
     EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - 接続失敗ソケットを登録しないこと。
+}
+
+// TCP と TCP_BIDIR の受け入れが、先読みの前に TCP_NODELAY を要求し、失敗しても続行することの確認
+TEST(potrConnectThreadTest, receiver_sets_nodelay_before_first_packet)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    ctx.service.service_id = 11;
+    ctx.n_path = 1;
+    ctx.global.max_payload = 64;
+    for (int i = 0; i < (int)POTR_MAX_PATH; i++)
+    {
+        ctx.sock[i] = CPLAT_INVALID_SOCKET;
+        ctx.tcp_conn_fd[i] = CPLAT_INVALID_SOCKET;
+        ctx.tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
+    }
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    int accepts = 0;
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_accept(_, _, _, _))
+        .WillByDefault(
+            [&](cplat_socket, cplat_ipv4_endpoint *peer, cplat_socket *out, cplat_error *)
+            {
+                if (accepts == 0)
+                {
+                    accepts++;
+                    peer->address = 1;
+                    peer->port = 1;
+                    *out = static_cast<cplat_socket>(7);
+                    return CPLAT_OK;
+                }
+
+                cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_ERR_UNKNOWN;
+            });
+    // [状態] - 双方向の受け入れで、最初の 1 接続だけを成功させ、TCP_NODELAY は失敗させる。
+    // Pre-Assert
+    cplat_error nodelay_failure = {};
+    nodelay_failure.result = CPLAT_ERR_UNKNOWN;
+#if defined(PLATFORM_LINUX)
+    nodelay_failure.domain = CPLAT_ERROR_DOMAIN_SOCKET_ERRNO;
+    nodelay_failure.code = (unsigned long)ENOPROTOOPT;
+#elif defined(PLATFORM_WINDOWS)
+    nodelay_failure.domain = CPLAT_ERROR_DOMAIN_WINSOCK;
+    nodelay_failure.code = (unsigned long)WSAENOPROTOOPT;
+#endif
+    {
+        InSequence order;
+        EXPECT_CALL(mock_cplat, cplat_socket_set_nodelay(static_cast<cplat_socket>(7), 1, _))
+            .WillOnce(DoAll(SetArgPointee<2>(nodelay_failure), Return(CPLAT_ERR_UNKNOWN)));
+        // [Pre-Assert確認_異常系] - 先読みの前に TCP_NODELAY の有効化を 1 回要求すること。
+        // [Pre-Assert手順] - detail_out へ、Linux は SOCKET_ERRNO と ENOPROTOOPT、Windows は WINSOCK と WSAENOPROTOOPT、結果は CPLAT_ERR_UNKNOWN を書き、CPLAT_ERR_UNKNOWN を返す。
+        EXPECT_CALL(mock_porter, thread_connect_read_first_packet(_, _, _, _, _))
+            .WillOnce(Return(POTR_ERR_UNKNOWN));
+        // [Pre-Assert確認_正常系] - TCP_NODELAY の失敗後も先読みへ進むこと。
+        // [Pre-Assert手順] - 先読みの失敗を返す。
+        EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7))).WillOnce(Return());
+        // [Pre-Assert確認_異常系] - 先読みの失敗後に、そのソケットを閉じること。
+        // [Pre-Assert手順] - クローズを成功として扱う。
+    }
+    // Act
+    int actual_ret = potr_internal_connect_thread_start(&ctx); // [手順] - 受け入れ処理を準備する。
+    ASSERT_NE(nullptr, entry);                                 // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);                                          // [手順] - 受け入れループを同期実行する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);                      // [確認_正常系] - 受け入れ処理の準備に成功すること。
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - 先読みに失敗したソケットを登録しないこと。
+    potr_internal_connect_thread_stop(&ctx);
 }

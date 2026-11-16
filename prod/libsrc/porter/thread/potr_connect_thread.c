@@ -464,6 +464,20 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             }
         }
 
+        /*
+         * 最初のパケットと TLS より前に、受け入れたソケットの Nagle を抑止する。
+         * 継承には依存せず、受け入れた接続ごとに設定する。
+         * 失敗しても受け入れは続ける。この設定は送信の遅れを縮めるためのもので、データの整合や認証は変えない。
+         * see: https://man7.org/linux/man-pages/man7/tcp.7.html
+         * see: https://learn.microsoft.com/en-us/windows/win32/winsock/ipproto-tcp-socket-options
+         */
+        if (cplat_socket_set_nodelay(conn, 1, &detail) != CPLAT_OK)
+        {
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_WARNING, &detail,
+                                      "connect_thread[service_id=%" PRId64 " path=%d]: TCP_NODELAY failed",
+                                      ctx->service.service_id, path_idx);
+        }
+
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP accepted from %s:%u",
                    ctx->service.service_id, path_idx, peer_addr_str, (unsigned)cplat_ntoh16(peer_addr.port));
 
