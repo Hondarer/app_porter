@@ -50,19 +50,15 @@
 #include <cplat/base/platform.h>
 #include <cplat/crt/path.h>
 #include <cplat/crt/stdio.h>
-#include <cplat/crt/unistd.h>
 #include <cplat/prompt/pinned_prompt.h>
 #include <cplat/runtime/shutdown.h>
 #include <cplat/sync/atomic.h>
+#include <cplat/sync/sync.h>
 #include <inttypes.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#if defined(PLATFORM_LINUX)
-    #include <unistd.h>
-#endif /* PLATFORM_LINUX */
 
 #include <cplat/console/console.h>
 #include <porter.h>
@@ -81,6 +77,39 @@ static volatile sig_atomic_t s_shutdown_requested = 0;
 
 /** pinned prompt ハンドル。on_recv や trace hook から参照する。 */
 static cplat_pinned_prompt *s_screen = NULL;
+
+/** 終了要求 callback と画面破棄の競合を防ぐ永続ロックの 1 回限り初期化フラグ。 */
+static cplat_once_flag s_screen_stop_lock_once = {0};
+
+/** 終了要求 callback の登録解除 API がなく main 終了処理後も参照され得るため、同じロック下での s_stop_target_screen NULL 化と直列化するプロセス寿命の永続ロック。 */
+static cplat_local_lock *s_screen_stop_lock = NULL;
+
+/** 終了要求 callback が中止対象として参照する画面ハンドル。同じ永続ロック下で破棄開始前に NULL 化する。 */
+static cplat_pinned_prompt *s_stop_target_screen = NULL;
+
+/* 登録解除できない終了要求 callback が main 終了処理後も安全に参照できるよう、永続ロックを 1 回だけ生成してプロセス終了まで破棄しない。 */
+static void init_screen_stop_lock(void)
+{
+    if (cplat_local_lock_create(&s_screen_stop_lock) != CPLAT_OK)
+    {
+        s_screen_stop_lock = NULL;
+    }
+}
+
+/* 終了要求 callback が使う永続ロックを返す。 */
+static cplat_local_lock *get_screen_stop_lock(void)
+{
+    cplat_call_once(&s_screen_stop_lock_once, init_screen_stop_lock);
+    return s_screen_stop_lock;
+}
+
+/* 終了要求 callback から参照される画面ハンドルを更新し、破棄直前に NULL 化する。 */
+static void set_stop_target_screen(cplat_local_lock *stop_lock, cplat_pinned_prompt *screen)
+{
+    cplat_local_lock_lock(stop_lock);
+    s_stop_target_screen = screen;
+    cplat_local_lock_unlock(stop_lock);
+}
 
 /** トレースしきい値レベル。trace hook が context として参照するため寿命を持続させる。 */
 static cplat_trace_level s_trace_level = CPLAT_TRACE_LEVEL_NONE;
@@ -149,14 +178,30 @@ static int is_text_data(const void *data, size_t len)
  */
 static void porter_test_shutdown_request_callback(const cplat_shutdown_event *event, void *context)
 {
+    cplat_local_lock *stop_lock;
+    int stop_result = CPLAT_OK;
+
     (void)event;
     (void)context;
     s_shutdown_requested = 1;
     cplat_atomic_store_i32(&s_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
 
-#if defined(PLATFORM_LINUX)
-    cplat_close(STDIN_FILENO, NULL); /* readline (fgets) のブロックを解除する */
-#endif                               /* PLATFORM_LINUX */
+    /* 画面破棄開始前か完了後かを永続ロックで直列化し、dispose 中の stop_input 呼び出しを防ぐ。 */
+    stop_lock = get_screen_stop_lock();
+    if (stop_lock != NULL)
+    {
+        cplat_local_lock_lock(stop_lock);
+        if (s_stop_target_screen != NULL)
+        {
+            stop_result = cplat_pinned_prompt_stop_input(s_stop_target_screen);
+        }
+        cplat_local_lock_unlock(stop_lock);
+    }
+
+    if (stop_result != CPLAT_OK)
+    {
+        fprintf(stderr, "警告: プロンプト入力の中止に失敗しました (result=%d)。\n", stop_result);
+    }
 }
 
 /**
@@ -800,24 +845,13 @@ static int do_open(porter_test_session *session, potr_role role, const char *con
 
     /*
      * サービス種別を取得して双方向サービスかどうか判定する。
-     * sender は unicast_bidir / tcp_bidir の双方を、receiver は unicast_bidir を双方向として扱う
-     * (送受信コマンド統合前の send / recv それぞれの判定を踏襲)。
+     * sender・receiver ともに unicast_bidir / tcp_bidir の双方を双方向として扱う。
      */
     if (potr_service_get_type(config_path, service_id, &svc_type) == POTR_OK)
     {
-        if (role == POTR_ROLE_SENDER)
+        if (svc_type == POTR_TYPE_UNICAST_BIDIR || svc_type == POTR_TYPE_TCP_BIDIR)
         {
-            if (svc_type == POTR_TYPE_UNICAST_BIDIR || svc_type == POTR_TYPE_TCP_BIDIR)
-            {
-                is_bidir = 1;
-            }
-        }
-        else
-        {
-            if (svc_type == POTR_TYPE_UNICAST_BIDIR)
-            {
-                is_bidir = 1;
-            }
+            is_bidir = 1;
         }
     }
 
@@ -1168,6 +1202,8 @@ int main(int argc, char *argv[])
     cplat_atomic_store_i32(&s_running, 1, CPLAT_MEMORY_ORDER_RELEASE);
     s_shutdown_requested = 0;
 
+    cplat_local_lock *stop_lock;
+
     s_screen = cplat_pinned_prompt_create(NULL);
     if (s_screen == NULL)
     {
@@ -1175,11 +1211,25 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    stop_lock = get_screen_stop_lock();
+    if (stop_lock == NULL)
+    {
+        cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                   "エラー: 終了同期用ロックの初期化に失敗しました。\n");
+        cplat_pinned_prompt_dispose(s_screen);
+        s_screen = NULL;
+        return EXIT_FAILURE;
+    }
+
+    set_stop_target_screen(stop_lock, s_screen);
+
     if (cplat_shutdown_request_register(porter_test_shutdown_request_callback, NULL) != CPLAT_OK)
     {
         cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
                                    "エラー: 終了要求 callback の登録に失敗しました。\n");
+        set_stop_target_screen(stop_lock, NULL);
         cplat_pinned_prompt_dispose(s_screen);
+        s_screen = NULL;
         return EXIT_FAILURE;
     }
 
@@ -1248,7 +1298,10 @@ int main(int argc, char *argv[])
     }
 
     cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "終了しました。\n");
+    /* callback の登録解除 API がなく main 終了処理後も実行され得るため、同じ永続ロック下で画面ハンドルを先に NULL 化してから破棄する。 */
+    set_stop_target_screen(stop_lock, NULL);
     cplat_pinned_prompt_dispose(s_screen);
+    s_screen = NULL;
 
     return EXIT_SUCCESS;
 }

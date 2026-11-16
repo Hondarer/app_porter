@@ -251,6 +251,11 @@ int potr_internal_packet_open(potr_packet *packet, const uint8_t *wire_header, c
         }
         return POTR_ERR_UNKNOWN;
     }
+    /*
+     * 復号・認証後に payload を平文 (空なら NULL) へ差し替え、メモリ上の flags も
+     * 平文の状態へ合わせる (DATA 以外の制御パケットでも payload と flags の状態を一致させる)。
+     * 後続のリプレイ検出 (thread_recv_replay_packet) は元の暗号化状態の判定に wire_header を参照する。
+     */
     packet->payload = NULL;
     if (plaintext_len != 0U)
     {

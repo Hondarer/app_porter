@@ -33,6 +33,8 @@
  * POTR_ERR_OUT_OF_MEMORY、構文解析に失敗した場合とルートがオブジェクトでない場合は
  * POTR_ERR_INVALID_ARGUMENT を返す。
  * 成功時に root_out へ返された cJSON オブジェクトは、呼び出し元が cjson_app_cJSON_Delete() で解放する。
+ * 設定解析は encrypt_key (鍵またはパスフレーズ) を受理し cJSON 内の値も消去するため、
+ * 読み込み元の生 JSONC テキストを残さないよう一時バッファー chunk / text も使用後・失敗時に消去する。
  */
 static int config_read_jsonc(const char *path, cJSON **root_out)
 {

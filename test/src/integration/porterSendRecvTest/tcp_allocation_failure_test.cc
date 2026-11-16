@@ -17,7 +17,7 @@ namespace
 constexpr size_t payload_size = 512;
 constexpr size_t message_size = 8192;
 constexpr size_t wire_size = offsetof(potr_packet, payload) + payload_size;
-constexpr size_t compress_size = CPLAT_COMPRESS_HEADER_SIZE + message_size + 64;
+constexpr size_t compress_size = message_size;
 constexpr size_t crypto_size = wire_size + POTR_CRYPTO_TAG_SIZE;
 
 struct allocation_probe
@@ -212,7 +212,7 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
     // Arrange
 #if defined(PLATFORM_LINUX)
     const auto target = GetParam();
-    size_t expected_calls = target.size == compress_size ? 1U : 2U;
+    size_t expected_calls = 2U;
     if (target.size == wire_size)
     {
         // recv_buf/send_wire_buf と経路別受信バッファー、既存の経路別先読みバッファーです。
@@ -307,12 +307,12 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
 // [サブ手順参照 名前=tcp_allocation_failure_test.TearDown 回数=PARAM]
 
 #if defined(PLATFORM_LINUX)
-/* 圧縮用の領域は送信時に呼び出しごとに確保するため、open 時の compress サイズは受信用だけです。
+/* 圧縮用の領域は送信時に呼び出しごとに確保するため、open 時の max_message_size は組み立て用の次が受信用です。
  * crypto は送信用の次が受信用。wire は recv_buf/send_wire_buf の次が経路別です。
  * 総 malloc 回数には依存せず、公開設定から決まるサイズの出現順で指定します。 */
 INSTANTIATE_TEST_SUITE_P(
     receive_buffers, tcp_allocation_failure_test,
-    Values(allocation_case{"recv_compress_buf", compress_size, 1}, allocation_case{"recv_crypto_buf", crypto_size, 2},
+    Values(allocation_case{"recv_compress_buf", compress_size, 2}, allocation_case{"recv_crypto_buf", crypto_size, 2},
            allocation_case{"tcp_recv_buf_0", wire_size, 3}, allocation_case{"tcp_recv_buf_1", wire_size, 4},
            allocation_case{"tcp_recv_buf_2", wire_size, 5}, allocation_case{"tcp_recv_buf_3", wire_size, 6}),
     [](const TestParamInfo<allocation_case> &case_info) { return case_info.param.name; });

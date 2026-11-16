@@ -216,6 +216,7 @@ static int send_impl(potr_context *handle, potr_peer_id peer_id, const void *dat
     if (((unsigned)flags & POTR_SEND_COMPRESS) != 0U)
     {
         size_t cmp_len = ctx->compress_buf_size;
+        int cmp_ret;
 
         compress_buf = (uint8_t *)cplat_malloc(ctx->compress_buf_size);
         if (compress_buf == NULL)
@@ -226,17 +227,8 @@ static int send_impl(potr_context *handle, potr_peer_id peer_id, const void *dat
             return POTR_ERR_OUT_OF_MEMORY;
         }
 
-        if (cplat_compress(compress_buf, &cmp_len, (const uint8_t *)data, len) != CPLAT_OK)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                       "potr_service_send: service_id=%" PRId64 " compression failed (len=%zu)",
-                       ctx->service.service_id, len);
-            cplat_secure_zero(compress_buf, ctx->compress_buf_size);
-            cplat_free(compress_buf);
-            return POTR_ERR_UNKNOWN; /* 圧縮失敗は入力データ起因と断定できないため、分類不能として扱う */
-        }
-
-        if (cmp_len < len)
+        cmp_ret = cplat_compress(compress_buf, &cmp_len, (const uint8_t *)data, len);
+        if (cmp_ret == CPLAT_OK && cmp_len < len)
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_send: service_id=%" PRId64 " compress %zu -> %zu bytes",
                        ctx->service.service_id, len, cmp_len);
@@ -244,13 +236,26 @@ static int send_impl(potr_context *handle, potr_peer_id peer_id, const void *dat
             len = cmp_len;
             base_flags = POTR_FLAG_COMPRESSED;
         }
-        else
+        else if (cmp_ret == CPLAT_OK || cmp_ret == CPLAT_ERR_BUFFER_TOO_SMALL)
         {
-            /* 圧縮後の長さが元の長さ以上のため、非圧縮のまま送る。ptr, len, base_flags は初期値を維持する。 */
+            /*
+             * 入口で len <= max_message_size を検証済みで compress_buf_size == max_message_size のため、
+             * CPLAT_ERR_BUFFER_TOO_SMALL は圧縮後サイズが元データ長以上であることを意味する。
+             * 圧縮が有利でないため、元のデータと長さのまま非圧縮で送る (POTR-MESSAGE-FUNC-004)。
+             */
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                        "potr_service_send: service_id=%" PRId64 " compression skipped"
-                       " (compressed %zu >= original %zu bytes), sending uncompressed",
-                       ctx->service.service_id, cmp_len, len);
+                       " (result=%d compressed=%zu original=%zu bytes), sending uncompressed",
+                       ctx->service.service_id, cmp_ret, cmp_len, len);
+        }
+        else
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                       "potr_service_send: service_id=%" PRId64 " compression failed (len=%zu result=%d)",
+                       ctx->service.service_id, len, cmp_ret);
+            cplat_secure_zero(compress_buf, ctx->compress_buf_size);
+            cplat_free(compress_buf);
+            return POTR_ERR_UNKNOWN; /* 圧縮失敗は入力データ起因と断定できないため、分類不能として扱う */
         }
     }
 

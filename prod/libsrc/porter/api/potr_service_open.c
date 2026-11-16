@@ -267,8 +267,8 @@ static int alloc_context_buffers(potr_context *ctx)
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
-    /* 送信時の圧縮先は、同一ハンドルへの並行送信のため potr_service_send が呼び出しごとに確保する。 */
-    ctx->compress_buf_size = CPLAT_COMPRESS_HEADER_SIZE + (size_t)ctx->global.max_message_size + 64U;
+    /* 受信データの展開先上限を max_message_size に一致させ、超過データは展開失敗として拒否する。 */
+    ctx->compress_buf_size = (size_t)ctx->global.max_message_size;
 
     ctx->recv_buf = (uint8_t *)cplat_malloc(POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
     if (ctx->recv_buf == NULL)

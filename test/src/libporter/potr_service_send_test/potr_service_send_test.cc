@@ -550,3 +550,73 @@ TEST_F(potrSendTest, receive_only_service_rejects_send)
     // [確認_異常系] - 送信キューを使う前に未対応の操作を拒否すること。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
+
+// 境界サイズ (max_message_size) の非圧縮性データを COMPRESS 指定で送っても非圧縮へフォールバックし送信できることの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, incompressible_boundary_message_falls_back_to_uncompressed)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.global.max_message_size = 256;
+    ctx.compress_buf_size = ctx.global.max_message_size;
+    std::vector<uint8_t> data(ctx.global.max_message_size);
+    uint32_t state = 0x12345678U;
+    for (size_t i = 0; i < data.size(); i++)
+    {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        data[i] = static_cast<uint8_t>(state & 0xFFU);
+    }
+    // [状態] - compress_buf_size を max_message_size に一致させ、圧縮で小さくならない境界長 256 バイトの入力を用意する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_service_send(handle, POTR_PEER_NA, data.data(), data.size(), POTR_SEND_COMPRESS);
+    potr_internal_payload_elem queued = popQueuedElem();
+    // [手順] - POTR_SEND_COMPRESS 指定で送信し、送信キューへ積まれたエレメントを取り出す。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 圧縮先容量超過でも非圧縮フォールバックで送信成功すること。
+    EXPECT_EQ(0U, static_cast<unsigned>(queued.flags & POTR_FLAG_COMPRESSED));
+    // [確認_正常系] - キューへ積まれたエレメントに POTR_FLAG_COMPRESSED が付かないこと。
+    EXPECT_EQ(data.size(), static_cast<size_t>(queued.payload_len));
+    // [確認_正常系] - キューへ積まれた長さが元のデータ長と一致すること。
+    EXPECT_EQ(0, memcmp(queued.payload, data.data(), data.size()));
+    // [確認_正常系] - キューへ積まれたデータが元の非圧縮データと一致すること。
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// CPLAT_ERR_BUFFER_TOO_SMALL 以外の圧縮失敗では従来通り POTR_ERR_UNKNOWN を返しキューへ積まないことの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, other_compress_error_returns_unknown_without_enqueue)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.global.max_message_size = 256;
+    ctx.compress_buf_size = ctx.global.max_message_size;
+    std::vector<uint8_t> data(64, 0x5AU);
+    potr_internal_payload_elem queued = {};
+    // [状態] - 圧縮時に CPLAT_ERR_UNKNOWN を返す条件を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_compress(_, _, _, _)).Times(1).WillOnce(Return(CPLAT_ERR_UNKNOWN));
+    // [Pre-Assert確認_異常系] - cplat_compress() が 1 回呼ばれること。
+    // [Pre-Assert手順] - CPLAT_ERR_UNKNOWN を返す。
+
+    // Act
+    int actual_ret = potr_service_send(handle, POTR_PEER_NA, data.data(), data.size(), POTR_SEND_COMPRESS);
+    int pop_ret = potr_internal_send_queue_try_pop(&ctx.send_queue, &queued);
+    // [手順] - 圧縮エラー発生時の送信結果と送信キュー状態を確認する。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_UNKNOWN,
+              actual_ret); // [確認_異常系] - BUFFER_TOO_SMALL 以外の圧縮失敗は POTR_ERR_UNKNOWN を返すこと。
+    EXPECT_EQ(POTR_ERR_EMPTY, pop_ret); // [確認_異常系] - 送信キューにデータが積まれないこと。
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
