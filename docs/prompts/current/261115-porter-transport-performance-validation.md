@@ -6,7 +6,7 @@
 最終更新エージェント: Codex (Grok の作業管理とレビュー)
 稼働 OS: Windows
 上流文書: `261115-porter-transport-performance-discussion.md` (版 6)、`261115-porter-transport-performance-design.md`
-再開手順: このファイルを開いたエージェントは、作業の前に `.agents/skills/agree-before-implement/SKILL.md` を読み込んでください。進行位置は検討用 Markdown の作業 WBS を確認してください。BL-002 の製品改修、Git の書き込み、全体テストは指示の範囲外です。
+再開手順: この案件は 2026-11-17 にユーザー指示で打ち切りました。測定結果は、やり直しの案件 `261117-porter-transport-performance-redo-discussion.md` が事実として参照します。本文にある受容の判断 (Q-006 A) と pilot の方針 (Q-007 B) は、やり直しの案件へ引き継いでいません。BL-001 の実装は cplat と porter のブランチ `fix/bl001-tcp-nodelay` にあり、`main` には入っていません。以下は打ち切り前の再開手順の記録です。このファイルを開いたエージェントは、作業の前に `.agents/skills/agree-before-implement/SKILL.md` を読み込んでください。進行位置は検討用 Markdown の作業 WBS を確認してください。BL-002 の製品改修、Git の書き込み、全体テストは指示の範囲外です。
 -->
 
 # porter の TCP 遅延と送信・通知性能の検証記録
