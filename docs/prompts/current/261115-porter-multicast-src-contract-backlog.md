@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-16 10:57:00 JST
-最終更新エージェント: claude code / セッション ID: session_01KJc53SKi4E2GpcLq8ibyKp (BL-003 を追記。BL-002 の継続案件は session_01KJc53T14fddkwQBRc7ZPQt が担当)
+最終更新日時: 2026-11-16 21:28:00 JST
+最終更新エージェント: agy / セッション ID: 15854f3f-cecf-4d5e-b7b6-56e4d5fa9320 (BL-001 の CI 結果を確認して状態を更新。BL-002 の継続案件は session_01KJc53T14fddkwQBRc7ZPQt、BL-003 の継続案件は session_01KJc53UbHjwaWeuucBs5Q5U が担当)
 稼働 OS: Windows
 上流文書: `261115-porter-multicast-src-contract-design.md` (最終仕様)、`261115-porter-multicast-src-contract-discussion.md` (検討用 Markdown)。いずれも削除されている場合があります。
 下流文書: この残課題一覧を対策する継続作業が開始された場合は、その検討用 Markdown・最終仕様・残課題一覧のパスを追記します。未作成の場合や、削除されている場合があります。BL-002 の継続作業 (2026-11-16 07:10 JST 開始、claude code / セッション ID: session_01KJc53T14fddkwQBRc7ZPQt): `../../../../../framework/makefw/docs/prompts/current/261116-makefw-subdir-rebuild-race-discussion.md` (検討用 Markdown)、`../../../../../framework/makefw/docs/prompts/current/261116-makefw-subdir-rebuild-race-design.md` (最終仕様)、`../../../../../framework/makefw/docs/prompts/current/261116-makefw-subdir-rebuild-race-backlog.md` (残課題一覧)。BL-003 の継続作業 (2026-11-16 11:10 JST 開始、claude code / セッション ID: session_01KJc53UbHjwaWeuucBs5Q5U): `../../../../../framework/doxyfw/docs/prompts/current/261116-doxyfw-page-variant-reload-flake-discussion.md` (検討用 Markdown)。
@@ -25,7 +25,7 @@
 
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
-| BL-001 | handleConcurrencyTest がクライアント側の CONNECTED を待たずに送信し、CI で不定期に失敗する | 作業中摘出 | 中 / 中 | 対応中 (本案件の Q-006、Q-007) |
+| BL-001 | handleConcurrencyTest がクライアント側の CONNECTED を待たずに送信し、CI で不定期に失敗する | 作業中摘出 | 中 / 中 | 対処済み (本案件の Q-006、Q-007。CI run 43835974193 で確認済み) |
 | BL-002 | mock_cplat の並列ビルドで同じサブディレクトリが 2 回ビルドされ、CI で不定期に失敗する | 作業中摘出 | 中 / 中 | 検討中 (継続案件 261116-makefw-subdir-rebuild-race で最終仕様を作成。承認待ち) |
 | BL-003 | doxyfw の依存関係レポートのテストで、再読み込み後にページ種別の保存値が失われ、CI で不定期に失敗する | 作業中摘出 | 中 / 中 | 検討中 (継続案件 261116-doxyfw-page-variant-reload-flake で対処の範囲と方法を確認中) |
 
@@ -41,7 +41,7 @@
 
 - **摘出契機**: BL-001 (マルチキャスト参加 NIC) の実装をプッシュした後の CI。
 - **今回の見送り理由**: 失敗した経路は `unicast_bidir_n1` で、この案件の変更 (マルチキャストのグループ参加 NIC と、close 時の離脱) とは関係しません。並行していた REJECT 受信再開の案件 (porter `68ab091`) も、REJECT 受信時と受信ウィンドウ範囲外のパケットでだけ働くため、関係しないと判断しています (担当セッションと確認済み)。この案件の範囲外なので、失敗したジョブの再実行で CI を確認し、テストの修正は行いません。
-- **継続作業での経緯と対処**: 2026-11-16、ユーザーの判断で本案件の範囲に加えました (検討用 Markdown の Q-006)。Q-007 で「`open_n1()` で全クライアントの CONNECTED も待つ」に決まり、最終仕様に追記して承認を受けました。`handleConcurrencyTest.cc` の `open_n1()` に、クライアント側の CONNECTED 数 (`s_client_connected_count`) が `n_clients` に達するまでの待ちを追加しました。Windows/MSVC で `porterSendRecvTest` 36 件が成功し、`handleConcurrencyTest` 10 件を 5 回繰り返して失敗 0 でした。CI での確認待ちです。
+- **継続作業での経緯と対処**: 2026-11-16、ユーザーの判断で本案件の範囲に加えました (検討用 Markdown の Q-006)。Q-007 で「`open_n1()` で全クライアントの CONNECTED も待つ」に決まり、最終仕様に追記して承認を受けました。`handleConcurrencyTest.cc` の `open_n1()` に、クライアント側の CONNECTED 数 (`s_client_connected_count`) が `n_clients` に達するまでの待ちを追加しました (`8220519`)。Windows/MSVC で `porterSendRecvTest` 36 件が成功し、`handleConcurrencyTest` 10 件を 5 回繰り返して失敗 0 でした。CI run 43835974193 (親 `fbbc1d848a`、porter `5ff9609`) で、全ジョブ (Windows、ol8、ol9、ol10、docs、verify-gen、deploy-pages、warnings-summary) の成功を確認しました。
 
 ### 影響範囲とリスク
 

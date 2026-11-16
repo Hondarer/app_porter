@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 検討用 Markdown (discussion)
-最終更新日時: 2026-11-16 04:10:00 JST
-最終更新エージェント: claude code / セッション ID: session_01KJc53SKi4E2GpcLq8ibyKp
+最終更新日時: 2026-11-16 21:28:00 JST
+最終更新エージェント: agy / セッション ID: 15854f3f-cecf-4d5e-b7b6-56e4d5fa9320
 稼働 OS: Windows
 上流文書: `261114-porter-windows-verification-clock-unify-backlog.md` (BL-001 の対策元)、`261114-porter-windows-verification-clock-unify-discussion.md` (Q-011)。削除されている場合があります。
 下流文書: `261115-porter-multicast-src-contract-design.md` (最終仕様)、`261115-porter-multicast-src-contract-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
@@ -50,14 +50,14 @@
     - ✅ 4.7. サンプル設定 `app/porter/prod/sample-config/porter-services.jsonc` への別ホスト構成例 (サービス `2003`) の追加
     - ✅ 4.8. 正本ドキュメントおよびコード コメントへの永続的知見の反映
     - ✅ 4.9. 局所テストおよび機械的検証 (`text_style_jp.py`、Windows/MSVC で対象 3 テスト ディレクトリの `make test` が失敗 0)
-    - 🔄 4.10a. コミット、プッシュ、CI の結果確認 (第 2 ゲートの承認条件)。porter `ebb79c2` の CI run 43727490184 は ol9 で不定期失敗 (attempt 1: handleConcurrencyTest、attempt 2: mock_cplat の並列ビルド)。attempt 3 を実行中
-    - 🔄 4.13. 追加範囲: 案件 backlog BL-001 (handleConcurrencyTest の接続待ち) の調査と対策 ([Q-006](#q-006-ciの不定期失敗テストを本案件の範囲に加えるか) で範囲に追加)
+    - ✅ 4.10a. コミット、プッシュ、CI の結果確認 (第 2 ゲートの承認条件)。porter `ebb79c2` を含む CI run 43835974193 (親 `fbbc1d848a`、porter `5ff9609`) で全ジョブ (Windows、ol8、ol9、ol10、docs 等) が成功
+    - ✅ 4.13. 追加範囲: 案件 backlog BL-001 (handleConcurrencyTest の接続待ち) の調査と対策 ([Q-006](#q-006-ciの不定期失敗テストを本案件の範囲に加えるか) で範囲に追加)
         - ✅ 4.13.1. 原因の調査 (結果は [Q-007](#q-007-handleconcurrencytestの接続待ちの直し方) の Context)
         - ✅ 4.13.2. 対策方針の確認 ([Q-007](#q-007-handleconcurrencytestの接続待ちの直し方) で A に決定、版 5 で第 1 ゲート通過)
         - ✅ 4.13.3. 最終仕様 (design.md) への追記と、追記部分の承認の受付 (第 2 ゲート)。2026-11-16 に Tetsuo Honda から「承認」を受領
         - ✅ 4.13.4. `app/porter/test/src/integration/porterSendRecvTest/handleConcurrencyTest.cc` の修正 (grok へ委譲)。Windows/MSVC で `porterSendRecvTest` 36 件成功、`handleConcurrencyTest` 10 件を 5 回繰り返して失敗 0
-        - 🔄 4.13.5. コミット、プッシュ、CI の結果確認と、案件 backlog BL-001 の状態更新 ← **CURRENT**
-    - ⏸️ 4.10. ユーザーの環境での PSK と証明書の Windows/WSL 相互接続 12 組み合わせの再実施 ([Q-004](#q-004-受入試験の範囲))
+        - ✅ 4.13.5. コミット、プッシュ、CI の結果確認と、案件 backlog BL-001 の状態更新 (porter `8220519` を含む CI run 43835974193 で全ジョブ成功を確認し、案件 backlog BL-001 を対処済みへ更新)
+    - 🔄 4.10. ユーザーの環境での PSK と証明書の Windows/WSL 相互接続 12 組み合わせの再実施 ([Q-004](#q-004-受入試験の範囲)) ← **CURRENT**
     - ⏸️ 4.11. 受入条件への適合確認 (全完確認)
     - ⏸️ 4.12. 残課題一覧 (`261115-porter-multicast-src-contract-backlog.md`) の再構築と整理、および過去 backlog BL-001 の経緯・対処の更新
 - ⏸️ 5. 成果物の承認の受付 (第 3 ゲート)
@@ -524,5 +524,5 @@ A の選択を確認しました。`handleConcurrencyTest.cc` の `open_n1()` �
 2026-11-15 に、実装を grok CLI (`grok-4.7`、reasoning effort high、`--yolo`) へ委譲し、claude code が差分を最終仕様と照合しました。
 
 - 変更: `config.md`、`porter_type.h`、`potr_context.h`、`api_open_paths_udp.c/.h`、`potr_service_close.c`、`porter-services.jsonc`、単体テスト 3 ファイル。機能仕様、自動生成物、公開構造体の形は変更していません。
-- 検証: grok が Windows/MSVC で `apiOpenPathsUdpTest` (22 件)、`potrServiceCloseTest` (11 件)、`configLoadServiceTest` (44 件) の `make test` を実行し、失敗 0 でした。`config.md` は `text_style_jp.py` の確認済みです。Linux/GCC は CI で確認します。
+- 検証: grok が Windows/MSVC で `apiOpenPathsUdpTest` (22 件)、`potrServiceCloseTest` (11 件)、`configLoadServiceTest` (44 件) の `make test` を実行し、失敗 0 でした。`config.md` は `text_style_jp.py` の確認済みです。追加範囲の `handleConcurrencyTest.cc` は Windows/MSVC で `porterSendRecvTest` 36 件成功、`handleConcurrencyTest` 10 件を 5 回繰り返して失敗 0 でした。CI run 43835974193 (親 `fbbc1d848a`、porter `5ff9609`) で、`ebb79c2` と `8220519` を含む全ジョブ (Windows、ol8、ol9、ol10、docs、verify-gen、deploy-pages、warnings-summary) の成功を確認しました。
 - 未実施: Windows/WSL 相互接続 12 組み合わせ (ユーザーの環境で実施)。
