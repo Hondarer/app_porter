@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 検討用 Markdown (discussion)
-最終更新日時: 2026-11-17 12:20:00 JST
+最終更新日時: 2026-11-17 12:07:52 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
 稼働 OS: Windows
 上流文書: `261115-porter-reject-recovery-backlog.md` (BL-001、BL-002 の対策元)。打ち切った旧案件の記録として `261115-porter-transport-performance-discussion.md`、`261115-porter-transport-performance-design.md`、`261115-porter-transport-performance-validation.md` があります。削除されている場合があります。
@@ -19,7 +19,7 @@
 
 版: 4
 
-状態: [Q-007](#q-007-5000b-の処理件数の低下への対処) の回答を受けて最終仕様を版 2 に改版。再承認待ち
+状態: [Q-007](#q-007-5000b-の処理件数の低下への対処) の回答を受けて最終仕様を版 2 に改版し、承認済み。まとめ送りの実装中
 
 この案件は、[261115-porter-reject-recovery-backlog.md](261115-porter-reject-recovery-backlog.md) の BL-001 (TCP の約 40[ms] の停止) と BL-002 (小さいメッセージと圧縮送信の処理件数の低下) を対策する継続作業です。  
 旧案件 `porter-transport-performance-20261115` は、論点が整理できない状態になったため、2026-11-17 にユーザーの指示で打ち切りました。この案件は、旧案件の測定結果と実装を材料として使い、判断を最初からやり直します。
@@ -46,10 +46,10 @@
     - ✅ 4.3. Linux (WSL) での off、on、試行版のビルドと 18 条件の測定 (担当: `c-modernization-kit-f6`)。追加の試行版 batch2 も測定
     - ✅ 4.4. Windows での off、on、試行版のビルドと 18 条件の測定 (担当: このセッション)。版の順序を逆にした再測定と、追加の試行版 batch2 の測定も実施
     - ✅ 4.5. 測定結果の集計と、5000[B] の低下の扱いを決める新しい Q の提示 ([Q-007](#q-007-5000b-の処理件数の低下への対処)、2026-11-17 回答: A)
-    - 🚫 4.6. 判断の結果の反映
+    - 🔄 4.6. 判断の結果の反映
         - ✅ 4.6.1. 最終仕様 `261117-porter-transport-performance-redo-design.md` の改版 (版 2。送信をまとめる変更の追加)
-        - 🚫 4.6.2. 最終仕様 (版 2) の再承認の受付。ユーザーの承認待ち ← **CURRENT**
-        - ⏸️ 4.6.3. porter のブランチ `fix/bl001-tcp-nodelay` での送信をまとめる変更の実装 (`prod/libsrc/porter/thread/potr_send_thread.c` と単体テスト。実装は Opus 5.5 のサブエージェント)
+        - ✅ 4.6.2. 最終仕様 (版 2) の再承認の受付。2026-11-17 にユーザーが承認
+        - 🔄 4.6.3. porter のブランチ `fix/bl001-tcp-nodelay` での送信をまとめる変更の実装 (`prod/libsrc/porter/thread/potr_send_thread.c` と単体テスト。実装は Opus 5.5 のサブエージェント) ← **CURRENT**
         - ⏸️ 4.6.4. 実装後の版 (final) の両 OS での測定と、試行版 batch2 との比較
     - ⏸️ 4.7. Linux の全件 `make test` が完了しなかった原因の調査
     - ⏸️ 4.8. cplat と porter の全件 `make test` (Windows と Linux (WSL)) と `.warn` の確認
@@ -506,7 +506,9 @@ A で確定しました。送信キューに溜まった分をメッセージの
 
 検討用 Markdown の合意版 (第 1 ゲート): 版 2 (2026-11-17)
 
-最終仕様の合意版 (第 2 ゲート): 版 1 (2026-11-17 にユーザーが承認)。版 2 は再承認待ち
+最終仕様の合意版 (第 2 ゲート): 版 2 (2026-11-17 にユーザーが承認。版 1 も同日に承認)
+
+版 2 の承認時のユーザーの指示 (2026-11-17、チャット): 自走する。より良い案があれば試行し、必要なら改修してよい。
 
 承認時のユーザーの指示 (2026-11-17、チャット): 実装には Opus 5.5 を利用する。性能測定の前の準備ができたら、ユーザーに確認する。
 
