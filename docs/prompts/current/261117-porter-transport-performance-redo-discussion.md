@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 検討用 Markdown (discussion)
-最終更新日時: 2026-11-17 17:52:44 JST
-最終更新エージェント: claude code / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
+最終更新日時: 2026-11-17 21:35:00 JST
+最終更新エージェント: claude code (Opus 5.5) / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
 稼働 OS: Windows
 上流文書: `261115-porter-reject-recovery-backlog.md` (BL-001、BL-002 の対策元)。打ち切った旧案件の記録として `../past/261115-porter-transport-performance-discussion.md`、`../past/261115-porter-transport-performance-design.md`、`../past/261115-porter-transport-performance-validation.md` があります。削除されている場合があります。
 下流文書: `261117-porter-transport-performance-redo-design.md` (最終仕様)、`261117-porter-transport-performance-redo-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
@@ -52,11 +52,13 @@
         - ✅ 4.6.3. porter のブランチ `fix/bl001-tcp-nodelay` での送信をまとめる変更の実装 (`prod/libsrc/porter/thread/potr_send_thread.c` と単体テスト。実装は Opus 5.5 のサブエージェント。コミット `a382a1d`)
         - ✅ 4.6.4. 実装後の版 (final) の両 OS での測定と、試行版 batch2 との比較。処理件数の受入条件は両 OS で満たした。Windows の 5000[B]・ブロッキングで通知遅延の上位が増える件は、ユーザーが問題なしと判断した (2026-11-17)
     - ✅ 4.7. Linux の全件 `make test` が完了しなかった原因の調査 (コードの調査による見立て。所要時間は 4.8 で実測する)
-    - 🔄 4.8. cplat と porter の全件 `make test` (Windows と Linux (WSL)) と `.warn` の確認
-        - ✅ 4.8.1. Windows (担当: Opus 5.5 のサブエージェント。4 段階とも終了コード 0、失敗 0 件、`.warn` なし)
-        - 🔄 4.8.2. Linux (WSL) (担当: `c-modernization-kit-f6`。2026-11-17 に開始を連絡) ← **CURRENT**
-    - ⏸️ 4.9. porter の機能仕様と設計文書への反映の要否の確認と反映
-    - ⏸️ 4.10. 親リポジトリのプル リクエストによる CI の実行と、全ジョブの成功および警告なしの確認
+    - ✅ 4.8. cplat と porter の全件 `make test` (Windows と Linux (WSL)) と `.warn` の確認
+        - ✅ 4.8.1. Windows (担当: Opus 5.5 のサブエージェント。4 段階とも終了コード 0、失敗 0 件、`.warn` なし。`e102d94` の変更分は、対象の 3 ディレクトリを再実行して確認)
+        - ✅ 4.8.2. Linux (WSL) (担当: `c-modernization-kit-f6`。4 段階とも終了コード 0、失敗 0 件、`.warn` なし)
+    - ✅ 4.9. porter の機能仕様と設計文書への反映の要否の確認と反映 (機能仕様は変更不要。`docs/protocol.md`、`docs/architecture.md`、cplat の `docs/api-cheatsheet.md`、呼び出し箇所の `see:` コメントは反映済み)
+    - 🔄 4.10. 親リポジトリのプル リクエスト ([#59](https://github.com/Hondarer/c-modernization-kit/pull/59)) による CI の実行と、全ジョブの成功および警告なしの確認 ← **CURRENT**
+        - ✅ 4.10.1. 1 回目 (run `44050752536`)。Linux の 3 ジョブが `tcp_allocation_failure_test` の 1 ケースで失敗。テストの期待値を直した (porter `e102d94`)
+        - 🔄 4.10.2. 2 回目 (run `44077056578`)
     - ⏸️ 4.11. cplat、porter、親リポジトリの `main` への取り込みと、Windows と WSL の同期 (ユーザーの指示を受けてから行う)
     - ⏸️ 4.12. 対策元 `261115-porter-reject-recovery-backlog.md` の更新と、`261117-porter-transport-performance-redo-backlog.md` の整理
 - ⏸️ 5. 成果物の承認の受付 (第 3 ゲート)
@@ -717,3 +719,40 @@ Table: Windows の全件ビルドと全件テスト
 ### Linux の全件テストが完了しなかった原因の見立て
 
 旧案件で Linux の全件 `make test` が完了しなかった原因を、`c-modernization-kit-f6` がコードから調べました。テスト 1 件ごとに実行するカバレッジの集計 (gcovr) が、ワークスペース全体の排他 (`framework/testfw/bin_internal/exec_test_c_cpp.sh` の flock) で直列になります。約 2,700 件で 45〜90 分以上かかる見込みで、旧案件の待ち時間では足りなかったという見立てです。実測はしておらず、今回の全件テストで所要時間を確かめます。
+
+### 全件テスト (Linux (WSL)、2026-11-17)
+
+`c-modernization-kit-f6` が、Windows と同じ手順で実行しました。porter は、CI の 1 回目の失敗を直した `e102d94` で実行しました (`a382a1d` で始めた実行は、テストの途中で中断しました)。
+
+| 段階 | 終了コード | 所要時間 |
+| --- | ---: | ---: |
+| cplat `make` | 0 | 46.1[分] |
+| cplat `MAKEFW_TEST_FORCE=1 make test` | 0 | 116.4[分] |
+| porter `make` | 0 | 3.3[分] |
+| porter `MAKEFW_TEST_FORCE=1 make test` | 0 | 36.8[分] |
+
+Table: Linux の全件ビルドと全件テスト
+
+- テストの件数は、cplat が 2,156 件、porter が 566 件です。失敗と警告は 0 件です。
+- どちらのログにも `INFO: Skipping test` の行はなく、`make -C test _test_run` の行があります。4 つのログにコンパイラの警告の行はありません。
+- cplat と porter の配下に、内容のある `.warn` はありません。テストの後、作業ツリーに差分はありません。
+- 修正した `tcp_allocation_failure_test` は 8 ケースすべて成功しました。
+- `test/src/cmd/makefile` の追加により、`porterTestOutputTest` の 7 件が実行され、成功しました。`windows/tcpServerWindowsTest` は Windows 専用で、Linux では実行されません。
+
+旧案件で完了しなかった Linux の全件テストは、cplat が約 2 時間 40 分、porter が約 40 分で完了しました。
+
+### CI の 1 回目の失敗と修正 (2026-11-17)
+
+プル リクエスト [#59](https://github.com/Hondarer/c-modernization-kit/pull/59) の CI の 1 回目 (run `44050752536`) で、Windows と docs のジョブは成功し、Linux の 3 ジョブ (ol8、ol9、ol10) が同じテスト 1 件で失敗しました。
+
+- 失敗したテスト: `porterSendRecvTest` の `receive_buffers/tcp_allocation_failure_test.releases_buffers_and_reopens_endpoints/recv_compress_buf` (Linux 専用)。対象サイズの確保回数の期待値 2 に対して、実際は 3 回でした。
+- 原因: まとめ送りの平文バッファー (16 × 最大ペイロード長 = 16 × 512 = 8192[B]) が、このテストの最大メッセージ長 (8192[B]) と同じサイズになり、数える対象に入りました。製品コードの不具合ではなく、テストの期待値のずれです。Windows ではこのテストを実行しないため、Windows の全件テストでは検出できませんでした。
+- 修正 (porter `e102d94`): 期待値を直し、サイズが同じになる前提を `static_assert` で固定しました。まとめ送り用の 2 つのバッファーの確保が失敗する場合のケースを 2 件加えました。
+
+Windows では、`e102d94` の変更が及ぶ 3 ディレクトリ (`test/src/cmd/porterTestOutputTest`、`test/src/cmd/windows/tcpServerWindowsTest`、`test/src/integration/porterSendRecvTest`) を `MAKEFW_TEST_FORCE=1` で実行し直しました。それぞれ 7 件、1 件、36 件で、すべて成功しました。ログにコンパイラの警告の行はありません。
+
+### 文書への反映の確認
+
+- 機能仕様 (`docs/functional-spec/`) は変更しません。今回の変更は送信の方式の変更で、利用側から見た要件と機能の振る舞いを変えないためです。
+- `docs/protocol.md` と `docs/architecture.md` には、まとめ送りの説明を追記済みです。cplat の `docs/api-cheatsheet.md` には、`cplat_socket_set_nodelay` の行を追記済みです。
+- `TCP_NODELAY` を設定する 2 箇所 (`thread_connect_prepare.c`、`potr_connect_thread.c`) には、根拠の `see:` コメントがあります。Doxygen の生成物はリポジトリで管理しておらず、CI の docs のジョブで生成されます (1 回目で成功)。

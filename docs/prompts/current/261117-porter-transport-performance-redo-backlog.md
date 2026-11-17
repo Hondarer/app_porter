@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-17 18:05:00 JST
-最終更新エージェント: claude code / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
+最終更新日時: 2026-11-17 21:35:00 JST
+最終更新エージェント: claude code (Opus 5.5) / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
 稼働 OS: Windows
 上流文書: `261117-porter-transport-performance-redo-design.md` (最終仕様)、`261117-porter-transport-performance-redo-discussion.md` (検討用 Markdown)。対策元の残課題一覧は `261115-porter-reject-recovery-backlog.md` です。いずれも削除されている場合があります。
 下流文書: この残課題一覧を対策する継続作業が開始された場合は、その検討用 Markdown・最終仕様・残課題一覧のパスを追記します。未作成の場合や、削除されている場合があります。
@@ -31,7 +31,7 @@
 | BL-002 | Linux の 5000[B]・ブロッキング・1 スレッドの TCP 送信で処理件数が対策前より約 17% 低い | 作業中摘出 | 低 | 未着手 |
 | BL-003 | Windows の圧縮送信の処理件数が測定ごとに大きく変わる | 作業中摘出 | 低 | 未着手 |
 | BL-004 | 性能の測定プログラムが Git で管理されていない | 検討時見送り | 低 | 未着手 |
-| BL-005 | porter の test/src/cmd 配下のテストが全件テストで実行されない | 作業中摘出 | 中 | 対応中 (ユーザーの指示でこの案件で対処する。`test/src/cmd/makefile` を追加し、検証中。解消を確認したら整理時に除外する) |
+| BL-005 | porter の test/src/cmd 配下のテストが全件テストで実行されない | 作業中摘出 | 中 | 解消 (ユーザーの指示でこの案件で対処した。`test/src/cmd/makefile` を追加し、両 OS で走査されることを確認した。整理時に除外する) |
 
 ## BL-001 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える
 
