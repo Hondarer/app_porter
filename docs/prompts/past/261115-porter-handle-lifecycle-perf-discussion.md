@@ -4,7 +4,7 @@
 最終更新日時: 2026-11-15 21:05:00 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53STZ6gsPHA4EQ62685
 稼働 OS: Windows
-上流文書: `../past/261107-porter-handle-lifecycle-backlog.md` の BL-001 (過去 backlog。継続作業の元)、`../past/261107-porter-handle-lifecycle-design.md` の「性能の測定条件と評価」、`../past/261107-porter-handle-lifecycle-validation.md`。削除されている場合があります。
+上流文書: `261107-porter-handle-lifecycle-backlog.md` の BL-001 (過去 backlog。継続作業の元)、`261107-porter-handle-lifecycle-design.md` の「性能の測定条件と評価」、`261107-porter-handle-lifecycle-validation.md`。削除されている場合があります。
 下流文書: `261115-porter-handle-lifecycle-perf-design.md` (最終仕様)、`261115-porter-handle-lifecycle-perf-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
 再開手順: このファイルを開いたエージェントは、作業の前に agree-before-implement スキルを読み込んでください。ユーザーが編集した最新版を読み直し、作業 WBS の `← **CURRENT**` の項目から再開します。本案件は Windows と Linux (WSL) の 2 セッションで協調して進めます。最終更新エージェントのセッション情報や稼働 OS・最終更新日時が参照可能であれば再開時のコンテキストや環境差分の把握に利用し、別エージェントや別環境・別 OS からの引き継ぎ、担当変更によりセッションが見つからない場合も異常とせず、文書の記載から継続してください。`← **CURRENT**` の項目は処理が中止された項目である場合があり、どこまで進んでいたかは文書だけでは分かりません。対象成果物の内容を確認して実施済みの範囲を特定してから、作業を再開してください。`← **CURRENT**` がなく、作業 WBS がすべて完了 (✅) であれば、この案件の合意フローは完了しています。
 -->
@@ -65,10 +65,10 @@
 
 参照資料と版:
 
-- `../past/261107-porter-handle-lifecycle-backlog.md` (整理済み) の BL-001
-- `../past/261107-porter-handle-lifecycle-design.md` の「性能の測定条件と評価」
-- `../past/261107-porter-handle-lifecycle-validation.md` の「性能比較」と「性能評価の未確認項目」
-- `../past/261107-porter-handle-lifecycle-performance.csv` (UDP 24 条件)
+- `261107-porter-handle-lifecycle-backlog.md` (整理済み) の BL-001
+- `261107-porter-handle-lifecycle-design.md` の「性能の測定条件と評価」
+- `261107-porter-handle-lifecycle-validation.md` の「性能比較」と「性能評価の未確認項目」
+- `261107-porter-handle-lifecycle-performance.csv` (UDP 24 条件)
 - `app/porter` `196be7d` (2026-11-15 15:08 JST 時点の HEAD、作業ツリーは差分なし)
 
 ### 調査で確認した事実 (2026-11-15 15:10 JST、Windows の作業ツリー)

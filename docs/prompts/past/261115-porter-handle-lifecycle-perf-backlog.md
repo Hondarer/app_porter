@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-15 23:00:00 JST
-最終更新エージェント: claude code / セッション ID: session_01KJc53STZ6gsPHA4EQ62685
+最終更新日時: 2026-11-18 06:05:54 JST
+最終更新エージェント: claude code / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc (past への移動と、転記先の状態の反映)
 稼働 OS: Windows
 上流文書: `261115-porter-handle-lifecycle-perf-design.md` (最終仕様)、`261115-porter-handle-lifecycle-perf-discussion.md` (検討用 Markdown)。いずれも削除されている場合があります。
 再開手順: このファイルを開いたエージェントは、作業の前に agree-before-implement スキルを読み込んでください。「整理状態」が「随時追記中」であれば、案件の作業中です。気付いた事項を追記し、第 3 ゲートの前に文書を再構築して整理します。上流文書が存在する場合は、各課題の背景と見送りの判断を上流文書で確認します。存在しない場合は、この文書を単体の残課題一覧として扱います。このファイルの残課題を参照して新たな成果物の作成または更新を始めるときは、元案件の再開とは別の作業として扱います。その開始には agree-before-implement を原則として使い、新しい検討用 Markdown から開始してください。継続作業によってこのファイルの残課題を対策する場合は、このファイルや各項目の記載を削除することなく、各項目の状態および経緯と対処を更新することを原則とします。
@@ -24,9 +24,9 @@
 
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
-| BL-001 | TCP の送信ソケットに TCP_NODELAY がなく約 40[ms] の停止が生じる | 作業中摘出 | 中 | 未着手 (`261115-porter-reject-recovery-backlog.md` の BL-001 へ転記) |
+| BL-001 | TCP の送信ソケットに TCP_NODELAY がなく約 40[ms] の停止が生じる | 作業中摘出 | 中 | 解消 (`261115-porter-reject-recovery-backlog.md` の BL-001 へ転記。継続案件 `porter-transport-performance-redo-20261117` で解消) |
 | BL-002 | UDP の受信ウィンドウが回復不能な欠落の後に進まなくなる | 作業中摘出 | 高 | 対応済み (`porter-reject-recovery`) |
-| BL-003 | 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える | 作業中摘出 | 中 | 未着手 (`261115-porter-reject-recovery-backlog.md` の BL-002 へ転記) |
+| BL-003 | 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える | 作業中摘出 | 中 | 未対処 (`261115-porter-reject-recovery-backlog.md` の BL-002 を経て、`../current/261117-porter-transport-performance-redo-backlog.md` の BL-001 へ転記) |
 
 ## BL-001 TCP の送信ソケットに TCP_NODELAY がなく約 40[ms] の停止が生じる
 

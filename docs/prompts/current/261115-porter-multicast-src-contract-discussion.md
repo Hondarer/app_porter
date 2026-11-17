@@ -4,7 +4,7 @@
 最終更新日時: 2026-11-18 06:03:43 JST
 最終更新エージェント: claude code / セッション ID: 2597d650-1196-4c79-aa7b-18ba3526112b
 稼働 OS: Windows
-上流文書: `261114-porter-windows-verification-clock-unify-backlog.md` (BL-001 の対策元)、`261114-porter-windows-verification-clock-unify-discussion.md` (Q-011)。削除されている場合があります。
+上流文書: `../past/261114-porter-windows-verification-clock-unify-backlog.md` (BL-001 の対策元)、`../past/261114-porter-windows-verification-clock-unify-discussion.md` (Q-011)。削除されている場合があります。
 下流文書: `261115-porter-multicast-src-contract-design.md` (最終仕様)、`261115-porter-multicast-src-contract-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
 再開手順: このファイルを開いたエージェントは、作業の前に agree-before-implement スキルを読み込んでください。ユーザーが編集した最新版を読み直し、作業 WBS の `← **CURRENT**` の項目から再開します。最終更新エージェントのセッション情報や稼働 OS・最終更新日時が参照可能であれば再開時のコンテキストや環境差分の把握に利用し、別エージェントや別環境・別 OS からの引き継ぎ、担当変更によりセッションが見つからない場合も異常とせず、文書の記載から継続してください。`← **CURRENT**` の項目は処理が中止された項目である場合があり、どこまで進んでいたかは文書だけでは分かりません。対象成果物の内容を確認して実施済みの範囲を特定してから、作業を再開してください。`← **CURRENT**` がなく、作業 WBS がすべて完了 (✅) であれば、この案件の合意フローは完了しています。
 -->
@@ -23,7 +23,7 @@
 
 ## 作業 WBS と進捗管理
 
-この検討用 Markdown が管理する作業 WBS です。過去 backlog `261114-porter-windows-verification-clock-unify-backlog.md` の BL-001 を対策します。作業 4 の内訳は、[Q-001](#q-001-マルチキャストの送信元制限の維持) から [Q-004](#q-004-受入試験の範囲) の回答で見直しました。
+この検討用 Markdown が管理する作業 WBS です。過去 backlog `../past/261114-porter-windows-verification-clock-unify-backlog.md` の BL-001 を対策します。作業 4 の内訳は、[Q-001](#q-001-マルチキャストの送信元制限の維持) から [Q-004](#q-004-受入試験の範囲) の回答で見直しました。
 
 凡例: ⏸️ 未着手、🔄 実施中、🚫 ブロック中、⚠️ 要注意、✅ 完了。現在取り組んでいる項目の末尾に `← **CURRENT**` を付けます。
 

@@ -88,15 +88,15 @@
 
 | 参照 | 内容 |
 | --- | --- |
-| [potr_service_send.c](../../prod/libsrc/porter/api/potr_service_send.c) | 送信 API。共有圧縮領域、断片の登録、ブロッキング送信 |
-| [potr_send_queue.c](../../prod/libsrc/porter/infra/potr_send_queue.c) | 送信キュー |
-| [potr_send_thread.c](../../prod/libsrc/porter/thread/potr_send_thread.c) | 送信スレッド。344-347 行でピア検索後にロックを解放 |
-| [potr_peer_table.c](../../prod/libsrc/porter/potr_peer_table.c) | `potr_internal_peer_free` (430-449 行) |
-| [potr_recv_thread.c](../../prod/libsrc/porter/thread/potr_recv_thread.c) | N:1 受信処理 (54-107 行で `peers_mutex` を保持したまま配信) |
-| [potr_path_event.c](../../prod/libsrc/porter/potr_path_event.c) | コールバック発火 |
-| [potr_service_close.c](../../prod/libsrc/porter/api/potr_service_close.c) | close 処理 (297 行で `send_has_data` をロックなしで参照) |
-| [api.md](../api.md) | 公開 API のスレッド セーフ表 |
-| [compiler.h](../../../cplat/prod/include/cplat/base/compiler.h) | `THREAD_LOCAL` マクロ |
+| [potr_service_send.c](../../../prod/libsrc/porter/api/potr_service_send.c) | 送信 API。共有圧縮領域、断片の登録、ブロッキング送信 |
+| [potr_send_queue.c](../../../prod/libsrc/porter/infra/potr_send_queue.c) | 送信キュー |
+| [potr_send_thread.c](../../../prod/libsrc/porter/thread/potr_send_thread.c) | 送信スレッド。344-347 行でピア検索後にロックを解放 |
+| [potr_peer_table.c](../../../prod/libsrc/porter/potr_peer_table.c) | `potr_internal_peer_free` (430-449 行) |
+| [potr_recv_thread.c](../../../prod/libsrc/porter/thread/potr_recv_thread.c) | N:1 受信処理 (54-107 行で `peers_mutex` を保持したまま配信) |
+| [potr_path_event.c](../../../prod/libsrc/porter/potr_path_event.c) | コールバック発火 |
+| [potr_service_close.c](../../../prod/libsrc/porter/api/potr_service_close.c) | close 処理 (297 行で `send_has_data` をロックなしで参照) |
+| [api.md](../../api.md) | 公開 API のスレッド セーフ表 |
+| [compiler.h](../../../../cplat/prod/include/cplat/base/compiler.h) | `THREAD_LOCAL` マクロ |
 
 Table: 主な参照資料
 
@@ -603,9 +603,9 @@ B は誤った前提のもとで選ばれた可能性があるため、既存 AP
 
 [Q-007](#q-007-コールバック内呼び出しの検出手段) では「cplat には現在のスレッドを識別する API がない」という誤った前提のもとで、「cplat に API を追加する」(B) が選ばれました。実際には、次の公開 API がすでにあります。
 
-- 宣言は [process.h](../../../cplat/prod/include/cplat/runtime/process.h) の 83 行目にある `uint32_t cplat_process_get_tid(void)` です。
+- 宣言は [process.h](../../../../cplat/prod/include/cplat/runtime/process.h) の 83 行目にある `uint32_t cplat_process_get_tid(void)` です。
 - 説明には「同時に存在するスレッドの間で一意」「終了したスレッドの識別子は再び割り当てられる場合がある」と書かれています。Linux はカーネルのスレッド ID (`syscall(SYS_gettid)`) を返します。
-- 説明は「ログ出力など、診断目的で」使う例を挙げていますが、用途を診断だけに限る記述はありません。実際に、[string-catalog-filter-sample.c](../../../string-catalog-sample/prod/src/cmd/string-catalog-filter-sample/string-catalog-filter-sample.c) の 572 行目と 608 行目が、記録したスレッド ID と現在のスレッドを比較する用途で使っています。
+- 説明は「ログ出力など、診断目的で」使う例を挙げていますが、用途を診断だけに限る記述はありません。実際に、[string-catalog-filter-sample.c](../../../../string-catalog-sample/prod/src/cmd/string-catalog-filter-sample/string-catalog-filter-sample.c) の 572 行目と 608 行目が、記録したスレッド ID と現在のスレッドを比較する用途で使っています。
 
 porter での使い方は次のとおりです。コールバックは `callback_mutex` の下で 1 つずつ呼ばれるため、記録する場所はハンドルごとに 1 つで足ります。比較は、コールバックを実行中のスレッドが生存している間だけ行うため、ID の再割り当ては問題になりません。
 
@@ -656,9 +656,9 @@ if (cplat_atomic_load_i32(&ctx->callback_active, ...) != 0 &&
 
 | 箇所 | 現在の記述 |
 | --- | --- |
-| [process.h](../../../cplat/prod/include/cplat/runtime/process.h) 74 行目 (TID)、61 行目 (PID) | 「ログ出力など、診断目的で…使用します」 |
-| [api-cheatsheet.md](../../../cplat/docs/api-cheatsheet.md) 386 行目 (TID) | 「診断目的の識別子です」 |
-| [runtime.md](../../../cplat/docs/functional-spec/runtime.md) 35-36 行目の要件 `CPLAT-RUNTIME-FUNC-010` <!-- cplat-req: uuid=0e823b69-8e80-457a-997a-60fb0fdecc79 --> (PID)、`CPLAT-RUNTIME-FUNC-011` <!-- cplat-req: uuid=7f2bb4ce-766b-4fde-8577-ab1c9aecdb3c --> (TID) と 72-75 行目の本文 | 「診断で識別するための数値を取得します」 |
+| [process.h](../../../../cplat/prod/include/cplat/runtime/process.h) 74 行目 (TID)、61 行目 (PID) | 「ログ出力など、診断目的で…使用します」 |
+| [api-cheatsheet.md](../../../../cplat/docs/api-cheatsheet.md) 386 行目 (TID) | 「診断目的の識別子です」 |
+| [runtime.md](../../../../cplat/docs/functional-spec/runtime.md) 35-36 行目の要件 `CPLAT-RUNTIME-FUNC-010` <!-- cplat-req: uuid=0e823b69-8e80-457a-997a-60fb0fdecc79 --> (PID)、`CPLAT-RUNTIME-FUNC-011` <!-- cplat-req: uuid=7f2bb4ce-766b-4fde-8577-ab1c9aecdb3c --> (TID) と 72-75 行目の本文 | 「診断で識別するための数値を取得します」 |
 
 Table: cplat で用途を診断に限っている記述
 
@@ -734,7 +734,7 @@ cplat の説明を汎用化する対象を、スレッド ID (`cplat_process_get
 **Context**
 
 現在の要件文は「cplat の実行時支援機能は、現在のスレッドを診断で識別するための数値を取得します。」です。  
-[機能仕様の記載規範](../../../general/docs/functional-spec-guideline.md) の「要件 ID と UUID の変更」節 (208-217 行) は、次のように定めています。
+[機能仕様の記載規範](../../../../general/docs/functional-spec-guideline.md) の「要件 ID と UUID の変更」節 (208-217 行) は、次のように定めています。
 
 - 意味を保った表現修正と要件の具体化では、UUID を維持します。
 - 別の論理要件に置き換える場合は、既存の ID と UUID を廃止し、新しい ID と UUID を付与します。

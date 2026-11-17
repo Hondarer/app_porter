@@ -49,7 +49,7 @@
 状態: `打ち切り (2026-11-17)。やり直しの案件は porter-transport-performance-redo-20261117`  
 合意版: `2` (第 1 ゲート、Q-001〜Q-005)。追加判断: 版 6 (Q-006/Q-007 解決済み)
 
-この文書は、[261115-porter-reject-recovery-backlog.md](../current/261115-porter-reject-recovery-backlog.md) に記録された BL-001 (TCP の約 40[ms] 停止) と BL-002 (小メッセージ・圧縮送信・N:1 外部返信の処理件数低下と通知遅延増加) について、事前のコード調査、仮説と事実の整理、および段階的な原因特定・対処計画をまとめた検討文書です。  
+この文書は、[261115-porter-reject-recovery-backlog.md](261115-porter-reject-recovery-backlog.md) に記録された BL-001 (TCP の約 40[ms] 停止) と BL-002 (小メッセージ・圧縮送信・N:1 外部返信の処理件数低下と通知遅延増加) について、事前のコード調査、仮説と事実の整理、および段階的な原因特定・対処計画をまとめた検討文書です。  
 版 1 (2026-11-15) では元案件 `porter-reject-recovery` の進行中状態を踏まえた調査と Q-001〜Q-005 の提示までを行い、版 2 (2026-11-16) ではユーザーの回答受付および元案件の完了確認を経て第 1 ゲートを通過し、`261115-porter-transport-performance-design.md` を新規作成しました。  
 版 2 の調査ターンでは、ソース コードの変更、ビルド、実測、Git の書き込みは行っていません。  
 版 3 では承認と実行指示に従ってステージ 0 と BL-001 を進め、版 4 で両 OS の P4/P5 A/B、版 5 で wrap プロファイルの実行可能性を確認しました。版 6 では Q-006 A による BL-001 の性能トレードオフ受容と、Q-007 B の回答記録を行いました。低負荷サンプリングの方法案はレビュー前で、pilot の設計・実装・測定は未実施です。BL-002 の原因・寄与率は未特定です。
@@ -60,11 +60,11 @@
 
 | 種別 | パス / 対象 | 主な確認内容 |
 | --- | --- | --- |
-| 元残課題 | `app/porter/docs/prompts/current/261115-porter-reject-recovery-backlog.md` | BL-001、BL-002 の起票内容と参考根拠 |
-| 元案件検討 (2026-11-15 調査時→2026-11-16 完了確認) | `app/porter/docs/prompts/current/261115-porter-reject-recovery-discussion.md` | 2026-11-15 時点は WBS 4.1 実施中。2026-11-16 確認で版 4・状態 `完了`・WBS 全完了・第 3 ゲート承認済み (Tetsuo Honda)・CI run 43724723928 全 8 ジョブ成功・P3 Windows 再測定 25 試行再開を確認 |
-| 元案件設計 | `app/porter/docs/prompts/current/261115-porter-reject-recovery-design.md` | `thread_recv_window.c` と `window.c/h` の設計範囲 (コミット `68ab091` / `11016c1` 反映済み) |
-| 性能検証記録 (旧基準) | `app/porter/docs/prompts/current/261115-porter-handle-lifecycle-perf-validation.md` | P1〜P5 の測定条件、旧固定版 (`porter 6e9002c`/`9e55a0c`)、比較不能条件、傾向値 |
-| 性能計測生データ (旧基準) | `app/porter/docs/prompts/current/261115-porter-handle-lifecycle-perf.csv` | Windows/Linux、old/new の各実行中央値と分布 |
+| 元残課題 | `app/porter/docs/prompts/past/261115-porter-reject-recovery-backlog.md` | BL-001、BL-002 の起票内容と参考根拠 |
+| 元案件検討 (2026-11-15 調査時→2026-11-16 完了確認) | `app/porter/docs/prompts/past/261115-porter-reject-recovery-discussion.md` | 2026-11-15 時点は WBS 4.1 実施中。2026-11-16 確認で版 4・状態 `完了`・WBS 全完了・第 3 ゲート承認済み (Tetsuo Honda)・CI run 43724723928 全 8 ジョブ成功・P3 Windows 再測定 25 試行再開を確認 |
+| 元案件設計 | `app/porter/docs/prompts/past/261115-porter-reject-recovery-design.md` | `thread_recv_window.c` と `window.c/h` の設計範囲 (コミット `68ab091` / `11016c1` 反映済み) |
+| 性能検証記録 (旧基準) | `app/porter/docs/prompts/past/261115-porter-handle-lifecycle-perf-validation.md` | P1〜P5 の測定条件、旧固定版 (`porter 6e9002c`/`9e55a0c`)、比較不能条件、傾向値 |
+| 性能計測生データ (旧基準) | `app/porter/docs/prompts/past/261115-porter-handle-lifecycle-perf.csv` | Windows/Linux、old/new の各実行中央値と分布 |
 | 前駆案件記録 | `app/porter/docs/prompts/past/261107-porter-handle-lifecycle-design.md` / `-validation.md` | ハンドル非再利用設計、通知スレッド・キュー、24 条件の根拠 |
 | cplat ソケット | `app/cplat/prod/include/cplat/net/socket.h`、`app/cplat/prod/libsrc/cplat/net/socket_linux.c`、`app/cplat/prod/libsrc/cplat/net/socket_windows.c` | 公開ソケット API と `set_int_option()`、Linux/Windows 実装 |
 | porter TCP 接続 | `app/porter/prod/libsrc/porter/api/api_open_paths_tcp.c`、`app/porter/prod/libsrc/porter/thread/thread_connect_prepare.c`、`app/porter/prod/libsrc/porter/thread/potr_connect_thread.c` | listen/connect/accept/再接続と `SO_REUSEADDR` の扱い |
@@ -553,7 +553,7 @@ Table: 質問一覧
 
 - 更新 (版 2 時点の本検討): `app/porter/docs/prompts/current/261115-porter-transport-performance-discussion.md` (第 1 ゲート通過、第 2 ゲート承認待ち。承認は 2026-11-16 に受領)
 - 新規作成 (詳細対処計画): `app/porter/docs/prompts/current/261115-porter-transport-performance-design.md` (最終対処計画。ただし BL-002 の実装設計確定と数値目標合意は計測後の別判断)
-- 状態更新 (元残課題): `app/porter/docs/prompts/current/261115-porter-reject-recovery-backlog.md` (BL-001、BL-002 の状態を「検討中 (計画承認待ち・実装未着手)」に維持し、凍結条件満了と `design.md` 参照を追記。対応済みにはしない)
+- 状態更新 (元残課題): `app/porter/docs/prompts/past/261115-porter-reject-recovery-backlog.md` (BL-001、BL-002 の状態を「検討中 (計画承認待ち・実装未着手)」に維持し、凍結条件満了と `design.md` 参照を追記。対応済みにはしない)
 
 受入条件:
 

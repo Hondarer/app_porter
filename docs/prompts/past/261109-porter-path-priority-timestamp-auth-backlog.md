@@ -24,7 +24,7 @@
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
 | BL-003 | cplat の単調増加時計を高分解能の実装へ一本化する | 見送り | 低 | 対応済み (実機計測・一本化完了。仮想環境では未計測) |
-| BL-004 | Windows/MSVC でのビルド・局所テストと OS 間の相互接続確認が未実施 | 移管済み | 高 | Windows 検証完了。相互接続 10/12 成功。残りは新 backlog `../current/261114-porter-windows-verification-clock-unify-backlog.md` へ移管 |
+| BL-004 | Windows/MSVC でのビルド・局所テストと OS 間の相互接続確認が未実施 | 移管済み | 高 | Windows 検証完了。相互接続 10/12 成功。残りは新 backlog `261114-porter-windows-verification-clock-unify-backlog.md` へ移管 |
 
 作業中に記録した BL-001 (PING の nonce の再使用) と BL-002 (`max_payload` の検査上限) は、本案件で解消したため一覧から除外しました。課題 ID は振り直していません。
 
@@ -39,7 +39,7 @@
 
 - 摘出契機: 2026-11-14 の対話で、作業 WBS の 4.1 の成果物に対し、ユーザーから「`cplat_clock_get_monotonic()` の実装を高分解能に置き換えるだけでよいのではないか」との確認を受けました。
 - 今回の見送り理由: (解消) Windows 実機で計測し、その結果を見てからユーザーが判断するため、計測まで一本化を保留しました。
-- 継続作業での経緯と対処: 2026-11-14 に Windows 11 実機で計測しました。環境は Windows 11 Pro for Workstations build 26300、MSVC x64 19.50.35724、Intel Xeon Gold 6254、仮想化機能あり (`HypervisorPresent=True`) です。QPF は 10 MHz、QPF/QPC は全試行で成功しました。1,000,000 回を 10 試行した中央値は、`GetTickCount64()` → timespec が 3.165 ns/回、QPF 毎回 + QPC → timespec が 35.575 ns/回でした (前者の最小/最大 3.160/3.186 ns、後者 35.528/35.670 ns)。補助の QPF キャッシュ経路は 34.666 ns/回でしたが、判断には使用していません。TEMP の `C:\Users\tetsuo\AppData\Local\Temp\porter-clock-bench-261114-86cab813\measurement-refined.csv` が計測根拠です。ユーザーは性能低下を許容して一本化を判断しました。QPF/QPC を毎回使う単一 API に変更し、古い高分解能専用 API とその mock、エクスポート表、テストを削除しました。porter は timespec の値を検証して `tx_mono_ns` に変換します。性能上の課題が出た場合だけ `GetTickCount64()` 専用の高速版関数を検討し、課題がない限り一系統を維持します。Windows で cplat と porter の対象ライブラリをビルドし、clock/export および packetSeal/packetEmission の対象テストはすべて成功しました。仮想環境では計測していません。結果は `../current/261114-porter-windows-verification-clock-unify-discussion.md` と design に記録します。
+- 継続作業での経緯と対処: 2026-11-14 に Windows 11 実機で計測しました。環境は Windows 11 Pro for Workstations build 26300、MSVC x64 19.50.35724、Intel Xeon Gold 6254、仮想化機能あり (`HypervisorPresent=True`) です。QPF は 10 MHz、QPF/QPC は全試行で成功しました。1,000,000 回を 10 試行した中央値は、`GetTickCount64()` → timespec が 3.165 ns/回、QPF 毎回 + QPC → timespec が 35.575 ns/回でした (前者の最小/最大 3.160/3.186 ns、後者 35.528/35.670 ns)。補助の QPF キャッシュ経路は 34.666 ns/回でしたが、判断には使用していません。TEMP の `C:\Users\tetsuo\AppData\Local\Temp\porter-clock-bench-261114-86cab813\measurement-refined.csv` が計測根拠です。ユーザーは性能低下を許容して一本化を判断しました。QPF/QPC を毎回使う単一 API に変更し、古い高分解能専用 API とその mock、エクスポート表、テストを削除しました。porter は timespec の値を検証して `tx_mono_ns` に変換します。性能上の課題が出た場合だけ `GetTickCount64()` 専用の高速版関数を検討し、課題がない限り一系統を維持します。Windows で cplat と porter の対象ライブラリをビルドし、clock/export および packetSeal/packetEmission の対象テストはすべて成功しました。仮想環境では計測していません。結果は `261114-porter-windows-verification-clock-unify-discussion.md` と design に記録します。
 
 ### 影響範囲とリスク
 
@@ -93,10 +93,10 @@ Windows 検証は framework/testfw、app/cplat、app/openssl、app/porter の対
 
 Q-006=A で明示的に残した Windows VM 時計計測は、新案件 backlog BL-002 に独立項目として転記しました。certificateTest make 構成時の unexpected EOF stderr は新案件 backlog BL-003 に切り分けました。古い生成 `.warn` と既存の一般警告は今回の新規残課題に含めません。
 
-今回の残課題の正本: `../current/261114-porter-windows-verification-clock-unify-backlog.md`。本書の BL-003/BL-004 の履歴は保持し、後続対応は当該案件 backlog で追跡します。
+今回の残課題の正本: `261114-porter-windows-verification-clock-unify-backlog.md`。本書の BL-003/BL-004 の履歴は保持し、後続対応は当該案件 backlog で追跡します。
 
 ## past への保管
 
 2026-11-15、元案件の成果物承認と残課題の移管が完了していることを確認し、関連する discussion・design とともに `past/` へ移動しました。  
 未解決の課題が解消済みになったことを意味しません。  
-マルチキャスト設定契約、Windows 仮想環境での時計計測、certificateTest の make 構成時の stderr は、[移管先の残課題一覧](../current/261114-porter-windows-verification-clock-unify-backlog.md) の BL-001〜BL-003 で追跡します。
+マルチキャスト設定契約、Windows 仮想環境での時計計測、certificateTest の make 構成時の stderr は、[移管先の残課題一覧](261114-porter-windows-verification-clock-unify-backlog.md) の BL-001〜BL-003 で追跡します。

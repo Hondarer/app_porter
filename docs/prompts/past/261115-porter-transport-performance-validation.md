@@ -34,7 +34,7 @@ Table: 実行開始時の HEAD
 親の作業ツリーには、実行開始前から `app/porter` のサブモジュール差分と、未追跡の `framework/makefw` がありました。  
 2026-11-16 17:39 JST の再確認では、親は `m app/cplat`、`m app/porter`、`? framework/makefw` です。  
 `framework/makefw` は今回の変更対象ではありません。  
-porter の既存差分である `docs/prompts/current/261115-porter-reject-recovery-backlog.md` は残しています。
+porter の既存差分である `docs/prompts/past/261115-porter-reject-recovery-backlog.md` は残しています。
 
 詳細計画が候補にしていた親 `721131ef`、porter `11016c1`、cplat `822dc7da` は、実行開始時の HEAD と一致しません。  
 基準は実行開始時の HEAD です。

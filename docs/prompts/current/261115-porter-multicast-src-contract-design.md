@@ -116,4 +116,4 @@ Table: handleConcurrencyTest の変更
 
 ## 完了後の記録
 
-作業の完了後に、過去 backlog `261114-porter-windows-verification-clock-unify-backlog.md` の BL-001 に、この案件での対処内容と相互接続試験の結果を追記し、状態を更新します。
+作業の完了後に、過去 backlog `../past/261114-porter-windows-verification-clock-unify-backlog.md` の BL-001 に、この案件での対処内容と相互接続試験の結果を追記し、状態を更新します。
