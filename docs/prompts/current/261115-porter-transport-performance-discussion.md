@@ -3,14 +3,14 @@
 文書種別: 検討用 Markdown (discussion)
 検討 ID: porter-transport-performance-20261115
 版: 6
-状態: ユーザー指示により一時中断。BL-001 の性能トレードオフは受容済み。BL-002 の pilot は未着手
-最終更新日時: 2026-11-17 04:37:32 JST
-最終更新エージェント: Codex (Grok の作業管理とレビュー)
+状態: 打ち切り (2026-11-17、ユーザー指示)。この案件は再開しません。やり直しの案件は `261117-porter-transport-performance-redo-discussion.md` (検討 ID: porter-transport-performance-redo-20261117) です。この文書の合意 (Q-001〜Q-007) は、やり直しの案件へ自動では引き継ぎません
+最終更新日時: 2026-11-17 04:58:00 JST
+最終更新エージェント: claude code / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc (打ち切りの記録だけを追記。本文は Codex による版 6 のまま)
 稼働 OS: Windows
 上流文書: `261115-porter-reject-recovery-backlog.md` (BL-001、BL-002)、`261115-porter-reject-recovery-discussion.md` (元案件完了確認済み)、`261115-porter-handle-lifecycle-perf-validation.md` (旧検証記録)
 下流文書: `261115-porter-transport-performance-design.md` (詳細対処計画、第 2 ゲート通過)、`261115-porter-transport-performance-validation.md` (作業中の検証記録)
 対象成果物: BL-001 の実装・局所検証・P4/P5 A/B 測定と、BL-002 のプロファイル方法検証。Q-006/Q-007 の回答を記録しました。Q-007 B の低負荷計測 pilot はユーザー指示で中断し、未着手です
-再開手順: このファイルを開いたエージェントは、作業の前に `.agents/skills/agree-before-implement/SKILL.md` を読み込んでください。Q-001〜Q-007 の回答を確認し、作業 WBS の `← **CURRENT**` から再開してください。2026-11-16 に詳細計画が承認され、`grok --yolo high` による実行指示を受領しています。BL-001 の性能トレードオフは Q-006 A で受容されました。Q-007 B の低負荷計測方式は Grok が案を提示しましたが、Sol の設計レビューと pilot 実行前にユーザー指示で中断しました。`profile/pilot/` は存在せず、pilot 用ソース・ビルド・測定結果はありません。BL-002 製品改修と Git の書き込みは対象外です。全体テストと Doxygen 全体生成は未完了です。結果と限界は検証記録を参照してください。
+再開手順: この案件は打ち切りました。作業 WBS の `← **CURRENT**` から再開しないでください。BL-001 の実装は cplat と porter のブランチ `fix/bl001-tcp-nodelay` にあり、`main` には入っていません。作業は `261117-porter-transport-performance-redo-discussion.md` で続けます。以下は打ち切り前の再開手順の記録です。このファイルを開いたエージェントは、作業の前に `.agents/skills/agree-before-implement/SKILL.md` を読み込んでください。Q-001〜Q-007 の回答を確認し、作業 WBS の `← **CURRENT**` から再開してください。2026-11-16 に詳細計画が承認され、`grok --yolo high` による実行指示を受領しています。BL-001 の性能トレードオフは Q-006 A で受容されました。Q-007 B の低負荷計測方式は Grok が案を提示しましたが、Sol の設計レビューと pilot 実行前にユーザー指示で中断しました。`profile/pilot/` は存在せず、pilot 用ソース・ビルド・測定結果はありません。BL-002 製品改修と Git の書き込みは対象外です。全体テストと Doxygen 全体生成は未完了です。結果と限界は検証記録を参照してください。
 -->
 
 # porter の TCP 遅延と送信・通知性能の改善に関する検討
@@ -32,7 +32,7 @@
 - ✅ 9. wrap プロファイルの実行可能性を確認。計装影響と CPU 計数の制約により、元の方式は原因帰属に不適格
 - ✅ 10. Q-006 A を記録。全 TCP への常時適用と測定済み throughput 低下を受容し、BL-001 を対応完了として元 backlog を更新
 - ✅ 11. Q-007 B を記録。別方式の低負荷サンプリングを設計し、小規模に検証する方針を合意
-- ⏸️ 12. 一時プロファイル用複製で低負荷サンプリング候補を実装し、通常版との性能差と帰属の安定性を小規模に検証する。ユーザー指示で中断し、Grok の案に対する Sol のレビュー、pilot 用ソース・ビルド・測定は未実施。`profile/pilot/` は未作成 ← **CURRENT**
+- ⏸️ 12. 一時プロファイル用複製で低負荷サンプリング候補を実装し、通常版との性能差と帰属の安定性を小規模に検証する。ユーザー指示で中断し、Grok の案に対する Sol のレビュー、pilot 用ソース・ビルド・測定は未実施。`profile/pilot/` は未作成。2026-11-17 に案件を打ち切ったため、この項目以降は実施しません
 - ⏸️ 13. pilot 結果を評価し、BL-002 の本プロファイルへ進む方法の妥当性を確認する
 - ⏸️ 14. 妥当な方法が得られた場合、合意済み条件で両 OS の 8 観点プロファイルと区間計測を実施
 - ⏸️ 15. 主因・寄与率に基づき BL-002 の改善施策と数値目標を別判断で確定
@@ -46,7 +46,7 @@
 検討 ID: `porter-transport-performance-20261115`  
 作成日: `2026-11-15`  
 版: `6`  
-状態: `一時中断。BL-001 は性能トレードオフ受容済み。BL-002 の pilot は未着手`  
+状態: `打ち切り (2026-11-17)。やり直しの案件は porter-transport-performance-redo-20261117`  
 合意版: `2` (第 1 ゲート、Q-001〜Q-005)。追加判断: 版 6 (Q-006/Q-007 解決済み)
 
 この文書は、[261115-porter-reject-recovery-backlog.md](261115-porter-reject-recovery-backlog.md) に記録された BL-001 (TCP の約 40[ms] 停止) と BL-002 (小メッセージ・圧縮送信・N:1 外部返信の処理件数低下と通知遅延増加) について、事前のコード調査、仮説と事実の整理、および段階的な原因特定・対処計画をまとめた検討文書です。  

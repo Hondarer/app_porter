@@ -6,7 +6,7 @@
 稼働 OS: Windows
 上流文書: `261115-porter-transport-performance-discussion.md` (検討用 Markdown、合意版: 版 2、実行記録・追加判断: 版 3〜6)、`261115-porter-reject-recovery-backlog.md` (BL-001、BL-002)。削除されている場合があります。
 下流文書: `261115-porter-transport-performance-validation.md` (作業中の検証記録)
-再開手順: このファイルを開いたエージェントは、作業の前に `.agents/skills/agree-before-implement/SKILL.md` を読み込んでください。2026-11-16 にユーザーがこの詳細対処計画を承認し、`grok --yolo high` による実行を指示したため、第 2 ゲートは通過しています。承認だけを実行許可と読まず、この実行指示の範囲であるステージ 0 と BL-001 に限って実装と局所テストを進めます。BL-002 の製品改修、Git の書き込み、全体テストは指示の範囲外です。進行位置は上流の検討用 Markdown の作業 WBS を確認してください。
+再開手順: この案件は 2026-11-17 にユーザー指示で打ち切りました。この計画に従って作業を再開しないでください。やり直しの案件は `261117-porter-transport-performance-redo-discussion.md` です。BL-001 の実装は cplat と porter のブランチ `fix/bl001-tcp-nodelay` にあり、`main` には入っていません。以下は打ち切り前の再開手順の記録です。このファイルを開いたエージェントは、作業の前に `.agents/skills/agree-before-implement/SKILL.md` を読み込んでください。2026-11-16 にユーザーがこの詳細対処計画を承認し、`grok --yolo high` による実行を指示したため、第 2 ゲートは通過しています。承認だけを実行許可と読まず、この実行指示の範囲であるステージ 0 と BL-001 に限って実装と局所テストを進めます。BL-002 の製品改修、Git の書き込み、全体テストは指示の範囲外です。進行位置は上流の検討用 Markdown の作業 WBS を確認してください。
 -->
 
 # porter の TCP 遅延と送信・通知性能の改善 詳細対処計画
