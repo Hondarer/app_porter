@@ -4,7 +4,7 @@
 最終更新日時: 2026-11-17 17:52:44 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
 稼働 OS: Windows
-上流文書: `261115-porter-reject-recovery-backlog.md` (BL-001、BL-002 の対策元)。打ち切った旧案件の記録として `261115-porter-transport-performance-discussion.md`、`261115-porter-transport-performance-design.md`、`261115-porter-transport-performance-validation.md` があります。削除されている場合があります。
+上流文書: `261115-porter-reject-recovery-backlog.md` (BL-001、BL-002 の対策元)。打ち切った旧案件の記録として `../past/261115-porter-transport-performance-discussion.md`、`../past/261115-porter-transport-performance-design.md`、`../past/261115-porter-transport-performance-validation.md` があります。削除されている場合があります。
 下流文書: `261117-porter-transport-performance-redo-design.md` (最終仕様)、`261117-porter-transport-performance-redo-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
 再開手順: このファイルを開いたエージェントは、作業の前に agree-before-implement スキルを読み込んでください。ユーザーが編集した最新版を読み直し、作業 WBS の `← **CURRENT**` の項目から再開します。最終更新エージェントのセッション情報や稼働 OS・最終更新日時が参照可能であれば再開時のコンテキストや環境差分の把握に利用し、別エージェントや別環境・別 OS からの引き継ぎ、担当変更によりセッションが見つからない場合も異常とせず、文書の記載から継続してください。`← **CURRENT**` の項目は処理が中止された項目である場合があり、どこまで進んでいたかは文書だけでは分かりません。対象成果物の内容を確認して実施済みの範囲を特定してから、作業を再開してください。`← **CURRENT**` がなく、作業 WBS がすべて完了 (✅) であれば、この案件の合意フローは完了しています。旧案件の文書は経緯の記録であり、旧案件の合意 (旧 Q-001〜Q-007) をこの案件の合意として扱わないでください。引き継ぐ範囲はこの文書の Q で決めます。
 -->
@@ -72,7 +72,7 @@
 | 種別 | 対象 | 版 |
 | --- | --- | --- |
 | 対策元の残課題 | `261115-porter-reject-recovery-backlog.md` の BL-001、BL-002 | porter `main` |
-| 旧案件の記録 | `261115-porter-transport-performance-discussion.md` (版 6)、`-design.md`、`-validation.md` | porter `12756a3` |
+| 旧案件の記録 | `../past/261115-porter-transport-performance-discussion.md` (版 6)、`-design.md`、`-validation.md` | porter `12756a3` |
 | BL-001 の実装 | cplat のブランチ `fix/bl001-tcp-nodelay` (`19302982`)、porter のブランチ `fix/bl001-tcp-nodelay` (`e625621`) | `main` には未取り込み |
 | TCP の送信経路 | `prod/libsrc/porter/thread/potr_send_thread.c` の `tcp_write_path()`、`prod/include/porter/porter_const.h` | porter `e4104b5` |
 | 測定プログラムと結果 | Windows の `C:\Users\tetsuo\AppData\Local\Temp\porter-transport-perf-ab-20261116` (`bench/`、`results/`、`profile/`) | リポジトリ外の一時領域 |
