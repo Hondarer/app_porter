@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 検討用 Markdown (discussion)
-最終更新日時: 2026-11-16 21:28:00 JST
-最終更新エージェント: agy / セッション ID: 15854f3f-cecf-4d5e-b7b6-56e4d5fa9320
+最終更新日時: 2026-11-18 05:47:26 JST
+最終更新エージェント: claude code / セッション ID: 2597d650-1196-4c79-aa7b-18ba3526112b
 稼働 OS: Windows
 上流文書: `261114-porter-windows-verification-clock-unify-backlog.md` (BL-001 の対策元)、`261114-porter-windows-verification-clock-unify-discussion.md` (Q-011)。削除されている場合があります。
 下流文書: `261115-porter-multicast-src-contract-design.md` (最終仕様)、`261115-porter-multicast-src-contract-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
@@ -57,9 +57,9 @@
         - ✅ 4.13.3. 最終仕様 (design.md) への追記と、追記部分の承認の受付 (第 2 ゲート)。2026-11-16 に Tetsuo Honda から「承認」を受領
         - ✅ 4.13.4. `app/porter/test/src/integration/porterSendRecvTest/handleConcurrencyTest.cc` の修正 (grok へ委譲)。Windows/MSVC で `porterSendRecvTest` 36 件成功、`handleConcurrencyTest` 10 件を 5 回繰り返して失敗 0
         - ✅ 4.13.5. コミット、プッシュ、CI の結果確認と、案件 backlog BL-001 の状態更新 (porter `8220519` を含む CI run 43835974193 で全ジョブ成功を確認し、案件 backlog BL-001 を対処済みへ更新)
-    - 🔄 4.10. ユーザーの環境での PSK と証明書の Windows/WSL 相互接続 12 組み合わせの再実施 ([Q-004](#q-004-受入試験の範囲)) ← **CURRENT**
-    - ⏸️ 4.11. 受入条件への適合確認 (全完確認)
-    - ⏸️ 4.12. 残課題一覧 (`261115-porter-multicast-src-contract-backlog.md`) の再構築と整理、および過去 backlog BL-001 の経緯・対処の更新
+    - ✅ 4.10. ユーザーの環境での PSK と証明書の Windows/WSL 相互接続 12 組み合わせの再実施 ([Q-004](#q-004-受入試験の範囲))。2026-11-18 に、ユーザーの指示でエージェントが自動実施し、12 件すべて成功 (結果は「反映と検証の記録」)
+    - ✅ 4.11. 受入条件への適合確認 (全完確認)。単体テストは CI run 43835974193 で成功、相互接続 12 組み合わせは 4.10 で全件成功
+    - 🔄 4.12. 残課題一覧 (`261115-porter-multicast-src-contract-backlog.md`) の再構築と整理、および過去 backlog BL-001 の経緯・対処の更新。案件 backlog BL-002 は、継続案件 261116-makefw-subdir-rebuild-race の CI の成功を受けて 2026-11-18 に「解消」へ更新済み。残りは文書の再構築と整理 ← **CURRENT**
 - ⏸️ 5. 成果物の承認の受付 (第 3 ゲート)
     - ⏸️ 5.1. 成果物・検証結果・残課題の提示
     - ⏸️ 5.2. 対話セッションにおける成果物の承認の受付 (「承認」または「完了」の受領によるスキル完了)
@@ -525,4 +525,34 @@ A の選択を確認しました。`handleConcurrencyTest.cc` の `open_n1()` �
 
 - 変更: `config.md`、`porter_type.h`、`potr_context.h`、`api_open_paths_udp.c/.h`、`potr_service_close.c`、`porter-services.jsonc`、単体テスト 3 ファイル。機能仕様、自動生成物、公開構造体の形は変更していません。
 - 検証: grok が Windows/MSVC で `apiOpenPathsUdpTest` (22 件)、`potrServiceCloseTest` (11 件)、`configLoadServiceTest` (44 件) の `make test` を実行し、失敗 0 でした。`config.md` は `text_style_jp.py` の確認済みです。追加範囲の `handleConcurrencyTest.cc` は Windows/MSVC で `porterSendRecvTest` 36 件成功、`handleConcurrencyTest` 10 件を 5 回繰り返して失敗 0 でした。CI run 43835974193 (親 `fbbc1d848a`、porter `5ff9609`) で、`ebb79c2` と `8220519` を含む全ジョブ (Windows、ol8、ol9、ol10、docs、verify-gen、deploy-pages、warnings-summary) の成功を確認しました。
-- 未実施: Windows/WSL 相互接続 12 組み合わせ (ユーザーの環境で実施)。
+- 未実施: Windows/WSL 相互接続 12 組み合わせ (ユーザーの環境で実施)。2026-11-18 に実施しました (下記)。
+
+2026-11-18 に、ユーザーの指示 (「WSL 側と相談して自動でできないか」「ビルドもあなたが実施して良い」) で、claude code が Windows/WSL 相互接続 12 組み合わせを自動実施しました。
+
+- 対象の版: Windows は porter `0436424`、cplat `19302982` (2026-11-18 05:44 にビルド)。WSL (Oracle Linux 8、NAT) は porter `ad93ffbe`、cplat `19302982` の作業ツリーで、バイナリは porter `a382a1d` の時点のビルドです。`a382a1d` から `0436424` までの差分に `prod` 配下の変更はありません。
+- 方式: Windows 側の Python スクリプト 1 本が、`wsl.exe` 経由で WSL の `porter-test` (receiver) を起動し、続けて Windows の `porter-test.exe` (sender) を起動します。sender の標準入力へ `send <トークン>` を書き、receiver の出力にトークンが現れれば成功とします。`unicast_bidir` は逆方向 (WSL から Windows) も確認します。
+- アドレス: Windows `172.28.208.1`、WSL `172.28.209.184`。サービス ID は 78100 から 78111、ポートは 59000 番台です。
+- マルチキャストの設定: 送信側と受信側で同じ定義を使い、`src_addr1` を Windows、`dst_addr1` を WSL の参加 NIC にしました (最終仕様の受入条件のとおり)。
+
+```json
+{
+  "type": "multicast",
+  "src_addr1": "172.28.208.1",
+  "src_port": 59132,
+  "dst_addr1": "172.28.209.184",
+  "dst_port": 59133,
+  "multicast_group": "239.255.111.112"
+}
+```
+
+| 認証 | unicast | unicast_bidir | unicast_bidir_n1 | tcp | tcp_bidir | multicast |
+| --- | --- | --- | --- | --- | --- | --- |
+| PSK | 成功 | 成功 (双方向) | 成功 | 成功 (2 回目) | 成功 (2 回目) | 成功 |
+| 証明書 | 成功 (2 回目) | 成功 (双方向) | 成功 | 成功 | 成功 | 成功 (2 回目) |
+
+Table: Windows/WSL 相互接続 12 組み合わせの結果 (2026-11-18)
+
+- 「2 回目」は、1 回目の `send` を sender が「未接続のため送信できません」で拒否し、1 秒後の送り直しで届いた組み合わせです。送り直しを入れる前の実行では、接続の確立前に送信した 5 件が同じ理由で失敗しました。これは試験スクリプトが送信を始める時機の問題で、接続の確立後の送信はすべて届いています。
+- 証明書の `unicast` と `multicast` では、receiver が起動の約 1 秒後に `certificate: authentication failed: handshake failed or peer rejected certificate` の警告を 1 回出し、その後に接続が確立しました。sender の起動前に行われた認証の試行とみられますが、原因は確認していません。
+- Windows のファイアウォールの設定は変更していません。
+- スクリプト、生成した設定、組み合わせごとのログは作業用の一時領域にあり、リポジトリでは管理していません。
