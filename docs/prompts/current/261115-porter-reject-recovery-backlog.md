@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-17 07:50:00 JST
-最終更新エージェント: claude code / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc (やり直しの継続案件の方針の合意と最終仕様の作成を記録)
+最終更新日時: 2026-11-18 01:18:53 JST
+最終更新エージェント: claude code (Opus 5.5) / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
 稼働 OS: Windows
 上流文書: `261115-porter-reject-recovery-design.md` (最終仕様)、`261115-porter-reject-recovery-discussion.md` (検討用 Markdown、版 4・完了)。いずれも削除されている場合があります。
 下流文書: BL-001、BL-002 の継続作業 (2026-11-17 開始、検討 ID: `porter-transport-performance-redo-20261117`): `261117-porter-transport-performance-redo-discussion.md` (検討用 Markdown)、`261117-porter-transport-performance-redo-design.md` (最終仕様)。打ち切った旧継続案件 (検討 ID: `porter-transport-performance-20261115`、2026-11-17 に打ち切り) の記録: `../past/261115-porter-transport-performance-discussion.md` (版 6)、`../past/261115-porter-transport-performance-design.md`、`../past/261115-porter-transport-performance-validation.md`。未作成の場合や、削除されている場合があります。
@@ -25,8 +25,8 @@
 
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
-| BL-001 | TCP の送信ソケットに TCP_NODELAY がなく約 40[ms] の停止が生じる | 過去 backlog からの転記 | 中 | 対応中 (実装はブランチ `fix/bl001-tcp-nodelay` で保持し、`main` には未取り込み。継続案件 `porter-transport-performance-redo-20261117` で最終仕様 (版 2) を承認済み。パケットをまとめて送る変更を含めて実装し、Windows の全件テストは成功。Linux の全件テストと CI を確認中。[検討文書](261117-porter-transport-performance-redo-discussion.md)、[最終仕様](261117-porter-transport-performance-redo-design.md)) |
-| BL-002 | 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える | 過去 backlog からの転記 | 中 | 検討中 (原因は未特定で、製品改修は未着手。未対処 (原因は未特定で、製品改修は未着手。継続案件 `porter-transport-performance-redo-20261117` の対象外とし、BL-001 の完了後に別の案件で扱う。[検討文書](261117-porter-transport-performance-redo-discussion.md)) |
+| BL-001 | TCP の送信ソケットに TCP_NODELAY がなく約 40[ms] の停止が生じる | 過去 backlog からの転記 | 中 | 解消 (継続案件 `porter-transport-performance-redo-20261117` で `TCP_NODELAY` とまとめ送りを実装し、2026-11-18 に cplat、porter、親リポジトリの `main` へ取り込んだ。[検討文書](261117-porter-transport-performance-redo-discussion.md)、[最終仕様](261117-porter-transport-performance-redo-design.md)) |
+| BL-002 | 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える | 過去 backlog からの転記 | 中 | 未対処 (原因は未特定で、製品改修は未着手。継続案件 `porter-transport-performance-redo-20261117` の対象外とし、BL-001 の完了後に別の案件で扱う。継続案件の [残課題一覧](261117-porter-transport-performance-redo-backlog.md) の BL-001 へ転記した) |
 
 Table: 残課題一覧
 
@@ -54,7 +54,7 @@ Table: 残課題一覧
 
 ### 継続作業での経緯と対処
 
-- **状態**: 検討中 (実装はブランチ `fix/bl001-tcp-nodelay` で保持し、`main` には入っていません。採否と検証の範囲を継続案件で決め直します)
+- **状態**: 解消 (継続案件で `TCP_NODELAY` とまとめ送りを実装し、`main` へ取り込みました)
 - **継続 ID と検討文書**: `porter-transport-performance-redo-20261117` ([261117-porter-transport-performance-redo-discussion.md](261117-porter-transport-performance-redo-discussion.md))
 - **打ち切った旧継続案件の記録**: `porter-transport-performance-20261115` ([261115-porter-transport-performance-discussion.md](../past/261115-porter-transport-performance-discussion.md)、[261115-porter-transport-performance-design.md](../past/261115-porter-transport-performance-design.md)、[261115-porter-transport-performance-validation.md](../past/261115-porter-transport-performance-validation.md))。以下の 2026-11-15 から 2026-11-17 の 4 項目は旧継続案件の経緯です。
 - **対処状況**:
@@ -69,6 +69,8 @@ Table: 残課題一覧
     - 2026-11-17: 性能を測り直し、Linux の 5000[B] の低下が再現しました (圧縮なしの 3 条件で 35.2%〜74.4%)。パケットをまとめて送る試行版で処理件数が戻り、原因は、1400[B] のパケットごとに送信を呼ぶ作りが `TCP_NODELAY` の下でセグメント数を増やすことだと確認しました。ユーザーは、送信キューに溜まったパケットをまとめて 1 回で送る変更をこの課題の対策に含めると決め (検討用 Markdown の Q-007 A)、最終仕様 (版 2) を承認しました。
     - 2026-11-17: まとめて送る変更を porter のブランチ `fix/bl001-tcp-nodelay` (`a382a1d`) に実装しました。実装後の測定で、Linux の 5000[B] は、通常の 2 条件とブロッキング・4 スレッドで対策前を上回りました (+5.7%〜+55.8%)。ブロッキング・1 スレッドは 17.3% 低いままで、既知の特性として継続案件の残課題一覧に記録します。Windows の 5000[B] の圧縮なしの 4 条件は、`TCP_NODELAY` だけの版の 2.2〜4.9 倍になりました。Windows の 5000[B]・ブロッキングで通知遅延の上位が増える件 (1 スレッドの p95 が 140.0[µs] から 694.9[µs]) は原因が未特定です。ユーザーは、絶対値が最大でも約 1.5[ms] で秒の単位の遅延は起きていないことから、問題なしと判断しました。
     - 2026-11-17: Windows で cplat と porter の全件 `make test` が成功しました (失敗 0 件、`.warn` なし)。Linux の全件テストとプル リクエストによる CI は、これから確認します。`main` には未取り込みです。
+    - 2026-11-17: Linux (WSL) で cplat と porter の全件 `make test` が成功しました (cplat 2,156 件、porter 566 件、失敗 0 件、`.warn` なし)。プル リクエスト [#59](https://github.com/Hondarer/c-modernization-kit/pull/59) の CI の 1 回目は、Linux 専用の確保失敗テストの期待値がまとめ送りのバッファーとずれて失敗しました。テストを直し (porter `e102d94`)、2 回目 (run `44077056578`) で全ジョブが成功し、警告は 0 件でした。あわせて、全件テストで実行されていなかった `test/src/cmd` 配下のテストを、`makefile` の追加で実行されるようにしました (`7bfaa32`)。
+    - 2026-11-18: ユーザーの指示で、cplat (`19302982`)、porter (`ee5cfec`)、親リポジトリ (`365a41e3`) の `main` へ fast-forward で取り込みました。状態は「解消」です。Linux の 5000[B]・ブロッキング・1 スレッドで処理件数が対策前より約 17% 低い件は、既知の特性として継続案件の残課題一覧の BL-002 に記録しました。
 
 ## BL-002 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える
 
@@ -98,7 +100,7 @@ Table: 残課題一覧
 
 ### 継続作業での経緯と対処
 
-- **状態**: 検討中 (原因は未特定で、製品改修は未着手です。継続案件でこの課題を扱う範囲を確認しています)
+- **状態**: 未対処 (原因は未特定で、製品改修は未着手です。継続案件の対象外とし、継続案件の残課題一覧の BL-001 へ転記しました)
 - **継続 ID と検討文書**: `porter-transport-performance-redo-20261117` ([261117-porter-transport-performance-redo-discussion.md](261117-porter-transport-performance-redo-discussion.md))
 - **打ち切った旧継続案件の記録**: `porter-transport-performance-20261115` ([261115-porter-transport-performance-discussion.md](../past/261115-porter-transport-performance-discussion.md)、[261115-porter-transport-performance-design.md](../past/261115-porter-transport-performance-design.md))。以下の 2026-11-15 から 2026-11-17 の 3 項目は旧継続案件の経緯です。
 - **対処状況**:

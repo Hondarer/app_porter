@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 検討用 Markdown (discussion)
-最終更新日時: 2026-11-17 23:20:00 JST
+最終更新日時: 2026-11-18 01:25:00 JST
 最終更新エージェント: claude code (Opus 5.5) / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
 稼働 OS: Windows
 上流文書: `261115-porter-reject-recovery-backlog.md` (BL-001、BL-002 の対策元)。打ち切った旧案件の記録として `../past/261115-porter-transport-performance-discussion.md`、`../past/261115-porter-transport-performance-design.md`、`../past/261115-porter-transport-performance-validation.md` があります。削除されている場合があります。
@@ -40,7 +40,7 @@
     - ✅ 3.1. `261117-porter-transport-performance-redo-design.md` の作成 (対策元 backlog へ確定方針を反映)
     - ✅ 3.2. 最終仕様における受入条件と整合性の確認
     - ✅ 3.3. 最終仕様の承認の受付 (第 2 ゲート)。2026-11-17 にユーザーが承認
-- 🔄 4. 承認された最終仕様に従った作業の実施
+- ✅ 4. 承認された最終仕様に従った作業の実施
     - ✅ 4.1. 作業用の一時領域 `C:\Users\tetsuo\AppData\Local\Temp\porter-transport-perf-redo-20261117` の準備 (測定プログラムと実行スクリプトの複製、off と on のソースの展開)
     - ✅ 4.2. 試行版 (1 メッセージ分のパケットをまとめて 1 回で送る版) の作成。対象は一時領域の `potr_send_thread.c` の複製
     - ✅ 4.3. Linux (WSL) での off、on、試行版のビルドと 18 条件の測定 (担当: `c-modernization-kit-f6`)。追加の試行版 batch2 も測定
@@ -59,11 +59,11 @@
     - ✅ 4.10. 親リポジトリのプル リクエスト ([#59](https://github.com/Hondarer/c-modernization-kit/pull/59)) による CI の実行と、全ジョブの成功および警告なしの確認
         - ✅ 4.10.1. 1 回目 (run `44050752536`)。Linux の 3 ジョブが `tcp_allocation_failure_test` の 1 ケースで失敗。テストの期待値を直した (porter `e102d94`)
         - ✅ 4.10.2. 2 回目 (run `44077056578`)。全ジョブ成功。`*-warns` のアーティファクトはなく、警告は 0 件
-    - 🚫 4.11. cplat、porter、親リポジトリの `main` への取り込みと、Windows と WSL の同期 (ユーザーの指示を受けてから行う。CI の結果を報告し、指示を待っている) ← **CURRENT**
-    - ⏸️ 4.12. 対策元 `261115-porter-reject-recovery-backlog.md` の更新と、`261117-porter-transport-performance-redo-backlog.md` の整理
-- ⏸️ 5. 成果物の承認の受付 (第 3 ゲート)
-    - ⏸️ 5.1. 成果物・検証結果・残課題の提示
-    - ⏸️ 5.2. 成果物の承認の受付
+    - ✅ 4.11. cplat、porter、親リポジトリの `main` への取り込みと、Windows と WSL の同期 (2026-11-18 のユーザーの指示で実施。親 `365a41e3`、cplat `19302982`、porter `ee5cfec` へ fast-forward。WSL は `c-modernization-kit-f6` が同期し、3 つの HEAD と参照が一致することを確認)
+    - ✅ 4.12. 対策元 `261115-porter-reject-recovery-backlog.md` の更新と、`261117-porter-transport-performance-redo-backlog.md` の整理 (対策元の BL-001 を「解消」、BL-002 を「未対処」にした。この案件の残課題一覧から解消した BL-005 を除き、「整理済み」にした)
+- 🔄 5. 成果物の承認の受付 (第 3 ゲート)
+    - ✅ 5.1. 成果物・検証結果・残課題の提示
+    - ⏸️ 5.2. 成果物の承認の受付 ← **CURRENT**
 
 ## 対象と参照資料
 
