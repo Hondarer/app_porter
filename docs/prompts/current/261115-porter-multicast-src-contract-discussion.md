@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 検討用 Markdown (discussion)
-最終更新日時: 2026-11-18 05:47:26 JST
+最終更新日時: 2026-11-18 06:03:43 JST
 最終更新エージェント: claude code / セッション ID: 2597d650-1196-4c79-aa7b-18ba3526112b
 稼働 OS: Windows
 上流文書: `261114-porter-windows-verification-clock-unify-backlog.md` (BL-001 の対策元)、`261114-porter-windows-verification-clock-unify-discussion.md` (Q-011)。削除されている場合があります。
@@ -19,7 +19,7 @@
 
 版: 5
 
-状態: 合意済み (版 5、追加範囲の第 1 ゲート通過。版 3 の合意内容は実装済み)
+状態: 合意済み (版 5)。実装、CI の確認、相互接続試験、残課題一覧の整理は完了し、2026-11-18 に成果物の承認を受けて完了
 
 ## 作業 WBS と進捗管理
 
@@ -39,7 +39,7 @@
     - ✅ 3.1. `261115-porter-multicast-src-contract-design.md` の作成
     - ✅ 3.2. 最終仕様における受入条件と整合性の確認
     - ✅ 3.3. 対話セッションにおける最終仕様 (design.md) の承認の受付 (第 2 ゲート: 作業着手の合意)。2026-11-15 に Tetsuo Honda から条件付き承認を受領。条件は「作業中の他セッションから進行の許可を受けてから作業し、コミット、プッシュ、CI まで実施する」
-- 🔄 4. 承認された最終仕様に従った作業の実施 (実装は grok CLI `grok-4.7` / reasoning effort high / `--yolo` に委譲し、claude code が差分を確認)
+- ✅ 4. 承認された最終仕様に従った作業の実施 (実装は grok CLI `grok-4.7` / reasoning effort high / `--yolo` に委譲し、claude code が差分を確認)
     - ✅ 4.0. 他セッションからの進行許可の受領 (2026-11-15、c-modernization-kit-c1 から porter-reject-recovery のプッシュ完了と進行許可を受領。対策元 backlog の BL-001 を「対応中」へ更新)
     - ✅ 4.1. 設定仕様 `app/porter/docs/config.md` の更新 (共通フィールド表の `dst_addr`、multicast の図と表、送信元フィルタリング節)
     - ✅ 4.2. 機能仕様 `app/porter/docs/functional-spec/transport.md` の `POTR-TRANSPORT-QUAL-001` が変更不要であることの確認 ([Q-001](#q-001-マルチキャストの送信元制限の維持) で維持に決定)
@@ -59,10 +59,10 @@
         - ✅ 4.13.5. コミット、プッシュ、CI の結果確認と、案件 backlog BL-001 の状態更新 (porter `8220519` を含む CI run 43835974193 で全ジョブ成功を確認し、案件 backlog BL-001 を対処済みへ更新)
     - ✅ 4.10. ユーザーの環境での PSK と証明書の Windows/WSL 相互接続 12 組み合わせの再実施 ([Q-004](#q-004-受入試験の範囲))。2026-11-18 に、ユーザーの指示でエージェントが自動実施し、12 件すべて成功 (結果は「反映と検証の記録」)
     - ✅ 4.11. 受入条件への適合確認 (全完確認)。単体テストは CI run 43835974193 で成功、相互接続 12 組み合わせは 4.10 で全件成功
-    - 🔄 4.12. 残課題一覧 (`261115-porter-multicast-src-contract-backlog.md`) の再構築と整理、および過去 backlog BL-001 の経緯・対処の更新。案件 backlog BL-002 は、継続案件 261116-makefw-subdir-rebuild-race の CI の成功を受けて 2026-11-18 に「解消」へ更新済み。残りは文書の再構築と整理 ← **CURRENT**
-- ⏸️ 5. 成果物の承認の受付 (第 3 ゲート)
-    - ⏸️ 5.1. 成果物・検証結果・残課題の提示
-    - ⏸️ 5.2. 対話セッションにおける成果物の承認の受付 (「承認」または「完了」の受領によるスキル完了)
+    - ✅ 4.12. 残課題一覧 (`261115-porter-multicast-src-contract-backlog.md`) の再構築と整理、および過去 backlog BL-001 の経緯・対処の更新。2026-11-18 に整理済み。未対処は BL-004 (証明書認証の最初の試行の警告) と BL-005 (試験スクリプトの管理)。過去 backlog BL-001 は「解消」へ更新
+- ✅ 5. 成果物の承認の受付 (第 3 ゲート)
+    - ✅ 5.1. 成果物・検証結果・残課題の提示 (2026-11-18、対話で提示)
+    - ✅ 5.2. 対話セッションにおける成果物の承認の受付 (「承認」または「完了」の受領によるスキル完了)。2026-11-18、チャットでユーザーが承認 (「承認。main に skip ci でプッシュ。」)
 
 ## 対象と参照資料
 
@@ -553,6 +553,6 @@ A の選択を確認しました。`handleConcurrencyTest.cc` の `open_n1()` �
 Table: Windows/WSL 相互接続 12 組み合わせの結果 (2026-11-18)
 
 - 「2 回目」は、1 回目の `send` を sender が「未接続のため送信できません」で拒否し、1 秒後の送り直しで届いた組み合わせです。送り直しを入れる前の実行では、接続の確立前に送信した 5 件が同じ理由で失敗しました。これは試験スクリプトが送信を始める時機の問題で、接続の確立後の送信はすべて届いています。
-- 証明書の `unicast` と `multicast` では、receiver が起動の約 1 秒後に `certificate: authentication failed: handshake failed or peer rejected certificate` の警告を 1 回出し、その後に接続が確立しました。sender の起動前に行われた認証の試行とみられますが、原因は確認していません。
+- 証明書の `unicast` と `multicast` では、receiver が起動の約 1 秒後に `certificate: authentication failed: handshake failed or peer rejected certificate` の警告を 1 回出し、その後に接続が確立しました。警告は sender の open の約 0.95 秒後で、最初の認証の試行が失敗し、再試行で成功したとみられます。原因は確認しておらず、残課題一覧の BL-004 に記録しました。
 - Windows のファイアウォールの設定は変更していません。
-- スクリプト、生成した設定、組み合わせごとのログは作業用の一時領域にあり、リポジトリでは管理していません。
+- スクリプト、生成した設定、組み合わせごとのログは作業用の一時領域 `C:\Users\tetsuo\AppData\Local\Temp\porter-interop-20261118` にあり、リポジトリでは管理していません (残課題一覧の BL-005)。

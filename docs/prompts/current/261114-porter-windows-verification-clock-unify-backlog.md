@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-15 22:45:00 JST
-最終更新エージェント: claude code / セッション ID: session_01KJc53SKi4E2GpcLq8ibyKp (BL-001 の対策方針の確定と対応開始の記録)
+最終更新日時: 2026-11-18 06:00:57 JST
+最終更新エージェント: claude code / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc (BL-001 の解消の記録)
 稼働 OS: Windows
 上流文書: `261114-porter-windows-verification-clock-unify-discussion.md`、`261114-porter-windows-verification-clock-unify-design.md`、`../past/261109-porter-path-priority-timestamp-auth-backlog.md`
 下流文書: BL-001 の継続案件 `261115-porter-multicast-src-contract-discussion.md` (検討 ID: 261115-porter-multicast-src-contract)、`261115-porter-multicast-src-contract-design.md` (最終仕様)。削除されている場合があります。
@@ -25,7 +25,7 @@
 
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
-| BL-001 | マルチキャスト受信 NIC と許可送信元の設定契約を解決する | 作業中摘出 | 高 / 高 | 対応中 (`261115-porter-multicast-src-contract-design.md`) |
+| BL-001 | マルチキャスト受信 NIC と許可送信元の設定契約を解決する | 作業中摘出 | 高 / 高 | 解消 (継続案件 `261115-porter-multicast-src-contract`。2026-11-18 に Windows/WSL 相互接続 12 組み合わせの全件成功を確認) |
 | BL-002 | Windows 仮想環境で時計取得コストを計測する | 過去 backlog からの転記 | 低 / 低 | クローズ (対応不要) |
 | BL-003 | certificateTest make 構成時の unexpected EOF stderr の原因を特定する | 作業中摘出 | 中 / 低 | 対応済み (makefw `f6a1367` で解消済みを確認) |
 
@@ -47,6 +47,7 @@
     - `POTR-TRANSPORT-QUAL-001` はマルチキャストでも維持し、受信側は `src_addrN` で送信元を照合します。NACK などの返送先も `src_addrN` のままです。
     - 受信側のグループ参加 NIC は `dst_addrN` で表し、省略時は従来どおり `src_addrN` の NIC で参加します。`dst_addrN` だけの経路は使いません。
     - 受入条件は、単体テストと、PSK と証明書の Windows/WSL 相互接続 12 組み合わせの全件成功です。
+- **実装と確認 (2026-11-18)**: 継続案件で、受信側のグループ参加 NIC を `dst_addrN` で指定できるようにしました (porter `ebb79c2`)。単体テストは CI run 43835974193 で成功しました。2026-11-18 に、受信側の `dst_addr1` に WSL の NIC を指定した設定で、PSK と証明書の Windows/WSL 相互接続 12 組み合わせを再実施し、マルチキャストの 2 件を含む 12 件すべてが成功しました。状態を「解消」にしました。継続案件で残した項目は、`261115-porter-multicast-src-contract-backlog.md` の BL-004 と BL-005 です。
 - **未採用案**: discussion Q-011 の A (NIC 指定と許可送信元 IP を別設定にする) は推奨として提示しましたが、採用されていません。B (マルチキャスト受信側で送信元照合をしない) も未採用です。いずれも次回の合意なしに実装しません。
 - **影響範囲**: `app/porter/docs/config.md`、`app/porter/docs/functional-spec/transport.md` の `POTR-TRANSPORT-QUAL-001`、`api_open_paths_multicast()`、`thread_recv_check_src_addr()`、PSK/証明書の相互接続。
 - **放置した場合のリスク**: 異なる NIC を通るマルチキャスト送信元が受信フィルターで破棄され、対象環境でマルチキャスト通信が成立しない可能性があります。

@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-18 05:49:58 JST
-最終更新エージェント: claude code (Opus 5.5) / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
+最終更新日時: 2026-11-18 05:59:52 JST
+最終更新エージェント: claude code / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
 稼働 OS: Windows
 上流文書: `261115-porter-multicast-src-contract-design.md` (最終仕様)、`261115-porter-multicast-src-contract-discussion.md` (検討用 Markdown)。いずれも削除されている場合があります。
 下流文書: この残課題一覧を対策する継続作業が開始された場合は、その検討用 Markdown・最終仕様・残課題一覧のパスを追記します。未作成の場合や、削除されている場合があります。BL-002 の継続作業 (2026-11-16 07:10 JST 開始、claude code / セッション ID: session_01KJc53T14fddkwQBRc7ZPQt): `../../../../../framework/makefw/docs/prompts/current/261116-makefw-subdir-rebuild-race-discussion.md` (検討用 Markdown)、`../../../../../framework/makefw/docs/prompts/current/261116-makefw-subdir-rebuild-race-design.md` (最終仕様)、`../../../../../framework/makefw/docs/prompts/current/261116-makefw-subdir-rebuild-race-backlog.md` (残課題一覧)。BL-003 の継続作業 (2026-11-16 11:10 JST 開始、claude code / セッション ID: session_01KJc53UbHjwaWeuucBs5Q5U): `../../../../../framework/doxyfw/docs/prompts/current/261116-doxyfw-page-variant-reload-flake-discussion.md` (検討用 Markdown)、`../../../../../framework/doxyfw/docs/prompts/current/261116-doxyfw-page-variant-reload-flake-design.md` (最終仕様)、`../../../../../framework/doxyfw/docs/prompts/current/261116-doxyfw-page-variant-reload-flake-backlog.md` (残課題一覧)。2026-11-16 に、担当を WSL のセッション (claude code / セッション ID: session_01KJc53SqgNC8iDAi6rvzgwh) へ引き継ぎました。
@@ -17,41 +17,20 @@
 
 案件名: porter マルチキャスト受信側の送信元設定契約 (過去 backlog BL-001 の対策)  
 作成日: 2026-11-16  
-整理状態: 随時追記中
+整理状態: 整理済み
 
-この文書は、作業中に別問題として判明した事項を随時記録しています。第 3 ゲートの前に再構築して整理します。
+この文書は、作業中に別問題として判明し、この案件では対策しなかった事項を記録したものです。2026-11-18 に再構築して整理しました。
+
+未対処の項目は BL-004 と BL-005 です。BL-002 と BL-003 は継続案件で解消済みで、継続案件からの参照と経緯の記録のために残しています。BL-001 (`handleConcurrencyTest` の接続待ち) は、この案件の範囲に加えて解消したため、整理で除外しました (経緯は検討用 Markdown の Q-006 と Q-007)。ほかの文書からの参照を保つため、課題 ID は振り直していません。
 
 ## 残課題一覧
 
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
-| BL-001 | handleConcurrencyTest がクライアント側の CONNECTED を待たずに送信し、CI で不定期に失敗する | 作業中摘出 | 中 / 中 | 対処済み (本案件の Q-006、Q-007。CI run 43835974193 で確認済み) |
 | BL-002 | mock_cplat の並列ビルドで同じサブディレクトリが 2 回ビルドされ、CI で不定期に失敗する | 作業中摘出 | 中 / 中 | 解消 (継続案件 261116-makefw-subdir-rebuild-race。CI run 44144556601 で確認し、2026-11-18 に `main` へ取り込み済み) |
-| BL-003 | doxyfw の依存関係レポートのテストで、再読み込み後にページ種別の保存値が失われ、CI で不定期に失敗する | 作業中摘出 | 中 / 中 | 対応済み (継続案件 261116-doxyfw-page-variant-reload-flake。ローカルの検証は完了し、成果物の承認済み。CI での確認は未了) |
-
-## BL-001 handleConcurrencyTest がクライアント側の CONNECTED を待たずに送信し、CI で不定期に失敗する
-
-### 概要と問題点
-
-- **現状の事象**: CI run 43727490184 (porter `ebb79c2`) の ol9 ジョブで、`app/porter/test/src/integration/porterSendRecvTest/handleConcurrencyTest.cc` の `handleConcurrencyTest.close_waits_for_running_callback_and_rejects_callback_send` が失敗しました。556 行目の `potr_service_send(clients[0], POTR_PEER_NA, &data, sizeof(data), POTR_SEND_BLOCKING)` が `POTR_ERR_DISCONNECTED` (-20) を返しています。同じテストは、同じ run の Windows、ol8、ol10 と、直前の run 43724723928 の ol9 では成功しています。
-- **原因の見立て**: 準備処理 `open_n1()` (同ファイル 245 行目付近) は、サーバー側で全クライアントが CONNECTED になる (`s_connected_peers`) ことだけを待ちます。クライアント側は、相手の PING 応答を受けるまで CONNECTED になりません。そのため、クライアントが PING 応答を受ける前に送信すると DISCONNECTED になる競合があります。
-- **本来あるべき姿**: テストの準備処理が、送信に使う側 (クライアント) の CONNECTED も待ってから本体の手順へ進み、実行環境の速度に左右されずに成功すること。
-
-### 経緯と見送り理由
-
-- **摘出契機**: BL-001 (マルチキャスト参加 NIC) の実装をプッシュした後の CI。
-- **今回の見送り理由**: 失敗した経路は `unicast_bidir_n1` で、この案件の変更 (マルチキャストのグループ参加 NIC と、close 時の離脱) とは関係しません。並行していた REJECT 受信再開の案件 (porter `68ab091`) も、REJECT 受信時と受信ウィンドウ範囲外のパケットでだけ働くため、関係しないと判断しています (担当セッションと確認済み)。この案件の範囲外なので、失敗したジョブの再実行で CI を確認し、テストの修正は行いません。
-- **継続作業での経緯と対処**: 2026-11-16、ユーザーの判断で本案件の範囲に加えました (検討用 Markdown の Q-006)。Q-007 で「`open_n1()` で全クライアントの CONNECTED も待つ」に決まり、最終仕様に追記して承認を受けました。`handleConcurrencyTest.cc` の `open_n1()` に、クライアント側の CONNECTED 数 (`s_client_connected_count`) が `n_clients` に達するまでの待ちを追加しました (`8220519`)。Windows/MSVC で `porterSendRecvTest` 36 件が成功し、`handleConcurrencyTest` 10 件を 5 回繰り返して失敗 0 でした。CI run 43835974193 (親 `fbbc1d848a`、porter `5ff9609`) で、全ジョブ (Windows、ol8、ol9、ol10、docs、verify-gen、deploy-pages、warnings-summary) の成功を確認しました。
-
-### 影響範囲とリスク
-
-- **影響対象**: `app/porter/test/src/integration/porterSendRecvTest/handleConcurrencyTest.cc` の `open_n1()` を使うテスト。
-- **放置した場合のリスク**: CI が不定期に失敗し、再実行の手間が増えます。本当の不具合による失敗を見逃しやすくなります。
-
-### 推奨される対応策
-
-- **恒久対応案**: `open_n1()` で、サーバー側の接続確認に加えて、各クライアントの CONNECTED 通知も待つようにします。クライアント側のコールバックで CONNECTED を記録し、`wait_for()` で全クライアント分を待つ形が考えられます。修正後は、同じテストを繰り返し実行して安定性を確認します。
-- **参考情報**: CI run 43727490184 (attempt 1) の ol9 ジョブ `build-and-test-linux (ol9)`、`handleConcurrencyTest.cc:556`。
+| BL-003 | doxyfw の依存関係レポートのテストで、再読み込み後にページ種別の保存値が失われ、CI で不定期に失敗する | 作業中摘出 | 中 / 中 | 解消 (継続案件 261116-doxyfw-page-variant-reload-flake。修正 doxyfw `a160e44` を含む CI run 44144556601 が成功) |
+| BL-004 | 証明書認証の片方向の通信種別で、最初の認証の試行が失敗の警告を出してから接続が確立する | 作業中摘出 | 低 / 低 | 未着手 |
+| BL-005 | Windows/WSL 相互接続試験のスクリプトが Git で管理されていない | 作業中摘出 | 低 / 低 | 未着手 |
 
 ## BL-002 mock_cplat の並列ビルドで同じサブディレクトリが 2 回ビルドされ、CI で不定期に失敗する
 
@@ -89,7 +68,7 @@
 
 - **摘出契機**: この案件の `handleConcurrencyTest` 修正 (BL-001) をプッシュした後の CI。
 - **今回の見送り理由**: 失敗したのは doxyfw のテストで、この案件の変更 (porter のマルチキャスト参加 NIC と結合テストの接続待ち) とは関係しません。同じテストは、run 42978073210 でも失敗しています。そのときは `app/general/docs/prompts/past/261111-ci-time-backlog-followup-backlog.md` の BL-006 で、原因不明として閉じました。その後、doxyfw の `1144ce6` で保存値の診断出力が追加されています。今回は失敗したジョブの再実行で CI を確認し、テストの修正は行いません。稼働中のセッション (c-modernization-kit-c1、c-modernization-kit-0d) に内容を共有し、0d は対処・調査していないことを確認しました。
-- **継続作業での経緯と対処**: 2026-11-16、対処する継続案件を開始しました (検討 ID: 261116-doxyfw-page-variant-reload-flake、検討用 Markdown: `framework/doxyfw/docs/prompts/current/261116-doxyfw-page-variant-reload-flake-discussion.md`、担当: claude code / セッション ID: session_01KJc53UbHjwaWeuucBs5Q5U)。稼働中のセッション (c-modernization-kit-c1、96、0d) へ着手を宣言し、3 セッションとも支障がないことを確認しました。状態は「検討中」で、対処の範囲、削除の方法、検証の方法をユーザーに確認しています。事前調査では、puppeteer 25.11.0 の `FrameManager.js` と `CdpPreloadScript.js` を読み、「原因の見立て」の 1 つ目の候補の経路 (遷移でメインフレームのオブジェクトが作り直されると、解除の要求が送られない) がソース上で成り立つことを確認しました。リポジトリ外の一時スクリプトで同じ順序の操作を Windows の Edge 157 で 30 回実行しましたが、再現していません。 同日、担当を WSL のセッション (claude code / セッション ID: session_01KJc53SqgNC8iDAi6rvzgwh) へ引き継ぎました。WSL 上の Oracle Linux 8.10 と Chrome for Testing 153.0.8010.36 で、CPU を 2 コアに絞って負荷をかけると、CI と同じ失敗が 40 回中 10 回再現しました (負荷なしの 40 回はすべて成功)。切り分けの結果、「原因の見立て」の 1 つ目の候補 (削除スクリプトの再実行) は成り立たないことが分かりました。値が失われた回でも、削除スクリプトの実行は 1 回だけでした。失敗の条件は、起動直後のブラウザーで文書の開始時に `localStorage.removeItem()` を実行し、その後に同じキーへ保存して再読み込みすることです (1 回ごとにブラウザーを起動する試験で、削除ありは 60 回中 24 回、削除なしは 60 回中 0 回)。Chrome の内部で値が失われる理由は未確認で、継続案件の残課題一覧の BL-001 に記録しました。対処の方針は、最初に開くページの削除指定 (`clearVariant: true`) を外すことと、doxyfw の `1144ce6` で追加した診断出力を削除することです (最終仕様: `framework/doxyfw/docs/prompts/current/261116-doxyfw-page-variant-reload-flake-design.md`)。ユーザーが最終仕様を承認しました。同日、`framework/doxyfw/bin_test/page_link_probe.js` を変更し、対象のテスト 1 件を WSL で繰り返して実行しました。負荷ありの 40 回と、負荷なしの 10 回は、すべて成功しました (変更前は、負荷ありで 40 回中 10 回失敗)。状態は「対応済み」です。同日、ユーザーが成果物を承認しました。CI での確認は、コミットとプッシュの後に行います。未対処の項目 (Chrome の内部の原因が未確認) は、`framework/doxyfw/docs/prompts/current/261116-doxyfw-page-variant-reload-flake-backlog.md` の BL-001 へ記録しました。
+- **継続作業での経緯と対処**: 2026-11-16、対処する継続案件を開始しました (検討 ID: 261116-doxyfw-page-variant-reload-flake、検討用 Markdown: `framework/doxyfw/docs/prompts/current/261116-doxyfw-page-variant-reload-flake-discussion.md`、担当: claude code / セッション ID: session_01KJc53UbHjwaWeuucBs5Q5U)。稼働中のセッション (c-modernization-kit-c1、96、0d) へ着手を宣言し、3 セッションとも支障がないことを確認しました。状態は「検討中」で、対処の範囲、削除の方法、検証の方法をユーザーに確認しています。事前調査では、puppeteer 25.11.0 の `FrameManager.js` と `CdpPreloadScript.js` を読み、「原因の見立て」の 1 つ目の候補の経路 (遷移でメインフレームのオブジェクトが作り直されると、解除の要求が送られない) がソース上で成り立つことを確認しました。リポジトリ外の一時スクリプトで同じ順序の操作を Windows の Edge 157 で 30 回実行しましたが、再現していません。 同日、担当を WSL のセッション (claude code / セッション ID: session_01KJc53SqgNC8iDAi6rvzgwh) へ引き継ぎました。WSL 上の Oracle Linux 8.10 と Chrome for Testing 153.0.8010.36 で、CPU を 2 コアに絞って負荷をかけると、CI と同じ失敗が 40 回中 10 回再現しました (負荷なしの 40 回はすべて成功)。切り分けの結果、「原因の見立て」の 1 つ目の候補 (削除スクリプトの再実行) は成り立たないことが分かりました。値が失われた回でも、削除スクリプトの実行は 1 回だけでした。失敗の条件は、起動直後のブラウザーで文書の開始時に `localStorage.removeItem()` を実行し、その後に同じキーへ保存して再読み込みすることです (1 回ごとにブラウザーを起動する試験で、削除ありは 60 回中 24 回、削除なしは 60 回中 0 回)。Chrome の内部で値が失われる理由は未確認で、継続案件の残課題一覧の BL-001 に記録しました。対処の方針は、最初に開くページの削除指定 (`clearVariant: true`) を外すことと、doxyfw の `1144ce6` で追加した診断出力を削除することです (最終仕様: `framework/doxyfw/docs/prompts/current/261116-doxyfw-page-variant-reload-flake-design.md`)。ユーザーが最終仕様を承認しました。同日、`framework/doxyfw/bin_test/page_link_probe.js` を変更し、対象のテスト 1 件を WSL で繰り返して実行しました。負荷ありの 40 回と、負荷なしの 10 回は、すべて成功しました (変更前は、負荷ありで 40 回中 10 回失敗)。状態は「対応済み」です。同日、ユーザーが成果物を承認しました。CI での確認は、コミットとプッシュの後に行います。未対処の項目 (Chrome の内部の原因が未確認) は、`framework/doxyfw/docs/prompts/current/261116-doxyfw-page-variant-reload-flake-backlog.md` の BL-001 へ記録しました。 2026-11-18、修正 (doxyfw `a160e44`) を含む CI run 44144556601 (親 `a530edc6`、doxyfw `fcebcbe`) で全ジョブが成功したことを確認し、状態を「解消」にしました。この失敗は不定期のため、1 回の成功は再発しないことの証明ではありません。
 
 ### 影響範囲とリスク
 
@@ -100,3 +79,54 @@
 
 - **恒久対応案**: まず、削除スクリプトが実行されたことと、削除した時点の値を診断出力に加え、2 つの候補を区別します。削除スクリプトの再実行が原因であれば、解除に頼らない形に直します。たとえば、初回のページで `page.evaluate()` により削除してから再読み込みする方法や、`sessionStorage` の目印で初回だけ削除する方法があります。保存の確定前の再読み込みが原因であれば、保存の確定を待ってから再読み込みします。修正後は、同じテストを繰り返し実行して安定性を確認します。
 - **参考情報**: CI run 43767517941 (attempt 1) の ol8 ジョブ `build-and-test-linux (ol8)`、`test_generate_dependency_report.py` の 2963 行目と 2965 行目。
+
+## BL-004 証明書認証の片方向の通信種別で、最初の認証の試行が失敗の警告を出してから接続が確立する
+
+### 概要と問題点
+
+- **現状の事象**: 2026-11-18 の Windows/WSL 相互接続試験で、証明書認証の `unicast` と `multicast` の 2 件だけ、WSL の receiver が次の警告を 1 回出しました。警告の直後に接続が確立し、データは届いています。2 回の実行の両方で、同じ 2 件に出ました。
+
+    ```text
+    W [certificate.c:225] certificate: authentication failed: handshake failed or peer rejected certificate
+    ```
+
+    `unicast` の例では、receiver の open が 05:46:22.979、Windows の sender の open が 05:46:23.029、警告が 05:46:23.984 です。sender の open から約 0.95 秒後に警告が出ています。証明書認証の `unicast_bidir`、`unicast_bidir_n1`、`tcp`、`tcp_bidir` と、PSK の 6 件では出ていません。
+- **原因**: 未確認です。警告は `prod/libsrc/porter/security/certificate.c` の `advance_session()` が、受信した認証メッセージの処理に失敗したときに出します。最初の試行が失敗し、再試行で成功したとみられますが、最初の試行が失敗する理由は調べていません。
+- **本来あるべき姿**: 未確定です。最初の試行の失敗が設計上起こり得るものであれば、警告の水準と文言が適切かを判断します。起こるべきでないものであれば、原因を直します。
+
+### 経緯と見送り理由
+
+- **摘出契機**: この案件の受入試験 (Windows/WSL 相互接続 12 組み合わせ、検討用 Markdown の「反映と検証の記録」)。
+- **今回の見送り理由**: この案件の対象は、マルチキャスト受信側のグループ参加 NIC と送信元の照合の設定契約です。証明書認証の手順は変更していません。受入条件 (12 件の全件成功) は満たしています。同じ警告が前回 (2026-11-15) の試験でも出ていたかは確認していません。
+
+### 影響範囲とリスク
+
+- **影響対象**: 証明書認証を使う片方向の UDP 通信 (`unicast`、`multicast`) の接続の確立。別ホスト間 (Windows の sender、WSL の receiver) で確認しました。同じホスト内や、Linux どうし、Windows どうしでの発生は未確認です。
+- **放置した場合のリスク**: 接続の確立が、最初の試行の失敗の分だけ遅れている可能性があります (遅れの大きさは未測定)。運用時に、正常な接続でも認証失敗の警告がログに残り、本当の認証失敗と区別しにくくなります。
+
+### 推奨される対応策
+
+- **恒久対応案**: receiver と sender の双方をログ水準 DEBUG で実行し、最初の試行で送受信した認証メッセージと、失敗した処理の段階を特定します。同じホスト内の構成でも再現するかを確かめます。原因が分かった後に、直すか、警告の水準と文言を見直すかを判断します。
+- **参考情報**: `prod/libsrc/porter/security/certificate.c` の `advance_session()` と `start_session()` (`retry_ms`)。試験のログは BL-005 の一時領域の `cert-unicast.log` と `cert-multicast.log`。
+
+## BL-005 Windows/WSL 相互接続試験のスクリプトが Git で管理されていない
+
+### 概要と問題点
+
+- **現状の事象**: Windows/WSL 相互接続 12 組み合わせの試験スクリプト `interop_matrix.py`、生成した設定 24 個、組み合わせごとのログは、作業用の一時領域 `C:\Users\tetsuo\AppData\Local\Temp\porter-interop-20261118` にあります。一時領域は、再起動や掃除で消える場合があります。スクリプトには、この環境のアドレス (Windows `172.28.208.1`、WSL `172.28.209.184`)、WSL のディストリビューション名 (`OracleLinux8-Dev`)、リポジトリの絶対パスが直接書かれています。
+- **本来あるべき姿**: 同じ試験を、別の時点や別の環境で、同じ手順でやり直せることです。
+
+### 経緯と見送り理由
+
+- **摘出契機**: この案件の受入試験。スクリプトは、前回 (2026-11-15) の試験で使われた一時領域のスクリプトを直して使いました。
+- **今回の見送り理由**: リポジトリで管理する場合の置き場所と、環境に依存する値の与え方が決まっていません。試験の方式、マルチキャストの設定例、結果は、検討用 Markdown の「反映と検証の記録」に記録済みです。
+
+### 影響範囲とリスク
+
+- **影響対象**: porter の別ホスト間の相互接続の確認 (CI では確認できない範囲)。
+- **放置した場合のリスク**: 次に相互接続試験が必要になったときに、スクリプトを作り直す手間がかかります。判定の方法 (receiver の出力のトークン、未接続で拒否された送信の送り直し) が試験のたびに変わると、結果を比べにくくなります。
+
+### 推奨される対応策
+
+- **恒久対応案**: スクリプトの置き場所 (たとえば `app/porter/bin/` と、その検証を置く `app/porter/bin_test/`) を決めます。アドレス、ディストリビューション名、WSL 側のリポジトリのパスを引数で受け取る形に直し、手順を porter の文書に書きます。置き場所と文書の構成は、新しい検討で合意してください。
+- **参考情報**: 一時領域の `interop_matrix.py` (使い方: `python interop_matrix.py <WSL 側のリポジトリの絶対パス> [認証/種別 ...]`)。
