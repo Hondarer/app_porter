@@ -264,7 +264,7 @@ Figure: TCP SENDER のスレッド構成 (path 数 = N の例)
 | スレッド | 数 | 役割 |
 |---|---|---|
 | connect スレッド | N | path ごとに起動。`connect()` で接続を確立し、成功したら recv / health スレッドを起動します。切断後は `reconnect_interval_ms` 待機して再試行します。 |
-| 送信スレッド | 1 | 全 path 共有。送信キューからエレメントを取り出し、全アクティブ path にループ送信します。各 path の送信前に `poll()` で書き込み可能を確認し、バッファー満杯の path はスキップします (他 path への送信は続行)。 |
+| 送信スレッド | 1 | 全 path 共有。送信キューからエレメントを取り出し、全アクティブ path にループ送信します。各 path の送信前に `poll()` で書き込み可能を確認し、バッファー満杯の path はスキップします (他 path への送信は続行)。キューにある複数の DATA パケットは、path ごとに連結して 1 回の送信で書き込みます ([プロトコル](protocol.md) のパッキングの動作を参照)。 |
 | recv スレッド | N | path ごとに起動。PING 応答 (`ack_num > 0`) を受信して対応する health スレッドに通知します。TCP 接続断を検知したら `tcp_active_paths` をデクリメントし、0 になった時点で `POTR_EVENT_DISCONNECTED` を発火します。 |
 | health スレッド | N | path ごとに起動。`tcp_health_interval_ms` 周期で PING 要求を送信します。`tcp_health_timeout_ms` 以内に応答を受信しなければその path の接続断と判定して `shutdown()` します。 |
 

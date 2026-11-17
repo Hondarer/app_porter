@@ -8,8 +8,12 @@
 #include <mock_string.h>
 #include <porter/porter_const.h>
 #include <porter/porter_result.h>
+#include <porter/protocol/packet.h>
+#include <porter/protocol/packet_seal.h>
+#include <cplat/net/byteorder.h>
 #include <algorithm>
 #include <cstring>
+#include <deque>
 #include <vector>
 
 using namespace testing;
@@ -462,3 +466,516 @@ TEST_F(potrSendThreadTcpTest, data_write_failure_keeps_sent_after_peer_fin_zero)
     // [確認_異常系] - 書き込み失敗時は送信フラグが 0 のままであること。
 }
 // [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]
+
+// 書き込まれたバイト列を外側パケットに分ける。payload_len はワイヤ上の値 (ネットワーク バイト オーダー) から求める。
+static std::vector<potr_packet> split_packets(const std::vector<uint8_t> &bytes)
+{
+    std::vector<potr_packet> packets;
+    size_t offset = 0U;
+
+    while (offset + POTR_PACKET_HEADER_SIZE <= bytes.size())
+    {
+        uint16_t payload_len_nbo = 0U;
+        potr_packet packet = {};
+        std::memcpy(&payload_len_nbo, bytes.data() + offset + 34U, sizeof(payload_len_nbo));
+        const size_t packet_len = POTR_PACKET_HEADER_SIZE + cplat_ntoh16(payload_len_nbo);
+        if (offset + packet_len > bytes.size() ||
+            potr_internal_packet_parse(&packet, bytes.data() + offset, packet_len) != POTR_OK)
+        {
+            break;
+        }
+        packets.push_back(packet);
+        offset += packet_len;
+    }
+    return packets;
+}
+
+// まとめ送りの確認用 fixture。送信キューを模擬し、書き込みを記録する。
+// -Wpadded の警告を避けるため、メンバーは 8 [byte] 境界のものだけとし、ソケット値は静的定数とする。
+class potrSendThreadTcpBatchTest : public Test
+{
+  protected:
+    static constexpr cplat_socket conn_fd = (cplat_socket)7;
+    static constexpr cplat_socket second_fd = (cplat_socket)8;
+
+    // [サブ手順 名前=potrSendThreadTcpBatchTest.SetUp]
+    void SetUp() override
+    {
+        memset(&ctx, 0, sizeof(ctx));
+        wire_buf.assign(POTR_PACKET_HEADER_SIZE + 1400U, 0U);
+        sealed_buf.assign(POTR_PACKET_HEADER_SIZE + 1400U + POTR_CRYPTO_TAG_SIZE, 0U);
+        batch_plain_buf.assign(POTR_TCP_BATCH_MAX_PACKETS * 1400U, 0U);
+        batch_wire_buf.assign(POTR_TCP_BATCH_MAX_PACKETS * sealed_buf.size(), 0U);
+        ctx.service.type = POTR_TYPE_TCP_BIDIR; // [状態] - TCP_BIDIR とする。
+        ctx.global.max_payload = 1400U;         // [状態] - 最大ペイロード長を設定する。
+        ctx.crypto_buf = sealed_buf.data();
+        ctx.crypto_buf_size = sealed_buf.size();
+        ctx.send_wire_buf = wire_buf.data();    // [状態] - 送信 wire 組立バッファーを設定する。
+        ctx.tcp_batch_plain_buf = batch_plain_buf.data();
+        ctx.tcp_batch_wire_buf = batch_wire_buf.data();
+        ctx.tcp_batch_cap = POTR_TCP_BATCH_MAX_PACKETS; // [状態] - まとめ送りの上限を 16 個とする。
+        ctx.send_queue.depth = 64U;                     // [状態] - 送信キューの深さを 64 とする。
+        ctx.n_path = 1;                                 // [状態] - path 数を 1 とする。
+        ctx.tcp_conn_fd[0] = conn_fd;                   // [状態] - path 0 を接続済みとする。
+        cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELAXED);
+        delegate_real_cplat_local_lock_create(&ctx.tcp_send_mutex[0]);
+        ON_CALL(mock_porter, potr_internal_window_send_push(&ctx.send_window, _))
+            .WillByDefault([](potr_internal_window *window, const potr_packet *) {
+                window->next_seq++;
+                return POTR_OK;
+            }); // [状態] - DATA 保持時に送信通番を進める。
+        ON_CALL(mock_cplat, cplat_clock_get_realtime(_))
+            .WillByDefault(Return(CPLAT_ERR_UNKNOWN)); // [状態] - 封緘結果を固定するため、実時刻の取得を失敗させる。
+        ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(conn_fd, CPLAT_NO_WAIT, _))
+            .WillByDefault(Return(CPLAT_OK)); // [状態] - path 0 の送信バッファーに空きがあるものとする。
+        ON_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
+            .WillByDefault([this](potr_internal_send_queue *, potr_internal_payload_elem *out, cplat_atomic_i32 *) {
+                return takeFront(out, POTR_ERR_CANCELED);
+            }); // [状態] - 模擬キューの先頭を取り出し、空なら停止を返す。
+        ON_CALL(mock_porter, potr_internal_send_queue_try_pop(&ctx.send_queue, _))
+            .WillByDefault([this](potr_internal_send_queue *, potr_internal_payload_elem *out) {
+                return takeFront(out, POTR_ERR_EMPTY);
+            }); // [状態] - 模擬キューの先頭を取り出す。
+        ON_CALL(mock_porter, potr_internal_send_queue_peek(&ctx.send_queue, _))
+            .WillByDefault([this](potr_internal_send_queue *, potr_internal_payload_elem *out) {
+                return peekFront(out, POTR_ERR_EMPTY);
+            }); // [状態] - 模擬キューの先頭を参照する。
+        ON_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _))
+            .WillByDefault([this](cplat_socket fd, const void *buf, size_t len, cplat_error *) {
+                const uint8_t *bytes = static_cast<const uint8_t *>(buf);
+                write_fds.push_back(fd);
+                write_bufs.push_back(buf);
+                writes.emplace_back(bytes, bytes + len);
+                return CPLAT_OK;
+            }); // [状態] - 書き込みを記録して成功を返す。
+    }
+    // [サブ手順終了]
+
+    // [サブ手順 名前=potrSendThreadTcpBatchTest.TearDown]
+    void TearDown() override
+    {
+        delegate_real_cplat_local_lock_dispose(ctx.tcp_send_mutex[0]);
+    }
+    // [サブ手順終了]
+
+    // [サブ手順 名前=potrSendThreadTcpBatchTest.addMessage]
+    // len [byte] のメッセージを、送信 API と同じ規則で断片に分けて登録対象へ加える。
+    void addMessage(size_t len, uint8_t seed)
+    {
+        const size_t max_chunk = 1400U - POTR_PAYLOAD_ELEM_HDR_SIZE;
+        size_t offset = 0U;
+
+        messages.emplace_back(len);
+        std::vector<uint8_t> &data = messages.back();
+        for (size_t i = 0U; i < len; ++i)
+        {
+            data[i] = static_cast<uint8_t>(seed + i);
+        }
+        while (offset < len)
+        {
+            potr_internal_payload_elem entry = {};
+            const size_t chunk = (std::min)(max_chunk, len - offset);
+            entry.peer_id = POTR_PEER_NA;
+            entry.flags = (offset + chunk < len) ? POTR_FLAG_MORE_FRAG : 0U;
+            entry.payload_len = static_cast<uint16_t>(chunk);
+            entry.payload = data.data() + offset;
+            entries.push_back(entry);
+            offset += chunk;
+        }
+    }
+    // [サブ手順終了]
+
+    // [サブ手順 名前=potrSendThreadTcpBatchTest.runQueue]
+    // 登録対象を模擬キューへ積み、送信スレッドを開始して、キューが空になって終了するまで待つ。
+    int runQueue()
+    {
+        queue.assign(entries.begin(), entries.end());
+        clearWrites();
+        int ret = potr_internal_send_thread_start(&ctx); // [手順] - send を開始する。
+        potr_internal_send_thread_stop(&ctx);            // [手順] - send を停止して終了を待つ。
+        return ret;
+    }
+    // [サブ手順終了]
+
+    // [サブ手順 名前=potrSendThreadTcpBatchTest.runReference]
+    // まとめ送りを使わない従来の手順で同じ登録対象を送り、書き込まれたバイト列を連結して返す。
+    // 送出通番と送信通番は、実行前の値へ戻す。
+    std::vector<uint8_t> runReference(size_t *write_count)
+    {
+        std::vector<uint8_t> joined;
+        const size_t cap = ctx.tcp_batch_cap;
+
+        ctx.tcp_batch_cap = 0U; // [状態] - まとめ送りを使わない。
+        // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
+        (void)runQueue();
+        for (const std::vector<uint8_t> &w : writes)
+        {
+            joined.insert(joined.end(), w.begin(), w.end());
+        }
+        *write_count = writes.size();
+        clearWrites();
+        ctx.tcp_batch_cap = cap;
+        ctx.send_window.next_seq = 0U;
+        cplat_atomic_store_u64(&ctx.tx_session.next_counter, 0U, CPLAT_MEMORY_ORDER_RELAXED);
+        return joined;
+    }
+    // [サブ手順終了]
+
+    void clearWrites()
+    {
+        write_fds.clear();
+        write_bufs.clear();
+        writes.clear();
+    }
+
+    int takeFront(potr_internal_payload_elem *out, int empty_result)
+    {
+        if (queue.empty())
+        {
+            return empty_result;
+        }
+        *out = queue.front();
+        queue.pop_front();
+        return POTR_OK;
+    }
+
+    int peekFront(potr_internal_payload_elem *out, int empty_result)
+    {
+        if (queue.empty())
+        {
+            return empty_result;
+        }
+        *out = queue.front();
+        return POTR_OK;
+    }
+
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx;
+    std::vector<uint8_t> wire_buf;
+    std::vector<uint8_t> sealed_buf;
+    std::vector<uint8_t> batch_plain_buf;
+    std::vector<uint8_t> batch_wire_buf;
+    std::deque<std::vector<uint8_t>> messages;
+    std::vector<potr_internal_payload_elem> entries;
+    std::deque<potr_internal_payload_elem> queue;
+    std::vector<cplat_socket> write_fds;
+    std::vector<const void *> write_bufs;
+    std::vector<std::vector<uint8_t>> writes;
+};
+// 分割されたメッセージの全パケットを、1 回の送信呼び出しで、従来と同じバイト列で書き込むことの確認
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.SetUp]
+TEST_F(potrSendThreadTcpBatchTest, fragmented_message_written_once_with_same_bytes)
+{
+    // Arrange
+    size_t reference_writes = 0U;
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage]
+    addMessage(5000U, 0x10U); // [状態] - 4 個の断片に分かれる 5000 [byte] のメッセージを登録する。
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runReference]
+    std::vector<uint8_t> expected = runReference(&reference_writes);
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(4);
+    // [Pre-Assert確認_正常系] - 取り出した 4 件を成功として完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);      // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(4U, reference_writes);     // [確認_正常系] - 従来の手順では 4 回に分けて書き込むこと。
+    ASSERT_EQ(1U, writes.size());        // [確認_正常系] - まとめ送りでは 1 回の送信呼び出しで書き込むこと。
+    EXPECT_EQ(conn_fd, write_fds[0]);    // [確認_正常系] - path 0 のソケットへ書き込むこと。
+    EXPECT_EQ(expected, writes[0]); // [確認_正常系] - 従来の 4 回分を連結したバイト列と一致すること。
+    EXPECT_EQ(4U, ctx.send_window.next_seq); // [確認_正常系] - 4 個の DATA の通番を消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]
+
+// キューにある複数のメッセージを、メッセージの境界をまたいで 1 回で書き込むことの確認
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.SetUp]
+TEST_F(potrSendThreadTcpBatchTest, messages_across_boundaries_written_once)
+{
+    // Arrange
+    size_t reference_writes = 0U;
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage 回数=3]
+    addMessage(8U, 0x20U);    // [状態] - 分割されないメッセージを登録する。
+    addMessage(2000U, 0x30U); // [状態] - 2 個の断片に分かれるメッセージを登録する。
+    addMessage(8U, 0x40U);    // [状態] - 分割されないメッセージを登録する。
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runReference]
+    std::vector<uint8_t> expected = runReference(&reference_writes);
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(4);
+    // [Pre-Assert確認_正常系] - 取り出した 4 件を成功として完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);  // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(3U, reference_writes); // [確認_正常系] - 従来の手順では外側パケット 3 個を 3 回で書き込むこと。
+    ASSERT_EQ(1U, writes.size());    // [確認_正常系] - まとめ送りでは 1 回の送信呼び出しで書き込むこと。
+    EXPECT_EQ(expected, writes[0]); // [確認_正常系] - 従来の 3 回分を連結したバイト列と一致すること。
+    EXPECT_EQ(3U, ctx.send_window.next_seq); // [確認_正常系] - 3 個の DATA の通番を消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]
+
+// 上限 (16 個) を超える分は、次の送信呼び出しに分かれることの確認
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.SetUp]
+TEST_F(potrSendThreadTcpBatchTest, packets_over_cap_split_into_next_write)
+{
+    // Arrange
+    size_t reference_writes = 0U;
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage]
+    addMessage(20U * (1400U - POTR_PAYLOAD_ELEM_HDR_SIZE), 0x50U); // [状態] - 20 個の断片に分かれるメッセージを登録する。
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runReference]
+    std::vector<uint8_t> expected = runReference(&reference_writes);
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(20);
+    // [Pre-Assert確認_正常系] - 取り出した 20 件を成功として完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);   // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(20U, reference_writes); // [確認_正常系] - 従来の手順では 20 回に分けて書き込むこと。
+    ASSERT_EQ(2U, writes.size());     // [確認_正常系] - 2 回の送信呼び出しに分かれること。
+    EXPECT_EQ(16U, split_packets(writes[0]).size()); // [確認_正常系] - 1 回目は上限の 16 個であること。
+    EXPECT_EQ(4U, split_packets(writes[1]).size());  // [確認_正常系] - 2 回目は残りの 4 個であること。
+    std::vector<uint8_t> joined = writes[0];
+    joined.insert(joined.end(), writes[1].begin(), writes[1].end());
+    EXPECT_EQ(expected, joined); // [確認_正常系] - 2 回分を連結したバイト列が従来の 20 回分と一致すること。
+    EXPECT_EQ(20U, ctx.send_window.next_seq); // [確認_正常系] - 20 個の DATA の通番を消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]
+
+// 1 パケットだけの場合は、従来の手順 (crypto_buf への封緘) で書き込むことの確認
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.SetUp]
+TEST_F(potrSendThreadTcpBatchTest, single_packet_uses_single_packet_path)
+{
+    // Arrange
+    size_t reference_writes = 0U;
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage]
+    addMessage(8U, 0x60U); // [状態] - 分割されないメッセージを 1 件登録する。
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runReference]
+    std::vector<uint8_t> expected = runReference(&reference_writes);
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);                         // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(1U, writes.size());                           // [確認_正常系] - 1 回で書き込むこと。
+    EXPECT_EQ(static_cast<const void *>(ctx.crypto_buf), write_bufs[0]); // [確認_正常系] - crypto_buf から書き込むこと。
+    EXPECT_EQ(expected, writes[0]);                   // [確認_正常系] - 従来の手順と同じバイト列であること。
+    EXPECT_EQ(1U, ctx.send_window.next_seq);                // [確認_正常系] - 1 個の DATA の通番を消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]
+
+// まとめた書き込みに失敗した場合、path を停止し、取り出した全件を失敗として完了させ、通番を進めないことの確認
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.SetUp]
+TEST_F(potrSendThreadTcpBatchTest, batch_write_failure_completes_all_entries_as_failed)
+{
+    // Arrange
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage]
+    addMessage(5000U, 0x70U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_ERR_UNKNOWN));
+    // [Pre-Assert確認_異常系] - まとめた DATA の書き込みを 1 回試みること。
+    // [Pre-Assert手順] - 書き込みの失敗を返す。
+    EXPECT_CALL(mock_cplat, cplat_socket_shutdown(conn_fd)).Times(1);
+    // [Pre-Assert確認_異常系] - 書き込めなかった path のソケットを停止すること。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete_failed(&ctx.send_queue, POTR_ERR_DISCONNECTED)).Times(4);
+    // [Pre-Assert確認_異常系] - 取り出した 4 件を POTR_ERR_DISCONNECTED の送信失敗として完了させること。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(_)).Times(0);
+    // [Pre-Assert確認_異常系] - 成功として完了させないこと。
+    EXPECT_CALL(mock_porter, potr_internal_window_send_push(_, _)).Times(0);
+    // [Pre-Assert確認_異常系] - 送信ウィンドウへ登録しないこと。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);          // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(0U, ctx.send_window.next_seq); // [確認_異常系] - 書き込めなかった DATA の通番を消費しないこと。
+}
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]
+
+// 途中のパケットの封緘に失敗した場合、どのパケットも書き込まずに path を停止し、全件を失敗として完了させることの確認
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.SetUp]
+TEST_F(potrSendThreadTcpBatchTest, batch_seal_failure_writes_nothing)
+{
+    // Arrange
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage]
+    addMessage(5000U, 0x78U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
+    cplat_atomic_store_u64(&ctx.tx_session.next_counter, UINT64_MAX - 2U, CPLAT_MEMORY_ORDER_RELAXED);
+    // [状態] - 3 個目の封緘で送出通番が尽きるようにする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _)).Times(0);
+    // [Pre-Assert確認_異常系] - 封緘できたパケットも含めて書き込まないこと。
+    EXPECT_CALL(mock_cplat, cplat_socket_shutdown(conn_fd)).Times(1);
+    // [Pre-Assert確認_異常系] - 封緘できなかった path のソケットを停止すること。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete_failed(&ctx.send_queue, POTR_ERR_DISCONNECTED)).Times(4);
+    // [Pre-Assert確認_異常系] - 取り出した 4 件を POTR_ERR_DISCONNECTED の送信失敗として完了させること。
+    EXPECT_CALL(mock_porter, potr_internal_window_send_push(_, _)).Times(0);
+    // [Pre-Assert確認_異常系] - 送信ウィンドウへ登録しないこと。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);          // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(0U, ctx.send_window.next_seq); // [確認_異常系] - 書き込めなかった DATA の通番を消費しないこと。
+}
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]
+
+// 2 経路で、両方の経路へ同じパケット列を 1 回ずつ書き込み、送出通番のずれを受信側の重複検出が受け入れることの確認
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.SetUp]
+TEST_F(potrSendThreadTcpBatchTest, two_paths_receive_same_packets)
+{
+    // Arrange
+    potr_internal_replay_window replay = {};
+    int replay_results[8] = {};
+    ctx.n_path = 2;                  // [状態] - path 数を 2 とする。
+    ctx.tcp_conn_fd[1] = second_fd;  // [状態] - path 1 を接続済みとする。
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 2, CPLAT_MEMORY_ORDER_RELAXED);
+    delegate_real_cplat_local_lock_create(&ctx.tcp_send_mutex[1]);
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(second_fd, CPLAT_NO_WAIT, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - path 1 の送信バッファーに空きがあるものとする。
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage]
+    addMessage(5000U, 0x80U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
+    int actual_ret = runQueue();
+    // 受信側が path 1 のパケット列を先に受け取った順で、重複検出へ渡す。
+    std::vector<potr_packet> first_path = writes.size() == 2U ? split_packets(writes[0]) : std::vector<potr_packet>();
+    std::vector<potr_packet> second_path = writes.size() == 2U ? split_packets(writes[1]) : std::vector<potr_packet>();
+    for (size_t i = 0U; i < second_path.size() && i < 4U; ++i)
+    {
+        replay_results[i] = potr_internal_replay_window_accept(&replay, &second_path[i]); // [手順] - path 1 の分を渡す。
+    }
+    for (size_t i = 0U; i < first_path.size() && i < 4U; ++i)
+    {
+        replay_results[4U + i] = potr_internal_replay_window_accept(&replay, &first_path[i]); // [手順] - path 0 の分を渡す。
+    }
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(2U, writes.size());         // [確認_正常系] - 経路ごとに 1 回ずつ書き込むこと。
+    EXPECT_EQ(conn_fd, write_fds[0]);     // [確認_正常系] - 1 回目は path 0 へ書き込むこと。
+    EXPECT_EQ(second_fd, write_fds[1]);   // [確認_正常系] - 2 回目は path 1 へ書き込むこと。
+    ASSERT_EQ(4U, first_path.size());     // [確認_正常系] - path 0 へ 4 個のパケットを書き込むこと。
+    ASSERT_EQ(4U, second_path.size());    // [確認_正常系] - path 1 へ 4 個のパケットを書き込むこと。
+    for (size_t i = 0U; i < 4U; ++i)
+    {
+        EXPECT_EQ(first_path[i].seq_num, second_path[i].seq_num);
+        // [確認_正常系 回数=4] - 両経路の i 番目のパケットの通番が一致すること。
+        EXPECT_EQ(0, std::memcmp(first_path[i].payload, second_path[i].payload, first_path[i].payload_len));
+        // [確認_正常系 回数=4] - 両経路の i 番目のパケットのペイロードが一致すること。
+        EXPECT_EQ(static_cast<uint64_t>(i), first_path[i].tx_counter);
+        // [確認_正常系 回数=4] - path 0 の送出通番が 0 から続けて割り当てられること。
+        EXPECT_EQ(static_cast<uint64_t>(4U + i), second_path[i].tx_counter);
+        // [確認_正常系 回数=4] - path 1 の送出通番が path 0 の後に続けて割り当てられること。
+    }
+    for (size_t i = 0U; i < 8U; ++i)
+    {
+        EXPECT_EQ(POTR_OK, replay_results[i]);
+        // [確認_正常系 回数=8] - 経路間で順序が入れ替わって届いても、重複検出がすべて受け入れること。
+    }
+    EXPECT_EQ(4U, ctx.send_window.next_seq); // [確認_正常系] - 4 個の DATA の通番を 1 回だけ消費すること。
+
+    // Cleanup
+    delegate_real_cplat_local_lock_dispose(ctx.tcp_send_mutex[1]);
+}
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]
+
+// 2 経路で片方の送信バッファーに空きがない場合、従来と同じく他方へだけ書き込んで成功とすることの確認
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.SetUp]
+TEST_F(potrSendThreadTcpBatchTest, two_paths_full_path_is_skipped_as_before)
+{
+    // Arrange
+    ctx.n_path = 2;                 // [状態] - path 数を 2 とする。
+    ctx.tcp_conn_fd[1] = second_fd; // [状態] - path 1 を接続済みとする。
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 2, CPLAT_MEMORY_ORDER_RELAXED);
+    delegate_real_cplat_local_lock_create(&ctx.tcp_send_mutex[1]);
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(second_fd, CPLAT_NO_WAIT, _))
+        .WillByDefault(Return(CPLAT_ERR_TIMEOUT)); // [状態] - path 1 の送信バッファーに空きがないものとする。
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage]
+    addMessage(5000U, 0x90U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(4);
+    // [Pre-Assert確認_正常系] - 取り出した 4 件を成功として完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);             // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(1U, writes.size());               // [確認_正常系] - 1 回だけ書き込むこと。
+    EXPECT_EQ(conn_fd, write_fds[0]);           // [確認_正常系] - 空きのある path 0 へ書き込むこと。
+    EXPECT_EQ(4U, split_packets(writes[0]).size()); // [確認_正常系] - 4 個のパケットをまとめて書き込むこと。
+    EXPECT_EQ(1, ctx.buf_full_suppress_cnt[1]); // [確認_正常系] - path 1 を飛ばした警告を記録すること。
+    EXPECT_EQ(4U, ctx.send_window.next_seq);    // [確認_正常系] - 4 個の DATA の通番を消費すること。
+
+    // Cleanup
+    delegate_real_cplat_local_lock_dispose(ctx.tcp_send_mutex[1]);
+}
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]
+
+// 再送が必要な場合、保持中の DATA を新しい DATA より先に書き込むことの確認
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.SetUp]
+TEST_F(potrSendThreadTcpBatchTest, retained_data_written_before_new_batch)
+{
+    // Arrange
+    uint8_t retained_payload[8] = {9U, 9U, 9U, 9U, 9U, 9U, 9U, 9U};
+    potr_internal_packet_session_hdr shdr = {};
+    potr_packet retained = {};
+    (void)potr_internal_packet_build_packed(&retained, &shdr, 0U, retained_payload, sizeof(retained_payload));
+    ctx.send_window.base_seq = 0U; // [状態] - 通番 0 の DATA を保持しているものとする。
+    ctx.send_window.next_seq = 1U;
+    delegate_real_cplat_local_lock_create(&ctx.callback_mutex);
+    ON_CALL(mock_porter, potr_internal_path_group_select(_, _, _))
+        .WillByDefault([](potr_context *, potr_internal_peer_context *, potr_internal_path_group_result *selection) {
+            *selection = {};
+            selection->data_paths = 1U;
+            selection->selected_paths = 1U;
+            selection->tcp_resend = 1;
+            return POTR_OK;
+        }); // [状態] - 再送が必要な経路選択とする。
+    ON_CALL(mock_porter, potr_internal_window_send_get(&ctx.send_window, 0U, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(retained), Return(POTR_OK))); // [状態] - 保持中の DATA を返す。
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage]
+    addMessage(5000U, 0xA0U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(2U, writes.size());   // [確認_正常系] - 再送と新しい DATA を 2 回で書き込むこと。
+    std::vector<potr_packet> resent = split_packets(writes[0]);
+    std::vector<potr_packet> fresh = split_packets(writes[1]);
+    ASSERT_EQ(1U, resent.size());   // [確認_正常系] - 1 回目は保持中の DATA 1 個であること。
+    EXPECT_EQ(0U, resent[0].seq_num); // [確認_正常系] - 1 回目は通番 0 の保持中の DATA であること。
+    ASSERT_EQ(4U, fresh.size());    // [確認_正常系] - 2 回目は新しい DATA 4 個であること。
+    EXPECT_EQ(1U, fresh[0].seq_num); // [確認_正常系] - 新しい DATA は通番 1 から始まること。
+    EXPECT_EQ(5U, ctx.send_window.next_seq); // [確認_正常系] - 新しい 4 個の DATA の通番を消費すること。
+
+    // Cleanup
+    delegate_real_cplat_local_lock_dispose(ctx.callback_mutex);
+}
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]

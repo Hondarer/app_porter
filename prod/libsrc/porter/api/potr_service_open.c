@@ -306,6 +306,26 @@ static int alloc_context_buffers(potr_context *ctx)
                 return POTR_ERR_OUT_OF_MEMORY;
             }
         }
+
+        /*
+         * 送信スレッドのまとめ送り用バッファー。連結バッファーが POTR_TCP_BATCH_MAX_BYTES を超えないよう上限数を決め、
+         * 2 個未満になる設定 (最大ペイロード長が大きい場合) では確保せず、まとめ送りを使わない。
+         */
+        size_t batch_cap = POTR_TCP_BATCH_MAX_BYTES / ctx->crypto_buf_size;
+        if (batch_cap > POTR_TCP_BATCH_MAX_PACKETS)
+        {
+            batch_cap = POTR_TCP_BATCH_MAX_PACKETS;
+        }
+        if (batch_cap >= 2U)
+        {
+            ctx->tcp_batch_plain_buf = (uint8_t *)cplat_malloc(batch_cap * (size_t)ctx->global.max_payload);
+            ctx->tcp_batch_wire_buf = (uint8_t *)cplat_malloc(batch_cap * ctx->crypto_buf_size);
+            if (ctx->tcp_batch_plain_buf == NULL || ctx->tcp_batch_wire_buf == NULL)
+            {
+                return POTR_ERR_OUT_OF_MEMORY;
+            }
+            ctx->tcp_batch_cap = batch_cap;
+        }
     }
 
     return POTR_OK;

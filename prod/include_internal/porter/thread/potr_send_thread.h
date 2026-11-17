@@ -29,6 +29,22 @@
 #include <porter/porter_result.h>
 #include <porter/potr_context.h>
 
+/**
+ *  @brief          TCP の 1:1 通信で、送信スレッドが 1 回の送信呼び出しにまとめる外側パケットの上限数です。
+ *
+ *  送出通番の割り当て順は経路ごとに最大この数だけずれるため、
+ *  経路数の上限との積は受信側の重複検出の範囲 (直近 256 通番) より小さくします。
+ */
+#define POTR_TCP_BATCH_MAX_PACKETS 16U
+
+/**
+ *  @brief          まとめ送りの連結バッファーの上限 [byte] です。
+ *
+ *  封緘後の外側パケットの最大長 (crypto_buf_size) と POTR_TCP_BATCH_MAX_PACKETS の積がこの値を超える場合は、
+ *  1 回にまとめる数を下げます。2 個未満になる場合は、まとめ送りを使いません。
+ */
+#define POTR_TCP_BATCH_MAX_BYTES 65536U
+
 #ifdef __cplusplus
 extern "C"
 {
