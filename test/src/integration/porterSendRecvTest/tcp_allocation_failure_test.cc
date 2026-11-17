@@ -19,6 +19,12 @@ constexpr size_t message_size = 8192;
 constexpr size_t wire_size = offsetof(potr_packet, payload) + payload_size;
 constexpr size_t compress_size = message_size;
 constexpr size_t crypto_size = wire_size + POTR_CRYPTO_TAG_SIZE;
+/* TCP のまとめ送り用バッファーは、上限 16 個 (POTR_TCP_BATCH_MAX_PACKETS) 分を open 時に確保します。
+ * この設定では、平文側 (16 × max_payload) が max_message_size と同じサイズになります。 */
+constexpr size_t batch_packets = 16;
+constexpr size_t batch_plain_size = batch_packets * payload_size;
+constexpr size_t batch_wire_size = batch_packets * crypto_size;
+static_assert(batch_plain_size == compress_size, "まとめ送りの平文バッファーは compress_size と同じサイズの前提です");
 
 struct allocation_probe
 {
@@ -218,6 +224,16 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
         // recv_buf/send_wire_buf と経路別受信バッファー、既存の経路別先読みバッファーです。
         expected_calls += 2 * POTR_MAX_PATH;
     }
+    else if (target.size == compress_size)
+    {
+        // 組み立て用と受信用に加えて、同じサイズになるまとめ送りの平文バッファーです。
+        expected_calls += 1U;
+    }
+    else if (target.size == batch_wire_size)
+    {
+        // まとめ送りの連結バッファーだけです。
+        expected_calls = 1U;
+    }
     arm(target.size, 0); // [状態] - 全 4 経路の TCP 受信者で、対象サイズの確保回数を記録する。
     // Pre-Assert
     // Act
@@ -309,12 +325,15 @@ TEST_P(tcp_allocation_failure_test, releases_buffers_and_reopens_endpoints)
 #if defined(PLATFORM_LINUX)
 /* 圧縮用の領域は送信時に呼び出しごとに確保するため、open 時の max_message_size は組み立て用の次が受信用です。
  * crypto は送信用の次が受信用。wire は recv_buf/send_wire_buf の次が経路別です。
+ * まとめ送りの平文バッファーは max_message_size と同じサイズの 3 番目、連結バッファーは固有のサイズです。
  * 総 malloc 回数には依存せず、公開設定から決まるサイズの出現順で指定します。 */
 INSTANTIATE_TEST_SUITE_P(
     receive_buffers, tcp_allocation_failure_test,
     Values(allocation_case{"recv_compress_buf", compress_size, 2}, allocation_case{"recv_crypto_buf", crypto_size, 2},
            allocation_case{"tcp_recv_buf_0", wire_size, 3}, allocation_case{"tcp_recv_buf_1", wire_size, 4},
-           allocation_case{"tcp_recv_buf_2", wire_size, 5}, allocation_case{"tcp_recv_buf_3", wire_size, 6}),
+           allocation_case{"tcp_recv_buf_2", wire_size, 5}, allocation_case{"tcp_recv_buf_3", wire_size, 6},
+           allocation_case{"tcp_batch_plain_buf", batch_plain_size, 3},
+           allocation_case{"tcp_batch_wire_buf", batch_wire_size, 1}),
     [](const TestParamInfo<allocation_case> &case_info) { return case_info.param.name; });
 #else
 INSTANTIATE_TEST_SUITE_P(receive_buffers, tcp_allocation_failure_test, Values(allocation_case{"linux_only", 0, 0}));
