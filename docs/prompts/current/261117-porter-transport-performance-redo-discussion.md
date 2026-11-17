@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 検討用 Markdown (discussion)
-最終更新日時: 2026-11-17 21:35:00 JST
+最終更新日時: 2026-11-17 23:20:00 JST
 最終更新エージェント: claude code (Opus 5.5) / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
 稼働 OS: Windows
 上流文書: `261115-porter-reject-recovery-backlog.md` (BL-001、BL-002 の対策元)。打ち切った旧案件の記録として `../past/261115-porter-transport-performance-discussion.md`、`../past/261115-porter-transport-performance-design.md`、`../past/261115-porter-transport-performance-validation.md` があります。削除されている場合があります。
@@ -56,10 +56,10 @@
         - ✅ 4.8.1. Windows (担当: Opus 5.5 のサブエージェント。4 段階とも終了コード 0、失敗 0 件、`.warn` なし。`e102d94` の変更分は、対象の 3 ディレクトリを再実行して確認)
         - ✅ 4.8.2. Linux (WSL) (担当: `c-modernization-kit-f6`。4 段階とも終了コード 0、失敗 0 件、`.warn` なし)
     - ✅ 4.9. porter の機能仕様と設計文書への反映の要否の確認と反映 (機能仕様は変更不要。`docs/protocol.md`、`docs/architecture.md`、cplat の `docs/api-cheatsheet.md`、呼び出し箇所の `see:` コメントは反映済み)
-    - 🔄 4.10. 親リポジトリのプル リクエスト ([#59](https://github.com/Hondarer/c-modernization-kit/pull/59)) による CI の実行と、全ジョブの成功および警告なしの確認 ← **CURRENT**
+    - ✅ 4.10. 親リポジトリのプル リクエスト ([#59](https://github.com/Hondarer/c-modernization-kit/pull/59)) による CI の実行と、全ジョブの成功および警告なしの確認
         - ✅ 4.10.1. 1 回目 (run `44050752536`)。Linux の 3 ジョブが `tcp_allocation_failure_test` の 1 ケースで失敗。テストの期待値を直した (porter `e102d94`)
-        - 🔄 4.10.2. 2 回目 (run `44077056578`)
-    - ⏸️ 4.11. cplat、porter、親リポジトリの `main` への取り込みと、Windows と WSL の同期 (ユーザーの指示を受けてから行う)
+        - ✅ 4.10.2. 2 回目 (run `44077056578`)。全ジョブ成功。`*-warns` のアーティファクトはなく、警告は 0 件
+    - 🚫 4.11. cplat、porter、親リポジトリの `main` への取り込みと、Windows と WSL の同期 (ユーザーの指示を受けてから行う。CI の結果を報告し、指示を待っている) ← **CURRENT**
     - ⏸️ 4.12. 対策元 `261115-porter-reject-recovery-backlog.md` の更新と、`261117-porter-transport-performance-redo-backlog.md` の整理
 - ⏸️ 5. 成果物の承認の受付 (第 3 ゲート)
     - ⏸️ 5.1. 成果物・検証結果・残課題の提示
@@ -756,3 +756,7 @@ Windows では、`e102d94` の変更が及ぶ 3 ディレクトリ (`test/src/cm
 - 機能仕様 (`docs/functional-spec/`) は変更しません。今回の変更は送信の方式の変更で、利用側から見た要件と機能の振る舞いを変えないためです。
 - `docs/protocol.md` と `docs/architecture.md` には、まとめ送りの説明を追記済みです。cplat の `docs/api-cheatsheet.md` には、`cplat_socket_set_nodelay` の行を追記済みです。
 - `TCP_NODELAY` を設定する 2 箇所 (`thread_connect_prepare.c`、`potr_connect_thread.c`) には、根拠の `see:` コメントがあります。Doxygen の生成物はリポジトリで管理しておらず、CI の docs のジョブで生成されます (1 回目で成功)。
+
+### CI の 2 回目 (2026-11-17)
+
+`e102d94` を参照するプル リクエスト [#59](https://github.com/Hondarer/c-modernization-kit/pull/59) の CI の 2 回目 (run `44077056578`) で、全ジョブが成功しました。所要時間は、Linux の 3 ジョブが約 2 時間 3 分から 2 時間 22 分、Windows が約 2 時間 8 分、docs が約 58 分です。warnings-summary は成功し、警告のアーティファクト (`*-warns`) は 1 件もアップロードされていません。注記は、GitHub のランナーのラベル `ubuntu-latest` の移行の案内だけで、この案件の変更とは関係ありません。
