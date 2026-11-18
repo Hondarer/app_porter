@@ -177,31 +177,6 @@ TEST(potrServiceCloseTest, tcp_close_without_active_path_after_data_returns_disc
     delegate_real_cplat_local_lock_dispose(ctx.send_window_mutex);
 }
 
-// 終了待ち未完了の TCP コンテキストを解放しないことの確認
-TEST(potrServiceCloseTest, incomplete_join_retains_shared_resources)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    porter_handle_test owned_handle(&ctx); // [サブ手順参照 名前=porter_handle_test.constructor]
-    ctx.service.type = POTR_TYPE_TCP;
-    ON_CALL(mock_porter, api_context_has_threads(_)).WillByDefault(Return(1));
-    // Pre-Assert
-    EXPECT_CALL(mock_porter, api_context_dispose_resources(_)).Times(0);
-    // [Pre-Assert確認_異常系] - 終了待ち未完了で共通資源を解放しないこと。
-    EXPECT_CALL(mock_porter, api_context_dispose_tcp_sync(_)).Times(0);
-    // [Pre-Assert確認_異常系] - 終了待ち未完了で同期資源を解放しないこと。
-    EXPECT_CALL(mock_cplat, cplat_free(_)).Times(AnyNumber());
-    // [Pre-Assert確認_正常系] - 試験用制御オブジェクトの解放を許可する。
-    EXPECT_CALL(mock_cplat, cplat_free(&ctx)).Times(0);
-    // [Pre-Assert確認_異常系] - コンテキスト本体を解放しないこと。
-    // Act
-    int actual_ret = potr_service_close(owned_handle.get()); // [手順] - 終了待ちが完了しないサービスを閉じる。
-    // Assert
-    EXPECT_EQ(POTR_ERR_UNKNOWN, actual_ret); // [確認_異常系] - 終了待ち失敗を成功としないこと。
-}
-
 // 相手 FIN 受理済み・送信済みデータあり・FIN 受理後の送信なしなら FIN を送らず POTR_OK を返すことの確認
 TEST(potrServiceCloseTest, tcp_close_after_peer_fin_without_post_fin_send_returns_ok)
 {

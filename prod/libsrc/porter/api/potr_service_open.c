@@ -82,22 +82,11 @@ static int generate_session(potr_context *ctx)
 
 /*
  * 共通資源を破棄してコンテキストを解放する。
- * 呼び出し前に、起動済みスレッドの終了待ちを完了する。
- * スレッド ハンドルが残っているときは、コンテキストを解放せずに戻る。
+ * 呼び出し前に、起動済みスレッドを停止しておく。停止関数は終了待ちに失敗しない。
  */
 static void ctx_cleanup(potr_context *ctx)
 {
-    if (api_context_has_threads(ctx))
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: thread join incomplete; retaining context");
-        return;
-    }
-
-    if (potr_internal_notify_stop(ctx) != POTR_OK)
-    {
-        return;
-    }
-
+    potr_internal_notify_stop(ctx);
     potr_internal_handle_discard(ctx);
     api_context_dispose_resources(ctx);
     cplat_free(ctx);
@@ -401,12 +390,7 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
     result = potr_internal_connect_thread_start(ctx);
     if (result != POTR_OK)
     {
-        /* 待機失敗でハンドルが残る場合は、使用中のキューと同期資源を保持する。 */
-        if (api_context_has_threads(ctx))
-        {
-            return result;
-        }
-
+        /* 起動関数は、失敗時に起動済みのスレッドを停止してから戻る。 */
         if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
         {
             potr_internal_send_queue_dispose(&ctx->send_queue);
@@ -477,13 +461,6 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
         if (result != POTR_OK)
         {
             potr_internal_send_thread_stop(ctx);
-
-            /* 待機失敗でハンドルが残る場合は、使用中のキューを保持する。 */
-            if (api_context_has_threads(ctx))
-            {
-                return result;
-            }
-
             potr_internal_send_queue_dispose(&ctx->send_queue);
             return result;
         }
@@ -491,20 +468,8 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
         result = potr_internal_comm_recv_thread_start(ctx);
         if (result != POTR_OK)
         {
-            /* ヘルス チェック スレッドの終了待ちに失敗したときは、ハンドルが残るためキューを保持して戻る。 */
-            if (potr_internal_health_thread_stop(ctx) != POTR_OK)
-            {
-                return result;
-            }
-
+            potr_internal_health_thread_stop(ctx);
             potr_internal_send_thread_stop(ctx);
-
-            /* 待機失敗でハンドルが残る場合は、使用中のキューを保持する。 */
-            if (api_context_has_threads(ctx))
-            {
-                return result;
-            }
-
             potr_internal_send_queue_dispose(&ctx->send_queue);
             return result;
         }

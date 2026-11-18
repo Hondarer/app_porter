@@ -53,7 +53,7 @@ TEST(potrHandleTest, close_waits_for_reference_and_rejects_late_entries)
     }
     potr_internal_handle_release(active); // [手順] - 先行 API の参照を返して close を進める。
     closer.join();
-    potr_internal_handle_end_close(&ctx, 1); // [手順] - 資源回収済みとしてハンドルを無効化する。
+    potr_internal_handle_end_close(&ctx); // [手順] - 資源回収済みとしてハンドルを無効化する。
     int stale_ret = potr_internal_handle_acquire(handle, &later);
     // [手順] - close 完了後の古いハンドルを使用する。
     // Assert
@@ -66,8 +66,8 @@ TEST(potrHandleTest, close_waits_for_reference_and_rejects_late_entries)
     potr_internal_handle_discard(&ctx);
 }
 
-// 終了失敗後の再試行と、古い公開値の再利用防止を確認する。
-TEST(potrHandleTest, close_failure_allows_only_retry_and_closed_value_is_not_reused)
+// 終了済みの公開値を再利用せず、終了後の close を無効ハンドルとして拒否することの確認
+TEST(potrHandleTest, closed_value_is_not_reused)
 {
     // Arrange
     potr_context first = {};
@@ -80,20 +80,18 @@ TEST(potrHandleTest, close_failure_allows_only_retry_and_closed_value_is_not_reu
     // Act
     int initial = potr_internal_handle_begin_close(old_handle, &resolved);
     // [手順] - 最初の終了処理を開始する。
-    potr_internal_handle_end_close(&first, 0);
-    int normal = potr_internal_handle_acquire(old_handle, &resolved);
-    // [手順] - 終了失敗後に通常操作を試みる。
-    int retry = potr_internal_handle_begin_close(old_handle, &resolved);
-    // [手順] - 終了処理を再試行する。
-    potr_internal_handle_end_close(&first, 1);
+    potr_internal_handle_end_close(&first);
+    // [手順] - 資源回収済みとして終了を記録する。
+    int closed_again = potr_internal_handle_begin_close(old_handle, &resolved);
+    // [手順] - 終了後に close を再度要求する。
     int prepared = potr_internal_handle_prepare(&second);
     int stale = potr_internal_handle_acquire(old_handle, &resolved);
     // [手順] - 新しいハンドルを作成した後に古い値を使用する。
     // Assert
-    EXPECT_EQ(POTR_OK, initial);                                 // [確認_正常系] - 最初の終了処理を受け付けること。
-    EXPECT_EQ(POTR_ERR_CANCELED, normal);                        // [確認_異常系] - 終了失敗後も通常操作を拒否すること。
-    EXPECT_EQ(POTR_OK, retry);                                   // [確認_正常系] - close の再試行を受け付けること。
-    EXPECT_EQ(POTR_OK, prepared);                                // [確認_正常系] - 新しいハンドルを準備できること。
+    EXPECT_EQ(POTR_OK, initial); // [確認_正常系] - 最初の終了処理を受け付けること。
+    EXPECT_EQ(POTR_ERR_INVALID_HANDLE,
+              closed_again);      // [確認_異常系] - 終了後の close を無効ハンドルとして拒否すること。
+    EXPECT_EQ(POTR_OK, prepared); // [確認_正常系] - 新しいハンドルを準備できること。
     EXPECT_NE(old_handle, potr_internal_handle_public(&second)); // [確認_正常系] - 終了済みの公開値を再利用しないこと。
     EXPECT_EQ(POTR_ERR_INVALID_HANDLE, stale); // [確認_異常系] - 古い値から新しいコンテキストへ到達しないこと。
     // Cleanup
@@ -122,6 +120,6 @@ TEST(potrHandleTest, fatal_error_rejects_normal_operation_but_allows_close)
     EXPECT_EQ(POTR_OK, actual_ret_close);
     // [確認_正常系] - close による資源回収を受け付けること。
     // Cleanup
-    potr_internal_handle_end_close(&ctx, 1);
+    potr_internal_handle_end_close(&ctx);
     potr_internal_handle_discard(&ctx);
 }

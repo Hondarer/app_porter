@@ -184,7 +184,7 @@ class threadRecvWindowRejectTest : public Test
     // [サブ手順 名前=threadRecvWindowRejectTest.TearDown]
     void TearDown() override
     {
-        (void)potr_internal_notify_stop(&ctx);
+        potr_internal_notify_stop(&ctx);
         potr_internal_window_dispose(&ctx.recv_window);
         if (ctx.send_window_mutex != nullptr)
         {
@@ -231,10 +231,10 @@ TEST_F(threadRecvWindowRejectTest, reject_at_next_seq_disconnects_and_discards_r
 
     // Act
     thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - next_seq と一致する REJECT を処理する。
-    const int stop_ret = potr_internal_notify_stop(&ctx);         // [手順] - 通知スレッドを停止して全イベントを回収する。
+    potr_internal_notify_stop(&ctx);                         // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert
-    EXPECT_EQ(POTR_OK, stop_ret); // [確認_正常系] - potr_internal_notify_stop() の戻り値が POTR_OK であること。
+    EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
     EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - ctx.health_alive が 0 であること。
     EXPECT_EQ(0, ctx.path_logical_alive[0]); // [確認_正常系] - ctx.path_logical_alive[0] が 0 であること。
     EXPECT_EQ(0, ctx.peer_session_known); // [確認_正常系] - ctx.peer_session_known が 0 であること。
@@ -266,10 +266,10 @@ TEST_F(threadRecvWindowRejectTest, reject_beyond_window_disconnects_and_discards
 
     // Act
     thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 受信ウィンドウより先の REJECT を処理する。
-    const int stop_ret = potr_internal_notify_stop(&ctx);         // [手順] - 通知スレッドを停止して全イベントを回収する。
+    potr_internal_notify_stop(&ctx);                         // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert
-    EXPECT_EQ(POTR_OK, stop_ret); // [確認_正常系] - potr_internal_notify_stop() の戻り値が POTR_OK であること。
+    EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
     EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - ctx.health_alive が 0 であること。
     EXPECT_EQ(0, ctx.path_logical_alive[0]); // [確認_正常系] - ctx.path_logical_alive[0] が 0 であること。
     EXPECT_EQ(0, ctx.peer_session_known); // [確認_正常系] - ctx.peer_session_known が 0 であること。
@@ -301,10 +301,10 @@ TEST_F(threadRecvWindowRejectTest, reject_already_delivered_seq_is_ignored)
 
     // Act
     thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 配信済み通番の REJECT を処理する。
-    const int stop_ret = potr_internal_notify_stop(&ctx);         // [手順] - 通知スレッドを停止して全イベントを回収する。
+    potr_internal_notify_stop(&ctx);                         // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert
-    EXPECT_EQ(POTR_OK, stop_ret); // [確認_正常系] - potr_internal_notify_stop() の戻り値が POTR_OK であること。
+    EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
     EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - ctx.health_alive が 1 であること。
     EXPECT_EQ(1, ctx.path_logical_alive[0]); // [確認_正常系] - ctx.path_logical_alive[0] が 1 であること。
     EXPECT_EQ(1, ctx.peer_session_known); // [確認_正常系] - ctx.peer_session_known が 1 であること。
@@ -333,10 +333,10 @@ TEST_F(threadRecvWindowRejectTest, reject_already_buffered_in_window_is_ignored)
 
     // Act
     thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 保持済み通番の REJECT を処理する。
-    const int stop_ret = potr_internal_notify_stop(&ctx);         // [手順] - 通知スレッドを停止して全イベントを回収する。
+    potr_internal_notify_stop(&ctx);                         // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert
-    EXPECT_EQ(POTR_OK, stop_ret); // [確認_正常系] - potr_internal_notify_stop() の戻り値が POTR_OK であること。
+    EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
     EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - ctx.health_alive が 1 であること。
     EXPECT_EQ(1, ctx.path_logical_alive[0]); // [確認_正常系] - ctx.path_logical_alive[0] が 1 であること。
     EXPECT_EQ(1, ctx.peer_session_known); // [確認_正常系] - ctx.peer_session_known が 1 であること。
@@ -366,10 +366,10 @@ TEST_F(threadRecvWindowRejectTest, reject_gap_with_pending_fin_fires_fin_and_ret
 
     // Act
     thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 保留 FIN 中の欠番 REJECT を処理する。
-    const int stop_ret = potr_internal_notify_stop(&ctx);         // [手順] - 通知スレッドを停止して全イベントを回収する。
+    potr_internal_notify_stop(&ctx);                         // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert
-    EXPECT_EQ(POTR_OK, stop_ret); // [確認_正常系] - potr_internal_notify_stop() の戻り値が POTR_OK であること。
+    EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
     EXPECT_TRUE(events.empty());
     // [確認_正常系] - events.empty() の戻り値が true であること。(on_reject からの切断通知二重発火なしの確認)
 }
@@ -410,11 +410,11 @@ TEST_F(threadRecvWindowRejectTest, reject_then_new_data_readopts_session_and_del
     // Act_2
     const int adopted = thread_recv_session_adopt(&slot, &next_data.packet); // [手順] - 後続 DATA でセッションを再採用する。
     thread_recv_window_accept_outer(&slot, &next_data.packet, 0);            // [手順] - 後続 DATA を受信ウィンドウへ受理する。
-    const int stop_ret = potr_internal_notify_stop(&ctx);                    // [手順] - 通知スレッドを停止して全イベントを回収する。
+    potr_internal_notify_stop(&ctx);                                    // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert_2
     EXPECT_EQ(1, adopted);        // [確認_正常系] - thread_recv_session_adopt() の戻り値が 1 であること。
-    EXPECT_EQ(POTR_OK, stop_ret); // [確認_正常系] - potr_internal_notify_stop() の戻り値が POTR_OK であること。
+    EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
     EXPECT_EQ(1, ctx.peer_session_known); // [確認_正常系] - ctx.peer_session_known が 1 であること。
     EXPECT_EQ(201U, ctx.recv_window.base_seq);
     // [確認_正常系] - ctx.recv_window.base_seq が 201U であること。(200 を起点に再初期化して配信済みの確認)

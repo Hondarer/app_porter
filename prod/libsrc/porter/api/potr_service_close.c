@@ -257,7 +257,7 @@ static void stop_tcp_health_threads(potr_context *ctx)
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        (void)potr_internal_tcp_health_thread_stop(ctx, i);
+        potr_internal_tcp_health_thread_stop(ctx, i);
     }
 }
 
@@ -270,17 +270,6 @@ static int close_impl(potr_context *handle)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_close: handle is NULL");
         return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    /*
-     * コールバックを呼んだスレッドは close が停止・join する対象のため、自身の終了を待って停止する。
-     * 停止前に拒否し、ハンドルは有効なまま残す。
-     */
-    if (potr_internal_in_own_callback(ctx))
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_close: service_id=%" PRId64 " called from its own callback",
-                   ctx->service.service_id);
-        return POTR_ERR_UNSUPPORTED;
     }
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service_id=%" PRId64 " closing", ctx->service.service_id);
@@ -384,11 +373,6 @@ static int close_impl(potr_context *handle)
                    "potr_service_close: service_id=%" PRId64 " stopping connect thread (TCP)", ctx->service.service_id);
         potr_internal_connect_thread_stop(ctx);
 
-        if (api_context_has_threads(ctx))
-        {
-            return POTR_ERR_UNKNOWN;
-        }
-
         /* 送信キューを破棄する (SENDER / TCP_BIDIR のみ)。 */
         if (ctx->role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
         {
@@ -408,10 +392,7 @@ static int close_impl(potr_context *handle)
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping health thread",
                    ctx->service.service_id);
 
-        if (potr_internal_health_thread_stop(ctx) != POTR_OK)
-        {
-            return POTR_ERR_UNKNOWN;
-        }
+        potr_internal_health_thread_stop(ctx);
     }
 
     for (size_t path_idx = 0U; path_idx < POTR_MAX_PATH; path_idx++)
@@ -451,19 +432,10 @@ static int close_impl(potr_context *handle)
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
                        ctx->service.service_id);
 
-            if (potr_internal_comm_recv_thread_stop(ctx) != POTR_OK)
-            {
-                return POTR_ERR_UNKNOWN;
-            }
+            potr_internal_comm_recv_thread_stop(ctx);
         }
 
         potr_internal_send_thread_stop(ctx);
-
-        if (ctx->send_thread != NULL)
-        {
-            return POTR_ERR_UNKNOWN;
-        }
-
         potr_internal_send_queue_dispose(&ctx->send_queue);
     }
 
@@ -473,10 +445,7 @@ static int close_impl(potr_context *handle)
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping recv thread",
                    ctx->service.service_id);
 
-        if (potr_internal_comm_recv_thread_stop(ctx) != POTR_OK)
-        {
-            return POTR_ERR_UNKNOWN;
-        }
+        potr_internal_comm_recv_thread_stop(ctx);
     }
 
     /*
@@ -537,25 +506,26 @@ int potr_service_close(potr_context *handle)
     ret = potr_internal_handle_begin_close(handle, &ctx);
     if (ret != POTR_OK)
     {
+        /*
+         * コールバックを実行したスレッドは close が停止・終了待ちする対象のため、自身の終了を待てない。
+         * 停止前に拒否し、ハンドルは有効なまま残す。
+         * 拒否の時点ではコンテキストを取得しないため、サービス ID の代わりにハンドルを出力する。
+         */
+        if (ret == POTR_ERR_UNSUPPORTED)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_close: called from its own callback (handle=%p)",
+                       (const void *)handle);
+        }
+
         return ret;
     }
 
+    /* スレッドの停止関数は終了待ちに失敗しないため、close_impl() の後はすべてのスレッドが終了している。 */
     ret = close_impl(ctx);
 
-    if (api_context_has_threads(ctx))
-    {
-        potr_internal_handle_end_close(ctx, 0);
-        return ret;
-    }
-
-    if (potr_internal_notify_stop(ctx) != POTR_OK)
-    {
-        potr_internal_handle_end_close(ctx, 0);
-        return POTR_ERR_UNKNOWN;
-    }
-
+    potr_internal_notify_stop(ctx);
     api_context_dispose_resources(ctx);
-    potr_internal_handle_end_close(ctx, 1);
+    potr_internal_handle_end_close(ctx);
     cplat_free(ctx);
 
     return ret;

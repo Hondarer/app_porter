@@ -22,14 +22,6 @@ extern "C"
 #endif
 
     /**
-     *  @brief          終了待ちが必要なスレッド ハンドルの有無を返します。
-     *  @param[in]      ctx  有効なコンテキスト。NULL は許可しません。
-     *  @return         ハンドルが残るとき 1、それ以外は 0 を返します。
-     *  @note           成否を返さない述語です。停止を管理するスレッドから呼びます。
-     */
-    int api_context_has_threads(const potr_context *ctx);
-
-    /**
      *  @brief          停止済みコンテキストの共通資源を解放します。
      *  @param[in,out]  ctx  有効なコンテキスト。NULL は許可しません。
      *  @note           使用する全スレッドが未起動または終了待ち済みであることが必要です。

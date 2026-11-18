@@ -47,10 +47,9 @@ TEST(potrRecvThreadTest, udp_stop_joins_finished_thread_once)
     // [Pre-Assert確認_正常系] - 生成済み recv を 1 回だけ join すること。
     // [Pre-Assert手順] - join 成功を返す。
     // Act
-    int actual_ret = potr_internal_comm_recv_thread_stop(&ctx); // [手順] - recv の終了を待つ。
-    (void)potr_internal_comm_recv_thread_stop(&ctx);            // [手順] - 停止済み recv を再度停止する。
+    potr_internal_comm_recv_thread_stop(&ctx); // [手順] - recv の終了を待つ。
+    potr_internal_comm_recv_thread_stop(&ctx); // [手順] - 停止済み recv を再度停止する。
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret);         // [確認_正常系] - 停止成功を返すこと。
     EXPECT_EQ(nullptr, ctx.recv_thread[0]); // [確認_正常系] - ハンドルが NULL であること。
 }
 
@@ -88,10 +87,9 @@ TEST(potrRecvThreadTest, tcp_stop_joins_finished_thread_once)
     // [Pre-Assert確認_正常系] - 生成済み recv を 1 回だけ join すること。
     // [Pre-Assert手順] - join 成功を返す。
     // Act
-    int actual_ret = potr_internal_tcp_recv_thread_stop(&ctx, 0); // [手順] - recv の終了を待つ。
-    (void)potr_internal_tcp_recv_thread_stop(&ctx, 0);            // [手順] - 停止済み recv を再度停止する。
+    potr_internal_tcp_recv_thread_stop(&ctx, 0); // [手順] - recv の終了を待つ。
+    potr_internal_tcp_recv_thread_stop(&ctx, 0); // [手順] - 停止済み recv を再度停止する。
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret);         // [確認_正常系] - 停止成功を返すこと。
     EXPECT_EQ(nullptr, ctx.recv_thread[0]); // [確認_正常系] - ハンドルが NULL であること。
 }
 

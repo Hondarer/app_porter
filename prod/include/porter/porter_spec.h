@@ -362,7 +362,6 @@ extern "C"
      *  いずれの場合も、相手側では POTR_EVENT_DISCONNECTED が発火します。
      *
      *  @attention      受付停止前の API と登録済み通知の完了を待ってから通信資源を解放します。\n
-     *                  停止失敗時は通常操作を拒否したまま close を再試行できます。\n
      *                  同一ハンドルのコールバック内では、終了要求を設定せず POTR_ERR_UNSUPPORTED を返します。
      *
      *  @par            スレッド セーフ

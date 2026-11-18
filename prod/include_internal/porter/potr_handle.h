@@ -56,11 +56,12 @@ extern "C"
     int potr_internal_handle_begin_close(potr_context *handle, potr_context **ctx);
 
     /**
-     *  @brief          終了結果を記録します。
+     *  @brief          資源回収済みとして終了を記録します。
+     *  @note           以後、ハンドルによる操作は POTR_ERR_INVALID_HANDLE を返します。
+     *                  終了処理は資源を保持したまま失敗しないため、終了失敗の状態はありません。
      *  @param[in,out]  ctx 通信コンテキスト。
-     *  @param[in]      closed 資源回収済みなら 1。
      */
-    void potr_internal_handle_end_close(potr_context *ctx, int closed);
+    void potr_internal_handle_end_close(potr_context *ctx);
 #ifdef __cplusplus
 }
 #endif

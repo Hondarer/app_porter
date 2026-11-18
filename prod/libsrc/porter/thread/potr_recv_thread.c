@@ -893,11 +893,11 @@ int potr_internal_comm_recv_thread_start(potr_context *ctx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_comm_recv_thread_stop(potr_context *ctx)
+void potr_internal_comm_recv_thread_stop(potr_context *ctx)
 {
     if (ctx == NULL)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return;
     }
 
     cplat_atomic_store_i32(&ctx->running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
@@ -920,8 +920,6 @@ int potr_internal_comm_recv_thread_stop(potr_context *ctx)
 
         ctx->recv_thread[0] = NULL;
     }
-
-    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -957,11 +955,11 @@ int potr_internal_tcp_recv_thread_start(potr_context *ctx, int path_idx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_tcp_recv_thread_stop(potr_context *ctx, int path_idx)
+void potr_internal_tcp_recv_thread_stop(potr_context *ctx, int path_idx)
 {
     if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return;
     }
 
     cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
@@ -972,6 +970,4 @@ int potr_internal_tcp_recv_thread_stop(potr_context *ctx, int path_idx)
 
         ctx->recv_thread[path_idx] = NULL;
     }
-
-    return POTR_OK;
 }

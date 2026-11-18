@@ -857,19 +857,10 @@ void potr_internal_connect_thread_stop(potr_context *ctx)
     /* connect が生成した従属スレッドも、所有ハンドルが残っていれば回収する。 */
     for (i = 0; i < ctx->n_path; i++)
     {
-        if (potr_internal_tcp_recv_thread_stop(ctx, i) != POTR_OK ||
-            potr_internal_tcp_health_thread_stop(ctx, i) != POTR_OK)
-        {
-            return;
-        }
+        potr_internal_tcp_recv_thread_stop(ctx, i);
+        potr_internal_tcp_health_thread_stop(ctx, i);
     }
 
     potr_internal_send_thread_stop(ctx);
-
-    if (ctx->send_thread != NULL)
-    {
-        return;
-    }
-
     dispose_connect_resources(ctx);
 }

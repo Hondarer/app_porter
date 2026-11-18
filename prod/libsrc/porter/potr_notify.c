@@ -167,21 +167,17 @@ int potr_internal_notify_start(potr_context *ctx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_notify_stop(potr_context *ctx)
+void potr_internal_notify_stop(potr_context *ctx)
 {
     struct potr_internal_notifications *q;
     potr_internal_notice *node;
 
-    if (ctx == NULL)
+    if (ctx == NULL || ctx->notifications == NULL)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return;
     }
 
     q = ctx->notifications;
-    if (q == NULL)
-    {
-        return POTR_OK;
-    }
 
     /* 生成元の停止後に登録を締め切り、登録済み通知の配送が終わるまで資源を保持する。 */
     cplat_local_lock_lock(q->mutex);
@@ -203,8 +199,6 @@ int potr_internal_notify_stop(potr_context *ctx)
     cplat_local_lock_dispose(q->mutex);
     cplat_free(q);
     ctx->notifications = NULL;
-
-    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

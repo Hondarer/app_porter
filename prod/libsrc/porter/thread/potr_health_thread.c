@@ -560,16 +560,11 @@ int potr_internal_health_thread_start(potr_context *ctx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_health_thread_stop(potr_context *ctx)
+void potr_internal_health_thread_stop(potr_context *ctx)
 {
-    if (ctx == NULL)
+    if (ctx == NULL || ctx->health_thread[0] == NULL)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    if (ctx->health_thread[0] == NULL)
-    {
-        return POTR_OK;
+        return;
     }
 
     cplat_atomic_store_i32(&ctx->health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
@@ -586,8 +581,6 @@ int potr_internal_health_thread_stop(potr_context *ctx)
     ctx->health_wakeup[0] = NULL;
     cplat_local_lock_dispose(ctx->health_mutex[0]);
     ctx->health_mutex[0] = NULL;
-
-    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -656,17 +649,17 @@ int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
+void potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
 {
     if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return;
     }
 
     /* 起動前の失敗で同期資源が未生成なら、回収するスレッドもない。 */
     if (ctx->health_mutex[path_idx] == NULL)
     {
-        return POTR_OK;
+        return;
     }
 
     cplat_local_lock_lock(ctx->health_mutex[path_idx]);
@@ -680,7 +673,7 @@ int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
     if (ctx->health_thread[path_idx] == NULL)
     {
         cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
-        return POTR_OK;
+        return;
     }
 
     ctx->health_stopping[path_idx] = 1;
@@ -697,8 +690,6 @@ int potr_internal_tcp_health_thread_stop(potr_context *ctx, int path_idx)
     ctx->health_stopping[path_idx] = 0;
     cplat_condvar_broadcast(ctx->health_wakeup[path_idx]);
     cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
-
-    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

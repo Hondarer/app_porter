@@ -97,11 +97,9 @@ TEST(potrHealthThreadTest, udp_stop_joins_once)
     // [Pre-Assert確認_正常系] - 稼働終了後のハンドルを 1 回だけ join すること。
     // [Pre-Assert手順] - join 成功を返す。
     // Act
-    int actual_ret = potr_internal_health_thread_stop(&ctx);       // [手順] - 稼働終了した health の終了を待つ。
-    int actual_ret_again = potr_internal_health_thread_stop(&ctx); // [手順] - 二度目の停止を呼ぶ。
+    potr_internal_health_thread_stop(&ctx); // [手順] - 稼働終了した health の終了を待つ。
+    potr_internal_health_thread_stop(&ctx); // [手順] - 二度目の停止を呼ぶ。
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret);           // [確認_正常系] - 停止に成功すること。
-    EXPECT_EQ(POTR_OK, actual_ret_again);     // [確認_正常系] - 未生成状態の停止が成功すること。
     EXPECT_EQ(nullptr, ctx.health_thread[0]); // [確認_正常系] - join 後のハンドルを NULL にすること。
 }
 
@@ -130,11 +128,9 @@ TEST(potrHealthThreadTest, tcp_stop_joins_once)
     // [Pre-Assert確認_正常系] - 稼働終了後のハンドルを 1 回だけ join すること。
     // [Pre-Assert手順] - join 成功を返す。
     // Act
-    int actual_ret = potr_internal_tcp_health_thread_stop(&ctx, 1);       // [手順] - 稼働終了した health の終了を待つ。
-    int actual_ret_again = potr_internal_tcp_health_thread_stop(&ctx, 1); // [手順] - 二度目の停止を呼ぶ。
+    potr_internal_tcp_health_thread_stop(&ctx, 1); // [手順] - 稼働終了した health の終了を待つ。
+    potr_internal_tcp_health_thread_stop(&ctx, 1); // [手順] - 二度目の停止を呼ぶ。
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret);           // [確認_正常系] - 停止に成功すること。
-    EXPECT_EQ(POTR_OK, actual_ret_again);     // [確認_正常系] - 未生成状態の停止が成功すること。
     EXPECT_EQ(nullptr, ctx.health_thread[1]); // [確認_正常系] - join 後のハンドルを NULL にすること。
     delegate_real_cplat_condvar_dispose(ctx.health_wakeup[1]);
     delegate_real_cplat_local_lock_dispose(ctx.health_mutex[1]);
@@ -152,12 +148,14 @@ TEST(potrHealthThreadTest, disabled_health_does_not_allocate)
     // [Pre-Assert確認_正常系] - 無効時にロックを生成しないこと。
     EXPECT_CALL(mock_cplat, cplat_thread_create(_, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - 無効時にスレッドを生成しないこと。
+    EXPECT_CALL(mock_cplat, cplat_thread_join(_)).Times(0);
+    // [Pre-Assert確認_正常系] - 未起動の停止で join しないこと。
     // Act
-    int actual_ret = potr_internal_health_thread_start(&ctx);     // [手順] - 監視無効の UDP health を開始する。
-    int actual_ret_stop = potr_internal_health_thread_stop(&ctx); // [手順] - 未起動の health を停止する。
+    int actual_ret = potr_internal_health_thread_start(&ctx); // [手順] - 監視無効の UDP health を開始する。
+    potr_internal_health_thread_stop(&ctx);                   // [手順] - 未起動の health を停止する。
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret);      // [確認_正常系] - 無効時の開始が成功すること。
-    EXPECT_EQ(POTR_OK, actual_ret_stop); // [確認_正常系] - 未起動の停止が成功すること。
+    EXPECT_EQ(POTR_OK, actual_ret);           // [確認_正常系] - 無効時の開始が成功すること。
+    EXPECT_EQ(nullptr, ctx.health_thread[0]); // [確認_正常系] - 未起動の状態のままであること。
 }
 
 // 同じ TCP health の停止が重なっても、先行する終了待ちが完了するまで後続を待たせることの確認
@@ -202,11 +200,11 @@ TEST(potrHealthThreadTest, concurrent_tcp_stop_waits_for_single_join)
     // [Pre-Assert手順] - join の復帰をテスト本体が許可するまで待たせる。
 
     // Act
-    auto first = std::async(std::launch::async, [&] { return potr_internal_tcp_health_thread_stop(&ctx, 0); });
+    auto first = std::async(std::launch::async, [&] { potr_internal_tcp_health_thread_stop(&ctx, 0); });
     // [手順] - 先行する停止要求を開始する。
     auto entered = join_entered_future.wait_for(std::chrono::seconds(2));
     // [手順] - 先行要求が join に入るまで最大 2 秒待つ。
-    auto second = std::async(std::launch::async, [&] { return potr_internal_tcp_health_thread_stop(&ctx, 0); });
+    auto second = std::async(std::launch::async, [&] { potr_internal_tcp_health_thread_stop(&ctx, 0); });
     // [手順] - 後続の停止要求を開始する。
     auto waiting = stop_waiting_future.wait_for(std::chrono::seconds(2));
     // [手順] - 後続要求が先行要求の完了待ちに入るまで最大 2 秒待つ。
@@ -214,16 +212,14 @@ TEST(potrHealthThreadTest, concurrent_tcp_stop_waits_for_single_join)
     // [手順] - join 完了前の後続要求の復帰状態を取得する。
     release_join.set_value();
     // [手順] - 先行する join を復帰させる。
-    int first_ret = first.get();
-    int second_ret = second.get();
-    // [手順] - 両方の停止要求の結果を取得する。
+    first.get();
+    second.get();
+    // [手順] - 両方の停止要求の復帰を待つ。
 
     // Assert
     EXPECT_EQ(std::future_status::ready, entered);         // [確認_正常系] - 先行要求が join に入ること。
     EXPECT_EQ(std::future_status::ready, waiting);         // [確認_正常系] - 後続要求が先行要求の完了を待つこと。
     EXPECT_EQ(std::future_status::timeout, second_status); // [確認_正常系] - 回収完了前に後続要求が復帰しないこと。
-    EXPECT_EQ(POTR_OK, first_ret);                         // [確認_正常系] - 先行要求が成功すること。
-    EXPECT_EQ(POTR_OK, second_ret);                        // [確認_正常系] - 後続要求も成功すること。
     EXPECT_EQ(nullptr, ctx.health_thread[0]);              // [確認_正常系] - 回収後のハンドルが NULL であること。
 
     // Cleanup

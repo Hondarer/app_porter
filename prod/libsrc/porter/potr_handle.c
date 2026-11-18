@@ -23,7 +23,7 @@ struct potr_internal_handle
     cplat_local_lock *mutex;
     cplat_condvar *idle;
     size_t refs;
-    int state; /* 0: OPEN, 1: CLOSING, 2: CLOSE_FAILED, 3: CLOSED */
+    int state; /* 0: OPEN, 1: CLOSING, 2: CLOSED */
     int reserved;
 };
 
@@ -332,7 +332,7 @@ int potr_internal_handle_begin_close(potr_context *handle, potr_context **ctx)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void potr_internal_handle_end_close(potr_context *ctx, int closed)
+void potr_internal_handle_end_close(potr_context *ctx)
 {
     struct potr_internal_handle *entry;
 
@@ -343,16 +343,7 @@ void potr_internal_handle_end_close(potr_context *ctx, int closed)
 
     entry = ctx->handle_owner;
     cplat_local_lock_lock(entry->mutex);
-
-    if (closed != 0)
-    {
-        entry->ctx = NULL;
-        entry->state = 3;
-    }
-    else
-    {
-        entry->state = 2;
-    }
-
+    entry->ctx = NULL;
+    entry->state = 2;
     cplat_local_lock_unlock(entry->mutex);
 }

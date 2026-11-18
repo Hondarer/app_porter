@@ -47,28 +47,6 @@ static void dispose_condvar(cplat_condvar **cv)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int api_context_has_threads(const potr_context *ctx)
-{
-    int i;
-
-    if (ctx->send_thread != NULL)
-    {
-        return 1;
-    }
-
-    for (i = 0; i < (int)POTR_MAX_PATH; i++)
-    {
-        if (ctx->connect_thread[i] != NULL || ctx->recv_thread[i] != NULL || ctx->health_thread[i] != NULL)
-        {
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
 void api_context_dispose_tcp_sync(potr_context *ctx)
 {
     int i;

@@ -65,7 +65,8 @@ class potrNotifyTest : public Test
     void TearDown() override
     {
         release();
-        EXPECT_EQ(POTR_OK, potr_internal_notify_stop(&ctx));
+        potr_internal_notify_stop(&ctx);
+        EXPECT_EQ(nullptr, ctx.notifications);
         // [状態確認] - potr_internal_notify_stop() で資源を回収できること。
         potr_internal_send_queue_dispose(&ctx.send_queue);
     }
@@ -100,10 +101,10 @@ TEST_F(potrNotifyTest, owns_data_and_drains_in_order)
     first = 99;
     second = 99;
     release();
-    int actual_ret = potr_internal_notify_stop(&ctx); // [手順] - 登録済み通知を完了させる。
+    potr_internal_notify_stop(&ctx); // [手順] - 登録済み通知を完了させる。
     // Assert
-    EXPECT_TRUE(entered);           // [確認_正常系] - 通知スレッドが先行通知を開始したこと。
-    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 通知をすべて処理して停止したこと。
+    EXPECT_TRUE(entered);                  // [確認_正常系] - 通知スレッドが先行通知を開始したこと。
+    EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - 通知をすべて処理して停止したこと。
     EXPECT_EQ((std::vector<int>{17, 23}),
               s_values); // [確認_正常系] - 元領域の変更から独立した内容と順序を保持すること。
 }
@@ -154,12 +155,12 @@ TEST_F(potrNotifyTest, allocation_failure_uses_reserved_error_and_wakes_senders)
     }
     waiter.join(); // [手順] - 異常通知で送信待機が解除されるまで待つ。
     release();
-    int actual_ret = potr_internal_notify_stop(&ctx); // [手順] - 先行通知と異常通知を処理する。
+    potr_internal_notify_stop(&ctx); // [手順] - 先行通知と異常通知を処理する。
     // Assert
-    EXPECT_TRUE(waiter_entered.load()); // [確認_正常系] - 送信チケットの待機中に確保を失敗させたこと。
-    EXPECT_TRUE(waiter_done.load());    // [確認_異常系] - 異常理由によって送信待機が解除されること。
-    EXPECT_TRUE(entered);               // [確認_正常系] - 先行コールバックの実行を確認したこと。
-    EXPECT_EQ(POTR_OK, actual_ret);     // [確認_正常系] - 異常通知後に回収できること。
+    EXPECT_TRUE(waiter_entered.load());    // [確認_正常系] - 送信チケットの待機中に確保を失敗させたこと。
+    EXPECT_TRUE(waiter_done.load());       // [確認_異常系] - 異常理由によって送信待機が解除されること。
+    EXPECT_TRUE(entered);                  // [確認_正常系] - 先行コールバックの実行を確認したこと。
+    EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - 異常通知後に回収できること。
     EXPECT_EQ((std::vector<potr_event>{POTR_EVENT_DATA, POTR_EVENT_ERROR}), s_events);
     // [確認_異常系] - 先行通知の後に異常通知だけを一度実行すること。
     EXPECT_EQ((std::vector<int>{31, POTR_ERR_OUT_OF_MEMORY}), s_values);

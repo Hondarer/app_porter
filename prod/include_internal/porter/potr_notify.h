@@ -20,10 +20,11 @@ extern "C"
 
     /**
      *  @brief          通知をすべて実行して停止します。
+     *  @note           通知スレッドの終了待ちは失敗しないため、戻った時点で通知資源は解放済みです。
+     *                  通知資源が未起動の場合と、ctx が NULL の場合は何もしません。
      *  @param[in,out]  ctx 生成元が停止済みのコンテキスト。
-     *  @return         POTR_OK または POTR_ERR_INVALID_ARGUMENT。
      */
-    int potr_internal_notify_stop(potr_context *ctx);
+    void potr_internal_notify_stop(potr_context *ctx);
 
     /**
      *  @brief          通知を登録します。

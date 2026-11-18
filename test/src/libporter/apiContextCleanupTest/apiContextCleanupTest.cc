@@ -116,19 +116,6 @@ TEST(apiContextCleanupTest, partial_tcp_sync_disposal_is_repeatable)
     EXPECT_EQ(nullptr, ctx.health_wakeup[2]); // [確認_正常系] - 条件変数を未生成状態へ戻すこと。
 }
 
-// 稼働フラグが 0 でも生成済みハンドルを検出することの確認
-TEST(apiContextCleanupTest, detects_finished_but_unjoined_thread)
-{
-    // Arrange
-    potr_context ctx = {};
-    int token = 0;
-    ctx.connect_thread[1] = reinterpret_cast<cplat_thread *>(&token);
-    // Act
-    int actual_ret = api_context_has_threads(&ctx); // [手順] - 終了待ちが必要なハンドルを検査する。
-    // Assert
-    EXPECT_EQ(1, actual_ret); // [確認_正常系] - 稼働フラグが 0 でもハンドルを検出すること。
-}
-
 // 残存ソケットとピア資源を一度だけ回収し、解放済み状態へ戻すことの確認
 TEST(apiContextCleanupTest, closes_remaining_sockets_and_disposes_peer_table)
 {
