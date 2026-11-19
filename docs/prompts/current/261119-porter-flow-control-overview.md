@@ -79,7 +79,7 @@
 | 資料 | 参照した内容 |
 | --- | --- |
 | `app/porter/AGENTS.md` | 公開 API と文書の同期、機能仕様の同期、確認コマンド |
-| `docs/functional-spec/delivery.md`、`transport.md`、`base.md` | 送信の受け付けの要件 (`POTR-DELIVERY-FUNC-009`)、適用範囲外、失敗の区分 |
+| `docs/functional-spec/delivery.md`、`transport.md`、`base.md` | 送信の受け付けの要件 (`POTR-DELIVERY-FUNC-009` <!-- potr-req: uuid=654a3854-f1f6-423a-85c7-d11327aa1133 -->)、適用範囲外、失敗の区分 |
 | `docs/protocol.md` | パケットの形式、種別フラグ、受信報告、スライディング ウィンドウ、再送制御、プロトコル バージョン |
 | `docs/architecture.md` | 通知キューと通知スレッド、スレッド構成、送信と受信のフロー、close の手順 |
 | `docs/config.md`、`docs/api.md` | 構成の項目、`potr_service_send()` の戻り値、通知キューの保持領域の説明 |

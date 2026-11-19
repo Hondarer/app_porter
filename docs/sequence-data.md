@@ -401,6 +401,67 @@ sequenceDiagram
 
 Figure: RAW モード - PING ギャップ検出
 
+## フロー制御による抑制と解除
+
+受信側の構成で `flow_control_capacity` を指定した場合の動作です。  
+`multicast` と `broadcast` の送信者は、要求中の受信者の割合または台数が構成の条件を満たす場合に抑制します。
+
+```mermaid
+sequenceDiagram
+    participant SApp as 送信側の利用側
+    participant S as 送信者
+    participant R as 受信者
+    participant RApp as 受信側の利用側
+
+    SApp->>S: potr_service_send()
+    S->>R: DATA
+    Note over R: 通知キューの占有量が<br>要求のしきい値 (既定 80%) を超えた
+    R->>S: FLOW_CONTROL (状態 = 抑制の要求)
+    Note over S: 新しい DATA の送出を止める<br>再送、PING、FIN は継続する
+    SApp->>S: potr_service_send()
+    Note over S: 送信キューに空きがあれば受け付ける<br>空きがなければ POTR_ERR_FULL<br>(POTR_SEND_BLOCKING ありは空きを待つ)
+    R->>RApp: POTR_EVENT_DATA (コールバック)
+    loop 再送周期 (既定 200 ms) ごと
+        R->>S: FLOW_CONTROL (状態 = 抑制の要求)
+        Note over S: 要求の期限を<br>受信時刻 + 有効期限 (既定 1,000 ms) へ更新
+    end
+    Note over R: コールバックからの復帰で占有量が<br>解除のしきい値 (既定 60%) を下回った
+    R->>S: FLOW_CONTROL (状態 = 解除)
+    Note over S: 送出を再開する
+    S->>R: DATA
+```
+
+Figure: フロー制御による抑制と解除のシーケンス
+
+解除が失われた場合と、抑制を要求した受信者が停止した場合は、要求の期限が過ぎた時点で送信者が送出を再開します。
+
+## フロー制御の容量超過による切断と復帰
+
+抑制の要求が送信者へ届くまでに届いた DATA によって、占有量が容量を超える場合の動作です。
+
+```mermaid
+sequenceDiagram
+    participant S as 送信者
+    participant R as 受信者
+    participant RApp as 受信側の利用側
+
+    S->>R: DATA
+    Note over R: 登録すると占有量が容量を超える
+    Note over R: DATA を破棄する<br>受信の状態を破棄する
+    R->>RApp: 登録済みの POTR_EVENT_DATA
+    R->>RApp: POTR_EVENT_DISCONNECTED
+    S->>R: DATA / PING
+    Note over R: 占有量が解除のしきい値を下回るまで破棄し<br>新しい通信として採用しない<br>(TCP は接続を確立しない)
+    Note over R: 占有量が解除のしきい値を下回った
+    S->>R: DATA / PING
+    Note over R: 新しい通信として採用する
+    R->>RApp: POTR_EVENT_CONNECTED
+```
+
+Figure: フロー制御の容量超過による切断と復帰のシーケンス
+
+片方向 UDP の受信者は、採用しない間も抑制の要求の再送を続けます。
+
 ## close と登録済み通知
 
 close は API の受付を停止して、受付済み操作と送信の完了を待ちます。  

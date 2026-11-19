@@ -131,7 +131,7 @@ porter の公開 API および内部関数が戻り値として使用する共�
 | 契約・探索 | `POTR_ERR_NOT_FOUND` | -4 | 対象エントリが存在しない |
 | 契約・探索 | `POTR_ERR_INVALID_HANDLE` | -5 | 未登録または終了済みのハンドル |
 | 資源・状態 | `POTR_ERR_OUT_OF_MEMORY` | -10 | メモリ確保不可 |
-| 資源・状態 | `POTR_ERR_FULL` | -11 | キューまたはウィンドウが満杯 |
+| 資源・状態 | `POTR_ERR_FULL` | -11 | キューまたはウィンドウが満杯。`potr_service_send()` は、待ち合わせを指定しない送信で送信キューに空きがない場合に返す |
 | 資源・状態 | `POTR_ERR_EMPTY` | -12 | キューが空、または順序整列済みパケットが未着 |
 | 資源・状態 | `POTR_ERR_OUT_OF_WINDOW` | -13 | 受信ウィンドウの範囲外 |
 | 通信・I/O | `POTR_ERR_DISCONNECTED` | -20 | 論理 CONNECTED 前または切断中 |

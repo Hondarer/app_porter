@@ -326,7 +326,7 @@ Table: LADR-009 の経緯
 
 ### 得られた事実
 
-- 機能仕様の `POTR-DELIVERY-FUNC-009` は、「送信の要求を受け付ける容量が不足している場合、そのメッセージを送出せず、容量が不足していることを利用側へ返します」と定めています (`docs/functional-spec/delivery.md`)。
+- 機能仕様の `POTR-DELIVERY-FUNC-009` <!-- potr-req: uuid=654a3854-f1f6-423a-85c7-d11327aa1133 --> は、「送信の要求を受け付ける容量が不足している場合、そのメッセージを送出せず、容量が不足していることを利用側へ返します」と定めています (`docs/functional-spec/delivery.md`)。
 - 実装は、送信キューが満杯の場合、ブロッキング指定 (`POTR_SEND_BLOCKING`) の有無にかかわらず空きを待ちます (`prod/libsrc/porter/api/potr_service_send.c` の `send_to_peer()`)。`docs/api.md` の戻り値の表に、容量不足を表す値はありません。
 
 ### 決定

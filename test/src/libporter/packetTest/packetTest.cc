@@ -169,7 +169,7 @@ TEST_F(packetTest, wire_layout_matches_protocol)
     size_t header_size = POTR_PACKET_HEADER_SIZE; // [手順] - 外側ヘッダーの長さを取得する。
     // Assert
     EXPECT_EQ(72U, header_size); // [確認_正常系] - ヘッダー長が 72 であること。
-    EXPECT_EQ(2U, POTR_PROTOCOL_VERSION); // [確認_正常系] - プロトコル版が 2 であること。
+    EXPECT_EQ(3U, POTR_PROTOCOL_VERSION); // [確認_正常系] - プロトコル版が 3 であること。
     EXPECT_EQ(65435U, POTR_MAX_PAYLOAD); // [確認_正常系] - 最大ペイロードが 65435 であること。
     EXPECT_EQ(8U, POTR_MAX_PATH); // [確認_正常系] - 最大経路数が 8 であること。
 }
@@ -209,7 +209,7 @@ TEST_F(packetTest, parses_transmission_fields_and_ignores_reserved)
     // Arrange
     uint8_t wire[POTR_PACKET_HEADER_WIRE_SIZE];
     potr_packet parsed = {};
-    build_wire_packet(wire, 2U);
+    build_wire_packet(wire, POTR_PROTOCOL_VERSION);
     write_i64_be(wire, 40, INT64_C(0x123456789ABCDEF));
     write_i64_be(wire, 48, -123456789);
     write_u32_be(wire, 56, 987654321U);

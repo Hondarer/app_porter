@@ -96,6 +96,14 @@ static void close_tcp_conn(potr_context *ctx, int path_idx)
     cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
 }
 
+/* 通知キューの容量超過で切断した相手との接続を、まだ確立しない状態かどうかを返す。TCP は相手が 1 つである。 */
+static int tcp_flow_control_refused(potr_context *ctx)
+{
+    cplat_timespec unused_session_ts = {0};
+
+    return potr_internal_flow_control_refused(ctx, POTR_PEER_NA, 0U, &unused_session_ts);
+}
+
 /*
  * 再接続待機: reconnect_interval_ms 経過または停止シグナルまでスリープする。
  * 待機の失敗は ERROR のトレースへ出し、呼び出し元へ通知しない (呼び出し元は再接続へ進む)。
@@ -267,6 +275,17 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
     {
         cplat_socket sock;
         int active_count;
+
+        /*
+         * 通知キューの容量超過で切断した後は、占有量が解除のしきい値を下回るまで再接続しない。
+         * 再接続すると、次の DATA で再び容量を超え、接続と切断の通知が繰り返されるためである。
+         */
+        if (tcp_flow_control_refused(ctx) != 0)
+        {
+            /* request_interval_ms は構成の検査済みの再送周期。実用範囲は INT_MAX 以下。 */
+            reconnect_wait(ctx, path_idx, (int)ctx->flow_control_config.request_interval_ms);
+            continue;
+        }
 
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: connecting to %s:%u ...",
                    ctx->service.service_id, path_idx, ctx->service.dst_addr[path_idx], (unsigned)ctx->service.dst_port);
@@ -484,6 +503,20 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                 cplat_socket_close(conn);
                 continue;
             }
+        }
+
+        /*
+         * 通知キューの容量超過で切断した後は、占有量が解除のしきい値を下回るまで接続を確立しない。
+         * 受け付けた接続を直ちに閉じ、相手の再接続を待つ。
+         */
+        if (tcp_flow_control_refused(ctx) != 0)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                       "connect_thread[service_id=%" PRId64 " path=%d]: rejected connection"
+                       " from %s:%u (notification capacity exceeded)",
+                       ctx->service.service_id, path_idx, peer_addr_str, (unsigned)cplat_ntoh16(peer_addr.port));
+            cplat_socket_close(conn);
+            continue;
         }
 
         /*

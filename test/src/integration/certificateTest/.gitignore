@@ -14,6 +14,7 @@
 /potr_auth.c
 /potr_connect_thread.c
 /potr_connected_threads.c
+/potr_flow_control.c
 /potr_handle.c
 /potr_health_thread.c
 /potr_notify.c

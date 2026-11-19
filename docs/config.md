@@ -60,6 +60,13 @@ WARNING は、利用側が設定の読み込みより前にトレーサーを開
 | `tcp_health_timeout_ms`  | uint32 | 31,000 | TCP 通信種別の PING 応答待機タイムアウト (ms)。`tcp_health_interval_ms > 0` のときだけ有効で、SENDER 側が PING 応答を本値以内に受信できなければ DISCONNECTED。0 でタイムアウト検知を無効化。RECEIVER の接続直後の最初のパケットの待機には、本値 (グローバルの値) の 3 倍を使います。上限は 715,827,882 です。超える場合、`tcp`、`tcp_bidir` の RECEIVER でサービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
 | `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potr_service_close()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送信し、本値以内に `FIN_ACK` が返信されなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む。上限は 2,147,483,646 です。超える場合、`tcp` の SENDER と `tcp_bidir` の両端でサービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
 | `reorder_timeout_ms` | uint32 | 0 | 受信ウィンドウで欠番を検出してから NACK 送出 (通常モード) または DISCONNECTED 発行 (RAW モード) を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 で即時 (既定値)。推奨値: LAN/マルチパス = 10〜30 ms、遠距離 WAN = 30〜100 ms |
+| `flow_control_capacity` | uint32 | 0 | 受信側の通知キューの容量 (バイト)。フロー制御の割合の基準値です。0 でフロー制御は無効 (既定値)。`max_message_size` 以上の値を指定します。 |
+| `flow_control_suppress_percent` | uint32 | 80 | 受信側が抑制を要求するしきい値 (%)。1〜100 |
+| `flow_control_resume_percent` | uint32 | 60 | 受信側が解除するしきい値 (%)。1 以上、`flow_control_suppress_percent` 未満 |
+| `flow_control_request_interval_ms` | uint32 | 200 | 受信側が抑制の要求を再送する周期 (ms)。1 以上 |
+| `flow_control_request_lifetime_ms` | uint32 | 1,000 | 送信側が抑制の要求を有効とみなす時間 (ms)。`flow_control_request_interval_ms` より大きい値 |
+| `flow_control_receiver_percent` | uint32 | 0 | `multicast` / `broadcast` の送信側が抑制する、要求中の受信者の割合 (%)。0〜100。0 で割合の条件は無効 (既定値) |
+| `flow_control_receiver_count` | uint32 | 2 | `multicast` / `broadcast` の送信側が抑制する、要求中の受信者の台数。0 で台数の条件は無効 |
 
 Table: global オブジェクトの設定項目一覧
 
@@ -108,6 +115,89 @@ Table: 通信種別ごとの実効並べ替えタイムアウト
 - `reorder_timeout_ms = 20` に設定すると実際のタイマーは **20〜40 ms** の範囲に分散されます。
 - NACK が遅延する分だけ再送が遅れる可能性があるため、`reorder_timeout_ms` の設定値には余裕を持たせてください。
 
+### フロー制御の設定
+
+フロー制御は、受信側の利用側コールバックの処理が追い付かないときに、受信側の要求で送信側が新しい DATA の送出を止める仕組みです。  
+パケットの形式と送受信側の動作は [プロトコル仕様](protocol.md) の「フロー制御」を参照してください。
+
+フロー制御は、受信側の構成で `flow_control_capacity` を指定した場合に働きます。  
+送信側は、容量を指定していなくても、受けた抑制の要求に常に従います。  
+RAW モード (`unicast_raw` / `multicast_raw` / `broadcast_raw`) は、フロー制御の設定を無視します。
+
+| 設定 | 使う側 |
+|---|---|
+| `flow_control_capacity`、`flow_control_suppress_percent`、`flow_control_resume_percent`、`flow_control_request_interval_ms` | 受信側 (双方向の通信種別では両端) |
+| `flow_control_request_lifetime_ms` | 送信側 (双方向の通信種別では両端) |
+| `flow_control_receiver_percent`、`flow_control_receiver_count` | `multicast` / `broadcast` の送信側 |
+
+Table: フロー制御の設定を使う側
+
+#### 値の決まり方
+
+- `global` の値は、そのまま使います。`flow_control_capacity`、`flow_control_receiver_percent`、`flow_control_receiver_count` の `0` は「無効」です。
+- サービス側の `0` と省略は、「`global` の値を使用」です。
+- サービス側で「無効」にする場合は、`-1` を指定します。`-1` を指定できるのは、サービス側の `flow_control_capacity`、`flow_control_receiver_percent`、`flow_control_receiver_count` だけです。
+- `potr_service_def` を直接指定する場合は、`-1` の代わりに `POTR_FLOW_CONTROL_DISABLED` を指定します。
+- `potr_global_config` を直接指定する場合、しきい値、再送周期、有効期限の `0` には既定値を使います。
+
+```jsonc
+{
+  "global": {
+    // 全サービスの受信側で、容量 4 MiB のフロー制御を有効にする
+    "flow_control_capacity": 4194304
+  },
+  "services": {
+    "1001": {
+      "type": "multicast",
+      // このサービスは割合だけで判定する (半数以上が要求したら抑制)
+      "flow_control_receiver_percent": 50,
+      "flow_control_receiver_count": -1
+    },
+    "1002": {
+      "type": "unicast",
+      // このサービスはフロー制御を使わない
+      "flow_control_capacity": -1
+    }
+  }
+}
+```
+
+#### 容量の決め方
+
+占有量が容量を超えると、受信側は超えた DATA を破棄し、その相手との通信を切断として通知します。  
+抑制の要求が送信側へ届くまでの間に届く DATA を受け止められるように、「容量 × (100 − `flow_control_suppress_percent`) ÷ 100」の余裕を、次の量の合計より大きくしてください。
+
+| 余裕に含める量 | 目安 |
+|---|---|
+| 下位の通信が保持している送出済みの DATA | UDP は受信側のソケット受信バッファー。TCP は送信側の送信バッファーと受信側の受信バッファー |
+| 抑制の解除の直後に、送信側がまとめて送出する DATA | 送信キューに溜まっている量。最大で `send_queue_depth` × `max_payload` |
+
+Table: 容量の余裕に含める量
+
+余裕が不足している場合は、抑制が働いていても占有量が容量を超えます。  
+容量を大きくする、`flow_control_suppress_percent` を小さくする、送信側の `send_queue_depth` を小さくする、のいずれかで調整します。
+
+- 容量は、メモリ使用量の厳密な上限ではありません。占有量は DATA のバイト数だけを数え、通知ごとの管理情報は含みません。
+- `unicast_bidir_n1` のサーバーは、占有量をピアごとに数えます。メモリ使用量の目安は「容量 × 接続中のピア数」です。
+- `flow_control_request_interval_ms` と `flow_control_request_lifetime_ms` は、送信側と受信側で同じ値を構成してください。受信側の再送周期が送信側の有効期限以上の場合、要求の再送の間に抑制が外れます。
+
+#### 一対多の判定
+
+`multicast` と `broadcast` の送信側は、次のどちらかの条件を満たす間、送出を止めます。
+
+| 条件 | 満たす場合 |
+|---|---|
+| 割合 (`flow_control_receiver_percent`) | 要求中の受信者数 ÷ 活動中の受信者数 × 100 が、設定値以上 |
+| 台数 (`flow_control_receiver_count`) | 要求中の受信者数が、設定値と活動中の受信者数の小さい方以上 |
+
+Table: 一対多のフロー制御の判定条件
+
+- 既定値は、割合が無効、台数が 2 です。活動中の受信者が 1 台の場合は、その 1 台の要求で抑制します。
+- 両方の条件を無効にした場合、一対多の送信側は抑制しません。
+- 条件を満たさない少数の受信者は抑制されず、占有量が容量を超えた時点で切断になります。
+- 活動中の受信者数は受信報告で把握するため、`multicast` と `broadcast` の受信側で容量を指定する場合は、実効 `health_interval_ms` が 0 でないことが必要です。
+- 受信者が再起動すると、古いセッションの記録が `health_timeout_ms` の間、活動中の受信者数に残ります。
+
 ### health_interval_ms と health_timeout_ms の関係
 
 グローバル設定の `udp_*` / `tcp_*` は、コードの組み込み既定値に次ぐ「サービス定義へ適用する既定値」です。最終的な動作は、通信種別に応じて選ばれたグローバル既定値に対し、`services` 内にあるサービスの `health_interval_ms` / `health_timeout_ms` を重ねた実効値で決まります。実効 `health_interval_ms > 0` のとき、片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時だけ PING を送信し、双方向 UDP は設定周期で PING を送信します。TCP は実効 `health_interval_ms` にかかわらず接続直後に bootstrap PING を送信し、`health_interval_ms > 0` のときだけ定周期 PING と timeout 監視を有効にします。
@@ -154,6 +244,10 @@ Table: ヘルス チェック設定値とその効果
 | `pack_wait_ms` | uint32 | 省略可 | パッキング待機時間 (ミリ秒)。0 で即時送信 |
 | `auth` | 文字列 | 省略可 | 認証・暗号方式。`"psk"` (既定値、事前共有鍵方式) または `"cert"` (証明書方式) |
 | `encrypt_key` | 文字列 | 省略可 | `auth = "psk"` 時の AES-256-GCM 事前共有鍵。以下の 2 形式を受け付けます:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列で指定<br>**② パスフレーズ**: 上記以外の任意の文字列を指定すると SHA-256 で 32 バイト鍵に変換します。省略時は暗号化なし |
+| `flow_control_capacity` | uint32 | 省略可 | グローバルの `flow_control_capacity` をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でこのサービスのフロー制御を無効にします。 |
+| `flow_control_suppress_percent`、`flow_control_resume_percent` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用 |
+| `flow_control_request_interval_ms`、`flow_control_request_lifetime_ms` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用 |
+| `flow_control_receiver_percent`、`flow_control_receiver_count` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でその条件を無効にします。 |
 
 Table: 全通信種別共通のサービス設定項目
 
@@ -658,6 +752,12 @@ PING、ハンドシェイク、鍵配布、FIN、FIN_ACK は、待機グルー�
 |---|---|
 | グローバル設定 | `max_payload` が `64` 未満、または `POTR_MAX_PAYLOAD` (`65,435`) を超える |
 | 待機の時間 | 実効の `health_interval_ms` (ヘルス チェックを使う種別)、`reconnect_interval_ms` (`tcp`、`tcp_bidir` の SENDER)、`tcp_close_timeout_ms` (`tcp` の SENDER、`tcp_bidir`) が `2,147,483,646` を超える、または `tcp_health_timeout_ms` (`tcp`、`tcp_bidir` の RECEIVER) が `715,827,882` を超える |
+| フロー制御のしきい値 | `flow_control_suppress_percent` が 1〜100 の範囲にない、または `flow_control_resume_percent` が 1 以上 `flow_control_suppress_percent` 未満の範囲にない |
+| フロー制御の周期と期限 | `flow_control_request_lifetime_ms` が `flow_control_request_interval_ms` 以下である |
+| フロー制御の一対多の割合 | `flow_control_receiver_percent` が 100 を超える |
+| フロー制御の容量 | `flow_control_capacity` が 0 でなく、`max_message_size` 未満である |
+| フロー制御の一対多の受信側 | `multicast` / `broadcast` の受信側で `flow_control_capacity` が 0 でなく、実効 `health_interval_ms` が 0 である |
+| フロー制御の無効の指定 | `POTR_FLOW_CONTROL_DISABLED` を、指定できない項目または `potr_global_config` に指定している |
 | 経路数 | 9 番目以降の経路キー (`src_addr9`、`dst_addr9`、`path_group9` など) が指定されている |
 | 優先グループ | `path_group1` 〜 `path_group8` に `1` 〜 `4` の範囲外の値 (`0` や `5` 以上) が指定されている (設定ファイル読み込み時) |
 | 証明書方式 (`auth = "cert"`) | `cert_file` または `key_file` が未指定、秘密鍵と証明書が一致しない、またはファイル読み込みに失敗した (`POTR_ERR_IO`) |

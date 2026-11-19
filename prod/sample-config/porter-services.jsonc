@@ -8,6 +8,10 @@
     "udp_health_timeout_ms": 10000,
     "tcp_health_interval_ms": 10000,
     "tcp_health_timeout_ms": 31000,
+    // フロー制御: 受信側の通知キューの容量 (バイト)。0 または省略で無効。
+    // 指定すると、受信側の未処理の DATA が容量の 80% を超えたときに送信側の送出を止め、
+    // 60% を下回ったときに再開する。容量の決め方は docs/config.md の「フロー制御の設定」を参照。
+    // "flow_control_capacity": 4194304,
   },
   "services": {
     // 一方向ユニキャスト: ループバックで動作確認。
