@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-20 07:24:19 JST
+最終更新日時: 2026-11-20 08:36:10 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QxuPSr8Mxe6rktvre
 稼働 OS: Linux (WSL)
 上流文書: `261119-porter-flow-control-overview.md` (全体管理文書)、`261119-porter-flow-control-design.md` (最終仕様)、`261119-porter-flow-control-discussion.md` (検討用 Markdown)、`261119-porter-flow-control-lightadr.md` (簡易 ADR)。いずれも削除されている場合があります。
@@ -59,3 +59,5 @@ Table: 残課題一覧
 現状の事象: 送信スレッドが受信スレッドより速く送出すると、受信側の OS の受信バッファー (Linux の既定は約 208 KB) があふれて欠落します。欠落が送信側の保持範囲 (`window_size`、既定 16 パケット) を超えると、再送できずに切断になります。フロー制御の導入前からある動作です。
 
 摘出の契機: 集中送出への対策の方式の検討 (Q-039)。送出上限の範囲を OS の受信バッファーの大きさで絞ると防げますが、通知が DATA 数十パケットにつき 1 個に増え、ユーザーの制約 (個別の ACK に近づけない) から外れるため、この案件では見送りました。
+
+確認した事実 (2026-11-20): Linux の同じホストで、`porter-test` の `burst 6000 1000` (待ち合わせを指定しない送信) を `unicast` で実行すると、フロー制御が無効の構成でも、受信側で `out of recv_window, dropping` のエラーと、切断と接続の繰り返しが起きました (2 回の実行で 2 回とも)。待ち合わせを指定した送信 (`burst -b`) では起きませんでした。

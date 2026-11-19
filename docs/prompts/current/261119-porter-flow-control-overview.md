@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 全体管理文書 (overview)
-最終更新日時: 2026-11-20 08:23:33 JST
+最終更新日時: 2026-11-20 08:36:10 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QxuPSr8Mxe6rktvre
 稼働 OS: Linux (WSL)
 下流文書: `261119-porter-flow-control-discussion.md` (検討用 Markdown)、`261119-porter-flow-control-lightadr.md` (簡易 ADR)、`261119-porter-flow-control-design.md` (最終仕様)、`261119-porter-flow-control-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
@@ -64,12 +64,12 @@
     - ✅ 4.7. 単体テストと mock の追加・更新 (mock 17 関数と、テスト 6 か所の初稿は軽量エージェントへ委譲。送信スレッドのテスト 3 件は主エージェントが作成。`app/porter` の `make` と `make test` が成功し、内容のある `.warn` がないことを確認)
     - ✅ 4.7a. 最終仕様の版 4 の実装 (送出上限の通知、待機時間の上限、解除のしきい値の既定値 50%、余裕の検査) と、単体テスト、文書の更新 (送出上限と検査は Opus、設定の読み込みの統一と既定値は Sonnet のサブエージェントへ委譲。`app/porter` の `make` (テストを含む) が成功。未追加のテスト: TCP の受信での通知、PING での最初の送出、接続スレッドでの上限の破棄)
     - ⏸️ 4.7b. 証明書認証の最初の試行の失敗の確認と修正 (`prod/libsrc/porter/security/certificate.c`)
-    - ⚠️ 4.7c. 性能の測定プログラムの取り込み (`prod/src/cmd/porter-bench/`、`bin/porter_bench_*.py`、`docs/performance-measurement.md`。Linux のビルドは成功。未確認の事項: `-Wpadded` の警告の解消 (4.8 とあわせて Sonnet へ委譲中)、Windows のビルド (CI で確認)、実行による動作の確認)
-    - ⏸️ 4.7d. フロー制御が無効の構成での、変更前後の性能の比較
-    - 🔄 4.8. 動作確認用コマンドの更新 (`prod/src/cmd/porter-test/porter-test.c` の受信コールバックの遅延と連続送信、`bin/interop_matrix.py` の逆向きとフロー制御のシナリオ。Sonnet のサブエージェントへ委譲) ← **CURRENT**
+    - ⚠️ 4.7c. 性能の測定プログラムの取り込み (`prod/src/cmd/porter-bench/`、`bin/porter_bench_*.py`、`docs/performance-measurement.md`。Linux のビルドは警告なしで成功。未確認の事項: Windows のビルド (CI で確認)、実行による動作の確認 (4.7d で確認))
+    - ⏸️ 4.7d. フロー制御が無効の構成での、変更前後の性能の比較 ← **CURRENT**
+    - ✅ 4.8. 動作確認用コマンドの更新 (`porter-test` の `--recv-delay-ms` と `burst`、`bin/interop_matrix.py` の `--direction` と `--scenario flow-control`。Sonnet のサブエージェントへ委譲。ビルドは警告なしで成功)
     - ✅ 4.9. 機能仕様の更新と、正本ドキュメントおよびコード コメントへの反映 (`docs/functional-spec/delivery.md`、`config.md`、`docs/protocol.md`、`docs/config.md`、`docs/architecture.md`、`docs/api.md`、`docs/sequence-data.md`、`docs/coding-guideline.md`、`prod/include/porter/porter_spec.h`、サンプル構成)
     - ⚠️ 4.10. 局所テストと機械的検証 (未確認の事項: 先行の変更を取り込んだ後の `make` と `make test`。確認方法: rebase 後に `app/porter` で実行する。rebase 前の時点では `make`、`make test`、`text_style_jp.py`、`check_functional_spec.py` (既存の 35 件以外の指摘なし) を確認済み)
-    - ⚠️ 4.11. 結合の確認 (未確認の事項: `porter-test` による確認。確認方法: 4.8 の後に実施する。一時的な確認プログラムでは、`unicast`、`multicast`、`unicast_bidir`、`tcp`、`unicast_bidir_n1` で抑制と解除が働き、欠落と切断がないことを確認済み)
+    - ✅ 4.11. 結合の確認 (Linux 上の `porter-test`。結果は「反映と検証の記録」)
     - ⏸️ 4.11a. OS をまたぐ確認 (範囲は Q-038 の回答による。Windows 側の操作は Windows の作業ツリーを持つセッションへ依頼する)
     - ⏸️ 4.12. 先行の `main` への rebase、push、CI の確認と、問題があった場合の修正 (ユーザーの事前許可による。先行より先に `main` へ push しない)
     - ⏸️ 4.13. 受入条件への適合確認 (全作業の完了確認)
@@ -221,9 +221,33 @@ Table: 質問一覧
 | 2026-11-20 07:28 | 先行の変更の取り込みと、実装の再開 | 先行セッションへ並行作業の開始を連絡。親リポジトリとサブモジュールを更新し、`flow-control` を先行の `main` へ rebase (衝突 4 ファイルを解消)。最終仕様の版 4 の実装をサブエージェントへ委譲。性能の測定プログラムの置き場所を確認する Q-049 を追記 (検討用 Markdown の版 11) |
 | 2026-11-20 07:33 | Q-049 の回答の受付 | A (`prod/src/cmd/porter-bench/` に置き、通常の `make` でビルドする) を確認し、解決済みとした (検討用 Markdown の版 12)。LADR-017 と最終仕様の版 5 に反映 |
 | 2026-11-20 08:23 | 版 4 の実装と、先行の変更の取り込み直し | サブエージェントの実装をビルドし、`app/porter` の `make` (テストを含む) が成功。`porter-bench` の呼び出しの直し漏れ 1 か所を修正。実装を 3 件のコミットに分けて `flow-control` へ入れ、先行の CI の修正 (`app/porter` `935e302` ほか) を含む `main` へ rebase し直した (衝突なし)。実装で定めた細部 (最初の送出の時点、TCP のまとめ送りの抑制、セッションの変更での取り消し) を最終仕様へ追記。`framework/makefw` の別問題 (取り込み方の切り替わりでのビルドの失敗) は、ユーザーの指示で `framework/makefw/docs/prompts/current/261120-makefw-inject-source-switch-backlog.md` に記録 |
+| 2026-11-20 08:36 | Linux での結合の確認 | `porter-test` の更新をビルドし、最終仕様の受入条件 3 を確認 (結果は「反映と検証の記録」)。相互接続試験のフロー制御のシナリオの既定を、待ち合わせを指定した送信に変更 (UDP で待ち合わせを指定しない連続送信は、フロー制御と無関係の欠落と切断を起こすため。残課題一覧の BL-005) |
 
 Table: 案件の経緯
 
 ## 反映と検証の記録
 
 未着手。作業後の対応箇所、検証結果、未完了項目を記録します。
+
+### Linux での結合の確認 (2026-11-20、受入条件 3)
+
+`porter-test` を同じホストで起動し、受信側に `--recv-delay-ms`、送信側に `burst -b` (待ち合わせを指定した送信) を使いました。構成は、容量 2,000,000 byte、`send_queue_depth` 1,024 (既定)、`window_size` 16 (既定)、しきい値は既定 (80% と 50%) です。`flow-control` ブランチの `ed434e5` で確認しました。
+
+| 通信種別 | 送信 | 受信の遅延 | 受信 | 順序の乱れ | 切断 | 抑制と解除 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `unicast` | 6,000 件 × 1,000 byte | 1 ms | 6,000 / 6,000 | 0 | 0 | 11 回 |
+| `unicast_bidir` | 6,000 件 × 1,000 byte | 1 ms | 6,000 / 6,000 | 0 | 0 | 11 回 |
+| `tcp` | 6,000 件 × 1,000 byte | 1 ms | 6,000 / 6,000 | 0 | 0 | 11 回 |
+| `multicast` (受信者 2 つ) | 6,000 件 × 1,000 byte | 1 ms | 両方 6,000 / 6,000 | 0 | 0 | 送信側 11 回 |
+| `unicast`、`unicast_bidir`、`tcp`、`multicast` (受信者 2 つ) | 400 件 × 16,384 byte | 20 ms | すべて 400 / 400 | 0 | 0 | 送信側 9 回 |
+| `unicast` (フロー制御が無効) | 6,000 件 × 1,000 byte | なし | 6,000 / 6,000 | 0 | 0 | 0 回 |
+| `tcp` (待ち合わせを指定しない送信) | 6,000 件 × 1,000 byte | 1 ms | 6,000 / 6,000 | 0 | 0 | 11 回 (`POTR_ERR_FULL` は 3,831 回) |
+
+Table: Linux での結合の確認の結果
+
+- 1 行目から 4 行目は、送出上限を導入する前の実装で、`tcp` が容量超過で切断になった条件です (容量 2 MB、`send_queue_depth` 1,024)。
+- 受入条件 3 の 3 項目 (抑制の開始と解除の記録、欠落による切断がなく全件が順序どおりに届くこと、無効の構成で抑制が起きないこと) を満たしました。
+
+受入条件の対象外で、次の事象を確認しました。
+
+- `unicast` で待ち合わせを指定しない `burst` を実行すると、受信側で欠落と切断が繰り返されました (2 回の実行で 2 回とも)。フロー制御が無効の構成 (遅延なし) でも同じ事象が起きるため (2 回の実行で 2 回とも)、フロー制御の変更によるものではありません。送信側が `send_queue_depth` 分をまとめて送出し、受信側の受信ウィンドウ (16 パケット) を超える欠落が起きています。残課題一覧の BL-005 に該当します。
