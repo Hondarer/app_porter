@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 簡易 ADR (lightadr)
-最終更新日時: 2026-11-19 22:20:00 JST
+最終更新日時: 2026-11-20 06:45:00 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QxuPSr8Mxe6rktvre
 稼働 OS: Linux (WSL)
 上流文書: `261119-porter-flow-control-overview.md` (全体管理文書)、`261119-porter-flow-control-discussion.md` (検討用 Markdown)。いずれも削除されている場合があります。
@@ -33,6 +33,8 @@
 | [LADR-012](#ladr-012-有効化の方法と設定の配置) | 有効化の方法と設定の配置 | 2026-11-19 | [Q-020](261119-porter-flow-control-discussion.md#q-020-有効化の方法と既定の状態)、[Q-022](261119-porter-flow-control-discussion.md#q-022-設定項目の配置)、[Q-029](261119-porter-flow-control-discussion.md#q-029-サービスごとの設定での-0-の意味) |
 | [LADR-013](#ladr-013-機能仕様の記載先) | 機能仕様の記載先 | 2026-11-19 | [Q-023](261119-porter-flow-control-discussion.md#q-023-機能仕様の記載先) |
 | [LADR-014](#ladr-014-受入の検証範囲) | 受入の検証範囲 | 2026-11-19 | [Q-024](261119-porter-flow-control-discussion.md#q-024-受入の検証範囲) |
+| [LADR-015](#ladr-015-フロー制御の待機時間の上限) | フロー制御の待機時間の上限 | 2026-11-20 | [Q-031](261119-porter-flow-control-discussion.md#q-031-待機時間の設定値の上限の適用) |
+| [LADR-016](#ladr-016-解除の直後の集中送出への対策) | 解除の直後の集中送出への対策 | 2026-11-20 | [Q-032](261119-porter-flow-control-discussion.md#q-032-解除の直後の集中送出への対策の実施) |
 
 Table: 決定事項一覧
 
@@ -454,3 +456,55 @@ Windows と WSL の相互接続による確認と、フロー制御が無効の�
 | 2026-11-19 20:31 | [Q-024](261119-porter-flow-control-discussion.md#q-024-受入の検証範囲) | A だけを選択: 単体テスト、Linux 上の `porter-test` による結合の確認、CI の成功で判定する | なし | 新規に決定 |
 
 Table: LADR-014 の経緯
+
+## LADR-015 フロー制御の待機時間の上限
+
+決定者: Tetsuo Honda  
+最終更新日: 2026-11-20
+
+### 背景と課題
+
+フロー制御の待機時間の設定 (抑制の要求の再送周期と有効期限) には、上限を定めていませんでした。
+
+### 得られた事実
+
+- 先行する案件が、待機時間の設定値に上限 `POTR_WAIT_MS_MAX` (2147483646) を設け、超えた場合は `potr_service_open()` が `POTR_ERR_INVALID_ARGUMENT` を返すようにしました (`prod/libsrc/porter/api/potr_service_open.c`)。
+
+### 決定
+
+`flow_control_request_interval_ms` と `flow_control_request_lifetime_ms` の実効値に、上限 `POTR_WAIT_MS_MAX` を適用します。超えた場合は `potr_service_open()` が `POTR_ERR_INVALID_ARGUMENT` を返します。
+
+### 経緯
+
+| 日時 (JST) | 源泉 | ユーザーの選択 | ユーザーのコメント | 決定への反映 |
+| --- | --- | --- | --- | --- |
+| 2026-11-20 06:30 | [Q-031](261119-porter-flow-control-discussion.md#q-031-待機時間の設定値の上限の適用) | 推奨 (先行する案件の上限にそろえる) を承認 | 「待機時間の上限の適用を推奨のとおり進めてよい。」 | 新規に決定 |
+
+Table: LADR-015 の経緯
+
+## LADR-016 解除の直後の集中送出への対策
+
+決定者: Tetsuo Honda  
+最終更新日: 2026-11-20
+
+### 背景と課題
+
+抑制の解除の直後に、送信キューの内容がまとめて送出され、受信側の容量を超えて切断になることがあります (残課題一覧の BL-004)。
+
+### 得られた事実
+
+- 一時的な確認プログラムでは、容量 2 MB、送信キューの深さ 1024 (既定値) の `tcp` で、解除の直後に容量を超えて切断になりました。深さ 64 では切断が起きませんでした。
+- 受信側が要求を出してから送信側が止まるまでの間に届く DATA は、要求のしきい値から容量までの余裕に収まる必要があります。
+
+### 決定
+
+集中送出への対策を、この案件で行います。あわせて、Linux と Windows をまたぐ確認を、Windows 側のセッションと協力して進めます。  
+対策の方式と、OS をまたぐ確認の範囲は、未決定です (Q-033 から Q-038 で確認中)。
+
+### 経緯
+
+| 日時 (JST) | 源泉 | ユーザーの選択 | ユーザーのコメント | 決定への反映 |
+| --- | --- | --- | --- | --- |
+| 2026-11-20 06:36 | [Q-032](261119-porter-flow-control-discussion.md#q-032-解除の直後の集中送出への対策の実施) | この案件で対策する | 「あふれてしまうと切断・接続になるのでロバスト性を向上させるべき。今なら Windows 側にも Cloud が待機しており、OS またぎのテストも皆さんで推進できるため、本案件で対処をする。」 | 新規に決定。方式は未決定 |
+
+Table: LADR-016 の経緯
