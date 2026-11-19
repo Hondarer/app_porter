@@ -1308,3 +1308,218 @@ INSTANTIATE_TEST_SUITE_P(
            unparsed_service_case{"reconnect_interval_ms_negative", "reconnect_interval_ms", "-1",
                                  POTR_DEFAULT_RECONNECT_INTERVAL_MS}),
     [](const TestParamInfo<unparsed_service_case> &param_info) { return std::string(param_info.param.name); });
+
+// サービスにフロー制御のキーがない場合に 7 つのメンバーが 0 (グローバル値を使用) であることの確認
+TEST(configLoadServiceTest, flow_control_keys_zero_when_omitted)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines({R"({"services":{"42":{"type":"unicast","dst_port":5001}}})"}); // [状態] - フロー制御のキーを含まないサービス定義を用意する。
+    service_configuration owned;
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_service(
+        "config.conf", 42, &owned); // [手順] - フロー制御のキーを含まないサービス定義のサービス 42 を指定して potr_internal_config_load_service() を呼び出す。
+
+    // Assert
+    ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_config_load_service() の戻り値が POTR_OK であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_capacity); // [確認_正常系] - owned.definition.flow_control_capacity が 0U (グローバル値を使用) であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_suppress_percent); // [確認_正常系] - owned.definition.flow_control_suppress_percent が 0U (グローバル値を使用) であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_resume_percent); // [確認_正常系] - owned.definition.flow_control_resume_percent が 0U (グローバル値を使用) であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_request_interval_ms); // [確認_正常系] - owned.definition.flow_control_request_interval_ms が 0U (グローバル値を使用) であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_request_lifetime_ms); // [確認_正常系] - owned.definition.flow_control_request_lifetime_ms が 0U (グローバル値を使用) であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_receiver_percent); // [確認_正常系] - owned.definition.flow_control_receiver_percent が 0U (グローバル値を使用) であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_receiver_count); // [確認_正常系] - owned.definition.flow_control_receiver_count が 0U (グローバル値を使用) であること。
+}
+
+// サービスの 7 つのフロー制御のキーが数値で読み込まれることの確認
+TEST(configLoadServiceTest, flow_control_keys_are_loaded)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines({R"({"services":{"42":{"type":"unicast","dst_port":5001,"flow_control_capacity":1000,"flow_control_suppress_percent":70,"flow_control_resume_percent":50,"flow_control_request_interval_ms":300,"flow_control_request_lifetime_ms":2000,"flow_control_receiver_percent":25,"flow_control_receiver_count":4}}})"}); // [状態] - フロー制御の 7 つのキーを含むサービス定義を用意する。
+    service_configuration owned;
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_service(
+        "config.conf", 42, &owned); // [手順] - フロー制御の 7 つのキーを含むサービス定義のサービス 42 を指定して potr_internal_config_load_service() を呼び出す。
+
+    // Assert
+    ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_config_load_service() の戻り値が POTR_OK であること。
+    EXPECT_EQ(1000U, owned.definition.flow_control_capacity); // [確認_正常系] - owned.definition.flow_control_capacity が 1000U であること。
+    EXPECT_EQ(70U, owned.definition.flow_control_suppress_percent); // [確認_正常系] - owned.definition.flow_control_suppress_percent が 70U であること。
+    EXPECT_EQ(50U, owned.definition.flow_control_resume_percent); // [確認_正常系] - owned.definition.flow_control_resume_percent が 50U であること。
+    EXPECT_EQ(300U, owned.definition.flow_control_request_interval_ms); // [確認_正常系] - owned.definition.flow_control_request_interval_ms が 300U であること。
+    EXPECT_EQ(2000U, owned.definition.flow_control_request_lifetime_ms); // [確認_正常系] - owned.definition.flow_control_request_lifetime_ms が 2000U であること。
+    EXPECT_EQ(25U, owned.definition.flow_control_receiver_percent); // [確認_正常系] - owned.definition.flow_control_receiver_percent が 25U であること。
+    EXPECT_EQ(4U, owned.definition.flow_control_receiver_count); // [確認_正常系] - owned.definition.flow_control_receiver_count が 4U であること。
+}
+
+// 数値の -1 を 3 つのキーで POTR_FLOW_CONTROL_DISABLED として読み込むことの確認
+TEST(configLoadServiceTest, flow_control_numeric_minus_one_means_disabled)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines({R"({"services":{"42":{"type":"unicast","dst_port":5001,"flow_control_capacity":-1,"flow_control_receiver_percent":-1,"flow_control_receiver_count":-1}}})"}); // [状態] - 3 つのキーが数値の -1 であるサービス定義を用意する。
+    service_configuration owned;
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_service(
+        "config.conf", 42, &owned); // [手順] - 3 つのキーが数値の -1 であるサービス定義のサービス 42 を指定して potr_internal_config_load_service() を呼び出す。
+
+    // Assert
+    ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_config_load_service() の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, owned.definition.flow_control_capacity); // [確認_正常系] - owned.definition.flow_control_capacity が POTR_FLOW_CONTROL_DISABLED であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, owned.definition.flow_control_receiver_percent); // [確認_正常系] - owned.definition.flow_control_receiver_percent が POTR_FLOW_CONTROL_DISABLED であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, owned.definition.flow_control_receiver_count); // [確認_正常系] - owned.definition.flow_control_receiver_count が POTR_FLOW_CONTROL_DISABLED であること。
+}
+
+// 文字列の "-1" を 3 つのキーで POTR_FLOW_CONTROL_DISABLED として読み込むことの確認
+TEST(configLoadServiceTest, flow_control_string_minus_one_means_disabled)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines({R"({"services":{"42":{"type":"unicast","dst_port":5001,"flow_control_capacity":"-1","flow_control_receiver_percent":"-1","flow_control_receiver_count":"-1"}}})"}); // [状態] - 3 つのキーが文字列の "-1" であるサービス定義を用意する。
+    service_configuration owned;
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_service(
+        "config.conf", 42, &owned); // [手順] - 3 つのキーが文字列の "-1" であるサービス定義のサービス 42 を指定して potr_internal_config_load_service() を呼び出す。
+
+    // Assert
+    ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_config_load_service() の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, owned.definition.flow_control_capacity); // [確認_正常系] - owned.definition.flow_control_capacity が POTR_FLOW_CONTROL_DISABLED であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, owned.definition.flow_control_receiver_percent); // [確認_正常系] - owned.definition.flow_control_receiver_percent が POTR_FLOW_CONTROL_DISABLED であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, owned.definition.flow_control_receiver_count); // [確認_正常系] - owned.definition.flow_control_receiver_count が POTR_FLOW_CONTROL_DISABLED であること。
+}
+
+// 専用の値を受け付けない 4 つのキーに -1 を書いた場合に 0 のまま維持することの確認
+TEST(configLoadServiceTest, flow_control_minus_one_is_ignored_for_other_keys)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines({R"({"services":{"42":{"type":"unicast","dst_port":5001,"flow_control_suppress_percent":-1,"flow_control_resume_percent":-1,"flow_control_request_interval_ms":-1,"flow_control_request_lifetime_ms":-1}}})"}); // [状態] - 4 つのキーが -1 であるサービス定義を用意する。
+    service_configuration owned;
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_service(
+        "config.conf", 42, &owned); // [手順] - 4 つのキーが -1 であるサービス定義のサービス 42 を指定して potr_internal_config_load_service() を呼び出す。
+
+    // Assert
+    ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_config_load_service() の戻り値が POTR_OK であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_suppress_percent); // [確認_正常系] - owned.definition.flow_control_suppress_percent が 0U (直前の値を維持) であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_resume_percent); // [確認_正常系] - owned.definition.flow_control_resume_percent が 0U (直前の値を維持) であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_request_interval_ms); // [確認_正常系] - owned.definition.flow_control_request_interval_ms が 0U (直前の値を維持) であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_request_lifetime_ms); // [確認_正常系] - owned.definition.flow_control_request_lifetime_ms が 0U (直前の値を維持) であること。
+}
+
+// flow_control_capacity に -2 を書いた場合に 0 のまま維持することの確認
+TEST(configLoadServiceTest, flow_control_capacity_minus_two_preserves_previous)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines({R"({"services":{"42":{"type":"unicast","dst_port":5001,"flow_control_capacity":-2}}})"}); // [状態] - flow_control_capacity が -2 であるサービス定義を用意する。
+    service_configuration owned;
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_service(
+        "config.conf", 42, &owned); // [手順] - flow_control_capacity が -2 であるサービス定義のサービス 42 を指定して potr_internal_config_load_service() を呼び出す。
+
+    // Assert
+    ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_config_load_service() の戻り値が POTR_OK であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_capacity); // [確認_正常系] - owned.definition.flow_control_capacity が 0U (直前の値を維持) であること。
+}
+
+// flow_control_capacity に "abc" を書いた場合に 0 のまま維持することの確認
+TEST(configLoadServiceTest, flow_control_capacity_invalid_string_preserves_previous)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines({R"({"services":{"42":{"type":"unicast","dst_port":5001,"flow_control_capacity":"abc"}}})"}); // [状態] - flow_control_capacity が "abc" であるサービス定義を用意する。
+    service_configuration owned;
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_service(
+        "config.conf", 42, &owned); // [手順] - flow_control_capacity が "abc" であるサービス定義のサービス 42 を指定して potr_internal_config_load_service() を呼び出す。
+
+    // Assert
+    ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_config_load_service() の戻り値が POTR_OK であること。
+    EXPECT_EQ(0U, owned.definition.flow_control_capacity); // [確認_正常系] - owned.definition.flow_control_capacity が 0U (直前の値を維持) であること。
+}

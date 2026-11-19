@@ -12,6 +12,8 @@
 #include <porter/protocol/packet_seal.h>
 #include <cplat/net/byteorder.h>
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <cstring>
 #include <deque>
 #include <vector>
@@ -979,3 +981,181 @@ TEST_F(potrSendThreadTcpBatchTest, retained_data_written_before_new_batch)
     delegate_real_cplat_local_lock_dispose(ctx.callback_mutex);
 }
 // [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]
+// N:1 で宛先のピアが抑制中の場合、取り出したエントリを送出せずに保留することの確認
+TEST(potrSendThreadTest, n1_suppressed_peer_entry_is_deferred_without_sending)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_peer_context peer = {};
+    std::vector<uint8_t> wire_buf(POTR_PACKET_HEADER_SIZE + 1400U);
+    uint8_t payload[4] = {1U, 2U, 3U, 4U};
+    potr_internal_payload_elem elem = {};
+    ctx.is_multi_peer = 1;               // [状態] - N:1 モードとする。
+    ctx.global.max_payload = 1400U;      // [状態] - 最大ペイロード長を設定する。
+    ctx.send_wire_buf = wire_buf.data(); // [状態] - 送信 wire 組立バッファーを設定する。
+    delegate_real_cplat_local_lock_create(&ctx.peers_mutex);
+    peer.active = 1;
+    peer.peer_id = 5U;
+    elem.peer_id = 5U;
+    elem.flags = 0U;
+    elem.payload_len = (uint16_t)sizeof(payload);
+    elem.payload = payload;
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 5U, _, _))
+        .WillByDefault(Return(1)); // [状態] - ピア 5 がフロー制御で抑制中であるものとする。
+    ON_CALL(mock_porter, potr_internal_send_queue_peek_timed(_, _, _))
+        .WillByDefault(Return(POTR_ERR_TIMEOUT)); // [状態] - 保留中の再確認では、追加のエントリはないものとする。
+    ON_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 5U))
+        .WillByDefault(Return(&peer)); // [状態] - ピア 5 を検索できるようにする。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
+        .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
+        .WillRepeatedly(Return(POTR_ERR_CANCELED));
+    // [Pre-Assert手順] - 1 回目はピア 5 宛のエントリを返し、以降は停止を返す。
+    EXPECT_CALL(mock_porter, potr_internal_packet_build_packed(_, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 抑制中のピア宛のパケットを構築しないこと。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_defer(&ctx.send_queue)).Times(1);
+    // [Pre-Assert確認_正常系] - 取り出した 1 件を保留として通知すること。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(0);
+    // [Pre-Assert確認_正常系] - 送出していないエントリを完了として通知しないこと。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete_deferred(&ctx.send_queue)).Times(1);
+    // [Pre-Assert確認_正常系] - 終了時に残った保留の 1 件を、送出せずに解放して通知すること。
+    // Act
+    int actual_ret = potr_internal_send_thread_start(&ctx); // [手順] - send を開始する。
+    while (peer.flow_deferred_entries == 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    } // [手順] - 送信スレッドがエントリを保留するまで待つ。
+    potr_internal_send_thread_stop(&ctx); // [手順] - send を停止して終了を待つ。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(1, peer.flow_deferred_entries); // [確認_正常系] - ピア 5 宛の保留が 1 件と記録されていること。
+    EXPECT_EQ(nullptr, ctx.flow_deferred_head); // [確認_正常系] - 終了時に保留のリストが空になっていること。
+    // Cleanup
+    delegate_real_cplat_local_lock_dispose(ctx.peers_mutex);
+}
+
+// N:1 で保留したエントリが、宛先のピアの抑制の解除後に取り出されて完了することの確認
+TEST(potrSendThreadTest, n1_deferred_entry_is_released_after_peer_resumes)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_peer_context peer = {};
+    std::vector<uint8_t> wire_buf(POTR_PACKET_HEADER_SIZE + 1400U);
+    uint8_t payload[4] = {1U, 2U, 3U, 4U};
+    potr_internal_payload_elem elem = {};
+    cplat_atomic_i32 suppressed;
+    cplat_atomic_i32 released;
+    cplat_atomic_store_i32(&suppressed, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_i32(&released, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    ctx.is_multi_peer = 1;               // [状態] - N:1 モードとする。
+    ctx.global.max_payload = 1400U;      // [状態] - 最大ペイロード長を設定する。
+    ctx.send_wire_buf = wire_buf.data(); // [状態] - 送信 wire 組立バッファーを設定する。
+    delegate_real_cplat_local_lock_create(&ctx.peers_mutex);
+    peer.active = 1;
+    peer.peer_id = 5U;
+    elem.peer_id = 5U;
+    elem.flags = 0U;
+    elem.payload_len = (uint16_t)sizeof(payload);
+    elem.payload = payload;
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 5U, _, _))
+        .WillByDefault(Invoke(
+            [&](potr_context *, potr_peer_id, uint64_t, int *)
+            { return (int)cplat_atomic_load_i32(&suppressed, CPLAT_MEMORY_ORDER_ACQUIRE); }));
+    // [状態] - ピア 5 の抑制の状態を、テストから切り替えられるようにする (最初は抑制中)。
+    ON_CALL(mock_porter, potr_internal_send_queue_peek_timed(_, _, _))
+        .WillByDefault(Return(POTR_ERR_TIMEOUT)); // [状態] - 保留中の再確認では、追加のエントリはないものとする。
+    ON_CALL(mock_porter, potr_internal_send_queue_complete_deferred(&ctx.send_queue))
+        .WillByDefault(Invoke([&](potr_internal_send_queue *)
+                              { cplat_atomic_store_i32(&released, 1, CPLAT_MEMORY_ORDER_RELEASE); }));
+    // [状態] - 保留の解放の通知を、テストから検出できるようにする。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
+        .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
+        .WillRepeatedly(Return(POTR_ERR_CANCELED));
+    // [Pre-Assert手順] - 1 回目はピア 5 宛のエントリを返し、以降は停止を返す。
+    EXPECT_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 5U))
+        .WillOnce(Return(&peer))
+        .WillRepeatedly(Return(nullptr));
+    // [Pre-Assert手順] - 保留の記録ではピアを返し、送出の時点では切断済みとして NULL を返す。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_defer(&ctx.send_queue)).Times(1);
+    // [Pre-Assert確認_正常系] - 取り出した 1 件を保留として通知すること。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete_deferred(&ctx.send_queue)).Times(1);
+    // [Pre-Assert確認_正常系] - 抑制の解除後に、保留していた 1 件を解放して通知すること。
+    // Act
+    int actual_ret = potr_internal_send_thread_start(&ctx); // [手順] - send を開始する。
+    while (peer.flow_deferred_entries == 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    } // [手順] - 送信スレッドがエントリを保留するまで待つ。
+    int released_while_suppressed = (int)cplat_atomic_load_i32(&released, CPLAT_MEMORY_ORDER_ACQUIRE);
+    cplat_atomic_store_i32(&suppressed, 0, CPLAT_MEMORY_ORDER_RELEASE); // [手順] - ピア 5 の抑制を解除する。
+    while (cplat_atomic_load_i32(&released, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    } // [手順] - 送信スレッドが保留を解放するまで待つ。
+    potr_internal_send_thread_stop(&ctx); // [手順] - send を停止して終了を待つ。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(0, released_while_suppressed); // [確認_正常系] - 抑制中は保留が解放されていないこと。
+    EXPECT_EQ(nullptr, ctx.flow_deferred_head); // [確認_正常系] - 保留のリストが空になっていること。
+    // Cleanup
+    delegate_real_cplat_local_lock_dispose(ctx.peers_mutex);
+}
+
+// 1:1 で相手が抑制を要求している間は DATA の送出を待ち、解除後に送出して完了することの確認
+TEST(potrSendThreadTest, suppressed_sender_waits_until_resume_before_sending)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    std::vector<uint8_t> wire_buf(POTR_PACKET_HEADER_SIZE + 1400U);
+    uint8_t payload[4] = {1U, 2U, 3U, 4U};
+    potr_internal_payload_elem elem = {};
+    cplat_atomic_i32 completed;
+    cplat_atomic_store_i32(&completed, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    ctx.service.type = POTR_TYPE_UNICAST; // [状態] - 片方向 unicast の送信者とする。
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.global.max_payload = 1400U;      // [状態] - 最大ペイロード長を設定する。
+    ctx.send_wire_buf = wire_buf.data(); // [状態] - 送信 wire 組立バッファーを設定する。
+    elem.peer_id = POTR_PEER_NA;
+    elem.flags = 0U;
+    elem.payload_len = (uint16_t)sizeof(payload);
+    elem.payload = payload;
+    ON_CALL(mock_porter, potr_internal_send_queue_peek(_, _))
+        .WillByDefault(Return(POTR_ERR_EMPTY)); // [状態] - 追加のエントリはないものとする。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
+        .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
+        .WillRepeatedly(Return(POTR_ERR_CANCELED));
+    // [Pre-Assert手順] - 1 回目はエントリを返し、以降は停止を返す。
+    {
+        InSequence sequence;
+        EXPECT_CALL(mock_porter, potr_internal_flow_control_suppressed(&ctx, _, _))
+            .Times(2)
+            .WillRepeatedly(DoAll(SetArgPointee<2>(1), Return(1)));
+        // [Pre-Assert手順] - 抑制の判定の 1 回目と 2 回目は、抑制中を返す。
+        EXPECT_CALL(mock_porter, potr_internal_flow_control_suppressed(&ctx, _, _)).WillOnce(Return(0));
+        // [Pre-Assert手順] - 抑制の判定の 3 回目は、抑制なしを返す。
+        EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue))
+            .WillOnce(Invoke([&](potr_internal_send_queue *)
+                             { cplat_atomic_store_i32(&completed, 1, CPLAT_MEMORY_ORDER_RELEASE); }));
+        // [Pre-Assert確認_正常系] - 抑制の解除の後に、取り出した 1 件の完了を 1 回通知すること。
+    }
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_wait_flow(&ctx.send_queue, _, 1)).Times(2);
+    // [Pre-Assert確認_正常系] - 抑制中の 2 回、判定が返した待機時間 (1 ms) で状態の変化を待つこと。
+    // Act
+    int actual_ret = potr_internal_send_thread_start(&ctx); // [手順] - send を開始する。
+    while (cplat_atomic_load_i32(&completed, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    } // [手順] - 送信スレッドが、取り出した 1 件を完了させるまで待つ。
+    potr_internal_send_thread_stop(&ctx); // [手順] - send を停止して終了を待つ。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);      // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(nullptr, ctx.send_thread); // [確認_正常系] - 送信スレッドが終了していること。
+}

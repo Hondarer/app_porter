@@ -56,6 +56,8 @@
 #include <porter/protocol/packet_seal.h>
 #include <porter/protocol/window.h>
 #include <porter/infra/potr_trace.h>
+#include <cplat/crt/stdlib.h>
+#include <cplat/runtime/memory_lock.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/socket.h>
 
@@ -758,6 +760,261 @@ static int send_tcp_batch(potr_context *ctx, const potr_internal_payload_elem *f
 }
 
 /* 送信スレッド本体 */
+/** 保留中のエントリがある間に、抑制の状態を確認し直すまでの待機の上限 [ms]。 */
+#define FLOW_DEFERRED_RECHECK_MS 50
+
+/** 1 回の走査で送出を見送るピアの数の上限。超える分は次の走査で扱う。 */
+#define FLOW_DEFERRED_SKIP_MAX 16U
+
+/**
+ *  N:1 モードで、抑制中のピア宛のために送出を保留したエントリ。ペイロードは構造体の直後に置く。
+ *  送信キューの登録順を保つ 1 本のリストで管理し、同じピア宛のエントリの順序を変えない。
+ */
+typedef struct potr_internal_deferred_entry
+{
+    struct potr_internal_deferred_entry *next; /**< 次の保留エントリ。 */
+    potr_peer_id peer_id;                      /**< 宛先のピア識別子。 */
+    uint16_t flags;                            /**< ペイロード エレメント フラグ。 */
+    uint16_t payload_len;                      /**< ペイロード長 [byte]。 */
+} potr_internal_deferred_entry;
+
+/*
+ * ピアが抑制中か、またはそのピア宛の保留エントリが残っているかを返す。どちらの場合も、新しいエントリを先に送出しない。
+ * blocked には、ピアが抑制中かどうかを返す。
+ */
+static int peer_send_deferred(potr_context *ctx, potr_peer_id peer_id, int *blocked)
+{
+    uint64_t now_ms;
+    int deferred = 0;
+
+    /* 時刻を取得できない場合は期限を判定できないため、抑制せずに送出する。 */
+    if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
+    {
+        *blocked = 0;
+        return 0;
+    }
+
+    *blocked = potr_internal_flow_control_peer_state(ctx, peer_id, now_ms, &deferred);
+
+    return *blocked != 0 || deferred != 0;
+}
+
+/*
+ * 取り出したエントリの宛先が抑制中の場合、または同じ宛先の保留エントリが残っている場合に、エントリを保留する。
+ * 保留した場合は 1、そのまま送出する場合は 0 を返す。
+ * 保留したエントリは、完了待ちの番号だけを進める。送信キューの容量は、送出するまで占有し続ける。
+ */
+static int defer_entry_if_blocked(potr_context *ctx, const potr_internal_payload_elem *entry)
+{
+    potr_internal_deferred_entry *node;
+    potr_internal_peer_context *peer;
+    int blocked;
+
+    if (peer_send_deferred(ctx, entry->peer_id, &blocked) == 0)
+    {
+        return 0;
+    }
+
+    node = (potr_internal_deferred_entry *)cplat_malloc(sizeof(*node) + (size_t)entry->payload_len);
+    if (node == NULL)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "sender[service_id=%" PRId64 "]: peer=%u failed to hold suppressed entry (out of memory)",
+                   ctx->service.service_id, (unsigned)entry->peer_id);
+        potr_internal_send_queue_complete_failed(&ctx->send_queue, POTR_ERR_OUT_OF_MEMORY);
+        return 1;
+    }
+
+    node->next = NULL;
+    node->peer_id = entry->peer_id;
+    node->flags = entry->flags;
+    node->payload_len = entry->payload_len;
+    memcpy(node + 1, entry->payload, entry->payload_len);
+
+    if (ctx->flow_deferred_tail != NULL)
+    {
+        ctx->flow_deferred_tail->next = node;
+    }
+    else
+    {
+        ctx->flow_deferred_head = node;
+    }
+
+    ctx->flow_deferred_tail = node;
+
+    cplat_local_lock_lock(ctx->peers_mutex);
+    peer = potr_internal_peer_find_by_id(ctx, entry->peer_id);
+    if (peer != NULL)
+    {
+        peer->flow_deferred_entries++;
+    }
+    cplat_local_lock_unlock(ctx->peers_mutex);
+
+    potr_internal_send_queue_defer(&ctx->send_queue);
+
+    return 1;
+}
+
+/* 保留していたエントリを 1 つ送出する。宛先のピアが切断済みの場合は破棄する。 */
+static void send_deferred_entry(potr_context *ctx, potr_internal_deferred_entry *node)
+{
+    potr_internal_payload_elem entry;
+    potr_internal_peer_context *peer;
+    uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
+    size_t packed_len = 0;
+
+    entry.peer_id = node->peer_id;
+    entry.flags = node->flags;
+    entry.payload_len = node->payload_len;
+    entry.payload = (uint8_t *)(node + 1);
+    append_payload_elem(packed_buf, &packed_len, &entry);
+
+    cplat_local_lock_lock(ctx->peers_mutex);
+    peer = potr_internal_peer_find_by_id(ctx, node->peer_id);
+    if (peer != NULL)
+    {
+        if (peer->flow_deferred_entries > 0)
+        {
+            peer->flow_deferred_entries--;
+        }
+
+        flush_packed_peer(ctx, peer, packed_len);
+        if (cplat_atomic_load_i32(&peer->tx_session.exhausted, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+        {
+            thread_recv_disconnect_peer_all_paths(ctx, peer);
+            potr_internal_peer_free(ctx, peer);
+        }
+    }
+    cplat_local_lock_unlock(ctx->peers_mutex);
+
+    potr_internal_send_queue_complete_deferred(&ctx->send_queue);
+}
+
+/*
+ * 保留中のエントリのうち、宛先の抑制が解除されたものを登録順に送出する。
+ * あるピア宛のエントリを見送った後は、同じ走査の中でそのピア宛の後続のエントリも見送り、順序を保つ。
+ * drop_all が非 0 の場合は、送出せずにすべて破棄する (送信スレッドの終了時)。
+ */
+static void flush_deferred_entries(potr_context *ctx, int drop_all)
+{
+    potr_peer_id skipped[FLOW_DEFERRED_SKIP_MAX];
+    size_t n_skipped = 0U;
+    potr_internal_deferred_entry *prev = NULL;
+    potr_internal_deferred_entry *node = ctx->flow_deferred_head;
+
+    while (node != NULL)
+    {
+        potr_internal_deferred_entry *next = node->next;
+        int skip = 0;
+        size_t i;
+
+        if (drop_all == 0)
+        {
+            for (i = 0U; i < n_skipped; i++)
+            {
+                if (skipped[i] == node->peer_id)
+                {
+                    skip = 1;
+                }
+            }
+
+            if (skip == 0)
+            {
+                int blocked;
+
+                (void)peer_send_deferred(ctx, node->peer_id,
+                                         &blocked); /* 保留の有無ではなく抑制の状態だけを使うため、戻り値は明示的に破棄する */
+                if (blocked != 0)
+                {
+                    /* 見送るピアの記録が上限に達した場合は、順序を保てないため、残りを次の走査へ回す。 */
+                    if (n_skipped == FLOW_DEFERRED_SKIP_MAX)
+                    {
+                        return;
+                    }
+
+                    skipped[n_skipped++] = node->peer_id;
+                    skip = 1;
+                }
+            }
+        }
+
+        if (skip != 0)
+        {
+            prev = node;
+            node = next;
+            continue;
+        }
+
+        if (prev != NULL)
+        {
+            prev->next = next;
+        }
+        else
+        {
+            ctx->flow_deferred_head = next;
+        }
+
+        if (ctx->flow_deferred_tail == node)
+        {
+            ctx->flow_deferred_tail = prev;
+        }
+
+        if (drop_all == 0)
+        {
+            send_deferred_entry(ctx, node);
+        }
+        else
+        {
+            potr_internal_send_queue_complete_deferred(&ctx->send_queue);
+        }
+
+        cplat_secure_zero(node + 1, node->payload_len);
+        cplat_free(node);
+        node = next;
+    }
+}
+
+/*
+ * N:1 モード専用: 保留中のエントリを先に送出してから、送信キューの次のエントリを取り出す。
+ * 保留中のエントリが残っている間は、抑制の解除を確認し直すため、時間を区切って待つ。
+ * 取り出した場合は POTR_OK、時間切れの場合は POTR_ERR_TIMEOUT、終了要求と異常の場合はその原因コードを返す。
+ */
+static int pop_peer_mode(potr_context *ctx, potr_internal_payload_elem *first)
+{
+    int result;
+
+    flush_deferred_entries(ctx, 0);
+
+    if (ctx->flow_deferred_head == NULL)
+    {
+        return potr_internal_send_queue_pop(&ctx->send_queue, first, &ctx->send_thread_running);
+    }
+
+    result = potr_internal_send_queue_peek_timed(&ctx->send_queue, first, FLOW_DEFERRED_RECHECK_MS);
+    if (result == POTR_ERR_TIMEOUT)
+    {
+        if (cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+        {
+            return POTR_ERR_CANCELED;
+        }
+
+        return POTR_ERR_TIMEOUT;
+    }
+
+    if (result != POTR_OK)
+    {
+        return result;
+    }
+
+    /* 取り出すのは送信スレッドだけであり、参照できたエントリは必ず取り出せる。 */
+    if (potr_internal_send_queue_try_pop(&ctx->send_queue, first) != POTR_OK)
+    {
+        return POTR_ERR_TIMEOUT;
+    }
+
+    return POTR_OK;
+}
+
 /*
  * 相手からの抑制の要求が有効な間、新しい DATA の送出を待つ。
  * 取り出し済みの先頭エントリは、解除、要求の期限の経過、close の開始のいずれかの後に送出する。
@@ -810,17 +1067,33 @@ static void send_thread_func(void *arg)
 
     while (cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
+        /* N:1 モード: peer_id でルーティングして送信する。抑制中のピア宛は保留し、ほかのピア宛を先に送出する。 */
+        if (ctx->is_multi_peer)
+        {
+            int pop_result = pop_peer_mode(ctx, &first);
+
+            if (pop_result == POTR_ERR_TIMEOUT)
+            {
+                continue;
+            }
+
+            if (pop_result != POTR_OK)
+            {
+                break;
+            }
+
+            if (defer_entry_if_blocked(ctx, &first) == 0)
+            {
+                send_packed_peer_mode(ctx, &first);
+            }
+
+            continue;
+        }
+
         /* キューからエントリを取り出す (ブロッキング)。 */
         if (potr_internal_send_queue_pop(&ctx->send_queue, &first, &ctx->send_thread_running) != POTR_OK)
         {
             break;
-        }
-
-        /* N:1 モード: peer_id でルーティングして送信する。 */
-        if (ctx->is_multi_peer)
-        {
-            send_packed_peer_mode(ctx, &first);
-            continue;
         }
 
         /* 相手が抑制を要求している間は、新しい DATA を送出せずに待つ。 */
@@ -954,6 +1227,9 @@ static void send_thread_func(void *arg)
             }
         }
     }
+
+    /* 終了時に残っている保留エントリは、送出せずに破棄する。 */
+    flush_deferred_entries(ctx, 1);
 
     cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
 
