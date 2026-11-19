@@ -89,6 +89,8 @@ typedef struct potr_internal_send_queue
     cplat_condvar *not_full;             /**< count + inflight < depth になったことを通知する条件変数。 */
     cplat_condvar *drained;              /**< count == 0 && inflight == 0 を通知する条件変数。 */
     cplat_condvar *progress;             /**< completed_seq が増えたことを通知する条件変数。 */
+    cplat_condvar *flow_changed;         /**< フロー制御の抑制の状態が変わった可能性を通知する条件変数。 */
+    uint64_t flow_generation;            /**< flow_changed の通知回数。待機前の通知の取りこぼしを防ぐ。mutex で保護します。 */
 } potr_internal_send_queue;
 
 #ifdef __cplusplus
@@ -291,6 +293,26 @@ extern "C"
      *  @param[in,out]  q   送信キュー。
      */
     extern void potr_internal_send_queue_shutdown(potr_internal_send_queue *q);
+
+    /**
+     *  @brief          フロー制御の抑制の状態が変わるまで、送信スレッドを待機させます。
+     *
+     *  *generation が現在の通知回数と異なる場合は、待機せずに戻ります。
+     *  状態を確認してから待機に入るまでの間に届いた通知を取りこぼさないためです。
+     *
+     *  @param[in,out]  q           送信キュー。
+     *  @param[in,out]  generation  呼び出し元が最後に確認した通知回数。戻るときに現在の値へ更新します。
+     *  @param[in]      timeout_ms  待機の上限 [ms]。
+     */
+    extern void potr_internal_send_queue_wait_flow(potr_internal_send_queue *q, uint64_t *generation,
+                                                   int timeout_ms);
+
+    /**
+     *  @brief          フロー制御の抑制の状態が変わった可能性を、送信スレッドへ通知します。
+     *  @note           送信キューを持たないコンテキスト (未初期化のキュー) に対しては何もしません。
+     *  @param[in,out]  q   送信キュー。
+     */
+    extern void potr_internal_send_queue_wake_flow(potr_internal_send_queue *q);
 
     /** @brief 異常で全待機を解除します。@param[in,out] q キュー。@param[in] error 原因コード。 */
     void potr_internal_send_queue_abort(potr_internal_send_queue *q, int error);

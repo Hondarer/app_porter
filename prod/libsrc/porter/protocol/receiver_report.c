@@ -11,6 +11,7 @@
 #include <cplat/net/byteorder.h>
 #include <porter/potr_context.h>
 #include <porter/porter_result.h>
+#include <porter/protocol/packet.h>
 #include <porter/protocol/receiver_report.h>
 #include <porter/infra/potr_trace.h>
 
@@ -69,6 +70,7 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
     uint64_t now_ms;
     uint16_t wire_flags;
     int report;
+    int flow;
     int ret = POTR_OK;
     size_t count = 0U;
     size_t limit;
@@ -79,14 +81,25 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
         return POTR_ERR_INVALID_ARGUMENT;
     }
     report = packet->flags == POTR_FLAG_REPORT;
+    flow = packet->flags == POTR_FLAG_FLOW_CONTROL;
     limit = ctx->service.max_peers;
     if (limit == 0U)
     {
         limit = 1024U;
     }
-    if (!report && packet->flags != POTR_FLAG_NACK)
+    if (!report && !flow && packet->flags != POTR_FLAG_NACK)
     {
         return POTR_ERR_PROTOCOL;
+    }
+    if (flow)
+    {
+        if (packet->payload == NULL || packet->payload_len != POTR_FLOW_CONTROL_PAYLOAD_SIZE ||
+            packet->seq_num != 0U || packet->ack_num != 0U ||
+            (packet->payload[0] != POTR_FLOW_CONTROL_STATE_SUPPRESS &&
+             packet->payload[0] != POTR_FLOW_CONTROL_STATE_RESUME))
+        {
+            return POTR_ERR_PROTOCOL;
+        }
     }
     if (report)
     {
@@ -181,7 +194,95 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
             receiver->retired_ms = 0U;
             ctx->report_received = 1;
         }
+        else if (flow)
+        {
+            if (packet->payload[0] == POTR_FLOW_CONTROL_STATE_SUPPRESS)
+            {
+                receiver->flow_request_expire_ms = now_ms + ctx->flow_control_config.request_lifetime_ms;
+            }
+            else
+            {
+                receiver->flow_request_expire_ms = 0U;
+            }
+        }
     }
     cplat_local_lock_unlock(ctx->callback_mutex);
     return ret;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+int potr_internal_receiver_flow_suppressed(potr_context *ctx, uint64_t now_ms, size_t *requesting, uint64_t *until_ms)
+{
+    potr_internal_receiver *receiver;
+    size_t active_count = 0U;
+    size_t requesting_count = 0U;
+    uint64_t earliest_ms = 0U;
+    int suppressed = 0;
+
+    if (ctx == NULL || requesting == NULL || until_ms == NULL)
+    {
+        return 0;
+    }
+
+    cplat_local_lock_lock(ctx->callback_mutex);
+
+    /* 受信報告が途絶えた受信者を、活動中の数から先に外す。戻り値のグループ集合はここでは使わない。 */
+    (void)potr_internal_receiver_groups_locked(ctx, now_ms);
+
+    for (receiver = ctx->receivers; receiver != NULL; receiver = receiver->next)
+    {
+        int valid = receiver->flow_request_expire_ms > now_ms;
+
+        /* 有効な要求を送ってきている受信者は、受信報告の有無にかかわらず活動中として数える。 */
+        if (receiver->active || valid)
+        {
+            active_count++;
+        }
+
+        if (valid)
+        {
+            requesting_count++;
+            if (earliest_ms == 0U || receiver->flow_request_expire_ms < earliest_ms)
+            {
+                earliest_ms = receiver->flow_request_expire_ms;
+            }
+        }
+    }
+
+    cplat_local_lock_unlock(ctx->callback_mutex);
+
+    if (requesting_count != 0U)
+    {
+        if (ctx->service.type == POTR_TYPE_MULTICAST || ctx->service.type == POTR_TYPE_BROADCAST)
+        {
+            size_t count_threshold = (size_t)ctx->flow_control_config.receiver_count;
+            size_t percent = (size_t)ctx->flow_control_config.receiver_percent;
+
+            /* 活動中の受信者数が台数の設定値を下回る場合は、活動中の全員の要求で条件を満たす。 */
+            if (count_threshold > active_count)
+            {
+                count_threshold = active_count;
+            }
+
+            if (count_threshold != 0U && requesting_count >= count_threshold)
+            {
+                suppressed = 1;
+            }
+
+            /* 受信者数は max_peers 以下、percent は 100 以下のため、乗算は桁あふれしない。 */
+            if (percent != 0U && requesting_count * 100U >= percent * active_count)
+            {
+                suppressed = 1;
+            }
+        }
+        else
+        {
+            suppressed = 1;
+        }
+    }
+
+    *requesting = requesting_count;
+    *until_ms = earliest_ms;
+
+    return suppressed;
 }

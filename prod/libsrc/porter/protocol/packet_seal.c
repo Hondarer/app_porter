@@ -222,7 +222,8 @@ int potr_internal_packet_open(potr_packet *packet, const uint8_t *wire_header, c
         return POTR_OK;
     }
     if (packet->payload_len < POTR_CRYPTO_TAG_SIZE ||
-        (!(packet->flags & (POTR_FLAG_DATA | POTR_FLAG_PING | POTR_FLAG_REPORT | POTR_FLAG_KEY)) && packet->payload_len != POTR_CRYPTO_TAG_SIZE) ||
+        (!(packet->flags & (POTR_FLAG_DATA | POTR_FLAG_PING | POTR_FLAG_REPORT | POTR_FLAG_KEY | POTR_FLAG_FLOW_CONTROL)) &&
+         packet->payload_len != POTR_CRYPTO_TAG_SIZE) ||
         key == NULL)
     {
         return POTR_ERR_PROTOCOL;

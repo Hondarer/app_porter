@@ -160,9 +160,39 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
         return 0;
     }
 
+    if ((pkt->flags & POTR_FLAG_FLOW_CONTROL) != 0)
+    {
+        cplat_timespec pkt_session_ts;
+
+        /* 追跡中の相手セッションからの要求と解除だけを反映する。古いセッションのパケットは破棄する。 */
+        session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
+        if (*slot->peer_session_known != 0 && *slot->peer_session_id == pkt->session_id &&
+            slot->peer_session_ts->tv_sec == pkt_session_ts.tv_sec &&
+            slot->peer_session_ts->tv_nsec == pkt_session_ts.tv_nsec)
+        {
+            potr_internal_flow_control_on_packet(ctx, slot->peer, pkt);
+        }
+
+        return 0;
+    }
+
     if ((pkt->flags & (POTR_FLAG_DATA | POTR_FLAG_PING)) == 0)
     {
         return 0;
+    }
+
+    /*
+     * 通知キューの容量超過で切断した相手は、占有量が解除のしきい値を下回るまで採用しない。
+     * 採用すると、次の DATA で再び容量を超え、接続と切断の通知が繰り返されるためである。
+     */
+    {
+        cplat_timespec pkt_session_ts;
+
+        session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
+        if (potr_internal_flow_control_refused(ctx, slot->peer_id, pkt->session_id, &pkt_session_ts) != 0)
+        {
+            return 0;
+        }
     }
 
     if (thread_recv_session_adopt(slot, pkt) == 0)

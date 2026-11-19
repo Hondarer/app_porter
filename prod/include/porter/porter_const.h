@@ -72,6 +72,8 @@
     0x0200U /**< 相互認証と鍵確立のための TLS / DTLS ハンドシェイクのバイト列をペイロードに格納するパケット。封緘は鍵なしの平文です。 */
 #define POTR_FLAG_KEY \
     0x0400U /**< 一対多通信のグループ鍵を配布するパケット。受信者の証明書を検証した後、受信者用の鍵でグループ鍵を暗号化して送ります。 */
+#define POTR_FLAG_FLOW_CONTROL \
+    0x0800U /**< フロー制御パケット。受信側が送信側へ、抑制の要求または解除を伝えます。送出する側自身のセッション識別子を使い、seq_num と ack_num は 0。ペイロードは 1 [byte] の状態 (POTR_FLOW_CONTROL_STATE_*)。暗号化有効時は、同じ向きの受信報告または PING と同じ方式で保護します。 */
 
 /** @} */
 
@@ -100,7 +102,7 @@
  *  @ingroup        POTR_PROTOCOL
  *  @{
  */
-#define POTR_PROTOCOL_VERSION 2U /**< 現行の porter ワイヤー プロトコル バージョン。 */
+#define POTR_PROTOCOL_VERSION 3U /**< 現行の porter ワイヤー プロトコル バージョン。 */
 /** @} */
 
 /** @defgroup POTR_DEFAULT デフォルト値
@@ -193,6 +195,34 @@
     0U /**< 不定: 片方向のため PING を受信しない、またはまだ一度も PING を受信していない。 */
 #define POTR_PING_STATE_NORMAL   1U /**< 正常: 定周期で PING を受信中。 */
 #define POTR_PING_STATE_ABNORMAL 2U /**< 異常: PING タイムアウト (途絶)。 */
+/** @} */
+
+/** @defgroup POTR_FLOW_CONTROL フロー制御
+ *  @ingroup        PORTER_PUBLIC_API
+ *  受信側の通知キューの占有量に基づいて、送信側が新しい DATA の送出を止める仕組みの定数です。\n
+ *  対象は UNICAST / MULTICAST / BROADCAST / UNICAST_BIDIR / UNICAST_BIDIR_N1 / TCP / TCP_BIDIR です。
+ *  RAW 系の通信種別では、フロー制御の設定を無視します。
+ */
+
+/**
+ *  @ingroup        POTR_FLOW_CONTROL
+ *  @{
+ */
+#define POTR_FLOW_CONTROL_STATE_SUPPRESS 1U /**< フロー制御パケットの状態: 抑制の要求。 */
+#define POTR_FLOW_CONTROL_STATE_RESUME   2U /**< フロー制御パケットの状態: 解除。 */
+#define POTR_FLOW_CONTROL_DISABLED \
+    0xFFFFFFFFU /**< サービス定義で「無効」を表す専用の値。flow_control_capacity、flow_control_receiver_percent、flow_control_receiver_count に指定できます。設定ファイルでは -1 と記載します。 */
+#define POTR_DEFAULT_FLOW_CONTROL_CAPACITY 0U /**< 通知キューの容量のデフォルト [byte]。0 = フロー制御は無効。 */
+#define POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT 80U /**< 抑制を要求するしきい値のデフォルト [%]。 */
+#define POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT   60U /**< 解除するしきい値のデフォルト [%]。 */
+#define POTR_DEFAULT_FLOW_CONTROL_REQUEST_INTERVAL_MS \
+    200U /**< 抑制の要求の再送周期のデフォルト [ms]。 */
+#define POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS \
+    1000U /**< 抑制の要求の有効期限のデフォルト [ms]。 */
+#define POTR_DEFAULT_FLOW_CONTROL_RECEIVER_PERCENT \
+    0U /**< 一対多の送信側が抑制する、要求中の受信者の割合のデフォルト [%]。0 = 割合の条件は無効。 */
+#define POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT \
+    2U /**< 一対多の送信側が抑制する、要求中の受信者の台数のデフォルト。 */
 /** @} */
 
 #endif /* PORTER_CONST_H */

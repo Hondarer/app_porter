@@ -529,6 +529,7 @@ int potr_service_close(potr_context *handle)
     ret = close_impl(ctx);
 
     potr_internal_notify_stop(ctx);
+    potr_internal_flow_control_stop(ctx);
     api_context_dispose_resources(ctx);
     potr_internal_handle_end_close(ctx);
     cplat_free(ctx);

@@ -43,6 +43,7 @@
 #include <cplat/net/socket.h>
 #include <porter/infra/potr_send_queue.h>
 #include <porter/security/certificate.h>
+#include <porter/potr_flow_control.h>
 
 /** TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
 static inline int is_tcp_type(potr_type t)
@@ -194,6 +195,7 @@ typedef struct potr_internal_peer_context
     uint8_t remote_path_ping_state
         [POTR_MAX_PATH];         /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     cplat_timespec last_recv_ts; /**< 最終受信時刻 (CLOCK_MONOTONIC)。tv_sec == 0 は未受信。 */
+    uint64_t flow_request_expire_ms; /**< このピアから受けた抑制の要求の期限 [ms]。0 = 要求なし。peers_mutex で保護。 */
 
     /* NACK 重複抑制 */
     potr_internal_nack_dedup_entry nack_dedup_buf[POTR_NACK_DEDUP_SLOTS]; /**< NACK 重複抑制バッファー。 */
@@ -253,6 +255,11 @@ struct potr_context
     int certificate_padding; /**< 8 バイト境界のパディング。 */
     struct potr_internal_handle *handle_owner;         /**< 公開ハンドルの制御情報。 */
     struct potr_internal_notifications *notifications; /**< 通知専用スレッドとキュー。 */
+    struct potr_internal_flow_control *flow_control; /**< 受信側のフロー制御の資源。NULL は無効 (容量が 0)。 */
+    potr_internal_flow_control_config flow_control_config; /**< フロー制御の実効設定。スレッド起動後は不変。 */
+    cplat_atomic_u64 flow_request_expire_ms; /**< 送信側: 相手から受けた抑制の要求の期限 [ms]。0 = 要求なし。双方向 UDP (1:1) と TCP で使用。アトミックに読み書きします。 */
+    cplat_atomic_i32 flow_request_pending; /**< 送信側: 片方向 UDP で、受信者の管理表に抑制の要求が残っている可能性があるか。アトミックに読み書きします。 */
+    int flow_control_padding; /**< 8 [byte] 境界のパディング。 */
     cplat_atomic_i32 fatal_error;                      /**< 通知継続不能の原因。 */
     int lifecycle_padding;                             /**< ポインター境界の明示パディング。 */
     potr_recv_fn callback;                             /**< 受信コールバック。 */

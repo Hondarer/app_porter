@@ -93,6 +93,13 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
     session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
     peer = potr_internal_peer_find_by_session(ctx, pkt->session_id, &pkt_session_ts);
 
+    /* 通知キューの容量超過で切断した相手は、占有量が解除のしきい値を下回るまで、新しいピアとして登録しない。 */
+    if (peer == NULL && potr_internal_flow_control_refused(ctx, POTR_PEER_NA, pkt->session_id, &pkt_session_ts) != 0)
+    {
+        cplat_local_lock_unlock(ctx->peers_mutex);
+        return;
+    }
+
     if (peer == NULL)
     {
         if (pkt->flags & POTR_FLAG_PING)
@@ -188,6 +195,20 @@ static int sender_handle_packet(thread_recv_slot *slot, const potr_packet *pkt)
          * 検出するため、戻り値は明示的に破棄する。
          */
         (void)potr_internal_path_group_select(ctx, NULL, &selection);
+
+        /* 活動中の受信者数が変わると、一対多の抑制の判定が変わりうるため、送信スレッドへ判定し直させる。 */
+        potr_internal_send_queue_wake_flow(&ctx->send_queue);
+        return 1;
+    }
+
+    /*
+     * 片方向 UDP の送信者は、check_service_replay() が受信者の管理表へ抑制の要求の期限を反映済みである。
+     * 送信スレッドへ、抑制の判定をし直させる。
+     */
+    if (pkt->flags == POTR_FLAG_FLOW_CONTROL && is_oneway_udp_type(ctx->service.type))
+    {
+        cplat_atomic_store_i32(&ctx->flow_request_pending, 1, CPLAT_MEMORY_ORDER_RELEASE);
+        potr_internal_send_queue_wake_flow(&ctx->send_queue);
         return 1;
     }
     thread_recv_window_on_nack(slot, pkt);
@@ -275,6 +296,16 @@ static void recv_thread_func(void *arg)
         if (ctx->next_report_ms > now_ms && ctx->next_report_ms - now_ms < wait_ms)
         {
             wait_ms = (uint32_t)(ctx->next_report_ms - now_ms);
+        }
+
+        /* 抑制の要求を再送周期ごとに再送するため、フロー制御が有効な受信側は待ち時間の上限を再送周期にする。 */
+        if (ctx->flow_control != NULL)
+        {
+            potr_internal_flow_control_tick(ctx, now_ms);
+            if (ctx->flow_control_config.request_interval_ms < wait_ms)
+            {
+                wait_ms = ctx->flow_control_config.request_interval_ms;
+            }
         }
         poll_result =
             cplat_socket_timed_wait_readable_multi(ctx->sock, (size_t)ctx->n_path, (int)wait_ms, ready, &detail);
@@ -493,6 +524,13 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
     }
 
     /* パケット種別に応じた処理を行う。 */
+    if (pkt.flags & POTR_FLAG_FLOW_CONTROL)
+    {
+        /* 相手からの抑制の要求または解除を、送信側の状態へ反映する。 */
+        potr_internal_flow_control_on_packet(ctx, NULL, &pkt);
+        return POTR_OK;
+    }
+
     if (pkt.flags & POTR_FLAG_FIN_ACK)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "tcp_recv[service_id=%" PRId64 " path=%d]: FIN_ACK ack=%u",
@@ -648,6 +686,19 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
                         thread_recv_slot_deliver_payload_elem(svc_slot, &elem);
                     }
 
+                    /*
+                     * 通知キューの容量を超えた場合は、DATA を破棄したため、ストリームを切断する。
+                     * TCP は破棄した DATA を再送で補えない。ほかの path も、次の DATA の配信で同じ判定になり切断する。
+                     */
+                    if (svc_slot->flow_overflow != 0)
+                    {
+                        svc_slot->flow_overflow = 0;
+                        POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                                   "tcp_recv[service_id=%" PRId64 " path=%d]: notification capacity exceeded, disconnecting",
+                                   ctx->service.service_id, path_idx);
+                        return POTR_ERR_PROTOCOL;
+                    }
+
                     cplat_local_lock_lock(ctx->recv_window_mutex);
                 }
 
@@ -691,6 +742,9 @@ static void tcp_recv_thread_func(void *arg)
      */
     int use_recv_timeout = (ctx->health_interval_ms > 0 && ctx->health_timeout_ms > 0);
 
+    /* フロー制御が有効な受信側は、抑制の要求を再送周期ごとに再送するため、受信をポーリングで待つ。 */
+    int use_flow_tick = (ctx->flow_control != NULL);
+
     /* ポーリング間隔: 1 [s] 単位でチェックし、health_timeout_ms を超えないようにする。 */
     uint32_t poll_ms;
     const char *recv_timeout_label;
@@ -718,6 +772,11 @@ static void tcp_recv_thread_func(void *arg)
     else
     {
         recv_timeout_label = "disabled";
+    }
+
+    if (use_flow_tick != 0 && (use_recv_timeout == 0 || ctx->flow_control_config.request_interval_ms < poll_ms))
+    {
+        poll_ms = ctx->flow_control_config.request_interval_ms;
     }
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv[service_id=%" PRId64 " path=%d]: starting (recv_timeout=%s)",
@@ -763,9 +822,9 @@ static void tcp_recv_thread_func(void *arg)
              * タイムアウト付きポーリングで PING 受信を監視する。
              * データが到着するまで poll_ms 待機し、タイムアウト時は PING 受信時刻を確認する。
              */
-            if (use_recv_timeout)
+            if (use_recv_timeout != 0 || use_flow_tick != 0)
             {
-                /* poll_ms は health_timeout から算出したポーリング間隔。INT_MAX 以下。 */
+                /* poll_ms は health_timeout または抑制の要求の再送周期から算出したポーリング間隔。INT_MAX 以下。 */
                 int readable = tcp_wait_readable(fd, (int)poll_ms);
                 if (cplat_atomic_load_i32(&ctx->running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
                 {
@@ -788,6 +847,17 @@ static void tcp_recv_thread_func(void *arg)
                         cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
                         potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
                         break;
+                    }
+
+                    if (use_flow_tick != 0)
+                    {
+                        potr_internal_flow_control_tick(ctx, now);
+                    }
+
+                    /* 受信タイムアウト監視を使わない構成では、抑制の要求の再送だけを行う。 */
+                    if (use_recv_timeout == 0)
+                    {
+                        continue;
                     }
 
                     uint64_t elapsed = now - last;

@@ -40,6 +40,13 @@ static void config_set_global_defaults(potr_global_config *global)
     global->tcp_health_interval_ms = (uint32_t)POTR_DEFAULT_TCP_HEALTH_INTERVAL_MS;
     global->tcp_health_timeout_ms = (uint32_t)POTR_DEFAULT_TCP_HEALTH_TIMEOUT_MS;
     global->tcp_close_timeout_ms = (uint32_t)POTR_DEFAULT_TCP_CLOSE_TIMEOUT_MS;
+    global->flow_control_capacity = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_CAPACITY;
+    global->flow_control_suppress_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT;
+    global->flow_control_resume_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT;
+    global->flow_control_request_interval_ms = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_REQUEST_INTERVAL_MS;
+    global->flow_control_request_lifetime_ms = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS;
+    global->flow_control_receiver_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVER_PERCENT;
+    global->flow_control_receiver_count = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT;
 }
 
 /**
@@ -167,6 +174,34 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
             {
                 trace_unparsed_global_value(key, val);
             }
+        }
+        else if (strcmp(key, "flow_control_capacity") == 0)
+        {
+            (void)cplat_parse_uint32(&global->flow_control_capacity, val, 10);
+        }
+        else if (strcmp(key, "flow_control_suppress_percent") == 0)
+        {
+            (void)cplat_parse_uint32(&global->flow_control_suppress_percent, val, 10);
+        }
+        else if (strcmp(key, "flow_control_resume_percent") == 0)
+        {
+            (void)cplat_parse_uint32(&global->flow_control_resume_percent, val, 10);
+        }
+        else if (strcmp(key, "flow_control_request_interval_ms") == 0)
+        {
+            (void)cplat_parse_uint32(&global->flow_control_request_interval_ms, val, 10);
+        }
+        else if (strcmp(key, "flow_control_request_lifetime_ms") == 0)
+        {
+            (void)cplat_parse_uint32(&global->flow_control_request_lifetime_ms, val, 10);
+        }
+        else if (strcmp(key, "flow_control_receiver_percent") == 0)
+        {
+            (void)cplat_parse_uint32(&global->flow_control_receiver_percent, val, 10);
+        }
+        else if (strcmp(key, "flow_control_receiver_count") == 0)
+        {
+            (void)cplat_parse_uint32(&global->flow_control_receiver_count, val, 10);
         }
     }
     cjson_app_cJSON_Delete(root);

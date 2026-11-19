@@ -33,7 +33,7 @@ typedef struct thread_recv_slot
     potr_context *ctx;                /* 所属コンテキスト */
     potr_internal_peer_context *peer; /* N:1 のピア (1:1 モードでは NULL) */
     potr_peer_id peer_id;             /* コールバック用ピア識別子 (1:1 は POTR_PEER_NA) */
-    int pad;                          /* パディング (recv_window をポインター境界に揃える) */
+    int flow_overflow;                /* 通知キューの容量を超える DATA を破棄したか (1: 破棄した)。呼び出し元が切断する */
     potr_internal_window *recv_window;
     potr_internal_window *send_window;   /* NACK 再送元 */
     cplat_local_lock *send_window_mutex; /* send_window 保護 */
@@ -86,6 +86,8 @@ void thread_recv_slot_init_peer(thread_recv_slot *slot, potr_context *ctx, potr_
  * @note 呼び出し側は順序整列を済ませ、同じ受信状態と展開バッファーへの並行操作を避けます。
  *       所有権は移動しません。コールバックのデータは呼び出し中だけ有効です。
  *       未接続、結合途中、展開失敗の場合は DATA を通知しません。
+ *       通知キューの容量を超える場合は DATA を破棄して slot->flow_overflow を 1 にし、以後の DATA も破棄します。
+ *       呼び出し側は、配信の区切りで flow_overflow を確認し、その相手との通信を切断してから 0 へ戻します。
  */
 void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_packet *elem);
 

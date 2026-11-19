@@ -96,6 +96,7 @@ static int generate_session(potr_context *ctx)
 static void ctx_cleanup(potr_context *ctx)
 {
     potr_internal_notify_stop(ctx);
+    potr_internal_flow_control_stop(ctx);
     potr_internal_handle_discard(ctx);
     api_context_dispose_resources(ctx);
     cplat_free(ctx);
@@ -427,6 +428,11 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
         result = potr_internal_notify_start(ctx);
     }
 
+    if (result == POTR_OK)
+    {
+        result = potr_internal_flow_control_start(ctx);
+    }
+
     if (result != POTR_OK)
     {
         if (ctx->send_queue.mutex != NULL)
@@ -605,6 +611,12 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         result = open_validate_config(ctx);
     }
 
+    if (result == POTR_OK)
+    {
+        result = potr_internal_flow_control_resolve(&ctx->service, &ctx->global, role, ctx->health_interval_ms,
+                                                    &ctx->flow_control_config);
+    }
+
     if (result != POTR_OK)
     {
         ctx_cleanup(ctx);
@@ -671,6 +683,11 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
         if (result == POTR_OK)
         {
             result = potr_internal_notify_start(ctx);
+        }
+
+        if (result == POTR_OK)
+        {
+            result = potr_internal_flow_control_start(ctx);
         }
 
         if (result != POTR_OK)

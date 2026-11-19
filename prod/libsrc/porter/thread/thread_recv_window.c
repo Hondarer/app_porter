@@ -261,6 +261,39 @@ static void raw_session_disconnect(thread_recv_slot *slot)
     *slot->frag_compressed = 0;
 }
 
+/*
+ * 通知キューの容量を超える DATA を破棄した相手との通信を切断する。
+ * 全経路の切断を通知したうえで受信状態を破棄する。登録済みの DATA は通知キューに残り、切断の通知より先に渡る。
+ * 占有量が解除のしきい値を下回るまでは、thread_recv_dispatch_packet() がこの相手の DATA と PING を破棄し、
+ * 新しい通信として採用しない。切断と接続の通知が繰り返されることを避けるためである。
+ * last_recv_ts は送信側の生存を示すため維持する。
+ */
+static void slot_flow_overflow_disconnect(thread_recv_slot *slot)
+{
+    potr_context *ctx = slot->ctx;
+
+    thread_recv_set_all_path_ping_states(slot->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
+    memset(slot->remote_path_ping_state, 0, POTR_MAX_PATH);
+
+    if (slot->peer != NULL)
+    {
+        thread_recv_disconnect_peer_all_paths(ctx, slot->peer);
+    }
+    else
+    {
+        thread_recv_disconnect_service_all_paths(ctx);
+    }
+
+    potr_internal_window_recv_reset(slot->recv_window, 0U);
+    *slot->pending_fin = 0;
+    *slot->fin_target_seq = 0U;
+    *slot->frag_buf_len = 0U;
+    *slot->frag_compressed = 0;
+    *slot->reorder_pending = 0;
+    *slot->peer_session_known = 0;
+    slot->flow_overflow = 0;
+}
+
 /* N:1 の pending FIN 発火で peer が解放された場合は 0、それ以外は 1 を返す。 */
 static int slot_drain_recv_window(thread_recv_slot *slot)
 {
@@ -299,6 +332,13 @@ static int slot_drain_recv_window(thread_recv_slot *slot)
             {
                 thread_recv_slot_deliver_payload_elem(slot, &elem);
             }
+        }
+
+        /* 通知キューの容量を超えた場合は、残りの受信済みパケットを配信せずに切断する。 */
+        if (slot->flow_overflow != 0)
+        {
+            slot_flow_overflow_disconnect(slot);
+            return 1;
         }
     }
 

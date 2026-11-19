@@ -55,7 +55,8 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
     /* 同期資源生成 API に詳細原因がないため UNKNOWN として回収する。 */
     if (cplat_local_lock_create(&q->mutex) != CPLAT_OK || cplat_local_lock_create(&q->push_mutex) != CPLAT_OK ||
         cplat_condvar_create(&q->not_empty) != CPLAT_OK || cplat_condvar_create(&q->not_full) != CPLAT_OK ||
-        cplat_condvar_create(&q->drained) != CPLAT_OK || cplat_condvar_create(&q->progress) != CPLAT_OK)
+        cplat_condvar_create(&q->drained) != CPLAT_OK || cplat_condvar_create(&q->progress) != CPLAT_OK ||
+        cplat_condvar_create(&q->flow_changed) != CPLAT_OK)
     {
         potr_internal_send_queue_dispose(q);
         return POTR_ERR_UNKNOWN;
@@ -68,6 +69,12 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
 
 void potr_internal_send_queue_dispose(potr_internal_send_queue *q)
 {
+    if (q->flow_changed != NULL)
+    {
+        cplat_condvar_dispose(q->flow_changed);
+        q->flow_changed = NULL;
+    }
+
     if (q->progress != NULL)
     {
         cplat_condvar_dispose(q->progress);
@@ -156,6 +163,38 @@ int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer
     cplat_local_lock_unlock(q->mutex);
 
     return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_send_queue_wait_flow(potr_internal_send_queue *q, uint64_t *generation, int timeout_ms)
+{
+    cplat_local_lock_lock(q->mutex);
+
+    if (q->failure == POTR_OK && q->flow_generation == *generation)
+    {
+        (void)cplat_condvar_timed_wait(
+            q->flow_changed, q->mutex,
+            timeout_ms); /* 通知と時間切れのどちらで戻っても、呼び出し元が抑制の状態を確認し直すため、戻り値は明示的に破棄する */
+    }
+
+    *generation = q->flow_generation;
+    cplat_local_lock_unlock(q->mutex);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_send_queue_wake_flow(potr_internal_send_queue *q)
+{
+    if (q->mutex == NULL)
+    {
+        return;
+    }
+
+    cplat_local_lock_lock(q->mutex);
+    q->flow_generation++;
+    cplat_condvar_broadcast(q->flow_changed);
+    cplat_local_lock_unlock(q->mutex);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

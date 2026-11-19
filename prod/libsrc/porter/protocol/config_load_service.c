@@ -83,6 +83,22 @@ static void trace_unparsed_service_value(const char *key, const char *val, int64
  *  @param[in]      val     設定値の文字列。
  *  @param[in,out]  current 反映先のサービス定義構造体へのポインター。
  */
+/*
+ * サービス側で「無効」へ上書きできるフロー制御の設定値を解釈する。
+ * -1 は「無効」を表す専用の値 (POTR_FLOW_CONTROL_DISABLED) とし、それ以外は非負整数として解釈する。
+ * 0 と省略は「グローバル値を使用」である。不正な文字列の場合は、直前の値を維持する。
+ */
+static void parse_flow_control_value(uint32_t *value, const char *val)
+{
+    if (strcmp(val, "-1") == 0)
+    {
+        *value = POTR_FLOW_CONTROL_DISABLED;
+        return;
+    }
+
+    (void)cplat_parse_uint32(value, val, 10);
+}
+
 static void apply_service_kv(const char *key, const char *val, potr_service_def *current)
 {
     if (strcmp(key, "type") == 0)
@@ -179,6 +195,34 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
         {
             trace_unparsed_service_value(key, val, current->service_id);
         }
+    }
+    else if (strcmp(key, "flow_control_capacity") == 0)
+    {
+        parse_flow_control_value(&current->flow_control_capacity, val);
+    }
+    else if (strcmp(key, "flow_control_suppress_percent") == 0)
+    {
+        (void)cplat_parse_uint32(&current->flow_control_suppress_percent, val, 10);
+    }
+    else if (strcmp(key, "flow_control_resume_percent") == 0)
+    {
+        (void)cplat_parse_uint32(&current->flow_control_resume_percent, val, 10);
+    }
+    else if (strcmp(key, "flow_control_request_interval_ms") == 0)
+    {
+        (void)cplat_parse_uint32(&current->flow_control_request_interval_ms, val, 10);
+    }
+    else if (strcmp(key, "flow_control_request_lifetime_ms") == 0)
+    {
+        (void)cplat_parse_uint32(&current->flow_control_request_lifetime_ms, val, 10);
+    }
+    else if (strcmp(key, "flow_control_receiver_percent") == 0)
+    {
+        parse_flow_control_value(&current->flow_control_receiver_percent, val);
+    }
+    else if (strcmp(key, "flow_control_receiver_count") == 0)
+    {
+        parse_flow_control_value(&current->flow_control_receiver_count, val);
     }
     else if (strcmp(key, "health_timeout_ms") == 0)
     {

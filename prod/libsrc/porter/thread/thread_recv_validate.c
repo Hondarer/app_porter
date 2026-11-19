@@ -57,7 +57,7 @@ int thread_recv_authenticate_packet(potr_context *ctx, potr_packet *pkt, const u
     {
         key = ctx->service.encrypt_key;
     }
-    if (!(pkt->flags & (POTR_FLAG_DATA | POTR_FLAG_PING | POTR_FLAG_REPORT)))
+    if (!(pkt->flags & (POTR_FLAG_DATA | POTR_FLAG_PING | POTR_FLAG_REPORT | POTR_FLAG_FLOW_CONTROL)))
     {
         plaintext = dummy;
         capacity = sizeof(dummy);

@@ -88,6 +88,12 @@ static void notify_thread(void *arg)
             ctx->callback(ctx->service.service_id, node->peer_id, node->event, data, node->len);
             cplat_atomic_store_i32(&ctx->callback_active, 0, CPLAT_MEMORY_ORDER_RELEASE);
 
+            /* コールバックから復帰した DATA を占有量から減算する。解除のしきい値を下回った場合は、ここで解除を送出する。 */
+            if (node->event == POTR_EVENT_DATA)
+            {
+                potr_internal_flow_control_release(ctx, node->peer_id, node->len);
+            }
+
             if (node != &q->error_notice)
             {
                 cplat_secure_zero(node + 1, node->bytes);

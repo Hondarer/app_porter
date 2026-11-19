@@ -175,6 +175,22 @@ typedef struct potr_service_def
         reconnect_interval_ms; /**< SENDER 自動再接続間隔 [ms]。0 = 再接続なし。デフォルト: POTR_DEFAULT_RECONNECT_INTERVAL_MS。 */
     uint32_t
         connect_timeout_ms; /**< SENDER TCP 接続タイムアウト [ms]。0 = OS デフォルト。デフォルト: POTR_DEFAULT_CONNECT_TIMEOUT_MS。 */
+    /* フロー制御 (0 = グローバル値を使用。RAW 系の通信種別では無視) */
+    uint32_t
+        flow_control_capacity; /**< 通知キューの容量 [byte]。受信側が使用します。0 = グローバル値を使用。POTR_FLOW_CONTROL_DISABLED = このサービスではフロー制御を無効にします。 */
+    uint32_t
+        flow_control_suppress_percent; /**< 抑制を要求するしきい値 [%]。受信側が使用します。0 = グローバル値を使用。 */
+    uint32_t
+        flow_control_resume_percent; /**< 解除するしきい値 [%]。受信側が使用します。0 = グローバル値を使用。 */
+    uint32_t
+        flow_control_request_interval_ms; /**< 抑制の要求の再送周期 [ms]。受信側が使用します。0 = グローバル値を使用。 */
+    uint32_t
+        flow_control_request_lifetime_ms; /**< 抑制の要求の有効期限 [ms]。送信側が使用します。0 = グローバル値を使用。 */
+    uint32_t
+        flow_control_receiver_percent; /**< 一対多の送信側が抑制する、要求中の受信者の割合 [%]。0 = グローバル値を使用。POTR_FLOW_CONTROL_DISABLED = 割合の条件を無効にします。 */
+    uint32_t
+        flow_control_receiver_count; /**< 一対多の送信側が抑制する、要求中の受信者の台数。0 = グローバル値を使用。POTR_FLOW_CONTROL_DISABLED = 台数の条件を無効にします。 */
+    uint32_t _pad_flow_control; /**< パディング (cert_file を 8 [byte] 境界に揃える)。 */
     /** @name 証明書の設定
      * ポインター、配列とその文字列は potr_service_open() の呼び出し中だけ参照します。
      * porter はこれらのポインターを保持しません。証明書などは open 時に読み込みます。
@@ -214,6 +230,21 @@ typedef struct potr_global_config
         tcp_health_timeout_ms; /**< TCP 通信種別の既定 PING 応答待機タイムアウト [ms]。0 = 無効。設定ファイル キー: tcp_health_timeout_ms。 */
     uint32_t
         tcp_close_timeout_ms; /**< TCP 通信種別の close 完了待機タイムアウト [ms]。設定ファイル キー: tcp_close_timeout_ms。0 = 待機なし。 */
+    uint32_t
+        flow_control_capacity; /**< 通知キューの容量 [byte]。受信側が使用します。0 = フロー制御は無効 (デフォルト)。設定ファイル キー: flow_control_capacity。 */
+    uint32_t
+        flow_control_suppress_percent; /**< 抑制を要求するしきい値 [%]。1〜100。デフォルト: POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT。 */
+    uint32_t
+        flow_control_resume_percent; /**< 解除するしきい値 [%]。1 以上、flow_control_suppress_percent 未満。デフォルト: POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT。 */
+    uint32_t
+        flow_control_request_interval_ms; /**< 抑制の要求の再送周期 [ms]。1 以上。デフォルト: POTR_DEFAULT_FLOW_CONTROL_REQUEST_INTERVAL_MS。 */
+    uint32_t
+        flow_control_request_lifetime_ms; /**< 抑制の要求の有効期限 [ms]。flow_control_request_interval_ms より大きい値。デフォルト: POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS。 */
+    uint32_t
+        flow_control_receiver_percent; /**< 一対多の送信側が抑制する、要求中の受信者の割合 [%]。0〜100。0 = 割合の条件は無効 (デフォルト)。 */
+    uint32_t
+        flow_control_receiver_count; /**< 一対多の送信側が抑制する、要求中の受信者の台数。0 = 台数の条件は無効。デフォルト: POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT。 */
+    uint32_t _pad_flow_control; /**< パディング (構造体サイズを 8 [byte] の倍数に揃える)。 */
 } potr_global_config;
 
 /**

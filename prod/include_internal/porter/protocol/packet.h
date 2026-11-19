@@ -34,6 +34,9 @@
 /** potr_packet のワイヤー フォーマットで payload_len が始まる位置 [byte]。 */
 #define POTR_PACKET_PAYLOAD_LEN_OFFSET 34U
 
+/** フロー制御パケットのペイロード長 [byte]。状態 (POTR_FLOW_CONTROL_STATE_*) の 1 [byte] だけを持つ。 */
+#define POTR_FLOW_CONTROL_PAYLOAD_SIZE 1U
+
 /**
  *  @brief  パケットに付与するセッション識別情報。
  *
@@ -91,6 +94,22 @@ extern "C"
      */
     extern int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
                                                uint32_t nack_num);
+
+    /**
+     *  @brief          フロー制御パケットを構築します。
+     *  @param[out]     packet  構築結果を格納するパケット構造体へのポインター。
+     *  @param[in]      shdr    送出する側 (受信側) 自身のセッション識別ヘッダーへのポインター。
+     *  @param[in]      state   状態 (POTR_FLOW_CONTROL_STATE_SUPPRESS または POTR_FLOW_CONTROL_STATE_RESUME)
+     *                          へのポインター。封緘が終わるまで有効であること。
+     *  @return         成功時は POTR_OK、引数または状態の値が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
+     *
+     *  受信側が送信側へ、抑制の要求または解除を伝えるパケットです。\n
+     *  通番を消費せず、ウィンドウに登録しません (NACK・再送の対象外)。seq_num と ack_num は常に 0 です。\n
+     *  ペイロードは POTR_FLOW_CONTROL_PAYLOAD_SIZE バイトの状態です。
+     */
+    extern int potr_internal_packet_build_flow_control(potr_packet *packet,
+                                                       const potr_internal_packet_session_hdr *shdr,
+                                                       const uint8_t *state);
 
     /**
      *  @brief          PING パケットを構築します。

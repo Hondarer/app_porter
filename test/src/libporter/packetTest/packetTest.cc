@@ -229,6 +229,67 @@ TEST_F(packetTest, parses_transmission_fields_and_ignores_reserved)
     EXPECT_EQ(wire + 72, parsed.payload); // [確認_正常系] - ペイロード位置がオフセット 72 であること。
 }
 
+// parse が、フロー制御パケットを持たない版 2 のパケットを拒否することの確認
+TEST_F(packetTest, rejects_protocol_version_two)
+{
+    // Arrange
+    uint8_t wire[POTR_PACKET_HEADER_WIRE_SIZE];
+    potr_packet parsed = {};
+    build_wire_packet(wire, 2U); // [状態] - protocol_version を 2 にする。
+    // Pre-Assert
+    // Act
+    int version_ret = potr_internal_packet_parse(&parsed, wire, sizeof(wire));
+    // [手順] - 72 バイトで解析する。
+    // Assert
+    EXPECT_EQ(POTR_ERR_PROTOCOL, version_ret); // [確認_異常系] - 版 2 のパケットを拒否すること。
+}
+
+// フロー制御パケットの構築で、種別、状態のペイロード、通番が設定されることの確認
+TEST_F(packetTest, build_flow_control_sets_flag_and_state_payload)
+{
+    // Arrange
+    potr_packet packet;
+    potr_internal_packet_session_hdr session = {};
+    const uint8_t state = POTR_FLOW_CONTROL_STATE_SUPPRESS; // [状態] - 状態を「抑制の要求」とする。
+    session.service_id = 42;
+    session.session_id = 7U;
+    memset(&packet, 0xFF, sizeof(packet)); // [状態] - 出力領域を非ゼロにする。
+    // Pre-Assert
+    // Act
+    int actual_ret = potr_internal_packet_build_flow_control(&packet, &session, &state);
+    // [手順] - potr_internal_packet_build_flow_control() を呼び出す。
+    // Assert
+    ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 戻り値が POTR_OK であること。
+    EXPECT_EQ(htons(POTR_FLAG_FLOW_CONTROL), packet.flags); // [確認_正常系] - flags が POTR_FLAG_FLOW_CONTROL であること。
+    EXPECT_EQ(htons(1U), packet.payload_len); // [確認_正常系] - ペイロード長が 1 バイトであること。
+    EXPECT_EQ(&state, packet.payload); // [確認_正常系] - ペイロードが状態を指すこと。
+    EXPECT_EQ(0U, packet.seq_num); // [確認_正常系] - seq_num が 0 であること。
+    EXPECT_EQ(0U, packet.ack_num); // [確認_正常系] - ack_num が 0 であること。
+    EXPECT_EQ(htonl(POTR_PROTOCOL_VERSION), packet.protocol_version);
+    // [確認_正常系] - protocol_version が現行の版であること。
+    EXPECT_EQ(0U, packet.tx_counter); // [確認_正常系] - 送出通番が 0 であること。
+}
+
+// フロー制御パケットの構築が、定義されていない状態の値と NULL を拒否することの確認
+TEST_F(packetTest, build_flow_control_rejects_undefined_state)
+{
+    // Arrange
+    potr_packet packet = {};
+    potr_internal_packet_session_hdr session = {};
+    const uint8_t undefined_state = 0U; // [状態] - 状態を、定義されていない値 0 とする。
+    const uint8_t resume_state = POTR_FLOW_CONTROL_STATE_RESUME;
+    // Pre-Assert
+    // Act
+    int undefined_ret = potr_internal_packet_build_flow_control(&packet, &session, &undefined_state);
+    int null_ret = potr_internal_packet_build_flow_control(&packet, &session, nullptr);
+    int resume_ret = potr_internal_packet_build_flow_control(&packet, &session, &resume_state);
+    // [手順] - 状態が 0、NULL、「解除」の場合でそれぞれ構築する。
+    // Assert
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, undefined_ret); // [確認_異常系] - 状態 0 を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, null_ret); // [確認_異常系] - 状態が NULL の場合を拒否すること。
+    EXPECT_EQ(POTR_OK, resume_ret); // [確認_正常系] - 状態「解除」の戻り値が POTR_OK であること。
+}
+
 // parse が版 1 のヘッダーと、版 1 を指定した十分な長さのパケットを拒否することの確認
 TEST_F(packetTest, rejects_protocol_version_one)
 {
@@ -253,7 +314,7 @@ TEST_F(packetTest, transmission_fields_round_trip)
     potr_packet encoded = {};
     potr_packet decoded = {};
     uint8_t wire[POTR_PACKET_HEADER_WIRE_SIZE];
-    encoded.protocol_version = htonl(2U);
+    encoded.protocol_version = htonl(POTR_PROTOCOL_VERSION);
     encoded.tx_counter = hton64_test(UINT64_C(0xFEDCBA9876543210));
     encoded.tx_tv_sec = (int64_t)hton64_test((uint64_t)INT64_C(-123456789012));
     encoded.tx_tv_nsec = (int32_t)htonl(123456789U);

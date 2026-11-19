@@ -758,6 +758,51 @@ static int send_tcp_batch(potr_context *ctx, const potr_internal_payload_elem *f
 }
 
 /* 送信スレッド本体 */
+/*
+ * 相手からの抑制の要求が有効な間、新しい DATA の送出を待つ。
+ * 取り出し済みの先頭エントリは、解除、要求の期限の経過、close の開始のいずれかの後に送出する。
+ * 再送、PING、FIN などはほかのスレッドが送出するため、抑制中も継続する。
+ */
+static void wait_flow_resume(potr_context *ctx)
+{
+    uint64_t generation = 0U;
+    int announced = 0;
+
+    for (;;)
+    {
+        uint64_t now_ms;
+        int wait_ms = 0;
+
+        /* 時刻を取得できない場合は期限を判定できないため、抑制せずに送出する。 */
+        if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
+        {
+            break;
+        }
+
+        if (potr_internal_flow_control_suppressed(ctx, now_ms, &wait_ms) == 0 ||
+            cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0 ||
+            cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) != POTR_OK)
+        {
+            break;
+        }
+
+        if (announced == 0)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "sender[service_id=%" PRId64 "]: flow control suppressed DATA",
+                       ctx->service.service_id);
+            announced = 1;
+        }
+
+        potr_internal_send_queue_wait_flow(&ctx->send_queue, &generation, wait_ms);
+    }
+
+    if (announced != 0)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "sender[service_id=%" PRId64 "]: flow control resumed DATA",
+                   ctx->service.service_id);
+    }
+}
+
 static void send_thread_func(void *arg)
 {
     potr_context *ctx = (potr_context *)arg;
@@ -777,6 +822,9 @@ static void send_thread_func(void *arg)
             send_packed_peer_mode(ctx, &first);
             continue;
         }
+
+        /* 相手が抑制を要求している間は、新しい DATA を送出せずに待つ。 */
+        wait_flow_resume(ctx);
 
         /* パッキングを試行する。 */
         {

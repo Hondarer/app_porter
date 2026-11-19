@@ -99,6 +99,27 @@ int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_pac
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
+int potr_internal_packet_build_flow_control(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
+                                            const uint8_t *state)
+{
+    if (packet == NULL || shdr == NULL || state == NULL ||
+        (*state != POTR_FLOW_CONTROL_STATE_SUPPRESS && *state != POTR_FLOW_CONTROL_STATE_RESUME))
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    memset(packet, 0, POTR_PACKET_HEADER_SIZE);
+    fill_session_hdr(packet, shdr);
+    packet->seq_num = 0;
+    packet->ack_num = 0;
+    packet->flags = cplat_hton16(POTR_FLAG_FLOW_CONTROL);
+    packet->payload = state;
+    packet->payload_len = cplat_hton16((uint16_t)POTR_FLOW_CONTROL_PAYLOAD_SIZE);
+
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
 int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
                                     const uint8_t *health_payload, uint16_t health_payload_len)
 {

@@ -28,7 +28,7 @@ void thread_recv_slot_init_ctx(thread_recv_slot *slot, potr_context *ctx)
     slot->ctx = ctx;
     slot->peer = NULL;
     slot->peer_id = POTR_PEER_NA;
-    slot->pad = 0;
+    slot->flow_overflow = 0;
     slot->recv_window = &ctx->recv_window;
     slot->send_window = &ctx->send_window;
     slot->send_window_mutex = ctx->send_window_mutex;
@@ -62,7 +62,7 @@ void thread_recv_slot_init_peer(thread_recv_slot *slot, potr_context *ctx, potr_
     slot->ctx = ctx;
     slot->peer = peer;
     slot->peer_id = peer->peer_id;
-    slot->pad = 0;
+    slot->flow_overflow = 0;
     slot->recv_window = &peer->recv_window;
     slot->send_window = &peer->send_window;
     slot->send_window_mutex = peer->send_window_mutex;
@@ -90,6 +90,23 @@ void thread_recv_slot_init_peer(thread_recv_slot *slot, potr_context *ctx, potr_
 }
 
 /* 受信データを必要に応じて展開し、コールバックへ渡す。 */
+/*
+ * DATA を通知キューへ登録する。通知キューの容量を超える場合は登録せず、slot->flow_overflow を 1 にする。
+ */
+static void slot_emit_data(thread_recv_slot *slot, const uint8_t *data, size_t len)
+{
+    potr_context *ctx = slot->ctx;
+
+    if (potr_internal_flow_control_admit(ctx, slot->peer_id, *slot->peer_session_id, slot->peer_session_ts, len) !=
+        POTR_OK)
+    {
+        slot->flow_overflow = 1;
+        return;
+    }
+
+    potr_internal_callback_emit(ctx, slot->peer_id, POTR_EVENT_DATA, data, len);
+}
+
 static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, size_t payload_len, int compressed)
 {
     potr_context *ctx = slot->ctx;
@@ -103,7 +120,7 @@ static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, si
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: decompress %zu -> %zu bytes",
                        ctx->service.service_id, payload_len, dec_len);
-            potr_internal_callback_emit(ctx, slot->peer_id, POTR_EVENT_DATA, ctx->recv_compress_buf, dec_len);
+            slot_emit_data(slot, ctx->recv_compress_buf, dec_len);
         }
         else
         {
@@ -114,7 +131,7 @@ static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, si
     }
     else
     {
-        potr_internal_callback_emit(ctx, slot->peer_id, POTR_EVENT_DATA, payload, payload_len);
+        slot_emit_data(slot, payload, payload_len);
     }
 }
 
@@ -132,6 +149,12 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: drop DATA elem while health_alive=0",
                    ctx->service.service_id);
+        return;
+    }
+
+    /* 通知キューの容量を超えた後は、呼び出し元が切断するまで、後続の DATA も破棄する。 */
+    if (slot->flow_overflow != 0)
+    {
         return;
     }
 
