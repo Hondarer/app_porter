@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 簡易 ADR (lightadr)
-最終更新日時: 2026-11-20 06:45:00 JST
+最終更新日時: 2026-11-20 06:50:30 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QxuPSr8Mxe6rktvre
 稼働 OS: Linux (WSL)
 上流文書: `261119-porter-flow-control-overview.md` (全体管理文書)、`261119-porter-flow-control-discussion.md` (検討用 Markdown)。いずれも削除されている場合があります。
@@ -499,7 +499,7 @@ Table: LADR-015 の経緯
 ### 決定
 
 集中送出への対策を、この案件で行います。あわせて、Linux と Windows をまたぐ確認を、Windows 側のセッションと協力して進めます。  
-対策の方式と、OS をまたぐ確認の範囲は、未決定です (Q-033 から Q-038 で確認中)。
+対策の方式と、OS をまたぐ確認の範囲は、未決定です (Q-039 と Q-038 で確認中)。
 
 ### 経緯
 
