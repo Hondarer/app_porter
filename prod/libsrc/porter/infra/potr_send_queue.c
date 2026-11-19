@@ -160,6 +160,29 @@ int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
+int potr_internal_send_queue_check_space(potr_internal_send_queue *q, size_t entries)
+{
+    int ret = POTR_OK;
+
+    cplat_local_lock_lock(q->mutex);
+
+    if (q->failure != POTR_OK)
+    {
+        ret = q->failure;
+    }
+    else if (entries > q->depth - (q->count + q->inflight))
+    {
+        /* count + inflight は depth 以下に保たれるため、減算は桁あふれしない。 */
+        ret = POTR_ERR_FULL;
+    }
+
+    cplat_local_lock_unlock(q->mutex);
+
+    return ret;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
 int potr_internal_send_queue_push_wait(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags,
                                        const void *payload, uint16_t payload_len, cplat_atomic_i32 *running,
                                        uint64_t *ticket)

@@ -38,58 +38,109 @@
  * 成功時は POTR_OK を返す。断片の登録に失敗したときは、その結果を返す。
  * ブロッキング送信で断片を送信できなかったときは、送信スレッドが記録した結果を返す。
  */
-static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, int flags,
-                        uint16_t base_flags)
+/* 1 エレメントに格納できるデータ長 [byte] を返す。エレメント ヘッダーと認証タグの分を除く。 */
+static size_t elem_payload_capacity(const potr_context *ctx)
 {
-    size_t remaining = len;
-    size_t max_payload;
-    size_t chunk;
-    uint64_t first_ticket = 0U;
-    uint64_t last_ticket = 0U;
-    int result = POTR_OK;
-
-    max_payload = ctx->global.max_payload - POTR_PAYLOAD_ELEM_HDR_SIZE;
+    size_t capacity = (size_t)ctx->global.max_payload - POTR_PAYLOAD_ELEM_HDR_SIZE;
 
     if (ctx->service.encrypt_enabled)
     {
-        max_payload -= POTR_CRYPTO_TAG_SIZE;
+        capacity -= POTR_CRYPTO_TAG_SIZE;
     }
 
-    potr_internal_send_queue_lock_push(&ctx->send_queue);
+    return capacity;
+}
+
+/* len [byte] のメッセージが占有する送信キューのエントリ数 (断片数) を返す。len は 1 以上である。 */
+static size_t message_entry_count(const potr_context *ctx, size_t len)
+{
+    size_t capacity = elem_payload_capacity(ctx);
+
+    return (len + capacity - 1U) / capacity;
+}
+
+/*
+ * 1 メッセージ分の断片を送信キューへ登録する。呼び出し元は登録用ロックを保持する。
+ * wait が 0 の場合、呼び出し元は全断片分の空きを確認済みである。登録用ロックの保持中は
+ * 他の登録元が空きを減らさないため、確認後の登録は満杯で失敗しない。
+ */
+static int push_message(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, uint16_t base_flags,
+                        int wait, uint64_t *first_ticket, uint64_t *last_ticket)
+{
+    size_t remaining = len;
+    size_t capacity = elem_payload_capacity(ctx);
+    int result = POTR_OK;
+
+    *first_ticket = 0U;
+    *last_ticket = 0U;
 
     while (remaining > 0)
     {
-        if (remaining > max_payload)
-        {
-            chunk = max_payload;
-        }
-        else
-        {
-            chunk = remaining;
-        }
-
-        int more_frag = (remaining > chunk);
+        size_t chunk = remaining;
         uint16_t elem_flags = base_flags;
 
-        if (more_frag)
+        if (chunk > capacity)
         {
+            chunk = capacity;
             elem_flags |= POTR_FLAG_MORE_FRAG;
         }
 
-        result = potr_internal_send_queue_push_wait(&ctx->send_queue, peer_id, elem_flags, ptr, (uint16_t)chunk,
-                                                    &ctx->send_thread_running, &last_ticket);
+        if (wait != 0)
+        {
+            result = potr_internal_send_queue_push_wait(&ctx->send_queue, peer_id, elem_flags, ptr, (uint16_t)chunk,
+                                                        &ctx->send_thread_running, last_ticket);
+        }
+        else
+        {
+            result = potr_internal_send_queue_push(&ctx->send_queue, peer_id, elem_flags, ptr, (uint16_t)chunk,
+                                                   last_ticket);
+        }
+
         if (result != POTR_OK)
         {
             break;
         }
 
-        if (first_ticket == 0U)
+        if (*first_ticket == 0U)
         {
-            first_ticket = last_ticket;
+            *first_ticket = *last_ticket;
         }
 
         ptr += chunk;
         remaining -= chunk;
+    }
+
+    return result;
+}
+
+/*
+ * 1 つの宛先へメッセージを送信する。
+ * 待ち合わせを指定しない送信は、全断片分の空きがなければ 1 つも登録せずに POTR_ERR_FULL を返す。
+ * 待ち合わせを指定した送信は、空きを待って登録し、最後の断片の送出の完了まで待つ。
+ */
+static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, int flags,
+                        uint16_t base_flags)
+{
+    uint64_t first_ticket = 0U;
+    uint64_t last_ticket = 0U;
+    int result;
+    /* flags はビット フラグであり、POTR_SEND_* 定数は int に収まる。 */
+    int blocking = (((unsigned)flags & POTR_SEND_BLOCKING) != 0U);
+
+    potr_internal_send_queue_lock_push(&ctx->send_queue);
+
+    if (blocking != 0)
+    {
+        result = POTR_OK;
+    }
+    else
+    {
+        result = potr_internal_send_queue_check_space(&ctx->send_queue, message_entry_count(ctx, len));
+    }
+
+    if (result == POTR_OK)
+    {
+        result = push_message(ctx, peer_id, ptr, len, base_flags, blocking, &first_ticket, &last_ticket);
     }
 
     potr_internal_send_queue_unlock_push(&ctx->send_queue);
@@ -99,8 +150,7 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
         return result;
     }
 
-    /* flags はビット フラグであり、POTR_SEND_* 定数は int に収まる。 */
-    if (((unsigned)flags & POTR_SEND_BLOCKING) != 0U)
+    if (blocking != 0)
     {
         potr_internal_send_queue_wait_ticket(&ctx->send_queue, last_ticket);
         result = (int)cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE);
@@ -113,6 +163,33 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
     }
 
     return POTR_OK;
+}
+
+/*
+ * 待ち合わせを指定しない全ピア宛の送信を行う。
+ * 全ピア分の断片を登録できる空きがなければ、どのピア宛も登録せずに POTR_ERR_FULL を返す。
+ */
+static int send_to_peers_nonblocking(potr_context *ctx, const potr_peer_id *ids, int n_ids, const uint8_t *ptr,
+                                     size_t len, uint16_t base_flags)
+{
+    uint64_t first_ticket;
+    uint64_t last_ticket;
+    int result;
+    int i;
+
+    potr_internal_send_queue_lock_push(&ctx->send_queue);
+
+    /* n_ids は max_peers 以下の正の値であり、size_t に収まる。 */
+    result = potr_internal_send_queue_check_space(&ctx->send_queue, message_entry_count(ctx, len) * (size_t)n_ids);
+
+    for (i = 0; result == POTR_OK && i < n_ids; i++)
+    {
+        result = push_message(ctx, ids[i], ptr, len, base_flags, 0, &first_ticket, &last_ticket);
+    }
+
+    potr_internal_send_queue_unlock_push(&ctx->send_queue);
+
+    return result;
 }
 
 static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, int flags,
@@ -323,6 +400,14 @@ static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t
                 POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                            "potr_service_send: service_id=%" PRId64 " PEER_ALL not connected", ctx->service.service_id);
                 return POTR_ERR_DISCONNECTED;
+            }
+
+            /* flags はビット フラグであり、POTR_SEND_* 定数は int に収まる。 */
+            if (((unsigned)flags & POTR_SEND_BLOCKING) == 0U)
+            {
+                result = send_to_peers_nonblocking(ctx, ids, n_ids, ptr, len, base_flags);
+                cplat_free(ids);
+                return result;
             }
 
             for (i = 0; i < n_ids; i++)

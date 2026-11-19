@@ -131,6 +131,21 @@ extern "C"
                                              const void *payload, uint16_t payload_len, uint64_t *ticket);
 
     /**
+     *  @brief          指定した数のエントリを登録できる空きがあるかを確認します。
+     *
+     *  1 メッセージ分の断片を、一部だけ登録することなく登録するために使います。\n
+     *  呼び出し元は potr_internal_send_queue_lock_push() で登録用ロックを保持すること。
+     *  保持中は他の登録元が空きを減らさないため、確認した数の
+     *  potr_internal_send_queue_push() は満杯で失敗しません。
+     *
+     *  @param[in,out]  q           送信キュー。
+     *  @param[in]      entries     登録するエントリ数。
+     *  @return         空きがある場合は POTR_OK、不足する場合は POTR_ERR_FULL、
+     *                  待機中断理由が設定されている場合はその原因コードを返します。
+     */
+    extern int potr_internal_send_queue_check_space(potr_internal_send_queue *q, size_t entries);
+
+    /**
      *  @brief          ペイロード エレメントをキューに追加する (空き待機あり)。
      *
      *  キューが満杯の場合は空きが生じるまで待機します。

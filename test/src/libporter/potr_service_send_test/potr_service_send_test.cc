@@ -620,3 +620,169 @@ TEST_F(potrSendTest, other_compress_error_returns_unknown_without_enqueue)
     EXPECT_EQ(POTR_ERR_EMPTY, pop_ret); // [確認_異常系] - 送信キューにデータが積まれないこと。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
+
+// 待ち合わせを指定しない送信が、送信キューに空きがない場合に待たずに容量不足を返すことの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, nonblocking_send_returns_full_when_queue_has_no_space)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
+    const char payload[] = "queue-full"; // [状態] - 送信ペイロードを "queue-full" とする。
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    for (int i = 0; i < 8; i++)
+    {
+        ASSERT_EQ(POTR_OK, potr_service_send(handle, POTR_PEER_NA, payload, strlen(payload), 0));
+        // [状態確認] - 容量 8 の送信キューを満杯にする送信 (8 回) の戻り値が POTR_OK であること。
+    }
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret =
+        potr_service_send(handle, POTR_PEER_NA, payload, strlen(payload),
+                          0); // [手順] - 送信キューが満杯の状態で、待ち合わせを指定せずに potr_service_send() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_FULL,
+              actual_ret); // [確認_異常系] - 満杯時の potr_service_send() の戻り値が POTR_ERR_FULL であること。
+    EXPECT_EQ(
+        8U,
+        ctx.send_queue
+            .count); // [確認_異常系] - ctx.send_queue.count が 8U のままであること。(受け付けなかったメッセージが登録されないことの確認)
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// 待ち合わせを指定しない送信が、全断片分の空きがない場合に断片を 1 つも登録しないことの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, nonblocking_send_does_not_queue_part_of_fragmented_message)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
+    const char payload[] = "filler"; // [状態] - 空きを減らすための送信ペイロードを "filler" とする。
+    std::vector<uint8_t> large(3000, 0x5AU); // [状態] - 3 断片になる 3000 バイトのメッセージを用意する。
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    for (int i = 0; i < 6; i++)
+    {
+        ASSERT_EQ(POTR_OK, potr_service_send(handle, POTR_PEER_NA, payload, strlen(payload), 0));
+        // [状態確認] - 容量 8 の送信キューの空きを 2 にする送信 (6 回) の戻り値が POTR_OK であること。
+    }
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret =
+        potr_service_send(handle, POTR_PEER_NA, large.data(), large.size(),
+                          0); // [手順] - 空きが 2 の状態で、3 断片になるメッセージを待ち合わせを指定せずに送信する。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_FULL,
+              actual_ret); // [確認_異常系] - 空きが断片数に満たない場合の戻り値が POTR_ERR_FULL であること。
+    EXPECT_EQ(
+        6U,
+        ctx.send_queue
+            .count); // [確認_異常系] - ctx.send_queue.count が 6U のままであること。(一部の断片だけが登録されないことの確認)
+
+    // Act_2
+    potr_internal_payload_elem elem = {};
+    ASSERT_EQ(POTR_OK, potr_internal_send_queue_try_pop(&ctx.send_queue, &elem));
+    // [状態確認] - potr_internal_send_queue_try_pop() の戻り値が POTR_OK であること。
+    potr_internal_send_queue_complete(&ctx.send_queue); // [手順] - 1 件を取り出して完了させ、空きを 3 にする。
+    int actual_ret_2 =
+        potr_service_send(handle, POTR_PEER_NA, large.data(), large.size(),
+                          0); // [手順] - 空きが 3 の状態で、同じメッセージを待ち合わせを指定せずに送信する。
+
+    // Assert_2
+    EXPECT_EQ(POTR_OK, actual_ret_2); // [確認_正常系] - 全断片分の空きがある場合の戻り値が POTR_OK であること。
+    EXPECT_EQ(8U, ctx.send_queue.count); // [確認_正常系] - ctx.send_queue.count が 8U であること。(3 断片がすべて登録されたことの確認)
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// 待ち合わせを指定しない全 peer 宛の送信が、全 peer 分の空きがない場合にどの peer 宛も登録しないことの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, nonblocking_peer_all_queues_no_peer_when_space_is_short)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
+    const char payload[] = "n1-all"; // [状態] - 送信ペイロードを "n1-all" とする。
+
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1;
+    peers[0].active = 1;
+    peers[0].peer_id = 10;
+    cplat_atomic_store_i32(&peers[0].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    peers[1].active = 1;
+    peers[1].peer_id = 11;
+    cplat_atomic_store_i32(&peers[1].health_alive, 1,
+                           CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 接続済みの peer 10 と peer 11 を用意する。
+    EXPECT_CALL(mock_peer_table, potr_internal_peer_find_by_id(_, 10)).WillRepeatedly(Return(&peers[0]));
+    // [状態] - peer 10 を検索できるようにする。
+    for (int i = 0; i < 7; i++)
+    {
+        ASSERT_EQ(POTR_OK, potr_service_send(handle, 10, payload, strlen(payload), 0));
+        // [状態確認] - 容量 8 の送信キューの空きを 1 にする送信 (7 回) の戻り値が POTR_OK であること。
+    }
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret =
+        potr_service_send(handle, POTR_PEER_ALL, payload, strlen(payload),
+                          0); // [手順] - 空きが 1 の状態で、2 つの peer 宛になる POTR_PEER_ALL の送信を待ち合わせを指定せずに呼び出す。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_FULL,
+              actual_ret); // [確認_異常系] - 全 peer 分の空きがない場合の戻り値が POTR_ERR_FULL であること。
+    EXPECT_EQ(
+        7U,
+        ctx.send_queue
+            .count); // [確認_異常系] - ctx.send_queue.count が 7U のままであること。(どの peer 宛も登録されないことの確認)
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// 待ち合わせを指定した送信が、送信キューに空きがない場合に空きを待って登録することの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, blocking_send_waits_for_space_when_queue_is_full)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_peer_table;
+    const char payload[] = "wait-space"; // [状態] - 送信ペイロードを "wait-space" とする。
+    potr_internal_payload_elem elem = {};
+    int actual_ret = POTR_ERR_UNKNOWN;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    for (int i = 0; i < 8; i++)
+    {
+        ASSERT_EQ(POTR_OK, potr_service_send(handle, POTR_PEER_NA, payload, strlen(payload), 0));
+        // [状態確認] - 容量 8 の送信キューを満杯にする送信 (8 回) の戻り値が POTR_OK であること。
+    }
+
+    // Pre-Assert
+
+    // Act
+    std::thread sender(
+        [&]()
+        {
+            actual_ret = potr_service_send(handle, POTR_PEER_NA, payload, strlen(payload), POTR_SEND_BLOCKING);
+        }); // [手順] - 別スレッドで POTR_SEND_BLOCKING を指定して potr_service_send() を呼び出す。
+    for (int i = 0; i < 9; i++)
+    {
+        while (potr_internal_send_queue_try_pop(&ctx.send_queue, &elem) != POTR_OK)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        potr_internal_send_queue_complete(&ctx.send_queue);
+    } // [手順] - 送信スレッドの代わりに、登録済みの 8 件と、空きを待って登録された 1 件を取り出して完了させる。
+    sender.join();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);
+    // [確認_正常系] - 満杯時に待ち合わせを指定した potr_service_send() の戻り値が POTR_OK であること。(容量不足を返さず、空きを待って登録したことの確認)
+    EXPECT_EQ(0U, ctx.send_queue.count); // [確認_正常系] - ctx.send_queue.count が 0U であること。
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
