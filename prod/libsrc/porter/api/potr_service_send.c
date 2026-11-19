@@ -419,7 +419,7 @@ static int send_impl(potr_context *handle, potr_peer_id peer_id, const void *dat
             /*
              * 入口で len <= max_message_size を検証済みで compress_buf_size == max_message_size のため、
              * CPLAT_ERR_BUFFER_TOO_SMALL は圧縮後サイズが元データ長以上であることを意味する。
-             * 圧縮が有利でないため、元のデータと長さのまま非圧縮で送る (POTR-MESSAGE-FUNC-004)。
+             * 圧縮が有利でないため、元のデータと長さのまま非圧縮で送る。
              */
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                        "potr_service_send: service_id=%" PRId64 " compression skipped"
