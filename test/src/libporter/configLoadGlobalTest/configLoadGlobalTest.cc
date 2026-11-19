@@ -90,7 +90,35 @@ uint32_t global_field(const potr_global_config &global, const char *key)
     {
         return global.max_message_size;
     }
-    return global.send_queue_depth;
+    if (strcmp(key, "send_queue_depth") == 0)
+    {
+        return global.send_queue_depth;
+    }
+    if (strcmp(key, "flow_control_capacity") == 0)
+    {
+        return global.flow_control_capacity;
+    }
+    if (strcmp(key, "flow_control_suppress_percent") == 0)
+    {
+        return global.flow_control_suppress_percent;
+    }
+    if (strcmp(key, "flow_control_resume_percent") == 0)
+    {
+        return global.flow_control_resume_percent;
+    }
+    if (strcmp(key, "flow_control_request_interval_ms") == 0)
+    {
+        return global.flow_control_request_interval_ms;
+    }
+    if (strcmp(key, "flow_control_request_lifetime_ms") == 0)
+    {
+        return global.flow_control_request_lifetime_ms;
+    }
+    if (strcmp(key, "flow_control_receiver_percent") == 0)
+    {
+        return global.flow_control_receiver_percent;
+    }
+    return global.flow_control_receiver_count;
 }
 } // namespace
 
@@ -468,7 +496,21 @@ INSTANTIATE_TEST_SUITE_P(
            unparsed_global_case{"reorder_timeout_ms_text", "reorder_timeout_ms", "abc", 0U},
            unparsed_global_case{"max_message_size_negative", "max_message_size", "-1", POTR_MAX_MESSAGE_SIZE},
            unparsed_global_case{"send_queue_depth_out_of_range", "send_queue_depth", "4294967296",
-                                POTR_SEND_QUEUE_DEPTH}),
+                                POTR_SEND_QUEUE_DEPTH},
+           unparsed_global_case{"flow_control_capacity_text", "flow_control_capacity", "abc",
+                                POTR_DEFAULT_FLOW_CONTROL_CAPACITY},
+           unparsed_global_case{"flow_control_suppress_percent_text", "flow_control_suppress_percent", "abc",
+                                POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT},
+           unparsed_global_case{"flow_control_resume_percent_negative", "flow_control_resume_percent", "-1",
+                                POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT},
+           unparsed_global_case{"flow_control_request_interval_ms_out_of_range", "flow_control_request_interval_ms", "4294967296",
+                                POTR_DEFAULT_FLOW_CONTROL_REQUEST_INTERVAL_MS},
+           unparsed_global_case{"flow_control_request_lifetime_ms_text", "flow_control_request_lifetime_ms", "abc",
+                                POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS},
+           unparsed_global_case{"flow_control_receiver_percent_negative", "flow_control_receiver_percent", "-1",
+                                POTR_DEFAULT_FLOW_CONTROL_RECEIVER_PERCENT},
+           unparsed_global_case{"flow_control_receiver_count_out_of_range", "flow_control_receiver_count", "4294967296",
+                                POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT}),
     [](const TestParamInfo<unparsed_global_case> &param_info) { return std::string(param_info.param.name); });
 
 // global にフロー制御のキーがない場合に 7 つのメンバーが既定値になることの確認
@@ -511,7 +553,7 @@ TEST(configLoadGlobalTest, flow_control_keys_are_loaded)
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_stdio> mock_stdio;
-    ConfigLineStream lines({R"({"global":{"flow_control_capacity":4096,"flow_control_suppress_percent":90,"flow_control_resume_percent":50,"flow_control_request_interval_ms":300,"flow_control_request_lifetime_ms":3000,"flow_control_receiver_percent":25,"flow_control_receiver_count":5}})"}); // [状態] - フロー制御の 7 つのキーを含む global 定義を用意する。
+    ConfigLineStream lines({R"({"global":{"flow_control_capacity":4096,"flow_control_suppress_percent":90,"flow_control_resume_percent":55,"flow_control_request_interval_ms":300,"flow_control_request_lifetime_ms":3000,"flow_control_receiver_percent":25,"flow_control_receiver_count":5}})"}); // [状態] - フロー制御の 7 つのキーを含む global 定義を用意する。
     potr_global_config global = {}; // [状態] - 出力用 global 設定構造体をゼロ初期化する。
     ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
     ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
@@ -532,7 +574,7 @@ TEST(configLoadGlobalTest, flow_control_keys_are_loaded)
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 設定の読み込みが成功すること。
     EXPECT_EQ(4096U, global.flow_control_capacity); // [確認_正常系] - global.flow_control_capacity が 4096U であること。
     EXPECT_EQ(90U, global.flow_control_suppress_percent); // [確認_正常系] - global.flow_control_suppress_percent が 90U であること。
-    EXPECT_EQ(50U, global.flow_control_resume_percent); // [確認_正常系] - global.flow_control_resume_percent が 50U であること。
+    EXPECT_EQ(55U, global.flow_control_resume_percent); // [確認_正常系] - global.flow_control_resume_percent が 55U であること。
     EXPECT_EQ(300U, global.flow_control_request_interval_ms); // [確認_正常系] - global.flow_control_request_interval_ms が 300U であること。
     EXPECT_EQ(3000U, global.flow_control_request_lifetime_ms); // [確認_正常系] - global.flow_control_request_lifetime_ms が 3000U であること。
     EXPECT_EQ(25U, global.flow_control_receiver_percent); // [確認_正常系] - global.flow_control_receiver_percent が 25U であること。

@@ -177,31 +177,52 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
         }
         else if (strcmp(key, "flow_control_capacity") == 0)
         {
-            (void)cplat_parse_uint32(&global->flow_control_capacity, val, 10);
+            if (cplat_parse_uint32(&global->flow_control_capacity, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "flow_control_suppress_percent") == 0)
         {
-            (void)cplat_parse_uint32(&global->flow_control_suppress_percent, val, 10);
+            if (cplat_parse_uint32(&global->flow_control_suppress_percent, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "flow_control_resume_percent") == 0)
         {
-            (void)cplat_parse_uint32(&global->flow_control_resume_percent, val, 10);
+            if (cplat_parse_uint32(&global->flow_control_resume_percent, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "flow_control_request_interval_ms") == 0)
         {
-            (void)cplat_parse_uint32(&global->flow_control_request_interval_ms, val, 10);
+            if (cplat_parse_uint32(&global->flow_control_request_interval_ms, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "flow_control_request_lifetime_ms") == 0)
         {
-            (void)cplat_parse_uint32(&global->flow_control_request_lifetime_ms, val, 10);
+            if (cplat_parse_uint32(&global->flow_control_request_lifetime_ms, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "flow_control_receiver_percent") == 0)
         {
-            (void)cplat_parse_uint32(&global->flow_control_receiver_percent, val, 10);
+            if (cplat_parse_uint32(&global->flow_control_receiver_percent, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "flow_control_receiver_count") == 0)
         {
-            (void)cplat_parse_uint32(&global->flow_control_receiver_count, val, 10);
+            if (cplat_parse_uint32(&global->flow_control_receiver_count, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
     }
     cjson_app_cJSON_Delete(root);

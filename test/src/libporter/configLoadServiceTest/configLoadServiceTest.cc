@@ -1249,7 +1249,35 @@ uint32_t service_field(const potr_service_def &definition, const char *key)
     {
         return definition.health_timeout_ms;
     }
-    return definition.reconnect_interval_ms;
+    if (strcmp(key, "reconnect_interval_ms") == 0)
+    {
+        return definition.reconnect_interval_ms;
+    }
+    if (strcmp(key, "flow_control_capacity") == 0)
+    {
+        return definition.flow_control_capacity;
+    }
+    if (strcmp(key, "flow_control_suppress_percent") == 0)
+    {
+        return definition.flow_control_suppress_percent;
+    }
+    if (strcmp(key, "flow_control_resume_percent") == 0)
+    {
+        return definition.flow_control_resume_percent;
+    }
+    if (strcmp(key, "flow_control_request_interval_ms") == 0)
+    {
+        return definition.flow_control_request_interval_ms;
+    }
+    if (strcmp(key, "flow_control_request_lifetime_ms") == 0)
+    {
+        return definition.flow_control_request_lifetime_ms;
+    }
+    if (strcmp(key, "flow_control_receiver_percent") == 0)
+    {
+        return definition.flow_control_receiver_percent;
+    }
+    return definition.flow_control_receiver_count;
 }
 } // namespace
 
@@ -1306,7 +1334,14 @@ INSTANTIATE_TEST_SUITE_P(
            unparsed_service_case{"health_interval_ms_text", "health_interval_ms", "abc", 0U},
            unparsed_service_case{"health_timeout_ms_out_of_range", "health_timeout_ms", "4294967296", 0U},
            unparsed_service_case{"reconnect_interval_ms_negative", "reconnect_interval_ms", "-1",
-                                 POTR_DEFAULT_RECONNECT_INTERVAL_MS}),
+                                 POTR_DEFAULT_RECONNECT_INTERVAL_MS},
+           unparsed_service_case{"flow_control_capacity_text", "flow_control_capacity", "abc", 0U},
+           unparsed_service_case{"flow_control_suppress_percent_text", "flow_control_suppress_percent", "abc", 0U},
+           unparsed_service_case{"flow_control_resume_percent_negative", "flow_control_resume_percent", "-1", 0U},
+           unparsed_service_case{"flow_control_request_interval_ms_out_of_range", "flow_control_request_interval_ms", "4294967296", 0U},
+           unparsed_service_case{"flow_control_request_lifetime_ms_text", "flow_control_request_lifetime_ms", "abc", 0U},
+           unparsed_service_case{"flow_control_receiver_percent_text", "flow_control_receiver_percent", "abc", 0U},
+           unparsed_service_case{"flow_control_receiver_count_text", "flow_control_receiver_count", "abc", 0U}),
     [](const TestParamInfo<unparsed_service_case> &param_info) { return std::string(param_info.param.name); });
 
 // サービスにフロー制御のキーがない場合に 7 つのメンバーが 0 (グローバル値を使用) であることの確認

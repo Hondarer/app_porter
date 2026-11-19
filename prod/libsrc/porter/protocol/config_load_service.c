@@ -86,17 +86,17 @@ static void trace_unparsed_service_value(const char *key, const char *val, int64
 /*
  * サービス側で「無効」へ上書きできるフロー制御の設定値を解釈する。
  * -1 は「無効」を表す専用の値 (POTR_FLOW_CONTROL_DISABLED) とし、それ以外は非負整数として解釈する。
- * 0 と省略は「グローバル値を使用」である。不正な文字列の場合は、直前の値を維持する。
+ * 0 と省略は「グローバル値を使用」である。不正な文字列の場合は、直前の値を維持し、cplat_parse_uint32 の戻り値を返す。
  */
-static void parse_flow_control_value(uint32_t *value, const char *val)
+static int parse_flow_control_value(uint32_t *value, const char *val)
 {
     if (strcmp(val, "-1") == 0)
     {
         *value = POTR_FLOW_CONTROL_DISABLED;
-        return;
+        return CPLAT_OK;
     }
 
-    (void)cplat_parse_uint32(value, val, 10);
+    return cplat_parse_uint32(value, val, 10);
 }
 
 static void apply_service_kv(const char *key, const char *val, potr_service_def *current)
@@ -198,31 +198,52 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     }
     else if (strcmp(key, "flow_control_capacity") == 0)
     {
-        parse_flow_control_value(&current->flow_control_capacity, val);
+        if (parse_flow_control_value(&current->flow_control_capacity, val) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "flow_control_suppress_percent") == 0)
     {
-        (void)cplat_parse_uint32(&current->flow_control_suppress_percent, val, 10);
+        if (cplat_parse_uint32(&current->flow_control_suppress_percent, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "flow_control_resume_percent") == 0)
     {
-        (void)cplat_parse_uint32(&current->flow_control_resume_percent, val, 10);
+        if (cplat_parse_uint32(&current->flow_control_resume_percent, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "flow_control_request_interval_ms") == 0)
     {
-        (void)cplat_parse_uint32(&current->flow_control_request_interval_ms, val, 10);
+        if (cplat_parse_uint32(&current->flow_control_request_interval_ms, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "flow_control_request_lifetime_ms") == 0)
     {
-        (void)cplat_parse_uint32(&current->flow_control_request_lifetime_ms, val, 10);
+        if (cplat_parse_uint32(&current->flow_control_request_lifetime_ms, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "flow_control_receiver_percent") == 0)
     {
-        parse_flow_control_value(&current->flow_control_receiver_percent, val);
+        if (parse_flow_control_value(&current->flow_control_receiver_percent, val) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "flow_control_receiver_count") == 0)
     {
-        parse_flow_control_value(&current->flow_control_receiver_count, val);
+        if (parse_flow_control_value(&current->flow_control_receiver_count, val) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "health_timeout_ms") == 0)
     {
