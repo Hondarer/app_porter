@@ -640,21 +640,22 @@ struct Options
 {
     std::string cond;
     std::string label = "current"; /* CSV の version 列に記録する名前 */
-    size_t bytes = 0;         /* 0 means condition-specific default */
     std::string flags = "normal";
+    std::string reply_mode = "ext";
+    std::string proto = "udp";
+    std::string tcp_type = "oneway";
+    std::string out_path;
+    std::string trace_level = "warning";
+    size_t bytes = 0;         /* 0 means condition-specific default */
     uint32_t threads = 1U;
     uint32_t count = 0U;      /* 0 means condition-specific default */
     uint32_t runs = 5U;
     uint32_t warmup = UINT32_MAX; /* sentinel for condition-specific default */
     uint32_t inflight = 16U;
-    uint16_t base_port = 19000U;
-    std::string reply_mode = "ext";
-    std::string proto = "udp";
-    std::string tcp_type = "oneway";
     uint32_t cb_sleep_ms = 1U;
-    std::string out_path;
+    uint16_t base_port = 19000U;
     bool no_header = false;
-    std::string trace_level = "warning";
+    unsigned char pad[5] = {}; // 明示的アラインメントのためのパディング。
 };
 
 static std::string to_lower_str(std::string s)
@@ -742,22 +743,22 @@ struct P1ThreadState
 
 struct P1Context
 {
-    uint32_t threads = 1U;
-    uint32_t warmup = 0U;
-    uint32_t count = 0U;
-    bool is_tcp = false;
-    bool allow_errors_log = true;
-
     std::vector<P1ThreadState *> tstates;
     std::vector<std::vector<double>> notify_lat_us; /* [thread][seq - warmup] */
 
     std::mutex conn_mtx;
     std::condition_variable conn_cv;
+    std::atomic<uint64_t> unexpected_events{0ULL};
+    std::atomic<uint64_t> full_count{0ULL}; /* 測定区間で POTR_ERR_FULL を受けた回数 */
+    uint32_t threads = 1U;
+    uint32_t warmup = 0U;
+    uint32_t count = 0U;
+    bool is_tcp = false;
+    bool allow_errors_log = true;
     bool receiver_connected = false;
     bool sender_connected = false;
     std::atomic<bool> closing{false};
-    std::atomic<uint64_t> unexpected_events{0ULL};
-    std::atomic<uint64_t> full_count{0ULL}; /* 測定区間で POTR_ERR_FULL を受けた回数 */
+    unsigned char pad[7] = {}; // 明示的アラインメントのためのパディング。
 };
 
 static P1Context *s_p1_context = nullptr;
@@ -1011,9 +1012,10 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
         std::vector<std::thread> workers;
         workers.reserve(threads);
 
-        for (uint32_t tid = 0U; tid < threads; ++tid)
+        for (uint32_t spawn_index = 0U; spawn_index < threads; ++spawn_index)
         {
-            workers.emplace_back([&, tid]() {
+            /* 値捕捉の 4 [byte] がラムダのパディングになるため、添字は捕捉せず引数で渡す。 */
+            workers.emplace_back([&](uint32_t tid) {
                 std::vector<uint8_t> payload(bytes, 0U);
                 fill_payload_pattern(payload);
                 write_u32_le(payload.data() + 8U, tid);
@@ -1167,7 +1169,7 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
                         send_failed.store(true, std::memory_order_release);
                     }
                 }
-            });
+            }, spawn_index);
         }
 
         for (auto &w : workers)
@@ -1235,42 +1237,46 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
 
 struct P2ReplyItem
 {
-    potr_peer_id peer_id;
     std::vector<uint8_t> data;
+    potr_peer_id peer_id = 0U;
+    unsigned char pad[4] = {}; // 明示的アラインメントのためのパディング。
 };
 
 struct P2ClientState
 {
     std::mutex mtx;
     std::condition_variable cv;
-    bool connected = false;
-    uint32_t replies = 0U;
     std::vector<double> rtt_us;
+    uint32_t replies = 0U;
+    bool connected = false;
+    unsigned char pad[3] = {}; // 明示的アラインメントのためのパディング。
 };
 
 struct P2Context
 {
     static constexpr uint32_t kNumClients = 4U;
-    bool cb_reply_mode = false;
-    uint32_t warmup = 0U;
-    uint32_t count = 0U;
     potr_context *server = nullptr;
-    std::atomic<bool> closing{false};
-    std::atomic<bool> stop_worker{false};
     std::atomic<uint64_t> server_send_errors{0ULL};
     std::atomic<uint64_t> last_reply_ns{0ULL};
     std::atomic<uint64_t> full_count{0ULL}; /* 全区間 (ウォーム アップと返信を含む) で POTR_ERR_FULL を受けた回数 */
 
     std::mutex srv_conn_mtx;
     std::condition_variable srv_conn_cv;
-    uint32_t srv_connected_peers = 0U;
-    uint32_t cli_connected_count = 0U;
 
     std::mutex q_mtx;
     std::condition_variable q_cv;
     std::deque<P2ReplyItem> q;
 
     P2ClientState *clients[kNumClients]{};
+
+    uint32_t warmup = 0U;
+    uint32_t count = 0U;
+    uint32_t srv_connected_peers = 0U;
+    uint32_t cli_connected_count = 0U;
+    bool cb_reply_mode = false;
+    std::atomic<bool> closing{false};
+    std::atomic<bool> stop_worker{false};
+    unsigned char pad[5] = {}; // 明示的アラインメントのためのパディング。
 };
 
 static P2Context *s_p2_context = nullptr;
@@ -1551,9 +1557,10 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
 
         std::vector<std::thread> cthreads;
         cthreads.reserve(P2Context::kNumClients);
-        for (uint32_t c = 0U; c < P2Context::kNumClients; ++c)
+        for (uint32_t spawn_index = 0U; spawn_index < P2Context::kNumClients; ++spawn_index)
         {
-            cthreads.emplace_back([&, c]() {
+            /* 値捕捉の 4 [byte] がラムダのパディングになるため、添字は捕捉せず引数で渡す。 */
+            cthreads.emplace_back([&](uint32_t c) {
                 std::vector<uint8_t> payload(bytes, 0U);
                 fill_payload_pattern(payload);
                 write_u32_le(payload.data() + 8U, c);
@@ -1632,7 +1639,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                     }
                     send_req(seq);
                 }
-            });
+            }, spawn_index);
         }
 
         for (auto &t : cthreads)
@@ -2012,10 +2019,11 @@ struct P4Context
 {
     std::mutex mtx;
     std::condition_variable cv;
+    uint32_t expected_seq = 0U;
     bool recv_connected = false;
     bool send_connected = false;
     bool data_received = false;
-    uint32_t expected_seq = 0U;
+    unsigned char pad[1] = {}; // 明示的アラインメントのためのパディング。
 };
 
 static P4Context *s_p4_context = nullptr;
@@ -2130,11 +2138,12 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
 
         struct Checkpoint
         {
-            uint32_t cycle;
             double rss_inc;
             double priv_inc;
             double handles;
             double threads;
+            uint32_t cycle;
+            uint32_t pad; // 明示的アラインメントのためのパディング。
         };
         std::vector<Checkpoint> checkpoints;
 
@@ -2157,7 +2166,7 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             thread_series.push_back(th);
             if (is_checkpoint)
             {
-                checkpoints.push_back(Checkpoint{meas_idx, ri, pi, hd, th});
+                checkpoints.push_back(Checkpoint{ri, pi, hd, th, meas_idx, 0U});
             }
         };
 
