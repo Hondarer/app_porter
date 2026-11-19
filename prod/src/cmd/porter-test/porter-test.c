@@ -14,17 +14,22 @@
  *  \n
  *  サービス種別が unicast_bidir または tcp_bidir の場合は双方向モードで動作します。\n
  *  双方向モードでは相手から受信したメッセージと接続状態を表示します。\n
- *  受信データがバイナリと判定された場合は一時ファイルに保存してパスを表示します。
+ *  受信データがバイナリと判定された場合は一時ファイルに保存してパスを表示します。\n
+ *  \n
+ *  フロー制御の確認のため、受信コールバックを遅らせる指定 (--recv-delay-ms) と、
+ *  通し番号つきのメッセージを連続して送信する対話コマンド burst を備えます。\n
+ *  burst のメッセージを受けた側は、通し番号の順序を検証し、集計を 1 行で表示します。
  *
  *  @par            使用方法
     @code{.sh}
-    porter-test [-l <level>] [<role> <config_path> <service_id>]
+    porter-test [-l <level>] [--recv-delay-ms <ms>] [<role> <config_path> <service_id>]
     @endcode
  *
  *  @par            オプション
- *  | オプション       | 説明                                                        |
- *  | ---------------- | ----------------------------------------------------------- |
- *  | -l \<level\>     | ログレベルを指定します。指定がない場合はログ出力なし。      |
+ *  | オプション                | 説明                                                                               |
+ *  | ------------------------- | ---------------------------------------------------------------------------------- |
+ *  | -l \<level\>              | ログレベルを指定します。指定がない場合はログ出力なし。                             |
+ *  | --recv-delay-ms \<ms\>    | POTR_EVENT_DATA を受けるたびに、指定した時間 [ms] だけ待ちます。0 から 600000。既定は 0。 |
  *
  *  Table: porter-test のコマンドライン オプション
  *
@@ -32,11 +37,24 @@
  *  level に指定可能な値: VERBOSE, INFO, WARNING, ERROR, CRITICAL (大文字小文字不問)\n
  *  位置引数 (role/config_path/service_id) を省略した場合は対話コンソールで open を実行します。
  *
+ *  @par            burst コマンドと表示
+ *  対話コマンド `burst [-b|--blocking] <count> <bytes>` は、通し番号 (0 始まり) と総件数を先頭に入れた
+ *  bytes [byte] のメッセージを、count 件、間隔なしで送ります。bytes は 16 以上です。\n
+ *  既定は POTR_SEND_BLOCKING を使わない送信で、POTR_ERR_FULL を受けた場合は 1 [ms] 待って送り直し、
+ *  送り直した回数を数えます。-b を指定すると POTR_SEND_BLOCKING を使います。\n
+ *  終わると、送信側は次の 1 行を表示します。\n
+ *  `BURST_SENT sent=<n> expected=<n> full=<n> elapsed_ms=<n> bytes=<n> blocking=<0|1> result=<ok|full_timeout|interrupted|error=<code>>`\n
+ *  受信側は、最後のメッセージ (通し番号 = 総件数 - 1) を受けたとき、次の 1 行を表示します。\n
+ *  `BURST_RESULT received=<n> expected=<n> out_of_order=<n>`\n
+ *  途中の経過は、1000 件ごとに `BURST_PROGRESS received=<n> expected=<n> out_of_order=<n>` で表示します。\n
+ *  out_of_order は、期待した通し番号と一致しなかったメッセージの数です。
+ *
  *  @par            使用例
     @code{.sh}
     porter-test sender porter-services.jsonc 10
     porter-test receiver porter-services.jsonc 10
     porter-test -l INFO sender porter-services.jsonc 10
+    porter-test --recv-delay-ms 5 -l INFO receiver porter-services.jsonc 10
     porter-test
     @endcode
  *
@@ -48,6 +66,7 @@
 #include <cplat/argparser/argparser.h>
 #include <cplat/crt/stdlib.h>
 #include <cplat/base/platform.h>
+#include <cplat/clock/clock.h>
 #include <cplat/crt/path.h>
 #include <cplat/crt/stdio.h>
 #include <cplat/prompt/pinned_prompt.h>
@@ -68,6 +87,23 @@
 #define INPUT_BUF_SIZE (POTR_MAX_MESSAGE_SIZE + 2U)
 /** プロンプト状態文字列のバッファー サイズ。 */
 #define PROMPT_STATE_SIZE 32
+
+/** 受信コールバックを遅らせる時間の上限 [ms]。 */
+#define RECV_DELAY_MAX_MS 600000
+/** burst のメッセージの先頭に入れる識別子 (8 [byte])。 */
+#define BURST_MAGIC "PTBURST1"
+/** burst の識別子の長さ [byte]。 */
+#define BURST_MAGIC_SIZE 8U
+/** burst のメッセージのヘッダー長 [byte]。識別子 8、通し番号 4、総件数 4 (数値はリトル エンディアン)。 */
+#define BURST_HEADER_SIZE 16U
+/** burst で指定できる件数の上限。 */
+#define BURST_MAX_COUNT 1000000
+/** burst で POTR_ERR_FULL を受けたときの、送り直しまでの待ち時間 [ms]。 */
+#define BURST_RETRY_WAIT_MS 1
+/** burst で 1 件が POTR_ERR_FULL のまま進まない場合に、送信を打ち切るまでの時間 [ms]。 */
+#define BURST_STALL_LIMIT_MS 60000U
+/** 受信側が burst の経過を表示する件数の間隔。 */
+#define BURST_PROGRESS_INTERVAL 1000U
 
 /** REPL 継続フラグ。終了要求 callback で 0 に設定される。 */
 static cplat_atomic_i32 s_running = CPLAT_ATOMIC_INIT(1);
@@ -116,6 +152,21 @@ static cplat_trace_level s_trace_level = CPLAT_TRACE_LEVEL_NONE;
 
 /** トレーサーへの hook 設定と開始を実施済みかどうか。 */
 static int s_tracer_started = 0;
+
+/** 受信コールバックを遅らせる時間 [ms]。--recv-delay-ms で設定する。受信スレッドから参照する。 */
+static int s_recv_delay_ms = 0;
+
+/** burst のメッセージを受けた側の集計。受信コールバックだけが更新する。 */
+typedef struct porter_test_burst_receive
+{
+    uint32_t expected_total; /**< 先頭のメッセージが示す総件数。 */
+    uint32_t next_sequence;  /**< 次に期待する通し番号。 */
+    uint32_t received;       /**< 受けた件数。 */
+    uint32_t out_of_order;   /**< 期待した通し番号と一致しなかった件数。 */
+} porter_test_burst_receive;
+
+/** burst の受信側の集計。 */
+static porter_test_burst_receive s_burst_receive;
 
 /** 対話セッションの状態。1 セッションで 1 サービスを保持する。 */
 typedef struct porter_test_session
@@ -206,6 +257,107 @@ static void porter_test_shutdown_request_callback(const cplat_shutdown_event *ev
 }
 
 /**
+ *  @brief          32 ビット整数をリトル エンディアンで書き込みます。
+ *  @param[out]     dest    書き込み先 (4 [byte] 以上)。
+ *  @param[in]      value   書き込む値。
+ */
+static void write_u32_le(unsigned char *dest, uint32_t value)
+{
+    dest[0] = (unsigned char)(value & 0xFFU);
+    dest[1] = (unsigned char)((value >> 8) & 0xFFU);
+    dest[2] = (unsigned char)((value >> 16) & 0xFFU);
+    dest[3] = (unsigned char)((value >> 24) & 0xFFU);
+}
+
+/**
+ *  @brief          リトル エンディアンの 32 ビット整数を読み取ります。
+ *  @param[in]      src     読み取り元 (4 [byte] 以上)。
+ *  @return         読み取った値を返します。
+ */
+static uint32_t read_u32_le(const unsigned char *src)
+{
+    return (uint32_t)src[0] | ((uint32_t)src[1] << 8) | ((uint32_t)src[2] << 16) | ((uint32_t)src[3] << 24);
+}
+
+/**
+ *  @brief          単調クロックの現在値を [ms] で返します。
+ *  @return         現在値を返します。取得に失敗した場合は 0 を返します。
+ *
+ *  経過時間の表示と送信の打ち切り判定だけに使うため、失敗した場合は経過時間が 0 になるだけで、呼び出し元へ通知しません。
+ */
+static uint64_t monotonic_ms(void)
+{
+    uint64_t now = 0U;
+
+    if (cplat_clock_get_monotonic_ms(&now) != CPLAT_OK)
+    {
+        now = 0U;
+    }
+
+    return now;
+}
+
+/**
+ *  @brief          burst のメッセージかどうかを判定します。
+ *  @param[in]      data    受信データ。
+ *  @param[in]      len     データのバイト数。
+ *  @return         burst のメッセージの場合は 1、それ以外は 0 を返します。
+ */
+static int is_burst_message(const void *data, size_t len)
+{
+    return len >= BURST_HEADER_SIZE && memcmp(data, BURST_MAGIC, BURST_MAGIC_SIZE) == 0;
+}
+
+/**
+ *  @brief          burst のメッセージを検証し、集計と表示を更新します。
+ *  @param[in]      data    受信データ (is_burst_message が 1 を返したもの)。
+ *
+ *  通し番号 0 のメッセージで集計を初期化します。\n
+ *  期待した通し番号と一致しない場合は out_of_order を数え、受けた通し番号の次を期待し直します。\n
+ *  最後のメッセージ (通し番号 = 総件数 - 1) を受けたとき BURST_RESULT を、BURST_PROGRESS_INTERVAL 件ごとに
+ *  BURST_PROGRESS を表示します。
+ */
+static void on_burst_message(const void *data)
+{
+    const unsigned char *bytes = (const unsigned char *)data;
+    const uint32_t sequence = read_u32_le(bytes + BURST_MAGIC_SIZE);
+    const uint32_t total = read_u32_le(bytes + BURST_MAGIC_SIZE + 4U);
+
+    if (sequence == 0U)
+    {
+        s_burst_receive.expected_total = total;
+        s_burst_receive.next_sequence = 0U;
+        s_burst_receive.received = 0U;
+        s_burst_receive.out_of_order = 0U;
+    }
+
+    if (sequence != s_burst_receive.next_sequence)
+    {
+        s_burst_receive.out_of_order++;
+    }
+
+    s_burst_receive.next_sequence = sequence + 1U;
+    s_burst_receive.received++;
+
+    /*
+     * 集計の表示は試験スクリプトと利用者が画面で確認する表示であり、診断も出力先がほかにないため、
+     * この関数の cplat_pinned_prompt_printf の戻り値は明示的に破棄する。
+     */
+    if (total != 0U && sequence == total - 1U)
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                         "BURST_RESULT received=%u expected=%u out_of_order=%u\n",
+                                         s_burst_receive.received, total, s_burst_receive.out_of_order);
+    }
+    else if (s_burst_receive.received % BURST_PROGRESS_INTERVAL == 0U)
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                         "BURST_PROGRESS received=%u expected=%u out_of_order=%u\n",
+                                         s_burst_receive.received, total, s_burst_receive.out_of_order);
+    }
+}
+
+/**
  *  @brief          受信コールバック関数。
  *  @param[in]      service_id  サービスの ID。
  *  @param[in]      peer_id     ピア識別子 (N:1 モード時は非ゼロ、1:1 モード時は 0)。
@@ -221,6 +373,21 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
     int path_idx;
 
     (void)peer_id;
+
+    /* POTR_EVENT_DATA を受けるたびに指定した時間だけ待ち、受信側の処理が遅い状況を作る。 */
+    if (event == POTR_EVENT_DATA)
+    {
+        if (s_recv_delay_ms > 0)
+        {
+            cplat_sleep_ms(s_recv_delay_ms);
+        }
+
+        if (is_burst_message(data, len))
+        {
+            on_burst_message(data);
+            return;
+        }
+    }
 
     /*
      * 受信と接続の状態の表示は利用者が画面で確認する表示であり、診断も出力先がほかにないため、
@@ -590,6 +757,10 @@ static void print_interactive_help(void)
     (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
                                      "  file [-c|--compress] <path>             ファイルを送信します。\n");
     (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                     "  burst [-b|--blocking] <count> <bytes>   通し番号つきのメッセージを間隔なしで連続して送信します。\n");
+    (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                     "                                          bytes: 16 以上。-b で POTR_SEND_BLOCKING を使います。\n");
+    (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
                                      "  log <level>                             ログレベルを設定します。\n");
     (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
                                      "  help                                    このヘルプを表示します。\n");
@@ -794,10 +965,15 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
             (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
                                              "エラー: 未接続のため送信できません。\n");
         }
+        else if (send_ret == POTR_ERR_FULL)
+        {
+            (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                             "エラー: 送信キューが満杯のため送信できません (POTR_ERR_FULL)。\n");
+        }
         else
         {
             (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                             "エラー: 送信に失敗しました。\n");
+                                             "エラー: 送信に失敗しました (result=%d)。\n", send_ret);
         }
 
         cplat_free(file_data);
@@ -815,6 +991,175 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
     }
 
     cplat_free(file_data); /* テキスト送信時は NULL */
+}
+
+/**
+ *  @brief          burst コマンドを処理して、通し番号つきのメッセージを連続して送信します。
+ *  @param[in]      handle  サービス ハンドル。
+ *  @param[in,out]  cursor  コマンド名の次を指す解析位置。解析中に一部を書き換えます。
+ *
+ *  書式は `burst [-b|--blocking] <count> <bytes>` です。\n
+ *  メッセージの先頭 16 [byte] は、識別子、通し番号 (0 始まり)、総件数で、残りは固定のパターンです。\n
+ *  POTR_SEND_BLOCKING を指定しない場合に POTR_ERR_FULL を受けたときは、BURST_RETRY_WAIT_MS 待って送り直し、
+ *  送り直した回数を数えます。1 件が BURST_STALL_LIMIT_MS 進まない場合は打ち切ります。\n
+ *  終了時に BURST_SENT の 1 行を表示します。
+ */
+static void apply_burst_command(potr_context *handle, char *cursor)
+{
+    char *token;
+    char *count_token = NULL;
+    char *bytes_token = NULL;
+    int blocking = 0;
+    int64_t count_value = 0;
+    int64_t bytes_value = 0;
+    uint32_t count;
+    size_t bytes;
+    unsigned char *buffer;
+    uint32_t sequence;
+    uint32_t sent = 0U;
+    uint64_t full_count = 0U;
+    uint64_t started_ms;
+    uint64_t elapsed_ms;
+    const char *result_label = "ok";
+    int result_code = POTR_OK;
+    int send_flags = 0;
+    size_t i;
+
+    /*
+     * 送信の結果は試験スクリプトと利用者が画面で確認する表示であり、診断も出力先がほかにないため、
+     * この関数の cplat_pinned_prompt_printf の戻り値は明示的に破棄する。
+     */
+    token = next_token(&cursor);
+    if (token != NULL && (strcmp(token, "-b") == 0 || strcmp(token, "--blocking") == 0))
+    {
+        blocking = 1;
+        token = next_token(&cursor);
+    }
+
+    count_token = token;
+    bytes_token = next_token(&cursor);
+    if (count_token == NULL || bytes_token == NULL || next_token(&cursor) != NULL)
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                         "エラー: burst [-b|--blocking] <count> <bytes> を指定してください。\n");
+        return;
+    }
+
+    if (cplat_parse_int64(&count_value, count_token, 10) != CPLAT_OK || count_value < 1 ||
+        count_value > BURST_MAX_COUNT)
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                         "エラー: count は 1 から %d の整数で指定してください。\n", BURST_MAX_COUNT);
+        return;
+    }
+
+    if (cplat_parse_int64(&bytes_value, bytes_token, 10) != CPLAT_OK || bytes_value < (int64_t)BURST_HEADER_SIZE ||
+        bytes_value > (int64_t)POTR_MAX_MESSAGE_SIZE)
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                         "エラー: bytes は %u から %u の整数で指定してください。\n",
+                                         (unsigned)BURST_HEADER_SIZE, (unsigned)POTR_MAX_MESSAGE_SIZE);
+        return;
+    }
+
+    count = (uint32_t)count_value;
+    bytes = (size_t)bytes_value;
+
+    buffer = (unsigned char *)cplat_malloc(bytes);
+    if (buffer == NULL)
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                         "エラー: メモリ確保に失敗しました。\n");
+        return;
+    }
+
+    memcpy(buffer, BURST_MAGIC, BURST_MAGIC_SIZE);
+    write_u32_le(buffer + BURST_MAGIC_SIZE + 4U, count);
+    for (i = BURST_HEADER_SIZE; i < bytes; i++)
+    {
+        buffer[i] = (unsigned char)('a' + (i % 26U));
+    }
+
+    if (blocking)
+    {
+        send_flags = (int)POTR_SEND_BLOCKING;
+    }
+
+    (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                     "burst 送信中: %u 件、%zu バイト、blocking=%d\n", count, bytes, blocking);
+
+    started_ms = monotonic_ms();
+    for (sequence = 0U; sequence < count; sequence++)
+    {
+        uint64_t stall_started_ms = 0U;
+        int send_ret;
+
+        if (cplat_atomic_load_i32(&s_running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+        {
+            result_label = "interrupted";
+            break;
+        }
+
+        write_u32_le(buffer + BURST_MAGIC_SIZE, sequence);
+        for (;;)
+        {
+            send_ret = potr_service_send(handle, POTR_PEER_NA, buffer, bytes, send_flags);
+            if (send_ret != POTR_ERR_FULL)
+            {
+                break;
+            }
+
+            full_count++;
+            if (stall_started_ms == 0U)
+            {
+                stall_started_ms = monotonic_ms();
+            }
+            else if (monotonic_ms() - stall_started_ms > BURST_STALL_LIMIT_MS)
+            {
+                break;
+            }
+
+            if (cplat_atomic_load_i32(&s_running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+            {
+                break;
+            }
+
+            cplat_sleep_ms(BURST_RETRY_WAIT_MS);
+        }
+
+        if (send_ret == POTR_ERR_FULL)
+        {
+            result_label = "full_timeout";
+            break;
+        }
+
+        if (send_ret != POTR_OK)
+        {
+            result_label = "error";
+            result_code = send_ret;
+            break;
+        }
+
+        sent++;
+    }
+
+    elapsed_ms = monotonic_ms() - started_ms;
+    cplat_free(buffer);
+
+    if (result_code != POTR_OK)
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                         "BURST_SENT sent=%u expected=%u full=%" PRIu64 " elapsed_ms=%" PRIu64
+                                         " bytes=%zu blocking=%d result=error=%d\n",
+                                         sent, count, full_count, elapsed_ms, bytes, blocking, result_code);
+    }
+    else
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                         "BURST_SENT sent=%u expected=%u full=%" PRIu64 " elapsed_ms=%" PRIu64
+                                         " bytes=%zu blocking=%d result=%s\n",
+                                         sent, count, full_count, elapsed_ms, bytes, blocking, result_label);
+    }
 }
 
 /**
@@ -1143,7 +1488,7 @@ static int process_line(porter_test_session *session, char *line)
         return 1;
     }
 
-    if (strcmp(command, "send") == 0 || strcmp(command, "file") == 0)
+    if (strcmp(command, "send") == 0 || strcmp(command, "file") == 0 || strcmp(command, "burst") == 0)
     {
         if (!session->is_open)
         {
@@ -1157,6 +1502,12 @@ static int process_line(porter_test_session *session, char *line)
         {
             (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
                                              "エラー: 受信専用サービスのため送信できません。\n");
+            return 1;
+        }
+
+        if (strcmp(command, "burst") == 0)
+        {
+            apply_burst_command(session->handle, cursor);
             return 1;
         }
 
@@ -1216,6 +1567,7 @@ int main(int argc, char *argv[])
     porter_test_session session;
     int need_help = 0;
     const char *log_level = NULL;
+    int recv_delay_ms = 0;
 
     cplat_console_init();
 
@@ -1230,6 +1582,8 @@ int main(int argc, char *argv[])
     /* 登録の失敗は直後の cplat_argparser_get_register_error_count() でまとめて検査するため、戻り値は明示的に破棄する。 */
     (void)cplat_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
     (void)cplat_argparser_register_option_string("-l", NULL, "level", "ログレベル。", 0, &log_level);
+    (void)cplat_argparser_register_option_int(NULL, "--recv-delay-ms", "ms",
+                                              "POTR_EVENT_DATA を受けるたびに待つ時間 [ms]。既定は 0。", 0, &recv_delay_ms);
     (void)cplat_argparser_register_positional_string("role", "sender または receiver。", 0, &role_arg);
     (void)cplat_argparser_register_positional_string("config_path", "設定ファイル。", 0, &config_path_arg);
     (void)cplat_argparser_register_positional_string("service_id", "サービス ID。", 0, &service_id_arg);
@@ -1277,6 +1631,16 @@ int main(int argc, char *argv[])
     {
         positional_count++;
     }
+
+    if (recv_delay_ms < 0 || recv_delay_ms > RECV_DELAY_MAX_MS)
+    {
+        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの出力の戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "エラー: --recv-delay-ms は 0 から %d の整数で指定してください。\n\n", RECV_DELAY_MAX_MS);
+        (void)cplat_argparser_print_usage(stderr);
+        return EXIT_FAILURE;
+    }
+
+    s_recv_delay_ms = recv_delay_ms;
 
     if (log_level != NULL)
     {
