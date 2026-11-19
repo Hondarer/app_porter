@@ -1212,6 +1212,7 @@ struct unparsed_service_case
     const char *key;
     const char *value;
     uint32_t expected;
+    unsigned char pad[4] = {}; // 明示的アラインメントのためのパディング。
 };
 
 void PrintTo(const unparsed_service_case &, std::ostream *);

@@ -41,6 +41,7 @@ struct unparsed_global_case
     const char *key;
     const char *value;
     uint32_t expected;
+    unsigned char pad[4] = {}; // 明示的アラインメントのためのパディング。
 };
 
 void PrintTo(const unparsed_global_case &, std::ostream *);
