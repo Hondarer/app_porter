@@ -30,7 +30,7 @@
 | BL-002 | mock_cplat の並列ビルドで同じサブディレクトリが 2 回ビルドされ、CI で不定期に失敗する | 作業中摘出 | 中 / 中 | 解消 (継続案件 261116-makefw-subdir-rebuild-race。CI run 44144556601 で確認し、2026-11-18 に `main` へ取り込み済み) |
 | BL-003 | doxyfw の依存関係レポートのテストで、再読み込み後にページ種別の保存値が失われ、CI で不定期に失敗する | 作業中摘出 | 中 / 中 | 解消 (継続案件 261116-doxyfw-page-variant-reload-flake。修正 doxyfw `a160e44` を含む CI run 44144556601 が成功) |
 | BL-004 | 証明書認証の片方向の通信種別で、最初の認証の試行が失敗の警告を出してから接続が確立する | 作業中摘出 | 低 / 低 | 未着手 |
-| BL-005 | Windows/WSL 相互接続試験のスクリプトが Git で管理されていない | 作業中摘出 | 低 / 低 | 未着手 |
+| BL-005 | Windows/WSL 相互接続試験のスクリプトが Git で管理されていない | 作業中摘出 | 低 / 低 | 対応中 (2026-11-20 に `bin/interop_matrix.py`、`bin_test/test_interop_matrix.py`、`docs/interop-test.md` として取り込み、環境固有の値を引数にした。Linux での単体テストは成功。Windows 上での実行は未確認で、案件 261119-porter-flow-control の OS をまたぐ確認で確かめる) |
 
 ## BL-002 mock_cplat の並列ビルドで同じサブディレクトリが 2 回ビルドされ、CI で不定期に失敗する
 
