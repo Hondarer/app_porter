@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 全体管理文書 (overview)
-最終更新日時: 2026-11-19 23:15:00 JST
+最終更新日時: 2026-11-20 01:20:00 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QxuPSr8Mxe6rktvre
 稼働 OS: Linux (WSL)
 下流文書: `261119-porter-flow-control-discussion.md` (検討用 Markdown)、`261119-porter-flow-control-lightadr.md` (簡易 ADR)、`261119-porter-flow-control-design.md` (最終仕様)、`261119-porter-flow-control-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
@@ -45,22 +45,22 @@
     - ✅ 3.1a. 版 1 への指摘 (解除の即時送出) の記録 ([Q-030](261119-porter-flow-control-discussion.md#q-030-解除を送出する時点)、LADR-007) と、最終仕様の版 2 への改版
     - ✅ 3.2. 最終仕様における受入条件と整合性の確認
     - ✅ 3.3. 対話セッションにおける最終仕様の承認の受付 (第 2 ゲート: 作業着手の合意。版 2 を承認。着手は先行する案件の完了後)
-- 🔄 4. 承認された最終仕様に従った作業の実施 (作業ブランチ: `app/porter` の `flow-control`)
-    - 🔄 4.0. 先行する案件 (`app/general/docs/prompts/current/261119-void-discard-reason-and-failure-injection-*`、別の作業ツリーで別セッションが担当) との調整。先行が動作を変えるファイル (設定の読み込み、`potr_service_open.c` の検査、接続のスレッド、`porter-test.c`、関連テスト、`mock_porter`) は先行の push を取り込んでから着手し、取り込み時に待機時間の設定値の上限の定数と `(void)` の理由コメントの規範を確認する
-    - 🔄 4.1. 段階 A: 待ち合わせを指定しない送信の容量不足の返却 (`prod/libsrc/porter/infra/potr_send_queue.c`、`prod/libsrc/porter/api/potr_service_send.c`、`prod/include/porter.h`、関連する単体テスト)。主エージェントが実装 ← **CURRENT**
-    - ⏸️ 4.2. 段階 B: 定数、公開している構造体、プロトコル バージョン 3、フロー制御パケットの組み立てと検証 (`prod/include/porter/porter_const.h`、`porter_type.h`、`prod/libsrc/porter/protocol/packet.c`、`prod/libsrc/porter/thread/thread_recv_validate.c`)。主エージェントが実装。版の値を前提にした既存テストの追随は軽量エージェントへ委譲
-    - ⏸️ 4.3. 段階 C: 受信側 (占有量の計数 `prod/libsrc/porter/potr_notify.c`、状態遷移と要求・解除の送出、容量超過時の切断と再開の抑止 `prod/libsrc/porter/thread/` 配下)。主エージェントが実装
-    - ⏸️ 4.4. 段階 D: 送信側 (要求の受理と期限 `prod/libsrc/porter/protocol/receiver_report.c`、`prod/libsrc/porter/potr_peer_table.c`、1 対 N の判定、送出の停止と再開、close 時の抑制の無視 `prod/libsrc/porter/thread/potr_send_thread.c`)。主エージェントが実装
-    - ⏸️ 4.5. 段階 E: N 対 1 サーバーの保留と、抑制中のピア宛の送信要求の扱い (`potr_send_thread.c`、`potr_send_queue.c`、`potr_service_send.c`)。主エージェントが実装
-    - ⏸️ 4.6. 段階 F: 構成の読み込み、`-1` の解釈、構成の検査 (`prod/libsrc/porter/protocol/config_load_service.c`、`config_load_global.c`、`prod/libsrc/porter/api/potr_service_open.c`、`prod/sample-config/porter-services.jsonc`)。先行の push の取り込み後に、主エージェントが実装
-    - ⏸️ 4.7. 単体テストと mock の追加・更新 (`test/src/libporter/` 配下。`exportTest` の確認を含む)。各段階の中核の検証は主エージェントが書き、定型の観点の追加と既存テストの追随は軽量エージェント (Sonnet) へ委譲して主エージェントがレビューする。委譲先にはビルドとテストの実行、Git の書き込み操作を禁止する
-    - ⏸️ 4.8. 動作確認用コマンドの更新 (`prod/src/cmd/porter-test/porter-test.c`。`POTR_ERR_FULL` の表示、受信コールバックを遅らせる指定)。先行の push の取り込み後に実施
-    - ⏸️ 4.9. 機能仕様の更新 (`docs/functional-spec/delivery.md`、`docs/functional-spec/config.md`) と、正本ドキュメントおよびコード コメントへの反映 (`docs/protocol.md`、`docs/config.md`、`docs/architecture.md`、`docs/api.md`、`docs/sequence-data.md`、`docs/coding-guideline.md`、Doxygen コメント)。機能仕様と契約の記述は主エージェントが書き、表の追随などの定型部分は軽量エージェントへ委譲する
-    - ⏸️ 4.10. 局所テスト (`app/porter` の `make` と `make test`、`.warn` の確認) と機械的検証 (`text_style_jp.py`、`check_functional_spec.py`)。同時に走らせる make は 1 本とし、主エージェントが一括で実行する
-    - ⏸️ 4.11. 結合の確認 (Linux 上の `porter-test` による抑制と解除の確認。対象は `unicast`、`multicast`、`unicast_bidir`、`tcp`)
-    - ⏸️ 4.12. 先行の `main` への rebase、コミット、push、CI の確認と、問題があった場合の修正 (ユーザーの事前許可による。先行より先に `main` へ push しない)
+- 🚫 4. 承認された最終仕様に従った作業の実施 (作業ブランチ: `app/porter` の `flow-control`。push はまだしていない)
+    - 🚫 4.0. 先行する案件 (`app/general/docs/prompts/current/261119-void-discard-reason-and-failure-injection-*`、別の作業ツリーで別セッションが担当) の push の取り込み ← **CURRENT** (停止理由: 先行セッションの push の連絡待ち。取り込み時に、待機時間の設定値の上限の定数と `(void)` の理由コメントの規範を確認し、`flow-control` を先行の `main` へ rebase する)
+    - ✅ 4.1. 段階 A: 待ち合わせを指定しない送信の容量不足の返却 (コミット `1c15675`)
+    - ✅ 4.2. 段階 B: 定数、公開している構造体、プロトコル バージョン 3、フロー制御パケットの組み立てと検証 (コミット `0486911`)
+    - ✅ 4.3. 段階 C: 受信側 (占有量の計数、状態遷移と要求・解除の送出、容量超過時の切断と再開の抑止。TCP の再接続の抑止はコミット `2a212fc`)
+    - ✅ 4.4. 段階 D: 送信側 (要求の受理と期限、1 対 N の判定、送出の停止と再開、close 時の抑制の無視)
+    - ✅ 4.5. 段階 E: N 対 1 サーバーの保留と、抑制中のピア宛の送信要求の扱い (送信要求の扱いはコミット `e668229`、送信スレッドの保留はコミット `789c9ae`。`e668229` には送信スレッドの保留が入っていなかった)
+    - ✅ 4.6. 段階 F: 構成の読み込み、`-1` の解釈、構成の検査 (先行の push を待たずに実装した。rebase 時に先行の変更と統合する)
+    - ✅ 4.7. 単体テストと mock の追加・更新 (mock 17 関数と、テスト 6 か所の初稿は軽量エージェントへ委譲。送信スレッドのテスト 3 件は主エージェントが作成。`app/porter` の `make` と `make test` が成功し、内容のある `.warn` がないことを確認)
+    - ⏸️ 4.8. 動作確認用コマンドの更新 (`prod/src/cmd/porter-test/porter-test.c`。受信コールバックを遅らせる指定と、連続して送信する手段)。先行の push の取り込み後に実施
+    - ✅ 4.9. 機能仕様の更新と、正本ドキュメントおよびコード コメントへの反映 (`docs/functional-spec/delivery.md`、`config.md`、`docs/protocol.md`、`docs/config.md`、`docs/architecture.md`、`docs/api.md`、`docs/sequence-data.md`、`docs/coding-guideline.md`、`prod/include/porter/porter_spec.h`、サンプル構成)
+    - ⚠️ 4.10. 局所テストと機械的検証 (未確認の事項: 先行の変更を取り込んだ後の `make` と `make test`。確認方法: rebase 後に `app/porter` で実行する。rebase 前の時点では `make`、`make test`、`text_style_jp.py`、`check_functional_spec.py` (既存の 35 件以外の指摘なし) を確認済み)
+    - ⚠️ 4.11. 結合の確認 (未確認の事項: `porter-test` による確認。確認方法: 4.8 の後に実施する。一時的な確認プログラムでは、`unicast`、`multicast`、`unicast_bidir`、`tcp`、`unicast_bidir_n1` で抑制と解除が働き、欠落と切断がないことを確認済み)
+    - ⏸️ 4.12. 先行の `main` への rebase、push、CI の確認と、問題があった場合の修正 (ユーザーの事前許可による。先行より先に `main` へ push しない)
     - ⏸️ 4.13. 受入条件への適合確認 (全作業の完了確認)
-    - ⏸️ 4.14. 簡易 ADR の最終確認 (各決定が案件終了時点の決定を示し、経緯が時系列にそろっていることの確認)
+    - ⏸️ 4.14. 簡易 ADR の最終確認
     - ⏸️ 4.15. 残課題一覧 (`261119-porter-flow-control-backlog.md`) の再構築と整理
 - ⏸️ 5. 成果物の承認の受付 (第 3 ゲート)
     - ⏸️ 5.1. 成果物・検証結果・残課題の提示
@@ -176,6 +176,8 @@ Table: 質問一覧
 | 2026-11-19 23:01 | 第 2 ゲートの通過 | ユーザーが「先行の完了を以て作業開始を許可します」と指示。最終仕様の版 2 を承認とし、作業の着手は先行する案件の完了後とする |
 | 2026-11-19 23:05 | 着手条件の変更 | ユーザーが「先行セッションと対話して進めてください。git 操作は事前許可します」と指示。先行セッションの変更がこちらの作業ツリーにないこと (別の作業ツリー) を確認し、並行して着手する進め方を先行セッションへ提案 |
 | 2026-11-19 23:15 | 作業の着手と作業 WBS の見直し | ユーザーが「修正後、コミットプッシュし、CI を確認し、問題があれば修正するように」と指示。`app/porter` に作業ブランチ `flow-control` を作成。作業 WBS の項目 4 を、実装の段階と委譲の割り当てを示す形に見直した |
+| 2026-11-19 23:59 | 最終仕様の改版 (版 3) | 実装で分かった点 (容量の余裕の指針、構造体を 0 で初期化した利用側の扱い、N 対 1 の保留の完了待ちの扱い) を最終仕様へ反映。残課題一覧へ BL-004 を追記 |
+| 2026-11-20 01:20 | 実装と単体テストの完了 (rebase 前) | 段階 A から F、mock、単体テスト、文書を `flow-control` ブランチへコミット (5 件)。`app/porter` の `make` と `make test` が成功。先行セッションの push の連絡待ち |
 
 Table: 案件の経緯
 
