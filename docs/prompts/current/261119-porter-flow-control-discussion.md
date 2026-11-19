@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 検討用 Markdown (discussion)
-最終更新日時: 2026-11-20 07:28:54 JST
+最終更新日時: 2026-11-20 07:33:31 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QxuPSr8Mxe6rktvre
 稼働 OS: Linux (WSL)
 上流文書: `261119-porter-flow-control-overview.md` (全体管理文書)。削除されている場合があります。
@@ -2376,7 +2376,7 @@ B を選択。着手しません。TCP 双方向 N 対 1 の残課題 BL-001 は
 
 **Status**
 
-未回答
+解決済み
 
 **Question**
 
@@ -2403,7 +2403,7 @@ Table: 性能の測定プログラムの構成
 
 選択方式: 単一選択
 
-- [ ] A: (推奨) `prod/src/cmd/porter-bench/` に置き、通常の `make` でビルドする。CI ではビルドだけを行う。
+- [x] A: (推奨) `prod/src/cmd/porter-bench/` に置き、通常の `make` でビルドする。CI ではビルドだけを行う。
 - [ ] B: 専用のディレクトリに、一時領域の構成のまま置く。
 - [ ] C: `test/` 配下に置く。
 - [ ] D: その他
@@ -2411,11 +2411,18 @@ Table: 性能の測定プログラムの構成
 
 その他の回答 / 補足:
 
+回答者: Tetsuo Honda  
+回答日時: 2026-11-20 07:32:52 JST (検討用 Markdown の保存時刻)
+
 **Recommendation**
 
 推奨: A  
 理由: 通常のビルドと CI に含めることで、porter の API の変更に追随し続けます。Linux と Windows のビルドは、既存の makefw の仕組みに任せられます。専用のビルド スクリプト (合計 約 970 行) を保守せずに済みます。  
 制約: C++ のソースを `prod/src/cmd/` でビルドできない場合は、置き場所を見直す必要があります。その場合は、あらためて確認します。
+
+**Assessment**
+
+A を選択。測定プログラムを `prod/src/cmd/porter-bench/` に置き、通常の `make` でビルドします。CI ではビルドだけを行います。改修前の porter との切り替えと専用のビルド スクリプトは取り込みません。集計スクリプトは `bin/` に、そのテストは `bin_test/` に置き、手順を `docs/` に記載します。C++ のソースをこの場所でビルドできない場合は、あらためて確認します。
 
 **Related**
 

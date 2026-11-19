@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 全体管理文書 (overview)
-最終更新日時: 2026-11-20 07:28:54 JST
+最終更新日時: 2026-11-20 07:33:31 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QxuPSr8Mxe6rktvre
 稼働 OS: Linux (WSL)
 下流文書: `261119-porter-flow-control-discussion.md` (検討用 Markdown)、`261119-porter-flow-control-lightadr.md` (簡易 ADR)、`261119-porter-flow-control-design.md` (最終仕様)、`261119-porter-flow-control-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
@@ -18,7 +18,7 @@
 
 検討 ID: 261119-porter-flow-control
 
-検討用 Markdown の版: 11
+検討用 Markdown の版: 12
 
 状態: 合意済み (検討用 Markdown の版 10、最終仕様の版 5)。先行する案件の CI と並行して実装中。`main` への push は、先行する案件の CI の成功後
 
@@ -64,7 +64,7 @@
     - ✅ 4.7. 単体テストと mock の追加・更新 (mock 17 関数と、テスト 6 か所の初稿は軽量エージェントへ委譲。送信スレッドのテスト 3 件は主エージェントが作成。`app/porter` の `make` と `make test` が成功し、内容のある `.warn` がないことを確認)
     - 🔄 4.7a. 最終仕様の版 4 の実装 (送出上限の通知、待機時間の上限、解除のしきい値の既定値 50%、余裕の検査) と、単体テスト、文書の更新 (送出上限と検査は Opus、設定の読み込みの統一と既定値は Sonnet のサブエージェントへ委譲) ← **CURRENT**
     - ⏸️ 4.7b. 証明書認証の最初の試行の失敗の確認と修正 (`prod/libsrc/porter/security/certificate.c`)
-    - 🚫 4.7c. 性能の測定プログラムの取り込み (停止理由: 置き場所とビルドの方法を確認する [Q-049](261119-porter-flow-control-discussion.md#q-049-性能の測定プログラムの置き場所とビルドの方法) の回答待ち)
+    - 🔄 4.7c. 性能の測定プログラムの取り込み (`prod/src/cmd/porter-bench/`、`bin/` の集計スクリプト、手順の文書。Sonnet のサブエージェントへ委譲)
     - ⏸️ 4.7d. フロー制御が無効の構成での、変更前後の性能の比較
     - ⏸️ 4.8. 動作確認用コマンドの更新 (`prod/src/cmd/porter-test/porter-test.c`。受信コールバックを遅らせる指定と、連続して送信する手段)。先行の push の取り込み後に実施
     - ✅ 4.9. 機能仕様の更新と、正本ドキュメントおよびコード コメントへの反映 (`docs/functional-spec/delivery.md`、`config.md`、`docs/protocol.md`、`docs/config.md`、`docs/architecture.md`、`docs/api.md`、`docs/sequence-data.md`、`docs/coding-guideline.md`、`prod/include/porter/porter_spec.h`、サンプル構成)
@@ -172,7 +172,7 @@ Table: 観点別の確認状況
 | [Q-046](261119-porter-flow-control-discussion.md#q-046-udp-の-os-の受信バッファーあふれへの対策) | UDP の OS の受信バッファーあふれへの対策 | 解決済み | なし | LADR-017 |
 | [Q-047](261119-porter-flow-control-discussion.md#q-047-性能の低下と変動の調査) | 性能の低下と変動の調査 | 解決済み | なし | LADR-017 |
 | [Q-048](261119-porter-flow-control-discussion.md#q-048-tcp-双方向-n-対-1-の通信種別) | TCP 双方向 N 対 1 の通信種別 | 解決済み | なし | LADR-017 |
-| [Q-049](261119-porter-flow-control-discussion.md#q-049-性能の測定プログラムの置き場所とビルドの方法) | 性能の測定プログラムの置き場所とビルドの方法 | 未回答 | Q-043、Q-044 | 未定 |
+| [Q-049](261119-porter-flow-control-discussion.md#q-049-性能の測定プログラムの置き場所とビルドの方法) | 性能の測定プログラムの置き場所とビルドの方法 | 解決済み | Q-043、Q-044 | LADR-017 |
 
 Table: 質問一覧
 
@@ -219,6 +219,7 @@ Table: 質問一覧
 | 2026-11-20 07:19 | 第 2 ゲートの通過 (版 4) と、追加の質問 | ユーザーが最終仕様の版 4 を承認。ただし「版 4 で CI 後の作業を確定しません」として、ビルドが必要な残課題の着手可否を質問で確認するよう指示。Q-042 から Q-048 を追記 (検討用 Markdown の版 9)。あわせて、機能仕様の検査の対象から `docs/prompts` 配下を外す方針 (案件 261118-porter-thread-stop-cleanup の BL-001) の承認を受け、ビルドを伴わない作業として着手 |
 | 2026-11-20 07:24 | 回答の受付と、着手条件の変更 | Q-042 から Q-048 の回答を確認し、解決済みとした (検討用 Markdown の版 10)。簡易 ADR に LADR-017 を追加。最終仕様を版 5 に改め、「あわせて行う残課題」を追加。ユーザーが「確定した作業を現在の CI と並行して行えばよい」と指示したため、先行する案件の CI の成功を待たずに作業を再開。`main` への push は、先行の CI の成功後に行う |
 | 2026-11-20 07:28 | 先行の変更の取り込みと、実装の再開 | 先行セッションへ並行作業の開始を連絡。親リポジトリとサブモジュールを更新し、`flow-control` を先行の `main` へ rebase (衝突 4 ファイルを解消)。最終仕様の版 4 の実装をサブエージェントへ委譲。性能の測定プログラムの置き場所を確認する Q-049 を追記 (検討用 Markdown の版 11) |
+| 2026-11-20 07:33 | Q-049 の回答の受付 | A (`prod/src/cmd/porter-bench/` に置き、通常の `make` でビルドする) を確認し、解決済みとした (検討用 Markdown の版 12)。LADR-017 と最終仕様の版 5 に反映 |
 
 Table: 案件の経緯
 
