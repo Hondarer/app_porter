@@ -295,6 +295,31 @@ extern "C"
     extern void potr_internal_send_queue_shutdown(potr_internal_send_queue *q);
 
     /**
+     *  @brief          inflight エントリを 1 つ、送出を保留したものとしてマークします。
+     *
+     *  N:1 モードで、抑制中のピア宛のエントリを送信スレッドが保留するときに使います。\n
+     *  completed_seq をインクリメントし、progress を broadcast します。後続のエントリの完了待ちを、
+     *  保留したエントリが止めないようにするためです。\n
+     *  inflight は減らしません。保留したエントリは容量を占有し続け、drained の待機も解除しません。
+     *  送信スレッドは、保留したエントリを送出または破棄した後に
+     *  potr_internal_send_queue_complete_deferred() を呼び出してください。
+     *
+     *  @param[in,out]  q   送信キュー。
+     */
+    extern void potr_internal_send_queue_defer(potr_internal_send_queue *q);
+
+    /**
+     *  @brief          保留していたエントリを 1 つ完了としてマークします。
+     *
+     *  inflight をデクリメントし、count == 0 かつ inflight == 0 なら drained を broadcast します。\n
+     *  push_wait で待機中のスレッドを起床させるため not_full もシグナルします。\n
+     *  completed_seq は、potr_internal_send_queue_defer() で加算済みのため変更しません。
+     *
+     *  @param[in,out]  q   送信キュー。
+     */
+    extern void potr_internal_send_queue_complete_deferred(potr_internal_send_queue *q);
+
+    /**
      *  @brief          フロー制御の抑制の状態が変わるまで、送信スレッドを待機させます。
      *
      *  *generation が現在の通知回数と異なる場合は、待機せずに戻ります。

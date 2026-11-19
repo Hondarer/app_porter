@@ -409,6 +409,36 @@ static void complete_locked(potr_internal_send_queue *q)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
+void potr_internal_send_queue_defer(potr_internal_send_queue *q)
+{
+    cplat_local_lock_lock(q->mutex);
+    q->completed_seq++;
+    cplat_condvar_broadcast(q->progress);
+    cplat_local_lock_unlock(q->mutex);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_send_queue_complete_deferred(potr_internal_send_queue *q)
+{
+    cplat_local_lock_lock(q->mutex);
+
+    if (q->inflight > 0U)
+    {
+        q->inflight--;
+    }
+
+    if (q->count == 0U && q->inflight == 0U)
+    {
+        cplat_condvar_broadcast(q->drained);
+    }
+
+    cplat_condvar_signal(q->not_full);
+    cplat_local_lock_unlock(q->mutex);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
 void potr_internal_send_queue_complete(potr_internal_send_queue *q)
 {
     cplat_local_lock_lock(q->mutex);

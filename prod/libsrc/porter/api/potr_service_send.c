@@ -113,6 +113,80 @@ static int push_message(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
     return result;
 }
 
+/** 抑制中のピアの状態を確認し直すまでの待機の上限 [ms]。 */
+#define SEND_FLOW_RECHECK_MS 50
+
+/*
+ * N:1 モードで、宛先のピアが抑制中かどうかを返す。deferred には、送信スレッドが保留しているエントリ数を返す。
+ * 時刻を取得できない場合は期限を判定できないため、抑制中でないものとして扱う。
+ */
+static int peer_is_suppressed(potr_context *ctx, potr_peer_id peer_id, int *deferred)
+{
+    uint64_t now_ms;
+
+    *deferred = 0;
+
+    if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
+    {
+        return 0;
+    }
+
+    return potr_internal_flow_control_peer_state(ctx, peer_id, now_ms, deferred);
+}
+
+/*
+ * N:1 モードで、抑制中のピア宛の送信要求を扱う。
+ * 待ち合わせを指定しない送信は、送信キューの空きの有無にかかわらず POTR_ERR_FULL を返す。
+ * 保留が送信キューを占有して、ほかのピア宛の送信を止めないようにするためである。
+ * 待ち合わせを指定した送信は、抑制の解除、ピアの切断、close の開始のいずれかまで待つ。
+ * wait_deferred が非 0 の場合は、そのピア宛の保留エントリがなくなるまで待つ (送出の完了待ち)。
+ */
+static int wait_peer_sendable(potr_context *ctx, potr_peer_id peer_id, int blocking, int wait_deferred)
+{
+    uint64_t generation = 0U;
+
+    for (;;)
+    {
+        int deferred;
+        int suppressed = peer_is_suppressed(ctx, peer_id, &deferred);
+
+        if (wait_deferred != 0)
+        {
+            if (deferred == 0)
+            {
+                return POTR_OK;
+            }
+        }
+        else if (suppressed == 0)
+        {
+            return POTR_OK;
+        }
+        else if (blocking == 0)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                       "potr_service_send: service_id=%" PRId64 " peer_id=%u suppressed by flow control",
+                       ctx->service.service_id, (unsigned)peer_id);
+            return POTR_ERR_FULL;
+        }
+
+        if (cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+        {
+            return POTR_ERR_CANCELED;
+        }
+
+        {
+            int fatal = (int)cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE);
+
+            if (fatal != POTR_OK)
+            {
+                return fatal;
+            }
+        }
+
+        potr_internal_send_queue_wait_flow(&ctx->send_queue, &generation, SEND_FLOW_RECHECK_MS);
+    }
+}
+
 /*
  * 1 つの宛先へメッセージを送信する。
  * 待ち合わせを指定しない送信は、全断片分の空きがなければ 1 つも登録せずに POTR_ERR_FULL を返す。
@@ -126,6 +200,15 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
     int result;
     /* flags はビット フラグであり、POTR_SEND_* 定数は int に収まる。 */
     int blocking = (((unsigned)flags & POTR_SEND_BLOCKING) != 0U);
+
+    if (ctx->is_multi_peer)
+    {
+        result = wait_peer_sendable(ctx, peer_id, blocking, 0);
+        if (result != POTR_OK)
+        {
+            return result;
+        }
+    }
 
     potr_internal_send_queue_lock_push(&ctx->send_queue);
 
@@ -159,7 +242,15 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
             return result;
         }
 
-        return potr_internal_send_queue_ticket_result(&ctx->send_queue, first_ticket);
+        result = potr_internal_send_queue_ticket_result(&ctx->send_queue, first_ticket);
+
+        /* 送信スレッドが保留したエントリは、完了待ちの番号だけが先に進む。送出されるまで待つ。 */
+        if (result == POTR_OK && ctx->is_multi_peer)
+        {
+            result = wait_peer_sendable(ctx, peer_id, blocking, 1);
+        }
+
+        return result;
     }
 
     return POTR_OK;
@@ -176,6 +267,16 @@ static int send_to_peers_nonblocking(potr_context *ctx, const potr_peer_id *ids,
     uint64_t last_ticket;
     int result;
     int i;
+
+    /* 抑制中のピアが 1 つでもあれば、どのピア宛も登録しない。 */
+    for (i = 0; i < n_ids; i++)
+    {
+        result = wait_peer_sendable(ctx, ids[i], 0, 0);
+        if (result != POTR_OK)
+        {
+            return result;
+        }
+    }
 
     potr_internal_send_queue_lock_push(&ctx->send_queue);
 

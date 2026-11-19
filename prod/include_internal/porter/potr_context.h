@@ -196,6 +196,8 @@ typedef struct potr_internal_peer_context
         [POTR_MAX_PATH];         /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     cplat_timespec last_recv_ts; /**< 最終受信時刻 (CLOCK_MONOTONIC)。tv_sec == 0 は未受信。 */
     uint64_t flow_request_expire_ms; /**< このピアから受けた抑制の要求の期限 [ms]。0 = 要求なし。peers_mutex で保護。 */
+    int flow_deferred_entries; /**< 送信スレッドが保留している、このピア宛のエントリ数。peers_mutex で保護。 */
+    int _pad_flow_deferred;    /**< パディング (8 [byte] 境界に揃える)。 */
 
     /* NACK 重複抑制 */
     potr_internal_nack_dedup_entry nack_dedup_buf[POTR_NACK_DEDUP_SLOTS]; /**< NACK 重複抑制バッファー。 */
@@ -258,6 +260,8 @@ struct potr_context
     struct potr_internal_flow_control *flow_control; /**< 受信側のフロー制御の資源。NULL は無効 (容量が 0)。 */
     potr_internal_flow_control_config flow_control_config; /**< フロー制御の実効設定。スレッド起動後は不変。 */
     cplat_atomic_u64 flow_request_expire_ms; /**< 送信側: 相手から受けた抑制の要求の期限 [ms]。0 = 要求なし。双方向 UDP (1:1) と TCP で使用。アトミックに読み書きします。 */
+    struct potr_internal_deferred_entry *flow_deferred_head; /**< N:1 モードで保留中のエントリの先頭。送信スレッドだけが使用。 */
+    struct potr_internal_deferred_entry *flow_deferred_tail; /**< N:1 モードで保留中のエントリの末尾。送信スレッドだけが使用。 */
     cplat_atomic_i32 flow_request_pending; /**< 送信側: 片方向 UDP で、受信者の管理表に抑制の要求が残っている可能性があるか。アトミックに読み書きします。 */
     int flow_control_padding; /**< 8 [byte] 境界のパディング。 */
     cplat_atomic_i32 fatal_error;                      /**< 通知継続不能の原因。 */

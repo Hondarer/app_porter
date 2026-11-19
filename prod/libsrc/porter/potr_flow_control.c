@@ -817,3 +817,42 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
 
     return 1;
 }
+
+/* Doxygen コメントは、ヘッダーに記載 */
+int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms, int *deferred)
+{
+    potr_internal_peer_context *peer;
+    int suppressed = 0;
+
+    if (ctx == NULL || deferred == NULL)
+    {
+        return 0;
+    }
+
+    *deferred = 0;
+
+    if (!ctx->is_multi_peer)
+    {
+        return 0;
+    }
+
+    cplat_local_lock_lock(ctx->peers_mutex);
+    peer = potr_internal_peer_find_by_id(ctx, peer_id);
+
+    if (peer != NULL)
+    {
+        *deferred = peer->flow_deferred_entries;
+
+        /* 相手を切断と判定した場合と、close の開始後は、その相手の要求を無視する。 */
+        if (peer->flow_request_expire_ms > now_ms &&
+            cplat_atomic_load_i32(&peer->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
+            cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+        {
+            suppressed = 1;
+        }
+    }
+
+    cplat_local_lock_unlock(ctx->peers_mutex);
+
+    return suppressed;
+}

@@ -173,6 +173,23 @@ extern "C"
      *  送信スレッドから呼びます。
      */
     extern int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, int *wait_ms);
+
+    /**
+     *  @brief          N:1 モードのピアが、抑制の要求によって送出を止めるべき状態かを返します。
+     *
+     *  close の開始後は、抑制を無視するため常に 0 を返します。存在しないピアと未接続のピアは 0 を返します。
+     *
+     *  @param[in,out]  ctx         コンテキスト。
+     *  @param[in]      peer_id     ピア識別子。
+     *  @param[in]      now_ms      現在の単調増加時刻 [ms]。
+     *  @param[out]     deferred    送信スレッドが保留している、このピア宛のエントリ数の格納先。NULL は許可しません。
+     *  @return         抑制する場合は 1、しない場合は 0。失敗モードのない述語のため共通結果コードの適用対象外。
+     *
+     *  @par            スレッド セーフ
+     *  任意のスレッドから呼べます。内部で peers_mutex を取得するため、呼び出し元は peers_mutex を保持しないこと。
+     */
+    extern int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms,
+                                                     int *deferred);
 #ifdef __cplusplus
 }
 #endif
