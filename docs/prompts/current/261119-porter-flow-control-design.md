@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 最終仕様 (design)
-最終更新日時: 2026-11-20 06:57:16 JST
+最終更新日時: 2026-11-20 07:01:27 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QxuPSr8Mxe6rktvre
 稼働 OS: Linux (WSL)
 上流文書: `261119-porter-flow-control-overview.md` (全体管理文書)、`261119-porter-flow-control-discussion.md` (検討用 Markdown)、`261119-porter-flow-control-lightadr.md` (簡易 ADR)。いずれも削除されている場合があります。
@@ -111,7 +111,7 @@ Table: 送出上限を送出する時点
 - 「前回知らせた範囲」は、前回の送出の時点の「次に受信する通番」から、そのとき知らせた送出上限までです。
 - 3 と、状態遷移の「相手が送出上限まで送り終えた」の判定は、順序どおりに受信した DATA パケットを 1 個処理するたびに行います。フラグメントの途中のパケットも含みます。
 - 相手が送出上限まで送り終えた時点で、占有量が解除のしきい値を下回っている場合は、3 の更新を送出します。解除のしきい値以上の場合は、抑制の要求へ遷移します。相手が上限で止まっている間に受信側が何も送出しない状態を作らないためです。
-- 送出上限の更新の頻度は、占有量が小さい場合で「容量 × 要求のしきい値 ÷ `max_payload` ÷ 2」パケットにつき 1 個です (容量 2 MB、要求のしきい値 80%、`max_payload` 1,400 で約 570 パケットにつき 1 個)。占有量が解除のしきい値に近い場合は、「容量 × (要求のしきい値 − 解除のしきい値) ÷ `max_payload` ÷ 2」パケットにつき 1 個まで増えます (同じ構成で約 140 パケットにつき 1 個)。
+- 送出上限の更新の頻度は、占有量が小さい場合で「容量 × 要求のしきい値 ÷ `max_payload` ÷ 2」パケットにつき 1 個です (容量 2 MB、要求のしきい値 80%、`max_payload` 1,400 で約 570 パケットにつき 1 個)。占有量が解除のしきい値に近い場合は、「容量 × (要求のしきい値 − 解除のしきい値) ÷ `max_payload` ÷ 2」パケットにつき 1 個まで増えます (同じ構成で、解除のしきい値が 50% の場合、約 210 パケットにつき 1 個)。
 
 > [!NOTE]
 > 送出上限を通番で表すのは、同じ通知が重複して届いても、古い通知が失われても、送信側の判定が変わらないためです。バイト数の加算で表す方式は、通知の喪失と重複で送信側と受信側の数え方がずれます。
@@ -309,7 +309,7 @@ Table: 抑制中のピア宛の送信要求
 | --- | --- | --- | --- |
 | `flow_control_capacity` | 0 (無効) | 通知キューの容量 [byte]。0 でフロー制御は無効 | 受信側 |
 | `flow_control_suppress_percent` | 80 | 抑制を要求するしきい値 [%] | 受信側 |
-| `flow_control_resume_percent` | 60 | 解除するしきい値 [%] | 受信側 |
+| `flow_control_resume_percent` | 50 | 解除するしきい値 [%] | 受信側 |
 | `flow_control_request_interval_ms` | 200 | 抑制の要求の再送周期 [ms] | 受信側 |
 | `flow_control_request_lifetime_ms` | 1,000 | 抑制の要求の有効期限 [ms] | 送信側 |
 | `flow_control_receiver_percent` | 0 (無効) | 1 対 N の割合の条件 [%] | `multicast`、`broadcast` の送信側 |
@@ -363,7 +363,7 @@ Table: フロー制御の設定項目
 | `flow_control_request_lifetime_ms` が `flow_control_request_interval_ms` 以下である | 常に |
 | `flow_control_request_interval_ms` または `flow_control_request_lifetime_ms` が、待機時間の設定値の上限 (`POTR_WAIT_MS_MAX`、2,147,483,646) を超える | 常に |
 | `flow_control_receiver_percent` が 100 を超える | 常に |
-| `flow_control_capacity` が `max_message_size` 未満である | 容量が 0 でない場合 |
+| 要求のしきい値から容量までの余裕 (`flow_control_capacity` − `flow_control_capacity` × `flow_control_suppress_percent` ÷ 100) が `max_message_size` 未満である | 容量が 0 でない場合 |
 | 実効 `health_interval_ms` が 0 である | `multicast`、`broadcast` の受信側で、容量が 0 でない場合 |
 
 Table: フロー制御の構成の検査
@@ -387,7 +387,7 @@ Table: 容量の余裕で受け止める量
 > UDP では、同じ集中送出が受信側の OS の受信バッファー (Linux の既定は約 208 KB) をあふれさせ、欠落から再送不能の切断になることがあります。これはフロー制御の導入前からある動作で、送出上限では防げません。`send_queue_depth` を小さくするか、OS の受信バッファーを大きくして避けます。
 
 > [!NOTE]
-> 容量が `max_message_size` 未満の構成をエラーにするのは、最大長のメッセージ 1 件だけで容量を超え、必ず切断になるためです。
+> 余裕が `max_message_size` 未満の構成をエラーにするのは、フラグメントの途中にあった最大長のメッセージ 1 件が、送出上限で止まった後に完成するだけで、容量を超えるためです。既定の要求のしきい値 (80%) では、容量が `max_message_size` の 5 倍以上であることに相当します。要求のしきい値を 100% にした構成は、余裕が 0 になるため、容量が 0 でない限りエラーになります。
 
 > [!NOTE]
 > 再送周期と有効期限は、送信側と受信側で同じ値を構成することを前提とします。受信側の再送周期が送信側の有効期限以上の構成では、要求の再送の間に抑制が外れます。この組み合わせは、片側の構成からは検査できません。
