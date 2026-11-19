@@ -18,6 +18,7 @@ porter は UDP/IP および TCP/IP をサポートするクロスプラットフ
 - [通信シーケンス](sequence.md)
 - [実装の保守と未解決事項](maintenance.md)
 - [Windows と WSL の相互接続試験](interop-test.md)
+- [porter の性能測定](performance-measurement.md)
 - [porter コーディング規範](coding-guideline.md)
 - [porter 機能仕様の記載規範](functional-spec-guideline.md)
 - [TCP N:1 の設計記録](prompts/past/tcp-n1-design.md)
