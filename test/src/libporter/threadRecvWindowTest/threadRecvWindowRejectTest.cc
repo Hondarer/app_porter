@@ -493,3 +493,60 @@ TEST_F(threadRecvWindowRejectTest, data_already_delivered_drops_without_sending_
     // [確認_正常系] - potr_internal_window_recv_has_packet() の戻り値が 0 であること。
 }
 // [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]
+
+// 受信ウィンドウから順に取り出した DATA パケットごとに、次に受信する通番をフロー制御へ渡すことの確認
+// (フラグメントの途中のパケットを含む)
+// [サブ手順参照 名前=threadRecvWindowRejectTest.SetUp]
+TEST_F(threadRecvWindowRejectTest, drained_data_packets_report_next_seq_to_flow_control)
+{
+    // Arrange
+    PackedDataFixture fragment = makePackedDataPacket(100U, 42U, 1000, 500, "frag");
+    const uint16_t more_frag = cplat_hton16((uint16_t)POTR_FLAG_MORE_FRAG);
+    std::memcpy(fragment.packed_payload.data(), &more_frag, sizeof(more_frag));
+    // [状態] - 通番 100 を、フラグメントの途中の断片を格納した DATA パケットにする。
+    const PackedDataFixture last = makePackedDataPacket(101U, 42U, 1000, 500, "last");
+    ASSERT_EQ(POTR_OK, potr_internal_window_recv_push(&ctx.recv_window, &last.packet));
+    // [状態] - 通番 101 の DATA パケットを、先に受信ウィンドウへ保持する。
+    // [状態確認] - 受信ウィンドウへの保持の戻り値が POTR_OK であること。
+    // Pre-Assert
+    {
+        InSequence sequence;
+        EXPECT_CALL(mock_porter, potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 42U, _, 101U, 1)).Times(1);
+        // [Pre-Assert確認_正常系] - 通番 100 の取り出しの後に、次に受信する通番 101 で 1 回呼ばれること。
+        EXPECT_CALL(mock_porter, potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 42U, _, 102U, 1)).Times(1);
+        // [Pre-Assert確認_正常系] - 通番 101 の取り出しの後に、次に受信する通番 102 で 1 回呼ばれること。
+    }
+    // Act
+    thread_recv_window_accept_outer(&slot, &fragment.packet, 0); // [手順] - 通番 100 の DATA パケットを受理する。
+    // Assert
+    EXPECT_EQ(102U, ctx.recv_window.base_seq); // [確認_正常系] - 通番 100 と 101 を取り出したこと。
+}
+// [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]
+
+// 新しいセッションを採用した場合に、その相手から受けていた抑制の要求と送出上限を取り消すことの確認
+// [サブ手順参照 名前=threadRecvWindowRejectTest.SetUp]
+TEST_F(threadRecvWindowRejectTest, new_session_adoption_clears_flow_control_state)
+{
+    // Arrange
+    const PackedDataFixture same_session = makePackedDataPacket(100U, 42U, 1000, 500, "same");
+    const PackedDataFixture new_session = makePackedDataPacket(200U, 43U, 1000, 500, "new");
+    cplat_atomic_store_u64(&ctx.flow_request_expire_ms, 9999U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_HELD | 5U, CPLAT_MEMORY_ORDER_RELEASE);
+    // [状態] - 相手から抑制の要求 (期限 9999) と送出上限 5 を受けている状態にする。
+    // Pre-Assert
+    // Act
+    const int adopted_same = thread_recv_session_adopt(&slot, &same_session.packet);
+    // [手順] - 同じセッション (識別子 42) のパケットで呼び出す。
+    uint64_t limit_after_same = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    const int adopted_new = thread_recv_session_adopt(&slot, &new_session.packet);
+    // [手順] - 開始時刻が同じで識別子が大きい新しいセッション (識別子 43) のパケットで呼び出す。
+    // Assert
+    EXPECT_EQ(1, adopted_same); // [確認_正常系] - 同じセッションを受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 5U, limit_after_same); // [確認_正常系] - 同じセッションでは送出上限を保つこと。
+    EXPECT_EQ(1, adopted_new);  // [確認_正常系] - 新しいセッションを採用すること。
+    EXPECT_EQ(0U, cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 新しいセッションの採用で送出上限を取り消すこと。
+    EXPECT_EQ(0U, cplat_atomic_load_u64(&ctx.flow_request_expire_ms, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 新しいセッションの採用で抑制の要求を取り消すこと。
+}
+// [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]

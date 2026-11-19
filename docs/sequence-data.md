@@ -404,7 +404,8 @@ Figure: RAW モード - PING ギャップ検出
 ## フロー制御による抑制と解除
 
 受信側の構成で `flow_control_capacity` を指定した場合の動作です。  
-`multicast` と `broadcast` の送信者は、要求中の受信者の割合または台数が構成の条件を満たす場合に抑制します。
+受信者は、すべてのフロー制御パケットに送出上限 (次に受信する通番 + 許可数) を載せ、送信者は送出上限に達したら自分で止まります。  
+`multicast` と `broadcast` の送信者は、「止める状態」(要求中、または送出上限に達している) の受信者の割合または台数が構成の条件を満たす場合に抑制します。
 
 ```mermaid
 sequenceDiagram
@@ -413,10 +414,17 @@ sequenceDiagram
     participant R as 受信者
     participant RApp as 受信側の利用側
 
+    Note over R: 送信者を新しい通信として採用した
+    R->>S: FLOW_CONTROL (状態 = 解除、最初の送出上限)
+    Note over S: 送出上限を保持する
     SApp->>S: potr_service_send()
     S->>R: DATA
+    Note over R: 前回知らせた範囲の半分以上を受信し<br>占有量が解除のしきい値を下回っている
+    R->>S: FLOW_CONTROL (状態 = 解除、送出上限の更新)
+    Note over S: 送出上限を上書きする
+    S->>R: DATA
     Note over R: 通知キューの占有量が<br>要求のしきい値 (既定 80%) を超えた
-    R->>S: FLOW_CONTROL (状態 = 抑制の要求)
+    R->>S: FLOW_CONTROL (状態 = 抑制の要求、送出上限)
     Note over S: 新しい DATA の送出を止める<br>再送、PING、FIN は継続する
     SApp->>S: potr_service_send()
     Note over S: 送信キューに空きがあれば受け付ける<br>空きがなければ POTR_ERR_FULL<br>(POTR_SEND_BLOCKING ありは空きを待つ)
@@ -425,15 +433,38 @@ sequenceDiagram
         R->>S: FLOW_CONTROL (状態 = 抑制の要求)
         Note over S: 要求の期限を<br>受信時刻 + 有効期限 (既定 1,000 ms) へ更新
     end
-    Note over R: コールバックからの復帰で占有量が<br>解除のしきい値 (既定 60%) を下回った
-    R->>S: FLOW_CONTROL (状態 = 解除)
-    Note over S: 送出を再開する
+    Note over R: コールバックからの復帰で占有量が<br>解除のしきい値 (既定 50%) を下回った
+    R->>S: FLOW_CONTROL (状態 = 解除、新しい送出上限)
+    Note over S: 送出上限まで送出を再開する
     S->>R: DATA
 ```
 
 Figure: フロー制御による抑制と解除のシーケンス
 
 解除が失われた場合と、抑制を要求した受信者が停止した場合は、要求の期限が過ぎた時点で送信者が送出を再開します。
+
+送信者が送出上限まで送り終えたときの動作は、次のとおりです。
+
+```mermaid
+sequenceDiagram
+    participant S as 送信者
+    participant R as 受信者
+
+    S->>R: DATA (送出上限の直前の通番まで)
+    Note over S: 次に割り当てる通番が送出上限に達した<br>新しい DATA の送出を止める
+    alt 占有量が解除のしきい値を下回っている
+        R->>S: FLOW_CONTROL (状態 = 解除、送出上限の更新)
+        Note over S: 新しい送出上限まで送出を再開する
+    else 占有量が解除のしきい値以上である
+        R->>S: FLOW_CONTROL (状態 = 抑制の要求、送出上限)
+        Note over R: 要求中へ遷移し、再送周期ごとに再送する
+    end
+    opt 有効期限の間、フロー制御パケットが届かない
+        Note over S: 止まった時点から有効期限 (既定 1,000 ms) が経過したら<br>送出上限を破棄して送出を再開する
+    end
+```
+
+Figure: 送出上限まで送り終えたときのシーケンス
 
 ## フロー制御の容量超過による切断と復帰
 

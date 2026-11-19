@@ -756,6 +756,35 @@ TEST_F(potrSendThreadTcpBatchTest, packets_over_cap_split_into_next_write)
 }
 // [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]
 
+// 送出上限までに送出できる数 (3 個) が上限 (16 個) より少ない場合に、まとめ送りをその数で区切ることの確認
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.SetUp]
+TEST_F(potrSendThreadTcpBatchTest, batch_is_limited_by_send_limit_allowance)
+{
+    // Arrange
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage]
+    addMessage(8U * (1400U - POTR_PAYLOAD_ELEM_HDR_SIZE), 0x58U); // [状態] - 8 個の断片に分かれるメッセージを登録する。
+    ON_CALL(mock_porter, potr_internal_flow_control_suppressed(&ctx, _, _, _))
+        .WillByDefault(DoAll(SetArgPointee<3>(3U), Return(0)));
+    // [状態] - 抑制せず、送出上限までに送出できる数を 3 個として返す。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(8);
+    // [Pre-Assert確認_正常系] - 取り出した 8 件を成功として完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(3U, writes.size());   // [確認_正常系] - 3 回の送信呼び出しに分かれること。
+    EXPECT_EQ(3U, split_packets(writes[0]).size()); // [確認_正常系] - 1 回目は送出できる数の 3 個であること。
+    EXPECT_EQ(3U, split_packets(writes[1]).size()); // [確認_正常系] - 2 回目も 3 個であること。
+    EXPECT_EQ(2U, split_packets(writes[2]).size()); // [確認_正常系] - 3 回目は残りの 2 個であること。
+    EXPECT_EQ(8U, ctx.send_window.next_seq);        // [確認_正常系] - 8 個の DATA の通番を消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadTcpBatchTest.TearDown]
+
 // 1 パケットだけの場合は、従来の手順 (crypto_buf への封緘) で書き込むことの確認
 // [サブ手順参照 名前=potrSendThreadTcpBatchTest.SetUp]
 TEST_F(potrSendThreadTcpBatchTest, single_packet_uses_single_packet_path)
@@ -1135,11 +1164,11 @@ TEST(potrSendThreadTest, suppressed_sender_waits_until_resume_before_sending)
     // [Pre-Assert手順] - 1 回目はエントリを返し、以降は停止を返す。
     {
         InSequence sequence;
-        EXPECT_CALL(mock_porter, potr_internal_flow_control_suppressed(&ctx, _, _))
+        EXPECT_CALL(mock_porter, potr_internal_flow_control_suppressed(&ctx, _, _, _))
             .Times(2)
             .WillRepeatedly(DoAll(SetArgPointee<2>(1), Return(1)));
         // [Pre-Assert手順] - 抑制の判定の 1 回目と 2 回目は、抑制中を返す。
-        EXPECT_CALL(mock_porter, potr_internal_flow_control_suppressed(&ctx, _, _)).WillOnce(Return(0));
+        EXPECT_CALL(mock_porter, potr_internal_flow_control_suppressed(&ctx, _, _, _)).WillOnce(Return(0));
         // [Pre-Assert手順] - 抑制の判定の 3 回目は、抑制なしを返す。
         EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue))
             .WillOnce(Invoke([&](potr_internal_send_queue *)

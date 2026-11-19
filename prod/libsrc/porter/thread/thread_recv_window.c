@@ -340,6 +340,13 @@ static int slot_drain_recv_window(thread_recv_slot *slot)
             slot_flow_overflow_disconnect(slot);
             return 1;
         }
+
+        /*
+         * 順序どおりに受信した DATA パケットを 1 個処理するたびに、送出上限の更新と、
+         * 送出上限まで送り終えた相手への通知を判定する。フラグメントの途中のパケットも対象とする。
+         */
+        potr_internal_flow_control_on_received(ctx, slot->peer_id, *slot->peer_session_id, slot->peer_session_ts,
+                                               pop_pkt.seq_num + 1U, 1);
     }
 
     {

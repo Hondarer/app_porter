@@ -117,7 +117,8 @@ static int push_message(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
 #define SEND_FLOW_RECHECK_MS 50
 
 /*
- * N:1 モードで、宛先のピアが抑制中かどうかを返す。deferred には、送信スレッドが保留しているエントリ数を返す。
+ * N:1 モードで、宛先のピアが抑制中 (有効な抑制の要求がある、または受けた送出上限に達している) かどうかを返す。
+ * deferred には、送信スレッドが保留しているエントリ数を返す。
  * 時刻を取得できない場合は期限を判定できないため、抑制中でないものとして扱う。
  */
 static int peer_is_suppressed(potr_context *ctx, potr_peer_id peer_id, int *deferred)

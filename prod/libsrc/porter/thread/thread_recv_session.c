@@ -34,6 +34,25 @@ static void slot_clear_pending_fin(thread_recv_slot *slot)
     *slot->fin_target_seq = 0;
 }
 
+/*
+ * 新しいセッションを採用したため、その相手から受けていた抑制の要求と送出上限を取り消す。
+ * 送出上限は相手の受信の位置に基づく値であり、別のセッションには当てはまらないためである。
+ * N:1 モードのピアは、呼び出し元が peers_mutex を保持している。
+ */
+static void slot_forget_flow_control(thread_recv_slot *slot)
+{
+    if (slot->peer != NULL)
+    {
+        slot->peer->flow_request_expire_ms = 0U;
+        slot->peer->flow_send_limit = 0U;
+        slot->peer->flow_limit_stalled_ms = 0U;
+        return;
+    }
+
+    cplat_atomic_store_u64(&slot->ctx->flow_request_expire_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&slot->ctx->flow_send_limit, 0U, CPLAT_MEMORY_ORDER_RELEASE);
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
@@ -65,6 +84,7 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
         *slot->peer_session_known = 1;
         *slot->reorder_pending = 0;
         slot_clear_pending_fin(slot);
+        slot_forget_flow_control(slot);
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "recv[service_id=%" PRId64 "]: new session (first contact), new_id=%u seq=%u",
                    ctx->service.service_id, pkt->session_id, (unsigned)pkt->seq_num);
@@ -141,6 +161,7 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
     *slot->peer_session_ts = pkt_session_ts;
     *slot->reorder_pending = 0;
     slot_clear_pending_fin(slot);
+    slot_forget_flow_control(slot);
     /*
      * サービスまたはピアを作る時点で同じ window_size と max_payload で確保したウィンドウの状態をリセットするだけで
      * 再確保が起きないため、戻り値は明示的に破棄する。

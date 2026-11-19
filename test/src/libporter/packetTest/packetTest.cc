@@ -244,25 +244,31 @@ TEST_F(packetTest, rejects_protocol_version_two)
     EXPECT_EQ(POTR_ERR_PROTOCOL, version_ret); // [確認_異常系] - 版 2 のパケットを拒否すること。
 }
 
-// フロー制御パケットの構築で、種別、状態のペイロード、通番が設定されることの確認
-TEST_F(packetTest, build_flow_control_sets_flag_and_state_payload)
+// フロー制御パケットの構築で、種別、状態と送出上限のペイロード、通番が設定されることの確認
+TEST_F(packetTest, build_flow_control_sets_flag_state_and_send_limit)
 {
     // Arrange
     potr_packet packet;
     potr_internal_packet_session_hdr session = {};
-    const uint8_t state = POTR_FLOW_CONTROL_STATE_SUPPRESS; // [状態] - 状態を「抑制の要求」とする。
+    uint8_t payload[POTR_FLOW_CONTROL_PAYLOAD_SIZE];
+    const uint8_t expected_payload[POTR_FLOW_CONTROL_PAYLOAD_SIZE] = {(uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 0x12U,
+                                                                       0x34U, 0x56U, 0x78U};
     session.service_id = 42;
     session.session_id = 7U;
-    memset(&packet, 0xFF, sizeof(packet)); // [状態] - 出力領域を非ゼロにする。
+    memset(&packet, 0xFF, sizeof(packet));   // [状態] - 出力領域を非ゼロにする。
+    memset(payload, 0xEE, sizeof(payload)); // [状態] - ペイロードの格納先を非ゼロにする。
     // Pre-Assert
     // Act
-    int actual_ret = potr_internal_packet_build_flow_control(&packet, &session, &state);
-    // [手順] - potr_internal_packet_build_flow_control() を呼び出す。
+    int actual_ret = potr_internal_packet_build_flow_control(&packet, &session, payload,
+                                                             (uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 0x12345678U);
+    // [手順] - 状態を「抑制の要求」、送出上限を 0x12345678 として potr_internal_packet_build_flow_control() を呼び出す。
     // Assert
     ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 戻り値が POTR_OK であること。
     EXPECT_EQ(htons(POTR_FLAG_FLOW_CONTROL), packet.flags); // [確認_正常系] - flags が POTR_FLAG_FLOW_CONTROL であること。
-    EXPECT_EQ(htons(1U), packet.payload_len); // [確認_正常系] - ペイロード長が 1 バイトであること。
-    EXPECT_EQ(&state, packet.payload); // [確認_正常系] - ペイロードが状態を指すこと。
+    EXPECT_EQ(htons(5U), packet.payload_len); // [確認_正常系] - ペイロード長が 5 バイトであること。
+    EXPECT_EQ(payload, packet.payload); // [確認_正常系] - ペイロードが格納先を指すこと。
+    EXPECT_EQ(0, memcmp(expected_payload, payload, sizeof(payload)));
+    // [確認_正常系] - ペイロードが状態 1 バイトと、ネットワーク バイト オーダーの送出上限 4 バイトであること。
     EXPECT_EQ(0U, packet.seq_num); // [確認_正常系] - seq_num が 0 であること。
     EXPECT_EQ(0U, packet.ack_num); // [確認_正常系] - ack_num が 0 であること。
     EXPECT_EQ(htonl(POTR_PROTOCOL_VERSION), packet.protocol_version);
@@ -270,24 +276,95 @@ TEST_F(packetTest, build_flow_control_sets_flag_and_state_payload)
     EXPECT_EQ(0U, packet.tx_counter); // [確認_正常系] - 送出通番が 0 であること。
 }
 
-// フロー制御パケットの構築が、定義されていない状態の値と NULL を拒否することの確認
+// フロー制御パケットの構築が、定義されていない状態の値と NULL の格納先を拒否することの確認
 TEST_F(packetTest, build_flow_control_rejects_undefined_state)
 {
     // Arrange
     potr_packet packet = {};
     potr_internal_packet_session_hdr session = {};
-    const uint8_t undefined_state = 0U; // [状態] - 状態を、定義されていない値 0 とする。
-    const uint8_t resume_state = POTR_FLOW_CONTROL_STATE_RESUME;
+    uint8_t payload[POTR_FLOW_CONTROL_PAYLOAD_SIZE] = {};
     // Pre-Assert
     // Act
-    int undefined_ret = potr_internal_packet_build_flow_control(&packet, &session, &undefined_state);
-    int null_ret = potr_internal_packet_build_flow_control(&packet, &session, nullptr);
-    int resume_ret = potr_internal_packet_build_flow_control(&packet, &session, &resume_state);
-    // [手順] - 状態が 0、NULL、「解除」の場合でそれぞれ構築する。
+    int undefined_zero_ret = potr_internal_packet_build_flow_control(&packet, &session, payload, 0U, 0U);
+    int undefined_three_ret = potr_internal_packet_build_flow_control(&packet, &session, payload, 3U, 0U);
+    int null_ret = potr_internal_packet_build_flow_control(&packet, &session, nullptr,
+                                                           (uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, 0U);
+    int resume_ret = potr_internal_packet_build_flow_control(&packet, &session, payload,
+                                                             (uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, 0xFFFFFFFFU);
+    // [手順] - 状態が 0、3、格納先が NULL、「解除」(送出上限 0xFFFFFFFF) の場合でそれぞれ構築する。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, undefined_ret); // [確認_異常系] - 状態 0 を拒否すること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, null_ret); // [確認_異常系] - 状態が NULL の場合を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, undefined_zero_ret);  // [確認_異常系] - 状態 0 を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, undefined_three_ret); // [確認_異常系] - 状態 3 を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, null_ret); // [確認_異常系] - 格納先が NULL の場合を拒否すること。
     EXPECT_EQ(POTR_OK, resume_ret); // [確認_正常系] - 状態「解除」の戻り値が POTR_OK であること。
+    EXPECT_EQ((uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, payload[0]); // [確認_正常系] - 先頭が状態「解除」であること。
+    EXPECT_EQ(0xFFU, payload[4]); // [確認_正常系] - 送出上限の最下位バイトが格納されること。
+}
+
+// 開封済みのフロー制御パケットから状態と送出上限を取り出し、構築と往復で一致することの確認
+TEST_F(packetTest, flow_control_payload_decode_round_trip)
+{
+    // Arrange
+    potr_packet built;
+    potr_packet received;
+    potr_internal_packet_session_hdr session = {};
+    uint8_t payload[POTR_FLOW_CONTROL_PAYLOAD_SIZE];
+    uint8_t state = 0U;
+    uint32_t send_limit = 0U;
+    ASSERT_EQ(POTR_OK, potr_internal_packet_build_flow_control(&built, &session, payload,
+                                                               (uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, 0xFFFFFFFEU));
+    // [状態] - 状態「解除」、送出上限 0xFFFFFFFE (通番の循環の直前) でパケットを構築する。
+    // [状態確認] - 構築の戻り値が POTR_OK であること。
+    memset(&received, 0, sizeof(received));
+    received.payload = built.payload;
+    received.payload_len = ntohs(built.payload_len); // [状態] - 開封後と同じく、ペイロード長をホスト バイト オーダーにする。
+    // Pre-Assert
+    // Act
+    int actual_ret = flow_control_payload_decode(&received, &state, &send_limit); // [手順] - 状態と送出上限を取り出す。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 戻り値が POTR_OK であること。
+    EXPECT_EQ((uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, state); // [確認_正常系] - 状態が「解除」であること。
+    EXPECT_EQ(0xFFFFFFFEU, send_limit); // [確認_正常系] - 送出上限が構築した値と一致すること。
+}
+
+// 長さが 5 バイトでないペイロード、不正な状態、0 でない通番、NULL のペイロードを破棄することの確認
+TEST_F(packetTest, flow_control_payload_decode_rejects_malformed)
+{
+    // Arrange
+    const uint8_t valid[6] = {(uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 0U, 0U, 0U, 1U, 0U};
+    const uint8_t state_zero[5] = {0U, 0U, 0U, 0U, 1U};
+    const uint8_t state_three[5] = {3U, 0U, 0U, 0U, 1U};
+    potr_packet cases[7];
+    int actual_rets[7] = {};
+    uint8_t state = 0U;
+    uint32_t send_limit = 0U;
+    for (size_t i = 0; i < 7; i++)
+    {
+        memset(&cases[i], 0, sizeof(cases[i]));
+        cases[i].payload = valid;
+        cases[i].payload_len = 5U;
+    }
+    cases[0].payload_len = 1U;      // 版 3 の以前の長さ (1 バイト)
+    cases[1].payload_len = 6U;      // 長すぎる
+    cases[2].payload = state_zero;  // 状態が 0
+    cases[3].payload = state_three; // 状態が 3
+    cases[4].seq_num = 1U;          // seq_num が 0 でない
+    cases[5].ack_num = 1U;          // ack_num が 0 でない
+    cases[6].payload = nullptr;     // ペイロードが NULL
+    // [状態] - 7 種類の不正なパケットを用意する (ループ 7 回)。
+    // Pre-Assert
+    // Act
+    for (size_t i = 0; i < 7; i++)
+    {
+        actual_rets[i] = flow_control_payload_decode(&cases[i], &state, &send_limit);
+    }
+    // [手順] - 7 種類のパケットで状態と送出上限を取り出し、戻り値を記録する。
+    // Assert
+    for (size_t i = 0; i < 7; i++)
+    {
+        EXPECT_EQ(POTR_ERR_PROTOCOL, actual_rets[i]);
+        // [確認_異常系] - 戻り値が POTR_ERR_PROTOCOL であること。(確認 7 回)
+    }
 }
 
 // parse が版 1 のヘッダーと、版 1 を指定した十分な長さのパケットを拒否することの確認

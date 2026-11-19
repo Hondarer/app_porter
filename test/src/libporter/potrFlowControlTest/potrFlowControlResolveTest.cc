@@ -37,7 +37,7 @@ class potrFlowControlResolveTest : public Test
         memset(&cfg, 0xAA, sizeof(cfg));
         svc.type = POTR_TYPE_UNICAST;
         svc.service_id = 1;
-        glb.max_message_size = 65535U;
+        glb.max_message_size = 4096U; // [状態] - 余裕の検査に使う max_message_size を 4096 にする。
     }
     // [サブ手順終了]
 
@@ -105,7 +105,7 @@ TEST_F(potrFlowControlResolveTest, service_values_take_precedence)
     glb.flow_control_request_lifetime_ms = 2000U;
     glb.flow_control_receiver_percent = 25U;
     glb.flow_control_receiver_count = 3U;
-    svc.flow_control_capacity = 80000U;
+    svc.flow_control_capacity = 100000U;
     svc.flow_control_suppress_percent = 95U;
     svc.flow_control_resume_percent = 40U;
     svc.flow_control_request_interval_ms = 100U;
@@ -118,7 +118,7 @@ TEST_F(potrFlowControlResolveTest, service_values_take_precedence)
     int actual_ret = resolve(); // [手順] - resolve を呼び出す。
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret);               // [確認_正常系] - 戻り値が POTR_OK であること。
-    EXPECT_EQ(80000U, cfg.capacity);              // [確認_正常系] - 容量がサービスの値であること。
+    EXPECT_EQ(100000U, cfg.capacity);             // [確認_正常系] - 容量がサービスの値であること。
     EXPECT_EQ(95U, cfg.suppress_percent);         // [確認_正常系] - 要求のしきい値がサービスの値であること。
     EXPECT_EQ(40U, cfg.resume_percent);           // [確認_正常系] - 解除のしきい値がサービスの値であること。
     EXPECT_EQ(100U, cfg.request_interval_ms);     // [確認_正常系] - 再送周期がサービスの値であること。
@@ -197,7 +197,7 @@ TEST_F(potrFlowControlResolveTest, global_disabled_is_invalid)
     for (size_t i = 0; i < 7; i++)
     {
         memset(&glb, 0, sizeof(glb));
-        glb.max_message_size = 65535U;
+        glb.max_message_size = 4096U;
         glb.*(fields[i]) = POTR_FLOW_CONTROL_DISABLED;
         actual_rets[i] = resolve();
     }
@@ -274,21 +274,60 @@ TEST_F(potrFlowControlResolveTest, receiver_percent_upper_bound)
     EXPECT_EQ(POTR_OK, actual_ret_max);                    // [確認_正常系] - 割合 100 で POTR_OK であること。
 }
 
-// 容量が max_message_size 未満の場合に、引数エラーになることの確認
+// 要求のしきい値から容量までの余裕が max_message_size 未満の場合に、引数エラーになることの確認
 // [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
-TEST_F(potrFlowControlResolveTest, capacity_must_hold_max_message)
+TEST_F(potrFlowControlResolveTest, margin_must_hold_max_message)
+{
+    // Arrange
+    // [状態] - max_message_size を 4096 とし、要求のしきい値は既定の 80 [%] とする。
+    // Pre-Assert
+    // Act
+    svc.flow_control_capacity = 20474U;
+    int actual_ret_smaller = resolve();
+    // [手順] - 余裕が 20474 − 16379 = 4095 (max_message_size より 1 小さい) 容量で resolve を呼び出す。
+    svc.flow_control_capacity = 20480U;
+    int actual_ret_equal = resolve();
+    uint32_t capacity_equal = cfg.capacity;
+    // [手順] - 余裕が 20480 − 16384 = 4096 (max_message_size と同じ) 容量で resolve を呼び出す。
+    svc.flow_control_suppress_percent = 100U;
+    svc.flow_control_resume_percent = 50U;
+    svc.flow_control_capacity = 1000000U;
+    int actual_ret_no_margin = resolve();
+    // [手順] - 要求のしきい値を 100 [%] (余裕 0) にして、十分に大きい容量で resolve を呼び出す。
+    svc.flow_control_suppress_percent = 80U;
+    svc.flow_control_capacity = 0xFFFFFFFEU;
+    int actual_ret_large = resolve();
+    // [手順] - 容量を 0xFFFFFFFE (容量 × 要求のしきい値が 32 ビットを超える) にして resolve を呼び出す。
+    // Assert
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_smaller); // [確認_異常系] - 余裕が 1 小さい容量で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_OK, actual_ret_equal);                     // [確認_正常系] - 余裕が同じ容量で POTR_OK であること。
+    EXPECT_EQ(20480U, capacity_equal);                        // [確認_正常系] - 容量が 20480 であること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_no_margin); // [確認_異常系] - 余裕が 0 の構成で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_OK, actual_ret_large); // [確認_正常系] - 桁あふれせずに余裕を求め、POTR_OK であること。
+}
+
+// 再送周期と有効期限が、待機時間の設定値の上限 (POTR_WAIT_MS_MAX) を超える場合に、引数エラーになることの確認
+// [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
+TEST_F(potrFlowControlResolveTest, interval_and_lifetime_upper_bound)
 {
     // Arrange
     // Pre-Assert
     // Act
-    svc.flow_control_capacity = 65534U;
-    int actual_ret_smaller = resolve(); // [手順] - max_message_size (65535) より 1 小さい容量で resolve を呼び出す。
-    svc.flow_control_capacity = 65535U;
-    int actual_ret_equal = resolve(); // [手順] - max_message_size と同じ容量で resolve を呼び出す。
+    svc.flow_control_request_interval_ms = POTR_WAIT_MS_MAX - 1U;
+    svc.flow_control_request_lifetime_ms = POTR_WAIT_MS_MAX;
+    int actual_ret_max = resolve();
+    // [手順] - 再送周期を上限 − 1、有効期限を上限ちょうどにして resolve を呼び出す。
+    svc.flow_control_request_lifetime_ms = POTR_WAIT_MS_MAX + 1U;
+    int actual_ret_lifetime_over = resolve();
+    // [手順] - 有効期限を上限 + 1 にして resolve を呼び出す。
+    svc.flow_control_request_interval_ms = POTR_WAIT_MS_MAX + 1U;
+    svc.flow_control_request_lifetime_ms = POTR_WAIT_MS_MAX + 2U;
+    int actual_ret_interval_over = resolve();
+    // [手順] - 再送周期を上限 + 1、有効期限を上限 + 2 にして resolve を呼び出す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_smaller); // [確認_異常系] - 小さい容量で POTR_ERR_INVALID_ARGUMENT であること。
-    EXPECT_EQ(POTR_OK, actual_ret_equal);                     // [確認_正常系] - 同じ容量で POTR_OK であること。
-    EXPECT_EQ(65535U, cfg.capacity);                          // [確認_正常系] - 容量が 65535 であること。
+    EXPECT_EQ(POTR_OK, actual_ret_max);                             // [確認_正常系] - 上限ちょうどで POTR_OK であること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_lifetime_over); // [確認_異常系] - 有効期限の超過で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_interval_over); // [確認_異常系] - 再送周期の超過で POTR_ERR_INVALID_ARGUMENT であること。
 }
 
 // マルチキャストとブロードキャストの受信者で、health_interval_ms が 0 の場合に引数エラーになることの確認

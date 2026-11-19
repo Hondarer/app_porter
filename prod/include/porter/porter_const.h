@@ -73,7 +73,7 @@
 #define POTR_FLAG_KEY \
     0x0400U /**< 一対多通信のグループ鍵を配布するパケット。受信者の証明書を検証した後、受信者用の鍵でグループ鍵を暗号化して送ります。 */
 #define POTR_FLAG_FLOW_CONTROL \
-    0x0800U /**< フロー制御パケット。受信側が送信側へ、抑制の要求または解除を伝えます。送出する側自身のセッション識別子を使い、seq_num と ack_num は 0。ペイロードは 1 [byte] の状態 (POTR_FLOW_CONTROL_STATE_*)。暗号化有効時は、同じ向きの受信報告または PING と同じ方式で保護します。 */
+    0x0800U /**< フロー制御パケット。受信側が送信側へ、抑制の要求または解除と、送出上限 (送信側がこの通番以上の新しい DATA を送出しない通番) を伝えます。送出する側自身のセッション識別子を使い、seq_num と ack_num は 0。ペイロードは 5 [byte] で、1 [byte] の状態 (POTR_FLOW_CONTROL_STATE_*) と 4 [byte] の送出上限 (ネットワーク バイト オーダー)。暗号化有効時は、同じ向きの受信報告または PING と同じ方式で保護します。 */
 
 /** @} */
 
@@ -214,7 +214,7 @@
     0xFFFFFFFFU /**< サービス定義で「無効」を表す専用の値。flow_control_capacity、flow_control_receiver_percent、flow_control_receiver_count に指定できます。設定ファイルでは -1 と記載します。 */
 #define POTR_DEFAULT_FLOW_CONTROL_CAPACITY 0U /**< 通知キューの容量のデフォルト [byte]。0 = フロー制御は無効。 */
 #define POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT 80U /**< 抑制を要求するしきい値のデフォルト [%]。 */
-#define POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT   60U /**< 解除するしきい値のデフォルト [%]。 */
+#define POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT   50U /**< 解除するしきい値のデフォルト [%]。 */
 #define POTR_DEFAULT_FLOW_CONTROL_REQUEST_INTERVAL_MS \
     200U /**< 抑制の要求の再送周期のデフォルト [ms]。 */
 #define POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS \

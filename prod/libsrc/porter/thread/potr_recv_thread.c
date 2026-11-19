@@ -699,6 +699,13 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
                         return POTR_ERR_PROTOCOL;
                     }
 
+                    /*
+                     * 順序どおりに受信した DATA パケットを 1 個処理するたびに、送出上限の更新と、
+                     * 送出上限まで送り終えた相手への通知を判定する。呼び出し元が tcp_recv_mutex を保持している。
+                     */
+                    potr_internal_flow_control_on_received(ctx, POTR_PEER_NA, *svc_slot->peer_session_id,
+                                                           svc_slot->peer_session_ts, out.seq_num + 1U, 1);
+
                     cplat_local_lock_lock(ctx->recv_window_mutex);
                 }
 

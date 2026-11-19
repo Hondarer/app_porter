@@ -173,9 +173,8 @@ void potr_internal_send_queue_wait_flow(potr_internal_send_queue *q, uint64_t *g
 
     if (q->failure == POTR_OK && q->flow_generation == *generation)
     {
-        (void)cplat_condvar_timed_wait(
-            q->flow_changed, q->mutex,
-            timeout_ms); /* 通知と時間切れのどちらで戻っても、呼び出し元が抑制の状態を確認し直すため、戻り値は明示的に破棄する */
+        /* 通知と時間切れのどちらで戻っても、呼び出し元が抑制の状態を確認し直すため、戻り値は明示的に破棄する。 */
+        (void)cplat_condvar_timed_wait(q->flow_changed, q->mutex, timeout_ms);
     }
 
     *generation = q->flow_generation;

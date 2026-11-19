@@ -220,6 +220,12 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
 
     if ((pkt->flags & POTR_FLAG_PING) != 0)
     {
+        /*
+         * 新しい通信として採用した相手へ、まだ知らせていない送出上限を、最初に送出できる時点で知らせる。
+         * 送出上限の更新の判定は、DATA パケットの処理のたびに受信ウィンドウの取り出しで行う。
+         */
+        potr_internal_flow_control_on_received(ctx, slot->peer_id, *slot->peer_session_id, slot->peer_session_ts,
+                                               slot->recv_window->next_seq, 0);
         return dispatch_ping(slot, pkt, path_idx);
     }
 

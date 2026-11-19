@@ -45,12 +45,6 @@
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
 
-/**
- * 待機の関数へ int で渡す設定値の上限 [ms] (INT_MAX - 1)。
- * INT_MAX は CPLAT_WAIT_FOREVER と同じ値で無期限の待機になるため、上限に含めない。
- */
-#define POTR_WAIT_MS_MAX 2147483646U
-
 /** tcp_health_timeout_ms の上限 [ms]。POTR_TCP_FIRST_PKT_TIMEOUT_SCALE 倍しても POTR_WAIT_MS_MAX を超えない値。 */
 #define POTR_TCP_HEALTH_TIMEOUT_MS_MAX (POTR_WAIT_MS_MAX / POTR_TCP_FIRST_PKT_TIMEOUT_SCALE)
 

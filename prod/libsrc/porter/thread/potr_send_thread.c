@@ -727,14 +727,23 @@ static void pack_queued_entries(potr_context *ctx, uint8_t *packed_buf, size_t *
  * 場合も待たない。同じメッセージの断片は送信 API が push_mutex を保持したまま続けて登録するため、ほとんどの
  * 場合は取り出す時点でキューにそろっており、待ちを加えても処理件数は変わらないためである。
  * 残りの断片は、次の周回で同じ規則により送る。
+ * 外側パケットの数は、相手から受けた送出上限までに送出できる数 (allowance) を超えない。
+ * 送出上限は送出の前に 1 回だけ判定するため、まとめ送りで送出上限を超えて送り続けないようにするためである。
  * *n_dequeued には取り出したエントリ数を加算する。戻り値は tcp_flush_packets() の結果である。
  */
-static int send_tcp_batch(potr_context *ctx, const potr_internal_payload_elem *first, int *n_dequeued)
+static int send_tcp_batch(potr_context *ctx, const potr_internal_payload_elem *first, int *n_dequeued,
+                          uint32_t allowance)
 {
     size_t payload_lens[POTR_TCP_BATCH_MAX_PACKETS];
     size_t stride = (size_t)ctx->global.max_payload;
     size_t n_packets = 0U;
+    size_t batch_cap = ctx->tcp_batch_cap;
     potr_internal_payload_elem cur = *first;
+
+    if ((size_t)allowance < batch_cap)
+    {
+        batch_cap = (size_t)allowance;
+    }
 
     for (;;)
     {
@@ -748,7 +757,7 @@ static int send_tcp_batch(potr_context *ctx, const potr_internal_payload_elem *f
         }
         payload_lens[n_packets++] = packed_len;
 
-        if (n_packets >= ctx->tcp_batch_cap ||
+        if (n_packets >= batch_cap ||
             potr_internal_send_queue_try_pop(&ctx->send_queue, &cur) != POTR_OK)
         {
             break;
@@ -922,8 +931,8 @@ static void flush_deferred_entries(potr_context *ctx, int drop_all)
             {
                 int blocked;
 
-                (void)peer_send_deferred(ctx, node->peer_id,
-                                         &blocked); /* 保留の有無ではなく抑制の状態だけを使うため、戻り値は明示的に破棄する */
+                /* 保留の有無ではなく抑制の状態 (blocked) だけを使うため、戻り値は明示的に破棄する。 */
+                (void)peer_send_deferred(ctx, node->peer_id, &blocked);
                 if (blocked != 0)
                 {
                     /* 見送るピアの記録が上限に達した場合は、順序を保てないため、残りを次の走査へ回す。 */
@@ -1016,13 +1025,15 @@ static int pop_peer_mode(potr_context *ctx, potr_internal_payload_elem *first)
 }
 
 /*
- * 相手からの抑制の要求が有効な間、新しい DATA の送出を待つ。
- * 取り出し済みの先頭エントリは、解除、要求の期限の経過、close の開始のいずれかの後に送出する。
+ * 相手が「止める状態」(有効な抑制の要求がある、または送出上限に達している) の間、新しい DATA の送出を待つ。
+ * 取り出し済みの先頭エントリは、解除、要求の期限の経過、送出上限の更新または破棄、close の開始のいずれかの後に送出する。
  * 再送、PING、FIN などはほかのスレッドが送出するため、抑制中も継続する。
+ * 戻り値は、送出上限に達するまでに送出できる DATA のパケット数である (上限がない場合は UINT32_MAX)。
  */
-static void wait_flow_resume(potr_context *ctx)
+static uint32_t wait_flow_resume(potr_context *ctx)
 {
     uint64_t generation = 0U;
+    uint32_t allowance = UINT32_MAX;
     int announced = 0;
 
     for (;;)
@@ -1030,13 +1041,15 @@ static void wait_flow_resume(potr_context *ctx)
         uint64_t now_ms;
         int wait_ms = 0;
 
+        allowance = UINT32_MAX;
+
         /* 時刻を取得できない場合は期限を判定できないため、抑制せずに送出する。 */
         if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
         {
             break;
         }
 
-        if (potr_internal_flow_control_suppressed(ctx, now_ms, &wait_ms) == 0 ||
+        if (potr_internal_flow_control_suppressed(ctx, now_ms, &wait_ms, &allowance) == 0 ||
             cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0 ||
             cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) != POTR_OK)
         {
@@ -1058,12 +1071,15 @@ static void wait_flow_resume(potr_context *ctx)
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "sender[service_id=%" PRId64 "]: flow control resumed DATA",
                    ctx->service.service_id);
     }
+
+    return allowance;
 }
 
 static void send_thread_func(void *arg)
 {
     potr_context *ctx = (potr_context *)arg;
     potr_internal_payload_elem first;
+    uint32_t allowance = UINT32_MAX;
 
     while (cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
@@ -1096,8 +1112,8 @@ static void send_thread_func(void *arg)
             break;
         }
 
-        /* 相手が抑制を要求している間は、新しい DATA を送出せずに待つ。 */
-        wait_flow_resume(ctx);
+        /* 相手が「止める状態」の間は、新しい DATA を送出せずに待つ。 */
+        allowance = wait_flow_resume(ctx);
 
         /* パッキングを試行する。 */
         {
@@ -1114,7 +1130,7 @@ static void send_thread_func(void *arg)
             if (ctx->tcp_batch_cap >= 2U &&
                 ((first.flags & POTR_FLAG_MORE_FRAG) != 0U || ctx->service.pack_wait_ms == 0U))
             {
-                flush_result = send_tcp_batch(ctx, &first, &n_dequeued);
+                flush_result = send_tcp_batch(ctx, &first, &n_dequeued, allowance);
                 goto complete_packed;
             }
 

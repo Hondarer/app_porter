@@ -45,6 +45,12 @@
 #include <porter/security/certificate.h>
 #include <porter/potr_flow_control.h>
 
+/**
+ * 待機の関数へ int で渡す設定値の上限 [ms] (INT_MAX - 1)。
+ * INT_MAX は CPLAT_WAIT_FOREVER と同じ値で無期限の待機になるため、上限に含めない。
+ */
+#define POTR_WAIT_MS_MAX 2147483646U
+
 /** TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
 static inline int is_tcp_type(potr_type t)
 {
@@ -196,6 +202,9 @@ typedef struct potr_internal_peer_context
         [POTR_MAX_PATH];         /**< 相手端から PING ペイロードで受信した各パス受信状態 (POTR_PING_STATE_*)。 */
     cplat_timespec last_recv_ts; /**< 最終受信時刻 (CLOCK_MONOTONIC)。tv_sec == 0 は未受信。 */
     uint64_t flow_request_expire_ms; /**< このピアから受けた抑制の要求の期限 [ms]。0 = 要求なし。peers_mutex で保護。 */
+    uint64_t flow_send_limit; /**< このピアから受けた送出上限 (POTR_FLOW_SEND_LIMIT_HELD と通番の組)。0 = 上限なし。peers_mutex で保護。 */
+    uint64_t flow_limit_received_ms; /**< このピアから最後にフロー制御パケットを受けた時刻 [ms]。peers_mutex で保護。 */
+    uint64_t flow_limit_stalled_ms; /**< このピア宛の送出が送出上限に達して止まった時刻 [ms]。0 = 止まっていない。peers_mutex で保護。 */
     int flow_deferred_entries; /**< 送信スレッドが保留している、このピア宛のエントリ数。peers_mutex で保護。 */
     int _pad_flow_deferred;    /**< パディング (8 [byte] 境界に揃える)。 */
 
@@ -260,6 +269,9 @@ struct potr_context
     struct potr_internal_flow_control *flow_control; /**< 受信側のフロー制御の資源。NULL は無効 (容量が 0)。 */
     potr_internal_flow_control_config flow_control_config; /**< フロー制御の実効設定。スレッド起動後は不変。 */
     cplat_atomic_u64 flow_request_expire_ms; /**< 送信側: 相手から受けた抑制の要求の期限 [ms]。0 = 要求なし。双方向 UDP (1:1) と TCP で使用。アトミックに読み書きします。 */
+    cplat_atomic_u64 flow_send_limit; /**< 送信側: 相手から受けた送出上限 (POTR_FLOW_SEND_LIMIT_HELD と通番の組)。0 = 上限なし。双方向 UDP (1:1) と TCP で使用。flow_limit_received_ms の後に書き込みます。アトミックに読み書きします。 */
+    cplat_atomic_u64 flow_limit_received_ms; /**< 送信側: 最後にフロー制御パケットを受けた時刻 [ms]。双方向 UDP (1:1) と TCP で使用。アトミックに読み書きします。 */
+    uint64_t flow_limit_stalled_ms; /**< 送信側: 送出上限に達して止まった時刻 [ms]。0 = 止まっていない。送信スレッドだけが使用。 */
     struct potr_internal_deferred_entry *flow_deferred_head; /**< N:1 モードで保留中のエントリの先頭。送信スレッドだけが使用。 */
     struct potr_internal_deferred_entry *flow_deferred_tail; /**< N:1 モードで保留中のエントリの末尾。送信スレッドだけが使用。 */
     cplat_atomic_i32 flow_request_pending; /**< 送信側: 片方向 UDP で、受信者の管理表に抑制の要求が残っている可能性があるか。アトミックに読み書きします。 */

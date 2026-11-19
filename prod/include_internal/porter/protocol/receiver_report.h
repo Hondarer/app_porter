@@ -20,6 +20,9 @@ typedef struct potr_internal_receiver
     uint64_t last_report_ms; /**< 最後に受理した REPORT の到着時刻 [ms]。 */
     uint64_t retired_ms; /**< 離脱時刻 [ms]。NACK だけのエントリは登録時刻。再利用順の基準。 */
     uint64_t flow_request_expire_ms; /**< 受理した抑制の要求の期限 [ms]。0 = 要求なし。 */
+    uint64_t flow_send_limit; /**< 受理した送出上限 (POTR_FLOW_SEND_LIMIT_HELD と通番の組)。0 = 上限なし。 */
+    uint64_t flow_limit_received_ms; /**< 最後にフロー制御パケットを受理した時刻 [ms]。 */
+    uint64_t flow_limit_stalled_ms; /**< 送出が送出上限に達して止まった時刻 [ms]。0 = 止まっていない。 */
     int64_t session_tv_sec; /**< 受信者のセッション開始秒。 */
     int32_t session_tv_nsec; /**< 受信者のセッション開始ナノ秒部。 */
     uint32_t session_id; /**< 受信者のセッション識別子。 */
@@ -37,6 +40,8 @@ extern "C"
  *
  *  フロー制御パケットを受理した場合は、返送元の抑制の要求の期限を更新します。
  *  抑制の要求では「到着時刻 + 有効期限」とし、解除では要求なしへ戻します。
+ *  状態の値によらず、返送元の送出上限を上書きし、受理した時刻を記録します。
+ *  ペイロードが POTR_FLOW_CONTROL_PAYLOAD_SIZE バイトでないパケットと、状態が不正なパケットは POTR_ERR_PROTOCOL とします。
  *  @param[in,out]  ctx 送信者。NULL は許可しません。
  *  @param[in]      packet 開封済みパケット。NULL は許可しません。
  *  @param[in]      wire_header 受信ヘッダー。NULL は許可しません。
@@ -55,22 +60,30 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
  */
 uint8_t potr_internal_receiver_groups_locked(potr_context *ctx, uint64_t now_ms);
 /**
- *  @brief          片方向 UDP の送信者が、受信者からの抑制の要求によって送出を止めるべきかを判定します。
+ *  @brief          片方向 UDP の送信者が、受信者からの抑制の要求と送出上限によって送出を止めるべきかを判定します。
  *
- *  unicast は、有効な (期限内の) 要求が 1 つでもあれば抑制します。\n
- *  multicast と broadcast は、要求中の受信者の割合または台数が実効設定の条件を満たす場合に抑制します。
- *  活動中の受信者は、受信報告で活動中と判定している受信者と、有効な要求を送ってきている受信者です。
- *  活動中の受信者数が台数の設定値を下回る場合は、活動中の受信者数を台数のしきい値として使います。
+ *  受信者が「止める状態」であるとは、有効な (期限内の) 要求があるか、受理した送出上限に達している
+ *  (next_seq が送出上限以上である) ことです。通番は循環を考慮した差で比較します。\n
+ *  unicast は、「止める状態」の受信者が 1 つでもあれば抑制します。\n
+ *  multicast と broadcast は、「止める状態」の受信者の割合または台数が実効設定の条件を満たす場合に抑制します。
+ *  活動中の受信者は、受信報告で活動中と判定している受信者と、「止める状態」の受信者です。
+ *  活動中の受信者数が台数の設定値を下回る場合は、活動中の受信者数を台数のしきい値として使います。\n
+ *  送出上限に達した時点から有効期限が経過しても次のフロー制御パケットを受理していない受信者は、
+ *  その送出上限を破棄し、上限がないものとして扱います。
  *
  *  @param[in,out]  ctx 送信者。NULL は許可しません。
  *  @param[in]      now_ms 単調増加時刻 [ms]。
- *  @param[out]     requesting 有効な要求を送ってきている受信者数の格納先。NULL は許可しません。
- *  @param[out]     until_ms 有効な要求のうち最も早い期限 [ms] の格納先。要求がなければ 0。NULL は許可しません。
- *                  判定が変わりうる最も早い時刻であり、呼び出し元はこの時刻に判定し直します。
+ *  @param[in]      next_seq 次に割り当てる DATA の通番。
+ *  @param[out]     tracked 有効な要求または送出上限を保持している受信者数の格納先。NULL は許可しません。
+ *                  0 以外の間は、送出のたびに判定し直す必要があります。
+ *  @param[out]     until_ms 「止める状態」の受信者の判定が変わりうる最も早い時刻 [ms] の格納先
+ *                  (要求の期限、または送出上限の破棄の時刻)。該当がなければ 0。NULL は許可しません。
+ *                  呼び出し元はこの時刻に判定し直します。
  *  @return         抑制する場合は 1、しない場合と引数が NULL の場合は 0。失敗モードのない述語のため結果コードの対象外です。
  *  @note           callback_mutex を内部で取得します。所有権は移動しません。
  */
-int potr_internal_receiver_flow_suppressed(potr_context *ctx, uint64_t now_ms, size_t *requesting, uint64_t *until_ms);
+int potr_internal_receiver_flow_suppressed(potr_context *ctx, uint64_t now_ms, uint32_t next_seq, size_t *tracked,
+                                           uint64_t *until_ms);
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

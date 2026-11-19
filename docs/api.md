@@ -35,7 +35,7 @@ Table: PATH イベント時のコールバック引数の意味
 | `POTR_ERR_INVALID_ARGUMENT` | ハンドル、データ、サイズ、または N:1 モードの `peer_id` が不正 |
 | `POTR_ERR_DISCONNECTED` | 論理 CONNECTED 前または切断中。`unicast_bidir`、`unicast_bidir_n1` の未接続 peer、`POTR_PEER_ALL` で接続済み peer 0 件、`tcp` / `tcp_bidir` の CONNECTED 前または全 path 切断中が該当。ブロッキング送信では、`tcp` / `tcp_bidir` のどの path にも書き込めなかった場合も該当 |
 | `POTR_ERR_NOT_FOUND` | N:1 モードで指定した peer が存在しない |
-| `POTR_ERR_FULL` | `POTR_SEND_BLOCKING` を指定しない送信で、送信キューにメッセージの全断片を登録できる空きがない。N:1 モードでは、宛先の peer がフロー制御で抑制中の場合も該当 |
+| `POTR_ERR_FULL` | `POTR_SEND_BLOCKING` を指定しない送信で、送信キューにメッセージの全断片を登録できる空きがない。N:1 モードでは、宛先の peer がフロー制御で抑制中 (抑制の要求を受けている、または受けた送出上限に達している) の場合も該当 |
 | `POTR_ERR_OUT_OF_MEMORY` | `POTR_PEER_ALL` の送信先一覧・圧縮用の一時領域の確保失敗、または通知継続不能 |
 | `POTR_ERR_INVALID_HANDLE` | ハンドルが未登録または終了済み |
 | `POTR_ERR_UNSUPPORTED` | 片方向の受信専用サービスに送信を要求した |
@@ -47,7 +47,7 @@ Table: potr_service_send の戻り値一覧
 `POTR_ERR_FULL` を返した場合、そのメッセージは 1 つも登録されていません。  
 1 件のメッセージが複数の断片になる場合も、一部の断片だけが登録されることはありません。`POTR_PEER_ALL` の送信は、全 peer の分を登録できなければ、どの peer 宛も登録しません。  
 利用側は、間隔をおいて再試行するか、メッセージを破棄するかを決めます。断片の数が `send_queue_depth` を超えるメッセージは、`POTR_SEND_BLOCKING` を指定しない送信では常に `POTR_ERR_FULL` になります。  
-`POTR_SEND_BLOCKING` を指定した送信は、空きができるまで待って登録し、送出の完了まで待ちます。N:1 モードで宛先の peer がフロー制御で抑制中の場合は、抑制の解除まで待ちます。
+`POTR_SEND_BLOCKING` を指定した送信は、空きができるまで待って登録し、送出の完了まで待ちます。N:1 モードで宛先の peer がフロー制御で抑制中の場合は、抑制の解除 (送出上限の更新または破棄を含む) まで待ちます。
 
 `POTR_ERR_DISCONNECTED` は「送信先が論理的に CONNECTED していない」ことを示します。  
 双方向通信 (`unicast_bidir`、`unicast_bidir_n1`) と TCP (`tcp`、`tcp_bidir`) では、全グループ不達は全経路の切断と同じ論理切断として扱い、`potr_service_send()` は `POTR_ERR_DISCONNECTED` を返します。  
