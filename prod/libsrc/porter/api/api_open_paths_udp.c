@@ -41,7 +41,7 @@ static cplat_socket open_socket_unicast(const uint32_t bind_addr, const uint16_t
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行する。 */
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行するため、戻り値は明示的に破棄する。 */
     (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
     addr.address = bind_addr;
@@ -87,7 +87,7 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, const uin
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行する。 */
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行するため、戻り値は明示的に破棄する。 */
     (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
     addr.address = CPLAT_IPV4_ADDR_ANY;
@@ -114,10 +114,15 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, const uin
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* 送信者: マルチキャスト送信インターフェイスを設定する。 */
+    /* 送信者: マルチキャスト送信インターフェイスを設定する。設定できない場合は、指定した NIC から送れないため失敗とする。 */
     if (!is_receiver)
     {
-        (void)cplat_socket_set_multicast_interface(sock, join_if, NULL);
+        if (cplat_socket_set_multicast_interface(sock, join_if, &detail) != CPLAT_OK)
+        {
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "set_multicast_interface failed");
+            cplat_socket_close(sock);
+            return CPLAT_INVALID_SOCKET;
+        }
     }
 
     return sock;
@@ -155,7 +160,7 @@ static cplat_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, 
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行する。 */
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行するため、戻り値は明示的に破棄する。 */
     (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
     if (cplat_socket_set_broadcast(sock, 1, &detail) != CPLAT_OK)

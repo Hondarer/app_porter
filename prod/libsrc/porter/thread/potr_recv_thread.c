@@ -107,8 +107,12 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
                 {
                     potr_internal_replay_window_prepare(&peer->replay_window, pkt);
                 }
-                potr_internal_window_init(&peer->recv_window, pkt->seq_num, ctx->global.window_size,
-                                          ctx->global.max_payload);
+                /*
+                 * potr_internal_peer_create が同じ window_size と max_payload で確保したウィンドウの状態を
+                 * リセットするだけで再確保が起きないため、戻り値は明示的に破棄する。
+                 */
+                (void)potr_internal_window_init(&peer->recv_window, pkt->seq_num, ctx->global.window_size,
+                                                ctx->global.max_payload);
                 is_new_peer = 1;
             }
         }
@@ -179,6 +183,10 @@ static int sender_handle_packet(thread_recv_slot *slot, const potr_packet *pkt)
     if (pkt->flags == POTR_FLAG_REPORT)
     {
         potr_internal_path_group_result selection;
+        /*
+         * REPORT の反映でグループの状態を更新する目的だけで呼び、失敗 (時計の取得の失敗) は次の送信の経路選択が
+         * 検出するため、戻り値は明示的に破棄する。
+         */
         (void)potr_internal_path_group_select(ctx, NULL, &selection);
         return 1;
     }
@@ -373,7 +381,11 @@ static void recv_thread_func(void *arg)
                 /* UNICAST_BIDIR SENDER: フォール スルーして受信者処理 (FIN/REJECT/DATA/PING) へ進む。 */
             }
 
-            /* ── 受信者ロール: FIN / REJECT / DATA / PING を処理 ── */
+            /*
+             * ── 受信者ロール: FIN / REJECT / DATA / PING を処理 ──
+             * 戻り値はヘルス チェック スレッドを起こす要否 (N:1 のときだけ 1) であり、1:1 では常に 0 のため、
+             * 戻り値は明示的に破棄する。
+             */
             (void)thread_recv_dispatch_packet(&svc_slot, &pkt, i, &sender_addr);
         }
     }
@@ -909,6 +921,10 @@ void potr_internal_comm_recv_thread_stop(potr_context *ctx)
         {
             if (ctx->sock[i] != CPLAT_INVALID_SOCKET)
             {
+                /*
+                 * 停止の処理であり、未接続の UDP ソケットでは失敗を返すが、受信スレッドは待機の上限ごとに停止の指示を
+                 * 読み直し、失敗しても停止は有限の時間で終わるため、戻り値は明示的に破棄する。
+                 */
                 (void)cplat_socket_shutdown_receive(&ctx->sock[i], NULL);
             }
         }

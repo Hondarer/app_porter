@@ -129,14 +129,16 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
     if (is_tcp_type(ctx->service.type))
     {
         cplat_local_lock_lock(ctx->tcp_state_mutex);
-        thread_recv_set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
+        /* 結果は失敗ではなく経路の状態が変わったかを表し、この経路では割り込みの PING を送らないため、戻り値は明示的に破棄する。 */
+        (void)thread_recv_set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
         memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
         thread_recv_disconnect_service_all_paths(ctx);
         cplat_local_lock_unlock(ctx->tcp_state_mutex);
     }
     else
     {
-        thread_recv_set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
+        /* 結果は失敗ではなく経路の状態が変わったかを表し、この経路では割り込みの PING を送らないため、戻り値は明示的に破棄する。 */
+        (void)thread_recv_set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
         memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
         thread_recv_disconnect_service_all_paths(ctx);
     }
@@ -148,7 +150,11 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
     ctx->reorder_pending = 0;
     ctx->last_recv_ts.tv_sec = 0;
     cplat_local_lock_lock(ctx->recv_window_mutex);
-    potr_internal_window_init(&ctx->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
+    /*
+     * サービスを開く時点で同じ window_size と max_payload で確保したウィンドウの状態をリセットするだけで
+     * 再確保が起きないため、戻り値は明示的に破棄する。
+     */
+    (void)potr_internal_window_init(&ctx->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
     cplat_local_lock_unlock(ctx->recv_window_mutex);
 }
 

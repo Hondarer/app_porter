@@ -37,25 +37,35 @@ void handle_client_session(ClientFd fd)
     char buffer[BUFFER_SIZE];
     int n;
 
-    printf("[PID %lu] クライアント処理開始\n", (unsigned long)get_pid());
+    /* 稼働状況は利用者が画面で確認する表示であり、失敗を伝える先がないため、この関数の printf の戻り値は明示的に破棄する。 */
+    (void)printf("[PID %lu] クライアント処理開始\n", (unsigned long)get_pid());
 
     /* クライアントからデータを受信し、受信した内容をそのままエコーバックする。 */
     while ((n = (int)client_recv(fd, buffer, sizeof(buffer) - 1)) > 0)
     {
         buffer[n] = '\0';
-        printf("[PID %lu] 受信: %s", (unsigned long)get_pid(), buffer);
-        client_send(fd, buffer, (size_t)n);
+        (void)printf("[PID %lu] 受信: %s", (unsigned long)get_pid(), buffer);
+
+        /* 送信の失敗と一部だけの送信は、どちらもエコーが成立しないため、診断を出して受信のループを抜ける。 */
+        if ((int)client_send(fd, buffer, (size_t)n) != n)
+        {
+            /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
+            (void)fprintf(stderr, "[PID %lu] 送信に失敗しました\n", (unsigned long)get_pid());
+            break;
+        }
     }
 
-    printf("[PID %lu] クライアント切断\n", (unsigned long)get_pid());
-    client_close(fd);
+    (void)printf("[PID %lu] クライアント切断\n", (unsigned long)get_pid());
+    (void)client_close(fd); /* エコーを終えた接続の後始末であり、結果が変わらないため、戻り値は明示的に破棄する */
 }
 
 /**
  *  @brief          メイン エントリ ポイント。
  *  @param[in]      argc コマンド ライン引数の数。
  *  @param[in]      argv コマンド ライン引数の配列。
- *  @return         正常終了時は 0 を返します。
+ *  @return         正常終了時は EXIT_SUCCESS (0) を返します。
+ *  @return         引数が不正な場合 (解析の失敗、--mode の不正、--port が 1 から 65535 の範囲外) と、
+ *                  --help の使い方を標準出力へ書き込めなかった場合は EXIT_FAILURE を返します。
  *
  *  1. platform_init() でプラットフォーム初期化。
  *  2. dispatch_internal_args() で内部起動引数 (--child / --worker) を確認。
@@ -95,16 +105,18 @@ int main(int argc, char *argv[])
     const char *mode_str = NULL;
 
     cplat_argparser_init(argc, argv, "複数のプロセス モードを確認する TCP サーバーを起動します。");
-    cplat_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
-    cplat_argparser_register_option_string(NULL, "--mode", "mode", "fork または prefork。", 0, &mode_str);
-    cplat_argparser_register_option_int(NULL, "--port", "port", "待ち受けポート番号。", 0, &port);
-    cplat_argparser_register_option_int(NULL, "--workers", "count", "ワーカー数。", 0, &workers);
-    cplat_argparser_register_option_int(NULL, "--conns-per-worker", "count", "ワーカーごとの接続数。", 0,
-                                        &conns_per_worker);
+    /* 登録の失敗は直後の cplat_argparser_get_register_error_count() でまとめて検査するため、戻り値は明示的に破棄する。 */
+    (void)cplat_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
+    (void)cplat_argparser_register_option_string(NULL, "--mode", "mode", "fork または prefork。", 0, &mode_str);
+    (void)cplat_argparser_register_option_int(NULL, "--port", "port", "待ち受けポート番号。", 0, &port);
+    (void)cplat_argparser_register_option_int(NULL, "--workers", "count", "ワーカー数。", 0, &workers);
+    (void)cplat_argparser_register_option_int(NULL, "--conns-per-worker", "count", "ワーカーごとの接続数。", 0,
+                                              &conns_per_worker);
 
     if (cplat_argparser_get_register_error_count() > 0)
     {
-        cplat_argparser_print_register_error_messages(stderr);
+        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、戻り値は明示的に破棄する。 */
+        (void)cplat_argparser_print_register_error_messages(stderr);
         platform_cleanup();
         return EXIT_FAILURE;
     }
@@ -113,15 +125,33 @@ int main(int argc, char *argv[])
 
     if (need_help != 0)
     {
-        cplat_argparser_print_usage(stdout);
+        if (cplat_argparser_print_usage(stdout) != CPLAT_OK || fflush(stdout) != 0 || ferror(stdout) != 0)
+        {
+            /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
+            (void)fprintf(stderr, "エラー: 使い方を標準出力へ書き込めませんでした。\n");
+            platform_cleanup();
+            return EXIT_FAILURE;
+        }
+
         platform_cleanup();
         return EXIT_SUCCESS;
     }
 
     if (parse_result != CPLAT_OK)
     {
-        cplat_argparser_print_error_messages(stderr);
-        cplat_argparser_print_usage(stderr);
+        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの表示の関数の戻り値は明示的に破棄する。 */
+        (void)cplat_argparser_print_error_messages(stderr);
+        (void)cplat_argparser_print_usage(stderr);
+        platform_cleanup();
+        return EXIT_FAILURE;
+    }
+
+    /* ポート番号は 16 bit の範囲だけを受け付ける。範囲外の値は、別のポートへの切り詰めや書式化の失敗を招くため。 */
+    if (port < 1 || port > 65535)
+    {
+        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの出力の戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "エラー: --port には 1 から 65535 を指定してください。\n\n");
+        (void)cplat_argparser_print_usage(stderr);
         platform_cleanup();
         return EXIT_FAILURE;
     }
@@ -139,8 +169,9 @@ int main(int argc, char *argv[])
         }
         else
         {
-            fprintf(stderr, "エラー: --mode には fork または prefork を指定してください。\n\n");
-            cplat_argparser_print_usage(stderr);
+            /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの出力の戻り値は明示的に破棄する。 */
+            (void)fprintf(stderr, "エラー: --mode には fork または prefork を指定してください。\n\n");
+            (void)cplat_argparser_print_usage(stderr);
             platform_cleanup();
             return EXIT_FAILURE;
         }

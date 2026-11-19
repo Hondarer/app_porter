@@ -71,7 +71,9 @@ extern "C"
  *
  *  __FILE__ と __LINE__ を自動付加する cplat_tracer_writef() マクロを呼び出します。\n
  *  トレーサーが未 start の場合は無視されます。\n
- *  level には cplat_trace_level の値を指定してください。
+ *  level には cplat_trace_level の値を指定してください。\n
+ *  出力の結果 (戻り値) は返しません。式の値として使えません。\n
+ *  出力の失敗で処理を変える必要がある場合は、本マクロではなく cplat_tracer_writef() を直接呼んでください。
  *
  *  @par            例
     @code{.c}
@@ -80,7 +82,8 @@ extern "C"
     POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,   "socket() failed");
     @endcode
  */
-#define POTR_TRACE(level, ...) cplat_tracer_writef(potr_internal_trace_get(), (level), NULL, __VA_ARGS__)
+/* トレースは補助の記録であり、出力の失敗で処理を変えないため、戻り値は明示的に破棄する。 */
+#define POTR_TRACE(level, ...) ((void)cplat_tracer_writef(potr_internal_trace_get(), (level), NULL, __VA_ARGS__))
 
 /**
  *  @brief          ソケット失敗をトレースするマクロ。

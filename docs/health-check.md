@@ -36,6 +36,10 @@ tcp_health_timeout_ms  : TCP 系 PING 受信タイムアウト (ms)。両端で�
 
 サービス定義 (`potr_service_def`) に同名フィールドを設定するとグローバル値を上書きできます。0 の場合はグローバル値を使用します。
 
+送信間隔の実効値 (`udp_health_interval_ms`、`tcp_health_interval_ms`、サービスの上書きを含む) の上限は 2,147,483,646 です。  
+`tcp_health_timeout_ms` のグローバル値は、TCP の RECEIVER が接続直後の最初のパケットを待つ時間 (3 倍) にも使うため、上限は 715,827,882 です。サービスの上書きは、この待機に影響しません。  
+上限を超える値は、値を使う種別と役割でサービスを開く処理が設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。詳細は [設定ファイル](config.md) の「設定エラーの条件」を参照してください。
+
 ## PING パケット構造
 
 `flags` フィールドに `POTR_FLAG_PING` をセットし、`ack_num` は常に 0 とします (双方向 UDP の応答では要求の `seq_num` をセットします)。

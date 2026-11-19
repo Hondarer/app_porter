@@ -1202,3 +1202,108 @@ TEST(configLoadServiceTest, loads_multicast_dst_addr)
         "239.0.0.2",
         owned.definition.multicast_group); // [確認_正常系] - owned.definition.multicast_group が "239.0.0.2" であること。
 }
+
+namespace
+{
+/** 解釈できないサービスの設定値と、維持される既定値の組。 */
+struct unparsed_service_case
+{
+    const char *name;
+    const char *key;
+    const char *value;
+    uint32_t expected;
+};
+
+void PrintTo(const unparsed_service_case &, std::ostream *);
+void PrintTo(const unparsed_service_case &value, std::ostream *output)
+{
+    *output << "name: \"" << value.name << "\", key: \"" << value.key << "\", value: \"" << value.value
+            << "\", expected: " << value.expected;
+}
+
+/** 設定キーに対応するサービス定義の値を返す。 */
+uint32_t service_field(const potr_service_def &definition, const char *key)
+{
+    if (strcmp(key, "dst_port") == 0)
+    {
+        return definition.dst_port;
+    }
+    if (strcmp(key, "src_port") == 0)
+    {
+        return definition.src_port;
+    }
+    if (strcmp(key, "ttl") == 0)
+    {
+        return definition.ttl;
+    }
+    if (strcmp(key, "pack_wait_ms") == 0)
+    {
+        return definition.pack_wait_ms;
+    }
+    if (strcmp(key, "health_interval_ms") == 0)
+    {
+        return definition.health_interval_ms;
+    }
+    if (strcmp(key, "health_timeout_ms") == 0)
+    {
+        return definition.health_timeout_ms;
+    }
+    return definition.reconnect_interval_ms;
+}
+} // namespace
+
+class configLoadServiceUnparsedTest : public TestWithParam<unparsed_service_case>
+{
+};
+
+// 解釈できないサービスの設定値で WARNING を出し、既定値を維持することの確認
+TEST_P(configLoadServiceUnparsedTest, warns_and_keeps_default_when_value_cannot_be_parsed)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    NiceMock<Mock_stdio> mock_stdio;
+    const unparsed_service_case &param = GetParam();
+    std::string json = std::string("{\"services\":{\"42\":{\"") + param.key + "\":\"" + param.value + "\"}}}";
+    ConfigLineStream lines({json.c_str()}); // [状態] - 1 項目だけに解釈できない値を持つサービス 42 の定義を用意する。
+    service_configuration owned;
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _))
+        .WillByDefault(Return(ConfigLineStream::handle())); // [状態] - cplat_fopen() から設定用ストリームを返すように既定動作を設定する。
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Return(0)); // [状態] - fclose() から 0 を返すように既定動作を設定する。
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
+        .Times(AnyNumber()); // [Pre-Assert確認_正常系 回数=PARAM] - cplat_tracer_writef_at() が任意の回数呼び出されること。
+    EXPECT_CALL(mock_cplat,
+                cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_WARNING, nullptr,
+                                       AllOf(HasSubstr(param.key), HasSubstr(param.value), HasSubstr("service_id=42"))))
+        .Times(1); // [Pre-Assert確認_異常系 回数=PARAM] - cplat_tracer_writef_at() が CPLAT_TRACE_LEVEL_WARNING、nullptr、項目名と値と "service_id=42" を含む文字列を指定して 1 回呼び出されること。
+
+    // Act
+    int actual_ret = potr_internal_config_load_service("config.conf", 42,
+                                                       &owned); // [手順] - 解釈できない値を含むサービス 42 の設定を読み込む。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系 回数=PARAM] - 設定の読み込みが成功すること。
+    EXPECT_EQ(param.expected,
+              service_field(owned.definition, param.key)); // [確認_異常系 回数=PARAM] - 解釈できない値を与えた項目が既定値のままであること。
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    , configLoadServiceUnparsedTest,
+    Values(unparsed_service_case{"dst_port_text", "dst_port", "abc", 0U},
+           unparsed_service_case{"src_port_out_of_range", "src_port", "65536", 0U},
+           unparsed_service_case{"ttl_out_of_range", "ttl", "256", POTR_DEFAULT_TTL},
+           unparsed_service_case{"pack_wait_ms_negative", "pack_wait_ms", "-1", POTR_DEFAULT_PACK_WAIT_MS},
+           unparsed_service_case{"health_interval_ms_text", "health_interval_ms", "abc", 0U},
+           unparsed_service_case{"health_timeout_ms_out_of_range", "health_timeout_ms", "4294967296", 0U},
+           unparsed_service_case{"reconnect_interval_ms_negative", "reconnect_interval_ms", "-1",
+                                 POTR_DEFAULT_RECONNECT_INTERVAL_MS}),
+    [](const TestParamInfo<unparsed_service_case> &param_info) { return std::string(param_info.param.name); });

@@ -63,6 +63,21 @@ static void copy_cstr_trunc(char *dst, size_t dst_size, const char *src)
 }
 
 /**
+ *  @brief          整数として解釈できないサービスの設定値を WARNING のトレースへ出力します。
+ *  @param[in]      key        設定キー。
+ *  @param[in]      val        解釈できなかった設定値の文字列。
+ *  @param[in]      service_id 設定を読み込むサービスの ID。
+ *
+ *  @details        設定値は既定値または直前の値のまま維持し、呼び出し元へ失敗を通知しません。
+ */
+static void trace_unparsed_service_value(const char *key, const char *val, int64_t service_id)
+{
+    POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+               "config: %s value \"%s\" cannot be parsed, keeping current value (service_id=%" PRId64 ")", key, val,
+               service_id);
+}
+
+/**
  *  @brief          service セクションのキーと値 1 組をサービス定義へ反映します。
  *  @param[in]      key     設定キー。
  *  @param[in]      val     設定値の文字列。
@@ -115,11 +130,17 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     }
     else if (strcmp(key, "dst_port") == 0)
     {
-        (void)cplat_parse_uint16(&current->dst_port, val, 10);
+        if (cplat_parse_uint16(&current->dst_port, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "src_port") == 0)
     {
-        (void)cplat_parse_uint16(&current->src_port, val, 10);
+        if (cplat_parse_uint16(&current->src_port, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "multicast_group") == 0)
     {
@@ -127,7 +148,10 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     }
     else if (strcmp(key, "ttl") == 0)
     {
-        (void)cplat_parse_uint8(&current->ttl, val, 10);
+        if (cplat_parse_uint8(&current->ttl, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "broadcast_addr") == 0)
     {
@@ -135,7 +159,10 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     }
     else if (strcmp(key, "pack_wait_ms") == 0)
     {
-        (void)cplat_parse_uint32(&current->pack_wait_ms, val, 10);
+        if (cplat_parse_uint32(&current->pack_wait_ms, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "max_peers") == 0)
     {
@@ -148,15 +175,24 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
     }
     else if (strcmp(key, "health_interval_ms") == 0)
     {
-        (void)cplat_parse_uint32(&current->health_interval_ms, val, 10);
+        if (cplat_parse_uint32(&current->health_interval_ms, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "health_timeout_ms") == 0)
     {
-        (void)cplat_parse_uint32(&current->health_timeout_ms, val, 10);
+        if (cplat_parse_uint32(&current->health_timeout_ms, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "reconnect_interval_ms") == 0)
     {
-        (void)cplat_parse_uint32(&current->reconnect_interval_ms, val, 10);
+        if (cplat_parse_uint32(&current->reconnect_interval_ms, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
     }
     else if (strcmp(key, "connect_timeout_ms") == 0)
     {
@@ -440,6 +476,7 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
+    /* id_text は 32 byte で、int64 の十進表記 (最大 21 byte) は切り詰められないため、戻り値は明示的に破棄する。 */
     (void)snprintf(id_text, sizeof(id_text), "%" PRId64, service_id);
     service = cjson_app_cJSON_GetObjectItemCaseSensitive(services, id_text);
     if (service == NULL)

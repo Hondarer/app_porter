@@ -44,3 +44,28 @@ void test_invoke_shutdown_callback(void)
     cplat_atomic_store_i32(&s_running, 1, CPLAT_MEMORY_ORDER_RELEASE);
     porter_test_shutdown_request_callback(NULL, NULL);
 }
+
+void test_ensure_tracer_started(void)
+{
+    ensure_tracer_started();
+}
+
+int test_get_tracer_started(void)
+{
+    return s_tracer_started;
+}
+
+void test_reset_tracer_started(void)
+{
+    s_tracer_started = 0;
+}
+
+void test_do_close_handle(potr_context *handle, int64_t service_id)
+{
+    porter_test_session session = {0};
+
+    session.handle = handle;
+    session.service_id = service_id;
+    session.is_open = 1;
+    do_close(&session);
+}

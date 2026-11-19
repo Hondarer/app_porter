@@ -52,7 +52,7 @@ int thread_connect_session_compare(const potr_context *ctx, const potr_packet *p
  *  @brief          接続期限と停止要求を監視して TCP 接続します。
  *  @param[in,out]  ctx             設定と停止フラグ。NULL は許可しません。接続は登録しません。
  *  @param[in]      path_idx        有効なパス番号。
- *  @return         成功時は呼び出し元が所有する接続ソケット、失敗時は CPLAT_INVALID_SOCKET。
+ *  @return         成功時は呼び出し元が所有する接続ソケット (ブロッキング モード)、失敗時は CPLAT_INVALID_SOCKET。
  *  @note           失敗時は新規ソケットを閉じます。ハンドルを返すため共通結果コードの適用対象外です。
  *  @par            スレッド セーフ
  *                  設定を固定したコンテキストの接続管理から呼びます。停止フラグは atomic で参照します。

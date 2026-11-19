@@ -53,7 +53,11 @@ static void create_trace(void)
     s_trace = cplat_tracer_create(CPLAT_TRACER_CONCURRENCY_TRACER_MANAGED);
     if (s_trace != NULL)
     {
-        cplat_tracer_set_name(s_trace, "porter", 0);
+        /*
+         * 識別名の設定に失敗してもトレーサーは使え、失敗を出力する先もこのトレーサー自身のため、
+         * 戻り値は明示的に破棄する。
+         */
+        (void)cplat_tracer_set_name(s_trace, "porter", 0);
 
         /*
          * set_name は OS トレースの識別名のみに作用する。出力先はデフォルト設定に従い、
@@ -88,6 +92,10 @@ void potr_internal_trace_socket_failure_at(const char *file, const int line, con
         return;
     }
 
+    /*
+     * トレース出力の中の書式化であり、失敗を知らせる先がほかになく、失敗した項目は空文字列のまま出力するため、
+     * cplat_vsnprintf と cplat_error_message の戻り値は明示的に破棄する。
+     */
     va_start(args, format);
     (void)cplat_vsnprintf(context, sizeof(context), format, args);
     va_end(args);
@@ -96,6 +104,7 @@ void potr_internal_trace_socket_failure_at(const char *file, const int line, con
     /*
      * POTR_TRACE は展開位置の __FILE__ と __LINE__ を埋め込むため、本関数で使うと発生位置が
      * potr_trace.c で固定される。呼び出し元の位置を残すため、下位 API へ直接書式を渡す。
+     * トレースは補助の記録であり、出力の失敗で処理を変えないため、戻り値は明示的に破棄する。
      */
     (void)cplat_tracer_writef_at(potr_internal_trace_get(), level, NULL, "[%s:%d] %s: domain=%d code=%lu: %s",
                                  cplat_path_basename(file), line, context, (int)detail->domain, detail->code, message);

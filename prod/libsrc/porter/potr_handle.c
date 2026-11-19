@@ -33,9 +33,9 @@ static struct potr_internal_handle **s_buckets;
 static size_t s_capacity;
 static size_t s_count;
 
-/* 初期化失敗は s_mutex が NULL のままであることを呼び出し元が検出する。 */
 static void registry_init(void)
 {
+    /* 初期化失敗は s_mutex が NULL のままであることを呼び出し元が検出するため、戻り値は明示的に破棄する。 */
     (void)cplat_local_lock_create(&s_mutex);
 }
 

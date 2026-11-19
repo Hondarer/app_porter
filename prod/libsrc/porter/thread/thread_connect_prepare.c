@@ -146,6 +146,7 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
         return CPLAT_INVALID_SOCKET;
     }
 
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行するため、戻り値は明示的に破棄する。 */
     (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
     /*
@@ -211,15 +212,35 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
     /*
      * タイムアウト付き接続: 非ブロッキング モードで writable ポーリングを使う。
      * 停止シグナルに素早く応答するため 100 [ms] 単位でポーリングする。
+     * 非ブロッキングへ切り替えられない場合は、タイムアウトと停止の要求に応答できないため、
+     * ソケットを閉じて接続の失敗とする。
      */
-    (void)cplat_socket_set_nonblocking(sock, 1, NULL);
+    if (cplat_socket_set_nonblocking(sock, 1, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
+                                  "connect_thread[service_id=%" PRId64 " path=%d]: set_nonblocking failed",
+                                  ctx->service.service_id, path_idx);
+        cplat_socket_close(sock);
+        return CPLAT_INVALID_SOCKET;
+    }
 
     {
         const int connect_result = cplat_socket_connect(sock, &addr, &detail);
         if (connect_result == CPLAT_OK)
         {
-            /* 即座に接続成功した場合は非ブロッキングを解除してソケットを返す。 */
-            (void)cplat_socket_set_nonblocking(sock, 0, NULL);
+            /*
+             * 即座に接続成功した場合は非ブロッキングを解除してソケットを返す。
+             * ブロッキングへ戻せない場合は、ソケットを閉じて接続の失敗とする。
+             */
+            if (cplat_socket_set_nonblocking(sock, 0, &detail) != CPLAT_OK)
+            {
+                POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
+                                          "connect_thread[service_id=%" PRId64 " path=%d]: set_blocking failed",
+                                          ctx->service.service_id, path_idx);
+                cplat_socket_close(sock);
+                return CPLAT_INVALID_SOCKET;
+            }
+
             return sock;
         }
 
@@ -279,7 +300,15 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
         return CPLAT_INVALID_SOCKET;
     }
 
-    (void)cplat_socket_set_nonblocking(sock, 0, NULL);
+    /* 接続の完了後は非ブロッキングを解除する。ブロッキングへ戻せない場合は、ソケットを閉じて接続の失敗とする。 */
+    if (cplat_socket_set_nonblocking(sock, 0, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
+                                  "connect_thread[service_id=%" PRId64 " path=%d]: set_blocking failed",
+                                  ctx->service.service_id, path_idx);
+        cplat_socket_close(sock);
+        return CPLAT_INVALID_SOCKET;
+    }
 
     return sock;
 }

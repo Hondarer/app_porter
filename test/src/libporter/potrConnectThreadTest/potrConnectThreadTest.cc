@@ -490,6 +490,109 @@ TEST(potrConnectThreadTest, sender_calls_preparation_without_publishing_failed_s
     EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]); // [確認_異常系] - 接続失敗ソケットを登録しないこと。
 }
 
+// 再接続の待機に失敗した場合に ERROR を出してスレッドを続けることの確認
+TEST(potrConnectThreadTest, reconnect_wait_failure_traces_error)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.service.service_id = 11;
+    ctx.service.reconnect_interval_ms = 100;
+    ctx.n_path = 1;
+    ctx.tcp_conn_fd[0] = CPLAT_INVALID_SOCKET;
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            }); // [状態] - cplat_thread_create() から、スレッド本体を捕捉して CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_lock() が何もしないように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_unlock() が何もしないように既定動作を設定する。
+    // [状態] - 管理スレッド本体を実スレッドを生成せずに捕捉する。
+    ON_CALL(mock_porter, thread_connect_with_timeout(&ctx, 0))
+        .WillByDefault(Return(CPLAT_INVALID_SOCKET)); // [状態] - thread_connect_with_timeout() から CPLAT_INVALID_SOCKET を返すように既定動作を設定する。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, 100))
+        .WillOnce(
+            [&](cplat_condvar *, cplat_local_lock *, int)
+            {
+                cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_ERR_INVALID_ARGUMENT;
+            }); // [Pre-Assert確認_異常系] - cplat_condvar_timed_wait() が 100 を指定して 1 回呼び出されること。
+                // [Pre-Assert手順] - ctx.connect_thread_running[0] を 0 にし、cplat_condvar_timed_wait() から CPLAT_ERR_INVALID_ARGUMENT を返す。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
+        .Times(AnyNumber()); // [Pre-Assert確認_正常系] - cplat_tracer_writef_at() が任意の回数呼び出されること。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_ERROR, nullptr,
+                                                   HasSubstr("reconnect wait failed (result=")))
+        .Times(1); // [Pre-Assert確認_異常系] - cplat_tracer_writef_at() が CPLAT_TRACE_LEVEL_ERROR、nullptr、"reconnect wait failed (result=" を含む文字列を指定して 1 回呼び出されること。
+    // Act
+    int actual_ret = potr_internal_connect_thread_start(&ctx); // [手順] - 管理処理を準備する。
+    ASSERT_NE(nullptr, entry);                                 // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);                                          // [手順] - 管理ループを同期実行する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 管理処理の準備に成功すること。
+}
+
+// 再接続の待機のタイムアウトでは ERROR を出さないことの確認
+TEST(potrConnectThreadTest, reconnect_wait_timeout_does_not_trace_error)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.service.service_id = 11;
+    ctx.service.reconnect_interval_ms = 100;
+    ctx.n_path = 1;
+    ctx.tcp_conn_fd[0] = CPLAT_INVALID_SOCKET;
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            }); // [状態] - cplat_thread_create() から、スレッド本体を捕捉して CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_lock() が何もしないように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_unlock() が何もしないように既定動作を設定する。
+    // [状態] - 管理スレッド本体を実スレッドを生成せずに捕捉する。
+    ON_CALL(mock_porter, thread_connect_with_timeout(&ctx, 0))
+        .WillByDefault(Return(CPLAT_INVALID_SOCKET)); // [状態] - thread_connect_with_timeout() から CPLAT_INVALID_SOCKET を返すように既定動作を設定する。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, 100))
+        .WillOnce(
+            [&](cplat_condvar *, cplat_local_lock *, int)
+            {
+                cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_ERR_TIMEOUT;
+            }); // [Pre-Assert確認_正常系] - cplat_condvar_timed_wait() が 100 を指定して 1 回呼び出されること。
+                // [Pre-Assert手順] - ctx.connect_thread_running[0] を 0 にし、cplat_condvar_timed_wait() から CPLAT_ERR_TIMEOUT を返す。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
+        .Times(AnyNumber()); // [Pre-Assert確認_正常系] - cplat_tracer_writef_at() が任意の回数呼び出されること。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_ERROR, _, _))
+        .Times(0); // [Pre-Assert確認_正常系] - CPLAT_TRACE_LEVEL_ERROR を指定した cplat_tracer_writef_at() の呼び出しがないこと。
+    // Act
+    int actual_ret = potr_internal_connect_thread_start(&ctx); // [手順] - 管理処理を準備する。
+    ASSERT_NE(nullptr, entry);                                 // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);                                          // [手順] - 管理ループを同期実行する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 管理処理の準備に成功すること。
+}
+
 // TCP と TCP_BIDIR の受け入れが、先読みの前に TCP_NODELAY を要求し、失敗しても続行することの確認
 TEST(potrConnectThreadTest, receiver_sets_nodelay_before_first_packet)
 {

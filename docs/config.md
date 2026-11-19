@@ -39,6 +39,11 @@ porter は JSONC 形式のテキスト ファイルでサービスを定義し�
 JSON 数値の `-0` は数値の 0 として扱います。  
 これらの変換失敗だけで設定ファイル全体をエラーにすることはなく、読み込んだ構成への制約検査は別に行います。
 
+解釈できない値は、項目名と値を WARNING のトレースへ出力します。`services` の項目では、サービス ID も出力します。  
+対象は `global` の 10 項目 (`window_size`、`max_payload`、`udp_health_interval_ms`、`udp_health_timeout_ms`、`tcp_health_interval_ms`、`tcp_health_timeout_ms`、`tcp_close_timeout_ms`、`reorder_timeout_ms`、`max_message_size`、`send_queue_depth`) と、`services` の 7 項目 (`dst_port`、`src_port`、`ttl`、`pack_wait_ms`、`health_interval_ms`、`health_timeout_ms`、`reconnect_interval_ms`) の計 17 項目です。  
+`max_peers` と `connect_timeout_ms` の解釈できない値、および JSON の型が文字列と数値のどちらでもない値は、WARNING を出力しません。  
+WARNING は、利用側が設定の読み込みより前にトレーサーを開始した場合だけ出力されます。
+
 ## global オブジェクト
 
 すべてのサービスに適用されるグローバル設定です。
@@ -49,11 +54,11 @@ JSON 数値の `-0` は数値の 0 として扱います。
 | `max_payload` | uint16 | 1,400 | DATA パケットのペイロード上限バイト数 (64〜65,435) |
 | `max_message_size` | uint32 | 65,535 | 1 回の potr_service_send で送信できる最大メッセージ長 (バイト)。フラグメント化により max_payload を超えるメッセージを送受信できます。 |
 | `send_queue_depth` | uint32 | 1,024 | 非同期送信キューの最大エントリ数。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。 |
-| `udp_health_interval_ms` | uint32 | 3,000 | UDP 通信種別の PING 送信判定間隔 (ms)。片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時に PING を送信し、双方向 UDP は設定周期ごとに PING を送信します。0 でヘルス チェック送信を無効化。双方向 UDP は定周期 PING の送受信で `CONNECTED` を成立させるため、実効 `health_interval_ms` が 0 のままでは接続確立しません。 |
+| `udp_health_interval_ms` | uint32 | 3,000 | UDP 通信種別の PING 送信判定間隔 (ms)。片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時に PING を送信し、双方向 UDP は設定周期ごとに PING を送信します。0 でヘルス チェック送信を無効化。双方向 UDP は定周期 PING の送受信で `CONNECTED` を成立させるため、実効 `health_interval_ms` が 0 のままでは接続確立しません。上限は 2,147,483,646 です。ヘルス チェックを使う種別 (送信側、`unicast_bidir` と `unicast_bidir_n1` の受信側) で実効値が上限を超える場合、サービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
 | `udp_health_timeout_ms`  | uint32 | 10,000 | UDP 通信種別の受信タイムアウト (ms)。片方向 type 1-6 では有効な `PING` / `DATA`、双方向 UDP では `PING` の最終受信から本値を超えたら DISCONNECTED。0 でタイムアウト検知を無効化 |
-| `tcp_health_interval_ms` | uint32 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。接続直後の bootstrap PING とは別に、設定周期ごとに PING を送信します。0 の場合は定周期 PING を無効化するが、初回接続確立用の bootstrap PING は送信します。 |
-| `tcp_health_timeout_ms`  | uint32 | 31,000 | TCP 通信種別の PING 応答待機タイムアウト (ms)。`tcp_health_interval_ms > 0` のときだけ有効で、SENDER 側が PING 応答を本値以内に受信できなければ DISCONNECTED。0 でタイムアウト検知を無効化 |
-| `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potr_service_close()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送信し、本値以内に `FIN_ACK` が返信されなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む |
+| `tcp_health_interval_ms` | uint32 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。接続直後の bootstrap PING とは別に、設定周期ごとに PING を送信します。0 の場合は定周期 PING を無効化するが、初回接続確立用の bootstrap PING は送信します。上限は 2,147,483,646 です。実効値が上限を超える場合、`tcp`、`tcp_bidir` のサービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
+| `tcp_health_timeout_ms`  | uint32 | 31,000 | TCP 通信種別の PING 応答待機タイムアウト (ms)。`tcp_health_interval_ms > 0` のときだけ有効で、SENDER 側が PING 応答を本値以内に受信できなければ DISCONNECTED。0 でタイムアウト検知を無効化。RECEIVER の接続直後の最初のパケットの待機には、本値 (グローバルの値) の 3 倍を使います。上限は 715,827,882 です。超える場合、`tcp`、`tcp_bidir` の RECEIVER でサービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
+| `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potr_service_close()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送信し、本値以内に `FIN_ACK` が返信されなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む。上限は 2,147,483,646 です。超える場合、`tcp` の SENDER と `tcp_bidir` の両端でサービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
 | `reorder_timeout_ms` | uint32 | 0 | 受信ウィンドウで欠番を検出してから NACK 送出 (通常モード) または DISCONNECTED 発行 (RAW モード) を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 で即時 (既定値)。推奨値: LAN/マルチパス = 10〜30 ms、遠距離 WAN = 30〜100 ms |
 
 Table: global オブジェクトの設定項目一覧
@@ -144,7 +149,7 @@ Table: ヘルス チェック設定値とその効果
 | `src_port` | uint16 | 省略可 | 送信者の送信元 bind ポート (0 = OS が自動選定)。証明書方式 (`auth = "cert"`) の片方向通信 (`unicast` / `multicast` / `broadcast` と各 RAW モード) の送信者では 0 以外の指定が必須 |
 | `path_group1` 〜 `path_group8` | uint8 | 省略可 | 各経路の優先グループ番号 (1〜4、既定値 `1`)。番号が小さいほど優先度が高い。範囲外の値は設定エラー |
 | `group_failback_ms` | uint32 | 省略可 | 上位グループの回復を判定するまでの時間 (ms、既定値 `0`)。`0` の場合は実効 `health_timeout_ms` と同じ値を使用 |
-| `health_interval_ms` | uint32 | 省略可 | グローバルの `udp_health_interval_ms` または `tcp_health_interval_ms` をサービス単位でオーバーライドします。 |
+| `health_interval_ms` | uint32 | 省略可 | グローバルの `udp_health_interval_ms` または `tcp_health_interval_ms` をサービス単位でオーバーライドします。上限は 2,147,483,646 です。ヘルス チェックを使う種別で実効値が上限を超える場合、サービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
 | `health_timeout_ms`  | uint32 | 省略可 | グローバルの `udp_health_timeout_ms` または `tcp_health_timeout_ms` をサービス単位でオーバーライドします。 |
 | `pack_wait_ms` | uint32 | 省略可 | パッキング待機時間 (ミリ秒)。0 で即時送信 |
 | `auth` | 文字列 | 省略可 | 認証・暗号方式。`"psk"` (既定値、事前共有鍵方式) または `"cert"` (証明書方式) |
@@ -232,7 +237,7 @@ Table: unicast_bidir_n1 専用の設定項目
 | `dst_port` | uint16 | 必須 | — | SENDER: 接続先ポート。RECEIVER: listen ポート |
 | `src_addr1` | 文字列 | 省略可 | — | SENDER: ローカル bind アドレス (省略で自動選択)。RECEIVER: 接続元 IP フィルター (省略でフィルターなし) |
 | `src_port` | uint16 | 省略可 | 0 | SENDER: ローカル bind ポート (`0` または省略でエフェメラル)。RECEIVER: 接続元ポート フィルター (`0` または省略でフィルターなし) |
-| `reconnect_interval_ms` | uint32 | 省略可 | 5,000 | SENDER の自動再接続間隔 (ms)。`0` で自動再接続なし。RECEIVER では無視 |
+| `reconnect_interval_ms` | uint32 | 省略可 | 5,000 | SENDER の自動再接続間隔 (ms)。`0` で自動再接続なし。RECEIVER では無視。上限は 2,147,483,646 で、検査は SENDER だけで行います。超える場合、サービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します |
 | `connect_timeout_ms` | uint32 | 省略可 | 10,000 | SENDER の TCP 接続タイムアウト (ms)。`0` で OS 既定値。RECEIVER では無視 |
 
 Table: tcp および tcp_bidir 専用の設定項目
@@ -641,6 +646,7 @@ PING、ハンドシェイク、鍵配布、FIN、FIN_ACK は、待機グルー�
 | 区分 | エラーとなる条件 |
 |---|---|
 | グローバル設定 | `max_payload` が `64` 未満、または `POTR_MAX_PAYLOAD` (`65,435`) を超える |
+| 待機の時間 | 実効の `health_interval_ms` (ヘルス チェックを使う種別)、`reconnect_interval_ms` (`tcp`、`tcp_bidir` の SENDER)、`tcp_close_timeout_ms` (`tcp` の SENDER、`tcp_bidir`) が `2,147,483,646` を超える、または `tcp_health_timeout_ms` (`tcp`、`tcp_bidir` の RECEIVER) が `715,827,882` を超える |
 | 経路数 | 9 番目以降の経路キー (`src_addr9`、`dst_addr9`、`path_group9` など) が指定されている |
 | 優先グループ | `path_group1` 〜 `path_group8` に `1` 〜 `4` の範囲外の値 (`0` や `5` 以上) が指定されている (設定ファイル読み込み時) |
 | 証明書方式 (`auth = "cert"`) | `cert_file` または `key_file` が未指定、秘密鍵と証明書が一致しない、またはファイル読み込みに失敗した (`POTR_ERR_IO`) |

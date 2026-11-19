@@ -42,6 +42,19 @@ static void config_set_global_defaults(potr_global_config *global)
     global->tcp_close_timeout_ms = (uint32_t)POTR_DEFAULT_TCP_CLOSE_TIMEOUT_MS;
 }
 
+/**
+ *  @brief          整数として解釈できない global の設定値を WARNING のトレースへ出力します。
+ *  @param[in]      key     設定キー。
+ *  @param[in]      val     解釈できなかった設定値の文字列。
+ *
+ *  @details        設定値は既定値または直前の値のまま維持し、呼び出し元へ失敗を通知しません。
+ */
+static void trace_unparsed_global_value(const char *key, const char *val)
+{
+    POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING, "config: global %s value \"%s\" cannot be parsed, keeping current value",
+               key, val);
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_internal_config_load_global(const char *config_path, potr_global_config *global)
@@ -72,7 +85,7 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
 
     /*
      * global オブジェクトの各キーを走査し、対応する設定項目を更新する。
-     * パースに失敗した項目はデフォルト値を維持する。
+     * パースに失敗した項目はデフォルト値 (または直前の値) を維持し、項目名と値を WARNING のトレースへ出力する。
      */
     cJSON_ArrayForEach(item, global_object)
     {
@@ -87,43 +100,73 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
 
         if (strcmp(key, "window_size") == 0)
         {
-            (void)cplat_parse_uint16(&global->window_size, val, 10);
+            if (cplat_parse_uint16(&global->window_size, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "max_payload") == 0)
         {
-            (void)cplat_parse_uint16(&global->max_payload, val, 10);
+            if (cplat_parse_uint16(&global->max_payload, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "udp_health_interval_ms") == 0)
         {
-            (void)cplat_parse_uint32(&global->udp_health_interval_ms, val, 10);
+            if (cplat_parse_uint32(&global->udp_health_interval_ms, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "udp_health_timeout_ms") == 0)
         {
-            (void)cplat_parse_uint32(&global->udp_health_timeout_ms, val, 10);
+            if (cplat_parse_uint32(&global->udp_health_timeout_ms, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "tcp_health_interval_ms") == 0)
         {
-            (void)cplat_parse_uint32(&global->tcp_health_interval_ms, val, 10);
+            if (cplat_parse_uint32(&global->tcp_health_interval_ms, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "tcp_health_timeout_ms") == 0)
         {
-            (void)cplat_parse_uint32(&global->tcp_health_timeout_ms, val, 10);
+            if (cplat_parse_uint32(&global->tcp_health_timeout_ms, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "tcp_close_timeout_ms") == 0)
         {
-            (void)cplat_parse_uint32(&global->tcp_close_timeout_ms, val, 10);
+            if (cplat_parse_uint32(&global->tcp_close_timeout_ms, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "reorder_timeout_ms") == 0)
         {
-            (void)cplat_parse_uint32(&global->reorder_timeout_ms, val, 10);
+            if (cplat_parse_uint32(&global->reorder_timeout_ms, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "max_message_size") == 0)
         {
-            (void)cplat_parse_uint32(&global->max_message_size, val, 10);
+            if (cplat_parse_uint32(&global->max_message_size, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
         else if (strcmp(key, "send_queue_depth") == 0)
         {
-            (void)cplat_parse_uint32(&global->send_queue_depth, val, 10);
+            if (cplat_parse_uint32(&global->send_queue_depth, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
         }
     }
     cjson_app_cJSON_Delete(root);

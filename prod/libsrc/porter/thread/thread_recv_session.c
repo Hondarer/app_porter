@@ -68,7 +68,12 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "recv[service_id=%" PRId64 "]: new session (first contact), new_id=%u seq=%u",
                    ctx->service.service_id, pkt->session_id, (unsigned)pkt->seq_num);
-        potr_internal_window_init(slot->recv_window, pkt->seq_num, ctx->global.window_size, ctx->global.max_payload);
+        /*
+         * サービスまたはピアを作る時点で同じ window_size と max_payload で確保したウィンドウの状態をリセットするだけで
+         * 再確保が起きないため、戻り値は明示的に破棄する。
+         */
+        (void)potr_internal_window_init(slot->recv_window, pkt->seq_num, ctx->global.window_size,
+                                        ctx->global.max_payload);
         return 1;
     }
 
@@ -136,7 +141,11 @@ int thread_recv_session_adopt(thread_recv_slot *slot, const potr_packet *pkt)
     *slot->peer_session_ts = pkt_session_ts;
     *slot->reorder_pending = 0;
     slot_clear_pending_fin(slot);
-    potr_internal_window_init(slot->recv_window, pkt->seq_num, ctx->global.window_size, ctx->global.max_payload);
+    /*
+     * サービスまたはピアを作る時点で同じ window_size と max_payload で確保したウィンドウの状態をリセットするだけで
+     * 再確保が起きないため、戻り値は明示的に破棄する。
+     */
+    (void)potr_internal_window_init(slot->recv_window, pkt->seq_num, ctx->global.window_size, ctx->global.max_payload);
 
     return 1;
 }
@@ -237,6 +246,10 @@ void thread_recv_sync_path_state(thread_recv_slot *slot)
         potr_internal_emit_peer_path_events_locked(ctx, slot->peer, &prepared);
         cplat_local_lock_unlock(ctx->callback_mutex);
         potr_internal_path_group_result selection;
+        /*
+         * 経路状態の変化をグループの状態へ反映する目的だけで呼び、失敗 (時計の取得の失敗) は次の送信の経路選択と
+         * 受信スレッドの周期処理が検出するため、戻り値は明示的に破棄する。
+         */
         (void)potr_internal_path_group_select(ctx, slot->peer, &selection);
         return;
     }
@@ -259,6 +272,10 @@ void thread_recv_sync_path_state(thread_recv_slot *slot)
     potr_internal_emit_service_path_events_locked(ctx, &prepared);
     cplat_local_lock_unlock(ctx->callback_mutex);
     potr_internal_path_group_result selection;
+    /*
+     * 経路状態の変化をグループの状態へ反映する目的だけで呼び、失敗 (時計の取得の失敗) は次の送信の経路選択と
+     * 受信スレッドの周期処理が検出するため、戻り値は明示的に破棄する。
+     */
     (void)potr_internal_path_group_select(ctx, NULL, &selection);
 }
 

@@ -109,6 +109,7 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
         return POTR_ERR_IO;
     }
     cplat_local_lock_lock(ctx->callback_mutex);
+    /* 期限切れの受信者を無効にする副作用だけを使い、到達できるグループの集合はここでは使わないため、戻り値は明示的に破棄する。 */
     (void)potr_internal_receiver_groups_locked(ctx, now_ms);
     for (receiver = ctx->receivers; receiver != NULL; receiver = receiver->next)
     {

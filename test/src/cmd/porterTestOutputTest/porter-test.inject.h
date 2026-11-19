@@ -13,6 +13,10 @@ extern "C"
     int test_do_open(potr_role role, const char *config_path, int64_t service_id, int *is_bidir_out, int *can_send_out);
     void test_set_stop_target_screen(cplat_pinned_prompt *screen);
     void test_invoke_shutdown_callback(void);
+    void test_ensure_tracer_started(void);
+    int test_get_tracer_started(void);
+    void test_reset_tracer_started(void);
+    void test_do_close_handle(potr_context *handle, int64_t service_id);
 #ifdef __cplusplus
 }
 #endif

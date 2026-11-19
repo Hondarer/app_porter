@@ -96,17 +96,29 @@ static void close_tcp_conn(potr_context *ctx, int path_idx)
     cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
 }
 
-/* 再接続待機: reconnect_interval_ms 経過または停止シグナルまでスリープする。 */
+/*
+ * 再接続待機: reconnect_interval_ms 経過または停止シグナルまでスリープする。
+ * 待機の失敗は ERROR のトレースへ出し、呼び出し元へ通知しない (呼び出し元は再接続へ進む)。
+ */
 static void reconnect_wait(potr_context *ctx, int path_idx, int wait_ms)
 {
+    int wait_result = CPLAT_OK;
+
     cplat_local_lock_lock(ctx->tcp_state_mutex);
 
     if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
-        cplat_condvar_timed_wait(ctx->tcp_state_cv, ctx->tcp_state_mutex, wait_ms);
+        wait_result = cplat_condvar_timed_wait(ctx->tcp_state_cv, ctx->tcp_state_mutex, wait_ms);
     }
 
     cplat_local_lock_unlock(ctx->tcp_state_mutex);
+
+    if (wait_result != CPLAT_OK && wait_result != CPLAT_ERR_TIMEOUT)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "connect_thread[service_id=%" PRId64 " path=%d]: reconnect wait failed (result=%d)",
+                   ctx->service.service_id, path_idx, wait_result);
+    }
 }
 
 /*
@@ -282,7 +294,7 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
                        "retrying in %ums",
                        ctx->service.service_id, path_idx, (unsigned)ctx->service.reconnect_interval_ms);
 
-            /* reconnect_interval_ms は再接続間隔の設定値。実用範囲は INT_MAX 以下。 */
+            /* reconnect_interval_ms は再接続間隔の設定値。上限 2147483646 (INT_MAX - 1) は open_validate_config() で検査済み。 */
             reconnect_wait(ctx, path_idx, (int)ctx->service.reconnect_interval_ms);
             continue;
         }
@@ -301,6 +313,7 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
             {
                 break;
             }
+            /* reconnect_interval_ms は再接続間隔の設定値。上限 2147483646 (INT_MAX - 1) は open_validate_config() で検査済み。 */
             reconnect_wait(ctx, path_idx, (int)ctx->service.reconnect_interval_ms);
             continue;
         }
@@ -348,7 +361,7 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
                 break;
             }
 
-            /* reconnect_interval_ms は再接続間隔の設定値。実用範囲は INT_MAX 以下。 */
+            /* reconnect_interval_ms は再接続間隔の設定値。上限 2147483646 (INT_MAX - 1) は open_validate_config() で検査済み。 */
             reconnect_wait(ctx, path_idx, (int)ctx->service.reconnect_interval_ms);
             continue;
         }
@@ -395,7 +408,7 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
                    "connect_thread[service_id=%" PRId64 " path=%d]: waiting %ums before reconnect",
                    ctx->service.service_id, path_idx, (unsigned)ctx->service.reconnect_interval_ms);
 
-        /* reconnect_interval_ms は再接続間隔の設定値。実用範囲は INT_MAX 以下。 */
+        /* reconnect_interval_ms は再接続間隔の設定値。上限 2147483646 (INT_MAX - 1) は open_validate_config() で検査済み。 */
         reconnect_wait(ctx, path_idx, (int)ctx->service.reconnect_interval_ms);
     }
 }
@@ -416,7 +429,10 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
  */
 static void receiver_accept_loop(potr_context *ctx, int path_idx)
 {
-    /* 先読みタイムアウト: TCP ヘルス チェック タイムアウトの POTR_TCP_FIRST_PKT_TIMEOUT_SCALE 倍、未設定時は既定値。 */
+    /*
+     * 先読みタイムアウト: TCP ヘルス チェック タイムアウトの POTR_TCP_FIRST_PKT_TIMEOUT_SCALE 倍、未設定時は既定値。
+     * tcp_health_timeout_ms の上限 715827882 は open_validate_config() で検査済みのため、3 倍しても 2147483646 を超えない。
+     */
     uint32_t first_pkt_timeout_ms = POTR_DEFAULT_TCP_FIRST_PKT_TIMEOUT_MS;
 
     if (ctx->global.tcp_health_timeout_ms > 0U)
@@ -448,6 +464,12 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             continue;
         }
 
+        /*
+         * 受け付け済みのソケットの経路であり、Windows のソケットの初期化は成功済みである。宛先は
+         * CPLAT_IPV4_ADDR_STRLEN の大きさで、inet_ntop の失敗の条件 (未対応のアドレス ファミリー、容量不足) にも
+         * 当たらないため、戻り値は明示的に破棄する。
+         * see: https://pubs.opengroup.org/onlinepubs/9799919799/functions/inet_ntop.html
+         */
         (void)cplat_ipv4_to_string(peer_addr.address, peer_addr_str, sizeof(peer_addr_str), NULL);
 
         /* 接続元フィルター: src_addr[path_idx] / src_port が指定されていれば一致確認する。 */
@@ -487,7 +509,10 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             size_t pkt_len = 0;
             int r;
 
-            /* first_pkt_timeout_ms は先読み待機時間 [ms]。実用範囲は INT_MAX 以下。 */
+            /*
+             * first_pkt_timeout_ms は先読み待機時間 [ms]。tcp_health_timeout_ms の上限 715827882 は
+             * open_validate_config() で検査済みのため、3 倍しても 2147483646 を超えない。
+             */
             r = thread_connect_read_first_packet(conn, ctx->tcp_first_pkt_buf[path_idx],
                                                  POTR_PACKET_HEADER_SIZE + ctx->global.max_payload, &pkt_len,
                                                  (int)first_pkt_timeout_ms);

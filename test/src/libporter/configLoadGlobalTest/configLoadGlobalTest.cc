@@ -26,7 +26,76 @@
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 
+#include <cstring>
+#include <ostream>
+#include <string>
+
 using namespace testing;
+
+namespace
+{
+/** 解釈できない global の設定値と、維持される既定値の組。 */
+struct unparsed_global_case
+{
+    const char *name;
+    const char *key;
+    const char *value;
+    uint32_t expected;
+};
+
+void PrintTo(const unparsed_global_case &, std::ostream *);
+void PrintTo(const unparsed_global_case &value, std::ostream *output)
+{
+    *output << "name: \"" << value.name << "\", key: \"" << value.key << "\", value: \"" << value.value
+            << "\", expected: " << value.expected;
+}
+
+/** 設定キーに対応する global 設定構造体の値を返す。 */
+uint32_t global_field(const potr_global_config &global, const char *key)
+{
+    if (strcmp(key, "window_size") == 0)
+    {
+        return global.window_size;
+    }
+    if (strcmp(key, "max_payload") == 0)
+    {
+        return global.max_payload;
+    }
+    if (strcmp(key, "udp_health_interval_ms") == 0)
+    {
+        return global.udp_health_interval_ms;
+    }
+    if (strcmp(key, "udp_health_timeout_ms") == 0)
+    {
+        return global.udp_health_timeout_ms;
+    }
+    if (strcmp(key, "tcp_health_interval_ms") == 0)
+    {
+        return global.tcp_health_interval_ms;
+    }
+    if (strcmp(key, "tcp_health_timeout_ms") == 0)
+    {
+        return global.tcp_health_timeout_ms;
+    }
+    if (strcmp(key, "tcp_close_timeout_ms") == 0)
+    {
+        return global.tcp_close_timeout_ms;
+    }
+    if (strcmp(key, "reorder_timeout_ms") == 0)
+    {
+        return global.reorder_timeout_ms;
+    }
+    if (strcmp(key, "max_message_size") == 0)
+    {
+        return global.max_message_size;
+    }
+    return global.send_queue_depth;
+}
+} // namespace
+
+class configLoadGlobalUnparsedTest : public TestWithParam<unparsed_global_case>
+{
+};
 
 // 必須引数が NULL の場合に POTR_ERR_INVALID_ARGUMENT を返すことの確認
 TEST(configLoadGlobalTest, returnsInvalidArgumentWhenParameterIsNull)
@@ -340,3 +409,63 @@ TEST(configLoadGlobalTest, out_of_range_values_preserve_defaults)
     EXPECT_EQ(POTR_SEND_QUEUE_DEPTH,
               global.send_queue_depth); // [確認_正常系] - global.send_queue_depth が POTR_SEND_QUEUE_DEPTH であること。
 }
+
+// 解釈できない global の設定値で WARNING を出し、既定値を維持することの確認
+TEST_P(configLoadGlobalUnparsedTest, warns_and_keeps_default_when_value_cannot_be_parsed)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    const unparsed_global_case &param = GetParam();
+    std::string json = std::string("{\"global\":{\"") + param.key + "\":\"" + param.value + "\"}}";
+    ConfigLineStream lines({json.c_str()}); // [状態] - 1 項目だけに解釈できない値を持つ global 定義を用意する。
+    potr_global_config global = {};
+    ON_CALL(mock_cplat, cplat_fopen(StrEq("unparsed.jsonc"), StrEq("r"), nullptr))
+        .WillByDefault(Return(
+            ConfigLineStream::handle())); // [状態] - cplat_fopen() から設定用ストリームを返すように既定動作を設定する。
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, const int, const char *, char *buf, int size, FILE *stream) -> char *
+            {
+                return lines.read(buf, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Return(0)); // [状態] - fclose() から 0 を返すように既定動作を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
+        .Times(AnyNumber()); // [Pre-Assert確認_正常系 回数=PARAM] - cplat_tracer_writef_at() が任意の回数呼び出されること。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_WARNING, nullptr,
+                                                   AllOf(HasSubstr(param.key), HasSubstr(param.value))))
+        .Times(1); // [Pre-Assert確認_異常系 回数=PARAM] - cplat_tracer_writef_at() が CPLAT_TRACE_LEVEL_WARNING、nullptr、項目名と値を含む文字列を指定して 1 回呼び出されること。
+
+    // Act
+    int actual_ret = potr_internal_config_load_global(
+        "unparsed.jsonc",
+        &global); // [手順] - 解釈できない値を含む設定ファイルを指定して potr_internal_config_load_global() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系 回数=PARAM] - 設定の読み込みが成功すること。
+    EXPECT_EQ(param.expected,
+              global_field(global, param.key)); // [確認_異常系 回数=PARAM] - 解釈できない値を与えた項目が既定値のままであること。
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    , configLoadGlobalUnparsedTest,
+    Values(unparsed_global_case{"window_size_text", "window_size", "abc", POTR_DEFAULT_WINDOW_SIZE},
+           unparsed_global_case{"max_payload_out_of_range", "max_payload", "65536", POTR_DEFAULT_MAX_PAYLOAD},
+           unparsed_global_case{"udp_health_interval_ms_negative", "udp_health_interval_ms", "-1",
+                                POTR_DEFAULT_UDP_HEALTH_INTERVAL_MS},
+           unparsed_global_case{"udp_health_timeout_ms_out_of_range", "udp_health_timeout_ms", "4294967296",
+                                POTR_DEFAULT_UDP_HEALTH_TIMEOUT_MS},
+           unparsed_global_case{"tcp_health_interval_ms_text", "tcp_health_interval_ms", "abc",
+                                POTR_DEFAULT_TCP_HEALTH_INTERVAL_MS},
+           unparsed_global_case{"tcp_health_timeout_ms_negative", "tcp_health_timeout_ms", "-1",
+                                POTR_DEFAULT_TCP_HEALTH_TIMEOUT_MS},
+           unparsed_global_case{"tcp_close_timeout_ms_out_of_range", "tcp_close_timeout_ms", "4294967296",
+                                POTR_DEFAULT_TCP_CLOSE_TIMEOUT_MS},
+           unparsed_global_case{"reorder_timeout_ms_text", "reorder_timeout_ms", "abc", 0U},
+           unparsed_global_case{"max_message_size_negative", "max_message_size", "-1", POTR_MAX_MESSAGE_SIZE},
+           unparsed_global_case{"send_queue_depth_out_of_range", "send_queue_depth", "4294967296",
+                                POTR_SEND_QUEUE_DEPTH}),
+    [](const TestParamInfo<unparsed_global_case> &param_info) { return std::string(param_info.param.name); });

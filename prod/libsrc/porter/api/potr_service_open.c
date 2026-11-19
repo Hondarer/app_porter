@@ -45,6 +45,15 @@
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
 
+/**
+ * 待機の関数へ int で渡す設定値の上限 [ms] (INT_MAX - 1)。
+ * INT_MAX は CPLAT_WAIT_FOREVER と同じ値で無期限の待機になるため、上限に含めない。
+ */
+#define POTR_WAIT_MS_MAX 2147483646U
+
+/** tcp_health_timeout_ms の上限 [ms]。POTR_TCP_FIRST_PKT_TIMEOUT_SCALE 倍しても POTR_WAIT_MS_MAX を超えない値。 */
+#define POTR_TCP_HEALTH_TIMEOUT_MS_MAX (POTR_WAIT_MS_MAX / POTR_TCP_FIRST_PKT_TIMEOUT_SCALE)
+
 /*
  * セッション識別子と開始時刻を生成してコンテキストに格納する。
  * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は (key, nonce) の再利用を招く。
@@ -123,6 +132,8 @@ static int open_validate_callback(const potr_context *ctx, potr_role role, potr_
 
 /*
  * 設定値を検証し、実効ヘルス チェック間隔・タイムアウトを解決する。
+ * 実効値を決めた後に、待機の時間に使う設定値の上限を、値を使う種別と役割だけで検査する。
+ * 呼び出し前に ctx->role を設定しておく。
  * 検証に通ったときは POTR_OK を返し、不正なときは POTR_ERR_INVALID_ARGUMENT を返す。
  */
 static int open_validate_config(potr_context *ctx)
@@ -221,6 +232,46 @@ static int open_validate_config(potr_context *ctx)
     if (ctx->service.health_timeout_ms != 0U)
     {
         ctx->health_timeout_ms = ctx->service.health_timeout_ms;
+    }
+
+    /* 待機の時間に使う設定値の上限の正本は app/porter/docs/config.md である。 */
+    if ((is_tcp_type(ctx->service.type) || ctx->role == POTR_ROLE_SENDER ||
+         ctx->service.type == POTR_TYPE_UNICAST_BIDIR || ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1) &&
+        ctx->health_interval_ms > POTR_WAIT_MS_MAX)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "potr_service_open: service_id=%" PRId64 " invalid health_interval_ms=%u (max: %u)",
+                   ctx->service.service_id, (unsigned)ctx->health_interval_ms, (unsigned)POTR_WAIT_MS_MAX);
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    if (is_tcp_type(ctx->service.type) && ctx->role == POTR_ROLE_SENDER &&
+        ctx->service.reconnect_interval_ms > POTR_WAIT_MS_MAX)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "potr_service_open: service_id=%" PRId64 " invalid reconnect_interval_ms=%u (max: %u)",
+                   ctx->service.service_id, (unsigned)ctx->service.reconnect_interval_ms, (unsigned)POTR_WAIT_MS_MAX);
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    if (is_tcp_type(ctx->service.type) && ctx->role == POTR_ROLE_RECEIVER &&
+        ctx->global.tcp_health_timeout_ms > POTR_TCP_HEALTH_TIMEOUT_MS_MAX)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "potr_service_open: service_id=%" PRId64 " invalid tcp_health_timeout_ms=%u (max: %u)",
+                   ctx->service.service_id, (unsigned)ctx->global.tcp_health_timeout_ms,
+                   (unsigned)POTR_TCP_HEALTH_TIMEOUT_MS_MAX);
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    if (is_tcp_type(ctx->service.type) &&
+        (ctx->role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR) &&
+        ctx->global.tcp_close_timeout_ms > POTR_WAIT_MS_MAX)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "potr_service_open: service_id=%" PRId64 " invalid tcp_close_timeout_ms=%u (max: %u)",
+                   ctx->service.service_id, (unsigned)ctx->global.tcp_close_timeout_ms, (unsigned)POTR_WAIT_MS_MAX);
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
     return POTR_OK;

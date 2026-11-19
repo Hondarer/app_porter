@@ -55,7 +55,7 @@ static int config_read_jsonc(const char *path, cJSON **root_out)
     text = (char *)cplat_malloc(capacity);
     if (text == NULL)
     {
-        fclose(fp);
+        (void)fclose(fp); /* 読み取り専用のファイルを失敗の経路で閉じるため、戻り値は明示的に破棄する */
         return POTR_ERR_OUT_OF_MEMORY;
     }
 
@@ -69,7 +69,7 @@ static int config_read_jsonc(const char *path, cJSON **root_out)
         {
             cplat_secure_zero(text, length);
             cplat_free(text);
-            fclose(fp);
+            (void)fclose(fp); /* 読み取り専用のファイルを失敗の経路で閉じるため、戻り値は明示的に破棄する */
             return POTR_ERR_OUT_OF_MEMORY;
         }
 
@@ -85,7 +85,7 @@ static int config_read_jsonc(const char *path, cJSON **root_out)
                 {
                     cplat_secure_zero(text, length);
                     cplat_free(text);
-                    fclose(fp);
+                    (void)fclose(fp); /* 読み取り専用のファイルを失敗の経路で閉じるため、戻り値は明示的に破棄する */
                     return POTR_ERR_OUT_OF_MEMORY;
                 }
 
@@ -97,7 +97,7 @@ static int config_read_jsonc(const char *path, cJSON **root_out)
             {
                 cplat_secure_zero(text, length);
                 cplat_free(text);
-                fclose(fp);
+                (void)fclose(fp); /* 読み取り専用のファイルを失敗の経路で閉じるため、戻り値は明示的に破棄する */
                 return POTR_ERR_OUT_OF_MEMORY;
             }
 
@@ -110,7 +110,8 @@ static int config_read_jsonc(const char *path, cJSON **root_out)
     }
 
     cplat_secure_zero(chunk, sizeof(chunk));
-    fclose(fp);
+    /* 読み込んだ内容は複写済みで、読み取り専用のファイルを閉じるだけのため、戻り値は明示的に破棄する。 */
+    (void)fclose(fp);
     text[length] = '\0';
 
     /* 蓄積した JSONC テキストを構文解析し、ルート オブジェクトを検証する。 */
@@ -145,6 +146,10 @@ static inline const char *config_value_text(const cJSON *item, char *buffer, siz
 
     if (cjson_app_cJSON_HasExactInteger(item) && cjson_app_cJSON_GetInt64Value(item, &parsed) && buffer_size >= 32U)
     {
+        /*
+         * 直前で buffer_size >= 32 を確かめており、int64 の十進表記 (最大 21 byte) は切り詰められないため、
+         * 戻り値は明示的に破棄する。
+         */
         (void)snprintf(buffer, buffer_size, "%" PRId64, parsed);
         return buffer;
     }

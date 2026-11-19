@@ -56,8 +56,9 @@ static void prefork_trace(const char *stage, const DWORD worker_pid, const SOCKE
     #if defined(TCPSERVER_PREFORK_TEST)
     tracer = prefork_probe_tracer();
     #endif
-    cplat_tracer_writef_at(tracer, CPLAT_TRACE_LEVEL_NONE, NULL, "%s worker=%lu connection=%llu result=%d", stage,
-                           worker_pid, (unsigned long long)connection, result);
+    /* トレースはテストの観測用の補助の記録であり、出力の失敗で処理を変えないため、戻り値は明示的に破棄する。 */
+    (void)cplat_tracer_writef_at(tracer, CPLAT_TRACE_LEVEL_NONE, NULL, "%s worker=%lu connection=%llu result=%d", stage,
+                                 worker_pid, (unsigned long long)connection, result);
 }
 
 /* ワーカーへの引き渡し後も、親が所有する記述子の解放は親の責務である。
@@ -144,7 +145,8 @@ static int pipe_transfer(const HANDLE pipe, void *data, DWORD length, const int 
         {
             ok = GetOverlappedResult(pipe, &operation, &transferred, TRUE);
         }
-        CloseHandle(operation.hEvent);
+        /* 1 回の転送に使ったイベント ハンドルの後始末であり、転送の結果は ok で判定するため、戻り値は明示的に破棄する。 */
+        (void)CloseHandle(operation.hEvent);
         if (!ok || transferred == 0U)
         {
             return 0;
@@ -190,7 +192,11 @@ static SOCKET receive_socket(const HANDLE pipe)
     {
         if (result != INVALID_SOCKET)
         {
-            closesocket(result);
+            /*
+             * 受領通知を送れなかったソケットを捨てる後始末であり、すでに INVALID_SOCKET を返す経路のため、
+             * 戻り値は明示的に破棄する。
+             */
+            (void)closesocket(result);
         }
         return INVALID_SOCKET;
     }
@@ -215,30 +221,32 @@ static SOCKET create_listen_socket(int port)
     struct addrinfo hints = {0}, *result;
     char port_str[8];
 
-    sprintf_s(port_str, sizeof(port_str), "%d", port);
+    /* port は main() で 1 から 65535 に検査済みで、5 文字と終端が port_str[8] に収まるため、戻り値は明示的に破棄する。 */
+    (void)sprintf_s(port_str, sizeof(port_str), "%d", port);
 
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
     hints.ai_flags = AI_PASSIVE;
 
+    /* 診断の出力先がほかになく、直後にプロセスを終了するため、この関数の fprintf の戻り値は明示的に破棄する。 */
     if (getaddrinfo(NULL, port_str, &hints, &result) != 0)
     {
-        fprintf(stderr, "getaddrinfo 失敗\n");
+        (void)fprintf(stderr, "getaddrinfo 失敗\n");
         cplat_exit(1);
     }
 
     SOCKET listen_socket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
     if (listen_socket == INVALID_SOCKET)
     {
-        fprintf(stderr, "socket 失敗\n");
+        (void)fprintf(stderr, "socket 失敗\n");
         freeaddrinfo(result);
         cplat_exit(1);
     }
 
     if (bind(listen_socket, result->ai_addr, (int)result->ai_addrlen) == SOCKET_ERROR)
     {
-        fprintf(stderr, "bind 失敗\n");
+        (void)fprintf(stderr, "bind 失敗\n");
         freeaddrinfo(result);
         cplat_exit(1);
     }
@@ -247,7 +255,7 @@ static SOCKET create_listen_socket(int port)
 
     if (listen(listen_socket, 128) == SOCKET_ERROR)
     {
-        fprintf(stderr, "listen 失敗\n");
+        (void)fprintf(stderr, "listen 失敗\n");
         cplat_exit(1);
     }
 
@@ -282,15 +290,18 @@ __declspec(noreturn) static void run_as_fork_child(SOCKET client_socket)
  */
 static void worker_loop(const char *pipe_name, int conns_per_worker)
 {
-
-    printf("[ワーカー PID %lu] 起動完了\n", GetCurrentProcessId());
+    /*
+     * 稼働状況は利用者が画面で確認する表示であり、診断も出力先がほかにないため、
+     * この関数の printf と fprintf の戻り値は明示的に破棄する。
+     */
+    (void)printf("[ワーカー PID %lu] 起動完了\n", GetCurrentProcessId());
 
     HANDLE pipe =
         CreateFileU(pipe_name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
 
     if (pipe == INVALID_HANDLE_VALUE)
     {
-        fprintf(stderr, "[ワーカー] パイプ接続失敗\n");
+        (void)fprintf(stderr, "[ワーカー] パイプ接続失敗\n");
         return;
     }
 
@@ -305,9 +316,9 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
                 break;
             }
 
-            printf("[ワーカー PID %lu] クライアント接続\n", GetCurrentProcessId());
+            (void)printf("[ワーカー PID %lu] クライアント接続\n", GetCurrentProcessId());
             g_session_fn(client_socket);
-            printf("[ワーカー PID %lu] 次のソケット待機\n", GetCurrentProcessId());
+            (void)printf("[ワーカー PID %lu] 次のソケット待機\n", GetCurrentProcessId());
 
             /* 親プロセスへ処理完了を通知する。 */
             if (!worker_reply(pipe, WORKER_DONE, 1))
@@ -322,7 +333,11 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
         SOCKET *active = (SOCKET *)cplat_malloc((size_t)conns_per_worker * sizeof(SOCKET));
         if (active == NULL)
         {
-            CloseHandle(pipe);
+            /*
+             * メモリ確保の失敗でワーカーを終える経路のパイプの後始末であり、失敗しても動作が変わらないため、
+             * 戻り値は明示的に破棄する。
+             */
+            (void)CloseHandle(pipe);
             return;
         }
 
@@ -369,9 +384,14 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
 
             /*
              * Windows Sockets において select() の第 1 引数 nfds は互換性のためにのみ存在し、無視される。
+             * 監視に失敗した場合は、診断を出してループを抜け、残りの接続とパイプを閉じてワーカーを終える。
              * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-select
              */
-            select(0, &read_fds, NULL, NULL, &tv);
+            if (select(0, &read_fds, NULL, NULL, &tv) == SOCKET_ERROR)
+            {
+                (void)fprintf(stderr, "[ワーカー PID %lu] select 失敗: %d\n", GetCurrentProcessId(), WSAGetLastError());
+                break;
+            }
 
             /* 末尾から走査して配列詰めを安全に行う。 */
             for (int i = active_count - 1; i >= 0; i--)
@@ -381,41 +401,96 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
                     continue;
                 }
 
+                /*
+                 * 受信したデータをエコーバックする。送信の失敗と一部だけの送信は、エコーが成立しないため、
+                 * 診断を出して切断と同じく接続を閉じる。
+                 */
                 int n = recv(active[i], buf, BUFFER_SIZE, 0);
-                if (n <= 0)
+                int send_failed = 0;
+
+                if (n > 0 && send(active[i], buf, n, 0) != n)
                 {
-                    closesocket(active[i]);
+                    (void)fprintf(stderr, "[ワーカー PID %lu] send 失敗: %d\n", GetCurrentProcessId(), WSAGetLastError());
+                    send_failed = 1;
+                }
+
+                if (n <= 0 || send_failed)
+                {
+                    /*
+                     * 切断した接続、または送信に失敗した接続の後始末であり、失敗しても動作が変わらないため、
+                     * 戻り値は明示的に破棄する。
+                     */
+                    (void)closesocket(active[i]);
                     active[i] = active[--active_count]; /* 末尾と入れ替えて削除 */
-                    printf("[ワーカー PID %lu] 接続終了 (残 %d 接続)\n", GetCurrentProcessId(), active_count);
+                    (void)printf("[ワーカー PID %lu] 接続終了 (残 %d 接続)\n", GetCurrentProcessId(), active_count);
 
                     /* 親プロセスへ接続 1 本分の処理完了を通知する。 */
                     if (!worker_reply(pipe, WORKER_DONE, 1))
                     {
+                        /*
+                         * 親への完了通知に失敗してワーカーを終える経路の接続とパイプの後始末であり、
+                         * 失敗しても動作が変わらないため、closesocket と CloseHandle の戻り値は明示的に破棄する。
+                         */
                         for (int j = 0; j < active_count; ++j)
                         {
-                            closesocket(active[j]);
+                            (void)closesocket(active[j]);
                         }
                         cplat_free(active);
-                        CloseHandle(pipe);
+                        (void)CloseHandle(pipe);
                         return;
                     }
-                }
-                else
-                {
-                    send(active[i], buf, n, 0);
                 }
             }
         }
 
+        /* ループを抜けてワーカーを終える経路の接続の後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
         for (int i = 0; i < active_count; ++i)
         {
-            closesocket(active[i]);
+            (void)closesocket(active[i]);
         }
         cplat_free(active);
     }
 
-    CloseHandle(pipe);
-    printf("[ワーカー PID %lu] 終了\n", GetCurrentProcessId());
+    /* ワーカーの終了時のパイプの後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+    (void)CloseHandle(pipe);
+    (void)printf("[ワーカー PID %lu] 終了\n", GetCurrentProcessId());
+}
+
+/**
+ *  @brief          イベントをシグナル状態にします。失敗した場合はプロセスを終了します。
+ *  @param[in]      event 対象のイベント。
+ *
+ *  イベントはワーカーの空きと受領の通知そのものであり、状態を変えられない場合は
+ *  接続の振り分けが成立しないため、診断を出して終了します。
+ *
+ *  @attention      失敗した場合は cplat_exit() で終了します。
+ */
+static void set_event_or_exit(const HANDLE event)
+{
+    if (!SetEvent(event))
+    {
+        /* 診断の出力先がほかになく、直後にプロセスを終了するため、戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "SetEvent 失敗: %lu\n", GetLastError());
+        cplat_exit(1);
+    }
+}
+
+/**
+ *  @brief          イベントを非シグナル状態にします。失敗した場合はプロセスを終了します。
+ *  @param[in]      event 対象のイベント。
+ *
+ *  理由は set_event_or_exit() と同じです。
+ *
+ *  @attention      失敗した場合は cplat_exit() で終了します。
+ */
+static void reset_event_or_exit(const HANDLE event)
+{
+    if (!ResetEvent(event))
+    {
+        /* 診断の出力先がほかになく、直後にプロセスを終了するため、戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "ResetEvent 失敗: %lu\n", GetLastError());
+        cplat_exit(1);
+    }
 }
 
 /**
@@ -442,7 +517,7 @@ static void worker_monitor_thread(void *arg)
             {
                 ++worker->conn_count;
             }
-            SetEvent(worker->ack_event);
+            set_event_or_exit(worker->ack_event);
         }
         else if (reply.type == WORKER_DONE && worker->conn_count > 0)
         {
@@ -456,23 +531,24 @@ static void worker_monitor_thread(void *arg)
         int connection_count = worker->conn_count;
         if (worker->alive && worker->conn_count + worker->pending < ctx->conns_per_worker)
         {
-            SetEvent(ctx->events[ctx->id]);
+            set_event_or_exit(ctx->events[ctx->id]);
         }
         else
         {
-            ResetEvent(ctx->events[ctx->id]);
+            reset_event_or_exit(ctx->events[ctx->id]);
         }
         LeaveCriticalSection(&worker->state_lock);
         prefork_trace(reply.type == WORKER_ACK ? "ack" : "done", worker->process_id, INVALID_SOCKET,
                       reply.type == WORKER_ACK ? (int)reply.accepted : connection_count);
     }
-    DisconnectNamedPipe(worker->pipe);
+    /* ワーカーの終了後にパイプを切る後始末であり、以後このパイプを使わないため、戻り値は明示的に破棄する。 */
+    (void)DisconnectNamedPipe(worker->pipe);
     EnterCriticalSection(&worker->state_lock);
     worker->alive = 0;
     worker->pending = 0;
     worker->ack_ok = 0;
-    SetEvent(worker->ack_event);
-    SetEvent(ctx->events[ctx->id]); /* 空き待機側に終了を通知する。 */
+    set_event_or_exit(worker->ack_event);
+    set_event_or_exit(ctx->events[ctx->id]); /* 空き待機側に終了を通知する。 */
     LeaveCriticalSection(&worker->state_lock);
     prefork_trace("monitor_dead", worker->process_id, INVALID_SOCKET, 0);
 }
@@ -504,10 +580,10 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
                 {
                     worker->pending = 1;
                     worker->ack_ok = 0;
-                    ResetEvent(worker->ack_event);
+                    reset_event_or_exit(worker->ack_event);
                     if (worker->conn_count + worker->pending == conns_per_worker)
                     {
-                        ResetEvent(events[i]);
+                        reset_event_or_exit(events[i]);
                     }
                     LeaveCriticalSection(&worker->state_lock);
                     return i;
@@ -515,7 +591,7 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
             }
             else
             {
-                ResetEvent(events[i]);
+                reset_event_or_exit(events[i]);
             }
             LeaveCriticalSection(&worker->state_lock);
         }
@@ -540,7 +616,7 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
  *  各ワーカーに名前付きパイプと監視スレッドを作成し、
  *  自分自身を `--worker <pipe_name>` 引数付きで再起動します。
  *
- *  @attention      パイプ作成またはプロセス起動に失敗した場合は cplat_exit() で終了します。
+ *  @attention      実行ファイルのパスの取得、パイプ作成、またはプロセス起動に失敗した場合は cplat_exit() で終了します。
  */
 static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, int conns_per_worker)
 {
@@ -548,27 +624,36 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
     char cmdline[PLATFORM_PATH_MAX + 128];
     char exepath[PLATFORM_PATH_MAX];
 
-    GetModuleFileNameU(NULL, exepath, PLATFORM_PATH_MAX);
+    /*
+     * 診断の出力先がほかになく、起動状況は利用者が画面で確認する表示であるため、
+     * この関数の fprintf と printf の戻り値は明示的に破棄する。
+     */
+    if (GetModuleFileNameU(NULL, exepath, PLATFORM_PATH_MAX) == 0)
+    {
+        (void)fprintf(stderr, "GetModuleFileName 失敗: %lu\n", GetLastError());
+        cplat_exit(1);
+    }
 
     /* 監視スレッドの引数はプロセス終了まで有効である必要があるため、ヒープに確保する。 */
     WorkerMonitorArg *args = (WorkerMonitorArg *)cplat_malloc((size_t)n * sizeof(WorkerMonitorArg));
     if (args == NULL)
     {
-        fprintf(stderr, "malloc 失敗\n");
+        (void)fprintf(stderr, "malloc 失敗\n");
         cplat_exit(1);
     }
 
     /* 各ワーカー向けの名前付きパイプと監視スレッドを作成し、ワーカー プロセスを起動する。 */
     for (int i = 0; i < n; i++)
     {
-        sprintf_s(pipe_name, sizeof(pipe_name), TCPSERVER_PIPE_NAME_FMT, i);
+        /* パイプ名は書式と int の最大桁数から pipe_name[64] に収まるため、戻り値は明示的に破棄する。 */
+        (void)sprintf_s(pipe_name, sizeof(pipe_name), TCPSERVER_PIPE_NAME_FMT, i);
 
         workers[i].pipe = CreateNamedPipeU(pipe_name, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
                                            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4096, 4096, 0, NULL);
 
         if (workers[i].pipe == INVALID_HANDLE_VALUE)
         {
-            fprintf(stderr, "パイプ作成失敗: %d\n", i);
+            (void)fprintf(stderr, "パイプ作成失敗: %d\n", i);
             cplat_free(args);
             cplat_exit(1);
         }
@@ -585,16 +670,20 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
             cplat_exit(1);
         }
 
-        /* 1 ワーカーあたりの同時接続数上限を指定してワーカー プロセスを起動する。 */
-        sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --worker %s --conns-per-worker %d", exepath, pipe_name,
-                  conns_per_worker);
+        /*
+         * 1 ワーカーあたりの同時接続数上限を指定してワーカー プロセスを起動する。
+         * 実行ファイルのパス (PLATFORM_PATH_MAX 未満) と固定の引数は cmdline[PLATFORM_PATH_MAX + 128] に収まるため、
+         * 戻り値は明示的に破棄する。
+         */
+        (void)sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --worker %s --conns-per-worker %d", exepath, pipe_name,
+                        conns_per_worker);
 
         STARTUPINFOW si = {sizeof(si)};
         PROCESS_INFORMATION pi;
 
         if (!CreateProcessU(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
         {
-            fprintf(stderr, "ワーカー起動失敗: %d\n", i);
+            (void)fprintf(stderr, "ワーカー起動失敗: %d\n", i);
             cplat_free(args);
             cplat_exit(1);
         }
@@ -605,7 +694,8 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         prefork_probe_worker_started(i, pi.dwProcessId);
     #endif
         workers[i].conn_count = 0;
-        CloseHandle(pi.hThread);
+        /* 使わないワーカーのスレッド ハンドルを閉じる処理であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+        (void)CloseHandle(pi.hThread);
 
         /* ワーカー プロセスが名前付きパイプに接続するのを待機する。 */
         {
@@ -635,24 +725,33 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
                         }
                         else
                         {
-                            CancelIoEx(workers[i].pipe, &connection);
+                            /*
+                             * 取り消す I/O がすでに完了していても直後に完了を待ち、取り消した接続待ちの結果は使わず
+                             * ワーカーの接続の失敗として後始末へ進むため、この 2 つの戻り値は明示的に破棄する。
+                             */
+                            (void)CancelIoEx(workers[i].pipe, &connection);
                             (void)GetOverlappedResult(workers[i].pipe, &connection, &ignored, TRUE);
                         }
                     }
                 }
-                CloseHandle(connection.hEvent);
+                /* パイプ接続の待機に使ったイベント ハンドルの後始末であり、動作が変わらないため、戻り値は明示的に破棄する。 */
+                (void)CloseHandle(connection.hEvent);
             }
             if (!connected)
             {
+                /*
+                 * パイプ接続に失敗したワーカーの後始末であり、このワーカーは alive = 0 で以後使わず、
+                 * イベントも find_available_worker() が再びリセットするため、この節の戻り値は明示的に破棄する。
+                 */
                 workers[i].alive = 0;
-                ResetEvent(events[i]);
-                CloseHandle(workers[i].pipe);
+                (void)ResetEvent(events[i]);
+                (void)CloseHandle(workers[i].pipe);
                 workers[i].pipe = INVALID_HANDLE_VALUE;
-                CloseHandle(workers[i].process);
+                (void)CloseHandle(workers[i].process);
                 workers[i].process = NULL;
-                CloseHandle(workers[i].ack_event);
+                (void)CloseHandle(workers[i].ack_event);
                 workers[i].ack_event = NULL;
-                fprintf(stderr, "ワーカーのパイプ接続失敗: %d\n", i);
+                (void)fprintf(stderr, "ワーカーのパイプ接続失敗: %d\n", i);
                 continue;
             }
         }
@@ -667,14 +766,14 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
 
         if (cplat_thread_create(&monitor_thread, worker_monitor_thread, (void *)&args[i]) != CPLAT_OK)
         {
-            fprintf(stderr, "監視スレッド起動失敗: %d\n", i);
+            (void)fprintf(stderr, "監視スレッド起動失敗: %d\n", i);
             cplat_free(args);
             cplat_exit(1);
         }
 
         cplat_thread_detach(monitor_thread);
 
-        printf("[親プロセス] ワーカー %d (PID %lu) 起動完了\n", i, pi.dwProcessId);
+        (void)printf("[親プロセス] ワーカー %d (PID %lu) 起動完了\n", i, pi.dwProcessId);
     }
 
     /* args はスレッドが使い続けるため解放しない (プロセス終了時に解放される)。 */
@@ -694,7 +793,7 @@ void platform_init(ClientSessionFn session_fn)
 
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
     {
-        fprintf(stderr, "WSAStartup 失敗\n");
+        (void)fprintf(stderr, "WSAStartup 失敗\n"); /* 診断の出力先がほかにないため、戻り値は明示的に破棄する */
         cplat_exit(1);
     }
 
@@ -708,7 +807,8 @@ void platform_init(ClientSessionFn session_fn)
 
 void platform_cleanup(void)
 {
-    WSACleanup();
+    /* プロセスの終了の直前の Winsock の後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+    (void)WSACleanup();
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -768,9 +868,18 @@ void run_fork_server(int port)
 {
     SOCKET listen_socket = create_listen_socket(port);
     char exepath[PLATFORM_PATH_MAX];
-    GetModuleFileNameU(NULL, exepath, PLATFORM_PATH_MAX);
 
-    printf("[親プロセス %lu] fork モード、ポート %d で待ち受け開始\n", GetCurrentProcessId(), port);
+    /*
+     * 稼働状況は利用者が画面で確認する表示であり、診断も出力先がほかにないため、
+     * この関数の printf と fprintf の戻り値は明示的に破棄する。
+     */
+    if (GetModuleFileNameU(NULL, exepath, PLATFORM_PATH_MAX) == 0)
+    {
+        (void)fprintf(stderr, "GetModuleFileName 失敗: %lu\n", GetLastError());
+        cplat_exit(1);
+    }
+
+    (void)printf("[親プロセス %lu] fork モード、ポート %d で待ち受け開始\n", GetCurrentProcessId(), port);
 
     /* クライアント接続を受け付けるたびに、子プロセスを生成してソケット ハンドルを引き渡す。 */
     while (1)
@@ -781,24 +890,39 @@ void run_fork_server(int port)
             continue;
         }
 
-        printf("[親プロセス] 接続受付、子プロセス生成\n");
+        (void)printf("[親プロセス] 接続受付、子プロセス生成\n");
 
-        /* 子プロセスへソケット ハンドルを継承させるため、継承可能フラグを設定する。 */
-        SetHandleInformation((HANDLE)client_socket, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+        /*
+         * 子プロセスへソケット ハンドルを継承させるため、継承可能フラグを設定する。
+         * 設定できない場合は子プロセスが接続を使えないため、子プロセスを起動せずに接続を閉じ、次の接続を受け付ける。
+         */
+        if (!SetHandleInformation((HANDLE)client_socket, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
+        {
+            (void)fprintf(stderr, "[親プロセス] SetHandleInformation 失敗: %lu\n", GetLastError());
+            /* 子へ渡せなかった接続を閉じる後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+            (void)closesocket(client_socket);
+            continue;
+        }
 
         char cmdline[PLATFORM_PATH_MAX + 64];
-        sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --child %llu", exepath, (unsigned long long)client_socket);
+        /*
+         * 実行ファイルのパス (PLATFORM_PATH_MAX 未満) と固定の引数 (ソケットは最大 20 桁) は
+         * cmdline[PLATFORM_PATH_MAX + 64] に収まるため、戻り値は明示的に破棄する。
+         */
+        (void)sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --child %llu", exepath, (unsigned long long)client_socket);
 
         STARTUPINFOW si = {sizeof(si)};
         PROCESS_INFORMATION pi;
 
         if (CreateProcessU(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
         {
-            CloseHandle(pi.hProcess);
-            CloseHandle(pi.hThread);
+            /* 起動した子プロセスのハンドルは使わず、閉じる処理の失敗で動作が変わらないため、この 2 つの戻り値は明示的に破棄する。 */
+            (void)CloseHandle(pi.hProcess);
+            (void)CloseHandle(pi.hThread);
         }
 
-        closesocket(client_socket);
+        /* 子プロセスの起動の後に親が持つ接続の複製を閉じる処理であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+        (void)closesocket(client_socket);
     }
 }
 
@@ -809,17 +933,21 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
     WorkerInfo *workers = (WorkerInfo *)cplat_malloc((size_t)num_workers * sizeof(WorkerInfo));
     HANDLE *events = (HANDLE *)cplat_malloc((size_t)num_workers * sizeof(HANDLE));
 
+    /*
+     * 診断の出力先がほかになく、稼働状況は利用者が画面で確認する表示であるため、
+     * この関数の fprintf と printf の戻り値は明示的に破棄する。
+     */
     if (workers == NULL || events == NULL)
     {
-        fprintf(stderr, "malloc 失敗\n");
+        (void)fprintf(stderr, "malloc 失敗\n");
         cplat_exit(1);
     }
 
     SOCKET listen_socket = create_listen_socket(port);
-    printf("[親プロセス %lu] prefork モード、ワーカー %d 個を起動中 (1 ワーカーあたり最大 %d 接続)...\n",
-           GetCurrentProcessId(), num_workers, conns_per_worker);
+    (void)printf("[親プロセス %lu] prefork モード、ワーカー %d 個を起動中 (1 ワーカーあたり最大 %d 接続)...\n",
+                 GetCurrentProcessId(), num_workers, conns_per_worker);
     start_prefork_workers(workers, events, num_workers, conns_per_worker);
-    printf("[親プロセス] ポート %d で待ち受け開始\n", port);
+    (void)printf("[親プロセス] ポート %d で待ち受け開始\n", port);
 
     /* クライアント接続を受け付け、空きのあるワーカー プロセスへ名前付きパイプ経由でソケットを引き渡す。 */
     while (1)
@@ -838,7 +966,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         {
             close_parent_socket(client_socket, 0);
             prefork_trace("no_worker", 0, client_socket, 0);
-            fprintf(stderr, "利用可能なワーカーがありません\n");
+            (void)fprintf(stderr, "利用可能なワーカーがありません\n");
             continue;
         }
         WorkerInfo *worker = &workers[worker_id];
@@ -852,11 +980,15 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
             {
                 worker->alive = 0; /* 書きかけの転送があるパイプは再利用しない。 */
             }
-            SetEvent(events[worker_id]);
+            set_event_or_exit(events[worker_id]);
             LeaveCriticalSection(&worker->state_lock);
             if (duplicated)
             {
-                DisconnectNamedPipe(worker->pipe);
+                /*
+                 * 書きかけの転送があるパイプを再利用しないための後始末であり、以後このパイプを使わないため、
+                 * 戻り値は明示的に破棄する。
+                 */
+                (void)DisconnectNamedPipe(worker->pipe);
             }
             close_parent_socket(client_socket, worker->process_id);
             continue;
@@ -874,13 +1006,13 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         {
             worker->alive = 0;
             worker->pending = 0;
-            SetEvent(events[worker_id]);
+            set_event_or_exit(events[worker_id]);
         }
         LeaveCriticalSection(&worker->state_lock);
         close_parent_socket(client_socket, worker->process_id);
         if (!accepted)
         {
-            fprintf(stderr, "ワーカー %d へのソケット引き渡しに失敗しました\n", worker_id);
+            (void)fprintf(stderr, "ワーカー %d へのソケット引き渡しに失敗しました\n", worker_id);
         }
     }
 }

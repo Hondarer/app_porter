@@ -109,7 +109,8 @@ static int create_listen_socket(int port)
         cplat_exit(1);
     }
 
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    /* SO_REUSEADDR は再起動時の補助であり、失敗の影響は直後の bind の検査で分かるため、戻り値は明示的に破棄する。 */
+    (void)setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
@@ -151,7 +152,8 @@ static int create_listen_socket(int port)
  */
 static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
 {
-    printf("[ワーカー %d, PID %lu] 起動完了、接続待機\n", worker_id, (unsigned long)get_pid());
+    /* 稼働状況は利用者が画面で確認する表示であり、失敗を伝える先がないため、この関数の printf の戻り値は明示的に破棄する。 */
+    (void)printf("[ワーカー %d, PID %lu] 起動完了、接続待機\n", worker_id, (unsigned long)get_pid());
 
     if (conns_per_worker == 1)
     {
@@ -177,9 +179,9 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
                 continue;
             }
 
-            printf("[ワーカー %d] クライアント接続\n", worker_id);
+            (void)printf("[ワーカー %d] クライアント接続\n", worker_id);
             g_session_fn(client_fd);
-            printf("[ワーカー %d] 次の接続待機\n", worker_id);
+            (void)printf("[ワーカー %d] 次の接続待機\n", worker_id);
         }
     }
     else
@@ -246,12 +248,13 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev) < 0)
                     {
                         perror("epoll_ctl add client_fd");
-                        cplat_close(client_fd, NULL);
+                        /* 登録に失敗した接続を捨てる後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+                        (void)cplat_close(client_fd, NULL);
                         continue;
                     }
 
                     active_count++;
-                    printf("[ワーカー %d] 新規接続 (計 %d 接続)\n", worker_id, active_count);
+                    (void)printf("[ワーカー %d] 新規接続 (計 %d 接続)\n", worker_id, active_count);
 
                     /*
                      * ワーカーの同時接続数上限に達したため、
@@ -259,20 +262,36 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
                      */
                     if (active_count >= conns_per_worker)
                     {
-                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, server_fd, NULL);
+                        /* server_fd は同じ epoll に登録済みで、削除の失敗の条件に当たらないため、戻り値は明示的に破棄する。 */
+                        (void)epoll_ctl(epoll_fd, EPOLL_CTL_DEL, server_fd, NULL);
                         accepting = 0;
                     }
                 }
                 else
                 {
-                    /* 既存接続からのデータ受信、またはクライアントの切断を処理する。 */
+                    /*
+                     * 既存接続からのデータ受信とエコーバック、またはクライアントの切断を処理する。
+                     * 送信の失敗と一部だけの送信は、エコーが成立しないため、診断を出して切断と同じく接続を閉じる。
+                     */
                     ssize_t n = client_recv(fd, buf, sizeof(buf));
-                    if (n <= 0)
+                    int send_failed = 0;
+
+                    if (n > 0 && client_send(fd, buf, (size_t)n) != n)
                     {
-                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-                        client_close(fd);
+                        perror("write");
+                        send_failed = 1;
+                    }
+
+                    if (n <= 0 || send_failed)
+                    {
+                        /*
+                         * 切断した接続、または送信に失敗した接続の後始末であり、直後に閉じる記述子は閉じれば監視からも外れ、
+                         * 閉じる処理の失敗でも動作が変わらないため、この 2 つの戻り値は明示的に破棄する。
+                         */
+                        (void)epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
+                        (void)client_close(fd);
                         active_count--;
-                        printf("[ワーカー %d] 接続終了 (残 %d 接続)\n", worker_id, active_count);
+                        (void)printf("[ワーカー %d] 接続終了 (残 %d 接続)\n", worker_id, active_count);
 
                         /* 接続に空きが生じたため、server_fd を epoll に再登録して新規接続の受け付けを再開する。 */
                         if (!accepting && active_count < conns_per_worker)
@@ -286,18 +305,15 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
                             }
                         }
                     }
-                    else
-                    {
-                        client_send(fd, buf, (size_t)n);
-                    }
                 }
             }
         }
 
-        cplat_close(epoll_fd, NULL);
+        /* ワーカーの終了の直前に epoll の記述子を閉じる後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+        (void)cplat_close(epoll_fd, NULL);
     }
 
-    printf("[ワーカー %d] 終了\n", worker_id);
+    (void)printf("[ワーカー %d] 終了\n", worker_id);
     exit(0);
 }
 
@@ -311,7 +327,22 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
 
 void platform_init(ClientSessionFn session_fn)
 {
+    struct sigaction sa;
+
     g_session_fn = session_fn;
+
+    /*
+     * 相手が切断した後の送信でプロセスが終了しないよう、SIGPIPE を無視する。
+     * 送信は EPIPE で失敗し、送信の失敗の診断へ進む。fork した子とワーカーも設定を引き継ぐ。
+     * 有効なシグナル番号とローカル変数の構造体を渡し、失敗の条件 (EINVAL、EFAULT) に当たらないため、
+     * sigemptyset と sigaction の戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man2/sigaction.2.html
+     * see: https://man7.org/linux/man-pages/man3/sigsetops.3.html
+     */
+    sa.sa_handler = SIG_IGN;
+    (void)sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    (void)sigaction(SIGPIPE, &sa, NULL);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -346,14 +377,21 @@ void run_fork_server(int port)
     socklen_t addr_len = sizeof(addr);
     struct sigaction sa;
 
-    /* 終了した子プロセスのゾンビ化を防ぐため、SIGCHLD ハンドラーを設定する。 */
+    /*
+     * 終了した子プロセスのゾンビ化を防ぐため、SIGCHLD ハンドラーを設定する。
+     * 有効なシグナル番号とローカル変数の構造体を渡し、失敗の条件 (EINVAL、EFAULT) に当たらないため、
+     * sigemptyset と sigaction の戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man2/sigaction.2.html
+     * see: https://man7.org/linux/man-pages/man3/sigsetops.3.html
+     */
     sa.sa_handler = sigchld_handler;
-    sigemptyset(&sa.sa_mask);
+    (void)sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
-    sigaction(SIGCHLD, &sa, NULL);
+    (void)sigaction(SIGCHLD, &sa, NULL);
 
     server_fd = create_listen_socket(port);
-    printf("[親プロセス %lu] fork モード、ポート %d で待ち受け開始\n", (unsigned long)get_pid(), port);
+    /* 稼働状況は利用者が画面で確認する表示であり、失敗を伝える先がないため、この関数の printf の戻り値は明示的に破棄する。 */
+    (void)printf("[親プロセス %lu] fork モード、ポート %d で待ち受け開始\n", (unsigned long)get_pid(), port);
 
     /* クライアントからの接続を受け付け、接続ごとに子プロセスを fork して通信を処理する。 */
     while (1)
@@ -365,13 +403,14 @@ void run_fork_server(int port)
             continue;
         }
 
-        printf("[親プロセス] 接続受付、子プロセス生成\n");
+        (void)printf("[親プロセス] 接続受付、子プロセス生成\n");
 
         pid_t pid = fork();
         if (pid < 0)
         {
             perror("fork");
-            cplat_close(client_fd, NULL);
+            /* fork の失敗後、子へ渡せなかった接続を閉じる後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+            (void)cplat_close(client_fd, NULL);
         }
         else if (pid == 0)
         {
@@ -379,15 +418,20 @@ void run_fork_server(int port)
              * 子プロセス。
              * cplat_exit() は親が登録したシャットダウン コールバックを
              * fork で継承したまま実行してしまうため、生の exit() を使用する。
+             * 子プロセスが使わない待ち受けソケットの複製を閉じる処理であり、失敗しても動作が変わらないため、
+             * 戻り値は明示的に破棄する。
              */
-            cplat_close(server_fd, NULL);
+            (void)cplat_close(server_fd, NULL);
             g_session_fn(client_fd);
             exit(0);
         }
         else
         {
-            /* 親プロセス側では不要となったクライアント ソケットを閉じる。 */
-            cplat_close(client_fd, NULL);
+            /*
+             * 親プロセス側では不要となったクライアント ソケットを閉じる。
+             * 子へ渡した接続の複製を閉じる処理であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。
+             */
+            (void)cplat_close(client_fd, NULL);
         }
     }
 }
@@ -399,22 +443,29 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
     int server_fd;
     struct sigaction sa;
 
-    /* SIGINT と SIGTERM で待機ループを抜けるため、ハンドラーを設定する。 */
+    /*
+     * SIGINT と SIGTERM で待機ループを抜けるため、ハンドラーを設定する。
+     * 有効なシグナル番号とローカル変数の構造体を渡し、失敗の条件 (EINVAL、EFAULT) に当たらないため、
+     * この関数の sigemptyset と sigaction の戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man2/sigaction.2.html
+     * see: https://man7.org/linux/man-pages/man3/sigsetops.3.html
+     */
     sa.sa_handler = shutdown_handler;
-    sigemptyset(&sa.sa_mask);
+    (void)sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
+    (void)sigaction(SIGINT, &sa, NULL);
+    (void)sigaction(SIGTERM, &sa, NULL);
 
     /* 終了した子プロセスのゾンビ化を防ぐため、SIGCHLD ハンドラーを設定する。 */
     sa.sa_handler = sigchld_handler;
     sa.sa_flags = SA_RESTART;
-    sigaction(SIGCHLD, &sa, NULL);
+    (void)sigaction(SIGCHLD, &sa, NULL);
 
     server_fd = create_listen_socket(port);
-    printf("[親プロセス %lu] prefork モード、ポート %d で待ち受け開始\n", (unsigned long)get_pid(), port);
-    printf("[親プロセス] %d 個のワーカープロセスを起動 (1 ワーカーあたり最大 %d 接続)\n", num_workers,
-           conns_per_worker);
+    /* 稼働状況は利用者が画面で確認する表示であり、失敗を伝える先がないため、この関数の printf の戻り値は明示的に破棄する。 */
+    (void)printf("[親プロセス %lu] prefork モード、ポート %d で待ち受け開始\n", (unsigned long)get_pid(), port);
+    (void)printf("[親プロセス] %d 個のワーカープロセスを起動 (1 ワーカーあたり最大 %d 接続)\n", num_workers,
+                 conns_per_worker);
 
     pid_t *worker_pids = cplat_malloc((size_t)num_workers * sizeof(pid_t));
     if (worker_pids == NULL)
@@ -444,7 +495,7 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         worker_pids[i] = pid;
     }
 
-    printf("[親プロセス] Ctrl+C で終了\n");
+    (void)printf("[親プロセス] Ctrl+C で終了\n");
 
     /* シグナルを受信するまで待機を継続する。 */
     while (running)
@@ -452,29 +503,36 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
         pause();
     }
 
-    printf("\n[親プロセス] 全ワーカーを終了させます\n");
+    (void)printf("\n[親プロセス] 全ワーカーを終了させます\n");
 
-    /* 全ワーカー プロセスへ SIGTERM を送信して終了を促す。 */
+    /*
+     * 全ワーカー プロセスへ SIGTERM を送信して終了を促す。
+     * ワーカーが終了済みで回収された場合 (ESRCH) は送る必要がないため、戻り値は明示的に破棄する。
+     */
     for (int i = 0; i < num_workers; i++)
     {
         if (worker_pids[i] > 0)
         {
-            kill(worker_pids[i], SIGTERM);
+            (void)kill(worker_pids[i], SIGTERM);
         }
     }
 
-    /* 全ワーカー プロセスの終了を同期待機して回収する。 */
+    /*
+     * 全ワーカー プロセスの終了を同期待機して回収する。
+     * SIGCHLD ハンドラーが先に回収した場合 (ECHILD) もワーカーは終了済みのため、戻り値は明示的に破棄する。
+     */
     for (int i = 0; i < num_workers; i++)
     {
         if (worker_pids[i] > 0)
         {
-            waitpid(worker_pids[i], NULL, 0);
+            (void)waitpid(worker_pids[i], NULL, 0);
         }
     }
 
     cplat_free(worker_pids);
-    cplat_close(server_fd, NULL);
-    printf("[親プロセス] 終了\n");
+    /* 親プロセスの終了の直前に待ち受けソケットを閉じる後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+    (void)cplat_close(server_fd, NULL);
+    (void)printf("[親プロセス] 終了\n");
 }
 
 #elif defined(PLATFORM_WINDOWS) && defined(COMPILER_MSVC)

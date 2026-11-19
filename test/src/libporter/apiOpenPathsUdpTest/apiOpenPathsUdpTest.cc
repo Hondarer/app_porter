@@ -818,6 +818,54 @@ TEST(apiOpenPathsUdpTest, multicast_sender_joins_with_src_addr)
     EXPECT_EQ(42U, ctx.multicast_if_resolved[0]); // [確認_正常系] - ctx.multicast_if_resolved[0] が 42U であること。(送信側が src_addr1 の解決値を参加 NIC としたことの確認)
 }
 
+// 送信側で送信インターフェイスの設定に失敗した場合に、ソケットを閉じて POTR_ERR_IO を返すことの確認
+TEST(apiOpenPathsUdpTest, multicast_sender_set_interface_failure)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            }); // [状態] - src を 42U に解決する。
+    ON_CALL(mock_porter, api_paths_parse_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            }); // [状態] - グループ アドレスの解析を成功させる。
+    potr_context ctx = {};
+    ctx.service.dst_port = 1234;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.multicast_group, "239.1.2.3", sizeof("239.1.2.3"));
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(9);
+                return CPLAT_OK;
+            }); // [状態] - ソケット生成を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - bind を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - グループ参加を成功させる。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_multicast_interface(static_cast<cplat_socket>(9), 42U, _))
+        .WillOnce(Return(CPLAT_ERR_UNKNOWN));
+    // [Pre-Assert確認_異常系] - cplat_socket_set_multicast_interface() が 9、42U を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_socket_set_multicast_interface() から CPLAT_ERR_UNKNOWN を返す。
+    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(9))).Times(1);
+    // [Pre-Assert確認_異常系] - cplat_socket_close() が 9 を指定して 1 回呼び出されること。
+    // Act
+    int actual_ret = api_open_paths_multicast(&ctx, POTR_ROLE_SENDER); // [手順] - 送信側の経路を準備する。
+    // Assert
+    EXPECT_EQ(POTR_ERR_IO, actual_ret); // [確認_異常系] - api_open_paths_multicast() の戻り値が POTR_ERR_IO であること。
+}
+
 // dst_addr2 だけの経路を列挙しないことの確認
 TEST(apiOpenPathsUdpTest, multicast_ignores_dst_only_path)
 {

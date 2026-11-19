@@ -81,6 +81,7 @@ static void slot_send_packet(thread_recv_slot *slot, const potr_packet *packet)
         {
             return;
         }
+        /* UDP の送出は届く保証がなく、失われた NACK、REJECT、再送 DATA は相手の再要求で回復するため、戻り値は明示的に破棄する。 */
         (void)cplat_socket_sendto(ctx->sock[i], ctx->recv_buf, wire_len, &slot->dest_addr[i], &sent, NULL);
     }
 }
@@ -144,6 +145,7 @@ static void slot_send_nack(thread_recv_slot *slot, uint32_t nack_seq)
         {
             return;
         }
+        /* NACK が届かない場合は、欠番が残る間の再判定で送り直すため、戻り値は明示的に破棄する。 */
         (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &dest, &sent, NULL);
     }
 }
@@ -249,7 +251,8 @@ static int slot_gap_ready(thread_recv_slot *slot, uint32_t nack_num)
  */
 static void raw_session_disconnect(thread_recv_slot *slot)
 {
-    thread_recv_set_all_path_ping_states(slot->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
+    /* 結果は失敗ではなく経路の状態が変わったかを表し、この経路では割り込みの PING を送らないため、戻り値は明示的に破棄する。 */
+    (void)thread_recv_set_all_path_ping_states(slot->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
     memset(slot->remote_path_ping_state, 0, POTR_MAX_PATH);
     thread_recv_disconnect_service_all_paths(slot->ctx);
     *slot->pending_fin = 0;
@@ -510,6 +513,10 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: DATA seq=%u updates health on path=%d",
                    ctx->service.service_id, (unsigned)pkt->seq_num, path_idx);
+        /*
+         * 結果は受信状態が変化したかどうかであり、直後の thread_recv_sync_path_state が変化の有無によらず状態を
+         * 反映するため、戻り値は明示的に破棄する。
+         */
         (void)thread_recv_update_path_health(slot, path_idx);
         thread_recv_sync_path_state(slot);
     }
@@ -603,8 +610,9 @@ void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt
      * 1 通番ずつのスキップでは大きく遅れた受信側が送信側の保持範囲へ追い付けない。
      * 全経路の切断を通知したうえで受信状態を破棄し、次に届く DATA または PING の通番で受信ウィンドウを再初期化する。
      * last_recv_ts は送信側の生存を示すため維持する。
+     * 結果は失敗ではなく経路の状態が変わったかを表し、この経路では割り込みの PING を送らないため、戻り値は明示的に破棄する。
      */
-    thread_recv_set_all_path_ping_states(slot->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
+    (void)thread_recv_set_all_path_ping_states(slot->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
     memset(slot->remote_path_ping_state, 0, POTR_MAX_PATH);
 
     if (slot->peer != NULL)
@@ -760,7 +768,11 @@ void thread_recv_window_check_reorder_timeout(thread_recv_slot *slot)
         raw_session_disconnect(slot);
         *slot->peer_session_known = 0;
         slot->last_recv_ts->tv_sec = 0;
-        potr_internal_window_init(slot->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
+        /*
+         * サービスまたはピアを作る時点で同じ window_size と max_payload で確保したウィンドウの状態をリセットするだけで
+         * 再確保が起きないため、戻り値は明示的に破棄する。
+         */
+        (void)potr_internal_window_init(slot->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
     }
     else
     {

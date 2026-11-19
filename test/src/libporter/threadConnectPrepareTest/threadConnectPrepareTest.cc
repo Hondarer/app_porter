@@ -646,6 +646,8 @@ TEST(threadConnectPrepareTest, connect_immediate_success)
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
     // [状態] - 接続の段階と停止フラグを指定する。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
@@ -683,6 +685,8 @@ TEST(threadConnectPrepareTest, connect_connect_failure)
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
     // [状態] - 接続の段階と停止フラグを指定する。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
@@ -720,6 +724,8 @@ TEST(threadConnectPrepareTest, connect_deadline)
                 return CPLAT_ERR_TIMEOUT;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
     // [状態] - 接続の段階と停止フラグを指定する。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
@@ -758,6 +764,8 @@ TEST(threadConnectPrepareTest, connect_stopped)
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
     // [状態] - 接続の段階と停止フラグを指定する。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
@@ -796,6 +804,8 @@ TEST(threadConnectPrepareTest, connect_wait_failure)
                 return CPLAT_ERR_UNKNOWN;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
     // [状態] - 接続の段階と停止フラグを指定する。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
@@ -833,6 +843,8 @@ TEST(threadConnectPrepareTest, connect_pending_failure)
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
+    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
     // [状態] - 接続の段階と停止フラグを指定する。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
@@ -870,6 +882,8 @@ TEST(threadConnectPrepareTest, connect_poll_success)
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
     // [状態] - 接続の段階と停止フラグを指定する。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
@@ -994,4 +1008,137 @@ TEST(threadConnectPrepareTest, connect_nodelay_failure_continues)
     cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
     // Assert
     EXPECT_EQ(static_cast<cplat_socket>(7), actual_ret); // [確認_正常系] - 成功したソケットの所有権を返すこと。
+}
+
+// 非ブロッキングへの切り替えに失敗した場合に、接続せずにソケットを閉じて失敗を返すことの確認
+TEST(threadConnectPrepareTest, connect_set_nonblocking_failure)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.connect_timeout_ms = 250;
+    ctx.service.src_port = 0;
+    ctx.service.service_id = 11;
+    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(7);
+                return CPLAT_OK;
+            }); // [状態] - cplat_socket_open() から、7 を出力して CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_socket_set_nodelay(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nodelay() から CPLAT_OK を返すように既定動作を設定する。
+    // [状態] - タイムアウト付き接続と、ソケットの生成の成功を指定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_nonblocking(static_cast<cplat_socket>(7), 1, _))
+        .WillOnce(Return(CPLAT_ERR_UNKNOWN)); // [Pre-Assert確認_異常系] - cplat_socket_set_nonblocking() が 7、1 を指定して 1 回呼び出されること。
+                                              // [Pre-Assert手順] - cplat_socket_set_nonblocking() から CPLAT_ERR_UNKNOWN を返す。
+    EXPECT_CALL(mock_cplat, cplat_socket_connect(_, _, _))
+        .Times(0); // [Pre-Assert確認_異常系] - cplat_socket_connect() が呼び出されないこと。
+    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
+        .Times(1); // [Pre-Assert確認_異常系] - cplat_socket_close() が 7 を指定して 1 回呼び出されること。
+    EXPECT_CALL(mock_porter, potr_internal_trace_socket_failure_at(_, _, CPLAT_TRACE_LEVEL_ERROR, _,
+                                                                   HasSubstr("set_nonblocking failed")))
+        .Times(1); // [Pre-Assert確認_異常系] - potr_internal_trace_socket_failure_at() が CPLAT_TRACE_LEVEL_ERROR、"set_nonblocking failed" を含む文字列を指定して 1 回呼び出されること。
+
+    // Act
+    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - thread_connect_with_timeout() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - thread_connect_with_timeout() の戻り値が CPLAT_INVALID_SOCKET であること。
+}
+
+// 即時の接続の成功の後にブロッキングへ戻せない場合に、ソケットを閉じて失敗を返すことの確認
+TEST(threadConnectPrepareTest, connect_immediate_set_blocking_failure)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.connect_timeout_ms = 250;
+    ctx.service.src_port = 0;
+    ctx.service.service_id = 11;
+    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(7);
+                return CPLAT_OK;
+            }); // [状態] - cplat_socket_open() から、7 を出力して CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_connect() から CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_socket_set_nodelay(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nodelay() から CPLAT_OK を返すように既定動作を設定する。
+    // [状態] - タイムアウト付き接続と、即時の接続の成功を指定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_nonblocking(static_cast<cplat_socket>(7), 1, _))
+        .WillOnce(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - cplat_socket_set_nonblocking() が 7、1 を指定して 1 回呼び出されること。
+                                     // [Pre-Assert手順] - cplat_socket_set_nonblocking() から CPLAT_OK を返す。
+    EXPECT_CALL(mock_cplat, cplat_socket_set_nonblocking(static_cast<cplat_socket>(7), 0, _))
+        .WillOnce(Return(CPLAT_ERR_UNKNOWN)); // [Pre-Assert確認_異常系] - cplat_socket_set_nonblocking() が 7、0 を指定して 1 回呼び出されること。
+                                              // [Pre-Assert手順] - cplat_socket_set_nonblocking() から CPLAT_ERR_UNKNOWN を返す。
+    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
+        .Times(1); // [Pre-Assert確認_異常系] - cplat_socket_close() が 7 を指定して 1 回呼び出されること。
+    EXPECT_CALL(mock_porter, potr_internal_trace_socket_failure_at(_, _, CPLAT_TRACE_LEVEL_ERROR, _,
+                                                                   HasSubstr("set_blocking failed")))
+        .Times(1); // [Pre-Assert確認_異常系] - potr_internal_trace_socket_failure_at() が CPLAT_TRACE_LEVEL_ERROR、"set_blocking failed" を含む文字列を指定して 1 回呼び出されること。
+
+    // Act
+    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - thread_connect_with_timeout() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - thread_connect_with_timeout() の戻り値が CPLAT_INVALID_SOCKET であること。
+}
+
+// ポーリングでの接続の完了の後にブロッキングへ戻せない場合に、ソケットを閉じて失敗を返すことの確認
+TEST(threadConnectPrepareTest, connect_poll_set_blocking_failure)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.connect_timeout_ms = 250;
+    ctx.service.src_port = 0;
+    ctx.service.service_id = 11;
+    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(7);
+                return CPLAT_OK;
+            }); // [状態] - cplat_socket_open() から、7 を出力して CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _))
+        .WillByDefault(Return(CPLAT_ERR_IN_PROGRESS)); // [状態] - cplat_socket_connect() から CPLAT_ERR_IN_PROGRESS を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_timed_wait_writable() から CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_get_pending_error() から CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_socket_set_nodelay(_, _, _))
+        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nodelay() から CPLAT_OK を返すように既定動作を設定する。
+    // [状態] - タイムアウト付き接続と、ポーリングでの接続の完了を指定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_nonblocking(static_cast<cplat_socket>(7), 1, _))
+        .WillOnce(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - cplat_socket_set_nonblocking() が 7、1 を指定して 1 回呼び出されること。
+                                     // [Pre-Assert手順] - cplat_socket_set_nonblocking() から CPLAT_OK を返す。
+    EXPECT_CALL(mock_cplat, cplat_socket_set_nonblocking(static_cast<cplat_socket>(7), 0, _))
+        .WillOnce(Return(CPLAT_ERR_UNKNOWN)); // [Pre-Assert確認_異常系] - cplat_socket_set_nonblocking() が 7、0 を指定して 1 回呼び出されること。
+                                              // [Pre-Assert手順] - cplat_socket_set_nonblocking() から CPLAT_ERR_UNKNOWN を返す。
+    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
+        .Times(1); // [Pre-Assert確認_異常系] - cplat_socket_close() が 7 を指定して 1 回呼び出されること。
+    EXPECT_CALL(mock_porter, potr_internal_trace_socket_failure_at(_, _, CPLAT_TRACE_LEVEL_ERROR, _,
+                                                                   HasSubstr("set_blocking failed")))
+        .Times(1); // [Pre-Assert確認_異常系] - potr_internal_trace_socket_failure_at() が CPLAT_TRACE_LEVEL_ERROR、"set_blocking failed" を含む文字列を指定して 1 回呼び出されること。
+
+    // Act
+    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - thread_connect_with_timeout() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - thread_connect_with_timeout() の戻り値が CPLAT_INVALID_SOCKET であること。
 }

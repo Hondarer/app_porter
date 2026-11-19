@@ -352,13 +352,18 @@ static int tcp_flush_packets(potr_context *ctx, const uint8_t *payload_base, siz
     result = tcp_write_all_paths(ctx, packets, n_packets, selection.selected_paths);
     if (result == POTR_OK && selection.data_paths != selection.selected_paths)
     {
+        /*
+         * 選択したグループの経路へは書き込み済みであり、ほかのグループへの複製の失敗で送信の結果は変わらず、
+         * 書き込みの失敗は tcp_write_path がトレースするため、戻り値は明示的に破棄する。
+         */
         (void)tcp_write_all_paths(ctx, packets, n_packets, (uint8_t)(selection.data_paths & ~selection.selected_paths));
     }
     if (result == POTR_OK)
     {
         for (i = 0U; i < n_packets; i++)
         {
-            potr_internal_window_send_push(&ctx->send_window, &packets[i]);
+            /* 満杯でも最古のエントリを追い出して格納し、NULL の場合だけ失敗する契約のため、戻り値は明示的に破棄する。 */
+            (void)potr_internal_window_send_push(&ctx->send_window, &packets[i]);
         }
         ctx->send_has_data = 1;
     }
@@ -441,8 +446,11 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
         send_ret = cplat_socket_sendto(ctx->sock[i], ctx->crypto_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
         if (window_pending)
         {
-            /* 封緘に成功した平文を保持する。封緘と送出の間にはウィンドウ操作を挟まない。 */
-            potr_internal_window_send_push(&ctx->send_window, &outer_pkt);
+            /*
+             * 封緘に成功した平文を保持する。封緘と送出の間にはウィンドウ操作を挟まない。
+             * 満杯でも最古のエントリを追い出して格納し、NULL の場合だけ失敗する契約のため、戻り値は明示的に破棄する。
+             */
+            (void)potr_internal_window_send_push(&ctx->send_window, &outer_pkt);
             ctx->send_has_data = 1;
             window_pending = 0;
         }
@@ -532,10 +540,15 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
                 }
                 return;
             }
+            /*
+             * 送出したパケットは直後に送信ウィンドウへ保持し、届かなかった分は NACK による再送で回復するため、
+             * 戻り値は明示的に破棄する。
+             */
             (void)cplat_socket_sendto(ctx->sock[k], ctx->crypto_buf, wire_len, &peer->dest_addr[k], &sent, NULL);
             if (window_pending)
             {
-                potr_internal_window_send_push(&peer->send_window, &outer_pkt);
+                /* 満杯でも最古のエントリを追い出して格納し、NULL の場合だけ失敗する契約のため、戻り値は明示的に破棄する。 */
+                (void)potr_internal_window_send_push(&peer->send_window, &outer_pkt);
                 peer->send_has_data = 1;
                 cplat_local_lock_unlock(peer->send_window_mutex);
                 window_pending = 0;

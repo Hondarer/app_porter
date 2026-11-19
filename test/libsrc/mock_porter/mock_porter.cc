@@ -147,6 +147,21 @@ Mock_porter::Mock_porter()
 
     ON_CALL(*this, potr_internal_trace_socket_failure_at(_, _, _, _, _)).WillByDefault(Return());
 
+    // auth
+    ON_CALL(*this, potr_internal_auth_credentials_create(_, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_auth_credentials_dispose(_)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_auth_session_create(_, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_auth_session_dispose(_)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_auth_session_receive(_, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_auth_session_take_output(_, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_auth_session_get_timeout_ms(_, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_auth_session_handle_timeout(_, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_auth_session_export_keys(_, _, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_auth_session_failure_reason(_)).WillByDefault(Return(""));
+
+    // 公開関数は既定で実関数へ委譲する。
+    ON_CALL(*this, potr_service_close(_)).WillByDefault(Invoke(delegate_real_potr_service_close));
+
     TESTFW_REGISTER_MOCK_INSTANCE(_mock_porter);
 }
 

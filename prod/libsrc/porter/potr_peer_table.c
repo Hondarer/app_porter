@@ -154,6 +154,10 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
         {
             return;
         }
+        /*
+         * FIN は終了の通知であり、届かなくてもピアの解放を続け、相手はヘルス チェックのタイムアウトで
+         * 切断を検出するため、戻り値は明示的に破棄する。
+         */
         (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &peer->dest_addr[i], &sent, NULL);
     }
 }
@@ -308,6 +312,12 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     if (ctx->n_peers >= ctx->max_peers)
     {
         char ip_str[CPLAT_IPV4_ADDR_STRLEN];
+        /*
+         * 受信済みのソケットの経路であり、Windows のソケットの初期化は成功済みである。宛先は CPLAT_IPV4_ADDR_STRLEN の
+         * 大きさで、inet_ntop の失敗の条件 (未対応のアドレス ファミリー、容量不足) にも当たらないため、
+         * 戻り値は明示的に破棄する。
+         * see: https://pubs.opengroup.org/onlinepubs/9799919799/functions/inet_ntop.html
+         */
         (void)cplat_ipv4_to_string(sender_addr->address, ip_str, sizeof(ip_str), NULL);
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "potr_internal_peer_create: service_id=%" PRId64 " max_peers=%d reached, "

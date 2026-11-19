@@ -70,7 +70,7 @@ static int open_socket_tcp_receiver(potr_context *ctx, const int path_idx)
         return potr_internal_result_from_error(&detail);
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行する。 */
+    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行するため、戻り値は明示的に破棄する。 */
     (void)cplat_socket_set_reuse_address(sock, 1, NULL);
 
     addr.address = bind_ip;

@@ -163,7 +163,15 @@ void thread_recv_health_wake_tcp(potr_context *ctx, const int path_idx, const in
         }
         else
         {
-            (void)potr_internal_tcp_send_ping_now(ctx, path_idx);
+            /* 終了の処理中 (POTR_ERR_CANCELED) と未接続 (POTR_ERR_DISCONNECTED) は通常の状態のため、トレースへ出さない。 */
+            const int send_result = potr_internal_tcp_send_ping_now(ctx, path_idx);
+
+            if (send_result != POTR_OK && send_result != POTR_ERR_CANCELED && send_result != POTR_ERR_DISCONNECTED)
+            {
+                POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                           "recv[service_id=%" PRId64 " path=%d]: immediate PING send failed (result=%d)",
+                           ctx->service.service_id, path_idx, send_result);
+            }
         }
     }
 }
@@ -272,7 +280,11 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
                 thread_recv_set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
             memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
             thread_recv_disconnect_service_all_paths(ctx);
-            potr_internal_window_init(&ctx->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
+            /*
+             * サービスを開く時点で同じ window_size と max_payload で確保したウィンドウの状態をリセットするだけで
+             * 再確保が起きないため、戻り値は明示的に破棄する。
+             */
+            (void)potr_internal_window_init(&ctx->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
         }
     }
 

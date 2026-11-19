@@ -90,6 +90,10 @@ static void send_fin(potr_context *ctx)
         {
             return;
         }
+        /*
+         * FIN は終了の通知であり、届かなくても閉じる処理を続け、相手はヘルス チェックのタイムアウトで切断を検出するため、
+         * 戻り値は明示的に破棄する。
+         */
         (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
     }
 }
@@ -339,7 +343,7 @@ static int close_impl(potr_context *handle)
                 }
                 else
                 {
-                    /* タイムアウト [ms] は設定値。実用範囲は INT_MAX 以下である。 */
+                    /* タイムアウト [ms] は設定値。上限 2147483646 (INT_MAX - 1) は open_validate_config() で検査済み。 */
                     close_result = wait_for_tcp_close_ack(ctx, (int)ctx->global.tcp_close_timeout_ms, has_data);
                     if (close_result != POTR_OK)
                     {
@@ -471,6 +475,7 @@ static int close_impl(potr_context *handle)
                 /*
                  * 離脱には参加時と同じ NIC を渡す。
                  * 別のインターフェイスでは、参加したメンバーシップと一致せず離脱できない。
+                 * 直後にソケットを閉じ、閉じる時に OS がグループから離脱させるため、戻り値は明示的に破棄する。
                  * see: https://man7.org/linux/man-pages/man7/ip.7.html
                  * see: https://learn.microsoft.com/en-us/windows/win32/winsock/ipproto-ip-socket-options
                  */

@@ -780,6 +780,53 @@ TEST(threadRecvHealthTest, tcp_stopped_health)
     thread_recv_health_wake_tcp(&ctx, 0, 1); // [手順] - 状態変化の起床判断を行う。
 }
 
+// 即時の PING の送信に失敗した場合に WARNING を出すことの確認
+TEST(threadRecvHealthTest, tcp_immediate_ping_failure_traces_warning)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    ctx.service.service_id = 11;
+    ctx.health_interval_ms = 0;
+    // [状態] - 定周期の health を使わない TCP の通信方式を指定する。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_ping_now(&ctx, 0))
+        .WillOnce(Return(POTR_ERR_IO)); // [Pre-Assert確認_異常系] - potr_internal_tcp_send_ping_now() が &ctx、0 を指定して 1 回呼び出されること。
+                                        // [Pre-Assert手順] - potr_internal_tcp_send_ping_now() から POTR_ERR_IO を返す。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
+        .Times(AnyNumber()); // [Pre-Assert確認_正常系] - cplat_tracer_writef_at() が任意の回数呼び出されること。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_WARNING, nullptr,
+                                                   HasSubstr("immediate PING send failed (result=")))
+        .Times(1); // [Pre-Assert確認_異常系] - cplat_tracer_writef_at() が CPLAT_TRACE_LEVEL_WARNING、nullptr、"immediate PING send failed (result=" を含む文字列を指定して 1 回呼び出されること。
+    // Act
+    thread_recv_health_wake_tcp(&ctx, 0, 1); // [手順] - 状態変化の起床判断を行う。
+}
+
+// 未接続 (POTR_ERR_DISCONNECTED) の即時の PING では WARNING を出さないことの確認
+TEST(threadRecvHealthTest, tcp_immediate_ping_disconnected_does_not_trace_warning)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    ctx.service.service_id = 11;
+    ctx.health_interval_ms = 0;
+    // [状態] - 定周期の health を使わない TCP の通信方式を指定する。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_ping_now(&ctx, 0))
+        .WillOnce(Return(POTR_ERR_DISCONNECTED)); // [Pre-Assert確認_正常系] - potr_internal_tcp_send_ping_now() が &ctx、0 を指定して 1 回呼び出されること。
+                                                  // [Pre-Assert手順] - potr_internal_tcp_send_ping_now() から POTR_ERR_DISCONNECTED を返す。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
+        .Times(AnyNumber()); // [Pre-Assert確認_正常系] - cplat_tracer_writef_at() が任意の回数呼び出されること。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_WARNING, _, _))
+        .Times(0); // [Pre-Assert確認_正常系] - CPLAT_TRACE_LEVEL_WARNING を指定した cplat_tracer_writef_at() の呼び出しがないこと。
+    // Act
+    thread_recv_health_wake_tcp(&ctx, 0, 1); // [手順] - 状態変化の起床判断を行う。
+}
+
 // 時刻差分を計算できない場合に受信状態を保持することの確認
 TEST(threadRecvHealthTest, preserves_service_state_when_time_arithmetic_fails)
 {

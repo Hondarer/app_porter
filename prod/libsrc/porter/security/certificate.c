@@ -354,6 +354,10 @@ static int send_record(potr_context *ctx, potr_internal_certificate_state *state
             }
             break;
         }
+        /*
+         * UDP の送出は届く保証がなく、失われたハンドシェイクは DTLS の再送と周期的な再試行で回復するため、
+         * 戻り値は明示的に破棄する。
+         */
         (void)cplat_socket_sendto(ctx->sock[i], wire, wire_len, &state->destination[i], &sent, NULL);
     }
     cplat_secure_zero(wire, capacity);
@@ -429,6 +433,18 @@ static int flush_output(potr_context *ctx, potr_internal_certificate_state *stat
     cplat_secure_zero(record, ctx->global.max_payload);
     cplat_free(record);
     return ret;
+}
+
+/*
+ * ハンドシェイクの出力の失敗を WARNING のトレースへ出し、呼び出し元の処理は続けます。
+ * POTR_ERR_DISCONNECTED は、セッションの破棄 (WARNING 済み) と通番の枯渇 (状態に記録済み) を表すため除きます。
+ */
+static void trace_output_failure(const char *operation, int ret)
+{
+    if (ret != POTR_OK && ret != POTR_ERR_DISCONNECTED)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING, "certificate: %s failed result=%d", operation, ret);
+    }
 }
 
 /* callback_mutex と certificate_mutex を保持して受信者管理表を共用します。 */
@@ -508,6 +524,7 @@ int potr_internal_certificate_receive(potr_context *ctx, potr_packet *packet, co
     uint64_t now_ms;
     int managed;
     int ret;
+    int output_ret;
     int new_path;
     int produced;
 
@@ -608,11 +625,15 @@ int potr_internal_certificate_receive(potr_context *ctx, potr_packet *packet, co
     new_path = endpoint_is_unset(&state->destination[path_idx]);
     state->destination[path_idx] = *sender;
     ret = advance_session(state, packet->payload, packet->payload_len);
-    (void)flush_output(ctx, state, CPLAT_INVALID_SOCKET, &produced);
+    output_ret = flush_output(ctx, state, CPLAT_INVALID_SOCKET, &produced);
+    trace_output_failure("handshake output", output_ret);
     if (ret == POTR_OK && new_path && !produced)
     {
         struct potr_internal_certificate_flight *record;
-        /* 遅れて観測した経路にも同じバイト列を送り、DTLS に重複処理を任せます。 */
+        /*
+         * 遅れて観測した経路にも同じバイト列を送り、DTLS に重複処理を任せます。
+         * 新しい経路への補助的な再送出であり、失敗しても DTLS の再送で回復するため、戻り値は明示的に破棄する。
+         */
         for (record = state->flight; record != NULL; record = record->next)
         {
             (void)send_record(ctx, state, record->bytes, record->length, POTR_FLAG_HANDSHAKE, CPLAT_INVALID_SOCKET);
@@ -624,7 +645,9 @@ int potr_internal_certificate_receive(potr_context *ctx, potr_packet *packet, co
     }
     if (ctx->role == POTR_ROLE_SENDER && uses_group_key(ctx))
     {
-        (void)send_record(ctx, state, ctx->group_key, sizeof(ctx->group_key), POTR_FLAG_KEY, CPLAT_INVALID_SOCKET);
+        output_ret =
+            send_record(ctx, state, ctx->group_key, sizeof(ctx->group_key), POTR_FLAG_KEY, CPLAT_INVALID_SOCKET);
+        trace_output_failure("group key send", output_ret);
     }
     if (ctx->is_multi_peer && peer != NULL)
     {
@@ -664,6 +687,7 @@ static void tick_session(potr_context *ctx, potr_internal_certificate_state *sta
     potr_internal_auth_state result;
     uint32_t timeout_ms;
     int has_timeout;
+    int output_ret;
 
     if (state->session == NULL || state->failed)
     {
@@ -673,6 +697,7 @@ static void tick_session(potr_context *ctx, potr_internal_certificate_state *sta
         has_timeout && timeout_ms == 0U)
     {
         state->retransmitted = 1;
+        /* 引数は NULL でないため POTR_OK だけを返し、再送の失敗は result の FAILED で受け取るため、戻り値は明示的に破棄する。 */
         (void)potr_internal_auth_session_handle_timeout(state->session, &result);
         if (result == POTR_INTERNAL_AUTH_STATE_FAILED)
         {
@@ -686,7 +711,8 @@ static void tick_session(potr_context *ctx, potr_internal_certificate_state *sta
             cplat_secure_zero(state->send_key, sizeof(state->send_key));
             cplat_secure_zero(state->receive_key, sizeof(state->receive_key));
         }
-        (void)flush_output(ctx, state, CPLAT_INVALID_SOCKET, NULL);
+        output_ret = flush_output(ctx, state, CPLAT_INVALID_SOCKET, NULL);
+        trace_output_failure("handshake output", output_ret);
     }
 }
 
@@ -695,6 +721,7 @@ void potr_internal_certificate_tick(potr_context *ctx, uint64_t now_ms)
 {
     potr_internal_certificate_state *state;
     potr_internal_receiver *receiver;
+    int output_ret;
     int i;
 
     if (ctx == NULL || ctx->service.auth != POTR_AUTH_CERT || ctx->certificate_mutex == NULL || is_tcp_type(ctx->service.type))
@@ -745,8 +772,13 @@ void potr_internal_certificate_tick(potr_context *ctx, uint64_t now_ms)
                         state->destination[i] = ctx->dest_addr[i];
                     }
                 }
+                /*
+                 * 失敗は advance_session が状態 (failed) と WARNING のトレースに記録し、次の周期の再試行で回復するため、
+                 * 戻り値は明示的に破棄する。
+                 */
                 (void)advance_session(state, NULL, 0U);
-                (void)flush_output(ctx, state, CPLAT_INVALID_SOCKET, NULL);
+                output_ret = flush_output(ctx, state, CPLAT_INVALID_SOCKET, NULL);
+                trace_output_failure("handshake output", output_ret);
             }
         }
     }

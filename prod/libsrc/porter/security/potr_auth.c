@@ -104,7 +104,12 @@ static int copy_trust_config(potr_internal_auth_credentials *credentials, const 
                 return POTR_ERR_IO;
             }
             credentials->pinned_certs[i] = PEM_read_bio_X509(file, NULL, NULL, NULL);
-            BIO_free(file);
+            /*
+             * 読み取り専用のファイル BIO を読み終えた後の解放であり、閉じる際に失う書き込みがなく、
+             * 証明書の読み込みの結果は変わらないため、戻り値は明示的に破棄する。
+             * see: https://docs.openssl.org/3.5/man3/BIO_new/
+             */
+            (void)BIO_free(file);
             if (credentials->pinned_certs[i] == NULL)
             {
                 return POTR_ERR_IO;
@@ -149,7 +154,12 @@ static int load_revocations(SSL_CTX *context, const char *path)
         if (revocations == NULL)
         {
             unsigned long error = ERR_peek_last_error();
-            BIO_free(file);
+            /*
+             * 読み取り専用のファイル BIO を読み終えた後の解放であり、閉じる際に失う書き込みがなく、
+             * 失効リストの読み込みの結果は変わらないため、戻り値は明示的に破棄する。
+             * see: https://docs.openssl.org/3.5/man3/BIO_new/
+             */
+            (void)BIO_free(file);
             if (loaded == 0U || (error != 0UL &&
                 (ERR_GET_LIB(error) != ERR_LIB_PEM || ERR_GET_REASON(error) != PEM_R_NO_START_LINE)))
             {
@@ -164,7 +174,8 @@ static int load_revocations(SSL_CTX *context, const char *path)
         X509_CRL_free(revocations);
         if (ret != 1)
         {
-            BIO_free(file);
+            /* すでに POTR_ERR_UNKNOWN を返す経路で読み取り専用のファイル BIO を解放するため、戻り値は明示的に破棄する。 */
+            (void)BIO_free(file);
             return POTR_ERR_UNKNOWN;
         }
         ++loaded;
@@ -311,7 +322,10 @@ static int configure_context(potr_internal_auth_credentials *credentials, const 
     }
     /* チケットを無効にするだけでは TLS 1.3 の stateful ticket は止まらないため枚数も 0 にする。
      * EC グループだけを許可し、TLS 1.3 の既定に含まれるハイブリッド鍵交換も除外する。
+     * SSL_CTX_set_options は設定後のオプションのビット集合、SSL_CTX_set_session_cache_mode は変更前のキャッシュ モードを返し、
+     * どちらも失敗を表さないため、この 2 つの戻り値は明示的に破棄する。
      * see: https://docs.openssl.org/3.5/man3/SSL_CTX_set_options/
+     * see: https://docs.openssl.org/3.5/man3/SSL_CTX_set_session_cache_mode/
      * see: https://docs.openssl.org/3.5/man3/SSL_CTX_set_num_tickets/
      * see: https://docs.openssl.org/3.5/man3/SSL_CTX_set1_curves/ */
     (void)SSL_CTX_set_options(context, SSL_OP_NO_TICKET | SSL_OP_NO_RENEGOTIATION);
@@ -476,8 +490,13 @@ int potr_internal_auth_session_create(const potr_internal_auth_credentials *cred
     session->output = BIO_new(method);
     if (session->input == NULL || session->output == NULL)
     {
-        BIO_free(session->input);
-        BIO_free(session->output);
+        /*
+         * メモリ BIO の確保の失敗の後始末であり、すでに POTR_ERR_OUT_OF_MEMORY を返す経路のため (NULL を渡した場合も 0 を返す)、
+         * この 2 つの BIO_free の戻り値は明示的に破棄する。
+         * see: https://docs.openssl.org/3.5/man3/BIO_new/
+         */
+        (void)BIO_free(session->input);
+        (void)BIO_free(session->output);
         SSL_free(session->connection);
         cplat_free(session);
         return POTR_ERR_OUT_OF_MEMORY;
@@ -494,6 +513,7 @@ int potr_internal_auth_session_create(const potr_internal_auth_credentials *cred
     {
         /* SSL_set_mtu は IP/UDP ヘッダーを含まない DTLS の MTU を指定する。
          * OS の MTU 探索を禁止し、メモリ BIO が書き込みごとのデータグラム境界を保持する。
+         * SSL_set_options の戻り値は設定後のオプションのビット集合であり、失敗を表さないため、戻り値は明示的に破棄する。
          * see: https://docs.openssl.org/3.5/man3/SSL_CTX_set_options/
          * see: https://docs.openssl.org/3.5/man3/BIO_s_mem/ */
         (void)SSL_set_options(session->connection, SSL_OP_NO_QUERY_MTU);

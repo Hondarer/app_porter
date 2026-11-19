@@ -73,9 +73,14 @@ static void signal_health_thread(potr_context *ctx, int path_idx)
     cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
 }
 
-/* health_interval_ms [ms]、または停止シグナルを受信するまでスリープする (path_idx 版)。 */
+/*
+ * health_interval_ms [ms]、または停止シグナルを受信するまでスリープする (path_idx 版)。
+ * 待機の失敗は ERROR のトレースへ出し、呼び出し元へ通知しない (呼び出し元は次の判定へ進む)。
+ */
 static void health_sleep(potr_context *ctx, int path_idx, uint32_t interval_ms)
 {
+    int wait_result = CPLAT_OK;
+
     /*
      * オープン時割り込み PING フラグが立っていれば即リターンする (初回スリープをスキップ)。
      * チェックと直後のクリアに割り込みが入らないよう交換 (exchange) で一体に行う。
@@ -89,11 +94,21 @@ static void health_sleep(potr_context *ctx, int path_idx, uint32_t interval_ms)
 
     if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
-        /* interval_ms は PING 間隔の設定値。実用範囲は INT_MAX 以下。 */
-        cplat_condvar_timed_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], (int)interval_ms);
+        /*
+         * interval_ms は PING 間隔の設定値 (または、それ以下の残り時間)。
+         * 上限 2147483646 (INT_MAX - 1) は open_validate_config() で検査済み。
+         */
+        wait_result =
+            cplat_condvar_timed_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], (int)interval_ms);
     }
 
     cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
+
+    if (wait_result != CPLAT_OK && wait_result != CPLAT_ERR_TIMEOUT)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "health[service_id=%" PRId64 " path=%d]: wait failed (result=%d)",
+                   ctx->service.service_id, path_idx, wait_result);
+    }
 }
 
 /*
@@ -336,7 +351,12 @@ static void health_thread_func(void *arg)
 
                 /* N:1 (UNICAST_BIDIR_N1) は双方向 PING。ピアごとの自端パス受信状態をペイロードに設定する。 */
                 copy_path_ping_state(health_states, ctx->peers[i].path_ping_state, POTR_MAX_PATH);
-                potr_internal_packet_build_ping(&ping_pkt, &peer_shdr, seq, health_states, (uint16_t)POTR_MAX_PATH);
+                /*
+                 * パケットとヘッダーはどちらもローカル変数のアドレスで、NULL の場合だけ失敗する契約のため、
+                 * 戻り値は明示的に破棄する。
+                 */
+                (void)potr_internal_packet_build_ping(&ping_pkt, &peer_shdr, seq, health_states,
+                                                      (uint16_t)POTR_MAX_PATH);
                 cplat_local_lock_unlock(ctx->peers[i].send_window_mutex);
 
                 for (k = 0; k < (int)POTR_MAX_PATH; k++)
@@ -354,6 +374,10 @@ static void health_thread_func(void *arg)
                     {
                         break;
                     }
+                    /*
+                     * PING は次の周期に送り直し、届かない状態が続く経路は相手のヘルス チェックのタイムアウトで検出するため、
+                     * 戻り値は明示的に破棄する。
+                     */
                     (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k], &sent, NULL);
                 }
 
@@ -470,6 +494,7 @@ static void tcp_health_thread_func(void *arg)
     potr_internal_path_thread_arg *harg = (potr_internal_path_thread_arg *)arg;
     potr_context *ctx = harg->ctx;
     int path_idx = harg->path_idx;
+    int send_result;
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_health[service_id=%" PRId64 " path=%d]: starting",
                ctx->service.service_id, path_idx);
@@ -484,7 +509,15 @@ static void tcp_health_thread_func(void *arg)
         {
             break;
         }
-        (void)tcp_send_ping_packet(ctx, path_idx);
+
+        /* 終了の処理中 (POTR_ERR_CANCELED) と未接続 (POTR_ERR_DISCONNECTED) は通常の状態のため、トレースへ出さない。 */
+        send_result = tcp_send_ping_packet(ctx, path_idx);
+        if (send_result != POTR_OK && send_result != POTR_ERR_CANCELED && send_result != POTR_ERR_DISCONNECTED)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                       "tcp_health[service_id=%" PRId64 " path=%d]: PING send failed (result=%d)",
+                       ctx->service.service_id, path_idx, send_result);
+        }
     }
 
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_health[service_id=%" PRId64 " path=%d]: exited", ctx->service.service_id,

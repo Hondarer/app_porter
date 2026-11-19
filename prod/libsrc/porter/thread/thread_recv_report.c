@@ -102,6 +102,7 @@ int thread_recv_report_tick(potr_context *ctx, uint64_t now_ms)
         {
             return ret;
         }
+        /* REPORT は次の周期に送り直すため、戻り値は明示的に破棄する。 */
         (void)cplat_socket_sendto(ctx->sock[i], wire, wire_len, &destination, &sent, NULL);
     }
     return POTR_OK;

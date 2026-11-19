@@ -15,6 +15,7 @@ extern "C"
 #include <porter/infra/potr_tcp_control.h>
 #include <porter/protocol/packet.h>
 #include <porter/protocol/window.h>
+#include <porter/security/potr_auth.h>
 #include <porter/thread/potr_connected_threads.h>
 #include <porter/thread/potr_connect_thread.h>
 #include <porter/thread/potr_health_thread.h>
@@ -155,7 +156,23 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_health_check_peers")
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_health_check_service")
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_health_wake_tcp")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_auth_credentials_create")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_auth_credentials_dispose")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_auth_session_create")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_auth_session_dispose")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_auth_session_receive")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_auth_session_take_output")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_auth_session_get_timeout_ms")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_auth_session_handle_timeout")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_auth_session_export_keys")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_auth_session_failure_reason")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_service_close")
 #endif /* COMPILER_MSVC */
+
+/** 実関数へ委譲する公開関数を解決する porter の共有ライブラリ名。 */
+inline constexpr char kLibPorterName[] = "libporter" TESTFW_SHARED_LIBRARY_EXTENSION;
+
+extern int delegate_real_potr_service_close(potr_context *handle);
 
 class Mock_porter
 {
@@ -335,6 +352,32 @@ class Mock_porter
     MOCK_METHOD(int, potr_internal_certificate_key, (potr_context *ctx, const potr_internal_tx_session *session, const potr_packet *packet, int sending, uint8_t *key));
 
     MOCK_METHOD(int, potr_internal_certificate_connect, (potr_context *ctx, cplat_socket socket, const potr_packet *first));
+
+    // Auth mock methods
+    MOCK_METHOD(int, potr_internal_auth_credentials_create,
+                (const potr_internal_auth_config *config, potr_internal_auth_transport transport,
+                 potr_internal_auth_credentials **credentials_out));
+    MOCK_METHOD(void, potr_internal_auth_credentials_dispose, (potr_internal_auth_credentials * credentials));
+    MOCK_METHOD(int, potr_internal_auth_session_create,
+                (const potr_internal_auth_credentials *credentials, potr_internal_auth_role role,
+                 size_t max_record_size, potr_internal_auth_session **session_out));
+    MOCK_METHOD(void, potr_internal_auth_session_dispose, (potr_internal_auth_session * session));
+    MOCK_METHOD(int, potr_internal_auth_session_receive,
+                (potr_internal_auth_session * session, const uint8_t *in, size_t in_len,
+                 potr_internal_auth_state *state_out));
+    MOCK_METHOD(int, potr_internal_auth_session_take_output,
+                (potr_internal_auth_session * session, uint8_t *out, size_t out_capacity, size_t *out_len_out));
+    MOCK_METHOD(int, potr_internal_auth_session_get_timeout_ms,
+                (potr_internal_auth_session * session, int *has_timeout_out, uint32_t *timeout_ms_out));
+    MOCK_METHOD(int, potr_internal_auth_session_handle_timeout,
+                (potr_internal_auth_session * session, potr_internal_auth_state *state_out));
+    MOCK_METHOD(int, potr_internal_auth_session_export_keys,
+                (potr_internal_auth_session * session, const uint8_t *context, size_t context_len,
+                 uint8_t *client_to_server_key, uint8_t *server_to_client_key));
+    MOCK_METHOD(const char *, potr_internal_auth_session_failure_reason, (const potr_internal_auth_session *session));
+
+    // Public API mock methods
+    MOCK_METHOD(int, potr_service_close, (potr_context * handle));
 
     Mock_porter();
     virtual ~Mock_porter();

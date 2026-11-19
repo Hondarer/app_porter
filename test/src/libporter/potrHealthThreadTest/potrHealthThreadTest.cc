@@ -252,3 +252,229 @@ TEST(potrHealthThreadTest, tcp_start_rejects_closing_context)
     // Cleanup
     delegate_real_cplat_local_lock_dispose(ctx.health_mutex[0]);
 }
+
+// TCP の定周期の PING の送信に失敗した場合に、WARNING を出してスレッドを続けることの確認
+TEST(potrHealthThreadTest, tcp_ping_send_failure_traces_warning)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.type = POTR_TYPE_TCP;
+    ctx.service.service_id = 11;
+    ctx.health_interval_ms = 10;
+    ctx.tcp_conn_fd[0] = static_cast<cplat_socket>(7);
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            }); // [状態] - cplat_thread_create() から、スレッド本体を捕捉して CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_lock() が何もしないように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_unlock() が何もしないように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, _))
+        .WillByDefault(Return(CPLAT_ERR_TIMEOUT)); // [状態] - cplat_condvar_timed_wait() から CPLAT_ERR_TIMEOUT を返すように既定動作を設定する。
+    ON_CALL(mock_porter, potr_internal_result_from_error(_))
+        .WillByDefault(Return(POTR_ERR_IO)); // [状態] - potr_internal_result_from_error() から POTR_ERR_IO を返すように既定動作を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_send_all(static_cast<cplat_socket>(7), _, _, _))
+        .WillOnce(
+            [&](cplat_socket, const void *, size_t, cplat_error *)
+            {
+                cplat_atomic_store_i32(&ctx.health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_ERR_UNKNOWN;
+            }); // [Pre-Assert確認_異常系] - cplat_socket_send_all() が 7 を指定して 1 回呼び出されること。
+                // [Pre-Assert手順] - ctx.health_running[0] を 0 にし、cplat_socket_send_all() から CPLAT_ERR_UNKNOWN を返す。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
+        .Times(AnyNumber()); // [Pre-Assert確認_正常系] - cplat_tracer_writef_at() が任意の回数呼び出されること。
+    EXPECT_CALL(mock_cplat,
+                cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_WARNING, nullptr, HasSubstr("PING send failed (result=")))
+        .Times(1); // [Pre-Assert確認_異常系] - cplat_tracer_writef_at() が CPLAT_TRACE_LEVEL_WARNING、nullptr、"PING send failed (result=" を含む文字列を指定して 1 回呼び出されること。
+
+    // Act
+    int actual_ret = potr_internal_tcp_health_thread_start(&ctx, 0); // [手順] - potr_internal_tcp_health_thread_start() を呼び出す。
+    ASSERT_NE(nullptr, entry);                                        // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);                                                 // [手順] - スレッド本体を同期で実行する。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_tcp_health_thread_start() の戻り値が POTR_OK であること。
+}
+
+// 終了の処理中 (POTR_ERR_CANCELED) の PING の送信では WARNING を出さないことの確認
+TEST(potrHealthThreadTest, tcp_ping_canceled_does_not_trace_warning)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.type = POTR_TYPE_TCP;
+    ctx.service.service_id = 11;
+    ctx.health_interval_ms = 10;
+    ctx.tcp_conn_fd[0] = static_cast<cplat_socket>(7);
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    int waits = 0;
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            }); // [状態] - cplat_thread_create() から、スレッド本体を捕捉して CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_lock() が何もしないように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_unlock() が何もしないように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, _))
+        .WillByDefault(
+            [&](cplat_condvar *, cplat_local_lock *, int)
+            {
+                if (++waits == 2)
+                {
+                    cplat_atomic_store_i32(&ctx.health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                }
+                return CPLAT_ERR_TIMEOUT;
+            }); // [状態] - cplat_condvar_timed_wait() から CPLAT_ERR_TIMEOUT を返し、2 回目の待機で ctx.health_running[0] を 0 にするように既定動作を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _))
+        .Times(0); // [Pre-Assert確認_正常系] - cplat_socket_send_all() が呼び出されないこと。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
+        .Times(AnyNumber()); // [Pre-Assert確認_正常系] - cplat_tracer_writef_at() が任意の回数呼び出されること。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_WARNING, _, _))
+        .Times(0); // [Pre-Assert確認_正常系] - CPLAT_TRACE_LEVEL_WARNING を指定した cplat_tracer_writef_at() の呼び出しがないこと。
+
+    // Act
+    int actual_ret = potr_internal_tcp_health_thread_start(&ctx, 0); // [手順] - potr_internal_tcp_health_thread_start() を呼び出す。
+    ASSERT_NE(nullptr, entry);                                        // [状態確認] - スレッド本体を捕捉できたこと。
+    cplat_atomic_store_i32(&ctx.close_requested, 1, CPLAT_MEMORY_ORDER_RELEASE); // [手順] - 終了の処理中の状態にする。
+    entry(entry_arg);                                                            // [手順] - スレッド本体を同期で実行する。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_tcp_health_thread_start() の戻り値が POTR_OK であること。
+    EXPECT_EQ(2, waits);            // [確認_正常系] - 2 回待機したこと。(PING の送信を 1 回試みた後に終えたことの確認)
+}
+
+// TCP の経路で待機に失敗した場合に、ERROR を出してスレッドを続けることの確認
+TEST(potrHealthThreadTest, tcp_wait_failure_traces_error)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.type = POTR_TYPE_TCP;
+    ctx.service.service_id = 11;
+    ctx.health_interval_ms = 10;
+    ctx.tcp_conn_fd[0] = static_cast<cplat_socket>(7);
+    cplat_atomic_store_i32(&ctx.tcp_active_paths, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            }); // [状態] - cplat_thread_create() から、スレッド本体を捕捉して CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_lock() が何もしないように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_unlock() が何もしないように既定動作を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, 10))
+        .WillOnce(
+            [&](cplat_condvar *, cplat_local_lock *, int)
+            {
+                cplat_atomic_store_i32(&ctx.health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_ERR_UNKNOWN;
+            }); // [Pre-Assert確認_異常系] - cplat_condvar_timed_wait() が 10 を指定して 1 回呼び出されること。
+                // [Pre-Assert手順] - ctx.health_running[0] を 0 にし、cplat_condvar_timed_wait() から CPLAT_ERR_UNKNOWN を返す。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
+        .Times(AnyNumber()); // [Pre-Assert確認_正常系] - cplat_tracer_writef_at() が任意の回数呼び出されること。
+    EXPECT_CALL(mock_cplat,
+                cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_ERROR, nullptr, HasSubstr("wait failed (result=")))
+        .Times(1); // [Pre-Assert確認_異常系] - cplat_tracer_writef_at() が CPLAT_TRACE_LEVEL_ERROR、nullptr、"wait failed (result=" を含む文字列を指定して 1 回呼び出されること。
+
+    // Act
+    int actual_ret = potr_internal_tcp_health_thread_start(&ctx, 0); // [手順] - potr_internal_tcp_health_thread_start() を呼び出す。
+    ASSERT_NE(nullptr, entry);                                        // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);                                                 // [手順] - スレッド本体を同期で実行する。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_tcp_health_thread_start() の戻り値が POTR_OK であること。
+}
+
+// 片方向 UDP の PING の期限の待機に失敗した場合に、ERROR を出してスレッドを続けることの確認
+TEST(potrHealthThreadTest, oneway_udp_wait_failure_traces_error)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.service.service_id = 11;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 1;
+    ctx.health_interval_ms = 1000;
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            }); // [状態] - cplat_thread_create() から、スレッド本体を捕捉して CPLAT_OK を返すように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_lock() が何もしないように既定動作を設定する。
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_))
+        .WillByDefault(Return()); // [状態] - cplat_local_lock_unlock() が何もしないように既定動作を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, _))
+        .WillOnce(
+            [&](cplat_condvar *, cplat_local_lock *, int)
+            {
+                cplat_atomic_store_i32(&ctx.health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_ERR_UNKNOWN;
+            }); // [Pre-Assert確認_異常系] - cplat_condvar_timed_wait() が 1 回呼び出されること。
+                // [Pre-Assert手順] - ctx.health_running[0] を 0 にし、cplat_condvar_timed_wait() から CPLAT_ERR_UNKNOWN を返す。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
+        .Times(AnyNumber()); // [Pre-Assert確認_正常系] - cplat_tracer_writef_at() が任意の回数呼び出されること。
+    EXPECT_CALL(mock_cplat,
+                cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_ERROR, nullptr, HasSubstr("wait failed (result=")))
+        .Times(1); // [Pre-Assert確認_異常系] - cplat_tracer_writef_at() が CPLAT_TRACE_LEVEL_ERROR、nullptr、"wait failed (result=" を含む文字列を指定して 1 回呼び出されること。
+    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
+        .Times(0); // [Pre-Assert確認_正常系] - cplat_socket_sendto() が呼び出されないこと。(期限の前に PING を送らないことの確認)
+
+    // Act
+    int actual_ret = potr_internal_health_thread_start(&ctx); // [手順] - potr_internal_health_thread_start() を呼び出す。
+    ASSERT_NE(nullptr, entry);                                 // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);                                          // [手順] - スレッド本体を同期で実行する。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_health_thread_start() の戻り値が POTR_OK であること。
+
+    // Cleanup
+    ON_CALL(mock_cplat, cplat_thread_join(_))
+        .WillByDefault(Return()); // [状態] - cplat_thread_join() が何もしないように既定動作を設定する。
+    ctx.health_thread[0] = reinterpret_cast<cplat_thread *>(&entry); // [状態] - 生成済みのスレッドとして停止できるようにハンドルを設定する。
+    potr_internal_health_thread_stop(&ctx);
+}

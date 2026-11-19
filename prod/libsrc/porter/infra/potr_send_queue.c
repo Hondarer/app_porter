@@ -268,7 +268,8 @@ int potr_internal_send_queue_peek_timed(potr_internal_send_queue *q, potr_intern
 
     if (q->count == 0)
     {
-        cplat_condvar_timed_wait(q->not_empty, q->mutex, timeout_ms);
+        /* 待機の後に q->count を再検査し、空ならタイムアウトとして扱うため、戻り値は明示的に破棄する。 */
+        (void)cplat_condvar_timed_wait(q->not_empty, q->mutex, timeout_ms);
     }
 
     if (q->count == 0)

@@ -137,8 +137,11 @@ extern "C"
     /* --- プラットフォーム フック (各プラットフォーム ファイルで実装) --- */
 
     /**
- *  @brief          プラットフォーム初期化 (Windows は WSAStartup、Linux は no-op)。
+ *  @brief          プラットフォーム初期化 (Windows は WSAStartup、Linux は SIGPIPE を無視する設定)。
  *  @param[in]      session_fn セッション処理関数。g_session_fn に保存されます。
+ *
+ *  Linux では SIGPIPE を SIG_IGN にします。fork した子とワーカーも設定を引き継ぐため、
+ *  相手が切断した後の送信はプロセスを終了させず、送信の失敗 (EPIPE) として扱われます。
  */
     void platform_init(ClientSessionFn session_fn);
 
@@ -161,6 +164,9 @@ extern "C"
     /**
  *  @brief          fork モードのサーバーを起動します。
  *  @param[in]      port 待ち受けポート番号。
+ *
+ *  @attention      待ち受けの準備、または実行ファイルのパスの取得 (Windows) に失敗した場合は、
+ *                  cplat_exit() でプロセスを終了します。
  */
     void run_fork_server(int port);
 
@@ -171,6 +177,9 @@ extern "C"
  *  @param[in]      conns_per_worker 1 ワーカーあたりの同時接続数。
  *                                   1 の場合は従来の逐次処理。
  *                                   2 以上の場合はイベント駆動型の多重接続処理。
+ *
+ *  @attention      待ち受けの準備、またはワーカーの起動に失敗した場合は、cplat_exit() でプロセスを終了します。
+ *                  Windows では、ワーカーの空きと受領を通知するイベントの操作に失敗した場合も終了します。
  */
     void run_prefork_server(int port, int num_workers, int conns_per_worker);
 
