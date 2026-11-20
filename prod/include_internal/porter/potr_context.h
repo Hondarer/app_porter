@@ -206,7 +206,7 @@ typedef struct potr_internal_peer_context
     uint64_t flow_limit_received_ms; /**< このピアから最後にフロー制御パケットを受けた時刻 [ms]。peers_mutex で保護。 */
     uint64_t flow_limit_stalled_ms; /**< このピア宛の送出が送出上限に達して止まった時刻 [ms]。0 = 止まっていない。peers_mutex で保護。 */
     int flow_deferred_entries; /**< 送信スレッドが保留している、このピア宛のエントリ数。peers_mutex で保護。 */
-    int _pad_flow_deferred;    /**< パディング (8 [byte] 境界に揃える)。 */
+    int flow_tracked; /**< potr_context::flow_tracked_peers に数えているか (1: 数えている)。peers_mutex で保護。 */
 
     /* NACK 重複抑制 */
     potr_internal_nack_dedup_entry nack_dedup_buf[POTR_NACK_DEDUP_SLOTS]; /**< NACK 重複抑制バッファー。 */
@@ -275,7 +275,9 @@ struct potr_context
     struct potr_internal_deferred_entry *flow_deferred_head; /**< N:1 モードで保留中のエントリの先頭。送信スレッドだけが使用。 */
     struct potr_internal_deferred_entry *flow_deferred_tail; /**< N:1 モードで保留中のエントリの末尾。送信スレッドだけが使用。 */
     cplat_atomic_i32 flow_request_pending; /**< 送信側: 片方向 UDP で、受信者の管理表に抑制の要求が残っている可能性があるか。アトミックに読み書きします。 */
-    int flow_control_padding; /**< 8 [byte] 境界のパディング。 */
+    cplat_atomic_i32 flow_tracked_peers; /**< 送信側: N:1 モードで、抑制の要求または送出上限を保持しているピアの数。peers_mutex の下で増減し、アトミックに読み取ります。 */
+    cplat_atomic_i32 flow_deferred_total; /**< 送信側: N:1 モードで、送信スレッドが保留しているエントリの総数。送信スレッドだけが増減し、アトミックに読み取ります。 */
+    int flow_deferred_padding; /**< 8 [byte] 境界のパディング。 */
     cplat_atomic_i32 fatal_error;                      /**< 通知継続不能の原因。 */
     int lifecycle_padding;                             /**< ポインター境界の明示パディング。 */
     potr_recv_fn callback;                             /**< 受信コールバック。 */
@@ -516,5 +518,72 @@ struct potr_context
     potr_internal_path_thread_arg tcp_recv_args[POTR_MAX_PATH]; /**< TCP 受信スレッド引数 (path ごと)。 */
     potr_internal_path_thread_arg health_args[POTR_MAX_PATH];   /**< TCP ヘルス チェック スレッド引数 (path ごと)。 */
 };
+
+/**
+ *  @brief          N:1 モードのピアを、抑制の要求または送出上限を保持しているピアの数へ反映します。
+ *
+ *  抑制の要求 (flow_request_expire_ms) と送出上限 (flow_send_limit) のどちらかが 0 でないピアを、
+ *  potr_context::flow_tracked_peers に 1 回だけ数えます。どちらも 0 に戻ったピアは数から外します。\n
+ *  数が 0 の間は、どのピアも「止める状態」になりえないため、送信 API と送信スレッドはピアごとの判定を省きます。
+ *  ピアの要求か送出上限を書き換えた後に、必ず呼び出してください。
+ *
+ *  @param[in,out]  ctx     コンテキスト。
+ *  @param[in,out]  peer    ピア。
+ *
+ *  @par            スレッド セーフ
+ *  呼び出し元が peers_mutex を保持していること。失敗モードのない更新のため共通結果コードの適用対象外。
+ */
+static inline void potr_internal_flow_control_peer_sync(potr_context *ctx, potr_internal_peer_context *peer)
+{
+    int holding = (peer->flow_request_expire_ms != 0U || peer->flow_send_limit != 0U);
+
+    if (holding != 0 && peer->flow_tracked == 0)
+    {
+        peer->flow_tracked = 1;
+        /* 加算前の値は使わないため、戻り値は明示的に破棄する。 */
+        (void)cplat_atomic_fetch_add_i32(&ctx->flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    }
+    else if (holding == 0 && peer->flow_tracked != 0)
+    {
+        peer->flow_tracked = 0;
+        /* 減算前の値は使わないため、戻り値は明示的に破棄する。 */
+        (void)cplat_atomic_fetch_sub_i32(&ctx->flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    }
+}
+
+/**
+ *  @brief          解放するピアを、抑制の要求または送出上限を保持しているピアの数から外します。
+ *  @param[in,out]  ctx     コンテキスト。
+ *  @param[in,out]  peer    解放するピア。
+ *
+ *  @par            スレッド セーフ
+ *  呼び出し元が peers_mutex を保持していること。失敗モードのない更新のため共通結果コードの適用対象外。
+ */
+static inline void potr_internal_flow_control_peer_untrack(potr_context *ctx, potr_internal_peer_context *peer)
+{
+    if (peer->flow_tracked != 0)
+    {
+        peer->flow_tracked = 0;
+        /* 減算前の値は使わないため、戻り値は明示的に破棄する。 */
+        (void)cplat_atomic_fetch_sub_i32(&ctx->flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    }
+}
+
+/**
+ *  @brief          N:1 モードで、抑制の要求または送出上限を保持しているピアが 1 つもないかを返します。
+ *
+ *  1 を返す場合は、どのピアも「止める状態」でないため、ピアごとの判定 (時刻とロックの取得) を省けます。\n
+ *  判定の直後に届いたフロー制御パケットは、次の判定から反映します (ピアごとの判定でも同じ時間差があります)。
+ *
+ *  @param[in]      ctx     コンテキスト。
+ *  @return         ピアが 1 つもない場合は 1、それ以外は 0。失敗モードのない述語のため共通結果コードの適用対象外。
+ *
+ *  @par            スレッド セーフ
+ *  任意のスレッドから呼べます。ロックを取得しません。
+ */
+static inline int potr_internal_flow_control_peers_idle(const potr_context *ctx)
+{
+    return cplat_atomic_load_i32(&ctx->flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE) == 0;
+}
 
 #endif /* POTR_CONTEXT_H */

@@ -1355,3 +1355,124 @@ TEST_F(potrFlowControlTest, flow_send_limit_judge_cases)
     EXPECT_EQ(2000U, until_ms);                   // [確認_正常系] - 破棄する時刻が 1000 + 1000 であること。
 }
 // [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// N:1 モードで、フロー制御パケットを受けたピアを、要求または送出上限を保持しているピアの数へ 1 回だけ数えることの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, peer_tracking_counts_each_peer_once_on_packet)
+{
+    // Arrange
+    enable_multi_peer();
+    now_ms = 5000U;
+    potr_packet suppress = make_packet(kSuppressPayload);
+    potr_packet resume = make_packet(kResumePayload);
+    int idle_before = potr_internal_flow_control_peers_idle(&ctx);
+    // [状態] - N:1 モードで、どのピアからもフロー制御パケットを受けていない状態にする。
+    // Pre-Assert
+    // Act
+    potr_internal_flow_control_on_packet(&ctx, peer10, &suppress); // [手順] - ピア 10 から抑制の要求を受ける。
+    int32_t count_after_first = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    potr_internal_flow_control_on_packet(&ctx, peer10, &resume); // [手順] - ピア 10 から解除 (送出上限つき) を受ける。
+    int32_t count_after_resume = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    potr_internal_flow_control_on_packet(&ctx, peer11, &suppress); // [手順] - ピア 11 から抑制の要求を受ける。
+    int32_t count_after_second = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    int idle_after = potr_internal_flow_control_peers_idle(&ctx);
+    // Assert
+    EXPECT_EQ(1, idle_before);        // [確認_正常系] - 受ける前は、ピアの判定を省ける状態であること。
+    EXPECT_EQ(1, count_after_first);  // [確認_正常系] - ピア 10 を 1 として数えること。
+    EXPECT_EQ(1, count_after_resume); // [確認_正常系] - 送出上限を保持するピア 10 を、二重に数えないこと。
+    EXPECT_EQ(2, count_after_second); // [確認_正常系] - ピア 11 を加えて 2 として数えること。
+    EXPECT_EQ(1, peer10->flow_tracked); // [確認_正常系] - ピア 10 を数えている印が付くこと。
+    EXPECT_EQ(1, peer11->flow_tracked); // [確認_正常系] - ピア 11 を数えている印が付くこと。
+    EXPECT_EQ(0, idle_after);         // [確認_正常系] - 受けた後は、ピアの判定を省けない状態であること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// N:1 モードで、要求の期限の経過と送出上限の破棄の両方を経たピアを、数から外すことの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, peer_tracking_returns_to_zero_after_request_expiry_and_limit_discard)
+{
+    // Arrange
+    enable_multi_peer();
+    now_ms = 5000U;
+    potr_packet suppress = make_packet(kSuppressPayload);
+    int deferred = -1;
+    peer10->send_window.next_seq = 300U;
+    cplat_atomic_store_i32(&peer10->health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    potr_internal_flow_control_on_packet(&ctx, peer10, &suppress);
+    // [状態] - 時刻 5000 にピア 10 から抑制の要求 (期限 6000、送出上限 300) を受け、次の通番を 300 (送出上限に到達) にする。
+    // Pre-Assert
+    // Act
+    int actual_requesting = potr_internal_flow_control_peer_state(&ctx, 10U, 5500U, &deferred);
+    // [手順] - 要求の期限内の時刻 5500 に判定する (送出上限で止まった時点を 5500 と記録する)。
+    int32_t count_requesting = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    int actual_limited = potr_internal_flow_control_peer_state(&ctx, 10U, 6000U, &deferred);
+    // [手順] - 要求の期限 6000 に判定する (送出上限は止まった時点 5500 から有効期限内)。
+    uint64_t expire_after_expiry = peer10->flow_request_expire_ms;
+    int32_t count_limited = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    int actual_discarded = potr_internal_flow_control_peer_state(&ctx, 10U, 6500U, &deferred);
+    // [手順] - 止まった時点 5500 から有効期限 1000 [ms] が経過した時刻 6500 に判定する。
+    int32_t count_discarded = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    // Assert
+    EXPECT_EQ(1, actual_requesting); // [確認_正常系] - 要求の期限内は抑制すること。
+    EXPECT_EQ(1, count_requesting);  // [確認_正常系] - 要求を保持する間は 1 として数えること。
+    EXPECT_EQ(1, actual_limited);    // [確認_正常系] - 要求の期限の経過後も、送出上限に達している間は抑制すること。
+    EXPECT_EQ(0U, expire_after_expiry); // [確認_正常系] - 期限が経過した要求を、要求なし (0) へ戻すこと。
+    EXPECT_EQ(1, count_limited);     // [確認_正常系] - 送出上限を保持する間は 1 のままであること。
+    EXPECT_EQ(0, actual_discarded);  // [確認_正常系] - 送出上限の破棄の後は抑制しないこと。
+    EXPECT_EQ(0, count_discarded);   // [確認_正常系] - 要求と送出上限をどちらも持たないピアを数から外し、0 へ戻すこと。
+    EXPECT_EQ(0, peer10->flow_tracked); // [確認_正常系] - ピア 10 を数えている印が外れること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// N:1 モードで、切断と判定したピアの要求と送出上限を取り消し、数から外すことの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, peer_tracking_returns_to_zero_on_dead_peer)
+{
+    // Arrange
+    enable_multi_peer();
+    now_ms = 5000U;
+    potr_packet suppress = make_packet(kSuppressPayload);
+    int deferred = -1;
+    potr_internal_flow_control_on_packet(&ctx, peer10, &suppress);
+    cplat_atomic_store_i32(&peer10->health_alive, 0, CPLAT_MEMORY_ORDER_RELEASE);
+    // [状態] - 時刻 5000 にピア 10 から抑制の要求を受け、その後に相手を切断と判定した状態にする。
+    // Pre-Assert
+    // Act
+    int32_t count_before = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    int actual_ret = potr_internal_flow_control_peer_state(&ctx, 10U, 5500U, &deferred); // [手順] - 時刻 5500 に判定する。
+    int32_t count_after = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    // Assert
+    EXPECT_EQ(1, count_before); // [確認_正常系] - 切断の判定の前は 1 として数えていること。
+    EXPECT_EQ(0, actual_ret);   // [確認_正常系] - 切断と判定したピアは抑制しないこと。
+    EXPECT_EQ(0, count_after);  // [確認_正常系] - 要求と送出上限を取り消したピアを数から外し、0 へ戻すこと。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 数の反映 (sync) と解放時の除外 (untrack) が、同じピアを二重に数えず、二重に外さないことの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, peer_sync_and_untrack_keep_count_consistent)
+{
+    // Arrange
+    peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | 5U;
+    // [状態] - ピア 10 が送出上限を保持し、まだ数えていない状態にする。
+    // Pre-Assert
+    // Act
+    potr_internal_flow_control_peer_sync(&ctx, peer10); // [手順] - 数へ反映する。
+    potr_internal_flow_control_peer_sync(&ctx, peer10); // [手順] - 状態を変えずにもう一度反映する。
+    int32_t count_synced = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    peer10->flow_send_limit = 0U;
+    peer10->flow_request_expire_ms = 0U;
+    potr_internal_flow_control_peer_sync(&ctx, peer10); // [手順] - 要求と送出上限を取り消した後に反映する (セッションの変更と同じ)。
+    int32_t count_cleared = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    peer10->flow_request_expire_ms = 2000U;
+    potr_internal_flow_control_peer_sync(&ctx, peer10); // [手順] - 抑制の要求を保持した後に反映する。
+    potr_internal_flow_control_peer_untrack(&ctx, peer10); // [手順] - ピアの解放と同じく数から外す。
+    potr_internal_flow_control_peer_untrack(&ctx, peer10); // [手順] - もう一度外す。
+    int32_t count_untracked = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    // Assert
+    EXPECT_EQ(1, count_synced);    // [確認_正常系] - 2 回反映しても 1 であること。
+    EXPECT_EQ(0, count_cleared);   // [確認_正常系] - 要求と送出上限をどちらも持たなくなったら 0 へ戻すこと。
+    EXPECT_EQ(0, count_untracked); // [確認_正常系] - 解放で 0 へ戻し、2 回外しても負にならないこと。
+    EXPECT_EQ(0, peer10->flow_tracked); // [確認_正常系] - ピア 10 を数えている印が外れていること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]

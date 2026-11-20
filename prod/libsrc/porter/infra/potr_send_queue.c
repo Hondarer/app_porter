@@ -146,17 +146,18 @@ int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer
 {
     cplat_local_lock_lock(q->mutex);
 
-    if (q->count + q->inflight >= q->depth)
-    {
-        cplat_local_lock_unlock(q->mutex);
-        return POTR_ERR_FULL;
-    }
-
+    /* 待機中断理由を空き不足より先に返す。potr_internal_send_queue_check_space() と同じ優先順位にするためである。 */
     if (q->failure != POTR_OK)
     {
         int ret = q->failure;
         cplat_local_lock_unlock(q->mutex);
         return ret;
+    }
+
+    if (q->count + q->inflight >= q->depth)
+    {
+        cplat_local_lock_unlock(q->mutex);
+        return POTR_ERR_FULL;
     }
 
     push_locked(q, peer_id, flags, payload, payload_len, ticket);

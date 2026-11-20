@@ -46,6 +46,7 @@ static void slot_forget_flow_control(thread_recv_slot *slot)
         slot->peer->flow_request_expire_ms = 0U;
         slot->peer->flow_send_limit = 0U;
         slot->peer->flow_limit_stalled_ms = 0U;
+        potr_internal_flow_control_peer_sync(slot->ctx, slot->peer);
         return;
     }
 

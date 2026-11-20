@@ -972,6 +972,7 @@ void potr_internal_flow_control_on_packet(potr_context *ctx, struct potr_interna
         peer->flow_request_expire_ms = expire_ms;
         peer->flow_limit_received_ms = now_ms;
         peer->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)send_limit;
+        potr_internal_flow_control_peer_sync(ctx, peer);
     }
     else
     {
@@ -1175,7 +1176,16 @@ int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_i
             peer->flow_limit_stalled_ms = 0U;
         }
 
-        if (peer->flow_request_expire_ms > now_ms || limit_state == POTR_SEND_LIMIT_REACHED)
+        /*
+         * 期限が経過した抑制の要求は、要求なし (0) へ戻す。判定は期限との比較だけで行うため結果は変わらず、
+         * 要求と送出上限をどちらも持たないピアを、ピアの数 (flow_tracked_peers) から外せるようにするためである。
+         */
+        if (peer->flow_request_expire_ms != 0U && peer->flow_request_expire_ms <= now_ms)
+        {
+            peer->flow_request_expire_ms = 0U;
+        }
+
+        if (peer->flow_request_expire_ms != 0U || limit_state == POTR_SEND_LIMIT_REACHED)
         {
             /* 相手を切断と判定した場合は、その相手の要求と送出上限を取り消す。 */
             if (cplat_atomic_load_i32(&peer->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
@@ -1189,6 +1199,8 @@ int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_i
                 suppressed = 1;
             }
         }
+
+        potr_internal_flow_control_peer_sync(ctx, peer);
     }
 
     if (peer != NULL)

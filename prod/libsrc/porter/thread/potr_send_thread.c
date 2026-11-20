@@ -819,6 +819,15 @@ static int defer_entry_if_blocked(potr_context *ctx, const potr_internal_payload
     potr_internal_peer_context *peer;
     int blocked;
 
+    /*
+     * 保留中のエントリがなく、抑制の要求または送出上限を保持しているピアもない間は、どのピア宛も保留しない。
+     * フロー制御を使わない構成で、エントリごとに時刻とロックを取得しないためである。
+     */
+    if (ctx->flow_deferred_head == NULL && potr_internal_flow_control_peers_idle(ctx) != 0)
+    {
+        return 0;
+    }
+
     if (peer_send_deferred(ctx, entry->peer_id, &blocked) == 0)
     {
         return 0;
@@ -850,6 +859,12 @@ static int defer_entry_if_blocked(potr_context *ctx, const potr_internal_payload
     }
 
     ctx->flow_deferred_tail = node;
+
+    /*
+     * 送信 API は、完了待ちの後に保留の総数を見て保留の有無を確かめる。完了待ちの番号を進める前に総数へ加える。
+     * 加算前の値は使わないため、戻り値は明示的に破棄する。
+     */
+    (void)cplat_atomic_fetch_add_i32(&ctx->flow_deferred_total, 1, CPLAT_MEMORY_ORDER_RELEASE);
 
     cplat_local_lock_lock(ctx->peers_mutex);
     peer = potr_internal_peer_find_by_id(ctx, entry->peer_id);
@@ -929,10 +944,15 @@ static void flush_deferred_entries(potr_context *ctx, int drop_all)
 
             if (skip == 0)
             {
-                int blocked;
+                int blocked = 0;
 
-                /* 保留の有無ではなく抑制の状態 (blocked) だけを使うため、戻り値は明示的に破棄する。 */
-                (void)peer_send_deferred(ctx, node->peer_id, &blocked);
+                /* 抑制の要求または送出上限を保持しているピアがない間は、どのピアも抑制中でないため判定を省く。 */
+                if (potr_internal_flow_control_peers_idle(ctx) == 0)
+                {
+                    /* 保留の有無ではなく抑制の状態 (blocked) だけを使うため、戻り値は明示的に破棄する。 */
+                    (void)peer_send_deferred(ctx, node->peer_id, &blocked);
+                }
+
                 if (blocked != 0)
                 {
                     /* 見送るピアの記録が上限に達した場合は、順序を保てないため、残りを次の走査へ回す。 */
@@ -976,6 +996,9 @@ static void flush_deferred_entries(potr_context *ctx, int drop_all)
         {
             potr_internal_send_queue_complete_deferred(&ctx->send_queue);
         }
+
+        /* ピアごとの保留数を減らした後に総数を減らす。減算前の値は使わないため、戻り値は明示的に破棄する。 */
+        (void)cplat_atomic_fetch_sub_i32(&ctx->flow_deferred_total, 1, CPLAT_MEMORY_ORDER_RELEASE);
 
         cplat_secure_zero(node + 1, node->payload_len);
         cplat_free(node);
@@ -1025,6 +1048,31 @@ static int pop_peer_mode(potr_context *ctx, potr_internal_payload_elem *first)
 }
 
 /*
+ * 相手から抑制の要求も送出上限も受けていないかを返す (N:1 モード以外)。受けていない場合は 1 を返す。
+ * 1 を返す場合は potr_internal_flow_control_suppressed() が必ず 0 を返すため、時刻とロックの取得を省ける。
+ * 片方向 UDP は、受信者の管理表に要求か送出上限が残っている可能性 (flow_request_pending) で判定する。
+ * それ以外は、要求の期限と送出上限がどちらも 0 であることで判定する。このとき、送出上限で止まった時刻も
+ * 0 へ戻す。送出上限を保持していない判定 (flow_send_limit_judge()) と同じ状態に保つためである。
+ */
+static int flow_control_sender_idle(potr_context *ctx)
+{
+    if (is_oneway_udp_type(ctx->service.type))
+    {
+        return cplat_atomic_load_i32(&ctx->flow_request_pending, CPLAT_MEMORY_ORDER_ACQUIRE) == 0;
+    }
+
+    if (cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE) != 0U ||
+        cplat_atomic_load_u64(&ctx->flow_request_expire_ms, CPLAT_MEMORY_ORDER_ACQUIRE) != 0U)
+    {
+        return 0;
+    }
+
+    ctx->flow_limit_stalled_ms = 0U;
+
+    return 1;
+}
+
+/*
  * 相手が「止める状態」(有効な抑制の要求がある、または送出上限に達している) の間、新しい DATA の送出を待つ。
  * 取り出し済みの先頭エントリは、解除、要求の期限の経過、送出上限の更新または破棄、close の開始のいずれかの後に送出する。
  * 再送、PING、FIN などはほかのスレッドが送出するため、抑制中も継続する。
@@ -1035,6 +1083,12 @@ static uint32_t wait_flow_resume(potr_context *ctx)
     uint64_t generation = 0U;
     uint32_t allowance = UINT32_MAX;
     int announced = 0;
+
+    /* フロー制御パケットを受けていない間は、時刻とロックを取得せずに送出する。 */
+    if (flow_control_sender_idle(ctx) != 0)
+    {
+        return UINT32_MAX;
+    }
 
     for (;;)
     {

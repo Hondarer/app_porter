@@ -141,10 +141,25 @@ static int peer_is_suppressed(potr_context *ctx, potr_peer_id peer_id, int *defe
  * 保留が送信キューを占有して、ほかのピア宛の送信を止めないようにするためである。
  * 待ち合わせを指定した送信は、抑制の解除、ピアの切断、close の開始のいずれかまで待つ。
  * wait_deferred が非 0 の場合は、そのピア宛の保留エントリがなくなるまで待つ (送出の完了待ち)。
+ * 抑制の要求または送出上限を保持しているピアがない場合 (wait_deferred が 0) と、送信スレッドが保留している
+ * エントリがない場合 (wait_deferred が非 0) は、時刻とロックを取得せずに戻る。
  */
 static int wait_peer_sendable(potr_context *ctx, potr_peer_id peer_id, int blocking, int wait_deferred)
 {
     uint64_t generation = 0U;
+
+    if (wait_deferred != 0)
+    {
+        /* 送信スレッドは、完了待ちの番号を進める前に保留の総数へ加えるため、完了待ちの後に 0 なら保留はない。 */
+        if (cplat_atomic_load_i32(&ctx->flow_deferred_total, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+        {
+            return POTR_OK;
+        }
+    }
+    else if (potr_internal_flow_control_peers_idle(ctx) != 0)
+    {
+        return POTR_OK;
+    }
 
     for (;;)
     {
@@ -213,7 +228,11 @@ static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
 
     potr_internal_send_queue_lock_push(&ctx->send_queue);
 
-    if (blocking != 0)
+    /*
+     * 待ち合わせを指定しない送信は、全断片分の空きを先に確かめる。断片が 1 つの場合は、
+     * potr_internal_send_queue_push() が空きの確認と登録を 1 回の排他で行うため、確認を省く。
+     */
+    if (blocking != 0 || len <= elem_payload_capacity(ctx))
     {
         result = POTR_OK;
     }

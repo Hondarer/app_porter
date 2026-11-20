@@ -454,6 +454,9 @@ void potr_internal_peer_free(potr_context *ctx, potr_internal_peer_context *peer
     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_internal_peer_free: service_id=%" PRId64 " peer_id=%u freed",
                ctx->service.service_id, (unsigned)peer->peer_id);
 
+    /* 抑制の要求または送出上限を保持しているピアの数から外す。スロットの再利用時の初期化では数を戻さないためである。 */
+    potr_internal_flow_control_peer_untrack(ctx, peer);
+
     potr_internal_window_dispose(&peer->send_window);
     potr_internal_window_dispose(&peer->recv_window);
     cplat_local_lock_dispose(peer->send_window_mutex);

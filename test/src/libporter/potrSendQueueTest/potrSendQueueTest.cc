@@ -632,3 +632,38 @@ TEST(potrSendQueueUninitializedTest, wake_flow_does_nothing_for_uninitialized_qu
     // Assert
     EXPECT_EQ(0U, uninit_q.flow_generation); // [確認_正常系] - クラッシュせず、通知回数が 0 のままであること。
 }
+
+// 満杯のキューで待機中断理由が設定されている場合に、push が空き不足より先に原因コードを返すことの確認
+// (送信 API は、断片が 1 つのメッセージで check_space を省き push だけを呼ぶため、check_space と同じ優先順位であることを確かめる)
+// [サブ手順参照 名前=potrSendQueueTest.SetUp]
+TEST_F(potrSendQueueTest, push_returns_failure_before_full)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    const uint8_t payload[4] = {0x01, 0x02, 0x03, 0x04};
+    size_t i;
+
+    for (i = 0; i < 4; i++)
+    {
+        ASSERT_EQ(POTR_OK,
+                  potr_internal_send_queue_push(&q, 0, 0, payload, sizeof(payload),
+                                                nullptr)); // [状態] - depth=4 のキューに 4 件を積んで満杯にする。
+        // [状態確認] - potr_internal_send_queue_push() の戻り値が POTR_OK であること。
+    }
+    q.failure = POTR_ERR_IO; // [状態] - 待機中断理由 failure に POTR_ERR_IO を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_push = potr_internal_send_queue_push(
+        &q, 0, 0, payload, sizeof(payload),
+        nullptr); // [手順] - 満杯で待機中断理由が設定されたキューへ potr_internal_send_queue_push() を呼び出す。
+    int actual_check = potr_internal_send_queue_check_space(
+        &q, 1); // [手順] - 同じキューへ 1 件を指定して potr_internal_send_queue_check_space() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_IO, actual_push);  // [確認_異常系] - push の戻り値が待機中断理由の原因コード POTR_ERR_IO であること。
+    EXPECT_EQ(POTR_ERR_IO, actual_check); // [確認_異常系] - check_space の戻り値も POTR_ERR_IO であり、同じ優先順位であること。
+    EXPECT_EQ(4U, q.count);               // [確認_異常系] - キューの件数が 4 のままであること。
+}
+// [サブ手順参照 名前=potrSendQueueTest.TearDown]

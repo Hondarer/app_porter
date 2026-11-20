@@ -805,6 +805,8 @@ TEST_F(potrSendTest, n1_nonblocking_send_returns_full_when_peer_is_suppressed)
                            CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 接続済みの peer 10 を用意する。
     ON_CALL(mock_porter, potr_internal_peer_find_by_id(_, 10U)).WillByDefault(Return(&peers[0]));
     // [状態] - peer 10 を検索できるようにする。
+    cplat_atomic_store_i32(&ctx.flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    // [状態] - 抑制の要求または送出上限を保持しているピアが 1 つあるものとする。
 
     // Pre-Assert
     EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _)).Times(1).WillOnce(Return(1));
@@ -846,6 +848,8 @@ TEST_F(potrSendTest, n1_nonblocking_peer_all_queues_no_peer_when_one_peer_is_sup
     ON_CALL(mock_porter, potr_internal_flow_control_peer_state(_, 10U, _, _)).WillByDefault(Return(0));
     ON_CALL(mock_porter, potr_internal_flow_control_peer_state(_, 11U, _, _)).WillByDefault(Return(1));
     // [状態] - peer 10 は抑制中でなく、peer 11 は抑制中とする。
+    cplat_atomic_store_i32(&ctx.flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    // [状態] - 抑制の要求または送出上限を保持しているピアが 1 つあるものとする。
 
     // Pre-Assert
 
@@ -887,9 +891,12 @@ TEST_F(potrSendTest, n1_blocking_send_waits_until_peer_suppression_is_released)
     ON_CALL(mock_porter, potr_internal_peer_find_by_id(_, 10U)).WillByDefault(Return(&peers[0]));
     // [状態] - peer 10 を検索できるようにする。
 
+    cplat_atomic_store_i32(&ctx.flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    // [状態] - 抑制の要求または送出上限を保持しているピアが 1 つあり、送信スレッドが保留しているエントリはないものとする。
+
     // Pre-Assert
     EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _))
-        .Times(5)
+        .Times(4)
         .WillRepeatedly(Invoke(
             [&](potr_context *, potr_peer_id, uint64_t, int *)
             {
@@ -904,7 +911,7 @@ TEST_F(potrSendTest, n1_blocking_send_waits_until_peer_suppression_is_released)
                 }
                 return 0;
             }));
-    // [Pre-Assert確認_正常系] - potr_internal_flow_control_peer_state() が 5 回呼ばれること。(登録前の確認が 4 回、完了後の確認が 1 回)
+    // [Pre-Assert確認_正常系] - potr_internal_flow_control_peer_state() が 4 回呼ばれること。(登録前の確認が 4 回。保留の総数が 0 のため、完了後の確認は行わない)
     // [Pre-Assert手順] - 最初の 3 回は抑制中として 1 を、以降は 0 を返す。
 
     // Act
@@ -984,6 +991,8 @@ TEST_F(potrSendTest, n1_blocking_send_waits_until_deferred_entries_are_released)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     } // [手順] - 送信スレッドの代わりに、登録された 1 件を取り出す。
     deferred_marked = 1;
+    cplat_atomic_store_i32(&ctx.flow_deferred_total, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    // [手順] - 送信スレッドと同じく、完了待ちの番号を進める前に保留の総数を 1 にする。
     potr_internal_send_queue_defer(&ctx.send_queue); // [手順] - 取り出した 1 件を、送出を保留したものとしてマークする。
     while (post_defer_calls.load() < 3)
     {
@@ -1002,6 +1011,7 @@ TEST_F(potrSendTest, n1_blocking_send_waits_until_deferred_entries_are_released)
 
     // 後始末
     potr_internal_send_queue_complete_deferred(&ctx.send_queue); // [手順] - 保留したエントリを完了させ、キューの状態を戻す。
+    cplat_atomic_store_i32(&ctx.flow_deferred_total, 0, CPLAT_MEMORY_ORDER_RELEASE); // [手順] - 保留の総数を 0 へ戻す。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
 
@@ -1032,6 +1042,8 @@ TEST_F(potrSendTest, n1_blocking_send_returns_canceled_when_send_thread_stops_wh
                 return 1;
             }));
     // [状態] - peer 10 を常に抑制中とする。
+    cplat_atomic_store_i32(&ctx.flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    // [状態] - 抑制の要求または送出上限を保持しているピアが 1 つあるものとする。
 
     // Pre-Assert
 
@@ -1056,5 +1068,55 @@ TEST_F(potrSendTest, n1_blocking_send_returns_canceled_when_send_thread_stops_wh
         0U,
         ctx.send_queue
             .count); // [確認_異常系] - ctx.send_queue.count が 0U であること。(抑制中のため登録されなかったことの確認)
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// N:1 で、抑制の要求または送出上限を保持しているピアがなく、保留もない場合に、ピアの抑制の判定を行わずに登録することの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, n1_send_skips_peer_state_when_no_peer_is_tracked)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_porter;
+    const char payload[] = "n1-idle"; // [状態] - 送信ペイロードを "n1-idle" とする。
+    potr_internal_payload_elem elem = {};
+    int actual_blocking_ret = POTR_ERR_UNKNOWN;
+
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1;
+    peers[0].active = 1;
+    peers[0].peer_id = 10;
+    cplat_atomic_store_i32(&peers[0].health_alive, 1,
+                           CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 接続済みの peer 10 を用意する。
+    ON_CALL(mock_porter, potr_internal_peer_find_by_id(_, 10U)).WillByDefault(Return(&peers[0]));
+    // [状態] - peer 10 を検索できるようにする。flow_tracked_peers と flow_deferred_total は 0 のままとする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(_, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - potr_internal_flow_control_peer_state() が呼ばれないこと。(登録前と完了後の確認を省くことの確認)
+
+    // Act
+    int actual_ret = potr_service_send(handle, 10U, payload, strlen(payload),
+                                       0); // [手順] - peer 10 を指定して、待ち合わせを指定せずに送信する。
+    std::thread sender(
+        [&]()
+        {
+            actual_blocking_ret = potr_service_send(handle, 10U, payload, strlen(payload), POTR_SEND_BLOCKING);
+        }); // [手順] - 別スレッドで POTR_SEND_BLOCKING を指定して peer 10 宛に送信する。
+    for (int i = 0; i < 2; i++)
+    {
+        while (potr_internal_send_queue_try_pop(&ctx.send_queue, &elem) != POTR_OK)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        potr_internal_send_queue_complete(&ctx.send_queue);
+    } // [手順] - 送信スレッドの代わりに、登録された 2 件を取り出して完了させる。
+    sender.join();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 待ち合わせを指定しない送信の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, actual_blocking_ret); // [確認_正常系] - 待ち合わせを指定した送信の戻り値が POTR_OK であること。
+    EXPECT_EQ((potr_peer_id)10, elem.peer_id); // [確認_正常系] - 取り出した elem.peer_id が 10 と一致すること。
+    EXPECT_EQ(0U, ctx.send_queue.count);       // [確認_正常系] - ctx.send_queue.count が 0U であること。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]

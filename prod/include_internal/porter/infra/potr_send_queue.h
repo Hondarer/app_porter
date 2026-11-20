@@ -127,7 +127,8 @@ extern "C"
      *  @param[in]      payload     送信ペイロード データへのポインター。
      *  @param[in]      payload_len 送信ペイロード長 [byte]。
      *  @param[out]     ticket      登録したエントリの番号の格納先。NULL の場合は格納しません。
-     *  @return         成功時は POTR_OK、満杯時は POTR_ERR_FULL。
+     *  @return         成功時は POTR_OK、満杯時は POTR_ERR_FULL、
+     *                  待機中断理由が設定されている場合は (満杯かどうかによらず) その原因コードを返します。
      */
     extern int potr_internal_send_queue_push(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags,
                                              const void *payload, uint16_t payload_len, uint64_t *ticket);
