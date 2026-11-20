@@ -323,9 +323,15 @@ TEST(porterTestOutputTest, main_reports_close_failure_at_exit)
     // Arrange
     const int port = 19362;
     PorterConfigBuilder cfg;
-    std::string config_path = cfg.setTcpCloseTimeoutMs(200U).addTcpBidirService(3, port).build();
+    std::string config_path = cfg.setTcpHealthIntervalMs(0U)
+                                  .setTcpHealthTimeoutMs(0U)
+                                  .setTcpCloseTimeoutMs(200U)
+                                  .addTcpBidirService(3, port)
+                                  .build();
     ASSERT_FALSE(config_path.empty()); // [状態確認] - TCP_BIDIR サービス設定ファイルを生成できること。
-    // [状態] - FIN_ACK の待機を 200 [ms] とする TCP_BIDIR サービスの設定を用意する。
+    // [状態] - FIN_ACK の待機を 200 [ms] とし、定周期のヘルス チェックを無効にした TCP_BIDIR サービスの設定を用意する。
+    // 定周期のヘルス チェックが有効だと、接続の直後の終了要求でヘルス スレッドの起動が取り消されて接続が切れ、
+    // FIN_ACK を待たずに終了処理が成功することがある。無効にすると、最初のパケットの受信後は必ず FIN_ACK を待つ。
     cplat_socket listen_sock = CPLAT_INVALID_SOCKET;
     cplat_socket accepted_sock = CPLAT_INVALID_SOCKET;
     cplat_ipv4_endpoint listen_addr = {};
