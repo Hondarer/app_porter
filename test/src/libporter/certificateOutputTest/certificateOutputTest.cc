@@ -1,9 +1,11 @@
 /**
  *******************************************************************************
  *  @file           certificateOutputTest.cc
- *  @brief          証明書方式のハンドシェイクの出力の失敗を診断することを確認します。
+ *  @brief          証明書方式のハンドシェイクの出力の失敗の診断と、クライアントの再試行と DTLS の再送の出力を確認します。
  *
  *  認証の処理は mock_porter の mock で置き換え、cplat_malloc の失敗で出力の失敗を起こします。
+ *  再試行と再送の出力は、新しい試行の作成 (potr_internal_auth_session_create) と古い試行の再送
+ *  (potr_internal_auth_session_handle_timeout) の呼び出しで判定します。
  *  結合テスト integration/certificateTest と区別するため、名前に Output を付けます。
  *
  *******************************************************************************
@@ -35,6 +37,9 @@ constexpr uint16_t kMaxPayload = 1400U;
 
 /** 認証セッションの代わりに渡す値。mock だけが受け取り、参照しない。 */
 potr_internal_auth_session *const kFakeSession = reinterpret_cast<potr_internal_auth_session *>(0x1000);
+
+/** 再試行で作成する新しい認証セッションの代わりに渡す値。mock だけが受け取り、参照しない。 */
+potr_internal_auth_session *const kNewSession = reinterpret_cast<potr_internal_auth_session *>(0x2000);
 } // namespace
 
 class certificateOutputTest : public Test
@@ -78,6 +83,28 @@ class certificateOutputTest : public Test
         std::free(ctx);
         ctx = nullptr;
         // [手順] - 受信者の管理表、認証の状態、ロック、コンテキストを破棄する。
+    }
+    // [サブ手順終了]
+
+    // [サブ手順 名前=certificateOutputTest.PrepareClient]
+    void PrepareClient(Mock_porter &mock_porter, uint32_t retry_interval_ms)
+    {
+        ctx->service.type = POTR_TYPE_UNICAST;
+        ctx->role = POTR_ROLE_RECEIVER;
+        ctx->health_interval_ms = retry_interval_ms;
+        // [状態] - 片方向 UDP の受信者 (クライアント側) で、再試行の周期を retry_interval_ms とする条件を用意する。
+        ON_CALL(mock_porter, potr_internal_auth_session_create(_, _, _, _))
+            .WillByDefault(DoAll(SetArgPointee<3>(kNewSession), Return(POTR_OK)));
+        // [状態] - potr_internal_auth_session_create() から新しい認証セッションを返すように既定動作を設定する。
+        ON_CALL(mock_porter, potr_internal_auth_session_receive(_, _, _, _))
+            .WillByDefault(DoAll(SetArgPointee<3>(POTR_INTERNAL_AUTH_STATE_IN_PROGRESS), Return(POTR_OK)));
+        // [状態] - potr_internal_auth_session_receive() から認証の進行中を返すように既定動作を設定する。
+        ON_CALL(mock_porter, potr_internal_auth_session_handle_timeout(_, _))
+            .WillByDefault(DoAll(SetArgPointee<1>(POTR_INTERNAL_AUTH_STATE_IN_PROGRESS), Return(POTR_OK)));
+        // [状態] - potr_internal_auth_session_handle_timeout() から認証の進行中を返すように既定動作を設定する。
+        ON_CALL(mock_porter, potr_internal_auth_session_take_output(_, _, _, _))
+            .WillByDefault(DoAll(SetArgPointee<3>(0U), Return(POTR_OK)));
+        // [状態] - potr_internal_auth_session_take_output() から出力なし (0 byte) を返すように既定動作を設定する。
     }
     // [サブ手順終了]
 
@@ -307,5 +334,249 @@ TEST_F(certificateOutputTest, tick_warns_when_client_first_output_fails)
 
     // Assert
     EXPECT_EQ(kFakeSession, ctx->certificate.session); // [確認_異常系] - 出力の失敗では作成した認証セッションを破棄しないこと。
+}
+// [サブ手順参照 名前=certificateOutputTest.TearDown]
+
+// DTLS の再送の期限と再試行の周期 (DTLS の初回の再送タイマーより短い) が同じ周期処理で到来した場合に、
+// 古い試行を再送せず、新しい試行だけを開始することの確認
+// [サブ手順参照 名前=certificateOutputTest.SetUp]
+TEST_F(certificateOutputTest, tick_client_starts_only_new_attempt_when_retransmission_and_retry_are_due)
+{
+    // Arrange
+    NiceMock<Mock_porter> mock_porter;
+    PrepareClient(mock_porter, 500U); // [サブ手順参照 名前=certificateOutputTest.PrepareClient]
+    ctx->certificate.session = kFakeSession;
+    ctx->certificate.retry_ms = 0U;
+    // [状態] - 時刻 0 [ms] に開始し、まだ再送していない試行の認証セッションを持つ状態を用意する。
+    ON_CALL(mock_porter, potr_internal_auth_session_get_timeout_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<1>(1), SetArgPointee<2>(0U), Return(POTR_OK)));
+    // [状態] - potr_internal_auth_session_get_timeout_ms() から再送の期限の到来 (残り 0 [ms]) を返すように既定動作を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_handle_timeout(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 古い試行の再送 (potr_internal_auth_session_handle_timeout()) を呼ばないこと。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_dispose(_)).Times(AnyNumber());
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_dispose(kFakeSession)).Times(1);
+    // [Pre-Assert確認_正常系] - 古い試行の認証セッションを 1 回破棄すること。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_create(_, POTR_INTERNAL_AUTH_ROLE_CLIENT, _, _)).Times(1);
+    // [Pre-Assert確認_正常系] - クライアントの役割で新しい試行の認証セッションを 1 回作成すること。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_receive(_, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_receive(kNewSession, nullptr, 0U, _)).Times(1);
+    // [Pre-Assert確認_正常系] - 新しい試行の最初の flight (ClientHello) の生成を 1 回だけ行うこと。
+
+    // Act
+    potr_internal_certificate_tick(ctx, 1000U); // [手順] - 時刻 1000 [ms] で potr_internal_certificate_tick() を呼ぶ。
+
+    // Assert
+    EXPECT_EQ(kNewSession, ctx->certificate.session); // [確認_正常系] - 認証セッションが新しい試行のものに替わること。
+    EXPECT_EQ(1000U, ctx->certificate.retry_ms); // [確認_正常系] - 試行の開始時刻が 1000 [ms] であること。
+    EXPECT_EQ(0, ctx->certificate.retransmitted); // [確認_正常系] - 新しい試行は再送していない状態であること。
+}
+// [サブ手順参照 名前=certificateOutputTest.TearDown]
+
+// 再送済みの試行で、DTLS の再送の期限と再試行の周期 (DTLS の再送タイマーより長い) が同じ周期処理で到来した場合に、
+// 古い試行を再送せず、新しい試行だけを開始することの確認
+// [サブ手順参照 名前=certificateOutputTest.SetUp]
+TEST_F(certificateOutputTest, tick_client_starts_only_new_attempt_when_retransmitted_attempt_reaches_retry)
+{
+    // Arrange
+    NiceMock<Mock_porter> mock_porter;
+    PrepareClient(mock_porter, 3000U); // [サブ手順参照 名前=certificateOutputTest.PrepareClient]
+    ctx->certificate.session = kFakeSession;
+    ctx->certificate.retry_ms = 0U;
+    ctx->certificate.retransmitted = 1;
+    // [状態] - 時刻 0 [ms] に開始し、すでに 1 回再送した試行の認証セッションを持つ状態を用意する。
+    ON_CALL(mock_porter, potr_internal_auth_session_get_timeout_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<1>(1), SetArgPointee<2>(0U), Return(POTR_OK)));
+    // [状態] - potr_internal_auth_session_get_timeout_ms() から再送の期限の到来 (残り 0 [ms]) を返すように既定動作を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_handle_timeout(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 古い試行の再送 (potr_internal_auth_session_handle_timeout()) を呼ばないこと。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_create(_, POTR_INTERNAL_AUTH_ROLE_CLIENT, _, _)).Times(1);
+    // [Pre-Assert確認_正常系] - クライアントの役割で新しい試行の認証セッションを 1 回作成すること。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_receive(_, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_receive(kNewSession, nullptr, 0U, _)).Times(1);
+    // [Pre-Assert確認_正常系] - 新しい試行の最初の flight (ClientHello) の生成を 1 回だけ行うこと。
+
+    // Act
+    potr_internal_certificate_tick(ctx, 3000U); // [手順] - 時刻 3000 [ms] で potr_internal_certificate_tick() を呼ぶ。
+
+    // Assert
+    EXPECT_EQ(kNewSession, ctx->certificate.session); // [確認_正常系] - 認証セッションが新しい試行のものに替わること。
+    EXPECT_EQ(3000U, ctx->certificate.retry_ms); // [確認_正常系] - 試行の開始時刻が 3000 [ms] であること。
+    EXPECT_EQ(0, ctx->certificate.retransmitted); // [確認_正常系] - 新しい試行は再送していない状態であること。
+}
+// [サブ手順参照 名前=certificateOutputTest.TearDown]
+
+// 再試行の周期が経過していない周期処理で DTLS の再送の期限が到来した場合に、古い試行の再送だけを行うことの確認
+// [サブ手順参照 名前=certificateOutputTest.SetUp]
+TEST_F(certificateOutputTest, tick_client_only_retransmits_when_retry_interval_has_not_elapsed)
+{
+    // Arrange
+    NiceMock<Mock_porter> mock_porter;
+    PrepareClient(mock_porter, 3000U); // [サブ手順参照 名前=certificateOutputTest.PrepareClient]
+    ctx->certificate.session = kFakeSession;
+    ctx->certificate.retry_ms = 0U;
+    // [状態] - 時刻 0 [ms] に開始し、まだ再送していない試行の認証セッションを持つ状態を用意する。
+    ON_CALL(mock_porter, potr_internal_auth_session_get_timeout_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<1>(1), SetArgPointee<2>(0U), Return(POTR_OK)));
+    // [状態] - potr_internal_auth_session_get_timeout_ms() から再送の期限の到来 (残り 0 [ms]) を返すように既定動作を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_handle_timeout(kFakeSession, _)).Times(1);
+    // [Pre-Assert確認_正常系] - 古い試行の認証セッションで再送 (potr_internal_auth_session_handle_timeout()) を 1 回呼ぶこと。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_dispose(_)).Times(0);
+    // [Pre-Assert確認_正常系] - 認証セッションを破棄しないこと。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_create(_, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 新しい試行の認証セッションを作成しないこと。
+
+    // Act
+    potr_internal_certificate_tick(ctx, 1000U); // [手順] - 時刻 1000 [ms] で potr_internal_certificate_tick() を呼ぶ。
+
+    // Assert
+    EXPECT_EQ(kFakeSession, ctx->certificate.session); // [確認_正常系] - 認証セッションが古い試行のままであること。
+    EXPECT_EQ(0U, ctx->certificate.retry_ms); // [確認_正常系] - 試行の開始時刻が 0 [ms] のままであること。
+    EXPECT_NE(0, ctx->certificate.retransmitted); // [確認_正常系] - 再送した状態が記録されていること。
+}
+// [サブ手順参照 名前=certificateOutputTest.TearDown]
+
+// 前の周期処理で再送した試行は、DTLS の再送の期限が到来していなくても、再試行の周期の経過で再試行することの確認
+// [サブ手順参照 名前=certificateOutputTest.SetUp]
+TEST_F(certificateOutputTest, tick_client_retries_retransmitted_attempt_after_retry_interval)
+{
+    // Arrange
+    NiceMock<Mock_porter> mock_porter;
+    PrepareClient(mock_porter, 500U); // [サブ手順参照 名前=certificateOutputTest.PrepareClient]
+    ctx->certificate.session = kFakeSession;
+    ctx->certificate.retry_ms = 0U;
+    ctx->certificate.retransmitted = 1;
+    // [状態] - 時刻 0 [ms] に開始し、すでに 1 回再送した試行の認証セッションを持つ状態を用意する。
+    ON_CALL(mock_porter, potr_internal_auth_session_get_timeout_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<1>(1), SetArgPointee<2>(500U), Return(POTR_OK)));
+    // [状態] - potr_internal_auth_session_get_timeout_ms() から再送の期限の未到来 (残り 500 [ms]) を返すように既定動作を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_handle_timeout(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 古い試行の再送 (potr_internal_auth_session_handle_timeout()) を呼ばないこと。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_create(_, POTR_INTERNAL_AUTH_ROLE_CLIENT, _, _)).Times(1);
+    // [Pre-Assert確認_正常系] - クライアントの役割で新しい試行の認証セッションを 1 回作成すること。
+
+    // Act
+    potr_internal_certificate_tick(ctx, 1000U); // [手順] - 時刻 1000 [ms] で potr_internal_certificate_tick() を呼ぶ。
+
+    // Assert
+    EXPECT_EQ(kNewSession, ctx->certificate.session); // [確認_正常系] - 認証セッションが新しい試行のものに替わること。
+    EXPECT_EQ(1000U, ctx->certificate.retry_ms); // [確認_正常系] - 試行の開始時刻が 1000 [ms] であること。
+}
+// [サブ手順参照 名前=certificateOutputTest.TearDown]
+
+// 再送の期限が到来せず、再送もしていない試行は、再試行の周期が経過しても再試行も再送もしないことの確認
+// [サブ手順参照 名前=certificateOutputTest.SetUp]
+TEST_F(certificateOutputTest, tick_client_keeps_attempt_without_retransmission)
+{
+    // Arrange
+    NiceMock<Mock_porter> mock_porter;
+    PrepareClient(mock_porter, 500U); // [サブ手順参照 名前=certificateOutputTest.PrepareClient]
+    ctx->certificate.session = kFakeSession;
+    ctx->certificate.retry_ms = 0U;
+    // [状態] - 時刻 0 [ms] に開始し、まだ再送していない試行の認証セッションを持つ状態を用意する。
+    ON_CALL(mock_porter, potr_internal_auth_session_get_timeout_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<1>(1), SetArgPointee<2>(500U), Return(POTR_OK)));
+    // [状態] - potr_internal_auth_session_get_timeout_ms() から再送の期限の未到来 (残り 500 [ms]) を返すように既定動作を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_handle_timeout(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 再送 (potr_internal_auth_session_handle_timeout()) を呼ばないこと。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_create(_, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 新しい試行の認証セッションを作成しないこと。
+
+    // Act
+    potr_internal_certificate_tick(ctx, 1000U); // [手順] - 時刻 1000 [ms] で potr_internal_certificate_tick() を呼ぶ。
+
+    // Assert
+    EXPECT_EQ(kFakeSession, ctx->certificate.session); // [確認_正常系] - 認証セッションが進行中の試行のままであること。
+    EXPECT_EQ(0, ctx->certificate.retransmitted); // [確認_正常系] - 再送していない状態のままであること。
+}
+// [サブ手順参照 名前=certificateOutputTest.TearDown]
+
+// 認証に失敗した後は、再試行の周期の経過で新しい試行を開始することの確認
+// [サブ手順参照 名前=certificateOutputTest.SetUp]
+TEST_F(certificateOutputTest, tick_client_retries_after_failure)
+{
+    // Arrange
+    NiceMock<Mock_porter> mock_porter;
+    PrepareClient(mock_porter, 500U); // [サブ手順参照 名前=certificateOutputTest.PrepareClient]
+    ctx->certificate.failed = 1;
+    ctx->certificate.retry_ms = 0U;
+    // [状態] - 時刻 0 [ms] に開始した試行が失敗し、認証セッションを破棄した状態を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_get_timeout_ms(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 認証セッションがないため、再送の期限を問い合わせないこと。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_handle_timeout(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 再送 (potr_internal_auth_session_handle_timeout()) を呼ばないこと。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_create(_, POTR_INTERNAL_AUTH_ROLE_CLIENT, _, _)).Times(1);
+    // [Pre-Assert確認_正常系] - クライアントの役割で新しい試行の認証セッションを 1 回作成すること。
+
+    // Act
+    potr_internal_certificate_tick(ctx, 500U); // [手順] - 時刻 500 [ms] で potr_internal_certificate_tick() を呼ぶ。
+
+    // Assert
+    EXPECT_EQ(kNewSession, ctx->certificate.session); // [確認_正常系] - 新しい試行の認証セッションを持つこと。
+    EXPECT_EQ(0, ctx->certificate.failed); // [確認_正常系] - 失敗の状態が解除されていること。
+    EXPECT_EQ(500U, ctx->certificate.retry_ms); // [確認_正常系] - 試行の開始時刻が 500 [ms] であること。
+}
+// [サブ手順参照 名前=certificateOutputTest.TearDown]
+
+// 認証に失敗した後は、再試行の周期が経過するまで新しい試行を開始しないことの確認
+// [サブ手順参照 名前=certificateOutputTest.SetUp]
+TEST_F(certificateOutputTest, tick_client_waits_retry_interval_after_failure)
+{
+    // Arrange
+    NiceMock<Mock_porter> mock_porter;
+    PrepareClient(mock_porter, 500U); // [サブ手順参照 名前=certificateOutputTest.PrepareClient]
+    ctx->certificate.failed = 1;
+    ctx->certificate.retry_ms = 0U;
+    // [状態] - 時刻 0 [ms] に開始した試行が失敗し、認証セッションを破棄した状態を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_create(_, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 新しい試行の認証セッションを作成しないこと。
+
+    // Act
+    potr_internal_certificate_tick(ctx, 499U); // [手順] - 時刻 499 [ms] で potr_internal_certificate_tick() を呼ぶ。
+
+    // Assert
+    EXPECT_EQ(nullptr, ctx->certificate.session); // [確認_正常系] - 認証セッションを持たないままであること。
+    EXPECT_NE(0, ctx->certificate.failed); // [確認_正常系] - 失敗の状態のままであること。
+}
+// [サブ手順参照 名前=certificateOutputTest.TearDown]
+
+// 認証セッションを持たない最初の周期処理では、再試行の周期を待たずに試行を開始することの確認
+// [サブ手順参照 名前=certificateOutputTest.SetUp]
+TEST_F(certificateOutputTest, tick_client_starts_first_attempt_without_session)
+{
+    // Arrange
+    NiceMock<Mock_porter> mock_porter;
+    PrepareClient(mock_porter, 500U); // [サブ手順参照 名前=certificateOutputTest.PrepareClient]
+    ctx->certificate.retry_ms = 0U;
+    // [状態] - 認証セッションを持たず、失敗もしていない状態を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_handle_timeout(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 再送 (potr_internal_auth_session_handle_timeout()) を呼ばないこと。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_create(_, POTR_INTERNAL_AUTH_ROLE_CLIENT, _, _)).Times(1);
+    // [Pre-Assert確認_正常系] - クライアントの役割で認証セッションを 1 回作成すること。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_receive(_, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_receive(kNewSession, nullptr, 0U, _)).Times(1);
+    // [Pre-Assert確認_正常系] - 最初の flight (ClientHello) の生成を 1 回だけ行うこと。
+
+    // Act
+    potr_internal_certificate_tick(ctx, 100U); // [手順] - 時刻 100 [ms] で potr_internal_certificate_tick() を呼ぶ。
+
+    // Assert
+    EXPECT_EQ(kNewSession, ctx->certificate.session); // [確認_正常系] - 認証セッションを持つこと。
+    EXPECT_EQ(100U, ctx->certificate.retry_ms); // [確認_正常系] - 試行の開始時刻が 100 [ms] であること。
 }
 // [サブ手順参照 名前=certificateOutputTest.TearDown]

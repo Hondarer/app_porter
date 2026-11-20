@@ -510,6 +510,60 @@ TEST_P(auth_transport_test, export_requires_established_and_preserves_output_on_
 }
 // [サブ手順参照 名前=auth_pair.cleanup 回数=PARAM]
 
+// 相手に証明書を拒否された側の失敗理由が、汎用の理由に OpenSSL の理由の文字列を付けたものになることの確認
+TEST_P(auth_transport_test, rejected_side_failure_reason_includes_openssl_reason)
+{
+    // Arrange
+    NiceMock<Mock_openssl> mock_openssl;
+    auth_configuration client("client", 0, "server");
+    auth_configuration server("foreign", 0, "client");
+    // [状態] - サーバーが信頼されない CA の証明書を使い、クライアントがサーバー証明書を拒否する構成を用意する。
+    auth_pair pair;
+    int open_ret = pair.open(client.config, server.config, GetParam().transport); // [サブ手順参照 名前=auth_pair.open 回数=PARAM]
+    ASSERT_EQ(POTR_OK, open_ret); // [状態確認] - pair.open() の戻り値が POTR_OK であること。
+    pair.exchange(); // [サブ手順参照 名前=auth_pair.exchange 回数=PARAM]
+    ASSERT_EQ(POTR_INTERNAL_AUTH_STATE_FAILED, pair.report.client_state); // [状態確認] - クライアントの状態が FAILED であること。
+    potr_internal_auth_state server_state = pair.report.server_state;
+
+    // Pre-Assert
+    // Act
+    pair.transfer(pair.client, pair.server, server_state); // [手順] - クライアントの拒否の通知 (アラート) をサーバーへ渡す。
+
+    // Assert
+    EXPECT_EQ(POTR_INTERNAL_AUTH_STATE_FAILED, server_state); // [確認_異常系 回数=PARAM] - サーバーの状態が FAILED であること。
+    EXPECT_THAT(potr_internal_auth_session_failure_reason(pair.server),
+                HasSubstr("handshake failed or peer rejected certificate (OpenSSL: ")); // [確認_異常系 回数=PARAM] - サーバーの失敗理由が汎用の理由と OpenSSL の理由の文字列を含むこと。
+}
+// [サブ手順参照 名前=auth_pair.cleanup 回数=PARAM]
+
+// OpenSSL の理由の文字列が得られない場合は、失敗理由に OpenSSL のエラー コードを付けることの確認
+TEST_P(auth_transport_test, rejected_side_failure_reason_includes_openssl_code_without_reason_text)
+{
+    // Arrange
+    NiceMock<Mock_openssl> mock_openssl;
+    auth_configuration client("client", 0, "server");
+    auth_configuration server("foreign", 0, "client");
+    // [状態] - サーバーが信頼されない CA の証明書を使い、クライアントがサーバー証明書を拒否する構成を用意する。
+    ON_CALL(mock_openssl, ERR_reason_error_string(_, _, _, _)).WillByDefault(Return(nullptr));
+    // [状態] - ERR_reason_error_string() から nullptr (未登録のコード) を返すように既定動作を設定する。
+    auth_pair pair;
+    int open_ret = pair.open(client.config, server.config, GetParam().transport); // [サブ手順参照 名前=auth_pair.open 回数=PARAM]
+    ASSERT_EQ(POTR_OK, open_ret); // [状態確認] - pair.open() の戻り値が POTR_OK であること。
+    pair.exchange(); // [サブ手順参照 名前=auth_pair.exchange 回数=PARAM]
+    ASSERT_EQ(POTR_INTERNAL_AUTH_STATE_FAILED, pair.report.client_state); // [状態確認] - クライアントの状態が FAILED であること。
+    potr_internal_auth_state server_state = pair.report.server_state;
+
+    // Pre-Assert
+    // Act
+    pair.transfer(pair.client, pair.server, server_state); // [手順] - クライアントの拒否の通知 (アラート) をサーバーへ渡す。
+
+    // Assert
+    EXPECT_EQ(POTR_INTERNAL_AUTH_STATE_FAILED, server_state); // [確認_異常系 回数=PARAM] - サーバーの状態が FAILED であること。
+    EXPECT_THAT(potr_internal_auth_session_failure_reason(pair.server),
+                HasSubstr("handshake failed or peer rejected certificate (OpenSSL error 0x")); // [確認_異常系 回数=PARAM] - サーバーの失敗理由が汎用の理由と OpenSSL のエラー コードを含むこと。
+}
+// [サブ手順参照 名前=auth_pair.cleanup 回数=PARAM]
+
 INSTANTIATE_TEST_SUITE_P(transports, auth_transport_test,
     Values(transport_parameter{POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM}, transport_parameter{POTR_INTERNAL_AUTH_TRANSPORT_STREAM}));
 

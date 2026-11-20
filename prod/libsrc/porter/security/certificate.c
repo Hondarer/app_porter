@@ -682,37 +682,50 @@ out_unlock:
     return POTR_OK;
 }
 
-static void tick_session(potr_context *ctx, potr_internal_certificate_state *state)
+/* DTLS の再送の期限が到来している (残り 0 [ms]) かを返します。 */
+static int is_retransmission_due(potr_internal_certificate_state *state)
 {
-    potr_internal_auth_state result;
-    uint32_t timeout_ms;
-    int has_timeout;
-    int output_ret;
+    uint32_t timeout_ms = 0U;
+    int has_timeout = 0;
 
     if (state->session == NULL || state->failed)
     {
-        return;
+        return 0;
     }
-    if (potr_internal_auth_session_get_timeout_ms(state->session, &has_timeout, &timeout_ms) == POTR_OK &&
-        has_timeout && timeout_ms == 0U)
+    return potr_internal_auth_session_get_timeout_ms(state->session, &has_timeout, &timeout_ms) == POTR_OK &&
+           has_timeout && timeout_ms == 0U;
+}
+
+/* 再送の期限が到来した試行の直近の flight を、DTLS の再送として送出し直します。 */
+static void retransmit_session(potr_context *ctx, potr_internal_certificate_state *state)
+{
+    potr_internal_auth_state result = POTR_INTERNAL_AUTH_STATE_IN_PROGRESS;
+    int output_ret;
+
+    state->retransmitted = 1;
+    /* 引数は NULL でないため POTR_OK だけを返し、再送の失敗は result の FAILED で受け取るため、戻り値は明示的に破棄する。 */
+    (void)potr_internal_auth_session_handle_timeout(state->session, &result);
+    if (result == POTR_INTERNAL_AUTH_STATE_FAILED)
     {
-        state->retransmitted = 1;
-        /* 引数は NULL でないため POTR_OK だけを返し、再送の失敗は result の FAILED で受け取るため、戻り値は明示的に破棄する。 */
-        (void)potr_internal_auth_session_handle_timeout(state->session, &result);
-        if (result == POTR_INTERNAL_AUTH_STATE_FAILED)
-        {
-            state->failed = 1;
-            state->established = 0;
-            POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING, "certificate: authentication failed: %s",
-                potr_internal_auth_session_failure_reason(state->session));
-            potr_internal_auth_session_dispose(state->session);
-            state->session = NULL;
-            dispose_flight(state);
-            cplat_secure_zero(state->send_key, sizeof(state->send_key));
-            cplat_secure_zero(state->receive_key, sizeof(state->receive_key));
-        }
-        output_ret = flush_output(ctx, state, CPLAT_INVALID_SOCKET, NULL);
-        trace_output_failure("handshake output", output_ret);
+        state->failed = 1;
+        state->established = 0;
+        POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING, "certificate: authentication failed: %s",
+            potr_internal_auth_session_failure_reason(state->session));
+        potr_internal_auth_session_dispose(state->session);
+        state->session = NULL;
+        dispose_flight(state);
+        cplat_secure_zero(state->send_key, sizeof(state->send_key));
+        cplat_secure_zero(state->receive_key, sizeof(state->receive_key));
+    }
+    output_ret = flush_output(ctx, state, CPLAT_INVALID_SOCKET, NULL);
+    trace_output_failure("handshake output", output_ret);
+}
+
+static void tick_session(potr_context *ctx, potr_internal_certificate_state *state)
+{
+    if (is_retransmission_due(state))
+    {
+        retransmit_session(ctx, state);
     }
 }
 
@@ -722,6 +735,7 @@ void potr_internal_certificate_tick(potr_context *ctx, uint64_t now_ms)
     potr_internal_certificate_state *state;
     potr_internal_receiver *receiver;
     int output_ret;
+    int retransmission_due;
     int i;
 
     if (ctx == NULL || ctx->service.auth != POTR_AUTH_CERT || ctx->certificate_mutex == NULL || is_tcp_type(ctx->service.type))
@@ -737,8 +751,15 @@ void potr_internal_certificate_tick(potr_context *ctx, uint64_t now_ms)
     cplat_local_lock_lock(ctx->callback_mutex);
     if (is_client(ctx))
     {
-        tick_session(ctx, state);
-        if (((!state->established && (state->session == NULL || state->failed || state->retransmitted)) ||
+        /*
+         * 再試行の条件は DTLS の再送より先に評価し、再送の期限の到来を、再送を行った (retransmitted) ものとして扱います。
+         * 再試行する周期処理では古い試行を再送しません。再試行で古い試行は破棄するため、その再送は役に立たず、
+         * 古い試行の ClientHello の再送が新しい試行の ClientHello の直前に届くと、サーバーは古い試行に応答して
+         * 新しい試行の ClientHello を既存の認証セッションで処理し、新しい試行が失敗するためです。
+         */
+        retransmission_due = is_retransmission_due(state);
+        if (((!state->established &&
+              (state->session == NULL || state->failed || state->retransmitted || retransmission_due)) ||
              (uses_group_key(ctx) && state->established && !ctx->group_key_known) ||
              (ctx->health_timeout_ms != 0U && now_ms - state->retry_ms >= ctx->health_timeout_ms &&
               cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)) &&
@@ -780,6 +801,10 @@ void potr_internal_certificate_tick(potr_context *ctx, uint64_t now_ms)
                 output_ret = flush_output(ctx, state, CPLAT_INVALID_SOCKET, NULL);
                 trace_output_failure("handshake output", output_ret);
             }
+        }
+        else if (retransmission_due)
+        {
+            retransmit_session(ctx, state);
         }
     }
     else

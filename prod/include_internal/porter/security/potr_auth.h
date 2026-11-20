@@ -157,7 +157,9 @@ int potr_internal_auth_session_export_keys(potr_internal_auth_session *session,
 /**
  *  @brief          FAILED の理由を取得します。
  *  @param[in]      session 参照する session。同時操作は不可です。NULL を許可します。
- *  @return         静的文字列を借用して返します。FAILED 以外と NULL には空文字列を返します。
+ *  @return         静的文字列、または session が保持する文字列を借用して返します。session の破棄後は参照できません。
+ *                  ハンドシェイクの汎用の失敗には、取得できた場合に OpenSSL の失敗の理由を付けます。
+ *                  FAILED 以外と NULL には空文字列を返します。
  *                  結果コードの対象外です。ログ用の値を返すためです。
  */
 const char *potr_internal_auth_session_failure_reason(const potr_internal_auth_session *session);

@@ -6,6 +6,7 @@
  */
 #include <limits.h>
 #include <string.h>
+#include <cplat/crt/stdio.h>
 #include <cplat/crt/stdlib.h>
 #include <cplat/crt/string.h>
 #include <cplat/runtime/memory_lock.h>
@@ -40,6 +41,7 @@ struct potr_internal_auth_session
     size_t max_record_size;
     potr_internal_auth_state state;
     int padding;
+    char failure_text[128]; /**< OpenSSL の失敗の理由を付けた失敗の理由。failure_reason が指す場合があります。 */
 };
 
 /* パスフレーズの契約がないため、OpenSSL の既定の端末入力を起こさず失敗させる。 */
@@ -557,6 +559,38 @@ static void fail_session(potr_internal_auth_session *session, const char *reason
     }
 }
 
+/*
+ * 汎用の失敗の理由に、OpenSSL のエラー キューの最後のエラーの理由を付けて失敗を記録します。
+ * ERR_reason_error_string は OpenSSL が持つ静的な理由の文字列を返し、未登録のコードでは NULL を返します。
+ * 理由の文字列は鍵や証明書の内容を含みません。付けられない場合は汎用の理由だけを記録します。
+ * see: https://docs.openssl.org/3.5/man3/ERR_error_string/
+ */
+static void fail_session_with_detail(potr_internal_auth_session *session, const char *reason, const unsigned long detail)
+{
+    const char *detail_reason;
+    int ret = CPLAT_ERR_UNKNOWN;
+
+    if (session->failure_reason[0] == '\0' && detail != 0UL)
+    {
+        detail_reason = ERR_reason_error_string(detail);
+        if (detail_reason != NULL)
+        {
+            ret = cplat_snprintf(session->failure_text, sizeof(session->failure_text), "%s (OpenSSL: %s)", reason,
+                detail_reason);
+        }
+        else
+        {
+            ret = cplat_snprintf(session->failure_text, sizeof(session->failure_text), "%s (OpenSSL error 0x%08lx)",
+                reason, detail);
+        }
+    }
+    if (ret == CPLAT_OK)
+    {
+        reason = session->failure_text;
+    }
+    fail_session(session, reason);
+}
+
 static void advance_handshake(potr_internal_auth_session *session, const int established_input)
 {
     int ret;
@@ -602,7 +636,7 @@ static void advance_handshake(potr_internal_auth_session *session, const int est
         }
         else
         {
-            fail_session(session, "handshake failed or peer rejected certificate");
+            fail_session_with_detail(session, "handshake failed or peer rejected certificate", detail);
         }
     }
 }
