@@ -230,10 +230,13 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual("x", existing["OTHER"])
 
     def test_build_command(self) -> None:
-        command = runner.build_command(Path("/x/porter-bench"), "base", ("--cond", "p1"), 29000, Path("/o/p1.csv"))
+        # パスの区切り文字は OS によって異なるため、期待値も Path から作る。
+        executable = Path("/x/porter-bench")
+        output_csv = Path("/o/p1.csv")
+        command = runner.build_command(executable, "base", ("--cond", "p1"), 29000, output_csv)
         self.assertEqual(
-            ["/x/porter-bench", "--cond", "p1", "--label", "base", "--port", "29000", "--trace-level", "none",
-             "--out", "/o/p1.csv"],
+            [str(executable), "--cond", "p1", "--label", "base", "--port", "29000", "--trace-level", "none",
+             "--out", str(output_csv)],
             command,
         )
 
