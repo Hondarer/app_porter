@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 全体管理文書 (overview)
-最終更新日時: 2026-11-21 01:30:00 JST
+最終更新日時: 2026-11-21 02:40:00 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QxuPSr8Mxe6rktvre
 稼働 OS: Linux (WSL)
 下流文書: `261119-porter-flow-control-discussion.md` (検討用 Markdown)、`261119-porter-flow-control-lightadr.md` (簡易 ADR)、`261119-porter-flow-control-design.md` (最終仕様)、`261119-porter-flow-control-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
@@ -18,7 +18,7 @@
 
 検討 ID: 261119-porter-flow-control
 
-検討用 Markdown の版: 18
+検討用 Markdown の版: 19
 
 状態: 実装中 (検討用 Markdown の版 13、最終仕様の版 5)。最終仕様の版 7 (OS の受信バッファーに基づく送出上限と、`multicast` と `broadcast` の監視対象の方式。版 6 の内容を含む) を承認済みで、実装中。版 5 までの実装は `main` へ push 済みで、CI (run 44738819627) を確認中
 
@@ -183,6 +183,7 @@ Table: 観点別の確認状況
 | [Q-057](261119-porter-flow-control-discussion.md#q-057-遅い集団を見つける方法) | 遅い集団を見つける方法 | 解決済み | Q-054、Q-055、Q-056 | LADR-018 |
 | [Q-058](261119-porter-flow-control-discussion.md#q-058-通知キューの占有量に基づく送出上限を送る受信者) | 通知キューの占有量に基づく送出上限を送る受信者 | 解決済み | Q-039、Q-053、Q-055、Q-059 | LADR-018 |
 | [Q-059](261119-porter-flow-control-discussion.md#q-059-監視する台数と割合の設定と既定値) | 監視する台数と割合の設定と既定値 | 解決済み | Q-010、Q-012、Q-055、Q-058 | LADR-018 |
+| [Q-060](261119-porter-flow-control-discussion.md#q-060-multicast-と-broadcast-の既定の設定で起きる欠落への対処) | `multicast` と `broadcast` の既定の設定で起きる欠落への対処 | 解決済み | Q-012、Q-055、Q-059 | 残課題一覧の BL-006 |
 
 Table: 質問一覧
 
@@ -241,6 +242,7 @@ Table: 質問一覧
 | 2026-11-21 00:10 | Q-057 から Q-059 の回答の受付、第 1 ゲートの再通過 | ユーザーが対話で、3 件とも A (推奨案) を回答。Q-056 もあわせて解決済みとした (検討用 Markdown の版 18)。簡易 ADR の LADR-018 を更新。`multicast` と `broadcast` の監視対象の方式を、最終仕様の版 7 として作成する |
 | 2026-11-21 01:15 | 最終仕様の改版 (版 7) | `multicast` と `broadcast` の監視対象の方式 (受信報告に載せる送出上限、監視対象の選び方、監視対象の一覧のパケット、設定、受入条件 10 と 11) を加えた。版 6 の内容を含む。ユーザーの承認待ち |
 | 2026-11-21 01:30 | 第 2 ゲートの通過 (版 7) | ユーザーが最終仕様の版 7 を承認。実装をサブエージェントへ委譲 |
+| 2026-11-21 02:40 | 版 7 の実装と、結合の確認での事象の摘出 | サブエージェントが版 6 と版 7 を実装し、`app/porter` のビルドと全テストが成功 (`34183e0`)。OS の受信バッファーの大きさの取得は、`cplat` の関数へ移す (作業中)。結合の確認で、受入条件 8 (`unicast`、`unicast_bidir`) を確認。`multicast` は、既定のしきい値 (2) で欠落と切断が起きることを摘出し、Q-060 に記録 (検討用 Markdown の版 19)。ユーザーの指示により、残課題一覧の BL-006 に記録して作業を進める |
 
 Table: 案件の経緯
 
