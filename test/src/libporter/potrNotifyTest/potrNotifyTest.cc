@@ -4,6 +4,7 @@
 #endif
 #include <testfw.h>
 #include <mock_cplat.h>
+#include <mock_porter.h>
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/potr_context.h>
