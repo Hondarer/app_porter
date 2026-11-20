@@ -891,7 +891,12 @@ int potr_internal_certificate_key(potr_context *ctx, const potr_internal_tx_sess
             }
         }
     }
-    if (uses_group_key(ctx) && (flags & (POTR_FLAG_DATA | POTR_FLAG_PING | POTR_FLAG_REJECT | POTR_FLAG_FIN)) != 0U &&
+    /*
+     * 一対多の送信者から受信者への向きは、グループ鍵で保護する。この向きのフロー制御パケットは、
+     * 送信者が送る監視対象の一覧であり、PING と同じ鍵を使う。受信者から送信者への向きは、受信者ごとの鍵を使う。
+     */
+    if (uses_group_key(ctx) &&
+        (flags & (POTR_FLAG_DATA | POTR_FLAG_PING | POTR_FLAG_REJECT | POTR_FLAG_FIN | POTR_FLAG_FLOW_CONTROL)) != 0U &&
         ((sending && ctx->role == POTR_ROLE_SENDER) || (!sending && ctx->role == POTR_ROLE_RECEIVER)))
     {
         if (ctx->group_key_known && state != NULL && state->established && (sending || matches_identity(state, packet)))

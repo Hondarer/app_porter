@@ -298,6 +298,20 @@ static void recv_thread_func(void *arg)
             wait_ms = (uint32_t)(ctx->next_report_ms - now_ms);
         }
 
+        /*
+         * multicast と broadcast の送信者は、監視対象が変わった時点と周期で、監視対象の一覧を受信者へ送出する。
+         * 受信報告の処理で監視対象が変わった場合は、受信の処理を終えて次の周回に入ったこの時点で送出する。
+         */
+        if (ctx->role == POTR_ROLE_SENDER &&
+            (ctx->service.type == POTR_TYPE_MULTICAST || ctx->service.type == POTR_TYPE_BROADCAST))
+        {
+            potr_internal_flow_control_monitor_tick(ctx, now_ms);
+            if (ctx->flow_monitor_next_ms > now_ms && ctx->flow_monitor_next_ms - now_ms < wait_ms)
+            {
+                wait_ms = (uint32_t)(ctx->flow_monitor_next_ms - now_ms);
+            }
+        }
+
         /* 抑制の要求を再送周期ごとに再送するため、フロー制御が有効な受信側は待ち時間の上限を再送周期にする。 */
         if (ctx->flow_control != NULL)
         {

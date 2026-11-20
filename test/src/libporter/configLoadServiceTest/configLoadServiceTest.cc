@@ -1277,6 +1277,18 @@ uint32_t service_field(const potr_service_def &definition, const char *key)
     {
         return definition.flow_control_receiver_percent;
     }
+    if (strcmp(key, "flow_control_monitored_receiver_percent") == 0)
+    {
+        return definition.flow_control_monitored_receiver_percent;
+    }
+    if (strcmp(key, "flow_control_monitored_receiver_count") == 0)
+    {
+        return definition.flow_control_monitored_receiver_count;
+    }
+    if (strcmp(key, "flow_control_receive_buffer_percent") == 0)
+    {
+        return definition.flow_control_receive_buffer_percent;
+    }
     return definition.flow_control_receiver_count;
 }
 } // namespace
@@ -1341,7 +1353,13 @@ INSTANTIATE_TEST_SUITE_P(
            unparsed_service_case{"flow_control_request_interval_ms_out_of_range", "flow_control_request_interval_ms", "4294967296", 0U},
            unparsed_service_case{"flow_control_request_lifetime_ms_text", "flow_control_request_lifetime_ms", "abc", 0U},
            unparsed_service_case{"flow_control_receiver_percent_text", "flow_control_receiver_percent", "abc", 0U},
-           unparsed_service_case{"flow_control_receiver_count_text", "flow_control_receiver_count", "abc", 0U}),
+           unparsed_service_case{"flow_control_receiver_count_text", "flow_control_receiver_count", "abc", 0U},
+           unparsed_service_case{"flow_control_monitored_receiver_percent_text", "flow_control_monitored_receiver_percent",
+                                 "abc", 0U},
+           unparsed_service_case{"flow_control_monitored_receiver_count_text", "flow_control_monitored_receiver_count",
+                                 "abc", 0U},
+           unparsed_service_case{"flow_control_receive_buffer_percent_text", "flow_control_receive_buffer_percent", "abc",
+                                 0U}),
     [](const TestParamInfo<unparsed_service_case> &param_info) { return std::string(param_info.param.name); });
 
 // サービスにフロー制御のキーがない場合に 7 つのメンバーが 0 (グローバル値を使用) であることの確認
@@ -1557,4 +1575,56 @@ TEST(configLoadServiceTest, flow_control_capacity_invalid_string_preserves_previ
     // Assert
     ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - potr_internal_config_load_service() の戻り値が POTR_OK であること。
     EXPECT_EQ(0U, owned.definition.flow_control_capacity); // [確認_正常系] - owned.definition.flow_control_capacity が 0U (直前の値を維持) であること。
+}
+
+// サービスの監視する受信者と受信バッファーの幅のキーが、省略時に 0、指定時に数値、-1 で POTR_FLOW_CONTROL_DISABLED になることの確認
+TEST(configLoadServiceTest, monitor_and_receive_buffer_keys)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    const char *content =
+        R"({"services":{"41":{"type":"multicast","dst_port":5000},"42":{"type":"multicast","dst_port":5001,"flow_control_monitored_receiver_percent":10,"flow_control_monitored_receiver_count":8,"flow_control_receive_buffer_percent":50},"43":{"type":"multicast","dst_port":5002,"flow_control_monitored_receiver_percent":-1,"flow_control_monitored_receiver_count":"-1","flow_control_receive_buffer_percent":-1}}})";
+    ConfigLineStream first_lines({content});
+    ConfigLineStream second_lines({content});
+    ConfigLineStream third_lines({content});
+    ConfigLineStream *lines = &first_lines;
+    // [状態] - 3 つのキーを省略したサービス 41、数値で指定したサービス 42、-1 で指定したサービス 43 を含む設定を、読み込みの回数分用意する。
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines->read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+    service_configuration omitted;
+    service_configuration loaded;
+    service_configuration disabled;
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret_omitted = potr_internal_config_load_service("config.conf", 41, &omitted);
+    // [手順] - サービス 41 を指定して potr_internal_config_load_service() を呼び出す。
+    lines = &second_lines;
+    int actual_ret_loaded = potr_internal_config_load_service("config.conf", 42, &loaded);
+    // [手順] - サービス 42 を指定して potr_internal_config_load_service() を呼び出す。
+    lines = &third_lines;
+    int actual_ret_disabled = potr_internal_config_load_service("config.conf", 43, &disabled);
+    // [手順] - サービス 43 を指定して potr_internal_config_load_service() を呼び出す。
+
+    // Assert
+    ASSERT_EQ(POTR_OK, actual_ret_omitted); // [確認_正常系] - サービス 41 の戻り値が POTR_OK であること。
+    ASSERT_EQ(POTR_OK, actual_ret_loaded); // [確認_正常系] - サービス 42 の戻り値が POTR_OK であること。
+    ASSERT_EQ(POTR_OK, actual_ret_disabled); // [確認_正常系] - サービス 43 の戻り値が POTR_OK であること。
+    EXPECT_EQ(0U, omitted.definition.flow_control_monitored_receiver_percent); // [確認_正常系] - 省略した割合が 0U (グローバル値を使用) であること。
+    EXPECT_EQ(0U, omitted.definition.flow_control_monitored_receiver_count); // [確認_正常系] - 省略した台数が 0U (グローバル値を使用) であること。
+    EXPECT_EQ(0U, omitted.definition.flow_control_receive_buffer_percent); // [確認_正常系] - 省略した受信バッファーの幅の割合が 0U (グローバル値を使用) であること。
+    EXPECT_EQ(10U, loaded.definition.flow_control_monitored_receiver_percent); // [確認_正常系] - 割合が 10U であること。
+    EXPECT_EQ(8U, loaded.definition.flow_control_monitored_receiver_count); // [確認_正常系] - 台数が 8U であること。
+    EXPECT_EQ(50U, loaded.definition.flow_control_receive_buffer_percent); // [確認_正常系] - 受信バッファーの幅の割合が 50U であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, disabled.definition.flow_control_monitored_receiver_percent); // [確認_正常系] - 数値の -1 の割合が POTR_FLOW_CONTROL_DISABLED であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, disabled.definition.flow_control_monitored_receiver_count); // [確認_正常系] - 文字列の "-1" の台数が POTR_FLOW_CONTROL_DISABLED であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, disabled.definition.flow_control_receive_buffer_percent); // [確認_正常系] - 数値の -1 の受信バッファーの幅の割合が POTR_FLOW_CONTROL_DISABLED であること。
 }

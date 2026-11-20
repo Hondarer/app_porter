@@ -181,6 +181,101 @@ TEST(potrRecvThreadTest, poll_timeout_calls_peer_monitor)
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始準備に成功すること。
 }
 
+// multicast の送信者の受信ループが、周回ごとに監視対象の一覧の送出を判定し、次の送出の時刻までに待機を抑えることの確認
+TEST(potrRecvThreadTest, multicast_sender_loop_calls_monitor_tick)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.n_path = 1;
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    int waited_ms = -1;
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
+        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { slot->ctx = context; });
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([](uint64_t *out) {
+        *out = 1000U;
+        return CPLAT_OK;
+    });
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
+        .WillByDefault(
+            [&](const cplat_socket *, size_t, int wait_ms, unsigned char *ready, cplat_error *)
+            {
+                waited_ms = wait_ms;
+                ready[0] = 0;
+                cplat_atomic_store_i32(&ctx.running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_ERR_TIMEOUT;
+            });
+    // [状態] - スレッド本体を捕捉し、時刻 1000 で 1 回の poll タイムアウト後に終了させ、待機の上限を記録する。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_monitor_tick(&ctx, 1000U))
+        .WillOnce([](potr_context *context, uint64_t now_ms) { context->flow_monitor_next_ms = now_ms + 30U; });
+    // [Pre-Assert確認_正常系] - potr_internal_flow_control_monitor_tick() が時刻 1000 で 1 回呼び出されること。
+    // [Pre-Assert手順] - 次の周期の送出の時刻を 1030 にする。
+    // Act
+    int actual_ret = potr_internal_comm_recv_thread_start(&ctx); // [手順] - 受信処理を準備する。
+    ASSERT_NE(nullptr, entry);                                   // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);                                            // [手順] - 受信ループを同じスレッドで同期実行する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始準備に成功すること。
+    EXPECT_EQ(30, waited_ms);       // [確認_正常系] - 待機の上限が、次の送出の時刻までの 30 [ms] であること。
+}
+
+// multicast の受信者の受信ループは、監視対象の一覧を送出しないことの確認
+TEST(potrRecvThreadTest, receiver_loop_does_not_call_monitor_tick)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.n_path = 1;
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
+        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { slot->ctx = context; });
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
+        .WillByDefault(
+            [&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *)
+            {
+                ready[0] = 0;
+                cplat_atomic_store_i32(&ctx.running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_ERR_TIMEOUT;
+            });
+    // [状態] - スレッド本体を捕捉し、1 回の poll タイムアウト後に終了させる。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_monitor_tick(_, _))
+        .Times(0); // [Pre-Assert確認_正常系] - potr_internal_flow_control_monitor_tick() が呼び出されないこと。
+    // Act
+    int actual_ret = potr_internal_comm_recv_thread_start(&ctx); // [手順] - 受信処理を準備する。
+    ASSERT_NE(nullptr, entry);                                   // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);                                            // [手順] - 受信ループを同じスレッドで同期実行する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始準備に成功すること。
+}
+
 class potrRecvThreadTcpDataTest : public Test
 {
   protected:

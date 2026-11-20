@@ -118,6 +118,18 @@ uint32_t global_field(const potr_global_config &global, const char *key)
     {
         return global.flow_control_receiver_percent;
     }
+    if (strcmp(key, "flow_control_monitored_receiver_percent") == 0)
+    {
+        return global.flow_control_monitored_receiver_percent;
+    }
+    if (strcmp(key, "flow_control_monitored_receiver_count") == 0)
+    {
+        return global.flow_control_monitored_receiver_count;
+    }
+    if (strcmp(key, "flow_control_receive_buffer_percent") == 0)
+    {
+        return global.flow_control_receive_buffer_percent;
+    }
     return global.flow_control_receiver_count;
 }
 } // namespace
@@ -510,7 +522,17 @@ INSTANTIATE_TEST_SUITE_P(
            unparsed_global_case{"flow_control_receiver_percent_negative", "flow_control_receiver_percent", "-1",
                                 POTR_DEFAULT_FLOW_CONTROL_RECEIVER_PERCENT},
            unparsed_global_case{"flow_control_receiver_count_out_of_range", "flow_control_receiver_count", "4294967296",
-                                POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT}),
+                                POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT},
+           unparsed_global_case{"flow_control_monitored_receiver_percent_negative",
+                                "flow_control_monitored_receiver_percent", "-1",
+                                POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_PERCENT},
+           unparsed_global_case{"flow_control_monitored_receiver_count_negative", "flow_control_monitored_receiver_count",
+                                "-1", POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT},
+           unparsed_global_case{"flow_control_receive_buffer_percent_text", "flow_control_receive_buffer_percent", "abc",
+                                POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT},
+           unparsed_global_case{"flow_control_receive_buffer_percent_other_negative",
+                                "flow_control_receive_buffer_percent", "-2",
+                                POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT}),
     [](const TestParamInfo<unparsed_global_case> &param_info) { return std::string(param_info.param.name); });
 
 // global にフロー制御のキーがない場合に 7 つのメンバーが既定値になることの確認
@@ -635,4 +657,92 @@ TEST(configLoadGlobalTest, flow_control_capacity_negative_preserves_default)
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 設定の読み込みが成功すること。
     EXPECT_EQ(POTR_DEFAULT_FLOW_CONTROL_CAPACITY, global.flow_control_capacity); // [確認_正常系] - global.flow_control_capacity が POTR_DEFAULT_FLOW_CONTROL_CAPACITY (global は負号付きの値を受け付けない) であること。
+}
+
+// global に監視する受信者と受信バッファーの幅のキーがない場合に、3 つのメンバーが既定値になることの確認
+TEST(configLoadGlobalTest, monitor_and_receive_buffer_keys_default_when_omitted)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines({R"({"global":{"window_size":32}})"}); // [状態] - 3 つのキーを含まない global 定義を用意する。
+    potr_global_config global = {}; // [状態] - 出力用 global 設定構造体をゼロ初期化する。
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_global(
+        "config.conf", &global); // [手順] - 3 つのキーを含まない global 定義を指定して potr_internal_config_load_global() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 設定の読み込みが成功すること。
+    EXPECT_EQ(POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_PERCENT, global.flow_control_monitored_receiver_percent); // [確認_正常系] - global.flow_control_monitored_receiver_percent が既定値 (0) であること。
+    EXPECT_EQ(POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT, global.flow_control_monitored_receiver_count); // [確認_正常系] - global.flow_control_monitored_receiver_count が既定値 (4) であること。
+    EXPECT_EQ(POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT, global.flow_control_receive_buffer_percent); // [確認_正常系] - global.flow_control_receive_buffer_percent が既定値 (100) であること。
+}
+
+// global の監視する受信者と受信バッファーの幅のキーが数値で読み込まれることの確認
+TEST(configLoadGlobalTest, monitor_and_receive_buffer_keys_are_loaded)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines({R"({"global":{"flow_control_monitored_receiver_percent":10,"flow_control_monitored_receiver_count":8,"flow_control_receive_buffer_percent":50}})"}); // [状態] - 3 つのキーを含む global 定義を用意する。
+    potr_global_config global = {}; // [状態] - 出力用 global 設定構造体をゼロ初期化する。
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_global(
+        "config.conf", &global); // [手順] - 3 つのキーを含む global 定義を指定して potr_internal_config_load_global() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 設定の読み込みが成功すること。
+    EXPECT_EQ(10U, global.flow_control_monitored_receiver_percent); // [確認_正常系] - global.flow_control_monitored_receiver_percent が 10U であること。
+    EXPECT_EQ(8U, global.flow_control_monitored_receiver_count); // [確認_正常系] - global.flow_control_monitored_receiver_count が 8U であること。
+    EXPECT_EQ(50U, global.flow_control_receive_buffer_percent); // [確認_正常系] - global.flow_control_receive_buffer_percent が 50U であること。
+}
+
+// global の flow_control_receive_buffer_percent だけが -1 を「無効」として受け付けることの確認
+TEST(configLoadGlobalTest, receive_buffer_percent_accepts_disabled)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream lines({R"({"global":{"flow_control_receive_buffer_percent":-1}})"}); // [状態] - flow_control_receive_buffer_percent が数値の -1 の global 定義を用意する。
+    potr_global_config global = {}; // [状態] - 出力用 global 設定構造体をゼロ初期化する。
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines.read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_config_load_global(
+        "config.conf", &global); // [手順] - flow_control_receive_buffer_percent が -1 の global 定義を指定して potr_internal_config_load_global() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 設定の読み込みが成功すること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, global.flow_control_receive_buffer_percent); // [確認_正常系] - global.flow_control_receive_buffer_percent が POTR_FLOW_CONTROL_DISABLED であること。
 }

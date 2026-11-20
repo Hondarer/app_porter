@@ -145,12 +145,16 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_suppressed")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_peer_state")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_packet_build_flow_control")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_packet_build_flow_control_list")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_report_limit")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_monitor_tick")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_check_space")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_wait_flow")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_wake_flow")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_defer")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_complete_deferred")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_receiver_flow_suppressed")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_receiver_monitor_list")
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_slot_deliver_payload_elem")
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_slot_init_ctx")
     #pragma comment(linker, "/INCLUDE:_mock_impl_thread_recv_slot_init_peer")
@@ -320,12 +324,16 @@ class Mock_porter
     MOCK_METHOD(int, potr_internal_flow_control_suppressed, (potr_context *ctx, uint64_t now_ms, int *wait_ms, uint32_t *allowance));
     MOCK_METHOD(int, potr_internal_flow_control_peer_state, (potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms, int *deferred));
     MOCK_METHOD(int, potr_internal_packet_build_flow_control, (potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint8_t *payload, uint8_t state, uint32_t send_limit));
+    MOCK_METHOD(int, potr_internal_packet_build_flow_control_list, (potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint8_t *payload, const potr_internal_packet_session_hdr *receivers, size_t count));
+    MOCK_METHOD(int, potr_internal_flow_control_report_limit, (potr_context *ctx, uint32_t *send_limit));
+    MOCK_METHOD(void, potr_internal_flow_control_monitor_tick, (potr_context *ctx, uint64_t now_ms));
     MOCK_METHOD(int, potr_internal_send_queue_check_space, (potr_internal_send_queue *q, size_t entries));
     MOCK_METHOD(void, potr_internal_send_queue_wait_flow, (potr_internal_send_queue *q, uint64_t *generation, int timeout_ms));
     MOCK_METHOD(void, potr_internal_send_queue_wake_flow, (potr_internal_send_queue *q));
     MOCK_METHOD(void, potr_internal_send_queue_defer, (potr_internal_send_queue *q));
     MOCK_METHOD(void, potr_internal_send_queue_complete_deferred, (potr_internal_send_queue *q));
     MOCK_METHOD(int, potr_internal_receiver_flow_suppressed, (potr_context *ctx, uint64_t now_ms, uint32_t next_seq, size_t *tracked, uint64_t *until_ms));
+    MOCK_METHOD(size_t, potr_internal_receiver_monitor_list, (potr_context *ctx, uint64_t now_ms, potr_internal_packet_session_hdr *list, size_t capacity, int *changed));
     MOCK_METHOD(void, thread_recv_slot_deliver_payload_elem, (thread_recv_slot * slot, const potr_packet *elem));
     MOCK_METHOD(void, thread_recv_slot_init_ctx, (thread_recv_slot * slot, potr_context *ctx));
     MOCK_METHOD(void, thread_recv_slot_init_peer,

@@ -67,13 +67,13 @@
 #define POTR_FLAG_FIN_ACK \
     0x0080U /**< FIN 処理完了応答パケットであることを示すフラグ。ack_num に完了した fin_target_seq を格納します。 */
 #define POTR_FLAG_REPORT \
-    0x0100U /**< 受信報告パケット。受信者自身のセッション識別子を使い、seq_num と ack_num は 0。ペイロードは POTR_MAX_PATH バイトの経路受信状態 (POTR_PING_STATE_*)。暗号化有効時は PING と同じ方式で保護します。 */
+    0x0100U /**< 受信報告パケット。受信者自身のセッション識別子を使い、seq_num は送出上限の有無 (1 = ack_num に送出上限がある、0 = ない)、ack_num は送出上限 (seq_num が 0 の場合は 0)。ペイロードは POTR_MAX_PATH バイトの経路受信状態 (POTR_PING_STATE_*)。暗号化有効時は PING と同じ方式で保護します。 */
 #define POTR_FLAG_HANDSHAKE \
     0x0200U /**< 相互認証と鍵確立のための TLS / DTLS ハンドシェイクのバイト列をペイロードに格納するパケット。封緘は鍵なしの平文です。 */
 #define POTR_FLAG_KEY \
     0x0400U /**< 一対多通信のグループ鍵を配布するパケット。受信者の証明書を検証した後、受信者用の鍵でグループ鍵を暗号化して送ります。 */
 #define POTR_FLAG_FLOW_CONTROL \
-    0x0800U /**< フロー制御パケット。受信側が送信側へ、抑制の要求または解除と、送出上限 (送信側がこの通番以上の新しい DATA を送出しない通番) を伝えます。送出する側自身のセッション識別子を使い、seq_num と ack_num は 0。ペイロードは 5 [byte] で、1 [byte] の状態 (POTR_FLOW_CONTROL_STATE_*) と 4 [byte] の送出上限 (ネットワーク バイト オーダー)。暗号化有効時は、同じ向きの受信報告または PING と同じ方式で保護します。 */
+    0x0800U /**< フロー制御パケット。受信側が送信側へ、抑制の要求または解除と、送出上限 (送信側がこの通番以上の新しい DATA を送出しない通番) を伝えます。送出する側自身のセッション識別子を使い、seq_num と ack_num は 0。状態が抑制の要求と解除の場合、ペイロードは 5 [byte] で、1 [byte] の状態 (POTR_FLOW_CONTROL_STATE_*) と 4 [byte] の送出上限 (ネットワーク バイト オーダー)。状態が監視対象の一覧 (POTR_FLOW_CONTROL_STATE_MONITOR) の場合は、multicast と broadcast の送信者が自身のセッション識別子で送り、ペイロードは 1 [byte] の状態、1 [byte] の台数、台数分の 16 [byte] の受信者のセッション識別子。暗号化有効時は、同じ向きの受信報告または PING と同じ方式で保護します。 */
 
 /** @} */
 
@@ -200,7 +200,9 @@
 /** @defgroup POTR_FLOW_CONTROL フロー制御
  *  @ingroup        PORTER_PUBLIC_API
  *  受信側の通知キューの占有量に基づいて、送信側が新しい DATA の送出を止める仕組みの定数です。\n
- *  対象は UNICAST / MULTICAST / BROADCAST / UNICAST_BIDIR / UNICAST_BIDIR_N1 / TCP / TCP_BIDIR です。
+ *  対象は UNICAST / MULTICAST / BROADCAST / UNICAST_BIDIR / UNICAST_BIDIR_N1 / TCP / TCP_BIDIR です。\n
+ *  OS の受信バッファーに基づく送出上限は、UNICAST / MULTICAST / BROADCAST / UNICAST_BIDIR / UNICAST_BIDIR_N1 の
+ *  受信側で、容量の設定によらず働きます。
  *  RAW 系の通信種別では、フロー制御の設定を無視します。
  */
 
@@ -210,8 +212,12 @@
  */
 #define POTR_FLOW_CONTROL_STATE_SUPPRESS 1U /**< フロー制御パケットの状態: 抑制の要求。 */
 #define POTR_FLOW_CONTROL_STATE_RESUME   2U /**< フロー制御パケットの状態: 解除。 */
+#define POTR_FLOW_CONTROL_STATE_MONITOR \
+    3U /**< フロー制御パケットの状態: 監視対象の一覧。multicast と broadcast の送信者が受信者へ送ります。 */
+#define POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX \
+    64U /**< multicast と broadcast の送信者が監視する受信者の台数の上限。flow_control_monitored_receiver_count の検査上限です。 */
 #define POTR_FLOW_CONTROL_DISABLED \
-    0xFFFFFFFFU /**< サービス定義で「無効」を表す専用の値。flow_control_capacity、flow_control_receiver_percent、flow_control_receiver_count に指定できます。設定ファイルでは -1 と記載します。 */
+    0xFFFFFFFFU /**< 「無効」を表す専用の値。サービス定義の flow_control_capacity、flow_control_receiver_percent、flow_control_receiver_count、flow_control_monitored_receiver_percent、flow_control_monitored_receiver_count と、グローバル設定とサービス定義の flow_control_receive_buffer_percent に指定できます。設定ファイルでは -1 と記載します。 */
 #define POTR_DEFAULT_FLOW_CONTROL_CAPACITY 0U /**< 通知キューの容量のデフォルト [byte]。0 = フロー制御は無効。 */
 #define POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT 80U /**< 抑制を要求するしきい値のデフォルト [%]。 */
 #define POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT   50U /**< 解除するしきい値のデフォルト [%]。 */
@@ -223,6 +229,12 @@
     0U /**< 一対多の送信側が抑制する、要求中の受信者の割合のデフォルト [%]。0 = 割合の条件は無効。 */
 #define POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT \
     2U /**< 一対多の送信側が抑制する、要求中の受信者の台数のデフォルト。 */
+#define POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_PERCENT \
+    0U /**< multicast と broadcast の送信側が監視する受信者の割合のデフォルト [%]。0 = 割合は使わない。 */
+#define POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT \
+    4U /**< multicast と broadcast の送信側が監視する受信者の台数のデフォルト。 */
+#define POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT \
+    100U /**< OS の受信バッファーの大きさのうち、受信バッファーの幅の計算に使う割合のデフォルト [%]。 */
 /** @} */
 
 #endif /* PORTER_CONST_H */

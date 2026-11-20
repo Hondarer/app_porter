@@ -9,7 +9,10 @@
  *  すべてのフロー制御パケットには、「この通番まで送ってよい」という送出上限を載せます。
  *  送信側は送出上限に達したら自分で止まるため、抑制の要求が届くまでの遅れや喪失があっても、
  *  占有量が要求のしきい値の付近で止まります。\n
- *  相手は、N:1 モードではピアごと、それ以外ではハンドルの通信相手 1 つです。
+ *  相手は、N:1 モードではピアごと、それ以外ではハンドルの通信相手 1 つです。\n
+ *  再送を行う UDP の通信種別の受信側は、容量の設定によらず、OS の受信バッファーに収まると見積もった
+ *  DATA パケットの数 (受信バッファーの幅) で送出上限の許可数を抑えます。\n
+ *  multicast と broadcast では、送出上限を知らせる受信者を、送信者が選んだ監視対象に限ります。
  *******************************************************************************
  */
 #ifndef POTR_FLOW_CONTROL_H
@@ -17,6 +20,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <cplat/clock/clock.h>
+#include <porter/porter_const.h>
 #include <porter/porter_type.h>
 
 /**
@@ -106,6 +110,38 @@ static inline potr_internal_send_limit_state flow_send_limit_judge(uint64_t send
     return POTR_SEND_LIMIT_EXPIRED;
 }
 
+/** 受信バッファーの幅の下限 [パケット]。 */
+#define POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN 4U
+
+/** 受信バッファーの幅の計算で、1 パケットの見積もりに加える管理情報の量 [byte]。 */
+#define POTR_FLOW_RECEIVE_BUFFER_OVERHEAD 2048U
+
+/**
+ *  @brief          OS の受信バッファーの大きさから、受信バッファーの幅 (収まると見積もった DATA パケットの数) を求めます。
+ *
+ *  パケット長 = ヘッダー長 + max_payload + 認証タグ長 (暗号化の有無によらず加える)、
+ *  1 パケットの見積もり = 2 × パケット長 + POTR_FLOW_RECEIVE_BUFFER_OVERHEAD、
+ *  幅 = OS の受信バッファーの大きさ × percent ÷ 100 ÷ 1 パケットの見積もり (切り捨て) です。\n
+ *  Linux は、受信したパケットを、データの長さではなく、管理情報を含む確保済みの領域の大きさで数えます。
+ *  領域は 2 のべき乗の大きさで確保されるため、最大でデータの長さの約 2 倍に管理情報を加えた量になります。
+ *  見積もりは、この数え方に対する安全側の値です。
+ *  see: https://man7.org/linux/man-pages/man7/socket.7.html \n
+ *  N:1 モードのピア数による分割と、下限 (POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN) の適用は、呼び出し元が行います。
+ *
+ *  @param[in]      buffer_size OS の受信バッファーの大きさ [byte] (SO_RCVBUF で取得した値)。
+ *  @param[in]      percent     幅の計算に使う割合 [%] (1〜100)。
+ *  @param[in]      max_payload 受信側の実効 max_payload [byte]。
+ *  @return         受信バッファーの幅 [パケット]。失敗モードのない計算のため共通結果コードの適用対象外。
+ */
+static inline uint64_t flow_receive_buffer_width(uint64_t buffer_size, uint32_t percent, uint32_t max_payload)
+{
+    uint64_t packet_size = (uint64_t)POTR_PACKET_HEADER_WIRE_SIZE + (uint64_t)max_payload + (uint64_t)POTR_CRYPTO_TAG_SIZE;
+    uint64_t estimate = 2U * packet_size + (uint64_t)POTR_FLOW_RECEIVE_BUFFER_OVERHEAD;
+
+    /* buffer_size は int の範囲 (SO_RCVBUF)、percent は 100 以下のため、乗算は 64 ビットで桁あふれしない。 */
+    return buffer_size * (uint64_t)percent / 100U / estimate;
+}
+
 struct potr_internal_peer_context;
 
 /**
@@ -120,7 +156,9 @@ typedef struct potr_internal_flow_control_config
     uint32_t request_lifetime_ms; /**< 抑制の要求の有効期限 [ms]。 */
     uint32_t receiver_percent;    /**< 一対多の割合の条件 [%]。0 = 無効。 */
     uint32_t receiver_count;      /**< 一対多の台数の条件。0 = 無効。 */
-    uint32_t _pad;                /**< パディング (構造体サイズを 8 [byte] の倍数に揃える)。 */
+    uint32_t monitored_receiver_percent; /**< multicast と broadcast の送信側が監視する受信者の割合 [%]。0 = 使わない。 */
+    uint32_t monitored_receiver_count;   /**< multicast と broadcast の送信側が監視する受信者の台数。0 = 使わない。 */
+    uint32_t receive_buffer_percent; /**< 受信バッファーの幅の計算に使う割合 [%]。0 = OS の受信バッファーに基づく送出上限を使わない (無効、または対象外の通信種別と役割)。 */
 } potr_internal_flow_control_config;
 
 #ifdef __cplusplus
@@ -131,7 +169,14 @@ extern "C"
      *  @brief          フロー制御の実効設定を決定し、検査します。
      *
      *  サービス側の 0 はグローバル設定の値を使用します。サービス側の POTR_FLOW_CONTROL_DISABLED は、
-     *  容量、一対多の割合、一対多の台数に限り「無効」(0) として扱います。\n
+     *  容量、一対多の割合、一対多の台数、監視する受信者の割合と台数、受信バッファーの幅の割合に限り
+     *  「無効」(0) として扱います。受信バッファーの幅の割合は、グローバル設定の POTR_FLOW_CONTROL_DISABLED も
+     *  「無効」として扱い、グローバル設定の 0 は既定値とします。\n
+     *  監視する受信者の割合は 100 以下、台数は POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX 以下、
+     *  受信バッファーの幅の割合は無効でなければ 1 から 100 であることを検査します。\n
+     *  受信バッファーの幅の割合は、OS の受信バッファーに基づく送出上限を使わない場合に 0 とします。
+     *  使う受信側は、unicast、multicast、broadcast の受信者 (multicast と broadcast は health_interval_ms が 0 でない場合だけ)、
+     *  unicast_bidir と unicast_bidir_n1 の両方の役割です。\n
      *  再送周期と有効期限は、待機時間の設定値の上限 (POTR_WAIT_MS_MAX) 以下であることを検査します。
      *  容量が 0 でない場合は、要求のしきい値から容量までの余裕 (容量 − 容量 × 要求のしきい値 ÷ 100) が
      *  max_message_size 以上であることを検査します。\n
@@ -151,10 +196,14 @@ extern "C"
 
     /**
      *  @brief          受信側のフロー制御の資源を生成します。
-     *  @note           実効設定の容量が 0 の場合は何も生成せず、以後の各関数は何もしません。
-     *                  受信スレッドと通知スレッドの起動前に呼びます。
+     *  @note           OS の受信バッファーに基づく送出上限を使う受信側 (実効設定の receive_buffer_percent が 0 でない) は、
+     *                  受信に使う全経路のソケットから OS の受信バッファーの大きさ (SO_RCVBUF) を取得し、最も小さい値から
+     *                  受信バッファーの幅を求めます。取得できなかった場合は、警告を診断出力に記録し、
+     *                  このハンドルでは OS の受信バッファーに基づく送出上限を使いません。\n
+     *                  容量が 0 で、OS の受信バッファーに基づく送出上限も使わない場合は何も生成せず、以後の各関数は何もしません。
+     *                  UDP では経路のソケットを開いた後、受信スレッドと通知スレッドの起動前に呼びます。
      *  @param[in,out]  ctx     実効設定 (flow_control_config) と global.max_payload を設定済みのコンテキスト。
-     *  @return         成功時は POTR_OK、ctx が NULL の場合と、容量が 0 でなく max_payload が 0 の場合は
+     *  @return         成功時は POTR_OK、ctx が NULL の場合と、資源を生成する構成で max_payload が 0 の場合は
      *                  POTR_ERR_INVALID_ARGUMENT、
      *                  メモリ確保失敗時は POTR_ERR_OUT_OF_MEMORY、同期資源の生成失敗時は POTR_ERR_UNKNOWN を返します。
      *                  失敗時は生成済みの資源を回収します。
@@ -174,7 +223,8 @@ extern "C"
      *  加算後の占有量が要求のしきい値を超えた場合は、抑制の要求を即時に送出します。
      *  抑制の要求には、その時点の送出上限 (potr_internal_flow_control_on_received() の説明を参照) を載せます。\n
      *  加算すると容量を超える場合は加算せず、その相手を「受信を再開しない」状態にして POTR_ERR_FULL を返します。
-     *  呼び出し元は DATA を破棄し、その相手との通信を切断として扱います。
+     *  呼び出し元は DATA を破棄し、その相手との通信を切断として扱います。\n
+     *  容量が 0 の場合 (OS の受信バッファーに基づく送出上限だけを使う場合) は、占有量を数えずに POTR_OK を返します。
      *
      *  @param[in,out]  ctx             コンテキスト。
      *  @param[in]      peer_id         相手のピア識別子 (N:1 モード以外では POTR_PEER_NA)。
@@ -193,7 +243,7 @@ extern "C"
      *  @brief          コールバックから復帰した DATA を占有量から減算します。
      *
      *  減算後の占有量が解除のしきい値を下回った場合は、解除 (新しい送出上限を載せる) を即時に 1 回送出し、
-     *  「受信を再開しない」状態を取り消します。
+     *  「受信を再開しない」状態を取り消します。容量が 0 の場合は何もしません。
      *
      *  @param[in,out]  ctx             コンテキスト。
      *  @param[in]      peer_id         通知に付与したピア識別子。
@@ -207,8 +257,16 @@ extern "C"
     /**
      *  @brief          受信を終えた位置を反映し、必要な場合に送出上限を送信側へ知らせます。
      *
-     *  送出上限は「次に受信する通番 + 許可数」です。許可数は、占有量が「容量 × 要求のしきい値」を
-     *  超えている場合は 0、それ以外は (「容量 × 要求のしきい値」 − 占有量) ÷ max_payload (切り捨て) + 1 です。\n
+     *  送出上限は「次に受信する通番 + 許可数」です。許可数は、「占有量による許可数」と「受信バッファーの幅」の
+     *  小さいほうです。占有量による許可数は、占有量が「容量 × 要求のしきい値」を超えている場合は 0、
+     *  それ以外は (「容量 × 要求のしきい値」 − 占有量) ÷ max_payload (切り捨て) + 1 です。
+     *  容量が 0 の受信側は受信バッファーの幅だけを、OS の受信バッファーに基づく送出上限を使わない受信側は
+     *  占有量による許可数だけを使います。N:1 モードでは、受信バッファーの幅を接続中のピア数で割ります
+     *  (すべてのピアが 1 つのソケットを共有するため)。幅は POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN 以上とします。\n
+     *  容量が 0 の受信側は、下の最初の送出と更新だけを行い、占有量の条件は常に満たすものとして扱います。\n
+     *  multicast と broadcast の受信者は、送信者から受けた監視対象の一覧に自身が含まれている間だけ、
+     *  最初の送出と更新を行います。監視対象でない間は、送出上限を知らせていないものとして扱い、
+     *  送り終えた時点の判定も行いません。\n
      *  次の時点でフロー制御パケットを送出します。
      *  - 相手にまだ送出上限を知らせていない場合 (相手を新しい通信として採用した後、または次に受信する通番が
      *    前回知らせた時点より前へ戻った後)。状態の値は、要求中なら抑制の要求、それ以外は解除とします。
@@ -244,7 +302,9 @@ extern "C"
     /**
      *  @brief          再送周期が経過した抑制の要求を再送し、まだ知らせていない送出上限を送出し直します。
      *
-     *  N:1 モードでは、占有量が 0 になり、ピアが解放された相手の記録も解放します。
+     *  N:1 モードでは、占有量が 0 になり、ピアが解放された相手の記録も解放します。\n
+     *  multicast と broadcast の受信者は、監視対象の一覧を flow_control_request_lifetime_ms の間受け取っていない場合、
+     *  監視対象でなくなったものとして扱い、送出上限を知らせていない状態に戻します。
      *
      *  @param[in,out]  ctx     コンテキスト。
      *  @param[in]      now_ms  現在の単調増加時刻 [ms]。
@@ -280,7 +340,12 @@ extern "C"
     /**
      *  @brief          相手から受信したフロー制御パケットを、送信側の状態へ反映します。
      *
-     *  双方向 UDP と TCP で使います。抑制の要求では期限を「現在時刻 + 有効期限」へ更新し、
+     *  双方向 UDP と TCP、および multicast と broadcast の受信者 (監視対象の一覧) で使います。\n
+     *  状態が監視対象の一覧 (POTR_FLOW_CONTROL_STATE_MONITOR) のパケットは、multicast と broadcast の受信者だけが受理し、
+     *  一覧に自身のセッション識別子が含まれていれば監視対象として、含まれていなければ監視対象でないものとして動作します。
+     *  監視対象になった時点で、送出上限をまだ知らせていない状態から始め、次に受信する通番が分かっていれば
+     *  送出上限を送出します。そのほかの通信種別と役割、形式が不正な一覧は破棄します。\n
+     *  抑制の要求と解除では、抑制の要求では期限を「現在時刻 + 有効期限」へ更新し、
      *  解除では要求なしへ戻します。状態の値によらず、その相手の送出上限を上書きし、受けた時刻を記録します。
      *  N:1 モードでは、要求または送出上限を保持しているピアの数 (potr_context::flow_tracked_peers) へ反映します。
      *  そのうえで、送信スレッドへ通知します。\n
@@ -297,6 +362,40 @@ extern "C"
      */
     extern void potr_internal_flow_control_on_packet(potr_context *ctx, struct potr_internal_peer_context *peer,
                                                      const potr_packet *pkt);
+
+    /**
+     *  @brief          受信報告に載せる、その時点の自身の送出上限を返します。
+     *
+     *  multicast と broadcast の受信者は、送出上限を受信報告の seq_num (有無) と ack_num (値) に載せます。
+     *  送信者は、この値を監視対象を選ぶための順位付けだけに使います。\n
+     *  送出上限がないのは、フロー制御パケットを送出しない受信側 (資源が未生成)、送信者をまだ採用していない受信側
+     *  (次に受信する通番を受け取っていない)、容量超過で受信を再開しない状態の受信側です。
+     *
+     *  @param[in,out]  ctx         コンテキスト。
+     *  @param[out]     send_limit  送出上限の格納先。送出上限がない場合は 0 を格納します。NULL は許可しません。
+     *  @return         送出上限がある場合は 1、ない場合と引数が NULL の場合は 0。失敗モードのない述語のため
+     *                  共通結果コードの適用対象外。
+     *
+     *  @par            スレッド セーフ
+     *  受信スレッドから呼びます。呼び出し元はロックを保持しないこと。
+     */
+    extern int potr_internal_flow_control_report_limit(potr_context *ctx, uint32_t *send_limit);
+
+    /**
+     *  @brief          multicast と broadcast の送信者が、監視対象の一覧を受信者へ送出します。
+     *
+     *  監視対象を選び直し (potr_internal_receiver_monitor_list())、監視対象が変わった時点と、
+     *  flow_control_request_interval_ms の周期で、監視対象の一覧のパケット (状態が POTR_FLOW_CONTROL_STATE_MONITOR) を
+     *  DATA と同じ宛先へ全経路から送出します。監視対象が 0 台の間は送出しません。\n
+     *  multicast と broadcast の送信者以外では何もしません。
+     *
+     *  @param[in,out]  ctx     コンテキスト。
+     *  @param[in]      now_ms  現在の単調増加時刻 [ms]。
+     *
+     *  @par            スレッド セーフ
+     *  受信スレッドから呼びます。呼び出し元はロックを保持しないこと (内部で callback_mutex を取得します)。
+     */
+    extern void potr_internal_flow_control_monitor_tick(potr_context *ctx, uint64_t now_ms);
 
     /**
      *  @brief          送信側が、相手が「止める状態」であるために新しい DATA の送出を止めるべきかを返します。

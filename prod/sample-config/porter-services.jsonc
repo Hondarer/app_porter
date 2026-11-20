@@ -12,6 +12,14 @@
     // 指定すると、受信側の未処理の DATA が容量の 80% を超えたときに送信側の送出を止め、
     // 50% を下回ったときに再開する。容量の決め方は docs/config.md の「フロー制御の設定」を参照。
     // "flow_control_capacity": 4194304,
+    // OS の受信バッファーに基づく送出上限: unicast、multicast、broadcast、unicast_bidir、unicast_bidir_n1 の受信側は、
+    // 容量の指定がなくても、OS の受信バッファーに収まる数を超えて送らないよう送信側へ知らせる (既定で有効)。
+    // 受信バッファーの幅の計算に使う割合 (%)。-1 で無効。説明は docs/config.md の「OS の受信バッファーに基づく送出上限」を参照。
+    // "flow_control_receive_buffer_percent": 100,
+    // multicast と broadcast の送信側が、送出上限を知らせる受信者として選ぶ台数と割合 (%)。
+    // 遅い受信者から選ぶ。説明は docs/config.md の「multicast と broadcast の監視対象」を参照。
+    // "flow_control_monitored_receiver_count": 4,
+    // "flow_control_monitored_receiver_percent": 0,
   },
   "services": {
     // 一方向ユニキャスト: ループバックで動作確認。

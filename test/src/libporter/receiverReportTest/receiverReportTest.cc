@@ -316,13 +316,18 @@ TEST(receiverReportTest, malformed_report_does_not_register)
     states[0] = 255;
     int actual_ret_state = potr_internal_receiver_accept(&ctx, &packet, wire);
     states[0] = POTR_PING_STATE_NORMAL;
-    packet.seq_num = 1;
+    packet.seq_num = 2;
     int actual_ret_sequence = potr_internal_receiver_accept(&ctx, &packet, wire);
-    // [手順] - ペイロード長、経路状態、通番の不正を順に検査する。
+    packet.seq_num = 0;
+    packet.ack_num = 1;
+    int actual_ret_ack_without_limit = potr_internal_receiver_accept(&ctx, &packet, wire);
+    // [手順] - ペイロード長、経路状態、送出上限の有無 (seq_num が 2)、送出上限がないのに ack_num が 0 でない報告を順に検査する。
     // Assert
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_length); // [確認_異常系] - 長さ不正を破棄すること。
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_state); // [確認_異常系] - 未定義の経路状態を破棄すること。
-    EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_sequence); // [確認_異常系] - 通番 0 以外の報告を破棄すること。
+    EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_sequence); // [確認_異常系] - seq_num が 0 と 1 以外の報告を破棄すること。
+    EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_ack_without_limit);
+    // [確認_異常系] - seq_num が 0 (送出上限なし) で ack_num が 0 でない報告を破棄すること。
     EXPECT_EQ(nullptr, ctx.receivers); // [確認_異常系] - 不正報告を登録しないこと。
     // Cleanup
     while (ctx.receivers != nullptr)
@@ -475,7 +480,7 @@ TEST(receiverReportTest, malformed_flow_control_is_rejected)
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_length); // [確認_異常系] - ペイロード長が 1 (5 未満) のパケットを破棄すること。
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_length_long); // [確認_異常系] - ペイロード長が 6 (5 超) のパケットを破棄すること。
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_state_zero); // [確認_異常系] - 状態 0 を破棄すること。
-    EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_state_undefined); // [確認_異常系] - 未定義の状態 3 を破棄すること。
+    EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_state_undefined); // [確認_異常系] - 送信者が受けた状態 3 (監視対象の一覧) を破棄すること。
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_sequence); // [確認_異常系] - 通番 0 以外のパケットを破棄すること。
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_ack); // [確認_異常系] - 確認応答番号 0 以外のパケットを破棄すること。
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_null_payload); // [確認_異常系] - ペイロードが NULL のパケットを破棄すること。
@@ -965,6 +970,466 @@ TEST(receiverReportTest, flow_suppressed_multicast_counts_send_limit_reached)
     EXPECT_EQ(2U, tracked_one); // [確認_正常系] - 要求中と送出上限の保持の 2 台を返すこと。
     EXPECT_EQ(1, actual_two);   // [確認_正常系] - 送出上限に達した受信者を含めて 2 台となり抑制すること。
     EXPECT_EQ(1300U, until_two); // [確認_正常系] - 送出上限の破棄の時刻 1300 が、要求の期限 1500 より早いため返すこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+namespace
+{
+// 監視する数の計算の入力と期待値の組
+struct monitor_count_case
+{
+    size_t active;
+    size_t candidates;
+    uint32_t receiver_percent;
+    uint32_t receiver_count;
+    uint32_t monitored_percent;
+    uint32_t monitored_count;
+    size_t max_payload; // 構造体に詰め物が入らないよう size_t で持ち、呼び出しで uint32_t へ変換する
+    size_t expected;
+};
+
+// multicast の送信者の構成にする。監視する数は台数 monitored_count、1 対 N の台数の条件は receiver_count とする。
+void SetupMonitoringSender(potr_context *ctx, uint32_t receiver_count, uint32_t monitored_count)
+{
+    ctx->service.type = POTR_TYPE_MULTICAST;
+    ctx->role = POTR_ROLE_SENDER;
+    ctx->global.max_payload = 1400U;
+    ctx->health_timeout_ms = 1000U;
+    ctx->flow_control_config.receiver_count = receiver_count;
+    ctx->flow_control_config.monitored_receiver_count = monitored_count;
+    ctx->flow_control_config.request_lifetime_ms = 300U;
+}
+
+// 受信報告を 1 件受理させる。seq_num が 1 の場合は ack_num を送出上限として載せる。
+int AcceptReport(potr_context *ctx, uint32_t session_id, uint32_t seq_num, uint32_t ack_num)
+{
+    uint8_t states[POTR_MAX_PATH] = {};
+    uint8_t wire[POTR_PACKET_HEADER_SIZE] = {};
+    potr_packet packet = {};
+
+    packet.flags = POTR_FLAG_REPORT;
+    packet.payload = states;
+    packet.payload_len = POTR_MAX_PATH;
+    packet.session_id = session_id;
+    packet.seq_num = seq_num;
+    packet.ack_num = ack_num;
+    return potr_internal_receiver_accept(ctx, &packet, wire);
+}
+
+// フロー制御パケット (状態と送出上限) を 1 件受理させる。
+int AcceptFlowControl(potr_context *ctx, uint32_t session_id, uint8_t state, uint32_t send_limit)
+{
+    uint8_t payload[POTR_FLOW_CONTROL_PAYLOAD_SIZE] = {state, (uint8_t)(send_limit >> 24), (uint8_t)(send_limit >> 16),
+                                                       (uint8_t)(send_limit >> 8), (uint8_t)send_limit};
+    uint8_t wire[POTR_PACKET_HEADER_SIZE] = {};
+    potr_packet packet = {};
+
+    packet.flags = POTR_FLAG_FLOW_CONTROL;
+    packet.payload = payload;
+    packet.payload_len = POTR_FLOW_CONTROL_PAYLOAD_SIZE;
+    packet.session_id = session_id;
+    return potr_internal_receiver_accept(ctx, &packet, wire);
+}
+
+// セッション識別子が一致する受信者を返す。
+potr_internal_receiver *FindReceiver(potr_context *ctx, uint32_t session_id)
+{
+    for (potr_internal_receiver *receiver = ctx->receivers; receiver != nullptr; receiver = receiver->next)
+    {
+        if (receiver->session_id == session_id)
+        {
+            return receiver;
+        }
+    }
+    return nullptr;
+}
+} // namespace
+
+// 監視する数を、台数、割合、しきい値による下限、上限、候補の数、しきい値が 0 の場合のそれぞれで求めることの確認
+TEST(receiverReportTest, monitor_count_cases)
+{
+    // Arrange
+    const monitor_count_case cases[] = {
+        {3U, 3U, 0U, 2U, 0U, 4U, 1400U, 3U},       // 台数 4 より受信者が少ない場合は全員
+        {100U, 100U, 0U, 2U, 0U, 4U, 1400U, 4U},   // 既定の構成で受信者が多い場合は台数 4
+        {100U, 100U, 0U, 2U, 0U, 1U, 1400U, 2U},   // しきい値 2 より少ない台数は、しきい値の台数
+        {100U, 100U, 0U, 10U, 0U, 20U, 1400U, 20U}, // しきい値 10、台数 20
+        {100U, 100U, 0U, 2U, 10U, 4U, 1400U, 10U}, // 割合 10% (10 台) が台数 4 より大きい
+        {15U, 15U, 0U, 1U, 10U, 0U, 1400U, 2U},    // 割合 10% の 1.5 台は切り上げて 2 台
+        {10U, 10U, 50U, 0U, 0U, 1U, 1400U, 5U},    // 割合の条件 50% のしきい値は 5 台
+        {10U, 10U, 50U, 2U, 0U, 0U, 1400U, 2U},    // 両方の条件があるしきい値は小さいほうの 2 台
+        {10U, 10U, 0U, 0U, 0U, 4U, 1400U, 0U},     // 両方の条件が無効の場合は 0
+        {0U, 0U, 0U, 2U, 0U, 4U, 1400U, 0U},       // 活動中の受信者がいない場合は 0
+        {100U, 100U, 0U, 2U, 100U, 0U, 1400U, 64U}, // 割合 100% でも上限 64
+        {100U, 100U, 0U, 2U, 0U, 10U, 100U, 6U},   // max_payload 100 の上限 (100 − 2) ÷ 16 = 6
+        {10U, 3U, 0U, 2U, 0U, 4U, 1400U, 3U},      // 候補が 3 台の場合は 3 台
+    };
+    const size_t case_count = sizeof(cases) / sizeof(cases[0]);
+    size_t actual[sizeof(cases) / sizeof(cases[0])] = {};
+    // [状態] - 13 通りの入力を用意する (ループ 13 回)。
+    // Pre-Assert
+    // Act
+    for (size_t i = 0; i < case_count; i++)
+    {
+        actual[i] = flow_monitor_count(cases[i].active, cases[i].candidates, cases[i].receiver_percent,
+                                       cases[i].receiver_count, cases[i].monitored_percent, cases[i].monitored_count,
+                                       (uint32_t)cases[i].max_payload);
+    }
+    // [手順] - 入力ごとに flow_monitor_count() を呼び出し、監視する数を記録する。
+    // Assert
+    for (size_t i = 0; i < case_count; i++)
+    {
+        EXPECT_EQ(cases[i].expected, actual[i]); // [確認_正常系] - 監視する数が期待値であること。(確認 13 回)
+    }
+}
+
+// 受信報告の送出上限から余裕を記録し、余裕が小さいほうから監視対象に選ぶことの確認
+TEST(receiverReportTest, report_records_margin_and_selects_slowest)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX] = {};
+    uint64_t now_ms = 1000;
+    int changed_first = -1;
+    int changed_second = -1;
+    SetupMonitoringSender(&ctx, 2U, 2U);
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    // [状態] - multicast の送信者で、台数の条件 2、監視する台数 2、次に割り当てる通番 100 とする。
+    // Pre-Assert
+    // Act
+    int actual_ret_a = AcceptReport(&ctx, 1U, 1U, 150U); // [手順] - 受信者 1 から送出上限 150 (余裕 50) の受信報告を受理する。
+    int actual_ret_b = AcceptReport(&ctx, 2U, 1U, 120U); // [手順] - 受信者 2 から送出上限 120 (余裕 20) の受信報告を受理する。
+    int actual_ret_c = AcceptReport(&ctx, 3U, 1U, 180U); // [手順] - 受信者 3 から送出上限 180 (余裕 80) の受信報告を受理する。
+    size_t count_first = potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX,
+                                                             &changed_first);
+    // [手順] - 監視対象の一覧を取り出す。
+    size_t count_second = potr_internal_receiver_monitor_list(&ctx, now_ms, list,
+                                                              POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed_second);
+    // [手順] - 変化のないまま、監視対象の一覧をもう一度取り出す。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret_a); // [確認_正常系] - 受信者 1 の受信報告を受理すること。
+    EXPECT_EQ(POTR_OK, actual_ret_b); // [確認_正常系] - 受信者 2 の受信報告を受理すること。
+    EXPECT_EQ(POTR_OK, actual_ret_c); // [確認_正常系] - 受信者 3 の受信報告を受理すること。
+    ASSERT_NE(nullptr, FindReceiver(&ctx, 1U)); // [確認_正常系] - 受信者 1 の記録があること。
+    ASSERT_NE(nullptr, FindReceiver(&ctx, 2U)); // [確認_正常系] - 受信者 2 の記録があること。
+    ASSERT_NE(nullptr, FindReceiver(&ctx, 3U)); // [確認_正常系] - 受信者 3 の記録があること。
+    EXPECT_EQ(50, FindReceiver(&ctx, 1U)->flow_margin); // [確認_正常系] - 受信者 1 の余裕が 50 であること。
+    EXPECT_EQ(20, FindReceiver(&ctx, 2U)->flow_margin); // [確認_正常系] - 受信者 2 の余裕が 20 であること。
+    EXPECT_EQ(1, FindReceiver(&ctx, 1U)->flow_monitored); // [確認_正常系] - 余裕が 2 番目に小さい受信者 1 が監視対象であること。
+    EXPECT_EQ(1, FindReceiver(&ctx, 2U)->flow_monitored); // [確認_正常系] - 余裕が最も小さい受信者 2 が監視対象であること。
+    EXPECT_EQ(0, FindReceiver(&ctx, 3U)->flow_monitored); // [確認_正常系] - 余裕が最も大きい受信者 3 は監視対象でないこと。
+    EXPECT_EQ(2U, count_first);  // [確認_正常系] - 一覧が 2 台であること。
+    EXPECT_EQ(1, changed_first); // [確認_正常系] - 監視対象が変わったことを返すこと。
+    EXPECT_EQ(2U, count_second); // [確認_正常系] - 変化がなくても一覧が 2 台であること。
+    EXPECT_EQ(0, changed_second); // [確認_正常系] - 2 回目は監視対象が変わっていないことを返すこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 余裕を循環を考慮した差で記録することの確認
+TEST(receiverReportTest, report_margin_wraps_sequence)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000;
+    SetupMonitoringSender(&ctx, 2U, 4U);
+    ctx.send_window.next_seq = 0xFFFFFFF0U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    // [状態] - 次に割り当てる通番を 0xFFFFFFF0 (循環の直前) とする。
+    // Pre-Assert
+    // Act
+    int actual_ret = AcceptReport(&ctx, 1U, 1U, 0x10U); // [手順] - 送出上限 0x10 (循環した後) の受信報告を受理する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 受信報告を受理すること。
+    ASSERT_NE(nullptr, ctx.receivers); // [確認_正常系] - 受信者の記録があること。
+    EXPECT_EQ(1, ctx.receivers->flow_margin_known); // [確認_正常系] - 余裕の記録があること。
+    EXPECT_EQ(32, ctx.receivers->flow_margin); // [確認_正常系] - 余裕が循環をまたいだ差の 32 であること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 送出上限がない受信報告で余裕の記録を消し、監視対象から外れた受信者の送出上限を破棄することの確認
+TEST(receiverReportTest, report_without_limit_erases_margin_and_discards_limit)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX] = {};
+    uint64_t now_ms = 1000;
+    int changed = -1;
+    SetupMonitoringSender(&ctx, 1U, 1U);
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    AcceptReport(&ctx, 1U, 1U, 110U); // [状態] - 受信者 1 から余裕 10 の受信報告を受理し、監視対象にする。
+    AcceptReport(&ctx, 2U, 1U, 140U); // [状態] - 受信者 2 から余裕 40 の受信報告を受理する。
+    AcceptFlowControl(&ctx, 1U, (uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, 130U);
+    // [状態] - 監視対象の受信者 1 から送出上限 130 を受理する。
+    // 変化の記録を消す目的だけで一覧を取り出し、台数はこの時点では確認しないため、戻り値は明示的に破棄する。
+    (void)potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed);
+    // [状態] - 変化の記録を消すため、一覧を 1 回取り出す。
+    uint64_t limit_before = FindReceiver(&ctx, 1U)->flow_send_limit;
+    // Pre-Assert
+    // Act
+    int actual_ret = AcceptReport(&ctx, 1U, 0U, 0U); // [手順] - 受信者 1 から送出上限がない受信報告を受理する。
+    size_t count = potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX,
+                                                       &changed);
+    // [手順] - 監視対象の一覧を取り出す。
+    // Assert
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 130U, limit_before); // [確認_正常系] - 外れる前は受信者 1 の送出上限を保持していること。
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 送出上限がない受信報告を受理すること。
+    EXPECT_EQ(0, FindReceiver(&ctx, 1U)->flow_margin_known); // [確認_正常系] - 受信者 1 の余裕の記録が消えること。
+    EXPECT_EQ(0, FindReceiver(&ctx, 1U)->flow_monitored); // [確認_正常系] - 受信者 1 が監視対象から外れること。
+    EXPECT_EQ(0U, FindReceiver(&ctx, 1U)->flow_send_limit); // [確認_正常系] - 外れた受信者 1 の送出上限を破棄すること。
+    EXPECT_EQ(1, FindReceiver(&ctx, 2U)->flow_monitored); // [確認_正常系] - 受信者 2 が監視対象になること。
+    EXPECT_EQ(1U, count); // [確認_正常系] - 一覧が 1 台であること。
+    EXPECT_EQ(2U, list[0].session_id); // [確認_正常系] - 一覧の受信者が受信者 2 であること。
+    EXPECT_EQ(1, changed); // [確認_正常系] - 監視対象が変わったことを返すこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 監視対象でない受信者の抑制の要求で余裕 0 の候補になり、その要求の送出上限は使わないことの確認
+TEST(receiverReportTest, suppress_from_non_monitored_receiver_becomes_candidate)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000;
+    SetupMonitoringSender(&ctx, 1U, 1U);
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    AcceptReport(&ctx, 1U, 1U, 150U); // [状態] - 受信者 1 から余裕 50 の受信報告を受理し、監視対象にする。
+    AcceptReport(&ctx, 2U, 1U, 180U); // [状態] - 受信者 2 から余裕 80 の受信報告を受理する (監視対象でない)。
+    // Pre-Assert
+    // Act
+    int actual_ret_suppress = AcceptFlowControl(&ctx, 2U, (uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 105U);
+    // [手順] - 次の受信報告を待たずに、監視対象でない受信者 2 から、送出上限 105 の抑制の要求を受理する。
+    potr_internal_receiver *requester = FindReceiver(&ctx, 2U);
+    uint64_t limit_after_suppress = requester != nullptr ? requester->flow_send_limit : 99U;
+    int actual_ret_resume = AcceptFlowControl(&ctx, 2U, (uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, 160U);
+    // [手順] - 監視対象になった受信者 2 から、送出上限 160 の解除を受理する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret_suppress); // [確認_正常系] - 抑制の要求を受理すること。
+    ASSERT_NE(nullptr, requester); // [確認_正常系] - 受信者 2 の記録があること。
+    EXPECT_EQ(0U, limit_after_suppress); // [確認_正常系] - 監視対象でない間に受けた送出上限を保持しないこと。
+    EXPECT_EQ(1, requester->flow_margin_known); // [確認_正常系] - 受信者 2 の余裕の記録があること。
+    EXPECT_EQ(0, requester->flow_margin); // [確認_正常系] - 受信者 2 の余裕が 0 であること。
+    EXPECT_EQ(1, requester->flow_monitored); // [確認_正常系] - 余裕 0 の受信者 2 が監視対象になること。
+    EXPECT_EQ(0, FindReceiver(&ctx, 1U)->flow_monitored); // [確認_正常系] - 受信者 1 が監視対象から外れること。
+    EXPECT_EQ(POTR_OK, actual_ret_resume); // [確認_正常系] - 解除を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 160U, requester->flow_send_limit);
+    // [確認_正常系] - 監視対象になった後に受けた送出上限 160 を保持すること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 監視対象でない受信者のフロー制御パケットの送出上限を使わず、抑制の要求と解除は受理することの確認
+TEST(receiverReportTest, send_limit_of_non_monitored_receiver_is_ignored)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000;
+    SetupMonitoringSender(&ctx, 1U, 1U);
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    AcceptReport(&ctx, 1U, 1U, 110U); // [状態] - 受信者 1 から余裕 10 の受信報告を受理し、監視対象にする。
+    AcceptReport(&ctx, 2U, 1U, 150U); // [状態] - 受信者 2 から余裕 50 の受信報告を受理する (監視対象でない)。
+    // Pre-Assert
+    // Act
+    int actual_ret_monitored = AcceptFlowControl(&ctx, 1U, (uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, 140U);
+    // [手順] - 監視対象の受信者 1 から送出上限 140 の解除を受理する。
+    int actual_ret_other = AcceptFlowControl(&ctx, 2U, (uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, 120U);
+    // [手順] - 監視対象でない受信者 2 から送出上限 120 の解除を受理する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret_monitored); // [確認_正常系] - 監視対象の受信者の解除を受理すること。
+    EXPECT_EQ(POTR_OK, actual_ret_other); // [確認_正常系] - 監視対象でない受信者の解除を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 140U, FindReceiver(&ctx, 1U)->flow_send_limit);
+    // [確認_正常系] - 監視対象の受信者の送出上限 140 を保持すること。
+    EXPECT_EQ(0U, FindReceiver(&ctx, 2U)->flow_send_limit); // [確認_正常系] - 監視対象でない受信者の送出上限を保持しないこと。
+    EXPECT_EQ(0, FindReceiver(&ctx, 2U)->flow_monitored); // [確認_正常系] - 解除では監視対象を変えないこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 1 対 N の判定の条件が両方とも無効の場合に、監視対象を選ばないことの確認
+TEST(receiverReportTest, monitor_list_without_condition_selects_none)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX] = {};
+    uint64_t now_ms = 1000;
+    int changed = -1;
+    SetupMonitoringSender(&ctx, 0U, 4U);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    AcceptReport(&ctx, 1U, 1U, 110U); // [状態] - 台数と割合の条件が両方とも無効の送信者で、受信者 1 の受信報告を受理する。
+    // Pre-Assert
+    // Act
+    size_t count = potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX,
+                                                       &changed);
+    // [手順] - 監視対象の一覧を取り出す。
+    // Assert
+    EXPECT_EQ(0U, count); // [確認_正常系] - 監視対象が 0 台であること。
+    EXPECT_EQ(0, changed); // [確認_正常系] - 監視対象が変わっていないことを返すこと。
+    EXPECT_EQ(0, ctx.receivers->flow_monitored); // [確認_正常系] - 受信者が監視対象でないこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 受信報告が途絶えた監視対象を、一覧の取り出しで外すことの確認
+TEST(receiverReportTest, monitor_list_reselects_when_receiver_goes_inactive)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX] = {};
+    uint64_t now_ms = 1000;
+    int changed_before = -1;
+    int changed_after = -1;
+    SetupMonitoringSender(&ctx, 1U, 1U);
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    AcceptReport(&ctx, 1U, 1U, 110U); // [状態] - 時刻 1000 に受信者 1 から余裕 10 の受信報告を受理する。
+    now_ms = 1500;
+    AcceptReport(&ctx, 2U, 1U, 150U); // [状態] - 時刻 1500 に受信者 2 から余裕 50 の受信報告を受理する。
+    size_t count_before = potr_internal_receiver_monitor_list(&ctx, now_ms, list,
+                                                              POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed_before);
+    uint32_t session_before = list[0].session_id;
+    // [状態] - 一覧を取り出し、受信者 1 が監視対象であることを記録する。
+    // Pre-Assert
+    // Act
+    now_ms = 2000;
+    size_t count_after = potr_internal_receiver_monitor_list(&ctx, now_ms, list,
+                                                             POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed_after);
+    // [手順] - 受信者 1 の受信報告が health_timeout_ms (1000) 途絶えた時刻 2000 に、一覧を取り出す。
+    // Assert
+    EXPECT_EQ(1U, count_before);    // [確認_正常系] - 途絶える前の一覧が 1 台であること。
+    EXPECT_EQ(1U, session_before);  // [確認_正常系] - 途絶える前の監視対象が受信者 1 であること。
+    EXPECT_EQ(1U, count_after);     // [確認_正常系] - 途絶えた後の一覧が 1 台であること。
+    EXPECT_EQ(2U, list[0].session_id); // [確認_正常系] - 途絶えた後の監視対象が受信者 2 であること。
+    EXPECT_EQ(1, changed_after);    // [確認_正常系] - 監視対象が変わったことを返すこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// multicast と broadcast の送信者以外と、引数が NULL の場合に、一覧が 0 台になることの確認
+TEST(receiverReportTest, monitor_list_other_types_and_null_arguments)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_packet_session_hdr list[1] = {};
+    int changed = -1;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - unicast の送信者とする。
+    // Pre-Assert
+    // Act
+    size_t count_unicast = potr_internal_receiver_monitor_list(&ctx, 1000U, list, 1U, &changed);
+    // [手順] - unicast の送信者で一覧を取り出す。
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.role = POTR_ROLE_RECEIVER;
+    size_t count_receiver = potr_internal_receiver_monitor_list(&ctx, 1000U, list, 1U, &changed);
+    // [手順] - multicast の受信者で一覧を取り出す。
+    size_t count_null_ctx = potr_internal_receiver_monitor_list(nullptr, 1000U, list, 1U, &changed);
+    size_t count_null_list = potr_internal_receiver_monitor_list(&ctx, 1000U, nullptr, 1U, &changed);
+    size_t count_null_changed = potr_internal_receiver_monitor_list(&ctx, 1000U, list, 1U, nullptr);
+    // [手順] - ctx、list、changed を順に NULL にして一覧を取り出す。
+    // Assert
+    EXPECT_EQ(0U, count_unicast);      // [確認_正常系] - unicast の送信者で 0 台であること。
+    EXPECT_EQ(0U, count_receiver);     // [確認_正常系] - multicast の受信者で 0 台であること。
+    EXPECT_EQ(0, changed);             // [確認_正常系] - 監視対象が変わっていないことを返すこと。
+    EXPECT_EQ(0U, count_null_ctx);     // [確認_異常系] - ctx が NULL で 0 台であること。
+    EXPECT_EQ(0U, count_null_list);    // [確認_異常系] - list が NULL で 0 台であること。
+    EXPECT_EQ(0U, count_null_changed); // [確認_異常系] - changed が NULL で 0 台であること。
+}
+
+// 受信報告を受けていない受信者の抑制の要求で、受信報告を待たずに監視対象の候補になることの確認
+TEST(receiverReportTest, suppress_without_report_becomes_candidate)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000;
+    SetupMonitoringSender(&ctx, 1U, 1U);
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    // Pre-Assert
+    // Act
+    int actual_ret = AcceptFlowControl(&ctx, 2U, (uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 105U);
+    // [手順] - 受信報告を受けていない受信者 2 から、抑制の要求を受理する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 抑制の要求を受理すること。
+    ASSERT_NE(nullptr, ctx.receivers); // [確認_正常系] - 受信者 2 の記録があること。
+    EXPECT_EQ(0, ctx.receivers->active); // [確認_正常系] - 受信報告を受けていないため、受信報告による活動中でないこと。
+    EXPECT_EQ(1, ctx.receivers->flow_margin_known); // [確認_正常系] - 余裕の記録があること。
+    EXPECT_EQ(0, ctx.receivers->flow_margin); // [確認_正常系] - 余裕が 0 であること。
+    EXPECT_EQ(1, ctx.receivers->flow_monitored); // [確認_正常系] - 有効な要求で活動中として数え、監視対象になること。
+    EXPECT_EQ(0U, ctx.receivers->flow_send_limit); // [確認_正常系] - 監視対象になる前に受けた送出上限は保持しないこと。
     // Cleanup
     FreeReceivers(&ctx);
 }

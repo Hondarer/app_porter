@@ -149,12 +149,16 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_flow_control_suppressed(_, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_flow_control_peer_state(_, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_packet_build_flow_control(_, _, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_packet_build_flow_control_list(_, _, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_flow_control_report_limit(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_flow_control_monitor_tick(_, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_check_space(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_send_queue_wait_flow(_, _, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_wake_flow(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_defer(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_complete_deferred(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_receiver_flow_suppressed(_, _, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_receiver_monitor_list(_, _, _, _, _)).WillByDefault(Return(0U));
     ON_CALL(*this, thread_recv_slot_deliver_payload_elem(_, _)).WillByDefault(Return());
     ON_CALL(*this, thread_recv_slot_init_ctx(_, _)).WillByDefault(Return());
     ON_CALL(*this, thread_recv_slot_init_peer(_, _, _)).WillByDefault(Return());

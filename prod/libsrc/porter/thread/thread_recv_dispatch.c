@@ -164,7 +164,10 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
     {
         cplat_timespec pkt_session_ts;
 
-        /* 追跡中の相手セッションからの要求と解除だけを反映する。古いセッションのパケットは破棄する。 */
+        /*
+         * 追跡中の相手セッションからの要求と解除、および multicast と broadcast の送信者からの監視対象の一覧だけを反映する。
+         * 古いセッションのパケットは破棄する。
+         */
         session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &pkt_session_ts);
         if (*slot->peer_session_known != 0 && *slot->peer_session_id == pkt->session_id &&
             slot->peer_session_ts->tv_sec == pkt_session_ts.tv_sec &&

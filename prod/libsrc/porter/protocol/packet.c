@@ -126,6 +126,55 @@ int potr_internal_packet_build_flow_control(potr_packet *packet, const potr_inte
     return POTR_OK;
 }
 
+/* 値を、上位のバイトから順に length [byte] 書き込む (ネットワーク バイト オーダー)。 */
+static void put_network_order(uint8_t *destination, uint64_t value, size_t length)
+{
+    size_t i;
+
+    for (i = 0U; i < length; i++)
+    {
+        destination[i] = (uint8_t)(value >> (8U * (length - 1U - i)));
+    }
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+int potr_internal_packet_build_flow_control_list(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
+                                                 uint8_t *payload, const potr_internal_packet_session_hdr *receivers,
+                                                 size_t count)
+{
+    size_t i;
+
+    if (packet == NULL || shdr == NULL || payload == NULL || receivers == NULL || count < 1U ||
+        count > POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    /* 受信者のセッション識別子は、ヘッダーと同じ並びとし、解析側の flow_control_monitor_entry() と対称にする。 */
+    payload[0] = (uint8_t)POTR_FLOW_CONTROL_STATE_MONITOR;
+    payload[1] = (uint8_t)count;
+
+    for (i = 0U; i < count; i++)
+    {
+        uint8_t *entry = payload + POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE + POTR_FLOW_CONTROL_MONITOR_ENTRY_SIZE * i;
+
+        put_network_order(entry, (uint64_t)receivers[i].session_tv_sec, 8U);
+        put_network_order(entry + 8U, (uint64_t)receivers[i].session_id, 4U);
+        put_network_order(entry + 12U, (uint64_t)(uint32_t)receivers[i].session_tv_nsec, 4U);
+    }
+
+    memset(packet, 0, POTR_PACKET_HEADER_SIZE);
+    fill_session_hdr(packet, shdr);
+    packet->seq_num = 0;
+    packet->ack_num = 0;
+    packet->flags = cplat_hton16(POTR_FLAG_FLOW_CONTROL);
+    packet->payload = payload;
+    packet->payload_len =
+        cplat_hton16((uint16_t)(POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE + POTR_FLOW_CONTROL_MONITOR_ENTRY_SIZE * count));
+
+    return POTR_OK;
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
 int potr_internal_packet_build_ping(potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint32_t seq_num,
                                     const uint8_t *health_payload, uint16_t health_payload_len)

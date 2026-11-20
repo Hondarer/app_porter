@@ -41,6 +41,19 @@
  */
 #define POTR_FLOW_CONTROL_PAYLOAD_SIZE 5U
 
+/** 監視対象の一覧のペイロードで、受信者のセッション識別子の前に置く部分の長さ [byte] (状態 1 [byte] と台数 1 [byte])。 */
+#define POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE 2U
+
+/**
+ * 監視対象の一覧のペイロードで、受信者 1 台分のセッション識別子の長さ [byte]。
+ * ヘッダーと同じ並び (session_tv_sec 8 [byte]、session_id 4 [byte]、session_tv_nsec 4 [byte]、ネットワーク バイト オーダー)。
+ */
+#define POTR_FLOW_CONTROL_MONITOR_ENTRY_SIZE 16U
+
+/** 監視対象の一覧のペイロード長の上限 [byte]。 */
+#define POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX \
+    (POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE + POTR_FLOW_CONTROL_MONITOR_ENTRY_SIZE * POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX)
+
 /**
  *  @brief  パケットに付与するセッション識別情報。
  *
@@ -115,6 +128,72 @@ static inline int flow_control_payload_decode(const potr_packet *packet, uint8_t
     return POTR_OK;
 }
 
+/**
+ *  @brief          開封済みの監視対象の一覧のパケットを検査し、台数を取り出します。
+ *  @param[in]      packet  開封済みのフロー制御パケット (payload_len はホスト バイト オーダー)。NULL は許可しません。
+ *  @param[out]     count   台数の格納先。NULL は許可しません。
+ *  @return         形式が正しい場合は POTR_OK、状態が POTR_FLOW_CONTROL_STATE_MONITOR でない場合、
+ *                  台数が 1 から POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX の範囲にない場合、
+ *                  ペイロード長が「2 + 16 × 台数」でない場合、seq_num または ack_num が 0 でない場合は
+ *                  POTR_ERR_PROTOCOL を返します。失敗時の出力は不定です。
+ */
+static inline int flow_control_monitor_decode(const potr_packet *packet, size_t *count)
+{
+    if (packet->payload == NULL || packet->payload_len < POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE ||
+        packet->seq_num != 0U || packet->ack_num != 0U || packet->payload[0] != POTR_FLOW_CONTROL_STATE_MONITOR)
+    {
+        return POTR_ERR_PROTOCOL;
+    }
+
+    *count = (size_t)packet->payload[1];
+    if (*count < 1U || *count > POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX ||
+        (size_t)packet->payload_len !=
+            POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE + POTR_FLOW_CONTROL_MONITOR_ENTRY_SIZE * *count)
+    {
+        return POTR_ERR_PROTOCOL;
+    }
+
+    return POTR_OK;
+}
+
+/**
+ *  @brief          検査済みの監視対象の一覧から、index 番目の受信者のセッション識別子を取り出します。
+ *  @param[in]      packet      flow_control_monitor_decode() で検査済みのパケット。NULL は許可しません。
+ *  @param[in]      index       取り出す受信者の位置 (0 以上、台数未満)。
+ *  @param[out]     session     セッション識別子の格納先 (service_id は変更しません)。NULL は許可しません。
+ *
+ *  ネットワーク バイト オーダーの値を、バイトの並びから組み立てます。
+ */
+static inline void flow_control_monitor_entry(const potr_packet *packet, size_t index,
+                                              potr_internal_packet_session_hdr *session)
+{
+    const uint8_t *entry =
+        packet->payload + POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE + POTR_FLOW_CONTROL_MONITOR_ENTRY_SIZE * index;
+    uint64_t tv_sec = 0U;
+    uint32_t tv_nsec = 0U;
+    uint32_t session_id = 0U;
+    size_t i;
+
+    for (i = 0U; i < 8U; i++)
+    {
+        tv_sec = (tv_sec << 8) | (uint64_t)entry[i];
+    }
+
+    for (i = 8U; i < 12U; i++)
+    {
+        session_id = (session_id << 8) | (uint32_t)entry[i];
+    }
+
+    for (i = 12U; i < 16U; i++)
+    {
+        tv_nsec = (tv_nsec << 8) | (uint32_t)entry[i];
+    }
+
+    session->session_tv_sec = (int64_t)tv_sec;
+    session->session_id = session_id;
+    session->session_tv_nsec = (int32_t)tv_nsec;
+}
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -147,6 +226,26 @@ extern "C"
     extern int potr_internal_packet_build_flow_control(potr_packet *packet,
                                                        const potr_internal_packet_session_hdr *shdr,
                                                        uint8_t *payload, uint8_t state, uint32_t send_limit);
+
+    /**
+     *  @brief          監視対象の一覧のフロー制御パケットを構築します。
+     *  @param[out]     packet      構築結果を格納するパケット構造体へのポインター。
+     *  @param[in]      shdr        送出する側 (multicast と broadcast の送信者) 自身のセッション識別ヘッダーへのポインター。
+     *  @param[out]     payload     ペイロードの格納先 (POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX [byte] 以上)。
+     *                              packet->payload はこの領域を指すため、封緘が終わるまで有効であること。
+     *  @param[in]      receivers   監視対象の受信者のセッション識別子の配列 (service_id は使いません)。
+     *  @param[in]      count       受信者の台数 (1 以上、POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX 以下)。
+     *  @return         成功時は POTR_OK、引数が NULL の場合と台数が範囲にない場合は POTR_ERR_INVALID_ARGUMENT を返します。
+     *
+     *  ペイロードは、先頭 1 [byte] が状態 (POTR_FLOW_CONTROL_STATE_MONITOR)、次の 1 [byte] が台数、
+     *  続いて台数分の受信者のセッション識別子 (1 台 16 [byte]、ヘッダーと同じ並びのネットワーク バイト オーダー) です。\n
+     *  通番を消費せず、ウィンドウに登録しません (NACK・再送の対象外)。seq_num と ack_num は常に 0 です。
+     */
+    extern int potr_internal_packet_build_flow_control_list(potr_packet *packet,
+                                                            const potr_internal_packet_session_hdr *shdr,
+                                                            uint8_t *payload,
+                                                            const potr_internal_packet_session_hdr *receivers,
+                                                            size_t count);
 
     /**
      *  @brief          PING パケットを構築します。

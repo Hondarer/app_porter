@@ -605,6 +605,9 @@ static potr_global_config make_default_global()
     g.flow_control_request_lifetime_ms = POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS;
     g.flow_control_receiver_percent = POTR_DEFAULT_FLOW_CONTROL_RECEIVER_PERCENT;
     g.flow_control_receiver_count = POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT;
+    g.flow_control_monitored_receiver_percent = POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_PERCENT;
+    g.flow_control_monitored_receiver_count = POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT;
+    g.flow_control_receive_buffer_percent = POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT;
     return g;
 }
 

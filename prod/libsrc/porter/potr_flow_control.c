@@ -7,6 +7,12 @@
 #include <string.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <cplat/base/platform.h>
+#if defined(PLATFORM_WINDOWS)
+    #include <cplat/base/windows_sdk.h>
+#else /* PLATFORM_WINDOWS */
+    #include <sys/socket.h>
+#endif /* PLATFORM_WINDOWS */
 #include <cplat/crt/stdlib.h>
 #include <cplat/crypto/random.h>
 #include <cplat/clock/clock.h>
@@ -28,6 +34,10 @@
 
 /** フロー制御パケットのワイヤー長の上限 [byte] (ヘッダー、状態と送出上限、認証タグ)。 */
 #define FLOW_CONTROL_WIRE_SIZE (POTR_PACKET_HEADER_SIZE + POTR_FLOW_CONTROL_PAYLOAD_SIZE + POTR_CRYPTO_TAG_SIZE)
+
+/** 監視対象の一覧のパケットのワイヤー長の上限 [byte] (ヘッダー、一覧、認証タグ)。 */
+#define FLOW_CONTROL_MONITOR_WIRE_SIZE \
+    (POTR_PACKET_HEADER_SIZE + POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX + POTR_CRYPTO_TAG_SIZE)
 
 /**
  *  相手ごとの占有量と、抑制の要求の状態。
@@ -61,6 +71,12 @@ struct potr_internal_flow_control
     uint64_t suppress_bytes;   /**< 抑制を要求するしきい値 [byte]。 */
     uint64_t resume_bytes;     /**< 解除するしきい値 [byte]。 */
     uint64_t max_payload;      /**< 受信側の実効 max_payload [byte]。送出上限の許可数の計算に使う。 */
+    uint64_t receive_buffer_width; /**< 受信バッファーの幅 [パケット] (N:1 モードのピア数による分割と下限の適用の前)。 */
+    uint64_t monitor_received_ms; /**< multicast と broadcast の受信者が、監視対象の一覧を最後に受け取った時刻 [ms]。 */
+    int receive_buffer_used;   /**< OS の受信バッファーに基づく送出上限を使うか (1: 使う)。 */
+    int one_to_many_receiver;  /**< multicast と broadcast の受信者か (1: 監視対象である間だけ送出上限を知らせる)。 */
+    int monitored;             /**< multicast と broadcast の受信者で、監視対象に指定されているか (1: 監視対象)。 */
+    int _pad;                  /**< パディング (reply を 8 [byte] 境界に揃える)。 */
     cplat_ipv4_endpoint reply[POTR_MAX_PATH]; /**< UDP の返送先 (N:1 モード以外)。受信スレッドが更新する。 */
 };
 
@@ -104,6 +120,83 @@ static int resolve_value(uint32_t service_value, uint32_t global_value, int allo
     return POTR_OK;
 }
 
+/*
+ * OS の受信バッファーに基づく送出上限を使う受信側かどうかを返す。
+ * unicast、multicast、broadcast の受信者と、unicast_bidir、unicast_bidir_n1 の両方の役割である。
+ * multicast と broadcast の受信者は、受信報告を送る構成 (実効 health_interval_ms が 0 でない) に限る。
+ * TCP は下位の通信が受信バッファーを守るため、RAW は再送を行わないため、対象外とする。
+ */
+static int uses_receive_buffer(potr_type type, potr_role role, uint32_t health_interval_ms)
+{
+    if (type == POTR_TYPE_UNICAST_BIDIR || type == POTR_TYPE_UNICAST_BIDIR_N1)
+    {
+        return 1;
+    }
+
+    if (role != POTR_ROLE_RECEIVER)
+    {
+        return 0;
+    }
+
+    if (type == POTR_TYPE_UNICAST)
+    {
+        return 1;
+    }
+
+    return (type == POTR_TYPE_MULTICAST || type == POTR_TYPE_BROADCAST) && health_interval_ms != 0U;
+}
+
+/*
+ * 受信バッファーの幅の計算に使う割合の実効値を決め、検査する。
+ * この項目は既定で有効で、0 が「既定値を使用」(サービス側では「グローバル値を使用」) を表すため、
+ * グローバル設定とサービス定義の両方で POTR_FLOW_CONTROL_DISABLED (無効) を受け付ける。
+ * 無効の場合と、OS の受信バッファーに基づく送出上限を使わない通信種別と役割では、0 を格納する。
+ */
+static int resolve_receive_buffer_percent(const potr_service_def *service, const potr_global_config *global,
+                                          potr_role role, uint32_t health_interval_ms, uint32_t *value)
+{
+    uint32_t percent;
+
+    if (service->flow_control_receive_buffer_percent == POTR_FLOW_CONTROL_DISABLED)
+    {
+        percent = 0U;
+    }
+    else if (service->flow_control_receive_buffer_percent != 0U)
+    {
+        percent = service->flow_control_receive_buffer_percent;
+    }
+    else if (global->flow_control_receive_buffer_percent == POTR_FLOW_CONTROL_DISABLED)
+    {
+        percent = 0U;
+    }
+    else if (global->flow_control_receive_buffer_percent != 0U)
+    {
+        percent = global->flow_control_receive_buffer_percent;
+    }
+    else
+    {
+        /* 構造体を 0 で初期化した利用側は、既定値を使う。 */
+        percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT;
+    }
+
+    if (percent > 100U)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "flow_control: service_id=%" PRId64 " invalid receive_buffer_percent=%u (1 <= percent <= 100)",
+                   service->service_id, (unsigned)percent);
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    if (!uses_receive_buffer(service->type, role, health_interval_ms))
+    {
+        percent = 0U;
+    }
+
+    *value = percent;
+
+    return POTR_OK;
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
 int potr_internal_flow_control_resolve(const potr_service_def *service, const potr_global_config *global,
                                        potr_role role, uint32_t health_interval_ms,
@@ -139,7 +232,11 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
         resolve_value(service->flow_control_receiver_percent, global->flow_control_receiver_percent, 1, 0U,
                       &config->receiver_percent) != POTR_OK ||
         resolve_value(service->flow_control_receiver_count, global->flow_control_receiver_count, 1, 0U,
-                      &config->receiver_count) != POTR_OK)
+                      &config->receiver_count) != POTR_OK ||
+        resolve_value(service->flow_control_monitored_receiver_percent, global->flow_control_monitored_receiver_percent,
+                      1, 0U, &config->monitored_receiver_percent) != POTR_OK ||
+        resolve_value(service->flow_control_monitored_receiver_count, global->flow_control_monitored_receiver_count, 1,
+                      0U, &config->monitored_receiver_count) != POTR_OK)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "flow_control: service_id=%" PRId64 " POTR_FLOW_CONTROL_DISABLED is not allowed for this field",
@@ -185,6 +282,23 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
+    if (config->monitored_receiver_percent > 100U ||
+        config->monitored_receiver_count > POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "flow_control: service_id=%" PRId64 " invalid monitored_receiver_percent=%u (max: 100)"
+                   " monitored_receiver_count=%u (max: %u)",
+                   service->service_id, (unsigned)config->monitored_receiver_percent,
+                   (unsigned)config->monitored_receiver_count, (unsigned)POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX);
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    if (resolve_receive_buffer_percent(service, global, role, health_interval_ms, &config->receive_buffer_percent) !=
+        POTR_OK)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
     if (config->capacity == 0U)
     {
         return POTR_OK;
@@ -221,25 +335,121 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
     return POTR_OK;
 }
 
+/*
+ * ソケットから OS の受信バッファーの大きさ (SO_RCVBUF) を取得する。取得できない場合と、0 以下の値の場合は POTR_ERR_IO を返す。
+ * Linux は、取得した値に管理情報の分を含め、受信したパケットを確保済みの領域の大きさで数える。
+ * see: https://man7.org/linux/man-pages/man7/socket.7.html
+ * Windows も同じ SOL_SOCKET の SO_RCVBUF で、受信に使う領域の大きさを取得できる。
+ * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-getsockopt
+ * see: https://learn.microsoft.com/en-us/windows/win32/winsock/sol-socket-socket-options
+ */
+static int get_receive_buffer_size(cplat_socket receive_socket, uint64_t *size)
+{
+    int value = 0;
+
+#if defined(PLATFORM_WINDOWS)
+    int length = (int)sizeof(value);
+
+    if (getsockopt((SOCKET)receive_socket, SOL_SOCKET, SO_RCVBUF, (char *)&value, &length) != 0 || value <= 0)
+    {
+        return POTR_ERR_IO;
+    }
+#else  /* PLATFORM_WINDOWS */
+    socklen_t length = (socklen_t)sizeof(value);
+
+    if (getsockopt((int)receive_socket, SOL_SOCKET, SO_RCVBUF, &value, &length) != 0 || value <= 0)
+    {
+        return POTR_ERR_IO;
+    }
+#endif /* PLATFORM_WINDOWS */
+
+    *size = (uint64_t)value;
+
+    return POTR_OK;
+}
+
+/*
+ * 受信に使う全経路のソケットから OS の受信バッファーの大きさを取得し、最も小さい値を返す。
+ * いずれかの経路で取得できなかった場合と、有効なソケットがない場合は、警告を記録して POTR_ERR_IO を返す。
+ */
+static int query_receive_buffer_size(const potr_context *ctx, uint64_t *size)
+{
+    uint64_t smallest = 0U;
+    int found = 0;
+    int i;
+
+    for (i = 0; i < ctx->n_path; i++)
+    {
+        uint64_t path_size = 0U;
+
+        if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+        {
+            continue;
+        }
+
+        if (get_receive_buffer_size(ctx->sock[i], &path_size) != POTR_OK)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                       "flow_control[service_id=%" PRId64 "]: path=%d cannot get SO_RCVBUF,"
+                       " send limit by OS receive buffer is not used",
+                       ctx->service.service_id, i);
+            return POTR_ERR_IO;
+        }
+
+        if (!found || path_size < smallest)
+        {
+            smallest = path_size;
+            found = 1;
+        }
+    }
+
+    if (!found)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                   "flow_control[service_id=%" PRId64 "]: no socket to get SO_RCVBUF,"
+                   " send limit by OS receive buffer is not used",
+                   ctx->service.service_id);
+        return POTR_ERR_IO;
+    }
+
+    *size = smallest;
+
+    return POTR_OK;
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
 int potr_internal_flow_control_start(potr_context *ctx)
 {
     struct potr_internal_flow_control *fc;
+    uint64_t buffer_size = 0U;
+    int buffer_used = 0;
 
     if (ctx == NULL)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (ctx->flow_control_config.capacity == 0U)
+    if (ctx->flow_control_config.capacity == 0U && ctx->flow_control_config.receive_buffer_percent == 0U)
     {
         return POTR_OK;
     }
 
-    /* 送出上限の許可数を max_payload で割って求めるため、0 は受け付けない (サービスを開く処理が 64 以上を検査済み)。 */
+    /* 送出上限の許可数を max_payload で求めるため、0 は受け付けない (サービスを開く処理が 64 以上を検査済み)。 */
     if (ctx->global.max_payload == 0U)
     {
         return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    /* 大きさを取得できなかった場合は、警告を記録し、このハンドルでは OS の受信バッファーに基づく送出上限を使わない。 */
+    if (ctx->flow_control_config.receive_buffer_percent != 0U && query_receive_buffer_size(ctx, &buffer_size) == POTR_OK)
+    {
+        buffer_used = 1;
+    }
+
+    /* 容量が 0 で、OS の受信バッファーに基づく送出上限も使わない受信側は、フロー制御パケットを送出しない。 */
+    if (ctx->flow_control_config.capacity == 0U && buffer_used == 0)
+    {
+        return POTR_OK;
     }
 
     fc = (struct potr_internal_flow_control *)cplat_calloc(1U, sizeof(*fc));
@@ -258,6 +468,17 @@ int potr_internal_flow_control_start(potr_context *ctx)
     fc->suppress_bytes = fc->capacity * ctx->flow_control_config.suppress_percent / 100U;
     fc->resume_bytes = fc->capacity * ctx->flow_control_config.resume_percent / 100U;
     fc->max_payload = ctx->global.max_payload;
+    fc->receive_buffer_used = buffer_used;
+    if (buffer_used != 0)
+    {
+        fc->receive_buffer_width = flow_receive_buffer_width(buffer_size, ctx->flow_control_config.receive_buffer_percent,
+                                                             (uint32_t)ctx->global.max_payload);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                   "flow_control[service_id=%" PRId64 "]: OS receive buffer=%" PRIu64 " width=%" PRIu64 " packets",
+                   ctx->service.service_id, buffer_size, fc->receive_buffer_width);
+    }
+    fc->one_to_many_receiver = ctx->role == POTR_ROLE_RECEIVER &&
+                               (ctx->service.type == POTR_TYPE_MULTICAST || ctx->service.type == POTR_TYPE_BROADCAST);
     fc->service.peer_id = POTR_PEER_NA;
     ctx->flow_control = fc;
 
@@ -477,30 +698,97 @@ static int send_state(potr_context *ctx, struct potr_internal_flow_control *fc, 
 }
 
 /*
- * 許可数を返す。占有量が要求のしきい値を超えている場合は 0、それ以外は
- * (要求のしきい値 − 占有量) ÷ max_payload (切り捨て) + 1 とする。fc->mutex を保持して呼ぶ。
+ * 受信バッファーの幅による許可数を返す。N:1 モードでは、すべてのピアが 1 つのソケットを共有するため、
+ * 幅を接続中のピア数で割る (切り捨て)。幅が下限 (POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN) 未満になる場合は下限とする。
+ * fc->mutex を保持して呼ぶ (N:1 モードでは peers_mutex も)。
  */
-static uint32_t send_allowance(const struct potr_internal_flow_control *fc, const flow_account *account)
+static uint32_t buffer_allowance(const potr_context *ctx, const struct potr_internal_flow_control *fc)
 {
-    if (account->occupancy > fc->suppress_bytes)
+    uint64_t width = fc->receive_buffer_width;
+
+    if (ctx->is_multi_peer && ctx->n_peers > 1)
     {
-        return 0U;
+        width /= (uint64_t)ctx->n_peers;
     }
 
-    /* 要求のしきい値は容量 (uint32_t) 以下、max_payload は 1 以上のため、商は uint32_t に収まる。 */
-    return (uint32_t)((fc->suppress_bytes - account->occupancy) / fc->max_payload) + 1U;
+    if (width < (uint64_t)POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN)
+    {
+        width = (uint64_t)POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN;
+    }
+
+    /* 幅は SO_RCVBUF (int) を 1 パケットの見積もり (2,000 byte 以上) で割った値以下のため、uint32_t に収まる。 */
+    return (uint32_t)width;
+}
+
+/*
+ * 許可数を返す。占有量による許可数と、受信バッファーの幅による許可数の小さいほうとする。
+ * 占有量による許可数は、占有量が要求のしきい値を超えている場合は 0、それ以外は
+ * (要求のしきい値 − 占有量) ÷ max_payload (切り捨て) + 1 とする。容量が 0 の受信側では使わない。
+ * 受信バッファーの幅による許可数は、OS の受信バッファーに基づく送出上限を使わない受信側では使わない。
+ * 資源は、どちらかを使う受信側にだけ生成する。fc->mutex を保持して呼ぶ (N:1 モードでは peers_mutex も)。
+ */
+static uint32_t send_allowance(const potr_context *ctx, const struct potr_internal_flow_control *fc,
+                               const flow_account *account)
+{
+    uint32_t allowance = UINT32_MAX;
+
+    if (fc->capacity != 0U)
+    {
+        if (account->occupancy > fc->suppress_bytes)
+        {
+            allowance = 0U;
+        }
+        else
+        {
+            /* 要求のしきい値は容量 (uint32_t) 以下、max_payload は 1 以上のため、商は uint32_t に収まる。 */
+            allowance = (uint32_t)((fc->suppress_bytes - account->occupancy) / fc->max_payload) + 1U;
+        }
+    }
+
+    if (fc->receive_buffer_used != 0)
+    {
+        uint32_t width = buffer_allowance(ctx, fc);
+
+        if (width < allowance)
+        {
+            allowance = width;
+        }
+    }
+
+    return allowance;
+}
+
+/*
+ * 送出上限を知らせてよいかを返す。multicast と broadcast の受信者は、送信者が選んだ監視対象である間だけ、
+ * 最初の送出と送出上限の更新を行う。受信者の全員が知らせると、送信者が受けるフロー制御パケットの数が
+ * 受信者の台数に比例するためである。fc->mutex を保持して呼ぶ。
+ */
+static int may_notify_limit(const struct potr_internal_flow_control *fc)
+{
+    return fc->one_to_many_receiver == 0 || fc->monitored != 0;
+}
+
+/*
+ * 占有量が解除のしきい値を下回っているかを返す。容量が 0 の受信側は、占有量の条件を常に満たすものとして扱う。
+ * fc->mutex を保持して呼ぶ。
+ */
+static int below_resume(const struct potr_internal_flow_control *fc, const flow_account *account)
+{
+    return fc->capacity == 0U || account->occupancy < fc->resume_bytes;
 }
 
 /*
  * 状態と送出上限 (次に受信する通番 + 許可数) を送出する。fc->mutex を保持して呼ぶ (N:1 モードでは peers_mutex も)。
  * 送出できた場合は、知らせた範囲を記録する。送出できなかった場合は記録を変えず、次の契機で送出し直す。
+ * multicast と broadcast の受信者で監視対象でない間は、抑制の要求と解除にも送出上限を載せるが、
+ * 送信者はその送出上限を使わないため、知らせたものとして記録しない。
  */
 static void notify_state(potr_context *ctx, struct potr_internal_flow_control *fc, flow_account *account,
                          uint8_t state)
 {
-    uint32_t send_limit = account->next_seq + send_allowance(fc, account);
+    uint32_t send_limit = account->next_seq + send_allowance(ctx, fc, account);
 
-    if (send_state(ctx, fc, account, state, send_limit) != 0)
+    if (send_state(ctx, fc, account, state, send_limit) != 0 && may_notify_limit(fc))
     {
         account->notified = 1;
         account->notified_base = account->next_seq;
@@ -521,15 +809,18 @@ static uint8_t current_state(const flow_account *account)
 
 /*
  * 相手のセッションを記録する。セッションが変わった場合は新しい通信として、送出上限をまだ知らせていない状態に戻す。
+ * multicast と broadcast の受信者は、送信者のセッションが変わった場合、監視対象の一覧を受け取っていない状態に戻す。
  * fc->mutex を保持して呼ぶ。
  */
-static void adopt_session(flow_account *account, uint32_t session_id, const cplat_timespec *session_ts)
+static void adopt_session(struct potr_internal_flow_control *fc, flow_account *account, uint32_t session_id,
+                          const cplat_timespec *session_ts)
 {
     if (account->session_id != session_id || account->session_ts.tv_sec != session_ts->tv_sec ||
         account->session_ts.tv_nsec != session_ts->tv_nsec)
     {
         account->notified = 0;
         account->has_next_seq = 0;
+        fc->monitored = 0;
     }
 
     account->session_id = session_id;
@@ -580,6 +871,12 @@ int potr_internal_flow_control_admit(potr_context *ctx, potr_peer_id peer_id, ui
 
     fc = ctx->flow_control;
 
+    /* 容量が 0 の受信側 (OS の受信バッファーに基づく送出上限だけを使う受信側) は、占有量を数えない。容量は開始後は不変である。 */
+    if (fc->capacity == 0U)
+    {
+        return POTR_OK;
+    }
+
     /*
      * 時刻は要求の再送の予定にだけ使い、失敗時は now_ms が 0 のままで次の周期処理の再送が早まるだけのため、
      * 戻り値は明示的に破棄する。
@@ -597,7 +894,7 @@ int potr_internal_flow_control_admit(potr_context *ctx, potr_peer_id peer_id, ui
         return POTR_OK;
     }
 
-    adopt_session(account, session_id, session_ts);
+    adopt_session(fc, account, session_id, session_ts);
 
     if (account->refused != 0 || (uint64_t)len > fc->capacity - account->occupancy)
     {
@@ -649,10 +946,12 @@ int potr_internal_flow_control_admit(potr_context *ctx, potr_peer_id peer_id, ui
 }
 
 /*
- * 順序どおりに受信した DATA パケットを 1 個処理した後の判定を行う。要求なしの状態で呼ぶ。fc->mutex を保持して呼ぶ。
+ * 順序どおりに受信した DATA パケットを 1 個処理した後の判定を行う。要求なしの状態で、送出上限を知らせた後に呼ぶ。
+ * fc->mutex を保持して呼ぶ。
  * 相手が送出上限まで送り終えた場合は、占有量が解除のしきい値以上なら抑制の要求へ遷移し、下回っていれば更新を送出する。
  * 相手が上限で止まっている間に、受信側が何も送出しない状態を作らないためである。
  * 送り終えていない場合は、前回知らせた範囲の半分以上を受信し、占有量が解除のしきい値を下回っていれば更新を送出する。
+ * 容量が 0 の受信側は、占有量の条件を常に満たすものとして扱い、抑制の要求へ遷移しない。
  */
 static void judge_progress(potr_context *ctx, struct potr_internal_flow_control *fc, flow_account *account)
 {
@@ -662,7 +961,7 @@ static void judge_progress(potr_context *ctx, struct potr_internal_flow_control 
     /* 通番は循環するため、差を符号付きで見て、送出上限に達したかを判定する。 */
     if ((int32_t)(account->next_seq - account->notified_limit) >= 0)
     {
-        if (account->occupancy >= fc->resume_bytes)
+        if (!below_resume(fc, account))
         {
             uint64_t now_ms = 0U;
 
@@ -686,7 +985,7 @@ static void judge_progress(potr_context *ctx, struct potr_internal_flow_control 
         return;
     }
 
-    if (account->occupancy < fc->resume_bytes && received * 2U >= range)
+    if (below_resume(fc, account) && received * 2U >= range)
     {
         notify_state(ctx, fc, account, (uint8_t)POTR_FLOW_CONTROL_STATE_RESUME);
     }
@@ -716,7 +1015,7 @@ void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer
         return;
     }
 
-    adopt_session(account, session_id, session_ts);
+    adopt_session(fc, account, session_id, session_ts);
 
     /*
      * 次に受信する通番をまだ受け取っていなかった場合 (抑制の要求だけを先に送出した場合を含む) と、
@@ -732,8 +1031,14 @@ void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer
 
     if (account->notified == 0)
     {
-        /* 相手にまだ送出上限を知らせていないため、最初に送出できる時点で知らせる。 */
-        notify_state(ctx, fc, account, current_state(account));
+        /*
+         * 相手にまだ送出上限を知らせていないため、最初に送出できる時点で知らせる。
+         * multicast と broadcast の受信者は、監視対象でない間は知らせず、送り終えた時点の判定も行わない。
+         */
+        if (may_notify_limit(fc))
+        {
+            notify_state(ctx, fc, account, current_state(account));
+        }
     }
     else if (data_packet != 0 && account->requesting == 0)
     {
@@ -755,6 +1060,12 @@ void potr_internal_flow_control_release(potr_context *ctx, potr_peer_id peer_id,
     }
 
     fc = ctx->flow_control;
+
+    /* 容量が 0 の受信側は占有量を数えないため、減算と解除の判定を行わない。容量は開始後は不変である。 */
+    if (fc->capacity == 0U)
+    {
+        return;
+    }
 
     /* N:1 モードでは、ピアの宛先を参照して送出するため、peers_mutex、fc->mutex の順に取得する。 */
     if (ctx->is_multi_peer)
@@ -831,7 +1142,7 @@ static void tick_account(potr_context *ctx, struct potr_internal_flow_control *f
         return;
     }
 
-    if (account->notified == 0 && account->has_next_seq != 0 && account->refused == 0)
+    if (account->notified == 0 && account->has_next_seq != 0 && account->refused == 0 && may_notify_limit(fc))
     {
         notify_state(ctx, fc, account, current_state(account));
     }
@@ -883,6 +1194,21 @@ void potr_internal_flow_control_tick(potr_context *ctx, uint64_t now_ms)
     else
     {
         refresh_reply(ctx, fc);
+
+        /*
+         * multicast と broadcast の受信者は、監視対象の一覧を有効期限の間受け取らなかった場合、監視対象でなくなったものとして扱う。
+         * 送信者の停止と一覧の喪失が続いた場合に、送出上限を送り続けないためである。
+         */
+        if (fc->monitored != 0 &&
+            now_ms >= fc->monitor_received_ms + (uint64_t)ctx->flow_control_config.request_lifetime_ms)
+        {
+            fc->monitored = 0;
+            fc->service.notified = 0;
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                       "flow_control[service_id=%" PRId64 "]: monitored receiver list expired, no longer monitored",
+                       ctx->service.service_id);
+        }
+
         tick_account(ctx, fc, &fc->service, now_ms);
     }
 
@@ -938,6 +1264,91 @@ int potr_internal_flow_control_refused(potr_context *ctx, potr_peer_id peer_id, 
     return refused;
 }
 
+/*
+ * multicast と broadcast の受信者が、採用している送信者から受けた監視対象の一覧を反映する。
+ * 一覧に自身のセッション識別子が含まれる間は監視対象として動作し、送出上限をまだ知らせていない状態から始める。
+ * 含まれない一覧を受けた場合は、監視対象でないものとして、送出上限を知らせていない状態に戻す。
+ * 採用している送信者 (ctx->peer_session_*) のセッションと一致しない一覧は破棄する。
+ */
+static void on_monitor_list(potr_context *ctx, const potr_packet *pkt)
+{
+    struct potr_internal_flow_control *fc = ctx->flow_control;
+    flow_account *account;
+    potr_internal_packet_session_hdr own;
+    cplat_timespec sender_ts;
+    uint64_t now_ms;
+    size_t count = 0U;
+    size_t i;
+    int included = 0;
+
+    /* その他の通信種別と、送信者が受信した一覧は破棄する。フロー制御パケットを送出しない受信者も使わない。 */
+    if (fc == NULL || fc->one_to_many_receiver == 0 || flow_control_monitor_decode(pkt, &count) != POTR_OK)
+    {
+        return;
+    }
+
+    /* 採用している送信者のセッション識別子と一致しない一覧は破棄する。 */
+    session_ts_from_hdr(pkt->session_tv_sec, pkt->session_tv_nsec, &sender_ts);
+    if (ctx->peer_session_known == 0 || pkt->session_id != ctx->peer_session_id ||
+        sender_ts.tv_sec != ctx->peer_session_ts.tv_sec || sender_ts.tv_nsec != ctx->peer_session_ts.tv_nsec)
+    {
+        return;
+    }
+
+    /* 時刻を取得できない場合は、一覧の期限を決められないため、この一覧を反映しない。送信者は周期ごとに送出する。 */
+    if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
+    {
+        return;
+    }
+
+    own.service_id = ctx->service.service_id;
+    session_ts_to_hdr(&ctx->session_ts, &own.session_tv_sec, &own.session_tv_nsec);
+    own.session_id = ctx->session_id;
+
+    for (i = 0U; i < count && included == 0; i++)
+    {
+        potr_internal_packet_session_hdr entry = own;
+
+        flow_control_monitor_entry(pkt, i, &entry);
+        if (entry.session_id == own.session_id && entry.session_tv_sec == own.session_tv_sec &&
+            entry.session_tv_nsec == own.session_tv_nsec)
+        {
+            included = 1;
+        }
+    }
+
+    cplat_local_lock_lock(fc->mutex);
+    refresh_reply(ctx, fc);
+    account = &fc->service;
+
+    /* 送信者のセッションが変わった場合は、一覧を受け取っていない状態から反映する。 */
+    adopt_session(fc, account, pkt->session_id, &sender_ts);
+    fc->monitor_received_ms = now_ms;
+
+    if (included != 0 && fc->monitored == 0)
+    {
+        fc->monitored = 1;
+        account->notified = 0;
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "flow_control[service_id=%" PRId64 "]: selected as monitored receiver",
+                   ctx->service.service_id);
+
+        /* 次に受信する通番が分かっていれば、最初の送出を行う。分からなければ、次の DATA か PING の受理で行う。 */
+        if (account->has_next_seq != 0 && account->refused == 0)
+        {
+            notify_state(ctx, fc, account, current_state(account));
+        }
+    }
+    else if (included == 0 && fc->monitored != 0)
+    {
+        fc->monitored = 0;
+        account->notified = 0;
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "flow_control[service_id=%" PRId64 "]: no longer monitored receiver",
+                   ctx->service.service_id);
+    }
+
+    cplat_local_lock_unlock(fc->mutex);
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
 void potr_internal_flow_control_on_packet(potr_context *ctx, struct potr_internal_peer_context *peer,
                                           const potr_packet *pkt)
@@ -947,7 +1358,23 @@ void potr_internal_flow_control_on_packet(potr_context *ctx, struct potr_interna
     uint64_t now_ms;
     uint64_t expire_ms = 0U;
 
-    if (ctx == NULL || pkt == NULL || flow_control_payload_decode(pkt, &state, &send_limit) != POTR_OK)
+    if (ctx == NULL || pkt == NULL)
+    {
+        return;
+    }
+
+    /* 監視対象の一覧は、multicast と broadcast の受信者だけが受理する。その他の通信種別では破棄する。 */
+    if (pkt->payload != NULL && pkt->payload_len >= 1U && pkt->payload[0] == POTR_FLOW_CONTROL_STATE_MONITOR)
+    {
+        if (peer == NULL && !ctx->is_multi_peer)
+        {
+            on_monitor_list(ctx, pkt);
+        }
+
+        return;
+    }
+
+    if (flow_control_payload_decode(pkt, &state, &send_limit) != POTR_OK)
     {
         return;
     }
@@ -1211,4 +1638,105 @@ int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_i
     cplat_local_lock_unlock(ctx->peers_mutex);
 
     return suppressed;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+int potr_internal_flow_control_report_limit(potr_context *ctx, uint32_t *send_limit)
+{
+    struct potr_internal_flow_control *fc;
+    flow_account *account;
+    int held = 0;
+
+    if (send_limit == NULL)
+    {
+        return 0;
+    }
+
+    *send_limit = 0U;
+
+    /* フロー制御パケットを送出しない受信側は、送出上限を持たない。 */
+    if (ctx == NULL || ctx->flow_control == NULL || ctx->is_multi_peer)
+    {
+        return 0;
+    }
+
+    fc = ctx->flow_control;
+    cplat_local_lock_lock(fc->mutex);
+    account = &fc->service;
+
+    /* 送信者をまだ採用していない受信側と、容量超過で受信を再開しない受信側は、送出上限を持たない。 */
+    if (account->has_next_seq != 0 && account->refused == 0)
+    {
+        *send_limit = account->next_seq + send_allowance(ctx, fc, account);
+        held = 1;
+    }
+
+    cplat_local_lock_unlock(fc->mutex);
+
+    return held;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+void potr_internal_flow_control_monitor_tick(potr_context *ctx, uint64_t now_ms)
+{
+    potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX];
+    potr_internal_packet_session_hdr shdr;
+    uint8_t payload[POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX];
+    potr_packet packet;
+    size_t count;
+    int changed = 0;
+    int i;
+
+    if (ctx == NULL || ctx->role != POTR_ROLE_SENDER ||
+        (ctx->service.type != POTR_TYPE_MULTICAST && ctx->service.type != POTR_TYPE_BROADCAST))
+    {
+        return;
+    }
+
+    count = potr_internal_receiver_monitor_list(ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed);
+
+    /* 監視対象が 0 台の間は送出しない。受信者は、一覧の有効期限で監視対象でなくなる。 */
+    if (count == 0U)
+    {
+        return;
+    }
+
+    /* 監視対象が変わった時点と、flow_control_request_interval_ms の周期で送出する。 */
+    if (changed == 0 && ctx->flow_monitor_next_ms != 0U && now_ms < ctx->flow_monitor_next_ms)
+    {
+        return;
+    }
+
+    shdr.service_id = ctx->service.service_id;
+    shdr.session_id = ctx->session_id;
+    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+
+    if (potr_internal_packet_build_flow_control_list(&packet, &shdr, payload, list, count) != POTR_OK)
+    {
+        return;
+    }
+
+    /* 宛先は DATA と同じ (マルチキャスト グループまたはブロードキャスト) とし、全経路へ送出する。 */
+    for (i = 0; i < ctx->n_path; i++)
+    {
+        uint8_t wire[FLOW_CONTROL_MONITOR_WIRE_SIZE];
+        size_t wire_len = sizeof(wire);
+        size_t sent = 0U;
+
+        if (ctx->sock[i] == CPLAT_INVALID_SOCKET || endpoint_is_unset(&ctx->dest_addr[i]))
+        {
+            continue;
+        }
+
+        /* 証明書方式でハンドシェイクが完了していない間は、封緘に失敗するため送出しない。次の周期で送出し直す。 */
+        if (potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &packet, wire, &wire_len) != POTR_OK)
+        {
+            continue;
+        }
+
+        /* 一覧は周期ごとに送出し直し、受信者は期限内の最新の一覧で動作するため、戻り値は明示的に破棄する。 */
+        (void)cplat_socket_sendto(ctx->sock[i], wire, wire_len, &ctx->dest_addr[i], &sent, NULL);
+    }
+
+    ctx->flow_monitor_next_ms = now_ms + (uint64_t)ctx->flow_control_config.request_interval_ms;
 }

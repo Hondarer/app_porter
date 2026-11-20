@@ -294,7 +294,7 @@ TEST_F(packetTest, build_flow_control_rejects_undefined_state)
     // [手順] - 状態が 0、3、格納先が NULL、「解除」(送出上限 0xFFFFFFFF) の場合でそれぞれ構築する。
     // Assert
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, undefined_zero_ret);  // [確認_異常系] - 状態 0 を拒否すること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, undefined_three_ret); // [確認_異常系] - 状態 3 を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, undefined_three_ret); // [確認_異常系] - 状態 3 (監視対象の一覧は専用の関数で構築する) を拒否すること。
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, null_ret); // [確認_異常系] - 格納先が NULL の場合を拒否すること。
     EXPECT_EQ(POTR_OK, resume_ret); // [確認_正常系] - 状態「解除」の戻り値が POTR_OK であること。
     EXPECT_EQ((uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, payload[0]); // [確認_正常系] - 先頭が状態「解除」であること。
@@ -437,4 +437,140 @@ TEST_F(packetTest, control_builders_clear_transmission_fields)
         EXPECT_EQ(0U, packets[i].reserved); // [確認_正常系 回数=5] - 予約領域が 0 であること。
         EXPECT_EQ(0U, packets[i].tx_mono_ns); // [確認_正常系 回数=5] - 経過時間が 0 であること。
     }
+}
+
+// 監視対象の一覧のパケットを構築し、状態、台数、受信者のセッション識別子を格納し、解析と往復で一致することの確認
+TEST_F(packetTest, build_flow_control_list_round_trip)
+{
+    // Arrange
+    potr_packet packet;
+    potr_packet received;
+    potr_internal_packet_session_hdr session = {};
+    potr_internal_packet_session_hdr receivers[2] = {};
+    potr_internal_packet_session_hdr decoded[2] = {};
+    uint8_t payload[POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX];
+    const uint8_t expected_first[POTR_FLOW_CONTROL_MONITOR_ENTRY_SIZE] = {
+        0x01U, 0x02U, 0x03U, 0x04U, 0x05U, 0x06U, 0x07U, 0x08U, 0xA1U, 0xA2U, 0xA3U, 0xA4U, 0x00U, 0x00U, 0x00U, 0x09U};
+    size_t count = 0U;
+    session.service_id = 42;
+    session.session_id = 7U;
+    receivers[0].session_tv_sec = 0x0102030405060708LL;
+    receivers[0].session_id = 0xA1A2A3A4U;
+    receivers[0].session_tv_nsec = 9;
+    receivers[1].session_tv_sec = 100;
+    receivers[1].session_id = 0x55U;
+    receivers[1].session_tv_nsec = 999999999;
+    memset(&packet, 0xFF, sizeof(packet));   // [状態] - 出力領域を非ゼロにする。
+    memset(payload, 0xEE, sizeof(payload)); // [状態] - ペイロードの格納先を非ゼロにする。
+    // [状態] - 2 台の受信者のセッション識別子を用意する。
+    // Pre-Assert
+    // Act
+    int actual_ret = potr_internal_packet_build_flow_control_list(&packet, &session, payload, receivers, 2U);
+    // [手順] - 2 台の一覧で potr_internal_packet_build_flow_control_list() を呼び出す。
+    memset(&received, 0, sizeof(received));
+    received.payload = packet.payload;
+    received.payload_len = ntohs(packet.payload_len); // [手順] - 開封後と同じく、ペイロード長をホスト バイト オーダーにする。
+    int decode_ret = flow_control_monitor_decode(&received, &count); // [手順] - 台数を取り出す。
+    flow_control_monitor_entry(&received, 0U, &decoded[0]);
+    flow_control_monitor_entry(&received, 1U, &decoded[1]);
+    // [手順] - 2 台分の受信者のセッション識別子を取り出す。
+    // Assert
+    ASSERT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 戻り値が POTR_OK であること。
+    EXPECT_EQ(htons(POTR_FLAG_FLOW_CONTROL), packet.flags); // [確認_正常系] - flags が POTR_FLAG_FLOW_CONTROL であること。
+    EXPECT_EQ(htons(34U), packet.payload_len); // [確認_正常系] - ペイロード長が 2 + 16 × 2 バイトであること。
+    EXPECT_EQ(payload, packet.payload); // [確認_正常系] - ペイロードが格納先を指すこと。
+    EXPECT_EQ((uint8_t)POTR_FLOW_CONTROL_STATE_MONITOR, payload[0]); // [確認_正常系] - 先頭が状態 3 であること。
+    EXPECT_EQ(2U, payload[1]); // [確認_正常系] - 次の 1 バイトが台数 2 であること。
+    EXPECT_EQ(0, memcmp(expected_first, payload + 2, sizeof(expected_first)));
+    // [確認_正常系] - 1 台目が session_tv_sec 8 バイト、session_id 4 バイト、session_tv_nsec 4 バイトのネットワーク バイト オーダーであること。
+    EXPECT_EQ(0U, packet.seq_num); // [確認_正常系] - seq_num が 0 であること。
+    EXPECT_EQ(0U, packet.ack_num); // [確認_正常系] - ack_num が 0 であること。
+    EXPECT_EQ(htonl(7U), packet.session_id); // [確認_正常系] - 送信者自身のセッション識別子であること。
+    EXPECT_EQ(POTR_OK, decode_ret); // [確認_正常系] - 解析の戻り値が POTR_OK であること。
+    EXPECT_EQ(2U, count); // [確認_正常系] - 台数が 2 であること。
+    EXPECT_EQ(receivers[0].session_tv_sec, decoded[0].session_tv_sec); // [確認_正常系] - 1 台目の session_tv_sec が一致すること。
+    EXPECT_EQ(receivers[0].session_id, decoded[0].session_id);         // [確認_正常系] - 1 台目の session_id が一致すること。
+    EXPECT_EQ(receivers[0].session_tv_nsec, decoded[0].session_tv_nsec); // [確認_正常系] - 1 台目の session_tv_nsec が一致すること。
+    EXPECT_EQ(receivers[1].session_tv_sec, decoded[1].session_tv_sec); // [確認_正常系] - 2 台目の session_tv_sec が一致すること。
+    EXPECT_EQ(receivers[1].session_id, decoded[1].session_id);         // [確認_正常系] - 2 台目の session_id が一致すること。
+    EXPECT_EQ(receivers[1].session_tv_nsec, decoded[1].session_tv_nsec); // [確認_正常系] - 2 台目の session_tv_nsec が一致すること。
+}
+
+// 監視対象の一覧の構築が、台数が範囲外の場合と NULL の引数を拒否することの確認
+TEST_F(packetTest, build_flow_control_list_rejects_invalid_arguments)
+{
+    // Arrange
+    potr_packet packet = {};
+    potr_internal_packet_session_hdr session = {};
+    potr_internal_packet_session_hdr receivers[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX + 1U] = {};
+    uint8_t payload[POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX + POTR_FLOW_CONTROL_MONITOR_ENTRY_SIZE] = {};
+    // Pre-Assert
+    // Act
+    int zero_ret = potr_internal_packet_build_flow_control_list(&packet, &session, payload, receivers, 0U);
+    int over_ret = potr_internal_packet_build_flow_control_list(&packet, &session, payload, receivers,
+                                                                POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX + 1U);
+    int max_ret = potr_internal_packet_build_flow_control_list(&packet, &session, payload, receivers,
+                                                               POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX);
+    int null_receivers_ret = potr_internal_packet_build_flow_control_list(&packet, &session, payload, nullptr, 1U);
+    int null_payload_ret = potr_internal_packet_build_flow_control_list(&packet, &session, nullptr, receivers, 1U);
+    // [手順] - 台数 0、65、64、受信者の配列が NULL、格納先が NULL の場合でそれぞれ構築する。
+    // Assert
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, zero_ret); // [確認_異常系] - 台数 0 を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, over_ret); // [確認_異常系] - 台数 65 を拒否すること。
+    EXPECT_EQ(POTR_OK, max_ret); // [確認_正常系] - 台数 64 を受け付けること。
+    EXPECT_EQ(htons((uint16_t)POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX), packet.payload_len);
+    // [確認_正常系] - 台数 64 のペイロード長が 2 + 16 × 64 バイトであること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, null_receivers_ret); // [確認_異常系] - 受信者の配列が NULL の場合を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, null_payload_ret); // [確認_異常系] - 格納先が NULL の場合を拒否すること。
+}
+
+// 状態、台数、長さ、seq_num、ack_num が不正な監視対象の一覧を解析で拒否することの確認
+TEST_F(packetTest, flow_control_monitor_decode_rejects_malformed)
+{
+    // Arrange
+    uint8_t valid[POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE + POTR_FLOW_CONTROL_MONITOR_ENTRY_SIZE] = {
+        (uint8_t)POTR_FLOW_CONTROL_STATE_MONITOR, 1U};
+    uint8_t wrong_state[sizeof(valid)] = {(uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, 1U};
+    uint8_t zero_count[POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE] = {(uint8_t)POTR_FLOW_CONTROL_STATE_MONITOR, 0U};
+    uint8_t over_count[POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE] = {(uint8_t)POTR_FLOW_CONTROL_STATE_MONITOR, 65U};
+    potr_packet cases[7];
+    size_t count = 0U;
+    memset(cases, 0, sizeof(cases));
+    cases[0].payload = wrong_state;
+    cases[0].payload_len = (uint16_t)sizeof(wrong_state); // 状態が 3 でない
+    cases[1].payload = zero_count;
+    cases[1].payload_len = (uint16_t)sizeof(zero_count); // 台数が 0
+    cases[2].payload = over_count;
+    cases[2].payload_len = (uint16_t)(POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE + POTR_FLOW_CONTROL_MONITOR_ENTRY_SIZE * 65U);
+    // 台数が 65
+    cases[3].payload = valid;
+    cases[3].payload_len = (uint16_t)(sizeof(valid) - 1U); // 長さが台数に合わない
+    cases[4].payload = valid;
+    cases[4].payload_len = (uint16_t)sizeof(valid);
+    cases[4].seq_num = 1U; // seq_num が 0 でない
+    cases[5].payload = valid;
+    cases[5].payload_len = (uint16_t)sizeof(valid);
+    cases[5].ack_num = 1U; // ack_num が 0 でない
+    cases[6].payload = nullptr;
+    cases[6].payload_len = (uint16_t)sizeof(valid); // ペイロードが NULL
+    potr_packet accepted = {};
+    accepted.payload = valid;
+    accepted.payload_len = (uint16_t)sizeof(valid);
+    int actual_rets[7] = {};
+    // [状態] - 7 種類の不正な一覧と、正しい 1 台の一覧を用意する (ループ 7 回)。
+    // Pre-Assert
+    // Act
+    for (size_t i = 0; i < 7; i++)
+    {
+        actual_rets[i] = flow_control_monitor_decode(&cases[i], &count);
+    }
+    // [手順] - 7 種類の不正な一覧を順に解析する。
+    int accepted_ret = flow_control_monitor_decode(&accepted, &count); // [手順] - 正しい 1 台の一覧を解析する。
+    // Assert
+    for (size_t i = 0; i < 7; i++)
+    {
+        EXPECT_EQ(POTR_ERR_PROTOCOL, actual_rets[i]); // [確認_異常系] - 不正な一覧を POTR_ERR_PROTOCOL とすること。(確認 7 回)
+    }
+    EXPECT_EQ(POTR_OK, accepted_ret); // [確認_正常系] - 正しい一覧を受け付けること。
+    EXPECT_EQ(1U, count);             // [確認_正常系] - 台数が 1 であること。
 }

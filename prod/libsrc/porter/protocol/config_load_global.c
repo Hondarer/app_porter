@@ -47,6 +47,26 @@ static void config_set_global_defaults(potr_global_config *global)
     global->flow_control_request_lifetime_ms = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS;
     global->flow_control_receiver_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVER_PERCENT;
     global->flow_control_receiver_count = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT;
+    global->flow_control_monitored_receiver_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_PERCENT;
+    global->flow_control_monitored_receiver_count = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT;
+    global->flow_control_receive_buffer_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT;
+}
+
+/*
+ * flow_control_receive_buffer_percent の値を解釈する。
+ * この項目は既定で有効で、0 が「既定値を使用」を表すため、global でも -1 を「無効」を表す専用の値
+ * (POTR_FLOW_CONTROL_DISABLED) として受け付ける。それ以外は非負整数として解釈する。
+ * 不正な文字列の場合は、直前の値を維持し、cplat_parse_uint32 の戻り値を返す。
+ */
+static int parse_receive_buffer_percent(uint32_t *value, const char *val)
+{
+    if (strcmp(val, "-1") == 0)
+    {
+        *value = POTR_FLOW_CONTROL_DISABLED;
+        return CPLAT_OK;
+    }
+
+    return cplat_parse_uint32(value, val, 10);
 }
 
 /**
@@ -220,6 +240,27 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
         else if (strcmp(key, "flow_control_receiver_count") == 0)
         {
             if (cplat_parse_uint32(&global->flow_control_receiver_count, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
+        }
+        else if (strcmp(key, "flow_control_monitored_receiver_percent") == 0)
+        {
+            if (cplat_parse_uint32(&global->flow_control_monitored_receiver_percent, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
+        }
+        else if (strcmp(key, "flow_control_monitored_receiver_count") == 0)
+        {
+            if (cplat_parse_uint32(&global->flow_control_monitored_receiver_count, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
+        }
+        else if (strcmp(key, "flow_control_receive_buffer_percent") == 0)
+        {
+            if (parse_receive_buffer_percent(&global->flow_control_receive_buffer_percent, val) != CPLAT_OK)
             {
                 trace_unparsed_global_value(key, val);
             }

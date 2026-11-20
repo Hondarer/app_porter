@@ -266,7 +266,7 @@ struct potr_context
     int certificate_padding; /**< 8 バイト境界のパディング。 */
     struct potr_internal_handle *handle_owner;         /**< 公開ハンドルの制御情報。 */
     struct potr_internal_notifications *notifications; /**< 通知専用スレッドとキュー。 */
-    struct potr_internal_flow_control *flow_control; /**< 受信側のフロー制御の資源。NULL は無効 (容量が 0)。 */
+    struct potr_internal_flow_control *flow_control; /**< 受信側のフロー制御の資源。NULL は無効 (容量が 0 で、OS の受信バッファーに基づく送出上限も使わない)。 */
     potr_internal_flow_control_config flow_control_config; /**< フロー制御の実効設定。スレッド起動後は不変。 */
     cplat_atomic_u64 flow_request_expire_ms; /**< 送信側: 相手から受けた抑制の要求の期限 [ms]。0 = 要求なし。双方向 UDP (1:1) と TCP で使用。アトミックに読み書きします。 */
     cplat_atomic_u64 flow_send_limit; /**< 送信側: 相手から受けた送出上限 (POTR_FLOW_SEND_LIMIT_HELD と通番の組)。0 = 上限なし。双方向 UDP (1:1) と TCP で使用。flow_limit_received_ms の後に書き込みます。アトミックに読み書きします。 */
@@ -349,7 +349,8 @@ struct potr_context
     uint64_t started_ms; /**< 起動時の単調増加時刻 [ms]。スレッド起動後は不変。 */
     uint64_t next_report_ms; /**< 次の報告予定時刻 [ms]。UDP 受信スレッドだけが使用。 */
     int report_received; /**< REPORT を一度以上受理したか。callback_mutex で保護。 */
-    int report_padding; /**< 8 [byte] 境界のパディング。 */
+    int flow_monitor_changed; /**< 送信側: multicast と broadcast で、監視対象の一覧を最後に取り出した後に監視対象が変わったか (1: 変わった)。callback_mutex で保護。 */
+    uint64_t flow_monitor_next_ms; /**< 送信側: multicast と broadcast で、監視対象の一覧を次に周期で送出する時刻 [ms]。0 = 未送出。UDP 受信スレッドだけが使用。 */
 
     /* 自セッション識別子 (potr_service_open 時に決定) */
     cplat_timespec session_ts; /**< 自セッション開始時刻。 */

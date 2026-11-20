@@ -404,8 +404,8 @@ Figure: RAW モード - PING ギャップ検出
 ## フロー制御による抑制と解除
 
 受信側の構成で `flow_control_capacity` を指定した場合の動作です。  
-受信者は、すべてのフロー制御パケットに送出上限 (次に受信する通番 + 許可数) を載せ、送信者は送出上限に達したら自分で止まります。  
-`multicast` と `broadcast` の送信者は、「止める状態」(要求中、または送出上限に達している) の受信者の割合または台数が構成の条件を満たす場合に抑制します。
+受信者は、すべてのフロー制御パケットに送出上限 (次に受信する通番 + 許可数) を載せ、送信者は送出上限に達したら自分で止まります。OS の受信バッファーに基づく送出上限を使う受信側では、許可数は、占有量による許可数と受信バッファーの幅の小さいほうです。  
+`multicast` と `broadcast` の送信者は、「止める状態」(要求中、または送出上限に達している) の受信者の割合または台数が構成の条件を満たす場合に抑制します。`multicast` と `broadcast` で送出上限の最初の通知と更新を送るのは、監視対象の受信者だけです (後述の「multicast の監視対象の選択と入れ替わり」)。
 
 ```mermaid
 sequenceDiagram
@@ -465,6 +465,74 @@ sequenceDiagram
 ```
 
 Figure: 送出上限まで送り終えたときのシーケンス
+
+## 容量を設定していない受信側の送出上限の更新
+
+受信側の構成で `flow_control_capacity` を指定していない場合も、`unicast`、`multicast`、`broadcast`、`unicast_bidir`、`unicast_bidir_n1` の受信側は、OS の受信バッファーに収まると見積もった DATA パケットの数 (受信バッファーの幅) を許可数として、送出上限を知らせます。  
+受信側は抑制の要求を送らず、送出上限の最初の通知と更新だけを送ります。次の図は、OS の受信バッファーが既定の Linux (幅 42) の受信者の例です。
+
+```mermaid
+sequenceDiagram
+    participant S as 送信者
+    participant R as 受信者
+
+    Note over R: サービスを開くときに<br>OS の受信バッファーの大きさ (SO_RCVBUF) を取得し<br>受信バッファーの幅 (42) を求める
+    S->>R: PING
+    Note over R: 送信者を新しい通信として採用した
+    R->>S: FLOW_CONTROL (状態 = 解除、送出上限 = 次に受信する通番 + 42)
+    loop 連続した送信
+        S->>R: DATA
+        Note over R: 前回知らせた範囲の半分 (21 パケット) を受信した
+        R->>S: FLOW_CONTROL (状態 = 解除、送出上限の更新)
+    end
+    Note over S: 送出上限に達した場合は止まり<br>次の更新で送出を再開する
+    opt 相手が送出上限まで送り終えた
+        R->>S: FLOW_CONTROL (状態 = 解除、送出上限の更新)
+    end
+```
+
+Figure: 容量を設定していない受信側が送出上限を更新するシーケンス
+
+OS の受信バッファーの大きさを取得できなかった受信側と、`flow_control_receive_buffer_percent` に `-1` を指定した受信側は、容量を指定していなければフロー制御パケットを送出しません。
+
+## multicast の監視対象の選択と入れ替わり
+
+`multicast` と `broadcast` では、送出上限を知らせるのは、送信者が選んだ監視対象の受信者だけです。  
+受信者は受信報告に自身の送出上限を載せ、送信者は受信者ごとの余裕 (送出上限 − 次に割り当てる通番) が小さいほうから監視対象を選びます。次の図は、1 対 N の台数の条件 (`flow_control_receiver_count`) が 1、監視する台数 (`flow_control_monitored_receiver_count`) が 1 の例です。
+
+```mermaid
+sequenceDiagram
+    participant S as 送信者
+    participant R1 as 受信者 1
+    participant R2 as 受信者 2
+
+    R1->>S: REPORT (seq_num = 1、ack_num = 送出上限)
+    R2->>S: REPORT (seq_num = 1、ack_num = 送出上限)
+    Note over S: 余裕を記録し、余裕が小さい受信者 1 を監視対象に選ぶ
+    S->>R1: FLOW_CONTROL (状態 = 監視対象の一覧、受信者 1)
+    S->>R2: FLOW_CONTROL (状態 = 監視対象の一覧、受信者 1)
+    Note over R1: 一覧に自身が含まれる<br>最初の通知から始める
+    R1->>S: FLOW_CONTROL (状態 = 解除、送出上限)
+    Note over R2: 一覧に自身が含まれない<br>送出上限を送出しない
+    loop flow_control_request_interval_ms (既定 200 ms) ごと
+        S->>R1: FLOW_CONTROL (状態 = 監視対象の一覧)
+        S->>R2: FLOW_CONTROL (状態 = 監視対象の一覧)
+    end
+    Note over R2: 受信の処理が遅くなった
+    R2->>S: REPORT (seq_num = 1、ack_num = 小さい送出上限)
+    Note over S: 受信者 2 の余裕が最も小さくなった<br>受信者 2 を監視対象に選び直し<br>受信者 1 の送出上限を破棄する
+    S->>R1: FLOW_CONTROL (状態 = 監視対象の一覧、受信者 2)
+    S->>R2: FLOW_CONTROL (状態 = 監視対象の一覧、受信者 2)
+    Note over R1: 監視対象でなくなった<br>送出上限を知らせていない状態に戻す
+    Note over R2: 監視対象になった<br>最初の通知から始める
+    R2->>S: FLOW_CONTROL (状態 = 解除、送出上限)
+    Note over S: 受信者 2 の送出上限で止まる
+```
+
+Figure: multicast で監視対象が選ばれ、入れ替わるシーケンス
+
+- 監視対象でない受信者も、容量を設定していれば、占有量に基づく抑制の要求と解除を送ります。監視対象でない受信者から抑制の要求を受けた送信者は、その受信者の余裕を 0 として扱い、次の受信報告を待たずに監視対象の候補にします。
+- 受信者は、一覧を `flow_control_request_lifetime_ms` (既定 1,000 ms) の間受け取らなかった場合、監視対象でなくなったものとして扱います。
 
 ## フロー制御の容量超過による切断と復帰
 

@@ -596,7 +596,7 @@ TEST_F(potrFlowControlTest, on_packet_ignores_malformed_packets)
     cases[0] = make_packet(kSuppressPayload, 1U);  // ペイロード長が 1 (送出上限なし)
     cases[1] = make_packet(kSuppressPayload, 6U);  // ペイロード長が 6
     cases[2] = make_packet(undefined_zero);        // 状態が 0
-    cases[3] = make_packet(undefined_three);       // 状態が 3
+    cases[3] = make_packet(undefined_three);       // 状態が 3 (監視対象の一覧。multicast と broadcast の受信者以外は破棄する)
     cases[4] = make_packet(kSuppressPayload);
     cases[4].seq_num = 1U;                         // seq_num が 0 でない
     cases[5] = make_packet(kSuppressPayload);

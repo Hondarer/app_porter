@@ -409,3 +409,222 @@ TEST_F(potrFlowControlResolveTest, null_arguments)
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_global);  // [確認_異常系] - global が NULL で POTR_ERR_INVALID_ARGUMENT であること。
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_config);  // [確認_異常系] - config が NULL で POTR_ERR_INVALID_ARGUMENT であること。
 }
+
+// サービスとグローバルがすべて 0 の場合に、監視する受信者の割合と台数が 0、受信バッファーの幅の割合が既定値になることの確認
+// [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
+TEST_F(potrFlowControlResolveTest, all_zero_uses_defaults_for_monitor_and_receive_buffer)
+{
+    // Arrange
+    // [状態] - 通信種別は unicast のままとする。
+    // Pre-Assert
+    // Act
+    int actual_ret = resolve(POTR_ROLE_RECEIVER); // [手順] - サービスとグローバルを 0 のままで、受信者として resolve を呼び出す。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);                  // [確認_正常系] - 戻り値が POTR_OK であること。
+    EXPECT_EQ(0U, cfg.monitored_receiver_percent);   // [確認_正常系] - 監視する受信者の割合が 0 であること。
+    EXPECT_EQ(0U, cfg.monitored_receiver_count);     // [確認_正常系] - 監視する受信者の台数が 0 であること。
+    EXPECT_EQ((uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT, cfg.receive_buffer_percent);
+    // [確認_正常系] - 受信バッファーの幅の割合が既定値 (100) であること。
+}
+
+// 監視する受信者の割合と台数が、グローバル、サービスの順に重なり、サービスの DISABLED で 0 になることの確認
+// [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
+TEST_F(potrFlowControlResolveTest, monitored_receiver_values_overlay)
+{
+    // Arrange
+    glb.flow_control_monitored_receiver_percent = 10U;
+    glb.flow_control_monitored_receiver_count = 4U;
+    // [状態] - グローバルの監視する受信者の割合を 10、台数を 4 にする。
+    // Pre-Assert
+    // Act
+    int actual_ret_global = resolve();
+    uint32_t global_percent = cfg.monitored_receiver_percent;
+    uint32_t global_count = cfg.monitored_receiver_count;
+    // [手順] - サービスを 0 のままで resolve を呼び出す。
+    svc.flow_control_monitored_receiver_percent = 20U;
+    svc.flow_control_monitored_receiver_count = 8U;
+    int actual_ret_service = resolve();
+    uint32_t service_percent = cfg.monitored_receiver_percent;
+    uint32_t service_count = cfg.monitored_receiver_count;
+    // [手順] - サービスの割合を 20、台数を 8 にして resolve を呼び出す。
+    svc.flow_control_monitored_receiver_percent = POTR_FLOW_CONTROL_DISABLED;
+    svc.flow_control_monitored_receiver_count = POTR_FLOW_CONTROL_DISABLED;
+    int actual_ret_disabled = resolve();
+    // [手順] - サービスの割合と台数を DISABLED にして resolve を呼び出す。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret_global);           // [確認_正常系] - グローバルだけの場合に POTR_OK であること。
+    EXPECT_EQ(10U, global_percent);                  // [確認_正常系] - 割合がグローバルの値であること。
+    EXPECT_EQ(4U, global_count);                     // [確認_正常系] - 台数がグローバルの値であること。
+    EXPECT_EQ(POTR_OK, actual_ret_service);          // [確認_正常系] - サービスの値がある場合に POTR_OK であること。
+    EXPECT_EQ(20U, service_percent);                 // [確認_正常系] - 割合がサービスの値であること。
+    EXPECT_EQ(8U, service_count);                    // [確認_正常系] - 台数がサービスの値であること。
+    EXPECT_EQ(POTR_OK, actual_ret_disabled);         // [確認_正常系] - DISABLED の場合に POTR_OK であること。
+    EXPECT_EQ(0U, cfg.monitored_receiver_percent);   // [確認_正常系] - DISABLED の割合が 0 であること。
+    EXPECT_EQ(0U, cfg.monitored_receiver_count);     // [確認_正常系] - DISABLED の台数が 0 であること。
+}
+
+// グローバルの監視する受信者の割合と台数が DISABLED の場合に、引数エラーになることの確認
+// [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
+TEST_F(potrFlowControlResolveTest, global_disabled_is_invalid_for_monitored_receiver)
+{
+    // Arrange
+    // Pre-Assert
+    // Act
+    glb.flow_control_monitored_receiver_percent = POTR_FLOW_CONTROL_DISABLED;
+    int actual_ret_percent = resolve(); // [手順] - グローバルの割合を DISABLED にして resolve を呼び出す。
+    glb.flow_control_monitored_receiver_percent = 0U;
+    glb.flow_control_monitored_receiver_count = POTR_FLOW_CONTROL_DISABLED;
+    int actual_ret_count = resolve(); // [手順] - グローバルの台数を DISABLED にして resolve を呼び出す。
+    // Assert
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_percent); // [確認_異常系] - 割合の DISABLED で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_count);   // [確認_異常系] - 台数の DISABLED で POTR_ERR_INVALID_ARGUMENT であること。
+}
+
+// 監視する受信者の割合が 100、台数が 64 を超える場合に、引数エラーになることの確認
+// [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
+TEST_F(potrFlowControlResolveTest, monitored_receiver_upper_bound)
+{
+    // Arrange
+    // Pre-Assert
+    // Act
+    svc.flow_control_monitored_receiver_percent = 101U;
+    int actual_ret_percent_over = resolve(); // [手順] - 割合 101 で resolve を呼び出す。
+    svc.flow_control_monitored_receiver_percent = 100U;
+    int actual_ret_percent_max = resolve(); // [手順] - 割合 100 で resolve を呼び出す。
+    svc.flow_control_monitored_receiver_count = POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX + 1U;
+    int actual_ret_count_over = resolve(); // [手順] - 台数 65 で resolve を呼び出す。
+    svc.flow_control_monitored_receiver_count = POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX;
+    int actual_ret_count_max = resolve(); // [手順] - 台数 64 で resolve を呼び出す。
+    // Assert
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_percent_over); // [確認_異常系] - 割合 101 で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_OK, actual_ret_percent_max);                    // [確認_正常系] - 割合 100 で POTR_OK であること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_count_over);   // [確認_異常系] - 台数 65 で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_OK, actual_ret_count_max);                      // [確認_正常系] - 台数 64 で POTR_OK であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, cfg.monitored_receiver_count); // [確認_正常系] - 台数が 64 であること。
+}
+
+// 受信バッファーの幅の割合が、グローバルとサービスの両方で DISABLED を受け付け、サービスの値が優先されることの確認
+// [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
+TEST_F(potrFlowControlResolveTest, receive_buffer_percent_overlay_and_disabled)
+{
+    // Arrange
+    // [状態] - unicast の受信者として resolve を呼び出す。
+    // Pre-Assert
+    // Act
+    glb.flow_control_receive_buffer_percent = 50U;
+    int actual_ret_global = resolve(POTR_ROLE_RECEIVER);
+    uint32_t global_percent = cfg.receive_buffer_percent;
+    // [手順] - グローバルを 50、サービスを 0 にして resolve を呼び出す。
+    svc.flow_control_receive_buffer_percent = 30U;
+    int actual_ret_service = resolve(POTR_ROLE_RECEIVER);
+    uint32_t service_percent = cfg.receive_buffer_percent;
+    // [手順] - サービスを 30 にして resolve を呼び出す。
+    svc.flow_control_receive_buffer_percent = POTR_FLOW_CONTROL_DISABLED;
+    int actual_ret_service_disabled = resolve(POTR_ROLE_RECEIVER);
+    uint32_t service_disabled_percent = cfg.receive_buffer_percent;
+    // [手順] - サービスを DISABLED にして resolve を呼び出す。
+    svc.flow_control_receive_buffer_percent = 0U;
+    glb.flow_control_receive_buffer_percent = POTR_FLOW_CONTROL_DISABLED;
+    int actual_ret_global_disabled = resolve(POTR_ROLE_RECEIVER);
+    uint32_t global_disabled_percent = cfg.receive_buffer_percent;
+    // [手順] - サービスを 0、グローバルを DISABLED にして resolve を呼び出す。
+    svc.flow_control_receive_buffer_percent = 40U;
+    int actual_ret_service_over_disabled = resolve(POTR_ROLE_RECEIVER);
+    // [手順] - グローバルを DISABLED のまま、サービスを 40 にして resolve を呼び出す。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret_global);               // [確認_正常系] - グローバルだけの場合に POTR_OK であること。
+    EXPECT_EQ(50U, global_percent);                      // [確認_正常系] - 割合がグローバルの値であること。
+    EXPECT_EQ(POTR_OK, actual_ret_service);              // [確認_正常系] - サービスの値がある場合に POTR_OK であること。
+    EXPECT_EQ(30U, service_percent);                     // [確認_正常系] - 割合がサービスの値であること。
+    EXPECT_EQ(POTR_OK, actual_ret_service_disabled);     // [確認_正常系] - サービスの DISABLED で POTR_OK であること。
+    EXPECT_EQ(0U, service_disabled_percent);             // [確認_正常系] - サービスの DISABLED で 0 (使わない) であること。
+    EXPECT_EQ(POTR_OK, actual_ret_global_disabled);      // [確認_正常系] - グローバルの DISABLED で POTR_OK であること。
+    EXPECT_EQ(0U, global_disabled_percent);              // [確認_正常系] - グローバルの DISABLED で 0 (使わない) であること。
+    EXPECT_EQ(POTR_OK, actual_ret_service_over_disabled); // [確認_正常系] - グローバルの DISABLED をサービスで上書きして POTR_OK であること。
+    EXPECT_EQ(40U, cfg.receive_buffer_percent);          // [確認_正常系] - 割合がサービスの値であること。
+}
+
+// 受信バッファーの幅の割合が 1 から 100 の範囲にない場合に、通信種別によらず引数エラーになることの確認
+// [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
+TEST_F(potrFlowControlResolveTest, receive_buffer_percent_upper_bound)
+{
+    // Arrange
+    // Pre-Assert
+    // Act
+    svc.flow_control_receive_buffer_percent = 101U;
+    int actual_ret_over = resolve(POTR_ROLE_RECEIVER); // [手順] - unicast の受信者で、サービスの割合 101 で resolve を呼び出す。
+    svc.flow_control_receive_buffer_percent = 0U;
+    glb.flow_control_receive_buffer_percent = 101U;
+    int actual_ret_global_over = resolve(POTR_ROLE_RECEIVER); // [手順] - グローバルの割合 101 で resolve を呼び出す。
+    glb.flow_control_receive_buffer_percent = 0U;
+    svc.type = POTR_TYPE_TCP;
+    svc.flow_control_receive_buffer_percent = 101U;
+    int actual_ret_tcp_over = resolve(POTR_ROLE_RECEIVER); // [手順] - 対象外の tcp で、割合 101 で resolve を呼び出す。
+    svc.type = POTR_TYPE_UNICAST;
+    svc.flow_control_receive_buffer_percent = 100U;
+    int actual_ret_max = resolve(POTR_ROLE_RECEIVER); // [手順] - unicast の受信者で、割合 100 で resolve を呼び出す。
+    svc.flow_control_receive_buffer_percent = 1U;
+    int actual_ret_min = resolve(POTR_ROLE_RECEIVER); // [手順] - unicast の受信者で、割合 1 で resolve を呼び出す。
+    // Assert
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_over);        // [確認_異常系] - サービスの割合 101 で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_global_over); // [確認_異常系] - グローバルの割合 101 で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_tcp_over);    // [確認_異常系] - 対象外の通信種別でも割合 101 で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_OK, actual_ret_max);                           // [確認_正常系] - 割合 100 で POTR_OK であること。
+    EXPECT_EQ(POTR_OK, actual_ret_min);                           // [確認_正常系] - 割合 1 で POTR_OK であること。
+    EXPECT_EQ(1U, cfg.receive_buffer_percent);                    // [確認_正常系] - 割合が 1 であること。
+}
+
+namespace
+{
+// 受信バッファーの幅の割合を使うかどうかを確認する、通信種別、役割、実効 health_interval_ms と期待値の組
+struct receive_buffer_case
+{
+    potr_type type;
+    potr_role role;
+    uint32_t health_interval_ms;
+    uint32_t expected_percent;
+};
+} // namespace
+
+// OS の受信バッファーに基づく送出上限を、対象の通信種別と役割だけで使うことの確認
+// [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
+TEST_F(potrFlowControlResolveTest, receive_buffer_percent_applies_to_target_types)
+{
+    // Arrange
+    const receive_buffer_case cases[] = {
+        {POTR_TYPE_UNICAST, POTR_ROLE_RECEIVER, 0U, 100U},
+        {POTR_TYPE_UNICAST, POTR_ROLE_SENDER, 0U, 0U},
+        {POTR_TYPE_MULTICAST, POTR_ROLE_RECEIVER, 1000U, 100U},
+        {POTR_TYPE_MULTICAST, POTR_ROLE_RECEIVER, 0U, 0U},
+        {POTR_TYPE_MULTICAST, POTR_ROLE_SENDER, 1000U, 0U},
+        {POTR_TYPE_BROADCAST, POTR_ROLE_RECEIVER, 1000U, 100U},
+        {POTR_TYPE_BROADCAST, POTR_ROLE_RECEIVER, 0U, 0U},
+        {POTR_TYPE_UNICAST_BIDIR, POTR_ROLE_SENDER, 0U, 100U},
+        {POTR_TYPE_UNICAST_BIDIR, POTR_ROLE_RECEIVER, 0U, 100U},
+        {POTR_TYPE_UNICAST_BIDIR_N1, POTR_ROLE_SENDER, 0U, 100U},
+        {POTR_TYPE_UNICAST_BIDIR_N1, POTR_ROLE_RECEIVER, 0U, 100U},
+        {POTR_TYPE_TCP, POTR_ROLE_RECEIVER, 0U, 0U},
+        {POTR_TYPE_TCP_BIDIR, POTR_ROLE_SENDER, 0U, 0U},
+        {POTR_TYPE_UNICAST_RAW, POTR_ROLE_RECEIVER, 0U, 0U},
+    };
+    const size_t case_count = sizeof(cases) / sizeof(cases[0]);
+    int actual_rets[sizeof(cases) / sizeof(cases[0])] = {};
+    uint32_t actual_percents[sizeof(cases) / sizeof(cases[0])] = {};
+    // [状態] - 14 通りの通信種別、役割、実効 health_interval_ms の組を用意する (ループ 14 回)。
+    // Pre-Assert
+    // Act
+    for (size_t i = 0; i < case_count; i++)
+    {
+        svc.type = cases[i].type;
+        actual_rets[i] = resolve(cases[i].role, cases[i].health_interval_ms);
+        actual_percents[i] = cfg.receive_buffer_percent;
+    }
+    // [手順] - 組ごとに resolve を呼び出し、戻り値と受信バッファーの幅の割合を記録する。
+    // Assert
+    for (size_t i = 0; i < case_count; i++)
+    {
+        EXPECT_EQ(POTR_OK, actual_rets[i]); // [確認_正常系] - 戻り値が POTR_OK であること。(確認 14 回)
+        EXPECT_EQ(cases[i].expected_percent, actual_percents[i]);
+        // [確認_正常系] - unicast、multicast、broadcast の受信者 (multicast と broadcast は health_interval_ms が 0 以外)、unicast_bidir と unicast_bidir_n1 の両方の役割で 100、それ以外で 0 であること。(確認 14 回)
+    }
+}
