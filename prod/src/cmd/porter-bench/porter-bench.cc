@@ -584,6 +584,9 @@ static void fill_payload_pattern(std::vector<uint8_t> &buf)
 
 /* ===== porter の設定値の生成 ===== */
 
+/* OS の受信バッファーに基づく送出上限を使うかどうか。--receive-buffer-limit off で false にする。 */
+static bool g_receive_buffer_limit_enabled = true;
+
 static potr_global_config make_default_global()
 {
     potr_global_config g{};
@@ -607,7 +610,9 @@ static potr_global_config make_default_global()
     g.flow_control_receiver_count = POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT;
     g.flow_control_monitored_receiver_percent = POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_PERCENT;
     g.flow_control_monitored_receiver_count = POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT;
-    g.flow_control_receive_buffer_percent = POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT;
+    g.flow_control_receive_buffer_percent = g_receive_buffer_limit_enabled
+                                                ? POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT
+                                                : POTR_FLOW_CONTROL_DISABLED;
     return g;
 }
 
@@ -727,6 +732,7 @@ static void print_usage(const char *prog)
         "  --reply-mode <cb|ext>       P2 reply mode (default: ext)\n"
         "  --proto <udp|tcp>           P4 protocol (default: udp)\n"
         "  --tcp-type <bidir|oneway>   TCP type for P5 / P4 tcp (default: oneway)\n"
+        "  --receive-buffer-limit <on|off>  Send limit by OS receive buffer on UDP receivers (default: on)\n"
         "  --cb-sleep-ms <ms>          P3 callback sleep duration in ms (default: 1)\n"
         "  --out <path>                Write CSV to file instead of stdout\n"
         "  --no-header                 Omit CSV header row\n"
@@ -2439,6 +2445,19 @@ int main(int argc, char **argv)
                 std::fprintf(stderr, "Invalid --tcp-type: %s\n", opt.tcp_type.c_str());
                 return EXIT_FAILURE;
             }
+        }
+        else if (arg == "--receive-buffer-limit")
+        {
+            const char *v = need_val("--receive-buffer-limit");
+            if (v == nullptr)
+                return EXIT_FAILURE;
+            const std::string value = to_lower_str(v);
+            if (value != "on" && value != "off")
+            {
+                std::fprintf(stderr, "Invalid --receive-buffer-limit: %s\n", value.c_str());
+                return EXIT_FAILURE;
+            }
+            g_receive_buffer_limit_enabled = (value == "on");
         }
         else if (arg == "--cb-sleep-ms")
         {

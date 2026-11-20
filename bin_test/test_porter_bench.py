@@ -217,7 +217,7 @@ class RunnerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             runner.build_matrix("unknown")
 
-    @unittest.skipUnless(os.name == "posix", "LD_LIBRARY_PATH は POSIX 限定")
+    @unittest.skipUnless(os.name == "posix", "[Linux] LD_LIBRARY_PATH は Linux 限定")
     def test_build_environment_prepends_executable_directory(self) -> None:
         with tempfile.TemporaryDirectory() as root_text:
             root = Path(root_text).resolve()
@@ -240,7 +240,7 @@ class RunnerTest(unittest.TestCase):
             command,
         )
 
-    @unittest.skipUnless(os.name == "posix", "代用の実行ファイルはシェル スクリプトのため POSIX 限定")
+    @unittest.skipUnless(os.name == "posix", "[Linux] 代用の実行ファイルはシェル スクリプトのため Linux 限定")
     def test_alternates_versions_per_condition_and_counts_failures(self) -> None:
         with tempfile.TemporaryDirectory() as root_text:
             root = Path(root_text)

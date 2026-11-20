@@ -3,7 +3,7 @@
  *  @file           potrFlowControlBufferTest.cc
  *  @brief          OS の受信バッファーに基づく送出上限と、multicast と broadcast の監視対象の扱いを検証します。
  *
- *  OS の受信バッファーの大きさは getsockopt() の mock で与えます。
+ *  OS の受信バッファーの大きさは cplat_socket_get_receive_buffer_size() の mock で与えます。
  *  フロー制御パケットの組み立ては Mock_porter で置き換え、状態と送出上限の値を記録します。
  *  封緘は実物 (packet_seal.c) を使い、送出は cplat_socket_sendto() の呼び出しで確認します。
  *******************************************************************************
@@ -15,11 +15,6 @@
 #include <testfw.h>
 #include <mock_cplat.h>
 #include <mock_porter.h>
-#if defined(PLATFORM_LINUX)
-    #include <sys/mock_socket.h>
-#elif defined(PLATFORM_WINDOWS)
-    #include <mock_winsock.h>
-#endif /* PLATFORM_ */
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/potr_context.h>
@@ -59,18 +54,13 @@ class potrFlowControlBufferTest : public Test
   protected:
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
-#if defined(PLATFORM_LINUX)
-    NiceMock<Mock_sys_socket> mock_sys_socket;
-#elif defined(PLATFORM_WINDOWS)
-    NiceMock<Mock_winsock> mock_winsock;
-#endif /* PLATFORM_ */
     potr_context ctx;
     uint64_t now_ms = 1000U;
     std::vector<uint8_t> states;  // フロー制御パケットの組み立てで渡された状態の履歴
     std::vector<uint32_t> limits; // フロー制御パケットの組み立てで渡された送出上限の履歴
     int sendto_count = 0;         // cplat_socket_sendto() の呼び出し回数
-    int getsockopt_count = 0;     // getsockopt() の呼び出し回数
-    int getsockopt_fails = 0;     // getsockopt() を失敗させるか (1: 失敗させる)
+    int receive_buffer_query_count = 0; // cplat_socket_get_receive_buffer_size() の呼び出し回数
+    int receive_buffer_query_fails = 0; // cplat_socket_get_receive_buffer_size() を失敗させるか (1: 失敗させる)
     int buffer_sizes[2] = {kLinuxDefaultBuffer, kLinuxDefaultBuffer}; // ソケット 5 と 6 の OS の受信バッファーの大きさ
     int fixture_padding = 0; // クラスのサイズを 8 バイト境界にそろえるためのパディング
     std::vector<cplat_ipv4_endpoint> destinations; // 送出先の履歴
@@ -78,16 +68,16 @@ class potrFlowControlBufferTest : public Test
     potr_internal_peer_context *peer11 = nullptr;
     cplat_timespec sender_ts = {};
 
-    // getsockopt() の mock の応答。ソケット 6 は buffer_sizes[1]、それ以外は buffer_sizes[0] を返す。
-    int fill_buffer_size(intptr_t socket_value, void *value)
+    // cplat_socket_get_receive_buffer_size() の mock の応答。ソケット 6 は buffer_sizes[1]、それ以外は buffer_sizes[0] を返す。
+    int fill_buffer_size(intptr_t socket_value, size_t *size_out)
     {
-        getsockopt_count++;
-        if (getsockopt_fails != 0)
+        receive_buffer_query_count++;
+        if (receive_buffer_query_fails != 0)
         {
-            return -1;
+            return CPLAT_ERR_UNKNOWN;
         }
-        *static_cast<int *>(value) = socket_value == 6 ? buffer_sizes[1] : buffer_sizes[0];
-        return 0;
+        *size_out = (size_t)(socket_value == 6 ? buffer_sizes[1] : buffer_sizes[0]);
+        return CPLAT_OK;
     }
 
     // [サブ手順 名前=potrFlowControlBufferTest.SetUp]
@@ -173,16 +163,10 @@ class potrFlowControlBufferTest : public Test
                 }
                 return nullptr;
             }); // [状態] - ピア識別子 10 と 11 だけ存在するピアを返す。
-#if defined(PLATFORM_LINUX)
-        ON_CALL(mock_sys_socket, getsockopt(_, _, _, _, SOL_SOCKET, SO_RCVBUF, _, _))
-            .WillByDefault([this](const char *, const int, const char *, int sockfd, int, int, void *value,
-                                  socklen_t *) { return fill_buffer_size((intptr_t)sockfd, value); });
-#elif defined(PLATFORM_WINDOWS)
-        ON_CALL(mock_winsock, getsockopt(_, _, _, _, SOL_SOCKET, SO_RCVBUF, _, _))
-            .WillByDefault([this](const char *, const int, const char *, SOCKET socket_value, int, int, char *value,
-                                  int *) { return fill_buffer_size((intptr_t)socket_value, value); });
-#endif /* PLATFORM_ */
-        // [状態] - getsockopt() の SO_RCVBUF で、ソケットごとの buffer_sizes を返す (getsockopt_fails が 1 なら失敗)。
+        ON_CALL(mock_cplat, cplat_socket_get_receive_buffer_size(_, _, _))
+            .WillByDefault([this](cplat_socket sock, size_t *size_out, cplat_error *)
+                           { return fill_buffer_size((intptr_t)sock, size_out); });
+        // [状態] - cplat_socket_get_receive_buffer_size() で、ソケットごとの buffer_sizes を返す (receive_buffer_query_fails が 1 なら失敗)。
     }
     // [サブ手順終了]
 
@@ -375,7 +359,7 @@ TEST_F(potrFlowControlBufferTest, disabled_receive_buffer_does_not_query_or_noti
     received(POTR_PEER_NA, 10U, 0); // [手順] - 次に受信する通番 10 で on_received を呼び出す。
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - start が POTR_OK であること。
-    EXPECT_EQ(0, getsockopt_count);       // [確認_正常系] - OS の受信バッファーの大きさを取得しないこと。
+    EXPECT_EQ(0, receive_buffer_query_count);       // [確認_正常系] - OS の受信バッファーの大きさを取得しないこと。
     EXPECT_EQ(nullptr, ctx.flow_control); // [確認_正常系] - 資源を生成しないこと。
     EXPECT_TRUE(states.empty());          // [確認_正常系] - フロー制御パケットを送出しないこと。
 }
@@ -386,8 +370,8 @@ TEST_F(potrFlowControlBufferTest, disabled_receive_buffer_does_not_query_or_noti
 TEST_F(potrFlowControlBufferTest, query_failure_does_not_use_receive_buffer)
 {
     // Arrange
-    getsockopt_fails = 1;
-    // [状態] - getsockopt() を失敗させる。
+    receive_buffer_query_fails = 1;
+    // [状態] - cplat_socket_get_receive_buffer_size() を失敗させる。
     // Pre-Assert
     // Act
     int actual_ret_zero = potr_internal_flow_control_start(&ctx); // [手順] - 容量 0 で start を呼び出す。
@@ -419,7 +403,7 @@ TEST_F(potrFlowControlBufferTest, smallest_buffer_among_paths_is_used)
     // Act
     received(POTR_PEER_NA, 10U, 0); // [手順] - 次に受信する通番 10 で on_received を呼び出す。
     // Assert
-    EXPECT_EQ(2, getsockopt_count);                  // [確認_正常系] - 経路ごとに大きさを取得すること。
+    EXPECT_EQ(2, receive_buffer_query_count);                  // [確認_正常系] - 経路ごとに大きさを取得すること。
     EXPECT_EQ(std::vector<uint32_t>{23U}, limits);   // [確認_正常系] - 送出上限が 10 + 13 (65536 の幅) であること。
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]

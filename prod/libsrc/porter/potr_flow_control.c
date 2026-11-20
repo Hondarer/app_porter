@@ -7,12 +7,6 @@
 #include <string.h>
 #include <stdint.h>
 #include <inttypes.h>
-#include <cplat/base/platform.h>
-#if defined(PLATFORM_WINDOWS)
-    #include <cplat/base/windows_sdk.h>
-#else /* PLATFORM_WINDOWS */
-    #include <sys/socket.h>
-#endif /* PLATFORM_WINDOWS */
 #include <cplat/crt/stdlib.h>
 #include <cplat/crypto/random.h>
 #include <cplat/clock/clock.h>
@@ -336,32 +330,18 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
 }
 
 /*
- * ソケットから OS の受信バッファーの大きさ (SO_RCVBUF) を取得する。取得できない場合と、0 以下の値の場合は POTR_ERR_IO を返す。
- * Linux は、取得した値に管理情報の分を含め、受信したパケットを確保済みの領域の大きさで数える。
- * see: https://man7.org/linux/man-pages/man7/socket.7.html
- * Windows も同じ SOL_SOCKET の SO_RCVBUF で、受信に使う領域の大きさを取得できる。
- * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-getsockopt
- * see: https://learn.microsoft.com/en-us/windows/win32/winsock/sol-socket-socket-options
+ * ソケットから OS の受信バッファーの大きさを取得する。取得できない場合と、値が 0 の場合は POTR_ERR_IO を返す。
+ * Linux の取得値は、管理情報の分を含み、受信したパケットを確保済みの領域の大きさで数える。
+ * 取得値は cplat_socket_get_receive_buffer_size() が補正せずに返す。
  */
 static int get_receive_buffer_size(cplat_socket receive_socket, uint64_t *size)
 {
-    int value = 0;
+    size_t value = 0U;
 
-#if defined(PLATFORM_WINDOWS)
-    int length = (int)sizeof(value);
-
-    if (getsockopt((SOCKET)receive_socket, SOL_SOCKET, SO_RCVBUF, (char *)&value, &length) != 0 || value <= 0)
+    if (cplat_socket_get_receive_buffer_size(receive_socket, &value, NULL) != CPLAT_OK || value == 0U)
     {
         return POTR_ERR_IO;
     }
-#else  /* PLATFORM_WINDOWS */
-    socklen_t length = (socklen_t)sizeof(value);
-
-    if (getsockopt((int)receive_socket, SOL_SOCKET, SO_RCVBUF, &value, &length) != 0 || value <= 0)
-    {
-        return POTR_ERR_IO;
-    }
-#endif /* PLATFORM_WINDOWS */
 
     *size = (uint64_t)value;
 

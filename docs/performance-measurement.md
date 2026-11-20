@@ -64,6 +64,7 @@ porter-bench --cond <p1|p2|p3|p4|p5> [options]
 | `--reply-mode <cb\|ext>` | p2 の返信方式。`cb` は受信コールバックの中で返信し、`ext` は別スレッドが返信します。 | `ext` |
 | `--proto <udp\|tcp>` | p4 の通信プロトコル。 | `udp` |
 | `--tcp-type <bidir\|oneway>` | p5 と、p4 (`--proto tcp`) の TCP の種別。 | `oneway` |
+| `--receive-buffer-limit <on\|off>` | UDP の受信側で、OS の受信バッファーに基づく送出上限を使うかどうか。`off` は `flow_control_receive_buffer_percent` を無効にします。 | `on` |
 | `--cb-sleep-ms <ms>` | p3 の受信コールバックで待つ時間 [ms]。 | `1` |
 | `--out <path>` | CSV の出力先。 | 標準出力 |
 | `--no-header` | CSV のヘッダー行を出力しません。 | 出力する |
