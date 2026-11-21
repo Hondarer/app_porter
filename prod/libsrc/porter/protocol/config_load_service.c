@@ -78,15 +78,13 @@ static void trace_unparsed_service_value(const char *key, const char *val, int64
 }
 
 /**
- *  @brief          service セクションのキーと値 1 組をサービス定義へ反映します。
- *  @param[in]      key     設定キー。
+ *  @brief          サービス側で無効化できるフロー制御の設定値を解釈します。
+ *  @param[out]     value   設定値の格納先へのポインター。失敗時は値を変更しません。
  *  @param[in]      val     設定値の文字列。
- *  @param[in,out]  current 反映先のサービス定義構造体へのポインター。
- */
-/*
- * サービス側で「無効」へ上書きできるフロー制御の設定値を解釈する。
- * -1 は「無効」を表す専用の値 (POTR_FLOW_CONTROL_DISABLED) とし、それ以外は非負整数として解釈する。
- * 0 と省略は「グローバル値を使用」である。不正な文字列の場合は、直前の値を維持し、cplat_parse_uint32 の戻り値を返す。
+ *  @return         成功時は `CPLAT_OK`、失敗時は `cplat_parse_uint32()` の戻り値を返します。
+ *
+ *  @details        "-1" は「無効」を表す専用の値 (`POTR_FLOW_CONTROL_DISABLED`) とし、それ以外は非負整数として解釈します。
+ *                  0 と省略は「グローバル値を使用」を表します。不正な文字列の場合は直前の値を維持します。
  */
 static int parse_flow_control_value(uint32_t *value, const char *val)
 {
@@ -99,6 +97,12 @@ static int parse_flow_control_value(uint32_t *value, const char *val)
     return cplat_parse_uint32(value, val, 10);
 }
 
+/**
+ *  @brief          service セクションのキーと値 1 組をサービス定義へ反映します。
+ *  @param[in]      key     設定キー。
+ *  @param[in]      val     設定値の文字列。
+ *  @param[in,out]  current 反映先のサービス定義構造体へのポインター。
+ */
 static void apply_service_kv(const char *key, const char *val, potr_service_def *current)
 {
     if (strcmp(key, "type") == 0)
