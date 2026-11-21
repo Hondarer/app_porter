@@ -46,26 +46,32 @@ porter は共有ライブラリ (Linux は `libporter.so`、Windows は `porter.
 ## 引数
 
 ```text
-porter-bench --cond <p1|p2|p3|p4|p5> [options]
+porter-bench --cond <p1|p2|p3|p4|p5|p6> [options]
 ```
 
 | 引数 | 説明 | 既定値 |
 |---|---|---|
-| `--cond <p1\|p2\|p3\|p4\|p5>` | 測定条件 (必須)。 | - |
+| `--cond <p1\|p2\|p3\|p4\|p5\|p6>` | 測定条件 (必須)。 | - |
 | `--label <name>` | CSV の `version` 列に記録する名前。英数字、`.`、`_`、`-` を使えます。 | `current` |
-| `--bytes <N>` | ペイロード長 [byte] (16 以上)。 | p1、p2、p4、p5 は `64`、p3 は `5000` |
+| `--bytes <N>` | ペイロード長 [byte] (16 以上)。 | p1、p2、p4、p5 は `64`、p3 は `5000`、p6 は `1000` |
 | `--flags <normal\|compress\|blocking\|compress_blocking>` | p1 と p5 の送信フラグ。 | `normal` |
 | `--threads <N>` | p1 と p5 の送信スレッド数。 | `1` |
-| `--count <N>` | 1 回の実行で測る件数 (p4 はサイクル数)。 | p1、p3、p5 は `10000`、p2 は `5000`、p4 は `1000` |
+| `--count <N>` | 1 回の実行で測る件数 (p4 はサイクル数)。 | p1、p3、p5、p6 は `10000`、p2 は `5000`、p4 は `1000` |
 | `--runs <R>` | 同じプロセスの中で繰り返す回数。 | `5` |
-| `--warmup <W>` | 各回の先頭で測定から除く件数。 | p1、p2、p3、p5 は `1000`、p4 は `10` |
+| `--warmup <W>` | 各回の先頭で測定から除く件数。 | p1、p2、p3、p5、p6 は `1000`、p4 は `10` |
 | `--inflight <K>` | p1、p2、p5 の、スレッドあたりの最大の未完了件数。 | `16` |
 | `--port <P>` | ループバック `127.0.0.1` の基準ポート番号。 | `19000` |
 | `--reply-mode <cb\|ext>` | p2 の返信方式。`cb` は受信コールバックの中で返信し、`ext` は別スレッドが返信します。 | `ext` |
 | `--proto <udp\|tcp>` | p4 の通信プロトコル。 | `udp` |
 | `--tcp-type <bidir\|oneway>` | p5 と、p4 (`--proto tcp`) の TCP の種別。 | `oneway` |
 | `--receive-buffer-limit <on\|off>` | UDP の受信側で、OS の受信バッファーに基づく送出上限を使うかどうか。`off` は `flow_control_receive_buffer_percent` を無効にします。 | `on` |
-| `--cb-sleep-ms <ms>` | p3 の受信コールバックで待つ時間 [ms]。 | `1` |
+| `--cb-sleep-ms <ms>` | p3 の受信コールバックおよび p6 の遅い受信者の受信コールバックで待つ時間 [ms]。 | `1` |
+| `--receivers <N>` | p6 のマルチキャスト受信者数 (1〜128)。 | `3` |
+| `--slow-receivers <M>` | p6 で受信コールバックを `--cb-sleep-ms` だけ遅らせる受信者数 (先頭の M 個)。 | `0` |
+| `--mcast-group <ip>` | p6 のマルチキャスト グループ アドレス。 | `239.0.0.1` |
+| `--mcast-if <ip>` | p6 のマルチキャスト送受信インターフェイス。 | `127.0.0.1` |
+| `--run-timeout-s <S>` | p6 の 1 回あたりの打ち切り時間 [s]。 | `60` |
+| `--config <key>=<value>` | `potr_global_config` の設定項目を名前で上書きします (複数回指定可)。p1 から p6 のすべての条件に適用します。`flow_control_receive_buffer_percent` には無効を表す `-1` も指定できます。 | なし |
 | `--out <path>` | CSV の出力先。 | 標準出力 |
 | `--no-header` | CSV のヘッダー行を出力しません。 | 出力する |
 | `--trace-level <none\|error\|warning\|info\|debug>` | porter のトレースを標準エラー出力へ出すレベル。 | `warning` |
@@ -84,11 +90,12 @@ Table: porter-bench の引数
 | p3 | `POTR_TYPE_UNICAST` で、受信コールバックが 1 件ごとに `--cb-sleep-ms` 待ちます。送信は間隔を空けません。件数に達するか、最後の受信から 5 [s] 無通知になると完了とし、さらに 1 [s] 後の保持メモリの増加量を測ります。 |
 | p4 | open、`POTR_EVENT_CONNECTED` の待ち、1 件の送受信、close を繰り返します。ポートはサイクルごとに `基準ポート + (サイクル番号 % 200)` へ分散します。100 サイクルごとと最後に、メモリ、ハンドル数、スレッド数を記録し、全サイクルの最小二乗法の傾きを求めます。 |
 | p5 | p1 と同等の負荷を TCP (`POTR_TYPE_TCP_BIDIR` または `POTR_TYPE_TCP`) で実行します。送信、受信、close の各段階のエラーを標準エラー出力へ出します。 |
+| p6 | 同一プロセス内で `POTR_TYPE_MULTICAST` の送信者 1 つと受信者 `--receivers` 個をループバックで動かします。先頭の `--slow-receivers` 個の受信者は受信コールバックで `--cb-sleep-ms` 待ちます。全受信者の受信報告が送信者に届いた後に、待ち合わせなしの連続送信を行い、健全な受信者の全員が最後のメッセージを受信するまでの処理件数と切断回数を測ります。 |
 
 Table: 測定条件
 
 測定に使う設定は、porter-bench が内部で組み立てます。構成ファイルは使いません。  
-フロー制御は無効 (`flow_control_capacity` が 0) です。フロー制御の影響は、この測定には含まれません。
+フロー制御は既定で無効 (`flow_control_capacity` が 0) です。グローバル設定を変更して測定する場合は、`--config <key>=<value>` を指定します。
 
 ## 出力
 
@@ -98,7 +105,7 @@ CSV の列は `os,version,cond,params,run,metric,value` です。
 |---|---|
 | `os` | `windows` または `linux`。 |
 | `version` | `--label` の値。 |
-| `cond` | `P1` から `P5`。 |
+| `cond` | `P1` から `P6`。 |
 | `params` | `;` 区切りの条件パラメーター。 |
 | `run` | `1` から `--runs` までの各回の番号に続けて、条件全体の `min`、`median`、`max`。 |
 | `metric`、`value` | 指標の名前と値。 |
@@ -113,17 +120,18 @@ Table: CSV の列
 | p2 | `rtt_p50_us`、`rtt_p95_us`、`rtt_p99_us`、`throughput_msg_s`、`dropped_count`、`send_full_count` |
 | p3 | `notify_p50_us`、`notify_p95_us`、`notify_p99_us`、`notify_max_us`、`peak_rss_inc_bytes`、`peak_priv_inc_bytes`、`after1s_rss_inc_bytes`、`after1s_priv_inc_bytes`、`dropped_count`、`send_full_count` |
 | p4 | `close_p50_us`、`close_p95_us`、`close_p99_us`、`rss_slope_bytes_per_cycle`、`priv_slope_bytes_per_cycle`、`handles_slope_per_cycle`、`threads_slope_per_cycle`、およびチェックポイント (`c0`、`c100`、...) ごとの `rss_inc_bytes_c<N>`、`priv_inc_bytes_c<N>`、`handles_c<N>`、`threads_c<N>` |
+| p6 | `throughput_msg_s`、`healthy_received_min`、`healthy_disconnect_count`、`slow_received_min`、`slow_disconnect_count`、`send_full_count` |
 
 Table: 条件ごとの指標
 
 ### 送信キューが満杯の場合の扱い
 
 待ち合わせを指定しない送信 (`flags` に `POTR_SEND_BLOCKING` を含めない送信) は、送信キューに空きがないと、待たずに `POTR_ERR_FULL` を返します。  
-porter-bench は、`POTR_ERR_FULL` を受けると、少し待って同じメッセージを送り直します。待ちは、最初の 32 回は `yield`、以降は 1 [ms] の `sleep` です。送り直しの上限を超えた場合は、測定を失敗とします。
+porter-bench は、`POTR_ERR_FULL` を受けると、少し待って同じメッセージを送り直します。待ちは、最初の 32 回は `yield`、以降は 1 [ms] の `sleep` です。送り直しの上限を超えた場合は、測定を失敗とします (p6 は `--run-timeout-s` で打ち切り、その回の `throughput_msg_s` を 0 とします)。
 
 - 送信時刻は送り直しのたびに取り直します。`api_*` は、受け付けられた呼び出しの所要時間であり、送り直しで待った時間を含みません。`notify_*` は、受け付けられた呼び出しの時刻から測ります。
 - `throughput_msg_s` は、送り直しで待った時間を含む経過時間で求めます。
-- 送り直した回数は `send_full_count` に出力します。p1、p3、p5 は測定の区間だけを数え、p2 はウォーム アップと返信を含む全区間を数えます。p4 は出力しません。
+- 送り直した回数は `send_full_count` に出力します。p1、p3、p5、p6 は測定の区間だけを数え、p2 はウォーム アップと返信を含む全区間を数えます。p4 は出力しません。
 - `POTR_SEND_BLOCKING` を指定した送信は、空きが生じるまで porter が待つため、`POTR_ERR_FULL` を返しません。
 
 `send_full_count` が 0 でない版どうしを比べる場合は、スループットの差が porter の処理能力の差か、送り直しの待ちの差かを、この値と合わせて判断してください。

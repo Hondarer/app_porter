@@ -23,6 +23,8 @@ KEY_METRICS: dict[str, list[str]] = {
            "priv_slope_bytes_per_cycle", "handles_slope_per_cycle", "threads_slope_per_cycle"],
     "P5": ["throughput_msg_s", "api_p50_us", "api_p95_us", "api_p99_us", "notify_p50_us", "notify_p95_us",
            "notify_p99_us", "cpu_time_ms", "send_full_count"],
+    "P6": ["throughput_msg_s", "healthy_received_min", "healthy_disconnect_count", "slow_received_min",
+           "slow_disconnect_count", "send_full_count"],
 }
 
 # 条件名の表記から取り除く、測定の長さだけを決めるパラメーターの接頭辞。

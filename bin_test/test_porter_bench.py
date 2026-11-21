@@ -61,8 +61,10 @@ class CommonTest(unittest.TestCase):
         self.assertEqual("-", common.format_value(None))
 
     def test_key_metrics_cover_all_conditions(self) -> None:
-        self.assertEqual({"P1", "P2", "P3", "P4", "P5"}, set(common.KEY_METRICS))
+        self.assertEqual({"P1", "P2", "P3", "P4", "P5", "P6"}, set(common.KEY_METRICS))
         self.assertIn("send_full_count", common.KEY_METRICS["P5"])
+        self.assertIn("healthy_received_min", common.KEY_METRICS["P6"])
+        self.assertIn("send_full_count", common.KEY_METRICS["P6"])
 
 
 class AggregateTest(unittest.TestCase):

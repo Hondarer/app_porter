@@ -20,18 +20,19 @@
  *  | p3   | 受信コールバックが 1 件ごとに待機する場合の通知遅延とメモリ増加量を測る。         |
  *  | p4   | open、接続待ち、1 件の送受信、close を反復し、メモリ、ハンドル、スレッドの増加を測る。 |
  *  | p5   | p1 と同等の負荷を TCP で実行する。                                                |
+ *  | p6   | マルチキャスト (`POTR_TYPE_MULTICAST`) の送信者 1 つと受信者 N 個をループバックで動かす。 |
  *
  *  Table: 測定条件
  *
  *  @par            使用方法
     @code{.sh}
-    porter-bench --cond <p1|p2|p3|p4|p5> [options]
+    porter-bench --cond <p1|p2|p3|p4|p5|p6> [options]
     @endcode
  *
  *  @par            主なオプション
- *  | オプション                   | 説明                                                         |
- *  | ---------------------------- | ------------------------------------------------------------ |
- *  | --cond \<p1\|p2\|p3\|p4\|p5\> | 測定条件 (必須)                                              |
+ *  | オプション                       | 説明                                                         |
+ *  | -------------------------------- | ------------------------------------------------------------ |
+ *  | --cond \<p1\|p2\|p3\|p4\|p5\|p6\> | 測定条件 (必須)                                              |
  *  | --label \<name\>             | CSV の version 列に記録する名前 (既定値: current)             |
  *  | --out \<path\>               | CSV の出力先 (省略時は標準出力)                               |
  *  | --help                       | すべてのオプションを表示する                                 |
@@ -89,10 +90,13 @@
 #include <porter.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -642,6 +646,167 @@ static potr_service_def make_service_def(int64_t service_id, potr_type type, uin
     return d;
 }
 
+/* ===== グローバル設定の上書き表 (--config) ===== */
+
+struct GlobalConfigField
+{
+    const char *name;
+    size_t offset;
+    size_t size;
+    bool allow_disabled; /* "-1" を POTR_FLOW_CONTROL_DISABLED として受け付けるか */
+    unsigned char pad[7];
+};
+
+static const GlobalConfigField kGlobalConfigFields[] = {
+    {"window_size", offsetof(potr_global_config, window_size), sizeof(potr_global_config::window_size), false, {}},
+    {"max_payload", offsetof(potr_global_config, max_payload), sizeof(potr_global_config::max_payload), false, {}},
+    {"reorder_timeout_ms", offsetof(potr_global_config, reorder_timeout_ms),
+     sizeof(potr_global_config::reorder_timeout_ms), false, {}},
+    {"max_message_size", offsetof(potr_global_config, max_message_size), sizeof(potr_global_config::max_message_size),
+     false, {}},
+    {"send_queue_depth", offsetof(potr_global_config, send_queue_depth), sizeof(potr_global_config::send_queue_depth),
+     false, {}},
+    {"udp_health_interval_ms", offsetof(potr_global_config, udp_health_interval_ms),
+     sizeof(potr_global_config::udp_health_interval_ms), false, {}},
+    {"udp_health_timeout_ms", offsetof(potr_global_config, udp_health_timeout_ms),
+     sizeof(potr_global_config::udp_health_timeout_ms), false, {}},
+    {"tcp_health_interval_ms", offsetof(potr_global_config, tcp_health_interval_ms),
+     sizeof(potr_global_config::tcp_health_interval_ms), false, {}},
+    {"tcp_health_timeout_ms", offsetof(potr_global_config, tcp_health_timeout_ms),
+     sizeof(potr_global_config::tcp_health_timeout_ms), false, {}},
+    {"tcp_close_timeout_ms", offsetof(potr_global_config, tcp_close_timeout_ms),
+     sizeof(potr_global_config::tcp_close_timeout_ms), false, {}},
+    {"flow_control_capacity", offsetof(potr_global_config, flow_control_capacity),
+     sizeof(potr_global_config::flow_control_capacity), false, {}},
+    {"flow_control_suppress_percent", offsetof(potr_global_config, flow_control_suppress_percent),
+     sizeof(potr_global_config::flow_control_suppress_percent), false, {}},
+    {"flow_control_resume_percent", offsetof(potr_global_config, flow_control_resume_percent),
+     sizeof(potr_global_config::flow_control_resume_percent), false, {}},
+    {"flow_control_request_interval_ms", offsetof(potr_global_config, flow_control_request_interval_ms),
+     sizeof(potr_global_config::flow_control_request_interval_ms), false, {}},
+    {"flow_control_request_lifetime_ms", offsetof(potr_global_config, flow_control_request_lifetime_ms),
+     sizeof(potr_global_config::flow_control_request_lifetime_ms), false, {}},
+    {"flow_control_receiver_percent", offsetof(potr_global_config, flow_control_receiver_percent),
+     sizeof(potr_global_config::flow_control_receiver_percent), false, {}},
+    {"flow_control_receiver_count", offsetof(potr_global_config, flow_control_receiver_count),
+     sizeof(potr_global_config::flow_control_receiver_count), false, {}},
+    {"flow_control_monitored_receiver_percent", offsetof(potr_global_config, flow_control_monitored_receiver_percent),
+     sizeof(potr_global_config::flow_control_monitored_receiver_percent), false, {}},
+    {"flow_control_monitored_receiver_count", offsetof(potr_global_config, flow_control_monitored_receiver_count),
+     sizeof(potr_global_config::flow_control_monitored_receiver_count), false, {}},
+    {"flow_control_receive_buffer_percent", offsetof(potr_global_config, flow_control_receive_buffer_percent),
+     sizeof(potr_global_config::flow_control_receive_buffer_percent), true, {}},
+};
+
+struct GlobalConfigOverride
+{
+    const GlobalConfigField *field = nullptr;
+    uint32_t value = 0U;
+    unsigned char pad[4] = {}; // 明示的アラインメントのためのパディング。
+};
+
+static const GlobalConfigField *find_global_config_field(const std::string &key)
+{
+    for (const GlobalConfigField &field : kGlobalConfigFields)
+    {
+        if (key == field.name)
+        {
+            return &field;
+        }
+    }
+
+    return nullptr;
+}
+
+static bool parse_config_override(const char *arg, GlobalConfigOverride *override_out)
+{
+    if (arg == nullptr || override_out == nullptr)
+    {
+        return false;
+    }
+
+    const char *eq = std::strchr(arg, '=');
+    if (eq == nullptr || eq == arg || eq[1] == '\0')
+    {
+        std::fprintf(stderr, "Invalid --config format (expected <key>=<value>): %s\n", arg);
+        return false;
+    }
+
+    const std::string key(arg, static_cast<size_t>(eq - arg));
+    const char *val_str = eq + 1;
+    const GlobalConfigField *field = find_global_config_field(key);
+    if (field == nullptr)
+    {
+        std::fprintf(stderr, "Unknown --config key: %s\n", key.c_str());
+        return false;
+    }
+
+    uint32_t parsed = 0U;
+    if (field->allow_disabled && std::strcmp(val_str, "-1") == 0)
+    {
+        parsed = POTR_FLOW_CONTROL_DISABLED;
+    }
+    else
+    {
+        if (val_str[0] < '0' || val_str[0] > '9')
+        {
+            std::fprintf(stderr, "Invalid --config value for %s: %s\n", key.c_str(), val_str);
+            return false;
+        }
+        errno = 0;
+        char *endp = nullptr;
+        const unsigned long long raw = std::strtoull(val_str, &endp, 10);
+        if (errno == ERANGE || endp == val_str || *endp != '\0')
+        {
+            std::fprintf(stderr, "Invalid --config value for %s: %s\n", key.c_str(), val_str);
+            return false;
+        }
+        const unsigned long long max_val = (field->size == sizeof(uint16_t)) ? UINT16_MAX : UINT32_MAX;
+        if (raw > max_val)
+        {
+            std::fprintf(stderr, "Out-of-range --config value for %s: %s\n", key.c_str(), val_str);
+            return false;
+        }
+        parsed = static_cast<uint32_t>(raw);
+    }
+
+    override_out->field = field;
+    override_out->value = parsed;
+    return true;
+}
+
+static void apply_global_config_overrides(potr_global_config *global,
+                                          const std::vector<GlobalConfigOverride> &overrides)
+{
+    uint8_t *base = reinterpret_cast<uint8_t *>(global);
+    for (const GlobalConfigOverride &ov : overrides)
+    {
+        if (ov.field->size == sizeof(uint16_t))
+        {
+            const uint16_t v16 = static_cast<uint16_t>(ov.value);
+            std::memcpy(base + ov.field->offset, &v16, sizeof(v16));
+        }
+        else if (ov.field->size == sizeof(uint32_t))
+        {
+            const uint32_t v32 = ov.value;
+            std::memcpy(base + ov.field->offset, &v32, sizeof(v32));
+        }
+    }
+}
+
+/* ===== P6 の既定定数 ===== */
+
+static constexpr uint32_t kP6MaxReceivers = 128U;
+static constexpr uint32_t kP6ProbeSeq = UINT32_MAX;
+static constexpr const char *kP6DefaultMcastGroup = "239.0.0.1";
+static constexpr const char *kP6DefaultMcastIf = "127.0.0.1";
+static constexpr uint32_t kP6DefaultReceivers = 3U;
+static constexpr uint32_t kP6DefaultSlowReceivers = 0U;
+static constexpr size_t kP6DefaultBytes = 1000U;
+static constexpr uint32_t kP6DefaultCount = 10000U;
+static constexpr uint32_t kP6DefaultWarmup = 1000U;
+static constexpr uint32_t kP6DefaultRunTimeoutS = 60U;
+
 /* ===== コマンド ライン オプション ===== */
 
 struct Options
@@ -654,6 +819,9 @@ struct Options
     std::string tcp_type = "oneway";
     std::string out_path;
     std::string trace_level = "warning";
+    std::string mcast_group = kP6DefaultMcastGroup;
+    std::string mcast_if = kP6DefaultMcastIf;
+    std::vector<GlobalConfigOverride> config_overrides;
     size_t bytes = 0;         /* 0 means condition-specific default */
     uint32_t threads = 1U;
     uint32_t count = 0U;      /* 0 means condition-specific default */
@@ -661,9 +829,12 @@ struct Options
     uint32_t warmup = UINT32_MAX; /* sentinel for condition-specific default */
     uint32_t inflight = 16U;
     uint32_t cb_sleep_ms = 1U;
+    uint32_t receivers = kP6DefaultReceivers;
+    uint32_t slow_receivers = kP6DefaultSlowReceivers;
+    uint32_t run_timeout_s = kP6DefaultRunTimeoutS;
     uint16_t base_port = 19000U;
     bool no_header = false;
-    unsigned char pad[5] = {}; // 明示的アラインメントのためのパディング。
+    unsigned char pad[1] = {}; // 明示的アラインメントのためのパディング。
 };
 
 static std::string to_lower_str(std::string s)
@@ -717,27 +888,34 @@ static void print_usage(const char *prog)
 {
     std::fprintf(
         stderr,
-        "Usage: %s --cond <p1|p2|p3|p4|p5> [options]\n"
+        "Usage: %s --cond <p1|p2|p3|p4|p5|p6> [options]\n"
         "Options:\n"
-        "  --cond <p1|p2|p3|p4|p5>     Benchmark condition (required)\n"
+        "  --cond <p1|p2|p3|p4|p5|p6>  Benchmark condition (required)\n"
         "  --label <name>              Name recorded in the CSV version column (default: current)\n"
-        "  --bytes <N>                 Payload bytes (>=16; default: P1/P2/P4/P5=64, P3=5000)\n"
+        "  --bytes <N>                 Payload bytes (>=16; default: P1/P2/P4/P5=64, P3=5000, P6=1000)\n"
         "  --flags <normal|compress|blocking|compress_blocking>  Send flags for P1/P5 (default: normal)\n"
         "  --threads <N>               Sender thread count for P1/P5 (default: 1)\n"
-        "  --count <N>                 Measured items/cycles per run (default: P1/P3/P5=10000, P2=5000, P4=1000)\n"
+        "  --count <N>                 Measured items/cycles per run (default: P1/P3/P5/P6=10000, P2=5000, P4=1000)\n"
         "  --runs <R>                  Runs inside process (default: 5)\n"
-        "  --warmup <W>                Warmup items/cycles excluded per run (default: P1/P2/P3/P5=1000, P4=10)\n"
+        "  --warmup <W>                Warmup items/cycles excluded per run (default: P1/P2/P3/P5/P6=1000, P4=10)\n"
         "  --inflight <K>              Max concurrent in-flight msgs per thread for P1/P2/P5 (default: 16)\n"
         "  --port <P>                  Base loopback port (default: 19000)\n"
         "  --reply-mode <cb|ext>       P2 reply mode (default: ext)\n"
         "  --proto <udp|tcp>           P4 protocol (default: udp)\n"
         "  --tcp-type <bidir|oneway>   TCP type for P5 / P4 tcp (default: oneway)\n"
         "  --receive-buffer-limit <on|off>  Send limit by OS receive buffer on UDP receivers (default: on)\n"
-        "  --cb-sleep-ms <ms>          P3 callback sleep duration in ms (default: 1)\n"
+        "  --cb-sleep-ms <ms>          Callback sleep duration in ms for P3 and P6 slow receivers (default: 1)\n"
+        "  --receivers <N>             P6 multicast receiver count (1..%u; default: %u)\n"
+        "  --slow-receivers <M>        P6 slow receiver count sleeping in callback (default: %u)\n"
+        "  --mcast-group <ip>          P6 multicast group address (default: %s)\n"
+        "  --mcast-if <ip>             P6 multicast interface address (default: %s)\n"
+        "  --run-timeout-s <S>         P6 per-run timeout in seconds (default: %u)\n"
+        "  --config <key>=<value>      Override potr_global_config field (repeatable, applies to P1..P6)\n"
         "  --out <path>                Write CSV to file instead of stdout\n"
         "  --no-header                 Omit CSV header row\n"
         "  --trace-level <none|error|warning|info|debug>  Porter stderr trace level (default: warning)\n",
-        prog);
+        prog, kP6MaxReceivers, kP6DefaultReceivers, kP6DefaultSlowReceivers, kP6DefaultMcastGroup, kP6DefaultMcastIf,
+        kP6DefaultRunTimeoutS);
 }
 
 /* ===== P1 / P5 の実装 ===== */
@@ -966,6 +1144,7 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
             global.tcp_health_timeout_ms = 5000U;
             global.tcp_close_timeout_ms = 5000U;
         }
+        apply_global_config_overrides(&global, opt.config_overrides);
         potr_service_def def = make_service_def(1LL, ptype, port, 0U, "127.0.0.1", "127.0.0.1");
 
         potr_context *receiver = nullptr;
@@ -1462,6 +1641,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         potr_global_config global = make_default_global();
         global.udp_health_interval_ms = 50U;
         global.udp_health_timeout_ms = 10000U;
+        apply_global_config_overrides(&global, opt.config_overrides);
 
         potr_service_def srv_def = make_service_def(1LL, POTR_TYPE_UNICAST_BIDIR_N1, port, 0U, "", "127.0.0.1");
         int rc = potr_service_open(&global, &srv_def, POTR_ROLE_RECEIVER, p2_server_cb, &ctx.server);
@@ -1827,6 +2007,7 @@ static bool run_p3(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         s_p3_context = &ctx;
 
         potr_global_config global = make_default_global();
+        apply_global_config_overrides(&global, opt.config_overrides);
         potr_service_def def = make_service_def(1LL, POTR_TYPE_UNICAST, port, 0U, "127.0.0.1", "127.0.0.1");
 
         potr_context *receiver = nullptr;
@@ -2131,6 +2312,7 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             global.tcp_health_timeout_ms = 5000U;
             global.tcp_close_timeout_ms = 5000U;
         }
+        apply_global_config_overrides(&global, opt.config_overrides);
 
         std::vector<double> close_us;
         close_us.reserve(cycles);
@@ -2321,6 +2503,535 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
     return true;
 }
 
+/* ===== P6 の実装 (マルチキャスト 1 送信者対 N 受信者) ===== */
+
+struct P6ReceiverState
+{
+    std::atomic<uint64_t> last_meas_rx_ns{0ULL};
+    std::atomic<uint32_t> meas_received{0U};
+    std::atomic<uint32_t> disconnect_count{0U};
+    std::atomic<bool> connected{false};
+    std::atomic<bool> probe_received{false};
+    std::atomic<bool> warmup_done{false};
+    std::atomic<bool> meas_last_received{false};
+    bool is_slow = false;
+    unsigned char pad[3] = {}; // 明示的アラインメントのためのパディング。
+};
+
+struct P6Context
+{
+    std::vector<P6ReceiverState *> receivers;
+    std::mutex state_mtx;
+    std::condition_variable state_cv;
+    uint32_t warmup = 0U;
+    uint32_t count = 0U;
+    uint32_t cb_sleep_ms = 0U;
+    std::atomic<bool> measuring{false};
+    std::atomic<bool> closing{false};
+    unsigned char pad[2] = {}; // 明示的アラインメントのためのパディング。
+};
+
+static P6Context *s_p6_context = nullptr;
+
+static void p6_receiver_cb_at(uint32_t idx, int64_t /*service_id*/, potr_peer_id /*peer_id*/, potr_event event,
+                              const void *data, size_t len)
+{
+    const uint64_t rx_ns = mono_now_ns();
+    P6Context *ctx = s_p6_context;
+    if (ctx == nullptr || idx >= ctx->receivers.size())
+    {
+        return;
+    }
+
+    P6ReceiverState *rs = ctx->receivers[idx];
+    if (event == POTR_EVENT_CONNECTED)
+    {
+        rs->connected.store(true, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lk(ctx->state_mtx);
+        }
+        ctx->state_cv.notify_all();
+        return;
+    }
+
+    if (event == POTR_EVENT_DISCONNECTED)
+    {
+        if (!ctx->closing.load(std::memory_order_acquire) && ctx->measuring.load(std::memory_order_acquire))
+        {
+            rs->disconnect_count.fetch_add(1U, std::memory_order_relaxed);
+        }
+        return;
+    }
+
+    if (event != POTR_EVENT_DATA || data == nullptr || len < 16U)
+    {
+        return;
+    }
+
+    if (ctx->closing.load(std::memory_order_acquire))
+    {
+        return;
+    }
+
+    const uint32_t seq = read_u32_le(static_cast<const uint8_t *>(data) + 12U);
+    if (seq == kP6ProbeSeq)
+    {
+        rs->probe_received.store(true, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lk(ctx->state_mtx);
+        }
+        ctx->state_cv.notify_all();
+        return;
+    }
+
+    if (rs->is_slow && ctx->cb_sleep_ms > 0U)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(ctx->cb_sleep_ms));
+    }
+
+    if (seq < ctx->warmup)
+    {
+        if (seq + 1U == ctx->warmup)
+        {
+            rs->warmup_done.store(true, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> lk(ctx->state_mtx);
+            }
+            ctx->state_cv.notify_all();
+        }
+        return;
+    }
+
+    if ((seq - ctx->warmup) < ctx->count)
+    {
+        rs->meas_received.fetch_add(1U, std::memory_order_relaxed);
+        if ((seq - ctx->warmup) + 1U == ctx->count)
+        {
+            rs->last_meas_rx_ns.store(rx_ns, std::memory_order_release);
+            rs->meas_last_received.store(true, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> lk(ctx->state_mtx);
+            }
+            ctx->state_cv.notify_all();
+        }
+    }
+}
+
+/* potr_recv_fn は利用者データを持たないため、受信者番号ごとのコールバックをコンパイル時に生成する。 */
+template <size_t Index>
+static void p6_receiver_cb_thunk(int64_t service_id, potr_peer_id peer_id, potr_event event, const void *data,
+                                 size_t len)
+{
+    p6_receiver_cb_at(static_cast<uint32_t>(Index), service_id, peer_id, event, data, len);
+}
+
+template <size_t... Is>
+static constexpr std::array<potr_recv_fn, sizeof...(Is)> make_p6_callbacks(std::index_sequence<Is...>)
+{
+    return {{&p6_receiver_cb_thunk<Is>...}};
+}
+
+static constexpr auto kP6Callbacks = make_p6_callbacks(std::make_index_sequence<kP6MaxReceivers>{});
+
+static bool run_p6(const Options &opt, std::vector<RunMetrics> *out_runs, std::string *out_params)
+{
+    const size_t bytes = (opt.bytes > 0U) ? opt.bytes : kP6DefaultBytes;
+    if (bytes < 16U)
+    {
+        std::fprintf(stderr, "--bytes must be >= 16\n");
+        return false;
+    }
+
+    const uint32_t count = (opt.count > 0U) ? opt.count : kP6DefaultCount;
+    const uint32_t warmup = (opt.warmup != UINT32_MAX) ? opt.warmup : kP6DefaultWarmup;
+    const uint32_t receivers = opt.receivers;
+    const uint32_t slow_receivers = opt.slow_receivers;
+    const uint32_t cb_sleep_ms = opt.cb_sleep_ms;
+    const uint32_t run_timeout_s = opt.run_timeout_s;
+
+    if (receivers == 0U || receivers > kP6MaxReceivers)
+    {
+        std::fprintf(stderr, "--receivers must be in 1..%u\n", kP6MaxReceivers);
+        return false;
+    }
+
+    if (slow_receivers > receivers)
+    {
+        std::fprintf(stderr, "--slow-receivers (%u) must be <= --receivers (%u)\n", slow_receivers, receivers);
+        return false;
+    }
+
+    if (run_timeout_s == 0U)
+    {
+        std::fprintf(stderr, "--run-timeout-s must be >= 1\n");
+        return false;
+    }
+
+    if (opt.mcast_group.empty() || opt.mcast_group.size() >= POTR_MAX_ADDR_LEN || opt.mcast_if.empty() ||
+        opt.mcast_if.size() >= POTR_MAX_ADDR_LEN)
+    {
+        std::fprintf(stderr, "Invalid --mcast-group or --mcast-if\n");
+        return false;
+    }
+
+    {
+        char pbuf[256];
+        std::snprintf(pbuf, sizeof(pbuf),
+                      "receivers=%u;slow_receivers=%u;bytes=%zu;count=%u;warmup=%u;cb_sleep_ms=%u", receivers,
+                      slow_receivers, bytes, count, warmup, cb_sleep_ms);
+        *out_params = pbuf;
+    }
+
+#ifdef _WIN32
+    timeBeginPeriod(1U);
+    struct WinTimerReset
+    {
+        ~WinTimerReset()
+        {
+            timeEndPeriod(1U);
+        }
+    } timer_reset;
+#endif
+
+    const uint32_t healthy_count = receivers - slow_receivers;
+
+    for (uint32_t r = 0U; r < opt.runs; ++r)
+    {
+        const uint16_t port = static_cast<uint16_t>(opt.base_port + r * 10U);
+        const uint16_t src_port = static_cast<uint16_t>(port + 1U);
+
+        P6Context ctx;
+        ctx.warmup = warmup;
+        ctx.count = count;
+        ctx.cb_sleep_ms = cb_sleep_ms;
+        ctx.receivers.reserve(receivers);
+        for (uint32_t idx = 0U; idx < receivers; ++idx)
+        {
+            P6ReceiverState *rs = new P6ReceiverState();
+            rs->is_slow = (idx < slow_receivers);
+            ctx.receivers.push_back(rs);
+        }
+        s_p6_context = &ctx;
+
+        std::vector<potr_context *> recv_handles(receivers, nullptr);
+        potr_context *sender = nullptr;
+
+        auto cleanup_run = [&]() {
+            ctx.closing.store(true, std::memory_order_release);
+            if (sender != nullptr)
+            {
+                potr_service_close(sender);
+                sender = nullptr;
+            }
+            for (potr_context *&h : recv_handles)
+            {
+                if (h != nullptr)
+                {
+                    potr_service_close(h);
+                    h = nullptr;
+                }
+            }
+            s_p6_context = nullptr;
+            for (P6ReceiverState *rs : ctx.receivers)
+            {
+                delete rs;
+            }
+            ctx.receivers.clear();
+        };
+
+        potr_global_config global = make_default_global();
+        apply_global_config_overrides(&global, opt.config_overrides);
+
+        potr_service_def def =
+            make_service_def(1LL, POTR_TYPE_MULTICAST, port, src_port, opt.mcast_if.c_str(), opt.mcast_if.c_str());
+        def.ttl = POTR_DEFAULT_TTL;
+        set_addr(def.multicast_group, opt.mcast_group.c_str());
+        def.max_peers = std::max<uint32_t>(16U, receivers * 2U);
+
+        for (uint32_t idx = 0U; idx < receivers; ++idx)
+        {
+            const int rc =
+                potr_service_open(&global, &def, POTR_ROLE_RECEIVER, kP6Callbacks[idx], &recv_handles[idx]);
+            if (rc != POTR_OK)
+            {
+                std::fprintf(stderr, "[P6] run=%u stage=open_receiver_%u err=%d (%s)\n", r + 1U, idx, rc,
+                             potr_err_name(rc));
+                cleanup_run();
+                return false;
+            }
+        }
+
+        const int open_s_rc = potr_service_open(&global, &def, POTR_ROLE_SENDER, nullptr, &sender);
+        if (open_s_rc != POTR_OK)
+        {
+            std::fprintf(stderr, "[P6] run=%u stage=open_sender err=%d (%s)\n", r + 1U, open_s_rc,
+                         potr_err_name(open_s_rc));
+            cleanup_run();
+            return false;
+        }
+
+        std::vector<uint8_t> payload(bytes, 0U);
+        fill_payload_pattern(payload);
+
+        /* プローブを送信し、全受信者が接続してプローブを受信するまで待つ。 */
+        write_u32_le(payload.data() + 12U, kP6ProbeSeq);
+        const uint64_t probe_deadline_ns = mono_now_ns() + 10000000000ULL;
+        bool all_probed = false;
+        while (mono_now_ns() < probe_deadline_ns)
+        {
+            write_u64_le(payload.data(), mono_now_ns());
+            const int sret = potr_service_send(sender, POTR_PEER_NA, payload.data(), bytes, 0);
+            if (sret != POTR_OK && sret != POTR_ERR_FULL)
+            {
+                std::fprintf(stderr, "[P6] run=%u stage=probe_send err=%d (%s)\n", r + 1U, sret, potr_err_name(sret));
+                cleanup_run();
+                return false;
+            }
+
+            std::unique_lock<std::mutex> lk(ctx.state_mtx);
+            all_probed = ctx.state_cv.wait_for(lk, std::chrono::milliseconds(50), [&]() {
+                for (const P6ReceiverState *rs : ctx.receivers)
+                {
+                    if (!rs->connected.load(std::memory_order_acquire) ||
+                        !rs->probe_received.load(std::memory_order_acquire))
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            });
+            if (all_probed)
+            {
+                break;
+            }
+        }
+
+        if (!all_probed)
+        {
+            std::fprintf(stderr, "[P6] run=%u stage=probe timeout waiting for all %u receivers\n", r + 1U, receivers);
+            cleanup_run();
+            return false;
+        }
+
+        /*
+         * multicast 受信者の初回受信報告 (POTR_FLAG_REPORT) は health_interval_ms の 1.0〜1.5 倍の間隔で送出される。
+         * 全受信者の受信報告が送信者に届いて活動中になり、監視対象一覧が配信されるまで待つ。
+         */
+        const uint64_t report_wait_ms =
+            (global.udp_health_interval_ms > 0U)
+                ? ((static_cast<uint64_t>(global.udp_health_interval_ms) * 3ULL) / 2ULL + 300ULL)
+                : 50ULL;
+        std::this_thread::sleep_for(std::chrono::milliseconds(report_wait_ms));
+
+        uint64_t full_count = 0ULL;
+
+        auto send_seq = [&](uint32_t seq, bool count_full, uint64_t deadline_ns, bool *timed_out_out,
+                            const char *stage) -> bool {
+            write_u32_le(payload.data() + 12U, seq);
+            int retry = 0;
+            for (;;)
+            {
+                write_u64_le(payload.data(), mono_now_ns());
+                const int sret = potr_service_send(sender, POTR_PEER_NA, payload.data(), bytes, 0);
+                if (sret == POTR_OK)
+                {
+                    return true;
+                }
+
+                if (sret == POTR_ERR_FULL)
+                {
+                    if (count_full)
+                    {
+                        ++full_count;
+                    }
+                    if (mono_now_ns() >= deadline_ns)
+                    {
+                        *timed_out_out = true;
+                        return true;
+                    }
+                    ++retry;
+                    if (retry < 32)
+                    {
+                        std::this_thread::yield();
+                    }
+                    else
+                    {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    }
+                    continue;
+                }
+
+                std::fprintf(stderr, "[P6] run=%u stage=%s seq=%u err=%d (%s)\n", r + 1U, stage, seq, sret,
+                             potr_err_name(sret));
+                return false;
+            }
+        };
+
+        auto target_receivers_done = [&](bool check_warmup) -> bool {
+            for (const P6ReceiverState *rs : ctx.receivers)
+            {
+                if (healthy_count > 0U && rs->is_slow)
+                {
+                    continue;
+                }
+                const bool done = check_warmup ? rs->warmup_done.load(std::memory_order_acquire)
+                                               : rs->meas_last_received.load(std::memory_order_acquire);
+                if (!done)
+                {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        /* ウォーム アップ */
+        if (warmup > 0U)
+        {
+            const uint64_t warmup_deadline_ns = mono_now_ns() + static_cast<uint64_t>(run_timeout_s) * 1000000000ULL;
+            bool warmup_timed_out = false;
+            for (uint32_t seq = 0U; seq < warmup; ++seq)
+            {
+                if (!send_seq(seq, false, warmup_deadline_ns, &warmup_timed_out, "warmup_send"))
+                {
+                    cleanup_run();
+                    return false;
+                }
+                if (warmup_timed_out)
+                {
+                    break;
+                }
+            }
+
+            if (!warmup_timed_out)
+            {
+                const uint64_t wait_limit_ns =
+                    std::min<uint64_t>(warmup_deadline_ns, mono_now_ns() + static_cast<uint64_t>(5000000000ULL));
+                while (mono_now_ns() < wait_limit_ns)
+                {
+                    std::unique_lock<std::mutex> lk(ctx.state_mtx);
+                    if (ctx.state_cv.wait_for(lk, std::chrono::milliseconds(20),
+                                              [&]() { return target_receivers_done(true); }))
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        /* 計測区間: 最初の送信から、健全な受信者の全員が最後のメッセージを受信するまでを測る。 */
+        ctx.measuring.store(true, std::memory_order_release);
+        const uint64_t meas_start_ns = mono_now_ns();
+        const uint64_t meas_deadline_ns = meas_start_ns + static_cast<uint64_t>(run_timeout_s) * 1000000000ULL;
+        bool timed_out = false;
+
+        for (uint32_t k = 0U; k < count; ++k)
+        {
+            if (!send_seq(warmup + k, true, meas_deadline_ns, &timed_out, "send"))
+            {
+                cleanup_run();
+                return false;
+            }
+            if (timed_out)
+            {
+                break;
+            }
+        }
+
+        bool all_healthy_done = false;
+        if (!timed_out)
+        {
+            for (;;)
+            {
+                {
+                    std::unique_lock<std::mutex> lk(ctx.state_mtx);
+                    if (ctx.state_cv.wait_for(lk, std::chrono::milliseconds(20),
+                                              [&]() { return target_receivers_done(false); }))
+                    {
+                        all_healthy_done = true;
+                        break;
+                    }
+                }
+                if (mono_now_ns() >= meas_deadline_ns)
+                {
+                    break;
+                }
+            }
+        }
+
+        double throughput = 0.0;
+        if (all_healthy_done)
+        {
+            uint64_t meas_end_ns = meas_start_ns;
+            for (const P6ReceiverState *rs : ctx.receivers)
+            {
+                if (healthy_count > 0U && rs->is_slow)
+                {
+                    continue;
+                }
+                const uint64_t rx_ns = rs->last_meas_rx_ns.load(std::memory_order_acquire);
+                if (rx_ns > meas_end_ns)
+                {
+                    meas_end_ns = rx_ns;
+                }
+            }
+            const double elapsed_s = static_cast<double>(meas_end_ns - meas_start_ns) / 1e9;
+            throughput = (elapsed_s > 0.0) ? (static_cast<double>(count) / elapsed_s) : 0.0;
+        }
+
+        /* すべてのコールバックを止めてから指標を集計する。 */
+        ctx.closing.store(true, std::memory_order_release);
+        potr_service_close(sender);
+        sender = nullptr;
+        for (potr_context *&h : recv_handles)
+        {
+            if (h != nullptr)
+            {
+                potr_service_close(h);
+                h = nullptr;
+            }
+        }
+
+        uint32_t healthy_received_min = 0U;
+        uint64_t healthy_disconnect_count = 0ULL;
+        bool has_healthy = false;
+
+        uint32_t slow_received_min = 0U;
+        uint64_t slow_disconnect_count = 0ULL;
+        bool has_slow = false;
+
+        for (const P6ReceiverState *rs : ctx.receivers)
+        {
+            const uint32_t rx = rs->meas_received.load(std::memory_order_acquire);
+            const uint32_t disc = rs->disconnect_count.load(std::memory_order_acquire);
+            if (rs->is_slow)
+            {
+                slow_received_min = has_slow ? std::min(slow_received_min, rx) : rx;
+                has_slow = true;
+                slow_disconnect_count += disc;
+            }
+            else
+            {
+                healthy_received_min = has_healthy ? std::min(healthy_received_min, rx) : rx;
+                has_healthy = true;
+                healthy_disconnect_count += disc;
+            }
+        }
+
+        RunMetrics rm;
+        rm.add("throughput_msg_s", throughput);
+        rm.add("healthy_received_min", static_cast<double>(healthy_received_min));
+        rm.add("healthy_disconnect_count", static_cast<double>(healthy_disconnect_count));
+        rm.add("slow_received_min", static_cast<double>(slow_received_min));
+        rm.add("slow_disconnect_count", static_cast<double>(slow_disconnect_count));
+        rm.add("send_full_count", static_cast<double>(full_count));
+        out_runs->push_back(std::move(rm));
+
+        cleanup_run();
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -2465,6 +3176,68 @@ int main(int argc, char **argv)
             if (v == nullptr || !parse_u32(v, &opt.cb_sleep_ms))
                 return EXIT_FAILURE;
         }
+        else if (arg == "--receivers")
+        {
+            const char *v = need_val("--receivers");
+            if (v == nullptr || !parse_u32(v, &opt.receivers) || opt.receivers == 0U ||
+                opt.receivers > kP6MaxReceivers)
+            {
+                std::fprintf(stderr, "Invalid --receivers (expected 1..%u)\n", kP6MaxReceivers);
+                print_usage(argv[0]);
+                return EXIT_FAILURE;
+            }
+        }
+        else if (arg == "--slow-receivers")
+        {
+            const char *v = need_val("--slow-receivers");
+            if (v == nullptr || !parse_u32(v, &opt.slow_receivers))
+            {
+                std::fprintf(stderr, "Invalid --slow-receivers\n");
+                print_usage(argv[0]);
+                return EXIT_FAILURE;
+            }
+        }
+        else if (arg == "--mcast-group")
+        {
+            const char *v = need_val("--mcast-group");
+            if (v == nullptr || v[0] == '\0')
+            {
+                print_usage(argv[0]);
+                return EXIT_FAILURE;
+            }
+            opt.mcast_group = v;
+        }
+        else if (arg == "--mcast-if")
+        {
+            const char *v = need_val("--mcast-if");
+            if (v == nullptr || v[0] == '\0')
+            {
+                print_usage(argv[0]);
+                return EXIT_FAILURE;
+            }
+            opt.mcast_if = v;
+        }
+        else if (arg == "--run-timeout-s")
+        {
+            const char *v = need_val("--run-timeout-s");
+            if (v == nullptr || !parse_u32(v, &opt.run_timeout_s) || opt.run_timeout_s == 0U)
+            {
+                std::fprintf(stderr, "Invalid --run-timeout-s (expected >= 1)\n");
+                print_usage(argv[0]);
+                return EXIT_FAILURE;
+            }
+        }
+        else if (arg == "--config")
+        {
+            const char *v = need_val("--config");
+            GlobalConfigOverride ov;
+            if (v == nullptr || !parse_config_override(v, &ov))
+            {
+                print_usage(argv[0]);
+                return EXIT_FAILURE;
+            }
+            opt.config_overrides.push_back(ov);
+        }
         else if (arg == "--out")
         {
             const char *v = need_val("--out");
@@ -2491,7 +3264,8 @@ int main(int argc, char **argv)
         }
     }
 
-    if (opt.cond != "p1" && opt.cond != "p2" && opt.cond != "p3" && opt.cond != "p4" && opt.cond != "p5")
+    if (opt.cond != "p1" && opt.cond != "p2" && opt.cond != "p3" && opt.cond != "p4" && opt.cond != "p5" &&
+        opt.cond != "p6")
     {
         print_usage(argv[0]);
         return EXIT_FAILURE;
@@ -2575,6 +3349,14 @@ int main(int argc, char **argv)
     {
         cond_upper = "P4";
         if (!run_p4(opt, &runs, &params))
+        {
+            exit_code = EXIT_FAILURE;
+        }
+    }
+    else if (opt.cond == "p6")
+    {
+        cond_upper = "P6";
+        if (!run_p6(opt, &runs, &params))
         {
             exit_code = EXIT_FAILURE;
         }
