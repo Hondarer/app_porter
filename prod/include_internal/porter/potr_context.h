@@ -520,6 +520,10 @@ struct potr_context
     int max_peers;                     /**< ピア テーブル サイズ (service.max_peers から取得)。 */
     int n_peers;                       /**< 現在の接続ピア数。 */
     cplat_local_lock *peers_mutex;     /**< ピア テーブル保護用ミューテックス。 */
+    potr_internal_slow_peer_reject_entry
+        flow_slow_rejected[POTR_FLOW_SLOW_PEER_REJECT_MAX]; /**< 遅いピアとして切断したセッションの受け入れ拒否記録。peers_mutex で保護。 */
+    uint64_t flow_slow_rejected_seq;   /**< 受け入れ拒否記録の連番。peers_mutex で保護。 */
+    size_t flow_slow_rejected_count;   /**< 有効な受け入れ拒否記録の件数。peers_mutex で保護。 */
     uint32_t next_peer_id;             /**< 次に発行するピア ID (単調増加、初期値 1)。 */
 
     /*

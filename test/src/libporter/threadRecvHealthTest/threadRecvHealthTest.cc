@@ -1045,3 +1045,106 @@ TEST(threadRecvHealthTest, slow_peers_scans_immediately_on_new_blocking_or_queue
     EXPECT_EQ(1060U, next2); // [確認_正常系] - 妨げ増加で時刻 1010 に即座に判定され次回が 1060 になること。
     EXPECT_EQ(1070U, next3); // [確認_正常系] - キュー満杯記録で時刻 1020 に即座に判定され次回が 1070 になること。
 }
+
+// 遅いピアの切断で解放前にセッションが拒否表へ記録され、WARNING に受け入れない期間が出ることの確認
+TEST(threadRecvHealthTest, slow_peers_records_disconnected_session_before_free)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_peer_context peer = {};
+    cplat_local_lock *lock = reinterpret_cast<cplat_local_lock *>(0x100);
+    ctx.service.service_id = 1;
+    ctx.is_multi_peer = 1;
+    ctx.peers_mutex = lock;
+    ctx.flow_control_config.grace_ms = 200U;
+    cplat_atomic_store_i32(&ctx.flow_blocking_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    peer.peer_id = 42U;
+    peer.active = 1;
+    peer.peer_session_id = 777U;
+    peer.peer_session_ts = {100, 200};
+    peer.peer_session_known = 1;
+    // [状態] - セッション (777, 100.200) を持つ遅いピア 42 と、猶予時間 200 [ms] の N:1 サーバーを用意する。
+    ON_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 42U)).WillByDefault(Return(&peer));
+    ON_CALL(mock_porter, potr_internal_flow_control_collect_slow_peers_locked(&ctx, 1200U, _, _, _, _))
+        .WillByDefault([](potr_context *, uint64_t, potr_peer_id *out_peers, uint64_t *out_accum_ms, size_t,
+                          uint64_t *next_check_ms) -> size_t {
+            out_peers[0] = 42U;
+            out_accum_ms[0] = 200U;
+            *next_check_ms = 1250U;
+            return 1U;
+        });
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat,
+                cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_WARNING, nullptr, HasSubstr("reject=2000ms")))
+        .Times(1);
+    // [Pre-Assert確認_正常系] - 切断の WARNING に受け入れない期間 (reject=2000ms) が含まれること。
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_cplat, cplat_local_lock_lock(lock)).Times(1).WillOnce(Return());
+        // [Pre-Assert確認_正常系] - peers_mutex を取得すること。
+        EXPECT_CALL(mock_porter, thread_recv_disconnect_peer_all_paths(&ctx, &peer)).Times(1);
+        // [Pre-Assert確認_正常系] - 切断通知を呼ぶこと。
+        EXPECT_CALL(mock_porter,
+                    potr_internal_flow_control_slow_peer_record_locked(&ctx, 777U, &peer.peer_session_ts, 1200U))
+            .Times(1);
+        // [Pre-Assert確認_正常系] - ピアを解放する前に、セッションと切断時刻を拒否表へ記録すること。
+        EXPECT_CALL(mock_porter, potr_internal_peer_free(&ctx, &peer)).Times(1);
+        // [Pre-Assert確認_正常系] - 記録の後にピアを解放すること。
+        EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(lock)).Times(1).WillOnce(Return());
+        // [Pre-Assert確認_正常系] - peers_mutex を解放すること。
+    }
+    // Act
+    uint64_t next_ms = thread_recv_health_check_slow_peers(&ctx, 1200U); // [手順] - 遅いピアの切断確認を呼ぶ。
+    // Assert
+    EXPECT_EQ(1250U, next_ms); // [確認_正常系] - 次回確認時刻 1250 が返ること。
+}
+
+// ヘルス チェックのタイムアウトで切断したピアは、遅いピアの拒否表へ記録しないことの確認
+TEST(threadRecvHealthTest, health_timeout_does_not_record_slow_peer_reject)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_peer_context peers[1] = {};
+    cplat_local_lock *lock = reinterpret_cast<cplat_local_lock *>(0x100);
+    ctx.service.service_id = 1;
+    ctx.is_multi_peer = 1;
+    ctx.peers = peers;
+    ctx.max_peers = 1;
+    ctx.peers_mutex = lock;
+    ctx.health_timeout_ms = 500U;
+    peers[0].peer_id = 99U;
+    peers[0].active = 1;
+    peers[0].peer_session_id = 888U;
+    peers[0].peer_session_ts = {50, 0};
+    peers[0].peer_session_known = 1;
+    peers[0].last_recv_ts = {10, 0};
+    cplat_atomic_store_i32(&peers[0].health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    // [状態] - タイムアウト期限を超過した N:1 ピア 99 を用意する。
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic(_)).WillByDefault([](cplat_timespec *ts) {
+        ts->tv_sec = 20;
+        ts->tv_nsec = 0;
+        return CPLAT_OK;
+    });
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _)).WillByDefault([](const cplat_timespec *, const cplat_timespec *, int64_t *diff) {
+        *diff = 1000;
+        return CPLAT_OK;
+    });
+    ON_CALL(mock_cplat, cplat_local_lock_lock(lock)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(lock)).WillByDefault(Return());
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_peer_all_paths(&ctx, &peers[0])).Times(1);
+    // [Pre-Assert確認_正常系] - タイムアウトで切断通知を呼ぶこと。
+    EXPECT_CALL(mock_porter, potr_internal_peer_free(&ctx, &peers[0])).Times(1);
+    // [Pre-Assert確認_正常系] - タイムアウトでピアを解放すること。
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_slow_peer_record_locked(_, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - ヘルス チェックのタイムアウトでは拒否表へ記録しないこと。
+    // Act
+    thread_recv_health_check_peers(&ctx); // [手順] - N:1 のヘルス チェック タイムアウト確認を呼ぶ。
+    // Assert
+    EXPECT_EQ(0U, ctx.flow_slow_rejected_count); // [確認_正常系] - 拒否記録の件数が 0 のままであること。
+}

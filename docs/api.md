@@ -26,7 +26,7 @@ Table: PATH イベント時のコールバック引数の意味
 
 `path_states` は常にイベント発火後の状態です。`PATH_DISCONNECTED` のときも対象 path は 0 です。  
 `CONNECTED` / `DISCONNECTED` は path 論理接続状態の OR が 0->1 / 1->0 に変化したときのみ発火します。  
-`unicast_bidir` の N:1 モードのサーバーでは、ヘルス チェックのタイムアウトや `potr_peer_disconnect()` による切断に加えて、フロー制御でほかのピアへの送信を妨げ続けている遅いピアをサーバーが自動的に切断する場合があります。このときも、ヘルス チェックのタイムアウトによる切断と同じく、`POTR_EVENT_PATH_DISCONNECTED` と `POTR_EVENT_DISCONNECTED` を通知します。
+`unicast_bidir` の N:1 モードのサーバーでは、ヘルス チェックのタイムアウトや `potr_peer_disconnect()` による切断に加えて、フロー制御でほかのピアへの送信を妨げ続けている遅いピアをサーバーが自動的に切断する場合があります。このときも、ヘルス チェックのタイムアウトによる切断と同じく、`POTR_EVENT_PATH_DISCONNECTED` と `POTR_EVENT_DISCONNECTED` を通知します。切断したピアのセッションからのパケットは、切断から猶予時間の 10 倍 (`flow_control_grace_ms × 10`) の間受け入れず、その後に通常どおり受け入れます。クライアントの性能が回復すれば、利用側の操作なしで接続が回復します (切断されていた間のメッセージは再送しません)。
 
 ### potr_service_send() の戻り値
 

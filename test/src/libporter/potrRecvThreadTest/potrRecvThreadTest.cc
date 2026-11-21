@@ -464,3 +464,180 @@ TEST_F(potrRecvThreadTcpDataTest, pending_fin_triggered_by_data_stops_tcp_recv_l
     // [確認_正常系] - 受信スレッド動作フラグが 0 になること。
 }
 // [サブ手順参照 名前=potrRecvThreadTcpDataTest.TearDown]
+
+// N:1 モードで遅いピアとして拒否中のセッションからの PING と DATA を破棄し、ピアを作らないことの確認
+TEST(potrRecvThreadTest, n1_drops_ping_and_data_from_rejected_slow_peer_without_creating_peer)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint8_t recv_buf[POTR_PACKET_HEADER_SIZE + 64U] = {};
+    cplat_local_lock *lock = reinterpret_cast<cplat_local_lock *>(0x200);
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.service.service_id = 10;
+    ctx.global.max_payload = 64U;
+    ctx.n_path = 1;
+    ctx.is_multi_peer = 1;
+    ctx.peers_mutex = lock;
+    ctx.sock[0] = (cplat_socket)1;
+    ctx.recv_buf = recv_buf;
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    int poll_calls = 0;
+    potr_packet ping_pkt = {};
+    ping_pkt.service_id = 10;
+    ping_pkt.session_id = 301U;
+    ping_pkt.session_tv_sec = 500;
+    ping_pkt.session_tv_nsec = 600;
+    ping_pkt.flags = POTR_FLAG_PING;
+    potr_packet data_pkt = ping_pkt;
+    data_pkt.flags = POTR_FLAG_DATA;
+    // [状態] - N:1 サーバーで、拒否中の未知セッション (301, 500.600) から PING と DATA を順に受信する条件を用意する。
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault([&](cplat_thread **out, cplat_thread_fn fn, void *arg) {
+            *out = nullptr;
+            entry = fn;
+            entry_arg = arg;
+            return CPLAT_OK;
+        });
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([](uint64_t *out) {
+        *out = 1500U;
+        return CPLAT_OK;
+    });
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
+        .WillByDefault([&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *) {
+            poll_calls++;
+            if (poll_calls <= 2)
+            {
+                ready[0] = 1U;
+                return CPLAT_OK;
+            }
+            cplat_atomic_store_i32(&ctx.running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+            return CPLAT_ERR_TIMEOUT;
+        });
+    ON_CALL(mock_cplat, cplat_socket_recvfrom(_, _, _, _, _, _))
+        .WillByDefault([](cplat_socket, void *, size_t, cplat_ipv4_endpoint *sender, size_t *recv_len, cplat_error *) {
+            sender->address = 0x0100007FU;
+            sender->port = 0x3930U;
+            *recv_len = POTR_PACKET_HEADER_SIZE;
+            return CPLAT_OK;
+        });
+    ON_CALL(mock_cplat, cplat_local_lock_lock(lock)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(lock)).WillByDefault(Return());
+    ON_CALL(mock_porter, thread_recv_check_src_addr(_, _)).WillByDefault(Return(1));
+    ON_CALL(mock_porter, potr_internal_certificate_receive(_, _, _, _, _)).WillByDefault(Return(POTR_ERR_NOT_FOUND));
+    ON_CALL(mock_porter, thread_recv_authenticate_packet(_, _, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(mock_porter, potr_internal_peer_find_by_session(_, _, _)).WillByDefault(Return(nullptr));
+    ON_CALL(mock_porter, potr_internal_flow_control_refused(_, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(mock_porter, potr_internal_flow_control_slow_peer_rejected_locked(&ctx, 301U, _, 1500U))
+        .WillByDefault(Return(1));
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_packet_parse(_, _, _))
+        .WillOnce(DoAll(SetArgPointee<0>(ping_pkt), Return(POTR_OK)))
+        .WillOnce(DoAll(SetArgPointee<0>(data_pkt), Return(POTR_OK)));
+    // [Pre-Assert確認_正常系] - 1 回目に PING、2 回目に DATA を解析すること。
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_slow_peer_rejected_locked(&ctx, 301U, _, 1500U)).Times(2);
+    // [Pre-Assert確認_正常系] - PING と DATA の両方で遅いピア拒否の照合が行われること。
+    EXPECT_CALL(mock_porter, potr_internal_peer_create(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 拒否期間内は新しいピアを作成しないこと。
+    EXPECT_CALL(mock_porter, thread_recv_dispatch_packet(_, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 拒否期間内はパケットをディスパッチせず破棄すること。
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_comm_recv_thread_start(&ctx));
+    // [状態確認] - 受信スレッド開始準備が成功すること。
+    ASSERT_NE(nullptr, entry); // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);          // [手順] - 受信ループを実行し、PING と DATA を処理する。
+    // Assert
+    EXPECT_EQ(3, poll_calls); // [確認_正常系] - PING と DATA の 2 回の受信後に停止したこと。
+}
+
+// N:1 モードで拒否期間を過ぎたセッションからの PING で新しいピアを作成することの確認
+TEST(potrRecvThreadTest, n1_creates_peer_when_slow_peer_reject_expired)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_peer_context new_peer = {};
+    uint8_t recv_buf[POTR_PACKET_HEADER_SIZE + 64U] = {};
+    cplat_local_lock *lock = reinterpret_cast<cplat_local_lock *>(0x200);
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.service.service_id = 10;
+    ctx.global.max_payload = 64U;
+    ctx.n_path = 1;
+    ctx.is_multi_peer = 1;
+    ctx.peers_mutex = lock;
+    ctx.sock[0] = (cplat_socket)1;
+    ctx.recv_buf = recv_buf;
+    new_peer.peer_id = 5U;
+    new_peer.active = 1;
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    int poll_calls = 0;
+    potr_packet ping_pkt = {};
+    ping_pkt.service_id = 10;
+    ping_pkt.session_id = 301U;
+    ping_pkt.session_tv_sec = 500;
+    ping_pkt.session_tv_nsec = 600;
+    ping_pkt.flags = POTR_FLAG_PING;
+    // [状態] - N:1 サーバーで、拒否期間を過ぎた未知セッション (301, 500.600) から PING を受信する条件を用意する。
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault([&](cplat_thread **out, cplat_thread_fn fn, void *arg) {
+            *out = nullptr;
+            entry = fn;
+            entry_arg = arg;
+            return CPLAT_OK;
+        });
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([](uint64_t *out) {
+        *out = 4000U;
+        return CPLAT_OK;
+    });
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
+        .WillByDefault([&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *) {
+            poll_calls++;
+            if (poll_calls == 1)
+            {
+                ready[0] = 1U;
+                return CPLAT_OK;
+            }
+            cplat_atomic_store_i32(&ctx.running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+            return CPLAT_ERR_TIMEOUT;
+        });
+    ON_CALL(mock_cplat, cplat_socket_recvfrom(_, _, _, _, _, _))
+        .WillByDefault([](cplat_socket, void *, size_t, cplat_ipv4_endpoint *sender, size_t *recv_len, cplat_error *) {
+            sender->address = 0x0100007FU;
+            sender->port = 0x3930U;
+            *recv_len = POTR_PACKET_HEADER_SIZE;
+            return CPLAT_OK;
+        });
+    ON_CALL(mock_cplat, cplat_local_lock_lock(lock)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(lock)).WillByDefault(Return());
+    ON_CALL(mock_porter, thread_recv_check_src_addr(_, _)).WillByDefault(Return(1));
+    ON_CALL(mock_porter, potr_internal_certificate_receive(_, _, _, _, _)).WillByDefault(Return(POTR_ERR_NOT_FOUND));
+    ON_CALL(mock_porter, thread_recv_authenticate_packet(_, _, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(mock_porter, potr_internal_peer_find_by_session(_, _, _)).WillByDefault(Return(nullptr));
+    ON_CALL(mock_porter, potr_internal_flow_control_refused(_, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(mock_porter, potr_internal_flow_control_slow_peer_rejected_locked(&ctx, 301U, _, 4000U))
+        .WillByDefault(Return(0));
+    ON_CALL(mock_porter, thread_recv_replay_packet(_, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(mock_porter, thread_recv_dispatch_packet(_, _, _, _)).WillByDefault(Return(0));
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_packet_parse(_, _, _))
+        .WillOnce(DoAll(SetArgPointee<0>(ping_pkt), Return(POTR_OK)));
+    // [Pre-Assert確認_正常系] - PING を 1 回解析すること。
+    EXPECT_CALL(mock_porter, potr_internal_peer_create(&ctx, _, 0)).WillOnce(Return(&new_peer));
+    // [Pre-Assert確認_正常系] - 拒否されていないため新しいピアを 1 回作成すること。
+    EXPECT_CALL(mock_porter, thread_recv_dispatch_packet(_, _, 0, _)).Times(1);
+    // [Pre-Assert確認_正常系] - 作成したピアへパケットをディスパッチすること。
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_comm_recv_thread_start(&ctx));
+    // [状態確認] - 受信スレッド開始準備が成功すること。
+    ASSERT_NE(nullptr, entry); // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);          // [手順] - 受信ループを実行し、PING を処理する。
+    // Assert
+    EXPECT_EQ(301U, new_peer.peer_session_id); // [確認_正常系] - 新しいピアにセッション識別子 301 が設定されること。
+    EXPECT_EQ(1, new_peer.peer_session_known); // [確認_正常系] - 新しいピアのセッション既知フラグが 1 になること。
+}

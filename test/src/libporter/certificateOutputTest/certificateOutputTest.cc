@@ -158,6 +158,63 @@ TEST_F(certificateOutputTest, receive_warns_when_handshake_output_fails)
 }
 // [サブ手順参照 名前=certificateOutputTest.TearDown]
 
+// N:1 モードで遅いピアとして拒否中のセッションからの HANDSHAKE を破棄し、認証開始・ピア生成・応答を行わないことの確認
+// [サブ手順参照 名前=certificateOutputTest.SetUp]
+TEST_F(certificateOutputTest, receive_drops_handshake_from_rejected_slow_peer_in_n1)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    const uint8_t payload[] = {22U, 1U, 2U, 3U};
+    const uint8_t wire_header[POTR_PACKET_HEADER_SIZE] = {};
+    cplat_ipv4_endpoint sender = {};
+    potr_packet packet = {};
+    ctx->service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx->role = POTR_ROLE_RECEIVER;
+    ctx->is_multi_peer = 1;
+    ctx->max_peers = 4;
+    ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&ctx->peers_mutex));
+    // [状態確認] - peers_mutex を作成できること。
+    packet.service_id = 42;
+    packet.session_id = 909U;
+    packet.session_tv_sec = 700;
+    packet.session_tv_nsec = 800;
+    packet.flags = POTR_FLAG_HANDSHAKE;
+    packet.payload = payload;
+    packet.payload_len = (uint16_t)sizeof(payload);
+    sender.address = 0x0100007FU;
+    sender.port = 0x3930U;
+    // [状態] - 証明書方式の N:1 サーバーで、拒否中の未知セッション (909, 700.800) から HANDSHAKE を受信する条件を用意する。
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([](uint64_t *out) {
+        *out = 1500U;
+        return CPLAT_OK;
+    });
+    ON_CALL(mock_porter, potr_internal_peer_find_by_session(ctx, 909U, _)).WillByDefault(Return(nullptr));
+    ON_CALL(mock_porter, potr_internal_flow_control_slow_peer_rejected_locked(ctx, 909U, _, 1500U))
+        .WillByDefault(Return(1));
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_slow_peer_rejected_locked(ctx, 909U, _, 1500U)).Times(1);
+    // [Pre-Assert確認_正常系] - 未知のピアのハンドシェイクで遅いピア拒否の照合が行われること。
+    EXPECT_CALL(mock_porter, potr_internal_auth_session_create(_, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 拒否期間内は認証セッションを開始しないこと。
+    EXPECT_CALL(mock_porter, potr_internal_peer_create(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 拒否期間内は新しいピアを作成しないこと。
+    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 拒否期間内は応答パケットを送出しないこと。
+
+    // Act
+    int actual_ret = potr_internal_certificate_receive(ctx, &packet, wire_header, &sender, 0);
+    // [手順] - potr_internal_certificate_receive() で拒否中のセッションの HANDSHAKE を処理する。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);  // [確認_正常系] - パケットを消費 (破棄) して POTR_OK を返すこと。
+    EXPECT_EQ(nullptr, ctx->receivers); // [確認_正常系] - 受信者 (ハンドシェイク状態) を作成しないこと。
+    cplat_local_lock_dispose(ctx->peers_mutex);
+    ctx->peers_mutex = nullptr;
+}
+// [サブ手順参照 名前=certificateOutputTest.TearDown]
+
 // 認証の失敗でセッションを破棄した後の出力 (POTR_ERR_DISCONNECTED) では、出力の失敗の WARNING を出さないことの確認 (P-022)
 // [サブ手順参照 名前=certificateOutputTest.SetUp]
 TEST_F(certificateOutputTest, receive_does_not_warn_when_session_is_disconnected)

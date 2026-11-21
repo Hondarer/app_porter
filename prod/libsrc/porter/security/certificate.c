@@ -587,6 +587,17 @@ int potr_internal_certificate_receive(potr_context *ctx, potr_packet *packet, co
         {
             state = &peer->certificate;
         }
+        else
+        {
+            cplat_timespec pkt_session_ts;
+
+            session_ts_from_hdr(packet->session_tv_sec, packet->session_tv_nsec, &pkt_session_ts);
+            if (potr_internal_flow_control_slow_peer_rejected_locked(ctx, packet->session_id, &pkt_session_ts,
+                                                                     now_ms) != 0)
+            {
+                goto out_unlock;
+            }
+        }
     }
     if (managed && peer == NULL)
     {

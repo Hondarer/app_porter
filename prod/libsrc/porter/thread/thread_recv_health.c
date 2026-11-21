@@ -206,12 +206,20 @@ uint64_t thread_recv_health_check_slow_peers(potr_context *ctx, uint64_t now_ms)
             continue;
         }
 
+        uint64_t reject_ms = (uint64_t)grace_ms * (uint64_t)POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER;
+
         POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
-                   "recv[service_id=%" PRId64 "]: disconnecting slow peer=%u (accum=%" PRIu64 "ms grace=%ums)",
-                   ctx->service.service_id, (unsigned)slow_peers[i], slow_accum_ms[i], (unsigned)grace_ms);
+                   "recv[service_id=%" PRId64 "]: disconnecting slow peer=%u (accum=%" PRIu64
+                   "ms grace=%ums reject=%" PRIu64 "ms)",
+                   ctx->service.service_id, (unsigned)slow_peers[i], slow_accum_ms[i], (unsigned)grace_ms, reject_ms);
 
         memset((void *)peer->remote_path_ping_state, 0, sizeof(peer->remote_path_ping_state));
         thread_recv_disconnect_peer_all_paths(ctx, peer);
+        if (peer->peer_session_known != 0)
+        {
+            potr_internal_flow_control_slow_peer_record_locked(ctx, peer->peer_session_id, &peer->peer_session_ts,
+                                                               now_ms);
+        }
         potr_internal_peer_free(ctx, peer);
         disconnected = 1;
     }

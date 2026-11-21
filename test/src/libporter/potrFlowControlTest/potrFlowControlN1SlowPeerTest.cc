@@ -410,3 +410,176 @@ TEST_F(potrFlowControlN1SlowPeerTest, short_stops_accumulate_on_release_and_all_
     EXPECT_EQ(10U, slow_peers[0]);     // [確認_正常系] - 切断対象がピア 10 であること。
 }
 // [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// 遅いピアとして切断したセッションは猶予時間の 10 倍の間拒否され (INFO は初回 1 回だけ)、期間経過後に受け入れられることの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, slow_peer_reject_within_duration_and_accept_after_expiry)
+{
+    // Arrange
+    const uint32_t session_id = 101U;
+    const cplat_timespec session_ts = {1000, 500};
+    const uint64_t duration_ms = (uint64_t)ctx.flow_control_config.grace_ms *
+                                 (uint64_t)POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER;
+    // [状態] - 猶予時間 200 [ms] (拒否期間 2000 [ms]) の N:1 サーバーとセッション (101, 1000.500) を用意する。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat,
+                cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_INFO, nullptr,
+                                       HasSubstr("ignoring packets from disconnected slow peer")))
+        .Times(1);
+    // [Pre-Assert確認_正常系] - 期間内のパケット破棄の INFO 出力がセッションごとに最初の 1 回だけであること。
+    // Act
+    cplat_local_lock_lock(ctx.peers_mutex);
+    potr_internal_flow_control_slow_peer_record_locked(&ctx, session_id, &session_ts, 1000U);
+    // [手順] - 時刻 1000 で遅いピアのセッションを記録する。
+    int rejected_at_start = potr_internal_flow_control_slow_peer_rejected_locked(&ctx, session_id, &session_ts, 1000U);
+    int rejected_before_end =
+        potr_internal_flow_control_slow_peer_rejected_locked(&ctx, session_id, &session_ts, 1000U + duration_ms - 1U);
+    // [手順] - 記録直後と期間終了 1 [ms] 前に照合する。
+    int rejected_at_expiry =
+        potr_internal_flow_control_slow_peer_rejected_locked(&ctx, session_id, &session_ts, 1000U + duration_ms);
+    size_t count_after_expiry = ctx.flow_slow_rejected_count;
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    // [手順] - 猶予時間の 10 倍 (2000 [ms]) 経過後に照合する。
+    // Assert
+    EXPECT_EQ(1, rejected_at_start);     // [確認_正常系] - 記録直後は拒否 (1) されること。
+    EXPECT_EQ(1, rejected_before_end);   // [確認_正常系] - 期間終了 1 [ms] 前も拒否 (1) されること。
+    EXPECT_EQ(0, rejected_at_expiry);    // [確認_正常系] - 期間経過後は受け入れ (0) になること。
+    EXPECT_EQ(0U, count_after_expiry);   // [確認_正常系] - 期間が過ぎた記録が照合時に消去されること。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// 別のセッション (セッション識別子または開始時刻が異なる) は拒否期間内でも受け入れられることの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, slow_peer_reject_allows_different_session_id_or_timestamp)
+{
+    // Arrange
+    const uint32_t session_id = 101U;
+    const cplat_timespec session_ts = {1000, 500};
+    const cplat_timespec diff_sec_ts = {1001, 500};
+    const cplat_timespec diff_nsec_ts = {1000, 501};
+    // [状態] - 切断したセッション (101, 1000.500) と、識別子または開始時刻が異なるセッションを用意する。
+    // Pre-Assert
+    // Act
+    cplat_local_lock_lock(ctx.peers_mutex);
+    potr_internal_flow_control_slow_peer_record_locked(&ctx, session_id, &session_ts, 1000U);
+    int diff_id = potr_internal_flow_control_slow_peer_rejected_locked(&ctx, session_id + 1U, &session_ts, 1500U);
+    int diff_sec = potr_internal_flow_control_slow_peer_rejected_locked(&ctx, session_id, &diff_sec_ts, 1500U);
+    int diff_nsec = potr_internal_flow_control_slow_peer_rejected_locked(&ctx, session_id, &diff_nsec_ts, 1500U);
+    int same_session = potr_internal_flow_control_slow_peer_rejected_locked(&ctx, session_id, &session_ts, 1500U);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    // [手順] - 拒否期間内 (時刻 1500) に、別セッション 3 種と元のセッションを照合する。
+    // Assert
+    EXPECT_EQ(0, diff_id);       // [確認_正常系] - セッション識別子が異なる場合は受け入れ (0) になること。
+    EXPECT_EQ(0, diff_sec);      // [確認_正常系] - 開始時刻の秒が異なる場合は受け入れ (0) になること。
+    EXPECT_EQ(0, diff_nsec);     // [確認_正常系] - 開始時刻のナノ秒が異なる場合は受け入れ (0) になること。
+    EXPECT_EQ(1, same_session);  // [確認_正常系] - 元のセッション自体は引き続き拒否 (1) されること。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// 受け入れ拒否記録の表が満杯の場合に、最も古い記録が上書きされることの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, slow_peer_reject_table_full_overwrites_oldest)
+{
+    // Arrange
+    const cplat_timespec base_ts = {2000, 0};
+    // [状態] - 拒否期間 (2000 [ms]) 内に POTR_FLOW_SLOW_PEER_REJECT_MAX + 1 件のセッションを記録する条件を用意する。
+    // Pre-Assert
+    // Act
+    cplat_local_lock_lock(ctx.peers_mutex);
+    for (uint32_t i = 0U; i < POTR_FLOW_SLOW_PEER_REJECT_MAX; i++)
+    {
+        potr_internal_flow_control_slow_peer_record_locked(&ctx, 1000U + i, &base_ts, 1000U + i);
+    }
+    // [手順] - 時刻 1000 から 1 [ms] 刻みで表の上限までセッションを記録する。
+    const uint32_t newest_id = 1000U + POTR_FLOW_SLOW_PEER_REJECT_MAX;
+    const uint64_t check_ms = 1000U + POTR_FLOW_SLOW_PEER_REJECT_MAX;
+    potr_internal_flow_control_slow_peer_record_locked(&ctx, newest_id, &base_ts, check_ms);
+    // [手順] - 満杯の状態でさらに 1 件記録し、最も古い記録 (1000) を上書きさせる。
+    size_t count = ctx.flow_slow_rejected_count;
+    int oldest_rejected = potr_internal_flow_control_slow_peer_rejected_locked(&ctx, 1000U, &base_ts, check_ms);
+    int second_rejected = potr_internal_flow_control_slow_peer_rejected_locked(&ctx, 1001U, &base_ts, check_ms);
+    int newest_rejected = potr_internal_flow_control_slow_peer_rejected_locked(&ctx, newest_id, &base_ts, check_ms);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    // Assert
+    EXPECT_EQ((size_t)POTR_FLOW_SLOW_PEER_REJECT_MAX, count);
+    // [確認_正常系] - 有効な記録数が表の上限のままであること。
+    EXPECT_EQ(0, oldest_rejected);  // [確認_正常系] - 最も古い記録 (1000) が上書きされて受け入れ (0) になること。
+    EXPECT_EQ(1, second_rejected);  // [確認_正常系] - 2 番目に古い記録 (1001) は保持されて拒否 (1) されること。
+    EXPECT_EQ(1, newest_rejected);  // [確認_正常系] - 新しく追加した記録が保持されて拒否 (1) されること。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// 期間経過後に受け入れたピアが再び遅い場合に、再び切断対象となり、再度記録されて拒否されることの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, slow_peer_reaccepted_and_slow_again_is_disconnected_and_rerecorded)
+{
+    // Arrange
+    const uint32_t session_id = 555U;
+    const cplat_timespec session_ts = {3000, 123};
+    const uint64_t duration_ms = (uint64_t)ctx.flow_control_config.grace_ms *
+                                 (uint64_t)POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER;
+    potr_internal_peer_context *p1 = add_peer(0, 10U);
+    add_peer(1, 20U);
+    p1->peer_session_id = session_id;
+    p1->peer_session_ts = session_ts;
+    p1->peer_session_known = 1;
+    set_peer_stopping(p1, true);
+    potr_internal_flow_control_peer_mark_blocking(&ctx, 10U, now_ms);
+    std::vector<potr_peer_id> slow_peers;
+    std::vector<uint64_t> slow_accum;
+    uint64_t next_ms = 0U;
+    // [状態] - 接続中 2 ピアのうちピア 10 (セッション 555) を止める状態にし、時刻 1000 で妨げを記録する。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat,
+                cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_INFO, nullptr,
+                                       HasSubstr("ignoring packets from disconnected slow peer")))
+        .Times(2);
+    // [Pre-Assert確認_正常系] - 1 回目と 2 回目の拒否期間で、破棄の INFO 出力がそれぞれ 1 回ずつ出ること。
+    // Act
+    now_ms = 1200U;
+    size_t first_count = collect_slow(slow_peers, slow_accum, &next_ms);
+    cplat_local_lock_lock(ctx.peers_mutex);
+    potr_internal_flow_control_slow_peer_record_locked(&ctx, p1->peer_session_id, &p1->peer_session_ts, now_ms);
+    potr_internal_flow_control_peer_clear_blocking(&ctx, p1);
+    potr_internal_flow_control_peer_untrack(&ctx, p1);
+    p1->active = 0;
+    ctx.n_peers--;
+    int first_rejected = potr_internal_flow_control_slow_peer_rejected_locked(&ctx, session_id, &session_ts, 1500U);
+    int after_first_expiry =
+        potr_internal_flow_control_slow_peer_rejected_locked(&ctx, session_id, &session_ts, 1200U + duration_ms);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    // [手順] - 1 回目の切断と記録の後、期間内の拒否と期間経過後の受け入れを確認する。
+
+    now_ms = 1200U + duration_ms;
+    cplat_local_lock_dispose(p1->send_window_mutex);
+    p1->send_window_mutex = nullptr;
+    potr_internal_peer_context *p1_reconnected = add_peer(0, 11U);
+    p1_reconnected->peer_session_id = session_id;
+    p1_reconnected->peer_session_ts = session_ts;
+    p1_reconnected->peer_session_known = 1;
+    set_peer_stopping(p1_reconnected, true);
+    potr_internal_flow_control_peer_mark_blocking(&ctx, 11U, now_ms);
+    now_ms += 200U;
+    size_t second_count = collect_slow(slow_peers, slow_accum, &next_ms);
+    potr_peer_id second_peer = (second_count > 0U) ? slow_peers[0] : POTR_PEER_NA;
+    cplat_local_lock_lock(ctx.peers_mutex);
+    potr_internal_flow_control_slow_peer_record_locked(&ctx, p1_reconnected->peer_session_id,
+                                                       &p1_reconnected->peer_session_ts, now_ms);
+    int second_rejected =
+        potr_internal_flow_control_slow_peer_rejected_locked(&ctx, session_id, &session_ts, now_ms + 100U);
+    int after_second_expiry =
+        potr_internal_flow_control_slow_peer_rejected_locked(&ctx, session_id, &session_ts, now_ms + duration_ms);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    // [手順] - 同じセッションを受け入れ直した後に再び遅くし、再度の切断・記録・期間内拒否・期間経過後受け入れを確認する。
+    // Assert
+    EXPECT_EQ(1U, first_count);          // [確認_正常系] - 1 回目の猶予時間到達で切断対象になること。
+    EXPECT_EQ(1, first_rejected);        // [確認_正常系] - 1 回目の切断後の拒否期間内は拒否されること。
+    EXPECT_EQ(0, after_first_expiry);    // [確認_正常系] - 1 回目の拒否期間経過後は受け入れられること。
+    EXPECT_EQ(1U, second_count);         // [確認_正常系] - 再受け入れ後も遅い場合に再び切断対象になること。
+    EXPECT_EQ(11U, second_peer);         // [確認_正常系] - 2 回目の切断対象が再接続したピア 11 であること。
+    EXPECT_EQ(1, second_rejected);       // [確認_正常系] - 2 回目の切断後の拒否期間内は再び拒否されること。
+    EXPECT_EQ(0, after_second_expiry);   // [確認_正常系] - 2 回目の拒否期間経過後は再び受け入れられること。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]

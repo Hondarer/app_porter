@@ -225,9 +225,31 @@ static_assert(POTR_PERCENT_MAX == 100U, "porter: POTR_PERCENT_MAX must be 100");
 /** N:1 モードで 1 回の周期判定で切断対象として収集するピア数の上限。 */
 #define POTR_FLOW_SLOW_PEER_BATCH_MAX 64U
 
+/**
+ * N:1 モードで、全体を妨げている遅いピアとして切断したセッションの受け入れ拒否記録の上限数。
+ * 除外する数の上限は接続中のピア数で変わるため固定長とし、既定の max_peers (POTR_DEFAULT_MAX_PEERS = 1024) と
+ * 既定の割合 (10% -> 102) を収めつつ、コンテキスト内の固定配列と線形探索を小さく保つ 128 とする。
+ */
+#define POTR_FLOW_SLOW_PEER_REJECT_MAX 128U
+
 static_assert(POTR_FLOW_ACCUM_DECAY_DIVISOR == 9U, "porter: POTR_FLOW_ACCUM_DECAY_DIVISOR must be 9");
 static_assert(POTR_FLOW_SLOW_PEER_BATCH_MAX >= 1U && POTR_FLOW_SLOW_PEER_BATCH_MAX <= 256U,
               "porter: POTR_FLOW_SLOW_PEER_BATCH_MAX out of range");
+static_assert(POTR_FLOW_SLOW_PEER_REJECT_MAX >= POTR_FLOW_SLOW_PEER_BATCH_MAX &&
+                  POTR_FLOW_SLOW_PEER_REJECT_MAX <= 1024U,
+              "porter: POTR_FLOW_SLOW_PEER_REJECT_MAX out of range");
+
+/** N:1 モードで遅いピアとして切断したセッションの受け入れ拒否記録の 1 エントリ。 */
+typedef struct potr_internal_slow_peer_reject_entry
+{
+    cplat_timespec session_ts; /**< 切断したピアのセッション開始時刻。 */
+    uint64_t disconnected_ms;  /**< 切断した単調増加時刻 [ms]。 */
+    uint64_t record_seq;       /**< 記録順の連番 (同時刻の古い順判定に使用)。 */
+    uint32_t session_id;       /**< 切断したピアのセッション識別子。 */
+    uint8_t active;            /**< 1: 有効な記録, 0: 未使用。 */
+    uint8_t drop_logged;       /**< 1: 期間内のパケット破棄を INFO へ記録済み, 0: 未記録。 */
+    uint8_t _pad[2];           /**< パディング (構造体を 8 [byte] 境界に揃える)。 */
+} potr_internal_slow_peer_reject_entry;
 
 /**
  *  @brief          除外または切断できる相手 (受信者またはピア) の数の上限を求めます。
@@ -778,6 +800,46 @@ extern "C"
     extern size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, uint64_t now_ms,
                                                                        potr_peer_id *out_peers, uint64_t *out_accum_ms,
                                                                        size_t max_out, uint64_t *next_check_ms);
+
+    /**
+     *  @brief          N:1 モードで全体を妨げている遅いピアとして切断したセッションを記録します。
+     *
+     *  記録したセッションからのパケットは、切断時刻 (now_ms) から猶予時間 (grace_ms) ×
+     *  POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER の間、受け入れを拒否します。\n
+     *  記録の表 (POTR_FLOW_SLOW_PEER_REJECT_MAX 件) が満杯の場合は、期限切れの記録を消したうえで、
+     *  なお空きがなければ最も古い記録を上書きします。同じセッションがすでに記録されている場合は上書きします。\n
+     *  ヘルス チェックのタイムアウト、FIN、REJECT による切断からは呼び出しません。
+     *
+     *  @param[in,out]  ctx         コンテキスト。
+     *  @param[in]      session_id  切断したピアのセッション識別子。
+     *  @param[in]      session_ts  切断したピアのセッション開始時刻。NULL は許可しません。
+     *  @param[in]      now_ms      切断した単調増加時刻 [ms]。
+     *
+     *  @par            スレッド セーフ
+     *  呼び出し元が peers_mutex を保持していること。失敗モードのない記録のため共通結果コードの適用対象外。
+     */
+    extern void potr_internal_flow_control_slow_peer_record_locked(potr_context *ctx, uint32_t session_id,
+                                                                   const cplat_timespec *session_ts, uint64_t now_ms);
+
+    /**
+     *  @brief          未知のピアのセッションが、遅いピアとして切断された後の受け入れ拒否期間内かを判定します。
+     *
+     *  ピア検索で見つからなかったパケットに対して、新しいピアを生成しうる経路の手前で呼び出します。\n
+     *  受け入れ拒否期間 (grace_ms × POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER) が過ぎた記録は、照合の時点で消去します。\n
+     *  期間内に一致した場合は、そのセッションの最初の 1 回だけ INFO へ診断出力し、1 を返します。
+     *
+     *  @param[in,out]  ctx         コンテキスト。
+     *  @param[in]      session_id  パケットのセッション識別子。
+     *  @param[in]      session_ts  パケットのセッション開始時刻。NULL は許可しません。
+     *  @param[in]      now_ms      現在の単調増加時刻 [ms]。
+     *  @return         受け入れを拒否する期間内であれば 1、そうでなければ 0。失敗モードのない述語のため
+     *                  共通結果コードの適用対象外。
+     *
+     *  @par            スレッド セーフ
+     *  呼び出し元が peers_mutex を保持していること。
+     */
+    extern int potr_internal_flow_control_slow_peer_rejected_locked(potr_context *ctx, uint32_t session_id,
+                                                                    const cplat_timespec *session_ts, uint64_t now_ms);
 #ifdef __cplusplus
 }
 #endif

@@ -151,6 +151,8 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_peer_mark_blocking")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_note_queue_full")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_collect_slow_peers_locked")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_slow_peer_record_locked")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_slow_peer_rejected_locked")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_packet_build_flow_control")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_packet_build_flow_control_list")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_report_limit")
@@ -338,6 +340,8 @@ class Mock_porter
     MOCK_METHOD(void, potr_internal_flow_control_peer_mark_blocking, (potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms));
     MOCK_METHOD(void, potr_internal_flow_control_note_queue_full, (potr_context *ctx, uint64_t now_ms));
     MOCK_METHOD(size_t, potr_internal_flow_control_collect_slow_peers_locked, (potr_context *ctx, uint64_t now_ms, potr_peer_id *out_peers, uint64_t *out_accum_ms, size_t max_out, uint64_t *next_check_ms));
+    MOCK_METHOD(void, potr_internal_flow_control_slow_peer_record_locked, (potr_context *ctx, uint32_t session_id, const cplat_timespec *session_ts, uint64_t now_ms));
+    MOCK_METHOD(int, potr_internal_flow_control_slow_peer_rejected_locked, (potr_context *ctx, uint32_t session_id, const cplat_timespec *session_ts, uint64_t now_ms));
     MOCK_METHOD(int, potr_internal_packet_build_flow_control, (potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint8_t *payload, uint8_t state, uint32_t send_limit));
     MOCK_METHOD(int, potr_internal_packet_build_flow_control_list, (potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint8_t *payload, const potr_internal_packet_session_hdr *receivers, size_t count));
     MOCK_METHOD(int, potr_internal_flow_control_report_limit, (potr_context *ctx, uint32_t *send_limit));

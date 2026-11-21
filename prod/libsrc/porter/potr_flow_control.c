@@ -3055,6 +3055,160 @@ size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, u
     return count;
 }
 
+/* 遅いピアとして切断したセッションを受け入れない期間 [ms] を返す。 */
+static uint64_t slow_peer_reject_duration_ms(const potr_context *ctx)
+{
+    uint32_t grace_ms = ctx->flow_control_config.grace_ms;
+
+    if (grace_ms == 0U)
+    {
+        grace_ms = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_GRACE_MS;
+    }
+
+    return (uint64_t)grace_ms * (uint64_t)POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER;
+}
+
+/* 受け入れ拒否記録が期限切れか判定する。 */
+static int slow_peer_reject_expired(const potr_internal_slow_peer_reject_entry *entry, uint64_t now_ms,
+                                    uint64_t duration_ms)
+{
+    return now_ms >= entry->disconnected_ms && now_ms - entry->disconnected_ms >= duration_ms;
+}
+
+/* 受け入れ拒否記録の 1 エントリを消去し、有効件数を減算する。 */
+static void slow_peer_reject_clear(potr_context *ctx, potr_internal_slow_peer_reject_entry *entry)
+{
+    memset(entry, 0, sizeof(*entry));
+    if (ctx->flow_slow_rejected_count > 0U)
+    {
+        ctx->flow_slow_rejected_count--;
+    }
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+void potr_internal_flow_control_slow_peer_record_locked(potr_context *ctx, uint32_t session_id,
+                                                        const cplat_timespec *session_ts, uint64_t now_ms)
+{
+    uint64_t duration_ms;
+    potr_internal_slow_peer_reject_entry *same_slot = NULL;
+    potr_internal_slow_peer_reject_entry *free_slot = NULL;
+    potr_internal_slow_peer_reject_entry *oldest_slot = NULL;
+    potr_internal_slow_peer_reject_entry *target;
+    size_t i;
+
+    if (ctx == NULL || session_ts == NULL)
+    {
+        return;
+    }
+
+    duration_ms = slow_peer_reject_duration_ms(ctx);
+
+    for (i = 0U; i < POTR_FLOW_SLOW_PEER_REJECT_MAX; i++)
+    {
+        potr_internal_slow_peer_reject_entry *entry = &ctx->flow_slow_rejected[i];
+
+        if (entry->active == 0U)
+        {
+            if (free_slot == NULL)
+            {
+                free_slot = entry;
+            }
+            continue;
+        }
+
+        if (slow_peer_reject_expired(entry, now_ms, duration_ms))
+        {
+            slow_peer_reject_clear(ctx, entry);
+            if (free_slot == NULL)
+            {
+                free_slot = entry;
+            }
+            continue;
+        }
+
+        if (entry->session_id == session_id && cplat_timespec_cmp(&entry->session_ts, session_ts) == 0)
+        {
+            same_slot = entry;
+        }
+
+        if (oldest_slot == NULL || entry->disconnected_ms < oldest_slot->disconnected_ms ||
+            (entry->disconnected_ms == oldest_slot->disconnected_ms && entry->record_seq < oldest_slot->record_seq))
+        {
+            oldest_slot = entry;
+        }
+    }
+
+    if (same_slot != NULL)
+    {
+        target = same_slot;
+    }
+    else if (free_slot != NULL)
+    {
+        target = free_slot;
+        ctx->flow_slow_rejected_count++;
+    }
+    else
+    {
+        target = oldest_slot;
+    }
+
+    target->session_id = session_id;
+    target->session_ts = *session_ts;
+    target->disconnected_ms = now_ms;
+    target->record_seq = ++ctx->flow_slow_rejected_seq;
+    target->active = 1U;
+    target->drop_logged = 0U;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+int potr_internal_flow_control_slow_peer_rejected_locked(potr_context *ctx, uint32_t session_id,
+                                                         const cplat_timespec *session_ts, uint64_t now_ms)
+{
+    uint64_t duration_ms;
+    size_t i;
+
+    if (ctx == NULL || session_ts == NULL || ctx->flow_slow_rejected_count == 0U)
+    {
+        return 0;
+    }
+
+    duration_ms = slow_peer_reject_duration_ms(ctx);
+
+    for (i = 0U; i < POTR_FLOW_SLOW_PEER_REJECT_MAX; i++)
+    {
+        potr_internal_slow_peer_reject_entry *entry = &ctx->flow_slow_rejected[i];
+
+        if (entry->active == 0U)
+        {
+            continue;
+        }
+
+        if (slow_peer_reject_expired(entry, now_ms, duration_ms))
+        {
+            slow_peer_reject_clear(ctx, entry);
+            continue;
+        }
+
+        if (entry->session_id == session_id && cplat_timespec_cmp(&entry->session_ts, session_ts) == 0)
+        {
+            if (entry->drop_logged == 0U)
+            {
+                uint64_t remaining_ms =
+                    (now_ms >= entry->disconnected_ms) ? (duration_ms - (now_ms - entry->disconnected_ms)) : duration_ms;
+
+                entry->drop_logged = 1U;
+                POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                           "recv[service_id=%" PRId64 "]: ignoring packets from disconnected slow peer session=%u "
+                           "(remaining=%" PRIu64 "ms)",
+                           ctx->service.service_id, session_id, remaining_ms);
+            }
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
 int potr_internal_flow_control_report_limit(potr_context *ctx, uint32_t *send_limit)
 {

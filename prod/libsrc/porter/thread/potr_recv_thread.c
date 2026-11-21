@@ -159,6 +159,19 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
         return;
     }
 
+    /* 全体を妨げている遅いピアとして切断したセッションは、受け入れ拒否期間の間、パケットを破棄する。 */
+    if (peer == NULL)
+    {
+        uint64_t now_ms = 0U;
+
+        if (cplat_clock_get_monotonic_ms(&now_ms) == CPLAT_OK &&
+            potr_internal_flow_control_slow_peer_rejected_locked(ctx, pkt->session_id, &pkt_session_ts, now_ms) != 0)
+        {
+            cplat_local_lock_unlock(ctx->peers_mutex);
+            return;
+        }
+    }
+
     if (peer == NULL)
     {
         if (pkt->flags & POTR_FLAG_PING)
