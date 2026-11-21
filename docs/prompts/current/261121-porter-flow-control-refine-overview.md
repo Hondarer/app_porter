@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 全体管理文書 (overview)
-最終更新日時: 2026-11-22 07:59:39 JST
+最終更新日時: 2026-11-22 08:24:10 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QxuPSr8Mxe6rktvre
 稼働 OS: Linux (WSL)
 上流文書: `261119-porter-flow-control-backlog.md` (対策元の残課題一覧)。削除されている場合があります。
@@ -302,6 +302,7 @@ Table: 遅いピアの切断の測定
 | 4.5 (止める判定と除外) | `multicast` と `broadcast` の止める判定 (1 台でも止める状態なら止める)、積算と除外、除外を解く条件。設定項目の追加 (`flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_grace_ms`、`flow_control_feedback_percent`) と廃止 (`flow_control_receiver_count`、`flow_control_receiver_percent`、`flow_control_monitored_receiver_percent`)。監視する数は、この時点では下限 (既定 1 台) だけで決まる。コミットは `c4e2bb1` | `app/porter` の `make` と `make quicktest` (全テスト) が成功。中身がある `.warn` はなし。測定は下の「止める判定と除外の測定」 |
 | 4.6 | N 対 1 サーバーの幅の配分 (送信中のピアの数で割る)、順番の許可、全体を妨げている遅いピアの切断。コミットは `f5e379d`。あわせて、`porter-bench` に、`p2` の `--clients`、条件 `p7` (全ピア宛の送信と、受信を止めるクライアント)、CSV への `--config` の出力を追加 (`7ef622d`、`1b469cb`) | `app/porter` の `make` と `make quicktest` (全テスト) が成功。中身がある `.warn` はなし。測定は下の「N 対 1 サーバーの測定」 |
 | 機能仕様 | `docs/functional-spec/` の `delivery.md`、`config.md`、`transport.md` を、最終仕様の版 2 に合わせて改めた (要件の追加 13 件、変更 5 件、削除 2 件)。コミットは `2e69720` | `check_functional_spec.py` が成功 (要件 416 件) |
+| 4.5 (除外の見直し) と、レビューの指摘の修正 | 全体が遅い間は、除外のための積算を進めない (LADR-016)。除外している数を、活動中の受信者だけで数える。レビューの指摘 5 件の修正 (LADR-019。未通知のまま止まる経路、TCP での「上限なし」の取り消し、期限切れの遷移の競合、積算の漏れ、送出時刻の重複した取得)。実装は、codex が途中まで行い (5 時間の枠の上限で停止)、残りを agy が行った。コミットは `77af17b` | `app/porter` の `make` と `make quicktest` (全テスト) が成功。中身がある `.warn` はなし。`p6` の測定: 全員が同じように遅い構成 (受信者 3) で、除外の記録が 0 件 (変更の前は、各回 1 件)。1 台だけ遅い構成 (受信者 16) で、遅い 1 台を除外し、処理件数は約 3,700 件/秒で変わらず |
 
 Table: 実装の記録
 
