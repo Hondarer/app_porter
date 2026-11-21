@@ -244,7 +244,7 @@ typedef enum potr_flow_control_state
 #define POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX \
     64U /**< multicast と broadcast の送信者が監視する受信者の台数の上限。flow_control_monitored_receiver_count の検査上限です。 */
 #define POTR_FLOW_CONTROL_DISABLED \
-    0xFFFFFFFFU /**< 「無効」を表す専用の値。サービス定義の flow_control_capacity、flow_control_receiver_percent、flow_control_receiver_count、flow_control_monitored_receiver_percent、flow_control_monitored_receiver_count と、グローバル設定とサービス定義の flow_control_receive_buffer_percent、udp_receive_buffer_size に指定できます。設定ファイルでは -1 と記載します。 */
+    0xFFFFFFFFU /**< 「無効」を表す専用の値。サービス定義の flow_control_capacity、flow_control_monitored_receiver_count と、グローバル設定とサービス定義の flow_control_excluded_receiver_count、flow_control_excluded_receiver_percent、flow_control_receive_buffer_percent、udp_receive_buffer_size に指定できます。設定ファイルでは -1 と記載します。 */
 #define POTR_DEFAULT_FLOW_CONTROL_CAPACITY 0U /**< 通知キューの容量のデフォルト [byte]。0 = フロー制御は無効。 */
 #define POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT 80U /**< 抑制を要求するしきい値のデフォルト [%]。 */
 #define POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT   50U /**< 解除するしきい値のデフォルト [%]。 */
@@ -252,14 +252,16 @@ typedef enum potr_flow_control_state
     200U /**< 抑制の要求の再送周期のデフォルト [ms]。 */
 #define POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS \
     1000U /**< 抑制の要求の有効期限のデフォルト [ms]。 */
-#define POTR_DEFAULT_FLOW_CONTROL_RECEIVER_PERCENT \
-    0U /**< 一対多の送信側が抑制する、要求中の受信者の割合のデフォルト [%]。0 = 割合の条件は無効。 */
-#define POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT \
-    2U /**< 一対多の送信側が抑制する、要求中の受信者の台数のデフォルト。 */
-#define POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_PERCENT \
-    0U /**< multicast と broadcast の送信側が監視する受信者の割合のデフォルト [%]。0 = 割合は使わない。 */
+#define POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_COUNT \
+    1U /**< 1 対 N の送信側および N:1 サーバーが除外または切断する数の上限のデフォルト [台]。 */
+#define POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_PERCENT \
+    10U /**< 1 対 N の送信側および N:1 サーバーが除外または切断する数の上限のデフォルト [%]。 */
+#define POTR_DEFAULT_FLOW_CONTROL_GRACE_MS \
+    200U /**< 遅い相手が全体を止めてよい猶予時間のデフォルト [ms]。 */
+#define POTR_DEFAULT_FLOW_CONTROL_FEEDBACK_PERCENT \
+    5U /**< multicast と broadcast の送信側が監視対象から受けるフロー制御パケットの数の予算のデフォルト (DATA 100 パケットあたりの数)。 */
 #define POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT \
-    4U /**< multicast と broadcast の送信側が監視する受信者の台数のデフォルト。 */
+    1U /**< multicast と broadcast の送信側が監視する受信者の台数の下限のデフォルト [台]。 */
 #define POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT \
     100U /**< OS の受信バッファーの大きさのうち、受信バッファーの幅の計算に使う割合のデフォルト [%]。 */
 /** @} */

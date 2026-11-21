@@ -779,9 +779,10 @@ static potr_global_config make_default_global()
     g.flow_control_resume_percent = POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT;
     g.flow_control_request_interval_ms = POTR_DEFAULT_FLOW_CONTROL_REQUEST_INTERVAL_MS;
     g.flow_control_request_lifetime_ms = POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS;
-    g.flow_control_receiver_percent = POTR_DEFAULT_FLOW_CONTROL_RECEIVER_PERCENT;
-    g.flow_control_receiver_count = POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT;
-    g.flow_control_monitored_receiver_percent = POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_PERCENT;
+    g.flow_control_excluded_receiver_count = POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_COUNT;
+    g.flow_control_excluded_receiver_percent = POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_PERCENT;
+    g.flow_control_grace_ms = POTR_DEFAULT_FLOW_CONTROL_GRACE_MS;
+    g.flow_control_feedback_percent = POTR_DEFAULT_FLOW_CONTROL_FEEDBACK_PERCENT;
     g.flow_control_monitored_receiver_count = POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT;
     g.flow_control_receive_buffer_percent = g_receive_buffer_limit_enabled
                                                 ? POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT
@@ -855,12 +856,14 @@ static const GlobalConfigField kGlobalConfigFields[] = {
      sizeof(potr_global_config::flow_control_request_interval_ms), false, {}},
     {"flow_control_request_lifetime_ms", offsetof(potr_global_config, flow_control_request_lifetime_ms),
      sizeof(potr_global_config::flow_control_request_lifetime_ms), false, {}},
-    {"flow_control_receiver_percent", offsetof(potr_global_config, flow_control_receiver_percent),
-     sizeof(potr_global_config::flow_control_receiver_percent), false, {}},
-    {"flow_control_receiver_count", offsetof(potr_global_config, flow_control_receiver_count),
-     sizeof(potr_global_config::flow_control_receiver_count), false, {}},
-    {"flow_control_monitored_receiver_percent", offsetof(potr_global_config, flow_control_monitored_receiver_percent),
-     sizeof(potr_global_config::flow_control_monitored_receiver_percent), false, {}},
+    {"flow_control_excluded_receiver_count", offsetof(potr_global_config, flow_control_excluded_receiver_count),
+     sizeof(potr_global_config::flow_control_excluded_receiver_count), true, {}},
+    {"flow_control_excluded_receiver_percent", offsetof(potr_global_config, flow_control_excluded_receiver_percent),
+     sizeof(potr_global_config::flow_control_excluded_receiver_percent), true, {}},
+    {"flow_control_grace_ms", offsetof(potr_global_config, flow_control_grace_ms),
+     sizeof(potr_global_config::flow_control_grace_ms), false, {}},
+    {"flow_control_feedback_percent", offsetof(potr_global_config, flow_control_feedback_percent),
+     sizeof(potr_global_config::flow_control_feedback_percent), false, {}},
     {"flow_control_monitored_receiver_count", offsetof(potr_global_config, flow_control_monitored_receiver_count),
      sizeof(potr_global_config::flow_control_monitored_receiver_count), false, {}},
     {"flow_control_receive_buffer_percent", offsetof(potr_global_config, flow_control_receive_buffer_percent),

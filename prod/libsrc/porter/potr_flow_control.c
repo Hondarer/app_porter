@@ -32,10 +32,13 @@ static_assert(POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX >= 1U && POTR_FLOW_CONTRO
               "porter: POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX must fit in the 1-byte count");
 static_assert(POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT <= POTR_PERCENT_MAX &&
                   POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT <= POTR_PERCENT_MAX &&
-                  POTR_DEFAULT_FLOW_CONTROL_RECEIVER_PERCENT <= POTR_PERCENT_MAX &&
-                  POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_PERCENT <= POTR_PERCENT_MAX &&
+                  POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_PERCENT <= POTR_PERCENT_MAX &&
+                  POTR_DEFAULT_FLOW_CONTROL_FEEDBACK_PERCENT >= 1U &&
+                  POTR_DEFAULT_FLOW_CONTROL_FEEDBACK_PERCENT <= POTR_PERCENT_MAX &&
                   POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT <= POTR_PERCENT_MAX,
-              "porter: default flow control percent exceeds POTR_PERCENT_MAX");
+              "porter: default flow control percent out of range");
+static_assert(POTR_DEFAULT_FLOW_CONTROL_GRACE_MS >= 1U && POTR_DEFAULT_FLOW_CONTROL_GRACE_MS <= POTR_WAIT_MS_MAX,
+              "porter: default grace_ms out of range");
 static_assert(POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT < POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT,
               "porter: default resume percent must be below suppress percent");
 
@@ -158,6 +161,37 @@ static int uses_receive_buffer(potr_type type, potr_role role, uint32_t health_i
 }
 
 /*
+ * 既定で有効で、0 が「既定値を使用」(サービス側では「グローバル値を使用」) を表し、
+ * グローバル設定とサービス定義の両方で POTR_FLOW_CONTROL_DISABLED (無効) を受け付ける項目の実効値を決める。
+ * 無効の場合は 0 を返す。
+ */
+static uint32_t resolve_default_or_disabled(uint32_t service_value, uint32_t global_value, uint32_t default_value)
+{
+    if (service_value == POTR_FLOW_CONTROL_DISABLED)
+    {
+        return 0U;
+    }
+
+    if (service_value != 0U)
+    {
+        return service_value;
+    }
+
+    if (global_value == POTR_FLOW_CONTROL_DISABLED)
+    {
+        return 0U;
+    }
+
+    if (global_value != 0U)
+    {
+        return global_value;
+    }
+
+    /* 構造体を 0 で初期化した利用側は、既定値を使う。 */
+    return default_value;
+}
+
+/*
  * 受信バッファーの幅の計算に使う割合の実効値を決め、検査する。
  * この項目は既定で有効で、0 が「既定値を使用」(サービス側では「グローバル値を使用」) を表すため、
  * グローバル設定とサービス定義の両方で POTR_FLOW_CONTROL_DISABLED (無効) を受け付ける。
@@ -166,29 +200,10 @@ static int uses_receive_buffer(potr_type type, potr_role role, uint32_t health_i
 static int resolve_receive_buffer_percent(const potr_service_def *service, const potr_global_config *global,
                                           potr_role role, uint32_t health_interval_ms, uint32_t *value)
 {
-    uint32_t percent;
-
-    if (service->flow_control_receive_buffer_percent == POTR_FLOW_CONTROL_DISABLED)
-    {
-        percent = 0U;
-    }
-    else if (service->flow_control_receive_buffer_percent != 0U)
-    {
-        percent = service->flow_control_receive_buffer_percent;
-    }
-    else if (global->flow_control_receive_buffer_percent == POTR_FLOW_CONTROL_DISABLED)
-    {
-        percent = 0U;
-    }
-    else if (global->flow_control_receive_buffer_percent != 0U)
-    {
-        percent = global->flow_control_receive_buffer_percent;
-    }
-    else
-    {
-        /* 構造体を 0 で初期化した利用側は、既定値を使う。 */
-        percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT;
-    }
+    uint32_t percent =
+        resolve_default_or_disabled(service->flow_control_receive_buffer_percent,
+                                    global->flow_control_receive_buffer_percent,
+                                    (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT);
 
     if (percent > POTR_PERCENT_MAX)
     {
@@ -240,12 +255,10 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
         resolve_value(service->flow_control_request_lifetime_ms, global->flow_control_request_lifetime_ms, 0,
                       (uint32_t)POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS,
                       &config->request_lifetime_ms) != POTR_OK ||
-        resolve_value(service->flow_control_receiver_percent, global->flow_control_receiver_percent, 1, 0U,
-                      &config->receiver_percent) != POTR_OK ||
-        resolve_value(service->flow_control_receiver_count, global->flow_control_receiver_count, 1, 0U,
-                      &config->receiver_count) != POTR_OK ||
-        resolve_value(service->flow_control_monitored_receiver_percent, global->flow_control_monitored_receiver_percent,
-                      1, 0U, &config->monitored_receiver_percent) != POTR_OK ||
+        resolve_value(service->flow_control_grace_ms, global->flow_control_grace_ms, 0,
+                      (uint32_t)POTR_DEFAULT_FLOW_CONTROL_GRACE_MS, &config->grace_ms) != POTR_OK ||
+        resolve_value(service->flow_control_feedback_percent, global->flow_control_feedback_percent, 0,
+                      (uint32_t)POTR_DEFAULT_FLOW_CONTROL_FEEDBACK_PERCENT, &config->feedback_percent) != POTR_OK ||
         resolve_value(service->flow_control_monitored_receiver_count, global->flow_control_monitored_receiver_count, 1,
                       0U, &config->monitored_receiver_count) != POTR_OK)
     {
@@ -254,6 +267,15 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
                    service->service_id);
         return POTR_ERR_INVALID_ARGUMENT;
     }
+
+    config->excluded_receiver_count =
+        resolve_default_or_disabled(service->flow_control_excluded_receiver_count,
+                                    global->flow_control_excluded_receiver_count,
+                                    (uint32_t)POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_COUNT);
+    config->excluded_receiver_percent =
+        resolve_default_or_disabled(service->flow_control_excluded_receiver_percent,
+                                    global->flow_control_excluded_receiver_percent,
+                                    (uint32_t)POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_PERCENT);
 
     if (config->suppress_percent < 1U || config->suppress_percent > POTR_PERCENT_MAX || config->resume_percent < 1U ||
         config->resume_percent >= config->suppress_percent)
@@ -275,7 +297,7 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* 再送周期と有効期限は待機の時間に使うため、待機の関数へ int で渡せる上限を超える値は受け付けない。 */
+    /* 再送周期、有効期限、猶予時間は待機の時間に使うため、待機の関数へ int で渡せる上限を超える値は受け付けない。 */
     if (config->request_interval_ms > POTR_WAIT_MS_MAX || config->request_lifetime_ms > POTR_WAIT_MS_MAX)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
@@ -286,21 +308,36 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (config->receiver_percent > POTR_PERCENT_MAX)
+    if (config->grace_ms == 0U || config->grace_ms > POTR_WAIT_MS_MAX)
     {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "flow_control: service_id=%" PRId64 " invalid receiver_percent=%u (max: 100)",
-                   service->service_id, (unsigned)config->receiver_percent);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "flow_control: service_id=%" PRId64 " invalid grace_ms=%u (1 <= grace_ms <= %u)",
+                   service->service_id, (unsigned)config->grace_ms, (unsigned)POTR_WAIT_MS_MAX);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (config->monitored_receiver_percent > POTR_PERCENT_MAX ||
-        config->monitored_receiver_count > POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX)
+    if (config->excluded_receiver_percent > POTR_PERCENT_MAX)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "flow_control: service_id=%" PRId64 " invalid monitored_receiver_percent=%u (max: 100)"
-                   " monitored_receiver_count=%u (max: %u)",
-                   service->service_id, (unsigned)config->monitored_receiver_percent,
-                   (unsigned)config->monitored_receiver_count, (unsigned)POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX);
+                   "flow_control: service_id=%" PRId64 " invalid excluded_receiver_percent=%u (max: 100)",
+                   service->service_id, (unsigned)config->excluded_receiver_percent);
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    if (config->feedback_percent < 1U || config->feedback_percent > POTR_PERCENT_MAX)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "flow_control: service_id=%" PRId64 " invalid feedback_percent=%u (1 <= percent <= 100)",
+                   service->service_id, (unsigned)config->feedback_percent);
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    if (config->monitored_receiver_count > POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "flow_control: service_id=%" PRId64 " invalid monitored_receiver_count=%u (max: %u)",
+                   service->service_id, (unsigned)config->monitored_receiver_count,
+                   (unsigned)POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
@@ -2088,7 +2125,7 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
         {
             /*
              * multicast と broadcast: 初期の幅は適用しない。
-             * 要求と送出上限を 1 つも受けていない間は、受信者の管理表を走査しない。
+             * 要求、送出上限、積算、除外のいずれも残っていない間は、受信者の管理表を走査しない。
              */
             if (cplat_atomic_load_i32(&ctx->flow_request_pending, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
             {

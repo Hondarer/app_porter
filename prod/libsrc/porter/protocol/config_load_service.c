@@ -255,23 +255,30 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
             trace_unparsed_service_value(key, val, current->service_id);
         }
     }
-    else if (strcmp(key, "flow_control_receiver_percent") == 0)
+    else if (strcmp(key, "flow_control_excluded_receiver_count") == 0)
     {
-        if (parse_flow_control_value(&current->flow_control_receiver_percent, val) != CPLAT_OK)
+        if (parse_flow_control_value(&current->flow_control_excluded_receiver_count, val) != CPLAT_OK)
         {
             trace_unparsed_service_value(key, val, current->service_id);
         }
     }
-    else if (strcmp(key, "flow_control_receiver_count") == 0)
+    else if (strcmp(key, "flow_control_excluded_receiver_percent") == 0)
     {
-        if (parse_flow_control_value(&current->flow_control_receiver_count, val) != CPLAT_OK)
+        if (parse_flow_control_value(&current->flow_control_excluded_receiver_percent, val) != CPLAT_OK)
         {
             trace_unparsed_service_value(key, val, current->service_id);
         }
     }
-    else if (strcmp(key, "flow_control_monitored_receiver_percent") == 0)
+    else if (strcmp(key, "flow_control_grace_ms") == 0)
     {
-        if (parse_flow_control_value(&current->flow_control_monitored_receiver_percent, val) != CPLAT_OK)
+        if (cplat_parse_uint32(&current->flow_control_grace_ms, val, 10) != CPLAT_OK)
+        {
+            trace_unparsed_service_value(key, val, current->service_id);
+        }
+    }
+    else if (strcmp(key, "flow_control_feedback_percent") == 0)
+    {
+        if (cplat_parse_uint32(&current->flow_control_feedback_percent, val, 10) != CPLAT_OK)
         {
             trace_unparsed_service_value(key, val, current->service_id);
         }

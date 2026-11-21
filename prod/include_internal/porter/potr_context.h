@@ -337,10 +337,13 @@ struct potr_context
     uint64_t flow_last_data_send_ms; /**< 送信側: 最後に DATA を送出した時刻 [ms]。0 = 未送出。送信スレッドだけが使用。 */
     struct potr_internal_deferred_entry *flow_deferred_head; /**< N:1 モードで保留中のエントリの先頭。送信スレッドだけが使用。 */
     struct potr_internal_deferred_entry *flow_deferred_tail; /**< N:1 モードで保留中のエントリの末尾。送信スレッドだけが使用。 */
-    cplat_atomic_i32 flow_request_pending; /**< 送信側: 片方向 UDP で、受信者の管理表に抑制の要求が残っている可能性があるか。アトミックに読み書きします。 */
+    cplat_atomic_i32 flow_request_pending; /**< 送信側: 片方向 UDP で、受信者の管理表に抑制の要求、送出上限、積算、または除外が残っている可能性があるか。アトミックに読み書きします。 */
     cplat_atomic_i32 flow_tracked_peers; /**< 送信側: N:1 モードで、抑制の要求または送出上限を保持しているピアの数。peers_mutex の下で増減し、アトミックに読み取ります。 */
     cplat_atomic_i32 flow_deferred_total; /**< 送信側: N:1 モードで、送信スレッドが保留しているエントリの総数。送信スレッドだけが増減し、アトミックに読み取ります。 */
     int flow_receiver_limit_stalled; /**< 送信側: 片方向 unicast の受信者管理表で送出上限または初期の幅に達しているか (1: 達している)。送信スレッドだけが使用。 */
+    uint64_t flow_judge_last_ms; /**< 送信側: multicast と broadcast で、前回 potr_internal_receiver_flow_suppressed() を判定した時刻 [ms]。callback_mutex で保護。 */
+    int flow_judge_has_last; /**< 送信側: flow_judge_last_ms が有効か (1: 判定済み)。callback_mutex で保護。 */
+    int flow_judge_last_suppressed; /**< 送信側: multicast と broadcast で、前回の判定で送出を止めたか (1: 止めた)。callback_mutex で保護。 */
     cplat_atomic_i32 fatal_error;                      /**< 通知継続不能の原因。 */
     int lifecycle_padding;                             /**< ポインター境界の明示パディング。 */
     potr_recv_fn callback;                             /**< 受信コールバック。 */

@@ -45,9 +45,10 @@ static void config_set_global_defaults(potr_global_config *global)
     global->flow_control_resume_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT;
     global->flow_control_request_interval_ms = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_REQUEST_INTERVAL_MS;
     global->flow_control_request_lifetime_ms = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS;
-    global->flow_control_receiver_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVER_PERCENT;
-    global->flow_control_receiver_count = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVER_COUNT;
-    global->flow_control_monitored_receiver_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_PERCENT;
+    global->flow_control_excluded_receiver_count = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_COUNT;
+    global->flow_control_excluded_receiver_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_PERCENT;
+    global->flow_control_grace_ms = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_GRACE_MS;
+    global->flow_control_feedback_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_FEEDBACK_PERCENT;
     global->flow_control_monitored_receiver_count = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT;
     global->flow_control_receive_buffer_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT;
     global->udp_receive_buffer_size = (uint32_t)POTR_DEFAULT_UDP_RECEIVE_BUFFER_SIZE;
@@ -55,7 +56,8 @@ static void config_set_global_defaults(potr_global_config *global)
 
 /*
  * global でも -1 を「無効」を表す専用の値 (POTR_FLOW_CONTROL_DISABLED) として受け付ける設定値を解釈する。
- * 既定で有効で、0 が「既定値を使用」を表す項目 (flow_control_receive_buffer_percent、udp_receive_buffer_size)
+ * 既定で有効で、0 が「既定値を使用」を表す項目 (flow_control_excluded_receiver_count、
+ * flow_control_excluded_receiver_percent、flow_control_receive_buffer_percent、udp_receive_buffer_size)
  * で使用する。それ以外は非負整数として解釈する。
  * 不正な文字列の場合は、直前の値を維持し、cplat_parse_uint32 の戻り値を返す。
  */
@@ -231,23 +233,30 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
                 trace_unparsed_global_value(key, val);
             }
         }
-        else if (strcmp(key, "flow_control_receiver_percent") == 0)
+        else if (strcmp(key, "flow_control_excluded_receiver_count") == 0)
         {
-            if (cplat_parse_uint32(&global->flow_control_receiver_percent, val, 10) != CPLAT_OK)
+            if (parse_disabled_or_uint32(&global->flow_control_excluded_receiver_count, val) != CPLAT_OK)
             {
                 trace_unparsed_global_value(key, val);
             }
         }
-        else if (strcmp(key, "flow_control_receiver_count") == 0)
+        else if (strcmp(key, "flow_control_excluded_receiver_percent") == 0)
         {
-            if (cplat_parse_uint32(&global->flow_control_receiver_count, val, 10) != CPLAT_OK)
+            if (parse_disabled_or_uint32(&global->flow_control_excluded_receiver_percent, val) != CPLAT_OK)
             {
                 trace_unparsed_global_value(key, val);
             }
         }
-        else if (strcmp(key, "flow_control_monitored_receiver_percent") == 0)
+        else if (strcmp(key, "flow_control_grace_ms") == 0)
         {
-            if (cplat_parse_uint32(&global->flow_control_monitored_receiver_percent, val, 10) != CPLAT_OK)
+            if (cplat_parse_uint32(&global->flow_control_grace_ms, val, 10) != CPLAT_OK)
+            {
+                trace_unparsed_global_value(key, val);
+            }
+        }
+        else if (strcmp(key, "flow_control_feedback_percent") == 0)
+        {
+            if (cplat_parse_uint32(&global->flow_control_feedback_percent, val, 10) != CPLAT_OK)
             {
                 trace_unparsed_global_value(key, val);
             }

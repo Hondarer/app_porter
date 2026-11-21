@@ -18,10 +18,14 @@
     // "flow_control_receive_buffer_percent": 100,
     // UDP のソケットを開くときに OS へ要求する受信バッファーの大きさ (バイト)。-1 で要求しない。
     // "udp_receive_buffer_size": 4194304,
-    // multicast と broadcast の送信側が、送出上限を知らせる受信者として選ぶ台数と割合 (%)。
-    // 遅い受信者から選ぶ。説明は docs/config.md の「multicast と broadcast の監視対象」を参照。
-    // "flow_control_monitored_receiver_count": 4,
-    // "flow_control_monitored_receiver_percent": 0,
+    // 1 対 N の送信側および N:1 サーバーで、遅い相手を除外または切断する数の上限 (台数と %、-1 で無効) と猶予時間 (ms)。
+    // "flow_control_excluded_receiver_count": 1,
+    // "flow_control_excluded_receiver_percent": 10,
+    // "flow_control_grace_ms": 200,
+    // multicast と broadcast の送信側が監視対象から受けるフロー制御パケットの予算 (DATA 100 パケットあたりの数) と、
+    // 監視する数の下限 (台数)。説明は docs/config.md の「multicast と broadcast の監視対象」を参照。
+    // "flow_control_feedback_percent": 5,
+    // "flow_control_monitored_receiver_count": 1,
   },
   "services": {
     // 一方向ユニキャスト: ループバックで動作確認。

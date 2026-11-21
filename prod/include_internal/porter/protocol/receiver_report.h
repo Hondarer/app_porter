@@ -28,84 +28,97 @@ typedef struct potr_internal_receiver
     uint64_t flow_limit_received_ms; /**< 最後にフロー制御パケットを受理した時刻 [ms]。 */
     uint64_t flow_last_packet_ms; /**< 最後に何らかのパケット (REPORT、NACK、フロー制御) を受理した時刻 [ms]。 */
     uint64_t flow_limit_stalled_ms; /**< 送出が送出上限に達して止まった時刻 [ms]。0 = 止まっていない。 */
+    uint64_t flow_stall_accum_units; /**< multicast と broadcast で、この受信者が止める状態で送信者が送出を止めていた時間の積算 [1/9 ms] (POTR_FLOW_ACCUM_DECAY_DIVISOR 倍)。 */
+    uint64_t flow_unexclude_since_ms; /**< 除外を解く条件を満たし始めた時刻 [ms]。flow_unexclude_pending が 1 の間だけ有効。 */
     int64_t session_tv_sec; /**< 受信者のセッション開始秒。 */
     int32_t session_tv_nsec; /**< 受信者のセッション開始ナノ秒部。 */
     uint32_t session_id; /**< 受信者のセッション識別子。 */
+    uint32_t flow_report_send_limit; /**< 受信報告に載った送出上限の絶対値。flow_report_limit_known が 1 の間だけ有効。 */
+    int flow_report_limit_known; /**< 受信報告に載った送出上限の記録があるか (1: ある)。 */
     uint8_t path_state[POTR_MAX_PATH]; /**< 受信者が報告した経路受信状態。 */
     int active; /**< 期限内に REPORT を受信したエントリ。 */
     int flow_monitored; /**< multicast と broadcast で、監視対象に選んでいるか (1: 監視対象)。 */
     int32_t flow_margin; /**< 余裕 (受信報告に載った送出上限 − 受理した時点の次に割り当てる通番)。flow_margin_known が 1 の間だけ有効。 */
     int flow_margin_known; /**< 余裕の記録があるか (1: ある)。記録がない受信者は監視対象の候補にしない。 */
+    int flow_excluded; /**< multicast と broadcast で、止める判定と監視対象から除外しているか (1: 除外中)。 */
+    int flow_unexclude_pending; /**< 除外を解く条件を満たし始めた時刻を記録中か (1: 記録中)。 */
 } potr_internal_receiver;
 
 /**
- *  @brief          multicast と broadcast の送信者が監視する受信者の数を求めます。
- *
- *  しきい値は、「1 対 N の判定」が成り立つ最小の「止める状態」の受信者数です。台数の条件では
- *  receiver_count と活動中の受信者数の小さいほう、割合の条件では「活動中の受信者数 × receiver_percent ÷ 100」の切り上げです。
- *  有効な条件のうち小さいほうとし、両方が無効の場合は 0 です。\n
- *  監視する数は、monitored_count、「活動中の受信者数 × monitored_percent ÷ 100」の切り上げ、しきい値のうち最も大きい値です。
- *  ただし、「監視する数の上限」(POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX と「(max_payload − 2) ÷ 16」の小さいほう) と、
- *  候補の受信者数を超えません。しきい値が 0 の場合は、送信者は送出上限で止まらないため 0 とします。\n
- *  しきい値より少ない数を設定した場合にしきい値の台数を監視するのは、監視対象がしきい値より少ないと、
- *  止める条件が成り立たないためです。
- *
- *  @param[in]      active              活動中の受信者数。
- *  @param[in]      candidates          余裕の記録がある活動中の受信者数 (候補の数)。
- *  @param[in]      receiver_percent    1 対 N の割合の条件 [%]。0 = 無効。
- *  @param[in]      receiver_count      1 対 N の台数の条件。0 = 無効。
- *  @param[in]      monitored_percent   監視する受信者の割合 [%]。0 = 使わない。
- *  @param[in]      monitored_count     監視する受信者の台数。0 = 使わない。
- *  @param[in]      max_payload         送信者の実効 max_payload [byte]。
- *  @return         監視する数。失敗モードのない計算のため結果コードの対象外です。
+ * 止めていない間の積算の減算率の分母 (経過時間 ÷ 9)。
+ * 積算 (flow_stall_accum_units) はこの定数倍 (1/9 [ms] 単位) で保持し、止めていた間は「経過時間 × 9」を加算、
+ * 止めていない間は「経過時間」をそのまま減算することで、1 [ms] 刻みの判定でも端数による誤差なく減算する。
  */
-static inline size_t flow_monitor_count(size_t active, size_t candidates, uint32_t receiver_percent,
-                                        uint32_t receiver_count, uint32_t monitored_percent, uint32_t monitored_count,
-                                        uint32_t max_payload)
+#define POTR_FLOW_ACCUM_DECAY_DIVISOR 9U
+
+/** 除外を解く条件 (受信報告の送出上限が次の通番より先にある状態) を維持する時間の倍率 (猶予時間の 10 倍)。 */
+#define POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER 10U
+
+/**
+ * 送出を止めている間の再判定間隔の許容倍率。
+ * 送信スレッドは止めている間、最大 POTR_INTERNAL_FLOW_RECHECK_MS (50 [ms]) 間隔で判定し直すため、
+ * OS のスケジューリング遅延を見込んでその 3 倍 (150 [ms]) 以上間隔が空いた場合は、
+ * 送出する DATA がなく送信者が待っていた間とみなし、止めていた間として数えない。
+ */
+#define POTR_INTERNAL_FLOW_STALL_GAP_MULTIPLIER 3U
+#define POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS \
+    ((uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS * (uint64_t)POTR_INTERNAL_FLOW_STALL_GAP_MULTIPLIER)
+
+static_assert(POTR_FLOW_ACCUM_DECAY_DIVISOR == 9U, "porter: POTR_FLOW_ACCUM_DECAY_DIVISOR must be 9");
+static_assert(POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER == 10U, "porter: POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER must be 10");
+static_assert(POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS > (uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS,
+              "porter: POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS must exceed POTR_INTERNAL_FLOW_RECHECK_MS");
+
+/**
+ *  @brief          multicast と broadcast の送信者が除外できる受信者の数の上限を求めます。
+ *
+ *  上限は「excluded_count」と「active × excluded_percent ÷ 100 (切り捨て)」の大きいほうとします。
+ *  ただし、「active − 1」を超えません (active が 0 または 1 の場合は 0)。
+ *  無効 (0) の項目は 0 として計算し、両方が 0 の場合は 0 を返します。
+ *
+ *  @param[in]      active              活動中の受信者数 (受信報告が有効期限内に届いている受信者数。除外中を含む)。
+ *  @param[in]      excluded_count      除外する数の上限 [台]。0 = 無効。
+ *  @param[in]      excluded_percent    除外する数の上限 [%]。0 = 無効。
+ *  @return         除外する数の上限 [台]。失敗モードのない計算のため結果コードの対象外です。
+ */
+static inline size_t flow_excluded_limit(size_t active, uint32_t excluded_count, uint32_t excluded_percent)
 {
-    size_t threshold = 0U;
-    size_t count = (size_t)monitored_count;
-    size_t limit = (size_t)POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX;
+    size_t by_count = (size_t)excluded_count;
+    size_t by_percent;
+    size_t limit;
 
-    if (receiver_count != 0U)
-    {
-        threshold = (size_t)receiver_count;
-        if (threshold > active)
-        {
-            threshold = active;
-        }
-    }
-
-    /* 受信者数は max_peers 以下、割合は 100 以下のため、乗算は桁あふれしない。 */
-    if (receiver_percent != 0U)
-    {
-        size_t by_percent = (active * (size_t)receiver_percent + POTR_PERCENT_CEIL_OFFSET) / POTR_PERCENT_MAX;
-
-        if (receiver_count == 0U || by_percent < threshold)
-        {
-            threshold = by_percent;
-        }
-    }
-
-    if (threshold == 0U)
+    if (active <= 1U)
     {
         return 0U;
     }
 
-    if (monitored_percent != 0U)
-    {
-        size_t by_percent = (active * (size_t)monitored_percent + POTR_PERCENT_CEIL_OFFSET) / POTR_PERCENT_MAX;
+    by_percent = (size_t)(((uint64_t)active * (uint64_t)excluded_percent) / (uint64_t)POTR_PERCENT_MAX);
+    limit = (by_count > by_percent) ? by_count : by_percent;
 
-        if (by_percent > count)
-        {
-            count = by_percent;
-        }
+    if (limit > active - 1U)
+    {
+        limit = active - 1U;
     }
 
-    if (threshold > count)
-    {
-        count = threshold;
-    }
+    return limit;
+}
+
+/**
+ *  @brief          multicast と broadcast の送信者が監視する受信者の数を求めます。
+ *
+ *  監視する数は monitored_count (監視する数の下限) とします。
+ *  ただし、「監視する数の上限」(POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX と「(max_payload − 2) ÷ 16」の小さいほう) と、
+ *  候補の受信者数を超えません。
+ *
+ *  @param[in]      candidates          余裕の記録がある活動中の受信者数 (候補の数)。
+ *  @param[in]      monitored_count     監視する受信者の台数の下限。0 = 下限なし。
+ *  @param[in]      max_payload         送信者の実効 max_payload [byte]。
+ *  @return         監視する数。失敗モードのない計算のため結果コードの対象外です。
+ */
+static inline size_t flow_monitor_count(size_t candidates, uint32_t monitored_count, uint32_t max_payload)
+{
+    size_t count = (size_t)monitored_count;
+    size_t limit = (size_t)POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX;
 
     /* 監視対象の一覧を 1 個のパケットで知らせるための上限。max_payload は検査済み (64 以上) で、2 を引いても負にならない。 */
     if (max_payload >= POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE &&
@@ -172,21 +185,25 @@ uint8_t potr_internal_receiver_groups_locked(potr_context *ctx, uint64_t now_ms)
  *
  *  受信者が「止める状態」であるとは、有効な (期限内の) 要求があるか、受理した送出上限に達している
  *  (next_seq が送出上限以上である) ことです。通番は循環を考慮した差で比較します。\n
- *  unicast は、「止める状態」の受信者が 1 つでもあれば抑制します。\n
- *  multicast と broadcast は、「止める状態」の受信者の割合または台数が実効設定の条件を満たす場合に抑制します。
- *  multicast と broadcast で受信者ごとに保持する送出上限は、監視対象の受信者のものだけです (potr_internal_receiver_accept())。
- *  活動中の受信者は、受信報告で活動中と判定している受信者と、「止める状態」の受信者です。
- *  活動中の受信者数が台数の設定値を下回る場合は、活動中の受信者数を台数のしきい値として使います。\n
+ *  unicast では、「止める状態」の受信者が 1 台でもあれば抑制します。\n
+ *  multicast と broadcast では、除外していない受信者のうち 1 台でも「止める状態」であれば抑制します。
+ *  受信者ごとに、その受信者が止める状態で送信者が送出を止めていた時間を積算し、止めていない間は経過時間 ÷ 9 だけ
+ *  減算します (0 を下回らない)。前回の判定から POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS 以上空いた場合は、
+ *  止めていない間として扱います。積算が猶予時間 (grace_ms) に達した受信者は、除外している数が
+ *  flow_excluded_limit() の上限に達していない場合に除外し、監視対象からも外します。
+ *  除外した受信者は、受信報告に載った送出上限が next_seq より先にある状態が猶予時間の 10 倍の間続いた時点で
+ *  除外を解き、積算を 0 に戻します。\n
+ *  multicast と broadcast で受信者ごとに保持する送出上限は、監視対象の受信者のものだけです (potr_internal_receiver_accept())。\n
  *  送出上限に達した時点から有効期限が経過しても次のフロー制御パケットを受理していない受信者は、
  *  その送出上限を破棄し、上限がないものとして扱います。
  *
  *  @param[in,out]  ctx 送信者。NULL は許可しません。
  *  @param[in]      now_ms 単調増加時刻 [ms]。
  *  @param[in]      next_seq 次に割り当てる DATA の通番。
- *  @param[out]     tracked 有効な要求または送出上限を保持している受信者数の格納先。NULL は許可しません。
+ *  @param[out]     tracked 有効な要求、送出上限、0 でない積算、または除外が残っている受信者数の格納先。NULL は許可しません。
  *                  0 以外の間は、送出のたびに判定し直す必要があります。
  *  @param[out]     until_ms 「止める状態」の受信者の判定が変わりうる最も早い時刻 [ms] の格納先
- *                  (要求の期限、または送出上限の破棄の時刻)。該当がなければ 0。NULL は許可しません。
+ *                  (要求の期限、送出上限の破棄の時刻、または積算が猶予時間に達しうる時刻)。該当がなければ 0。NULL は許可しません。
  *                  呼び出し元はこの時刻に判定し直します。
  *  @return         抑制する場合は 1、しない場合と引数が NULL の場合は 0。失敗モードのない述語のため結果コードの対象外です。
  *  @note           callback_mutex を内部で取得します。所有権は移動しません。

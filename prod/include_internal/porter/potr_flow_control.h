@@ -248,11 +248,13 @@ typedef struct potr_internal_flow_control_config
     uint32_t resume_percent;      /**< 解除するしきい値 [%]。 */
     uint32_t request_interval_ms; /**< 抑制の要求の再送周期 [ms]。 */
     uint32_t request_lifetime_ms; /**< 抑制の要求の有効期限 [ms]。 */
-    uint32_t receiver_percent;    /**< 一対多の割合の条件 [%]。0 = 無効。 */
-    uint32_t receiver_count;      /**< 一対多の台数の条件。0 = 無効。 */
-    uint32_t monitored_receiver_percent; /**< multicast と broadcast の送信側が監視する受信者の割合 [%]。0 = 使わない。 */
-    uint32_t monitored_receiver_count;   /**< multicast と broadcast の送信側が監視する受信者の台数。0 = 使わない。 */
+    uint32_t excluded_receiver_count;    /**< 除外または切断する数の上限 [台]。0 = 無効。 */
+    uint32_t excluded_receiver_percent;  /**< 除外または切断する数の上限 [%]。0 = 無効。 */
+    uint32_t grace_ms;                   /**< 遅い相手が全体を止めてよい猶予時間 [ms]。 */
+    uint32_t feedback_percent;           /**< 監視対象から受けるフロー制御パケットの数の予算 (DATA 100 パケットあたりの数)。 */
+    uint32_t monitored_receiver_count;   /**< multicast と broadcast の送信側が監視する受信者の台数の下限 [台]。0 = 下限なし。 */
     uint32_t receive_buffer_percent; /**< 受信バッファーの幅の計算に使う割合 [%]。0 = OS の受信バッファーに基づく送出上限を使わない (無効、または対象外の通信種別と役割)。 */
+    uint32_t _pad; /**< パディング (構造体サイズを 8 [byte] の倍数に揃える)。 */
 } potr_internal_flow_control_config;
 
 #ifdef __cplusplus
@@ -263,15 +265,15 @@ extern "C"
      *  @brief          フロー制御の実効設定を決定し、検査します。
      *
      *  サービス側の 0 はグローバル設定の値を使用します。サービス側の POTR_FLOW_CONTROL_DISABLED は、
-     *  容量、一対多の割合、一対多の台数、監視する受信者の割合と台数、受信バッファーの幅の割合に限り
-     *  「無効」(0) として扱います。受信バッファーの幅の割合は、グローバル設定の POTR_FLOW_CONTROL_DISABLED も
-     *  「無効」として扱い、グローバル設定の 0 は既定値とします。\n
-     *  監視する受信者の割合は 100 以下、台数は POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX 以下、
-     *  受信バッファーの幅の割合は無効でなければ 1 から 100 であることを検査します。\n
+     *  容量、監視する受信者の台数の下限、除外する数の上限 (台数と割合)、受信バッファーの幅の割合に限り
+     *  「無効」(0) として扱います。除外する数の上限 (台数と割合) と受信バッファーの幅の割合は、
+     *  グローバル設定の POTR_FLOW_CONTROL_DISABLED も「無効」(0) として扱い、グローバル設定の 0 は既定値とします。\n
+     *  除外する数の上限の割合は 100 以下、予算 (feedback_percent) は 1 から 100、監視する受信者の台数の下限は
+     *  POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX 以下、受信バッファーの幅の割合は無効でなければ 1 から 100 であることを検査します。\n
      *  受信バッファーの幅の割合は、OS の受信バッファーに基づく送出上限を使わない場合に 0 とします。
      *  使う受信側は、unicast、multicast、broadcast の受信者 (multicast と broadcast は health_interval_ms が 0 でない場合だけ)、
      *  unicast_bidir と unicast_bidir_n1 の両方の役割です。\n
-     *  再送周期と有効期限は、待機時間の設定値の上限 (POTR_WAIT_MS_MAX) 以下であることを検査します。
+     *  再送周期、有効期限、猶予時間は、待機時間の設定値の上限 (POTR_WAIT_MS_MAX) 以下であることを検査します。
      *  容量が 0 でない場合は、要求のしきい値から容量までの余裕 (容量 − 容量 × 要求のしきい値 ÷ 100) が
      *  max_message_size 以上であることを検査します。\n
      *  RAW 系の通信種別では、設定を検査せず、容量を 0 (無効) とします。

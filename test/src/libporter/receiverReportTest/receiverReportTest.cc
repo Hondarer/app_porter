@@ -529,7 +529,7 @@ TEST(receiverReportTest, flow_suppressed_unicast_valid_and_expired)
     FreeReceivers(&ctx);
 }
 
-// multicast の台数の条件 (活動中 10 台、台数 2) の確認
+// multicast で 1 台でも要求中であれば抑制することの確認
 TEST(receiverReportTest, flow_suppressed_multicast_count_threshold)
 {
     // Arrange
@@ -543,8 +543,6 @@ TEST(receiverReportTest, flow_suppressed_multicast_count_threshold)
     uint64_t until_two = 99;
     ctx.service.type = POTR_TYPE_MULTICAST;
     ctx.health_timeout_ms = 0;
-    ctx.flow_control_config.receiver_count = 2;
-    ctx.flow_control_config.receiver_percent = 0;
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
@@ -561,15 +559,15 @@ TEST(receiverReportTest, flow_suppressed_multicast_count_threshold)
     int actual_two = potr_internal_receiver_flow_suppressed(&ctx, now_ms, 0U, &requesting_two, &until_two);
     // [手順] - 活動中 10 台のうち 1 台、続いて 2 台が要求中の状態で判定する。
     // Assert
-    EXPECT_EQ(0, actual_one); // [確認_正常系] - 要求中 1 台では台数 2 に満たず抑制しないこと。
+    EXPECT_EQ(1, actual_one); // [確認_正常系] - 要求中 1 台で抑制すること。
     EXPECT_EQ(1U, requesting_one); // [確認_正常系] - 要求中の受信者数が 1 であること。
-    EXPECT_EQ(1, actual_two); // [確認_正常系] - 要求中 2 台で台数 2 を満たし抑制すること。
+    EXPECT_EQ(1, actual_two); // [確認_正常系] - 要求中 2 台でも抑制すること。
     EXPECT_EQ(2U, requesting_two); // [確認_正常系] - 要求中の受信者数が 2 であること。
     // Cleanup
     FreeReceivers(&ctx);
 }
 
-// 活動中の受信者数が台数を下回る場合は活動中の全員の要求で抑制することの確認
+// multicast で活動中 1 台でも 3 台のうち 1 台でも、要求中があれば抑制することの確認
 TEST(receiverReportTest, flow_suppressed_multicast_active_below_count)
 {
     // Arrange
@@ -583,8 +581,6 @@ TEST(receiverReportTest, flow_suppressed_multicast_active_below_count)
     uint64_t until_partial = 99;
     ctx.service.type = POTR_TYPE_MULTICAST;
     ctx.health_timeout_ms = 0;
-    ctx.flow_control_config.receiver_count = 2;
-    ctx.flow_control_config.receiver_percent = 0;
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
@@ -592,9 +588,9 @@ TEST(receiverReportTest, flow_suppressed_multicast_active_below_count)
     // Pre-Assert
     // Act
     int actual_all = potr_internal_receiver_flow_suppressed(&ctx, now_ms, 0U, &requesting, &until_ms);
-    // [手順] - 活動中 1 台の受信者が要求中の状態で、台数 2 の設定を判定する。
+    // [手順] - 活動中 1 台の受信者が要求中の状態で判定する。
     // Assert
-    EXPECT_EQ(1, actual_all); // [確認_正常系] - 活動中の受信者数をしきい値として使い抑制すること。
+    EXPECT_EQ(1, actual_all); // [確認_正常系] - 要求中 1 台で抑制すること。
     EXPECT_EQ(1U, requesting); // [確認_正常系] - 要求中の受信者数が 1 であること。
     EXPECT_EQ(1300U, until_ms); // [確認_正常系] - 最も早い期限が要求の期限であること。
     // Arrange_2
@@ -604,15 +600,15 @@ TEST(receiverReportTest, flow_suppressed_multicast_active_below_count)
     ctx.receivers->flow_request_expire_ms = 1300;
     // Act_2
     int actual_partial = potr_internal_receiver_flow_suppressed(&ctx, now_ms, 0U, &requesting_partial, &until_partial);
-    // [手順] - 活動中 3 台のうち 1 台だけが要求中の状態で、同じ設定を判定する。
+    // [手順] - 活動中 3 台のうち 1 台だけが要求中の状態で判定する。
     // Assert_2
-    EXPECT_EQ(0, actual_partial); // [確認_正常系] - 活動中の受信者数が台数以上なら 1 台の要求では抑制しないこと。
+    EXPECT_EQ(1, actual_partial); // [確認_正常系] - 活動中 3 台のうち 1 台の要求でも抑制すること。
     EXPECT_EQ(1U, requesting_partial); // [確認_正常系] - 要求中の受信者数が 1 であること。
     // Cleanup
     FreeReceivers(&ctx);
 }
 
-// 活動中の受信者数が台数を下回る場合 (台数 5、活動中 3 台) の確認
+// multicast で活動中 3 台のうち 2 台または 3 台が要求中の場合に抑制することの確認
 TEST(receiverReportTest, flow_suppressed_multicast_count_exceeds_active)
 {
     // Arrange
@@ -626,8 +622,6 @@ TEST(receiverReportTest, flow_suppressed_multicast_count_exceeds_active)
     uint64_t until_three = 99;
     ctx.service.type = POTR_TYPE_MULTICAST;
     ctx.health_timeout_ms = 0;
-    ctx.flow_control_config.receiver_count = 5;
-    ctx.flow_control_config.receiver_percent = 0;
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
@@ -643,9 +637,9 @@ TEST(receiverReportTest, flow_suppressed_multicast_count_exceeds_active)
     int actual_two = potr_internal_receiver_flow_suppressed(&ctx, now_ms, 0U, &requesting_two, &until_two);
     receivers[2]->flow_request_expire_ms = 1300;
     int actual_three = potr_internal_receiver_flow_suppressed(&ctx, now_ms, 0U, &requesting_three, &until_three);
-    // [手順] - 活動中 3 台のうち 2 台、続いて 3 台が要求中の状態で、台数 5 の設定を判定する。
+    // [手順] - 活動中 3 台のうち 2 台、続いて 3 台が要求中の状態で判定する。
     // Assert
-    EXPECT_EQ(0, actual_two); // [確認_正常系] - 要求中 2 台では活動中 3 台に満たず抑制しないこと。
+    EXPECT_EQ(1, actual_two); // [確認_正常系] - 要求中 2 台で抑制すること。
     EXPECT_EQ(2U, requesting_two); // [確認_正常系] - 要求中の受信者数が 2 であること。
     EXPECT_EQ(1, actual_three); // [確認_正常系] - 活動中の全員 (3 台) の要求で抑制すること。
     EXPECT_EQ(3U, requesting_three); // [確認_正常系] - 要求中の受信者数が 3 であること。
@@ -653,7 +647,7 @@ TEST(receiverReportTest, flow_suppressed_multicast_count_exceeds_active)
     FreeReceivers(&ctx);
 }
 
-// multicast の割合の条件 (活動中 10 台、割合 50) の確認
+// multicast で活動中 10 台のうち 4 台または 5 台が要求中の場合に抑制することの確認
 TEST(receiverReportTest, flow_suppressed_multicast_percent_threshold)
 {
     // Arrange
@@ -667,8 +661,6 @@ TEST(receiverReportTest, flow_suppressed_multicast_percent_threshold)
     uint64_t until_five = 99;
     ctx.service.type = POTR_TYPE_MULTICAST;
     ctx.health_timeout_ms = 0;
-    ctx.flow_control_config.receiver_count = 0;
-    ctx.flow_control_config.receiver_percent = 50;
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
@@ -686,17 +678,17 @@ TEST(receiverReportTest, flow_suppressed_multicast_percent_threshold)
     int actual_four = potr_internal_receiver_flow_suppressed(&ctx, now_ms, 0U, &requesting_four, &until_four);
     receivers[4]->flow_request_expire_ms = 1300;
     int actual_five = potr_internal_receiver_flow_suppressed(&ctx, now_ms, 0U, &requesting_five, &until_five);
-    // [手順] - 活動中 10 台のうち 4 台、続いて 5 台が要求中の状態で、割合 50 の設定を判定する。
+    // [手順] - 活動中 10 台のうち 4 台、続いて 5 台が要求中の状態で判定する。
     // Assert
-    EXPECT_EQ(0, actual_four); // [確認_正常系] - 要求中 4 台 (40%) では抑制しないこと。
+    EXPECT_EQ(1, actual_four); // [確認_正常系] - 要求中 4 台で抑制すること。
     EXPECT_EQ(4U, requesting_four); // [確認_正常系] - 要求中の受信者数が 4 であること。
-    EXPECT_EQ(1, actual_five); // [確認_正常系] - 要求中 5 台 (50%) で抑制すること。
+    EXPECT_EQ(1, actual_five); // [確認_正常系] - 要求中 5 台でも抑制すること。
     EXPECT_EQ(5U, requesting_five); // [確認_正常系] - 要求中の受信者数が 5 であること。
     // Cleanup
     FreeReceivers(&ctx);
 }
 
-// 割合と台数がともに 0 の broadcast は抑制せず、要求中の数は返すことの確認
+// broadcast でも要求中の受信者がいれば抑制し、要求中の数を返すことの確認
 TEST(receiverReportTest, flow_suppressed_broadcast_without_condition)
 {
     // Arrange
@@ -708,8 +700,6 @@ TEST(receiverReportTest, flow_suppressed_broadcast_without_condition)
     uint64_t until_ms = 99;
     ctx.service.type = POTR_TYPE_BROADCAST;
     ctx.health_timeout_ms = 0;
-    ctx.flow_control_config.receiver_count = 0;
-    ctx.flow_control_config.receiver_percent = 0;
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
@@ -718,15 +708,15 @@ TEST(receiverReportTest, flow_suppressed_broadcast_without_condition)
     // Pre-Assert
     // Act
     int actual_ret = potr_internal_receiver_flow_suppressed(&ctx, now_ms, 0U, &requesting, &until_ms);
-    // [手順] - 条件が無効の broadcast で、要求中の受信者が 2 台いる状態を判定する。
+    // [手順] - broadcast で、要求中の受信者が 2 台いる状態を判定する。
     // Assert
-    EXPECT_EQ(0, actual_ret); // [確認_正常系] - 条件が無効なら要求があっても抑制しないこと。
+    EXPECT_EQ(1, actual_ret); // [確認_正常系] - 要求中の受信者がいれば抑制すること。
     EXPECT_EQ(2U, requesting); // [確認_正常系] - 要求中の受信者数を返すこと。
     // Cleanup
     FreeReceivers(&ctx);
 }
 
-// 受信報告を受けていない受信者も、有効な要求があれば活動中として数えることの確認
+// 受信報告を受けていない受信者でも、有効な要求があれば抑制することの確認
 TEST(receiverReportTest, flow_suppressed_counts_requesting_inactive_receivers)
 {
     // Arrange
@@ -738,8 +728,6 @@ TEST(receiverReportTest, flow_suppressed_counts_requesting_inactive_receivers)
     uint64_t until_ms = 99;
     ctx.service.type = POTR_TYPE_MULTICAST;
     ctx.health_timeout_ms = 0;
-    ctx.flow_control_config.receiver_count = 2;
-    ctx.flow_control_config.receiver_percent = 0;
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
@@ -750,7 +738,7 @@ TEST(receiverReportTest, flow_suppressed_counts_requesting_inactive_receivers)
     int actual_ret = potr_internal_receiver_flow_suppressed(&ctx, now_ms, 0U, &requesting, &until_ms);
     // [手順] - 受信報告を受けていない 2 台が有効な要求を送ってきている状態を判定する。
     // Assert
-    EXPECT_EQ(1, actual_ret); // [確認_正常系] - 要求中の 2 台を活動中として数え、台数 2 を満たし抑制すること。
+    EXPECT_EQ(1, actual_ret); // [確認_正常系] - 要求中の受信者がいれば抑制すること。
     EXPECT_EQ(2U, requesting); // [確認_正常系] - 要求中の受信者数が 2 であること。
     // Cleanup
     FreeReceivers(&ctx);
@@ -935,7 +923,7 @@ TEST(receiverReportTest, flow_suppressed_send_limit_wraps_sequence)
     FreeReceivers(&ctx);
 }
 
-// multicast の台数の判定で、送出上限に達した受信者を「止める状態」として数えることの確認
+// multicast の判定で、送出上限に達した受信者を「止める状態」として扱い、最も早い期限を返すことの確認
 TEST(receiverReportTest, flow_suppressed_multicast_counts_send_limit_reached)
 {
     // Arrange
@@ -949,8 +937,6 @@ TEST(receiverReportTest, flow_suppressed_multicast_counts_send_limit_reached)
     uint64_t until_two = 99;
     ctx.service.type = POTR_TYPE_MULTICAST;
     ctx.health_timeout_ms = 0;
-    ctx.flow_control_config.receiver_count = 2;
-    ctx.flow_control_config.receiver_percent = 0;
     ctx.flow_control_config.request_lifetime_ms = 300;
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
@@ -967,9 +953,10 @@ TEST(receiverReportTest, flow_suppressed_multicast_counts_send_limit_reached)
     int actual_two = potr_internal_receiver_flow_suppressed(&ctx, now_ms, 50U, &tracked_two, &until_two);
     // [手順] - 次の通番 50 (送出上限ちょうど) で判定する。
     // Assert
-    EXPECT_EQ(0, actual_one);   // [確認_正常系] - 「止める状態」が 1 台では台数 2 に満たず抑制しないこと。
+    EXPECT_EQ(1, actual_one);   // [確認_正常系] - 要求中の 1 台がいるため抑制すること。
     EXPECT_EQ(2U, tracked_one); // [確認_正常系] - 要求中と送出上限の保持の 2 台を返すこと。
-    EXPECT_EQ(1, actual_two);   // [確認_正常系] - 送出上限に達した受信者を含めて 2 台となり抑制すること。
+    EXPECT_EQ(1500U, until_one); // [確認_正常系] - 送出上限の手前では要求の期限 1500 を返すこと。
+    EXPECT_EQ(1, actual_two);   // [確認_正常系] - 送出上限に達した受信者を含めて抑制すること。
     EXPECT_EQ(1300U, until_two); // [確認_正常系] - 送出上限の破棄の時刻 1300 が、要求の期限 1500 より早いため返すこと。
     // Cleanup
     FreeReceivers(&ctx);
@@ -980,24 +967,19 @@ namespace
 // 監視する数の計算の入力と期待値の組
 struct monitor_count_case
 {
-    size_t active;
     size_t candidates;
-    uint32_t receiver_percent;
-    uint32_t receiver_count;
-    uint32_t monitored_percent;
-    uint32_t monitored_count;
-    size_t max_payload; // 構造体に詰め物が入らないよう size_t で持ち、呼び出しで uint32_t へ変換する
+    size_t monitored_count; // 構造体に詰め物が入らないよう size_t で持ち、呼び出しで uint32_t へ変換する
+    size_t max_payload;
     size_t expected;
 };
 
-// multicast の送信者の構成にする。監視する数は台数 monitored_count、1 対 N の台数の条件は receiver_count とする。
-void SetupMonitoringSender(potr_context *ctx, uint32_t receiver_count, uint32_t monitored_count)
+// multicast の送信者の構成にする。監視する数の下限は monitored_count とする。
+void SetupMonitoringSender(potr_context *ctx, uint32_t monitored_count)
 {
     ctx->service.type = POTR_TYPE_MULTICAST;
     ctx->role = POTR_ROLE_SENDER;
     ctx->global.max_payload = 1400U;
     ctx->health_timeout_ms = 1000U;
-    ctx->flow_control_config.receiver_count = receiver_count;
     ctx->flow_control_config.monitored_receiver_count = monitored_count;
     ctx->flow_control_config.request_lifetime_ms = 300U;
 }
@@ -1047,41 +1029,36 @@ potr_internal_receiver *FindReceiver(potr_context *ctx, uint32_t session_id)
 }
 } // namespace
 
-// 監視する数を、台数、割合、しきい値による下限、上限、候補の数、しきい値が 0 の場合のそれぞれで求めることの確認
+// 監視する数を、下限、上限 (64 と max_payload による制限)、候補の数のそれぞれで求めることの確認
 TEST(receiverReportTest, monitor_count_cases)
 {
     // Arrange
     const monitor_count_case cases[] = {
-        {3U, 3U, 0U, 2U, 0U, 4U, 1400U, 3U},       // 台数 4 より受信者が少ない場合は全員
-        {100U, 100U, 0U, 2U, 0U, 4U, 1400U, 4U},   // 既定の構成で受信者が多い場合は台数 4
-        {100U, 100U, 0U, 2U, 0U, 1U, 1400U, 2U},   // しきい値 2 より少ない台数は、しきい値の台数
-        {100U, 100U, 0U, 10U, 0U, 20U, 1400U, 20U}, // しきい値 10、台数 20
-        {100U, 100U, 0U, 2U, 10U, 4U, 1400U, 10U}, // 割合 10% (10 台) が台数 4 より大きい
-        {15U, 15U, 0U, 1U, 10U, 0U, 1400U, 2U},    // 割合 10% の 1.5 台は切り上げて 2 台
-        {10U, 10U, 50U, 0U, 0U, 1U, 1400U, 5U},    // 割合の条件 50% のしきい値は 5 台
-        {10U, 10U, 50U, 2U, 0U, 0U, 1400U, 2U},    // 両方の条件があるしきい値は小さいほうの 2 台
-        {10U, 10U, 0U, 0U, 0U, 4U, 1400U, 0U},     // 両方の条件が無効の場合は 0
-        {0U, 0U, 0U, 2U, 0U, 4U, 1400U, 0U},       // 活動中の受信者がいない場合は 0
-        {100U, 100U, 0U, 2U, 100U, 0U, 1400U, 64U}, // 割合 100% でも上限 64
-        {100U, 100U, 0U, 2U, 0U, 10U, 100U, 6U},   // max_payload 100 の上限 (100 − 2) ÷ 16 = 6
-        {10U, 3U, 0U, 2U, 0U, 4U, 1400U, 3U},      // 候補が 3 台の場合は 3 台
+        {3U, 4U, 1400U, 3U},   // 下限 4 より候補が少ない場合は候補の数 3
+        {100U, 1U, 1400U, 1U}, // 既定の下限 1 で候補が多い場合は 1
+        {100U, 4U, 1400U, 4U}, // 下限 4 で候補が多い場合は 4
+        {100U, 20U, 1400U, 20U}, // 下限 20 で候補が多い場合は 20
+        {10U, 0U, 1400U, 0U},  // 下限 0 (下限なし) の場合は 0
+        {0U, 4U, 1400U, 0U},   // 候補がいない場合は 0
+        {100U, 100U, 1400U, 64U}, // 下限が 64 を超える場合は上限 64
+        {100U, 10U, 100U, 6U}, // max_payload 100 の上限 (100 − 2) ÷ 16 = 6
+        {3U, 10U, 100U, 3U},   // max_payload 上限 6 より候補 3 が小さい場合は 3
     };
     const size_t case_count = sizeof(cases) / sizeof(cases[0]);
     size_t actual[sizeof(cases) / sizeof(cases[0])] = {};
-    // [状態] - 13 通りの入力を用意する (ループ 13 回)。
+    // [状態] - 9 通りの入力を用意する (ループ 9 回)。
     // Pre-Assert
     // Act
     for (size_t i = 0; i < case_count; i++)
     {
-        actual[i] = flow_monitor_count(cases[i].active, cases[i].candidates, cases[i].receiver_percent,
-                                       cases[i].receiver_count, cases[i].monitored_percent, cases[i].monitored_count,
+        actual[i] = flow_monitor_count(cases[i].candidates, (uint32_t)cases[i].monitored_count,
                                        (uint32_t)cases[i].max_payload);
     }
     // [手順] - 入力ごとに flow_monitor_count() を呼び出し、監視する数を記録する。
     // Assert
     for (size_t i = 0; i < case_count; i++)
     {
-        EXPECT_EQ(cases[i].expected, actual[i]); // [確認_正常系] - 監視する数が期待値であること。(確認 13 回)
+        EXPECT_EQ(cases[i].expected, actual[i]); // [確認_正常系] - 監視する数が期待値であること。(確認 9 回)
     }
 }
 
@@ -1096,7 +1073,7 @@ TEST(receiverReportTest, report_records_margin_and_selects_slowest)
     uint64_t now_ms = 1000;
     int changed_first = -1;
     int changed_second = -1;
-    SetupMonitoringSender(&ctx, 2U, 2U);
+    SetupMonitoringSender(&ctx, 2U);
     ctx.send_window.next_seq = 100U;
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
         *out = now_ms;
@@ -1105,7 +1082,7 @@ TEST(receiverReportTest, report_records_margin_and_selects_slowest)
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
-    // [状態] - multicast の送信者で、台数の条件 2、監視する台数 2、次に割り当てる通番 100 とする。
+    // [状態] - multicast の送信者で、監視する台数の下限 2、次に割り当てる通番 100 とする。
     // Pre-Assert
     // Act
     int actual_ret_a = AcceptReport(&ctx, 1U, 1U, 150U); // [手順] - 受信者 1 から送出上限 150 (余裕 50) の受信報告を受理する。
@@ -1145,7 +1122,7 @@ TEST(receiverReportTest, report_margin_wraps_sequence)
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
     uint64_t now_ms = 1000;
-    SetupMonitoringSender(&ctx, 2U, 4U);
+    SetupMonitoringSender(&ctx, 4U);
     ctx.send_window.next_seq = 0xFFFFFFF0U;
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
         *out = now_ms;
@@ -1177,7 +1154,7 @@ TEST(receiverReportTest, report_without_limit_erases_margin_and_discards_limit)
     potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX] = {};
     uint64_t now_ms = 1000;
     int changed = -1;
-    SetupMonitoringSender(&ctx, 1U, 1U);
+    SetupMonitoringSender(&ctx, 1U);
     ctx.send_window.next_seq = 100U;
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
         *out = now_ms;
@@ -1222,7 +1199,7 @@ TEST(receiverReportTest, suppress_from_non_monitored_receiver_becomes_candidate)
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
     uint64_t now_ms = 1000;
-    SetupMonitoringSender(&ctx, 1U, 1U);
+    SetupMonitoringSender(&ctx, 1U);
     ctx.send_window.next_seq = 100U;
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
         *out = now_ms;
@@ -1264,7 +1241,7 @@ TEST(receiverReportTest, send_limit_of_non_monitored_receiver_is_ignored)
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
     uint64_t now_ms = 1000;
-    SetupMonitoringSender(&ctx, 1U, 1U);
+    SetupMonitoringSender(&ctx, 1U);
     ctx.send_window.next_seq = 100U;
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
         *out = now_ms;
@@ -1292,7 +1269,7 @@ TEST(receiverReportTest, send_limit_of_non_monitored_receiver_is_ignored)
     FreeReceivers(&ctx);
 }
 
-// 1 対 N の判定の条件が両方とも無効の場合に、監視対象を選ばないことの確認
+// 監視する数の下限が 0 (下限なし) の場合に、監視対象を選ばないことの確認
 TEST(receiverReportTest, monitor_list_without_condition_selects_none)
 {
     // Arrange
@@ -1302,7 +1279,7 @@ TEST(receiverReportTest, monitor_list_without_condition_selects_none)
     potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX] = {};
     uint64_t now_ms = 1000;
     int changed = -1;
-    SetupMonitoringSender(&ctx, 0U, 4U);
+    SetupMonitoringSender(&ctx, 0U);
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
         *out = now_ms;
         return CPLAT_OK;
@@ -1310,7 +1287,7 @@ TEST(receiverReportTest, monitor_list_without_condition_selects_none)
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
-    AcceptReport(&ctx, 1U, 1U, 110U); // [状態] - 台数と割合の条件が両方とも無効の送信者で、受信者 1 の受信報告を受理する。
+    AcceptReport(&ctx, 1U, 1U, 110U); // [状態] - 監視する数の下限が 0 の送信者で、受信者 1 の受信報告を受理する。
     // Pre-Assert
     // Act
     size_t count = potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX,
@@ -1335,7 +1312,7 @@ TEST(receiverReportTest, monitor_list_reselects_when_receiver_goes_inactive)
     uint64_t now_ms = 1000;
     int changed_before = -1;
     int changed_after = -1;
-    SetupMonitoringSender(&ctx, 1U, 1U);
+    SetupMonitoringSender(&ctx, 1U);
     ctx.send_window.next_seq = 100U;
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
         *out = now_ms;
@@ -1410,7 +1387,7 @@ TEST(receiverReportTest, suppress_without_report_becomes_candidate)
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
     uint64_t now_ms = 1000;
-    SetupMonitoringSender(&ctx, 1U, 1U);
+    SetupMonitoringSender(&ctx, 1U);
     ctx.send_window.next_seq = 100U;
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
         *out = now_ms;
@@ -1672,7 +1649,7 @@ TEST(receiverReportTest, multicast_monitored_report_recovers_send_limit_only_whe
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
     uint64_t now_ms = 1000U;
-    SetupMonitoringSender(&ctx, 1U, 1U);
+    SetupMonitoringSender(&ctx, 1U);
     ctx.send_window.next_seq = 100U;
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
         *out = now_ms;
@@ -1778,6 +1755,534 @@ TEST(receiverReportTest, unicast_new_receiver_inherits_handle_initial_base_seq)
     EXPECT_EQ(POTR_OK, ret_after_unlimited);                             // [確認_正常系] - 受信者 3 の NACK を受理すること。
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 50U, limit_after_unlimited);
     // [確認_正常系] - ハンドル側が上限なしだった場合は、その時点の通番 50 を基準にすること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+namespace
+{
+// 除外する数の上限の計算の入力と期待値の組
+struct excluded_limit_case
+{
+    size_t active;
+    size_t excluded_count;   // 構造体に詰め物が入らないよう size_t で持ち、呼び出しで uint32_t へ変換する
+    size_t excluded_percent;
+    size_t expected;
+};
+
+// multicast の送信者で、除外と猶予時間を設定する。
+void SetupExclusionSender(potr_context *ctx, uint32_t excluded_count, uint32_t excluded_percent, uint32_t grace_ms,
+                          uint32_t monitored_count)
+{
+    SetupMonitoringSender(ctx, monitored_count);
+    ctx->flow_control_config.excluded_receiver_count = excluded_count;
+    ctx->flow_control_config.excluded_receiver_percent = excluded_percent;
+    ctx->flow_control_config.grace_ms = grace_ms;
+}
+} // namespace
+
+// 除外する数の上限の表 (既定値、両方無効、片方無効、活動中 − 1 の上限) を確認する
+TEST(receiverReportTest, excluded_limit_cases)
+{
+    // Arrange
+    const excluded_limit_case cases[] = {
+        {0U, 1U, 10U, 0U},    // 活動中 0 (既定) → 0
+        {1U, 1U, 10U, 0U},    // 活動中 1 (既定) → 0
+        {3U, 1U, 10U, 1U},    // 活動中 3 (既定) → 1
+        {10U, 1U, 10U, 1U},   // 活動中 10 (既定) → 1
+        {50U, 1U, 10U, 5U},   // 活動中 50 (既定) → 5
+        {100U, 1U, 10U, 10U}, // 活動中 100 (既定) → 10
+        {10U, 0U, 0U, 0U},    // 両方が無効 → 0
+        {3U, 0U, 10U, 0U},    // 台数が無効、割合 10% で活動中 3 → 切り捨て 0
+        {10U, 0U, 10U, 1U},   // 台数が無効、割合 10% で活動中 10 → 1
+        {50U, 0U, 10U, 5U},   // 台数が無効、割合 10% で活動中 50 → 5
+        {1U, 3U, 0U, 0U},     // 割合が無効、台数 3 で活動中 1 → 0
+        {2U, 3U, 0U, 1U},     // 割合が無効、台数 3 で活動中 2 → 活動中 − 1 = 1
+        {3U, 3U, 0U, 2U},     // 割合が無効、台数 3 で活動中 3 → 活動中 − 1 = 2
+        {5U, 3U, 0U, 3U},     // 割合が無効、台数 3 で活動中 5 → 3
+        {100U, 3U, 0U, 3U},   // 割合が無効、台数 3 で活動中 100 → 3
+    };
+    const size_t case_count = sizeof(cases) / sizeof(cases[0]);
+    size_t actual[sizeof(cases) / sizeof(cases[0])] = {};
+    // [状態] - 15 通りの入力を用意する (ループ 15 回)。
+    // Pre-Assert
+    // Act
+    for (size_t i = 0; i < case_count; i++)
+    {
+        actual[i] = flow_excluded_limit(cases[i].active, (uint32_t)cases[i].excluded_count,
+                                        (uint32_t)cases[i].excluded_percent);
+    }
+    // [手順] - 入力ごとに flow_excluded_limit() を呼び出し、上限を記録する。
+    // Assert
+    for (size_t i = 0; i < case_count; i++)
+    {
+        EXPECT_EQ(cases[i].expected, actual[i]); // [確認_正常系] - 除外する数の上限が期待値であること。(確認 15 回)
+    }
+}
+
+// 猶予時間の直前では除外されず、達した時点で除外されて監視対象から外れ、送信者が再開することの確認
+TEST(receiverReportTest, flow_suppressed_excludes_at_grace_boundary_and_resumes)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000U;
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    SetupExclusionSender(&ctx, 1U, 10U, 200U, 1U);
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 活動中 3 台 (上限 1)、猶予時間 200 [ms]、監視対象 1 台の構成にする。
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 1U, 1U, 110U));
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 2U, 1U, 130U));
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 3U, 1U, 150U));
+    ASSERT_EQ(POTR_OK, AcceptFlowControl(&ctx, 1U, (uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 100U));
+    ctx.flow_monitor_changed = 0;
+    // [状態] - 受信者 1 が監視対象かつ止める状態 (抑制要求 + 送出上限到達) である。
+    // Pre-Assert
+    // Act
+    int sup_0 = potr_internal_receiver_flow_suppressed(&ctx, 1000U, 100U, &tracked, &until_ms);
+    uint64_t until_0 = until_ms;
+    int sup_50 = potr_internal_receiver_flow_suppressed(&ctx, 1050U, 100U, &tracked, &until_ms);
+    int sup_100 = potr_internal_receiver_flow_suppressed(&ctx, 1100U, 100U, &tracked, &until_ms);
+    int sup_150 = potr_internal_receiver_flow_suppressed(&ctx, 1150U, 100U, &tracked, &until_ms);
+    int sup_199 = potr_internal_receiver_flow_suppressed(&ctx, 1199U, 100U, &tracked, &until_ms);
+    uint64_t until_199 = until_ms;
+    int excluded_at_199 = FindReceiver(&ctx, 1U)->flow_excluded;
+    // [手順] - 50 [ms] 刻みで 199 [ms] まで進める。
+    int sup_200 = potr_internal_receiver_flow_suppressed(&ctx, 1200U, 100U, &tracked, &until_ms);
+    size_t tracked_200 = tracked;
+    uint64_t until_200 = until_ms;
+    // [手順] - 猶予時間ちょうど (200 [ms]) で判定する。
+    now_ms = 1210U;
+    int ret_sup_after = AcceptFlowControl(&ctx, 1U, (uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 100U);
+    int sup_after = potr_internal_receiver_flow_suppressed(&ctx, 1210U, 100U, &tracked, &until_ms);
+    // [手順] - 除外後の受信者 1 からさらに抑制の要求を受けて判定する。
+    // Assert
+    EXPECT_EQ(1, sup_0);                                         // [確認_正常系] - 1 台が止める状態で抑制すること。
+    EXPECT_EQ(1200U, until_0);                                   // [確認_正常系] - 猶予時間に達する時刻 1200 を返すこと。
+    EXPECT_EQ(1, sup_50);                                        // [確認_正常系] - 50 [ms] 経過時は抑制を続けること。
+    EXPECT_EQ(1, sup_100);                                       // [確認_正常系] - 100 [ms] 経過時は抑制を続けること。
+    EXPECT_EQ(1, sup_150);                                       // [確認_正常系] - 150 [ms] 経過時は抑制を続けること。
+    EXPECT_EQ(1, sup_199);                                       // [確認_正常系] - 猶予時間の直前 (199 [ms]) は抑制を続けること。
+    EXPECT_EQ(1200U, until_199);                                 // [確認_正常系] - 直前の until_ms が 1200 であること。
+    EXPECT_EQ(0, excluded_at_199);                               // [確認_正常系] - 猶予時間の直前では除外されないこと。
+    EXPECT_EQ(0, sup_200);                                       // [確認_正常系] - 猶予時間に達して除外されると送信者が再開すること。
+    EXPECT_EQ(1U, tracked_200);                                  // [確認_正常系] - 除外中の受信者を tracked に数えること。
+    EXPECT_EQ(0U, until_200);                                    // [確認_正常系] - 再開時は until_ms が 0 であること。
+    EXPECT_EQ(1, FindReceiver(&ctx, 1U)->flow_excluded);         // [確認_正常系] - 受信者 1 が除外されること。
+    EXPECT_EQ(0, FindReceiver(&ctx, 1U)->flow_monitored);        // [確認_正常系] - 除外された受信者 1 が監視対象から外れること。
+    EXPECT_EQ(0U, FindReceiver(&ctx, 1U)->flow_send_limit);      // [確認_正常系] - 監視対象から外れた受信者 1 の送出上限を破棄すること。
+    EXPECT_EQ(1, FindReceiver(&ctx, 2U)->flow_monitored);        // [確認_正常系] - 次に余裕が小さい受信者 2 が監視対象に選ばれること。
+    EXPECT_EQ(1, ctx.flow_monitor_changed);                      // [確認_正常系] - 監視対象の変更フラグが立つこと。
+    EXPECT_EQ(POTR_OK, ret_sup_after);                           // [確認_正常系] - 除外後の抑制要求パケット自体は受理すること。
+    EXPECT_EQ(0, sup_after);                                     // [確認_正常系] - 除外中の受信者の抑制要求は止める判定に使わないこと。
+    EXPECT_EQ(0, FindReceiver(&ctx, 1U)->flow_monitored);        // [確認_正常系] - 除外中の受信者は監視対象に選ばれないこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 積算が止めていた間に増え、止めていない間に経過時間 ÷ 9 で減って 0 を下回らず、判定間隔が空きすぎた場合も減ることの確認
+TEST(receiverReportTest, flow_suppressed_accum_increases_decays_and_handles_idle_gap)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    SetupExclusionSender(&ctx, 1U, 10U, 200U, 1U);
+    ctx.health_timeout_ms = 0U;
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 活動中 3 台、猶予時間 200 [ms] で受信者 1 が抑制要求中とする。
+    potr_internal_receiver *r1 = AddReceiver(&ctx, 1, 1000U, 5000U);
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    // Pre-Assert
+    // Act
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1000U, 0U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1050U, 0U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1090U, 0U, &tracked, &until_ms);
+    uint64_t accum_after_90 = r1->flow_stall_accum_units;
+    // [手順] - 90 [ms] の間、止める状態で判定する。
+    r1->flow_request_expire_ms = 0U;
+    int sup_released = potr_internal_receiver_flow_suppressed(&ctx, 1180U, 0U, &tracked, &until_ms);
+    uint64_t accum_after_decay_90 = r1->flow_stall_accum_units;
+    size_t tracked_with_accum = tracked;
+    // [手順] - 止める状態を解き、90 [ms] 進めて判定する (90 ÷ 9 = 10 [ms] 減少)。
+    for (uint64_t t = 1181U; t <= 1189U; t++)
+    {
+        (void)potr_internal_receiver_flow_suppressed(&ctx, t, 0U, &tracked, &until_ms);
+    }
+    uint64_t accum_after_9x1ms = r1->flow_stall_accum_units;
+    // [手順] - 1 [ms] 刻みで 9 回進める (端数で減らなくならないことの確認)。
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 11189U, 0U, &tracked, &until_ms);
+    uint64_t accum_at_floor = r1->flow_stall_accum_units;
+    size_t tracked_at_zero = tracked;
+    // [手順] - 十分に時間を進めて積算が 0 で止まることを確認する。
+    r1->flow_request_expire_ms = 20000U;
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 12000U, 0U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 12090U, 0U, &tracked, &until_ms);
+    uint64_t accum_before_gap = r1->flow_stall_accum_units;
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 12090U + POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS, 0U, &tracked,
+                                                 &until_ms);
+    uint64_t accum_after_gap = r1->flow_stall_accum_units;
+    // [手順] - 止める状態で 90 [ms] 積算した後、許容上限 (POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS) だけ間隔を空けて判定する。
+    // Assert
+    EXPECT_EQ(90U * POTR_FLOW_ACCUM_DECAY_DIVISOR, accum_after_90);
+    // [確認_正常系] - 90 [ms] 止めた後の積算が 90 [ms] 相当 (810 単位) であること。
+    EXPECT_EQ(0, sup_released);                                      // [確認_正常系] - 解除後は抑制しないこと。
+    EXPECT_EQ(80U * POTR_FLOW_ACCUM_DECAY_DIVISOR, accum_after_decay_90);
+    // [確認_正常系] - 90 [ms] 止めていない間に 10 [ms] 減り、80 [ms] 相当 (720 単位) になること。
+    EXPECT_EQ(1U, tracked_with_accum);                               // [確認_正常系] - 積算が 0 でない間は tracked に数えること。
+    EXPECT_EQ(79U * POTR_FLOW_ACCUM_DECAY_DIVISOR, accum_after_9x1ms);
+    // [確認_正常系] - 1 [ms] 刻みで 9 回進めるとちょうど 1 [ms] 減ること。
+    EXPECT_EQ(0U, accum_at_floor);                                   // [確認_正常系] - 積算が 0 を下回らないこと。
+    EXPECT_EQ(0U, tracked_at_zero);                                  // [確認_正常系] - 積算が 0 に戻ると tracked が 0 になること。
+    EXPECT_EQ(90U * POTR_FLOW_ACCUM_DECAY_DIVISOR, accum_before_gap); // [確認_正常系] - 間隔を空ける前の積算が 90 [ms] 相当であること。
+    EXPECT_EQ(90U * POTR_FLOW_ACCUM_DECAY_DIVISOR - POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS, accum_after_gap);
+    // [確認_正常系] - 判定間隔が空きすぎた場合は止めていない間として減算すること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 除外する数の上限を超えて除外せず積算を猶予時間で保持することと、上限 0 (1 台または両方無効) では除外しないことの確認
+TEST(receiverReportTest, flow_suppressed_respects_excluded_limit_and_zero_limit)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    SetupExclusionSender(&ctx, 1U, 10U, 200U, 1U);
+    ctx.health_timeout_ms = 0U;
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 活動中 3 台 (上限 1) で、2 台が止める状態とする。
+    potr_internal_receiver *r1 = AddReceiver(&ctx, 1, 1000U, 5000U);
+    potr_internal_receiver *r2 = AddReceiver(&ctx, 1, 1000U, 5000U);
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    // Pre-Assert
+    // Act
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1000U, 0U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1100U, 0U, &tracked, &until_ms);
+    int sup_at_grace = potr_internal_receiver_flow_suppressed(&ctx, 1200U, 0U, &tracked, &until_ms);
+    int sup_after_grace = potr_internal_receiver_flow_suppressed(&ctx, 1250U, 0U, &tracked, &until_ms);
+    int excluded_sum = r1->flow_excluded + r2->flow_excluded;
+    potr_internal_receiver *kept = r1->flow_excluded ? r2 : r1;
+    uint64_t kept_accum = kept->flow_stall_accum_units;
+    // [手順] - 猶予時間 200 [ms] とさらに 50 [ms] 進める。
+    FreeReceivers(&ctx);
+
+    // Arrange_2
+    ctx = {};
+    SetupExclusionSender(&ctx, 1U, 10U, 200U, 1U);
+    ctx.health_timeout_ms = 0U;
+    potr_internal_receiver *solo = AddReceiver(&ctx, 1, 1000U, 5000U);
+    // Act_2
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1000U, 0U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1100U, 0U, &tracked, &until_ms);
+    int sup_solo = potr_internal_receiver_flow_suppressed(&ctx, 1200U, 0U, &tracked, &until_ms);
+    int solo_excluded = solo->flow_excluded;
+    // [手順] - 活動中 1 台 (上限 0) で猶予時間まで進める。
+    FreeReceivers(&ctx);
+
+    // Arrange_3
+    ctx = {};
+    SetupExclusionSender(&ctx, 0U, 0U, 200U, 1U);
+    ctx.health_timeout_ms = 0U;
+    potr_internal_receiver *dis = AddReceiver(&ctx, 1, 1000U, 5000U);
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    // Act_3
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1000U, 0U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1100U, 0U, &tracked, &until_ms);
+    int sup_disabled = potr_internal_receiver_flow_suppressed(&ctx, 1200U, 0U, &tracked, &until_ms);
+    int disabled_excluded = dis->flow_excluded;
+    // [手順] - 活動中 3 台、除外設定の両方が無効 (上限 0) で猶予時間まで進める。
+    // Assert
+    EXPECT_EQ(1, sup_at_grace);                                      // [確認_正常系] - 上限 1 に達しても残る 1 台で抑制を続けること。
+    EXPECT_EQ(1, sup_after_grace);                                   // [確認_正常系] - さらに時間が経過しても抑制を続けること。
+    EXPECT_EQ(1, excluded_sum);                                      // [確認_正常系] - 除外する数が上限の 1 台を超えないこと。
+    EXPECT_EQ(200U * POTR_FLOW_ACCUM_DECAY_DIVISOR, kept_accum);     // [確認_正常系] - 除外されなかった受信者の積算が猶予時間で保持されること。
+    EXPECT_EQ(1, sup_solo);                                          // [確認_正常系] - 活動中 1 台 (上限 0) では抑制を続けること。
+    EXPECT_EQ(0, solo_excluded);                                     // [確認_正常系] - 活動中 1 台では除外しないこと。
+    EXPECT_EQ(1, sup_disabled);                                      // [確認_正常系] - 両方が無効 (上限 0) では抑制を続けること。
+    EXPECT_EQ(0, disabled_excluded);                                 // [確認_正常系] - 両方が無効では除外しないこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 同時に猶予時間に達した場合に、積算が大きい順、同じなら管理表の順で上限まで除外することの確認
+TEST(receiverReportTest, flow_suppressed_exclusion_tie_break_order)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    SetupExclusionSender(&ctx, 1U, 0U, 100U, 1U);
+    ctx.health_timeout_ms = 0U;
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 管理表の先頭が r_first、次が r_second になるように追加する (AddReceiver は先頭挿入)。
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    potr_internal_receiver *r_second = AddReceiver(&ctx, 1, 1000U, 5000U); // 先に止めるが管理表では後ろ
+    potr_internal_receiver *r_first = AddReceiver(&ctx, 1, 1000U, 0U);     // 管理表では先頭
+    // Pre-Assert
+    // Act
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1000U, 0U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1020U, 0U, &tracked, &until_ms);
+    r_first->flow_request_expire_ms = 5000U;
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1090U, 0U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1130U, 0U, &tracked, &until_ms);
+    int first_ex_by_accum = r_first->flow_excluded;
+    int second_ex_by_accum = r_second->flow_excluded;
+    // [手順] - 同じ判定 (t=1130) で r_second (130 ms) と r_first (110 ms) の両方が 100 [ms] を超える。
+    FreeReceivers(&ctx);
+
+    // Arrange_2
+    ctx = {};
+    SetupExclusionSender(&ctx, 1U, 0U, 100U, 1U);
+    ctx.health_timeout_ms = 0U;
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    potr_internal_receiver *r_tail = AddReceiver(&ctx, 1, 1000U, 5000U);
+    potr_internal_receiver *r_head = AddReceiver(&ctx, 1, 1000U, 5000U);
+    // Act_2
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1000U, 0U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1050U, 0U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1100U, 0U, &tracked, &until_ms);
+    int head_ex_by_list = r_head->flow_excluded;
+    int tail_ex_by_list = r_tail->flow_excluded;
+    // [手順] - 同じ積算 (100 [ms]) で同時に達した場合に、管理表の先頭側が選ばれることを確認する。
+    // Assert
+    EXPECT_EQ(0, first_ex_by_accum);  // [確認_正常系] - 積算が小さい r_first は除外されないこと。
+    EXPECT_EQ(1, second_ex_by_accum); // [確認_正常系] - 積算が大きい (先に達した) r_second が除外されること。
+    EXPECT_EQ(1, head_ex_by_list);    // [確認_正常系] - 積算が同じ場合は管理表の先頭側が除外されること。
+    EXPECT_EQ(0, tail_ex_by_list);    // [確認_正常系] - 積算が同じ場合は管理表の後ろ側が除外されないこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 除外を解く条件 (猶予時間の 10 倍の境界、途中での数え直し、期限切れでの数え直し、通番循環、解いた時点の積算 0) の確認
+TEST(receiverReportTest, flow_suppressed_unexclude_boundary_reset_and_wrap)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000U;
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    SetupExclusionSender(&ctx, 1U, 10U, 100U, 1U);
+    ctx.health_timeout_ms = 2000U;
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 活動中 3 台、猶予時間 100 [ms] (解除条件は 1000 [ms]) で受信者 1 を除外する。
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 1U, 1U, 100U));
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 2U, 1U, 150U));
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 3U, 1U, 160U));
+    ASSERT_EQ(POTR_OK, AcceptFlowControl(&ctx, 1U, (uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 100U));
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1000U, 100U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1100U, 100U, &tracked, &until_ms);
+    potr_internal_receiver *r1 = FindReceiver(&ctx, 1U);
+    ASSERT_NE(nullptr, r1);
+    ASSERT_EQ(1, r1->flow_excluded);
+    // [状態確認] - 受信者 1 が除外されていること。
+    // Pre-Assert
+    // Act
+    now_ms = 1500U;
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 1U, 1U, 200U));
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1500U, 100U, &tracked, &until_ms);
+    int pending_started = r1->flow_unexclude_pending;
+    // [手順] - 受信報告の送出上限 200 (> next_seq 100) で数え始めさせる。
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 2000U, 200U, &tracked, &until_ms);
+    int pending_reset_seq = r1->flow_unexclude_pending;
+    // [手順] - 途中で next_seq が 200 (送出上限以下) になり、数え直すことを確認する。
+    now_ms = 2100U;
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 1U, 1U, 300U));
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 2100U, 200U, &tracked, &until_ms);
+    // [手順] - 送出上限 300 (> 200) で時刻 2100 から再び数え始める。
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 3099U, 200U, &tracked, &until_ms);
+    int excluded_at_999 = r1->flow_excluded;
+    // [手順] - 999 [ms] 経過 (10 倍の 1 [ms] 手前) で判定する。
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 3100U, 200U, &tracked, &until_ms);
+    int excluded_at_1000 = r1->flow_excluded;
+    uint64_t accum_after_unexclude = r1->flow_stall_accum_units;
+    // [手順] - ちょうど 1000 [ms] (猶予時間の 10 倍) で判定する。
+
+    // Arrange_2
+    // 期限切れでの数え直しと、通番循環をまたぐ解除を確認する。
+    r1->flow_excluded = 1;
+    r1->flow_stall_accum_units = 100U * POTR_FLOW_ACCUM_DECAY_DIVISOR;
+    r1->flow_unexclude_pending = 0;
+    now_ms = 4000U;
+    ctx.send_window.next_seq = 0xFFFFFFF0U;
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 1U, 1U, 0x10U));
+    // Act_2
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 4000U, 0xFFFFFFF0U, &tracked, &until_ms);
+    int pending_wrap = r1->flow_unexclude_pending;
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 6000U, 0xFFFFFFF0U, &tracked, &until_ms);
+    int excluded_after_inactive = r1->flow_excluded;
+    int pending_after_inactive = r1->flow_unexclude_pending;
+    // [手順] - 受信報告の有効期限 (2000 [ms]) が切れた時刻 6000 で判定し、活動中でないため数え直すことを確認する。
+    now_ms = 6100U;
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 1U, 1U, 0x10U));
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 6100U, 0xFFFFFFF0U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 7100U, 0xFFFFFFF0U, &tracked, &until_ms);
+    int excluded_after_wrap_unexclude = r1->flow_excluded;
+    // [手順] - 再び活動中にしてから 1000 [ms] 維持し、循環をまたいだ比較で除外が解けることを確認する。
+    // Assert
+    EXPECT_EQ(1, pending_started);              // [確認_正常系] - 送出上限が次の通番より先にあれば数え始めること。
+    EXPECT_EQ(0, pending_reset_seq);            // [確認_正常系] - 途中で送出上限が次の通番以下になったら数え直すこと。
+    EXPECT_EQ(1, excluded_at_999);              // [確認_正常系] - 猶予時間の 10 倍の直前 (999 [ms]) では解かないこと。
+    EXPECT_EQ(0, excluded_at_1000);             // [確認_正常系] - 猶予時間の 10 倍 (1000 [ms]) で除外を解くこと。
+    EXPECT_EQ(0U, accum_after_unexclude);       // [確認_正常系] - 除外を解いた時点で積算が 0 になること。
+    EXPECT_EQ(1, pending_wrap);                 // [確認_正常系] - 通番循環をまたいでも先にあると判定すること。
+    EXPECT_EQ(1, excluded_after_inactive);      // [確認_正常系] - 受信報告の有効期限切れでは除外を解かないこと。
+    EXPECT_EQ(0, pending_after_inactive);       // [確認_正常系] - 活動中でなくなったら数え直すこと。
+    EXPECT_EQ(0, excluded_after_wrap_unexclude); // [確認_正常系] - 循環をまたぐ比較で 10 倍の継続後に除外を解くこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// セッションが変わった受信者が新しい受信者として扱われる (積算 0、除外なし) ことの確認
+TEST(receiverReportTest, session_change_starts_with_zero_accum_and_not_excluded)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000U;
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    SetupExclusionSender(&ctx, 1U, 10U, 100U, 1U);
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 1U, 1U, 100U));
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 2U, 1U, 150U));
+    ASSERT_EQ(POTR_OK, AcceptReport(&ctx, 3U, 1U, 160U));
+    ASSERT_EQ(POTR_OK, AcceptFlowControl(&ctx, 1U, (uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 100U));
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1000U, 100U, &tracked, &until_ms);
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1100U, 100U, &tracked, &until_ms);
+    ASSERT_EQ(1, FindReceiver(&ctx, 1U)->flow_excluded);
+    // [状態] - セッション 1 が除外された状態にする。
+    // [状態確認] - セッション 1 が除外されていること。
+    // Pre-Assert
+    // Act
+    now_ms = 1200U;
+    int ret_new = AcceptReport(&ctx, 4U, 1U, 120U);
+    potr_internal_receiver *r_new = FindReceiver(&ctx, 4U);
+    // [手順] - セッションが変わった受信者 (session_id = 4) の受信報告を受理する。
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_new);                      // [確認_正常系] - 新しいセッションの受信報告を受理すること。
+    ASSERT_NE(nullptr, r_new);                        // [確認_正常系] - 新しいセッションのエントリが作られること。
+    EXPECT_EQ(0U, r_new->flow_stall_accum_units);     // [確認_正常系] - 新しいセッションの積算が 0 であること。
+    EXPECT_EQ(0, r_new->flow_excluded);               // [確認_正常系] - 新しいセッションが除外されていないこと。
+    EXPECT_EQ(0, r_new->flow_unexclude_pending);      // [確認_正常系] - 解除待ち時刻が未設定であること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 1 台の連続停止と 2 台の交互停止のいずれでも有限の時間で除外され送信者が再開することの確認
+TEST(receiverReportTest, flow_suppressed_resolves_in_finite_time_continuous_and_alternating)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    SetupExclusionSender(&ctx, 1U, 10U, 200U, 1U);
+    ctx.health_timeout_ms = 0U;
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    potr_internal_receiver *slow = AddReceiver(&ctx, 1, 1000U, 100000U);
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    // [状態] - 活動中 3 台、猶予時間 200 [ms] で 1 台が止める状態を続ける。
+    // Pre-Assert
+    // Act
+    uint64_t t = 1000U;
+    int sup = 1;
+    int steps = 0;
+    while (steps < 20)
+    {
+        sup = potr_internal_receiver_flow_suppressed(&ctx, t, 0U, &tracked, &until_ms);
+        if (sup == 0)
+        {
+            break;
+        }
+        uint64_t step = (until_ms > t && until_ms - t < (uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS)
+                            ? (until_ms - t)
+                            : (uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS;
+        t += step;
+        steps++;
+    }
+    int continuous_excluded = slow->flow_excluded;
+    int continuous_sup = sup;
+    uint64_t continuous_end_ms = t;
+    // [手順] - until_ms と再判定周期に従って時刻を進め、有限回で除外・再開することを確認する。
+    FreeReceivers(&ctx);
+
+    // Arrange_2
+    ctx = {};
+    SetupExclusionSender(&ctx, 1U, 10U, 200U, 1U);
+    ctx.health_timeout_ms = 0U;
+    potr_internal_receiver *r1 = AddReceiver(&ctx, 1, 1000U, 0U);
+    potr_internal_receiver *r2 = AddReceiver(&ctx, 1, 1000U, 0U);
+    AddReceiver(&ctx, 1, 1000U, 0U);
+    // [状態] - 活動中 3 台で、r1 (40 [ms] 停止) と r2 (10 [ms] 停止) が交互に止める状態になる。
+    // Act_2
+    t = 1000U;
+    int alt_excluded = 0;
+    for (int cycle = 0; cycle < 20 && !alt_excluded; cycle++)
+    {
+        r1->flow_request_expire_ms = t + 1000U;
+        r2->flow_request_expire_ms = 0U;
+        (void)potr_internal_receiver_flow_suppressed(&ctx, t, 0U, &tracked, &until_ms);
+        t += 40U;
+        (void)potr_internal_receiver_flow_suppressed(&ctx, t, 0U, &tracked, &until_ms);
+        if (r1->flow_excluded)
+        {
+            alt_excluded = 1;
+            break;
+        }
+        r1->flow_request_expire_ms = 0U;
+        r2->flow_request_expire_ms = t + 1000U;
+        (void)potr_internal_receiver_flow_suppressed(&ctx, t, 0U, &tracked, &until_ms);
+        t += 10U;
+        (void)potr_internal_receiver_flow_suppressed(&ctx, t, 0U, &tracked, &until_ms);
+    }
+    int r2_excluded = r2->flow_excluded;
+    // [手順] - r1 と r2 が交互に止める状態を繰り返し、積算が猶予時間に達する r1 が除外されることを確認する。
+    // Assert
+    EXPECT_EQ(0, continuous_sup);       // [確認_正常系] - 連続停止の受信者が除外され送信者が再開すること。
+    EXPECT_EQ(1, continuous_excluded);  // [確認_正常系] - 連続停止の受信者が除外されること。
+    EXPECT_EQ(1200U, continuous_end_ms); // [確認_正常系] - ちょうど猶予時間 200 [ms] 後の時刻 1200 で再開すること。
+    EXPECT_EQ(1, alt_excluded);         // [確認_正常系] - 交互停止でも積算が猶予時間に達する r1 が除外されること。
+    EXPECT_EQ(0, r2_excluded);          // [確認_正常系] - 停止時間が短い r2 は除外されないこと。
     // Cleanup
     FreeReceivers(&ctx);
 }
