@@ -232,3 +232,43 @@ TEST(apiOpenPathsTcpTest, resolution_failure_precedes_socket_creation)
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - アドレスの結果分類を保持すること。
     EXPECT_EQ(0, ctx.n_path);                         // [確認_異常系] - 未完成の経路を数えないこと。
 }
+
+// TCP のソケットを開く処理では udp_receive_buffer_size の要求を呼ばないことの確認
+TEST(apiOpenPathsTcpTest, listen_does_not_request_udp_receive_buffer_size)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    potr_context ctx = {};
+    ctx.service.dst_port = 1234;
+    ctx.global.udp_receive_buffer_size = POTR_DEFAULT_UDP_RECEIVE_BUFFER_SIZE;
+    std::memcpy(ctx.service.dst_addr[0], "host", sizeof("host"));
+    ctx.tcp_listen_sock[0] = CPLAT_INVALID_SOCKET;
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(7);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_listen(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - TCP の listen ソケット作成を成功させる。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_receive_buffer_size(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - TCP ソケットには cplat_socket_set_receive_buffer_size() を呼ばないこと。
+
+    // Act
+    int actual_ret = api_open_paths_tcp(&ctx, POTR_ROLE_RECEIVER); // [手順] - TCP 経路を準備する。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 操作が成功すること。
+}

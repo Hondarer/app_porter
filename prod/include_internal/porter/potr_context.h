@@ -100,6 +100,44 @@ static inline int type_uses_immediate_health_ping(potr_type t)
     return !is_oneway_udp_type(t);
 }
 
+/**
+ *  @brief          UDP ソケットを開くときに OS へ要求する受信バッファーの大きさの実効値を返します。
+ *
+ *  サービス側の 0 はグローバル値を使用、グローバル側の 0 は既定値 (POTR_DEFAULT_UDP_RECEIVE_BUFFER_SIZE) を使用します。
+ *  サービス側またはグローバル側に POTR_FLOW_CONTROL_DISABLED が指定された場合は 0 (要求しない) を返します
+ *  (サービス側の非 0 値はグローバルの POTR_FLOW_CONTROL_DISABLED より優先します)。
+ *  失敗モードのない純関数のため共通結果コードの適用対象外。
+ *
+ *  @param[in]      service サービス定義。NULL は許可しません。
+ *  @param[in]      global  グローバル設定。NULL は許可しません。
+ *  @return         要求する受信バッファーの大きさ [byte]。要求しない場合は 0。
+ */
+static inline uint32_t resolve_udp_receive_buffer_size(const potr_service_def *service,
+                                                       const potr_global_config *global)
+{
+    if (service->udp_receive_buffer_size == POTR_FLOW_CONTROL_DISABLED)
+    {
+        return 0U;
+    }
+
+    if (service->udp_receive_buffer_size != 0U)
+    {
+        return service->udp_receive_buffer_size;
+    }
+
+    if (global->udp_receive_buffer_size == POTR_FLOW_CONTROL_DISABLED)
+    {
+        return 0U;
+    }
+
+    if (global->udp_receive_buffer_size != 0U)
+    {
+        return global->udp_receive_buffer_size;
+    }
+
+    return (uint32_t)POTR_DEFAULT_UDP_RECEIVE_BUFFER_SIZE;
+}
+
 /** アトミックな path_ping_state 配列を通常配列へコピーします。 */
 static inline void copy_path_ping_state(uint8_t *dst, const cplat_atomic_u8 *src, size_t count)
 {
@@ -301,6 +339,7 @@ struct potr_context
     potr_service_def service;                    /**< サービス定義。 */
     potr_global_config global;                   /**< プロトコル別のグローバル既定値。 */
     uint32_t health_interval_ms;                 /**< 通信種別とサービス上書きを解決した実効 PING 送信間隔。 */
+    uint32_t _pad_health_interval;               /**< パディング (send_window を 8 [byte] 境界に揃える)。 */
     potr_internal_window send_window; /**< 送信バッファー (過去 N パケット保持。NACK 再送・REJECT 判定に使用)。 */
     cplat_local_lock *
         send_window_mutex; /**< send_window 保護用ミューテックス (送信スレッド・ヘルス チェック スレッド・受信スレッドが競合するため)。 */

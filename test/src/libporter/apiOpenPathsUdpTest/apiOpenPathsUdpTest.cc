@@ -959,3 +959,328 @@ TEST(apiOpenPathsUdpTest, multicast_receiver_dst_resolution_failure)
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - api_open_paths_multicast() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。(解決関数の結果を返したことの確認)
     EXPECT_EQ(0, ctx.n_path);                         // [確認_異常系] - ctx.n_path が 0 であること。
 }
+
+// udp_receive_buffer_size の値の決まり方 (既定値、global、service 優先、DISABLED の扱い) の確認
+TEST(apiOpenPathsUdpTest, udp_receive_buffer_size_resolution)
+{
+    // Arrange
+    potr_service_def svc = {};
+    potr_global_config glb = {};
+    // [状態] - サービス定義とグローバル設定を 0 初期化する。
+
+    // Pre-Assert
+
+    // Act
+    uint32_t default_val = resolve_udp_receive_buffer_size(&svc, &glb);
+    // [手順] - 両方 0 で解決する。
+    glb.udp_receive_buffer_size = 1048576U;
+    uint32_t global_val = resolve_udp_receive_buffer_size(&svc, &glb);
+    // [手順] - global に 1048576U、service に 0 で解決する。
+    svc.udp_receive_buffer_size = 524288U;
+    uint32_t service_val = resolve_udp_receive_buffer_size(&svc, &glb);
+    // [手順] - service に 524288U を指定して解決する。
+    svc.udp_receive_buffer_size = POTR_FLOW_CONTROL_DISABLED;
+    uint32_t service_disabled_val = resolve_udp_receive_buffer_size(&svc, &glb);
+    // [手順] - service に POTR_FLOW_CONTROL_DISABLED を指定して解決する。
+    svc.udp_receive_buffer_size = 0U;
+    glb.udp_receive_buffer_size = POTR_FLOW_CONTROL_DISABLED;
+    uint32_t global_disabled_val = resolve_udp_receive_buffer_size(&svc, &glb);
+    // [手順] - global に POTR_FLOW_CONTROL_DISABLED、service に 0 を指定して解決する。
+    svc.udp_receive_buffer_size = 262144U;
+    uint32_t service_over_global_disabled_val = resolve_udp_receive_buffer_size(&svc, &glb);
+    // [手順] - global が POTR_FLOW_CONTROL_DISABLED のまま、service に 262144U を指定して解決する。
+
+    // Assert
+    EXPECT_EQ(POTR_DEFAULT_UDP_RECEIVE_BUFFER_SIZE, default_val); // [確認_正常系] - 両方 0 のとき既定値 (4194304U) であること。
+    EXPECT_EQ(1048576U, global_val); // [確認_正常系] - service が 0 のとき global の値であること。
+    EXPECT_EQ(524288U, service_val); // [確認_正常系] - service が非 0 のとき service の値が優先されること。
+    EXPECT_EQ(0U, service_disabled_val); // [確認_正常系] - service が DISABLED のとき 0U (要求しない) であること。
+    EXPECT_EQ(0U, global_disabled_val); // [確認_正常系] - global が DISABLED かつ service が 0 のとき 0U (要求しない) であること。
+    EXPECT_EQ(262144U, service_over_global_disabled_val); // [確認_正常系] - global の DISABLED を service の値で上書きできること。
+}
+
+// UDP の全通信種別 (送信者・受信者、片方向・双方向・N 対 1) で cplat_socket_set_receive_buffer_size() を呼ぶことの確認
+TEST(apiOpenPathsUdpTest, udp_receive_buffer_size_requested_on_all_udp_paths)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    ON_CALL(mock_porter, api_paths_parse_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    ON_CALL(mock_porter, potr_internal_peer_table_init(_)).WillByDefault(Return(POTR_OK));
+    int next_sock = 10;
+    ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_UDP, _, _))
+        .WillByDefault(
+            [&](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(++next_sock);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_multicast_interface(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_broadcast(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_get_receive_buffer_size(_, _, _))
+        .WillByDefault(
+            [](cplat_socket, size_t *size_out, cplat_error *)
+            {
+                *size_out = POTR_DEFAULT_UDP_RECEIVE_BUFFER_SIZE;
+                return CPLAT_OK;
+            });
+    // [状態] - UDP ソケットの作成・設定をすべて成功させ、取得値は要求値と同じにする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat,
+                cplat_socket_set_receive_buffer_size(_, static_cast<size_t>(POTR_DEFAULT_UDP_RECEIVE_BUFFER_SIZE), _))
+        .Times(11)
+        .WillRepeatedly(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - UDP の全 11 経路で既定値 (4 MiB) の要求が 1 回ずつ呼ばれること。
+
+    // Act
+    potr_context ctx = {};
+    ctx.service.dst_port = 5000;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.dst_addr[0], "dst", sizeof("dst"));
+    int ret_unicast_sender = api_open_paths_unicast(&ctx, POTR_ROLE_SENDER);
+    ctx.n_path = 0;
+    int ret_unicast_receiver = api_open_paths_unicast(&ctx, POTR_ROLE_RECEIVER);
+    // [手順] - unicast の送信者と受信者を開く。
+
+    ctx = {};
+    ctx.service.dst_port = 6000;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.multicast_group, "239.0.0.1", sizeof("239.0.0.1"));
+    int ret_mcast_sender = api_open_paths_multicast(&ctx, POTR_ROLE_SENDER);
+    ctx.n_path = 0;
+    int ret_mcast_receiver = api_open_paths_multicast(&ctx, POTR_ROLE_RECEIVER);
+    // [手順] - multicast の送信者と受信者を開く。
+
+    ctx = {};
+    ctx.service.dst_port = 7000;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    int ret_bcast_sender = api_open_paths_broadcast(&ctx, POTR_ROLE_SENDER);
+    ctx.n_path = 0;
+    int ret_bcast_receiver = api_open_paths_broadcast(&ctx, POTR_ROLE_RECEIVER);
+    // [手順] - broadcast の送信者と受信者を開く。
+
+    ctx = {};
+    ctx.service.dst_port = 8000;
+    int ret_bidir_dyn_receiver = api_open_paths_unicast_bidir(&ctx, POTR_ROLE_RECEIVER);
+    ctx = {};
+    ctx.service.dst_port = 8000;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.dst_addr[0], "dst", sizeof("dst"));
+    int ret_bidir_sender = api_open_paths_unicast_bidir(&ctx, POTR_ROLE_SENDER);
+    ctx.n_path = 0;
+    int ret_bidir_receiver = api_open_paths_unicast_bidir(&ctx, POTR_ROLE_RECEIVER);
+    // [手順] - unicast_bidir の動的受信者、1:1 送信者、1:1 受信者を開く。
+
+    ctx = {};
+    ctx.service.dst_port = 9000;
+    int ret_n1_any = api_open_paths_unicast_bidir_n1(&ctx);
+    ctx = {};
+    ctx.service.dst_port = 9000;
+    std::memcpy(ctx.service.dst_addr[0], "dst", sizeof("dst"));
+    int ret_n1_addr = api_open_paths_unicast_bidir_n1(&ctx);
+    // [手順] - unicast_bidir_n1 の dst_addr 省略と dst_addr 指定を開く。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_unicast_sender);     // [確認_正常系] - unicast 送信者が成功すること。
+    EXPECT_EQ(POTR_OK, ret_unicast_receiver);   // [確認_正常系] - unicast 受信者が成功すること。
+    EXPECT_EQ(POTR_OK, ret_mcast_sender);       // [確認_正常系] - multicast 送信者が成功すること。
+    EXPECT_EQ(POTR_OK, ret_mcast_receiver);     // [確認_正常系] - multicast 受信者が成功すること。
+    EXPECT_EQ(POTR_OK, ret_bcast_sender);       // [確認_正常系] - broadcast 送信者が成功すること。
+    EXPECT_EQ(POTR_OK, ret_bcast_receiver);     // [確認_正常系] - broadcast 受信者が成功すること。
+    EXPECT_EQ(POTR_OK, ret_bidir_dyn_receiver); // [確認_正常系] - unicast_bidir 動的受信者が成功すること。
+    EXPECT_EQ(POTR_OK, ret_bidir_sender);       // [確認_正常系] - unicast_bidir 送信者が成功すること。
+    EXPECT_EQ(POTR_OK, ret_bidir_receiver);     // [確認_正常系] - unicast_bidir 受信者が成功すること。
+    EXPECT_EQ(POTR_OK, ret_n1_any);             // [確認_正常系] - unicast_bidir_n1 (INADDR_ANY) が成功すること。
+    EXPECT_EQ(POTR_OK, ret_n1_addr);            // [確認_正常系] - unicast_bidir_n1 (dst_addr 指定) が成功すること。
+}
+
+// udp_receive_buffer_size が「要求しない」(POTR_FLOW_CONTROL_DISABLED) のとき、要求を呼ばないことの確認
+TEST(apiOpenPathsUdpTest, udp_receive_buffer_size_disabled_skips_request)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(10);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    potr_context ctx = {};
+    ctx.service.dst_port = 5000;
+    ctx.service.udp_receive_buffer_size = POTR_FLOW_CONTROL_DISABLED;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.dst_addr[0], "dst", sizeof("dst"));
+    // [状態] - サービスの udp_receive_buffer_size に POTR_FLOW_CONTROL_DISABLED を設定する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_receive_buffer_size(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - cplat_socket_set_receive_buffer_size() が呼ばれないこと。
+    EXPECT_CALL(mock_cplat, cplat_socket_get_receive_buffer_size(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - cplat_socket_get_receive_buffer_size() が呼ばれないこと。
+
+    // Act
+    int actual_ret = api_open_paths_unicast(&ctx, POTR_ROLE_RECEIVER); // [手順] - unicast 経路を開く。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 戻り値が POTR_OK であること。
+}
+
+// 要求が失敗してもエラーにせず続行し、INFO に要求値・実際の値・OS 設定の見直しをサービスごとに 1 回記録することの確認
+TEST(apiOpenPathsUdpTest, udp_receive_buffer_size_failure_continues_and_logs_info_once)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    int opens = 0;
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [&](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(++opens);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_receive_buffer_size(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
+    ON_CALL(mock_cplat, cplat_socket_get_receive_buffer_size(_, _, _))
+        .WillByDefault(
+            [](cplat_socket, size_t *size_out, cplat_error *)
+            {
+                *size_out = 212992U;
+                return CPLAT_OK;
+            });
+    potr_context ctx = {};
+    ctx.service.service_id = 1001;
+    ctx.service.dst_port = 5000;
+    ctx.global.udp_receive_buffer_size = 4194304U;
+    std::memcpy(ctx.service.src_addr[0], "src1", sizeof("src1"));
+    std::memcpy(ctx.service.dst_addr[0], "dst1", sizeof("dst1"));
+    std::memcpy(ctx.service.src_addr[1], "src2", sizeof("src2"));
+    std::memcpy(ctx.service.dst_addr[1], "dst2", sizeof("dst2"));
+    // [状態] - 2 経路の unicast で、要求を失敗させ、取得値を 212992 にする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat,
+                cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_INFO, nullptr,
+                                       AllOf(HasSubstr("requested=4194304"), HasSubstr("actual=212992"),
+                                             HasSubstr("OS receive buffer settings"))))
+        .Times(1);
+    // [Pre-Assert確認_正常系] - 2 経路あっても INFO に要求値、実際の値、OS 設定の見直しが 1 回だけ記録されること。
+
+    // Act
+    int actual_ret = api_open_paths_unicast(&ctx, POTR_ROLE_RECEIVER); // [手順] - 2 経路の unicast を開く。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 要求が失敗してもエラーにせず POTR_OK を返すこと。
+    EXPECT_EQ(2, ctx.n_path);       // [確認_正常系] - 2 経路すべてが開かれること。
+}
+
+// 取得値が要求値より小さい場合に INFO をサービスごとに 1 回記録し、要求値以上の場合は記録しないことの確認
+TEST(apiOpenPathsUdpTest, udp_receive_buffer_size_compares_actual_and_requested_for_info_log)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    int opens = 0;
+    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
+        .WillByDefault(
+            [&](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(++opens);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_receive_buffer_size(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    size_t mock_actual_size = 425984U;
+    ON_CALL(mock_cplat, cplat_socket_get_receive_buffer_size(_, _, _))
+        .WillByDefault(
+            [&](cplat_socket, size_t *size_out, cplat_error *)
+            {
+                *size_out = mock_actual_size;
+                return CPLAT_OK;
+            });
+    potr_context ctx_small = {};
+    ctx_small.service.service_id = 1002;
+    ctx_small.service.dst_port = 5001;
+    ctx_small.service.udp_receive_buffer_size = 4194304U;
+    std::memcpy(ctx_small.service.src_addr[0], "src1", sizeof("src1"));
+    std::memcpy(ctx_small.service.dst_addr[0], "dst1", sizeof("dst1"));
+    std::memcpy(ctx_small.service.src_addr[1], "src2", sizeof("src2"));
+    std::memcpy(ctx_small.service.dst_addr[1], "dst2", sizeof("dst2"));
+    potr_context ctx_exact = ctx_small;
+    ctx_exact.service.service_id = 1003;
+    potr_context ctx_doubled = ctx_small;
+    ctx_doubled.service.service_id = 1004;
+    // [状態] - 要求成功とし、取得値が要求値未満・同値・2 倍の 3 ケースを用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat,
+                cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_INFO, nullptr,
+                                       AllOf(HasSubstr("service_id=1002"), HasSubstr("requested=4194304"),
+                                             HasSubstr("actual=425984"), HasSubstr("OS receive buffer settings"))))
+        .Times(1);
+    // [Pre-Assert確認_正常系] - 取得値が要求値より小さいサービス 1002 は 2 経路でも INFO が 1 回だけ記録されること。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_INFO, nullptr, HasSubstr("service_id=1003")))
+        .Times(0);
+    // [Pre-Assert確認_正常系] - 取得値が要求値と同じサービス 1003 は INFO を記録しないこと。
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_INFO, nullptr, HasSubstr("service_id=1004")))
+        .Times(0);
+    // [Pre-Assert確認_正常系] - 取得値が要求値の 2 倍のサービス 1004 は INFO を記録しないこと。
+
+    // Act
+    mock_actual_size = 425984U;
+    int ret_small = api_open_paths_unicast(&ctx_small, POTR_ROLE_RECEIVER);
+    // [手順] - 取得値 425984 (< 4194304) でサービス 1002 を開く。
+    mock_actual_size = 4194304U;
+    int ret_exact = api_open_paths_unicast(&ctx_exact, POTR_ROLE_RECEIVER);
+    // [手順] - 取得値 4194304 (== 4194304) でサービス 1003 を開く。
+    mock_actual_size = 8388608U;
+    int ret_doubled = api_open_paths_unicast(&ctx_doubled, POTR_ROLE_RECEIVER);
+    // [手順] - 取得値 8388608 (2 倍) でサービス 1004 を開く。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_small);   // [確認_正常系] - サービス 1002 が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_exact);   // [確認_正常系] - サービス 1003 が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_doubled); // [確認_正常系] - サービス 1004 が POTR_OK であること。
+}

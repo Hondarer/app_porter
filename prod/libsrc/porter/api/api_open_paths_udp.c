@@ -26,10 +26,62 @@
 #include "api_open_paths_common.h"
 
 /*
+ * UDP ソケットの OS 受信バッファーの拡大を要求し、結果を確認して必要なら INFO にサービスごとに 1 回記録する。
+ * 要求しない設定 (実効値 0) の場合は何もしない。失敗してもエラーにはせず続行する。
+ */
+static void configure_udp_receive_buffer(const cplat_socket sock, const potr_context *ctx, int *logged)
+{
+    uint32_t requested_size = resolve_udp_receive_buffer_size(&ctx->service, &ctx->global);
+    cplat_error detail;
+    size_t actual_size = 0U;
+    int set_ret;
+    int get_ret;
+
+    if (requested_size == 0U)
+    {
+        return;
+    }
+
+    /*
+     * OS の受信バッファーの拡大を要求する。
+     * Linux は設定値を 2 倍にして保持し net.core.rmem_max で切り詰めるため、
+     * 取得値そのものが要求値未満かで不足を判定する。
+     * see: https://man7.org/linux/man-pages/man7/socket.7.html
+     */
+    set_ret = cplat_socket_set_receive_buffer_size(sock, (size_t)requested_size, &detail);
+    get_ret = cplat_socket_get_receive_buffer_size(sock, &actual_size, NULL);
+
+    if (*logged != 0)
+    {
+        return;
+    }
+
+    if (set_ret != CPLAT_OK || get_ret != CPLAT_OK || actual_size < (size_t)requested_size)
+    {
+        if (get_ret == CPLAT_OK)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                       "udp_receive_buffer_size[service_id=%" PRId64 "]: requested=%" PRIu32
+                       " actual=%zu; check OS receive buffer settings (e.g. net.core.rmem_max on Linux)",
+                       ctx->service.service_id, requested_size, actual_size);
+        }
+        else
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                       "udp_receive_buffer_size[service_id=%" PRId64 "]: requested=%" PRIu32
+                       " actual=unknown; check OS receive buffer settings (e.g. net.core.rmem_max on Linux)",
+                       ctx->service.service_id, requested_size);
+        }
+        *logged = 1;
+    }
+}
+
+/*
  * ソケットを作成して bind する。成功時はソケットを返す。失敗時は CPLAT_INVALID_SOCKET。
  * bind_addr: bind する IPv4 アドレス (ネットワーク バイト オーダー)。port: bind するポート番号 (0 = OS 自動選定)。
  */
-static cplat_socket open_socket_unicast(const uint32_t bind_addr, const uint16_t port)
+static cplat_socket open_socket_unicast(const potr_context *ctx, const uint32_t bind_addr, const uint16_t port,
+                                        int *rcvbuf_logged)
 {
     cplat_socket sock;
     cplat_ipv4_endpoint addr = {0};
@@ -54,6 +106,8 @@ static cplat_socket open_socket_unicast(const uint32_t bind_addr, const uint16_t
         return CPLAT_INVALID_SOCKET;
     }
 
+    configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
+
     return sock;
 }
 
@@ -62,8 +116,10 @@ static cplat_socket open_socket_unicast(const uint32_t bind_addr, const uint16_t
  * join_if: グループ参加と、送信者の送信インターフェイスに使うアドレス (INADDR_ANY = OS 自動選択)。
  * is_receiver: 1 = 受信者、0 = 送信者。
  */
-static cplat_socket open_socket_multicast(const potr_service_def *def, const uint32_t join_if, const int is_receiver)
+static cplat_socket open_socket_multicast(const potr_context *ctx, const uint32_t join_if, const int is_receiver,
+                                          int *rcvbuf_logged)
 {
+    const potr_service_def *def = &ctx->service;
     cplat_socket sock;
     cplat_ipv4_endpoint addr = {0};
     uint32_t group_addr;
@@ -125,6 +181,8 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, const uin
         }
     }
 
+    configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
+
     return sock;
 }
 
@@ -135,8 +193,8 @@ static cplat_socket open_socket_multicast(const potr_service_def *def, const uin
  * src_if: 送信者が使用するローカル インターフェイス (INADDR_ANY = OS 自動選択)。
  * is_receiver: 1 = 受信者 (INADDR_ANY で bind)、0 = 送信者 (src_if で bind)。
  */
-static cplat_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, const uint32_t src_if,
-                                          const int is_receiver)
+static cplat_socket open_socket_broadcast(const potr_context *ctx, uint16_t src_port, uint16_t dst_port,
+                                          const uint32_t src_if, const int is_receiver, int *rcvbuf_logged)
 {
     cplat_socket sock;
     cplat_ipv4_endpoint addr = {0};
@@ -189,6 +247,8 @@ static cplat_socket open_socket_broadcast(uint16_t src_port, uint16_t dst_port, 
         return CPLAT_INVALID_SOCKET;
     }
 
+    configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
+
     return sock;
 }
 
@@ -198,6 +258,7 @@ int api_open_paths_unicast(potr_context *ctx, const potr_role role)
 {
     int i;
     int result;
+    int rcvbuf_logged = 0;
 
     if (ctx->service.dst_port == 0)
     {
@@ -237,7 +298,7 @@ int api_open_paths_unicast(potr_context *ctx, const potr_role role)
             bind_port = ctx->service.src_port;
         }
 
-        ctx->sock[i] = open_socket_unicast(bind_addr, bind_port);
+        ctx->sock[i] = open_socket_unicast(ctx, bind_addr, bind_port, &rcvbuf_logged);
         if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
@@ -260,6 +321,7 @@ int api_open_paths_multicast(potr_context *ctx, const potr_role role)
 {
     int i;
     int result;
+    int rcvbuf_logged = 0;
 
     if (ctx->service.dst_port == 0 || ctx->service.multicast_group[0] == '\0')
     {
@@ -300,7 +362,7 @@ int api_open_paths_multicast(potr_context *ctx, const potr_role role)
         }
 
         ctx->multicast_if_resolved[i] = join_if;
-        ctx->sock[i] = open_socket_multicast(&ctx->service, join_if, role == POTR_ROLE_RECEIVER);
+        ctx->sock[i] = open_socket_multicast(ctx, join_if, role == POTR_ROLE_RECEIVER, &rcvbuf_logged);
         if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
@@ -323,6 +385,7 @@ int api_open_paths_broadcast(potr_context *ctx, const potr_role role)
 {
     int i;
     int result;
+    int rcvbuf_logged = 0;
 
     if (ctx->service.dst_port == 0)
     {
@@ -350,8 +413,8 @@ int api_open_paths_broadcast(potr_context *ctx, const potr_role role)
             return result;
         }
 
-        ctx->sock[i] = open_socket_broadcast(ctx->service.src_port, ctx->service.dst_port, ctx->src_addr_resolved[i],
-                                             role == POTR_ROLE_RECEIVER);
+        ctx->sock[i] = open_socket_broadcast(ctx, ctx->service.src_port, ctx->service.dst_port,
+                                             ctx->src_addr_resolved[i], role == POTR_ROLE_RECEIVER, &rcvbuf_logged);
         if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
@@ -373,6 +436,7 @@ int api_open_paths_broadcast(potr_context *ctx, const potr_role role)
 int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
 {
     int result;
+    int rcvbuf_logged = 0;
 
     ctx->is_multi_peer = 0;
 
@@ -409,7 +473,7 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
             ctx->dst_addr_resolved[0] = bind_addr;
         }
 
-        ctx->sock[0] = open_socket_unicast(bind_addr, ctx->service.dst_port);
+        ctx->sock[0] = open_socket_unicast(ctx, bind_addr, ctx->service.dst_port, &rcvbuf_logged);
         if (ctx->sock[0] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
@@ -475,12 +539,13 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
                     bind_addr = CPLAT_IPV4_ADDR_ANY;
                 }
 
-                ctx->sock[i] = open_socket_unicast(bind_addr, ctx->service.src_port);
+                ctx->sock[i] = open_socket_unicast(ctx, bind_addr, ctx->service.src_port, &rcvbuf_logged);
             }
             else
             {
                 /* RECEIVER: dst_addr:dst_port で bind する。 */
-                ctx->sock[i] = open_socket_unicast(ctx->dst_addr_resolved[i], ctx->service.dst_port);
+                ctx->sock[i] =
+                    open_socket_unicast(ctx, ctx->dst_addr_resolved[i], ctx->service.dst_port, &rcvbuf_logged);
             }
 
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
@@ -510,6 +575,7 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
 {
     int i;
     int result;
+    int rcvbuf_logged = 0;
 
     ctx->is_multi_peer = 1;
 
@@ -528,7 +594,7 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
         /* dst_addr すべて省略: INADDR_ANY で 1 ソケットを作成する。 */
         uint32_t any_addr;
         any_addr = CPLAT_IPV4_ADDR_ANY;
-        ctx->sock[0] = open_socket_unicast(any_addr, ctx->service.dst_port);
+        ctx->sock[0] = open_socket_unicast(ctx, any_addr, ctx->service.dst_port, &rcvbuf_logged);
         if (ctx->sock[0] == CPLAT_INVALID_SOCKET)
         {
             return POTR_ERR_IO;
@@ -555,7 +621,7 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
             }
 
             ctx->dst_addr_resolved[i] = bind_addr;
-            ctx->sock[i] = open_socket_unicast(bind_addr, ctx->service.dst_port);
+            ctx->sock[i] = open_socket_unicast(ctx, bind_addr, ctx->service.dst_port, &rcvbuf_logged);
             if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
             {
                 return POTR_ERR_IO;

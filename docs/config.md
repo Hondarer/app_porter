@@ -70,6 +70,7 @@ WARNING は、利用側が設定の読み込みより前にトレーサーを開
 | `flow_control_monitored_receiver_percent` | uint32 | 0 | `multicast` / `broadcast` の送信側が、送出上限を知らせる受信者 (監視対象) として選ぶ受信者の割合 (%)。0〜100。0 で割合は監視する数の計算に使わない (既定値) |
 | `flow_control_monitored_receiver_count` | uint32 | 4 | `multicast` / `broadcast` の送信側が、監視対象として選ぶ受信者の台数。0〜64。0 で台数は監視する数の計算に使わない |
 | `flow_control_receive_buffer_percent` | uint32 | 100 | 受信側が、OS の受信バッファーの大きさのうち、受信バッファーの幅の計算に使う割合 (%)。1〜100。`-1` で OS の受信バッファーに基づく送出上限を使わない |
+| `udp_receive_buffer_size` | uint32 | 4,194,304 | UDP のソケットを開くときに OS へ要求する受信バッファーの大きさ (バイト)。`0` で既定値を使用。`-1` で要求しない。TCP のソケットには適用しない |
 
 Table: global オブジェクトの設定項目一覧
 
@@ -143,11 +144,11 @@ Table: フロー制御の設定を使う側
 
 - `global` の値は、そのまま使います。`flow_control_capacity`、`flow_control_receiver_percent`、`flow_control_receiver_count`、`flow_control_monitored_receiver_percent`、`flow_control_monitored_receiver_count` の `0` は「無効」です。
 - サービス側の `0` と省略は、「`global` の値を使用」です。
-- サービス側で「無効」にする場合は、`-1` を指定します。`-1` を指定できるのは、サービス側の `flow_control_capacity`、`flow_control_receiver_percent`、`flow_control_receiver_count`、`flow_control_monitored_receiver_percent`、`flow_control_monitored_receiver_count` と、`global` とサービス側の `flow_control_receive_buffer_percent` だけです。その他の項目は、負号付きの値を受け付けません。
-- `flow_control_receive_buffer_percent` は既定で有効で、`0` が「既定値を使用」(サービス側では「`global` の値を使用」) を表すため、`global` でも `-1` で無効にできます。
+- サービス側で「無効」にする場合は、`-1` を指定します。`-1` を指定できるのは、サービス側の `flow_control_capacity`、`flow_control_receiver_percent`、`flow_control_receiver_count`、`flow_control_monitored_receiver_percent`、`flow_control_monitored_receiver_count` と、`global` とサービス側の `flow_control_receive_buffer_percent`、`udp_receive_buffer_size` だけです。その他の項目は、負号付きの値を受け付けません。
+- `flow_control_receive_buffer_percent` と `udp_receive_buffer_size` は既定で有効で、`0` が「既定値を使用」(サービス側では「`global` の値を使用」) を表すため、`global` でも `-1` で無効 (要求しない) にできます。
 - `flow_control_monitored_receiver_percent` と `flow_control_monitored_receiver_count` の「無効」は、その設定を監視する数の計算に使わないことを表します。両方が無効の場合、監視する数は「しきい値」の台数になります。
 - `potr_service_def` と `potr_global_config` を直接指定する場合は、`-1` の代わりに `POTR_FLOW_CONTROL_DISABLED` を指定します。
-- `potr_global_config` を直接指定する場合、しきい値、再送周期、有効期限、`flow_control_receive_buffer_percent` の `0` には既定値を使います。構造体を 0 で初期化した利用側が、構成の検査でエラーにならないようにするためです。
+- `potr_global_config` を直接指定する場合、しきい値、再送周期、有効期限、`flow_control_receive_buffer_percent`、`udp_receive_buffer_size` の `0` には既定値を使います。構造体を 0 で初期化した利用側が、構成の検査でエラーにならないようにするためです。
 
 ```jsonc
 {
@@ -384,6 +385,7 @@ Table: ヘルス チェック設定値とその効果
 | `flow_control_receiver_percent`、`flow_control_receiver_count` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でその条件を無効にします。 |
 | `flow_control_monitored_receiver_percent`、`flow_control_monitored_receiver_count` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でその設定を監視する数の計算に使いません。 |
 | `flow_control_receive_buffer_percent` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でこのサービスの受信側は OS の受信バッファーに基づく送出上限を使いません。 |
+| `udp_receive_buffer_size` | uint32 | 省略可 | グローバルの `udp_receive_buffer_size` をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でこのサービスの UDP ソケットでは OS へ受信バッファーの大きさを要求しません。TCP のソケットには適用しません。 |
 
 Table: 全通信種別共通のサービス設定項目
 

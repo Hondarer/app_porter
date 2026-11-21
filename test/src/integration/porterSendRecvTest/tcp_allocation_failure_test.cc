@@ -139,7 +139,6 @@ class tcp_allocation_failure_test : public TestWithParam<allocation_case>
 #if defined(PLATFORM_LINUX)
   protected:
     potr_global_config global = {};
-    uint32_t reserved = 0;
     potr_service_def service = {};
     potr_context *handle = nullptr;
     allocation_probe probe;

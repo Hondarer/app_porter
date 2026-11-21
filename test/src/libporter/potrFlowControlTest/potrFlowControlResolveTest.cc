@@ -26,7 +26,6 @@ class potrFlowControlResolveTest : public Test
     NiceMock<Mock_porter> mock_porter;
     potr_service_def svc;
     potr_global_config glb;
-    uint32_t fixture_padding = 0U; // クラスのサイズを 8 バイト境界にそろえるためのパディング
     potr_internal_flow_control_config cfg;
 
     // [サブ手順 名前=potrFlowControlResolveTest.SetUp]

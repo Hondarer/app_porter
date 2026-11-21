@@ -746,3 +746,64 @@ TEST(configLoadGlobalTest, receive_buffer_percent_accepts_disabled)
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 設定の読み込みが成功すること。
     EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, global.flow_control_receive_buffer_percent); // [確認_正常系] - global.flow_control_receive_buffer_percent が POTR_FLOW_CONTROL_DISABLED であること。
 }
+
+// global の udp_receive_buffer_size が、省略時に既定値、数値と 0 でその値、-1 で POTR_FLOW_CONTROL_DISABLED、不正値で既定値維持になることの確認
+TEST(configLoadGlobalTest, udp_receive_buffer_size_omitted_numeric_zero_disabled_and_invalid)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    ConfigLineStream omitted_lines({R"({"global":{}})"});
+    ConfigLineStream numeric_lines({R"({"global":{"udp_receive_buffer_size":1048576}})"});
+    ConfigLineStream zero_lines({R"({"global":{"udp_receive_buffer_size":0}})"});
+    ConfigLineStream disabled_lines({R"({"global":{"udp_receive_buffer_size":-1}})"});
+    ConfigLineStream invalid_lines({R"({"global":{"udp_receive_buffer_size":-2}})"});
+    ConfigLineStream *lines = &omitted_lines;
+    // [状態] - udp_receive_buffer_size の省略、数値、0、-1、-2 の各 global 定義を用意する。
+    potr_global_config global_omitted = {};
+    potr_global_config global_numeric = {};
+    potr_global_config global_zero = {};
+    potr_global_config global_disabled = {};
+    potr_global_config global_invalid = {};
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines->read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret_omitted = potr_internal_config_load_global("config.conf", &global_omitted);
+    // [手順] - udp_receive_buffer_size を省略した global 定義で potr_internal_config_load_global() を呼び出す。
+    lines = &numeric_lines;
+    int actual_ret_numeric = potr_internal_config_load_global("config.conf", &global_numeric);
+    // [手順] - udp_receive_buffer_size が 1048576 の global 定義で potr_internal_config_load_global() を呼び出す。
+    lines = &zero_lines;
+    int actual_ret_zero = potr_internal_config_load_global("config.conf", &global_zero);
+    // [手順] - udp_receive_buffer_size が 0 の global 定義で potr_internal_config_load_global() を呼び出す。
+    lines = &disabled_lines;
+    int actual_ret_disabled = potr_internal_config_load_global("config.conf", &global_disabled);
+    // [手順] - udp_receive_buffer_size が -1 の global 定義で potr_internal_config_load_global() を呼び出す。
+    lines = &invalid_lines;
+    int actual_ret_invalid = potr_internal_config_load_global("config.conf", &global_invalid);
+    // [手順] - udp_receive_buffer_size が -2 の global 定義で potr_internal_config_load_global() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret_omitted); // [確認_正常系] - 省略時の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_DEFAULT_UDP_RECEIVE_BUFFER_SIZE,
+              global_omitted.udp_receive_buffer_size); // [確認_正常系] - 省略時に既定値 (4194304) であること。
+    EXPECT_EQ(POTR_OK, actual_ret_numeric); // [確認_正常系] - 数値指定時の戻り値が POTR_OK であること。
+    EXPECT_EQ(1048576U, global_numeric.udp_receive_buffer_size); // [確認_正常系] - 数値指定時に 1048576U であること。
+    EXPECT_EQ(POTR_OK, actual_ret_zero); // [確認_正常系] - 0 指定時の戻り値が POTR_OK であること。
+    EXPECT_EQ(0U, global_zero.udp_receive_buffer_size); // [確認_正常系] - 0 指定時に 0U であること。
+    EXPECT_EQ(POTR_OK, actual_ret_disabled); // [確認_正常系] - -1 指定時の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED,
+              global_disabled.udp_receive_buffer_size); // [確認_正常系] - -1 指定時に POTR_FLOW_CONTROL_DISABLED であること。
+    EXPECT_EQ(POTR_OK, actual_ret_invalid); // [確認_異常系] - -2 指定時の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_DEFAULT_UDP_RECEIVE_BUFFER_SIZE,
+              global_invalid.udp_receive_buffer_size); // [確認_異常系] - -2 指定時に既定値を維持すること。
+}

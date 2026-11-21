@@ -696,6 +696,8 @@ static const GlobalConfigField kGlobalConfigFields[] = {
      sizeof(potr_global_config::flow_control_monitored_receiver_count), false, {}},
     {"flow_control_receive_buffer_percent", offsetof(potr_global_config, flow_control_receive_buffer_percent),
      sizeof(potr_global_config::flow_control_receive_buffer_percent), true, {}},
+    {"udp_receive_buffer_size", offsetof(potr_global_config, udp_receive_buffer_size),
+     sizeof(potr_global_config::udp_receive_buffer_size), true, {}},
 };
 
 struct GlobalConfigOverride

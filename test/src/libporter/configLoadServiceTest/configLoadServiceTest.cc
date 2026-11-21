@@ -1628,3 +1628,64 @@ TEST(configLoadServiceTest, monitor_and_receive_buffer_keys)
     EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, disabled.definition.flow_control_monitored_receiver_count); // [確認_正常系] - 文字列の "-1" の台数が POTR_FLOW_CONTROL_DISABLED であること。
     EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED, disabled.definition.flow_control_receive_buffer_percent); // [確認_正常系] - 数値の -1 の受信バッファーの幅の割合が POTR_FLOW_CONTROL_DISABLED であること。
 }
+
+// サービスの udp_receive_buffer_size が、省略時と 0 で 0、数値でその値、-1 で POTR_FLOW_CONTROL_DISABLED、不正値で 0 維持になることの確認
+TEST(configLoadServiceTest, udp_receive_buffer_size_keys)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    const char *content =
+        R"({"services":{"41":{"type":"unicast","dst_port":5000},"42":{"type":"unicast","dst_port":5001,"udp_receive_buffer_size":2097152},"43":{"type":"unicast","dst_port":5002,"udp_receive_buffer_size":0},"44":{"type":"unicast","dst_port":5003,"udp_receive_buffer_size":-1},"45":{"type":"unicast","dst_port":5004,"udp_receive_buffer_size":-2}}})";
+    ConfigLineStream s1({content});
+    ConfigLineStream s2({content});
+    ConfigLineStream s3({content});
+    ConfigLineStream s4({content});
+    ConfigLineStream s5({content});
+    ConfigLineStream *lines = &s1;
+    // [状態] - udp_receive_buffer_size の省略、数値、0、-1、-2 の各サービス定義を用意する。
+    ON_CALL(mock_cplat, cplat_fopen(_, _, _)).WillByDefault(Return(ConfigLineStream::handle()));
+    ON_CALL(mock_stdio, fclose(_, _, _, ConfigLineStream::handle())).WillByDefault(Return(0));
+    ON_CALL(mock_stdio, fgets(_, _, _, _, _, ConfigLineStream::handle()))
+        .WillByDefault(Invoke(
+            [&](const char *, int, const char *, char *buffer, int size, FILE *stream) -> char *
+            {
+                return lines->read(buffer, size, stream);
+            })); // [状態] - fgets() から、設定の内容を順に出力バッファーに設定してそのポインターを返すように既定動作を設定する。
+    service_configuration omitted;
+    service_configuration loaded;
+    service_configuration zero;
+    service_configuration disabled;
+    service_configuration invalid;
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret_omitted = potr_internal_config_load_service("config.conf", 41, &omitted);
+    // [手順] - 省略のサービス 41 を読み込む。
+    lines = &s2;
+    int actual_ret_loaded = potr_internal_config_load_service("config.conf", 42, &loaded);
+    // [手順] - 数値指定のサービス 42 を読み込む。
+    lines = &s3;
+    int actual_ret_zero = potr_internal_config_load_service("config.conf", 43, &zero);
+    // [手順] - 0 指定のサービス 43 を読み込む。
+    lines = &s4;
+    int actual_ret_disabled = potr_internal_config_load_service("config.conf", 44, &disabled);
+    // [手順] - -1 指定のサービス 44 を読み込む。
+    lines = &s5;
+    int actual_ret_invalid = potr_internal_config_load_service("config.conf", 45, &invalid);
+    // [手順] - -2 指定のサービス 45 を読み込む。
+
+    // Assert
+    ASSERT_EQ(POTR_OK, actual_ret_omitted);  // [確認_正常系] - サービス 41 の戻り値が POTR_OK であること。
+    ASSERT_EQ(POTR_OK, actual_ret_loaded);   // [確認_正常系] - サービス 42 の戻り値が POTR_OK であること。
+    ASSERT_EQ(POTR_OK, actual_ret_zero);     // [確認_正常系] - サービス 43 の戻り値が POTR_OK であること。
+    ASSERT_EQ(POTR_OK, actual_ret_disabled); // [確認_正常系] - サービス 44 の戻り値が POTR_OK であること。
+    ASSERT_EQ(POTR_OK, actual_ret_invalid);  // [確認_異常系] - サービス 45 の戻り値が POTR_OK であること。
+    EXPECT_EQ(0U, omitted.definition.udp_receive_buffer_size); // [確認_正常系] - 省略時は 0U (グローバル値を使用) であること。
+    EXPECT_EQ(2097152U, loaded.definition.udp_receive_buffer_size); // [確認_正常系] - 数値指定時は 2097152U であること。
+    EXPECT_EQ(0U, zero.definition.udp_receive_buffer_size); // [確認_正常系] - 0 指定時は 0U であること。
+    EXPECT_EQ(POTR_FLOW_CONTROL_DISABLED,
+              disabled.definition.udp_receive_buffer_size); // [確認_正常系] - -1 指定時は POTR_FLOW_CONTROL_DISABLED であること。
+    EXPECT_EQ(0U, invalid.definition.udp_receive_buffer_size); // [確認_異常系] - -2 指定時は 0U を維持すること。
+}

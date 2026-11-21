@@ -16,6 +16,8 @@
     // 容量の指定がなくても、OS の受信バッファーに収まる数を超えて送らないよう送信側へ知らせる (既定で有効)。
     // 受信バッファーの幅の計算に使う割合 (%)。-1 で無効。説明は docs/config.md の「OS の受信バッファーに基づく送出上限」を参照。
     // "flow_control_receive_buffer_percent": 100,
+    // UDP のソケットを開くときに OS へ要求する受信バッファーの大きさ (バイト)。-1 で要求しない。
+    // "udp_receive_buffer_size": 4194304,
     // multicast と broadcast の送信側が、送出上限を知らせる受信者として選ぶ台数と割合 (%)。
     // 遅い受信者から選ぶ。説明は docs/config.md の「multicast と broadcast の監視対象」を参照。
     // "flow_control_monitored_receiver_count": 4,

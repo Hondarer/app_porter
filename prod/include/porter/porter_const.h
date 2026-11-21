@@ -135,6 +135,8 @@
     3U /**< TCP 先読みパケット タイムアウトの係数。tcp_health_timeout_ms にこの値を乗じて先読みタイムアウトを算出します。 */
 #define POTR_DEFAULT_TCP_FIRST_PKT_TIMEOUT_MS \
     30000U /**< TCP 先読みパケット タイムアウトの既定値 [ms]。tcp_health_timeout_ms が 0 (無効) の場合に使用します。 */
+#define POTR_DEFAULT_UDP_RECEIVE_BUFFER_SIZE \
+    4194304U /**< UDP ソケットを開くときに OS へ要求する受信バッファーの大きさの既定値 [byte] (4 MiB)。 */
 /** @} */
 
 /** @defgroup POTR_CRYPTO 暗号化定数 (AES-256-GCM)
@@ -217,7 +219,7 @@
 #define POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX \
     64U /**< multicast と broadcast の送信者が監視する受信者の台数の上限。flow_control_monitored_receiver_count の検査上限です。 */
 #define POTR_FLOW_CONTROL_DISABLED \
-    0xFFFFFFFFU /**< 「無効」を表す専用の値。サービス定義の flow_control_capacity、flow_control_receiver_percent、flow_control_receiver_count、flow_control_monitored_receiver_percent、flow_control_monitored_receiver_count と、グローバル設定とサービス定義の flow_control_receive_buffer_percent に指定できます。設定ファイルでは -1 と記載します。 */
+    0xFFFFFFFFU /**< 「無効」を表す専用の値。サービス定義の flow_control_capacity、flow_control_receiver_percent、flow_control_receiver_count、flow_control_monitored_receiver_percent、flow_control_monitored_receiver_count と、グローバル設定とサービス定義の flow_control_receive_buffer_percent、udp_receive_buffer_size に指定できます。設定ファイルでは -1 と記載します。 */
 #define POTR_DEFAULT_FLOW_CONTROL_CAPACITY 0U /**< 通知キューの容量のデフォルト [byte]。0 = フロー制御は無効。 */
 #define POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT 80U /**< 抑制を要求するしきい値のデフォルト [%]。 */
 #define POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT   50U /**< 解除するしきい値のデフォルト [%]。 */

@@ -196,6 +196,9 @@ typedef struct potr_service_def
         flow_control_monitored_receiver_count; /**< multicast と broadcast の送信側が監視する受信者の台数。0 = グローバル値を使用。POTR_FLOW_CONTROL_DISABLED = 台数を監視する数の計算に使いません。 */
     uint32_t
         flow_control_receive_buffer_percent; /**< OS の受信バッファーの大きさのうち、受信バッファーの幅の計算に使う割合 [%]。受信側が使用します。0 = グローバル値を使用。POTR_FLOW_CONTROL_DISABLED = このサービスでは OS の受信バッファーに基づく送出上限を使いません。 */
+    uint32_t
+        udp_receive_buffer_size; /**< UDP ソケットを開くときに OS へ要求する受信バッファーの大きさ [byte]。0 = グローバル値を使用。POTR_FLOW_CONTROL_DISABLED = 要求しません。TCP 通信種別では無視します。 */
+    uint32_t _pad_udp_receive_buffer; /**< パディング (cert_file を 8 [byte] 境界に揃える)。 */
     /** @name 証明書の設定
      * ポインター、配列とその文字列は potr_service_open() の呼び出し中だけ参照します。
      * porter はこれらのポインターを保持しません。証明書などは open 時に読み込みます。
@@ -255,6 +258,8 @@ typedef struct potr_global_config
         flow_control_monitored_receiver_count; /**< multicast と broadcast の送信側が監視する受信者の台数。0〜POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX。0 = 台数を監視する数の計算に使わない。デフォルト: POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT。 */
     uint32_t
         flow_control_receive_buffer_percent; /**< OS の受信バッファーの大きさのうち、受信バッファーの幅の計算に使う割合 [%]。1〜100。受信側が使用します。0 = デフォルト (POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT) を使用。POTR_FLOW_CONTROL_DISABLED = OS の受信バッファーに基づく送出上限を使いません。設定ファイル キー: flow_control_receive_buffer_percent。 */
+    uint32_t
+        udp_receive_buffer_size; /**< UDP ソケットを開くときに OS へ要求する受信バッファーの大きさ [byte]。0 = デフォルト (POTR_DEFAULT_UDP_RECEIVE_BUFFER_SIZE) を使用。POTR_FLOW_CONTROL_DISABLED = 要求しません。TCP 通信種別では無視します。設定ファイル キー: udp_receive_buffer_size。 */
 } potr_global_config;
 
 /**
