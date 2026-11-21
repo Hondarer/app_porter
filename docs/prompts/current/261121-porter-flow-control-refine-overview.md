@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 全体管理文書 (overview)
-最終更新日時: 2026-11-21 21:57:29 JST
+最終更新日時: 2026-11-22 00:30:11 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QxuPSr8Mxe6rktvre
 稼働 OS: Linux (WSL)
 上流文書: `261119-porter-flow-control-backlog.md` (対策元の残課題一覧)。削除されている場合があります。
@@ -209,6 +209,7 @@ Table: 変更前の unicast ÷ tcp の比
 | WBS | 内容 | 確認 |
 | --- | --- | --- |
 | 4.4 | `app/cplat` に `cplat_socket_set_receive_buffer_size()` を追加。`app/porter` に設定項目 `udp_receive_buffer_size` (既定値 4,194,304) を追加し、UDP のソケットを開く処理のすべてで要求する。実際の大きさが要求より小さい場合は、INFO にサービスごとに 1 回記録する | `app/cplat` と `app/porter` の `make` (テストを含む) が成功。中身がある `.warn` はなし |
+| 4.3 (その 1) | プロトコル バージョン 4、状態の値「問い合わせ」と「上限なし」、送信側の 4 つの状態 (未通知、上限あり、上限なし、相手なし)、初期の幅、問い合わせ、破棄の条件、送信が途切れた後の許可。コミットは `9983ea4` | `app/porter` の `make` と `make test` (全テスト) が成功。中身がある `.warn` はなし。`porter-bench` の `p1`、`p2`、`p5`、`p6` が完了し、処理件数は変更前と同じ水準 (差は測定のばらつきの範囲) |
 
 Table: 実装の記録
 
