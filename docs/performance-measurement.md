@@ -63,7 +63,7 @@ porter-bench --cond <p1|p2|p3|p4|p5|p6|p7> [options]
 | `--port <P>` | ループバック `127.0.0.1` の基準ポート番号。 | `19000` |
 | `--clients <N>` | p2 と p7 のクライアント数 (1〜64)。 | `4` |
 | `--stalled-clients <M>` | p7 で受信を止めるクライアント数 (0〜N − 1、先頭の M 個)。健全なクライアントを 1 個以上残します。 | `1` |
-| `--stalled-capacity <bytes>` | p7 の停止クライアントの通知キュー容量 [byte] (1 以上)。 | `65536` |
+| `--stalled-capacity <bytes>` | p7 の停止クライアントの通知キュー容量 [byte] (1 以上)。 | `1048576` |
 | `--reply-mode <cb\|ext>` | p2 の返信方式。`cb` は受信コールバックの中で返信し、`ext` は別スレッドが返信します。 | `ext` |
 | `--proto <udp\|tcp>` | p4 の通信プロトコル。 | `udp` |
 | `--tcp-type <bidir\|oneway>` | p5 と、p4 (`--proto tcp`) の TCP の種別。 | `oneway` |
@@ -136,7 +136,7 @@ Table: p7 の受信と切断の指標
 ```bash
 # 4 クライアントのうち 1 つを止め、残る 3 つの全件受信を確認します。
 porter-bench --cond p7 --clients 4 --stalled-clients 1 --bytes 1000 --count 10000 \
-    --warmup 1000 --cb-sleep-ms 1000 --stalled-capacity 65536 --run-timeout-s 60 \
+    --warmup 1000 --cb-sleep-ms 1000 --stalled-capacity 1048576 --run-timeout-s 60 \
     --config flow_control_excluded_receiver_percent=25 --runs 1 --trace-level none --out p7.csv
 
 # p2 のクライアント数を変えて要求と返信を測ります。

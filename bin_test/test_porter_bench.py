@@ -24,7 +24,7 @@ import porter_bench_summarize as summarize  # noqa: E402
 import porter_bench_summarize_variants as variants_summary  # noqa: E402
 
 HEADER = "os,version,cond,params,run,metric,value\n"
-P7_PARAMS = "clients=4;stalled_clients=1;bytes=1000;flags=normal;count=10000;warmup=1000;cb_sleep_ms=1000;stalled_capacity=65536;run_timeout_s=60"
+P7_PARAMS = "clients=4;stalled_clients=1;bytes=1000;flags=normal;count=10000;warmup=1000;cb_sleep_ms=1000;stalled_capacity=1048576;run_timeout_s=60"
 P5_PARAMS = "tcp_type=oneway;bytes=64;flags=normal;threads=1;count=100;warmup=10"
 
 

@@ -997,7 +997,8 @@ constexpr uint32_t kP7DefaultStalledClients = 1U;
 /** P7 の停止クライアントのコールバック待機時間 [ms]。通知の消費を遅らせる。 */
 constexpr uint32_t kP7DefaultCbSleepMs = 1000U;
 /** P7 の停止クライアントの通知キュー容量 [byte]。既定ペイロードの数十件で抑制する。 */
-constexpr uint32_t kP7DefaultStalledCapacity = 65536U;
+/* 抑制を要求するしきい値 (既定 80%) から容量までの余裕が、max_message_size の既定値 (65,535 byte) 以上になる大きさにする。 */
+constexpr uint32_t kP7DefaultStalledCapacity = 1048576U;
 /** P7 のペイロード長 [byte]。 */
 constexpr size_t kP7DefaultBytes = 1000U;
 /** P7 の測定件数。 */
