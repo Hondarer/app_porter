@@ -418,23 +418,23 @@ TEST_F(potrFlowControlBufferTest, smallest_buffer_among_paths_is_used)
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
 
-// N:1 サーバーで、受信バッファーの幅を接続中のピア数で割り、下限 4 を適用することの確認
+// N:1 サーバーで、受信バッファーの全体の幅を送信中のピア数で割り、送信中のピアがない場合は 1 として計算することの確認
 // [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
 TEST_F(potrFlowControlBufferTest, multi_peer_divides_width_by_peer_count)
 {
     // Arrange
     enable_multi_peer(4);
     ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
-    // [状態] - N:1 モードで接続中のピアを 4 つにして start する (幅 42)。
+    // [状態] - N:1 モードで接続中のピアを 4 つにして start する (全体の幅 42、送信中のピア 0)。
     // [状態確認] - start の戻り値が POTR_OK であること。
     // Pre-Assert
     // Act
-    received(10U, 10U, 0); // [手順] - ピア 10 について、次に受信する通番 10 で on_received を呼び出す。
-    ctx.n_peers = 20;
-    received(11U, 10U, 0); // [手順] - 接続中のピアを 20 にして、ピア 11 について on_received を呼び出す。
+    received(10U, 10U, 0); // [手順] - ピア 10 について、PING の受理 (送信中にならない) で on_received を呼び出す。
+    received(10U, 11U, 1); // [手順] - ピア 10 について、DATA の受理で送信中のピアを 1 にする。
+    received(11U, 10U, 1); // [手順] - ピア 11 について、DATA の受理で送信中のピアを 2 にする。
     // Assert
-    EXPECT_EQ((std::vector<uint32_t>{20U, 14U}), limits);
-    // [確認_正常系] - 送出上限が 10 + 42 ÷ 4 (10) と、10 + 下限 4 (42 ÷ 20 = 2) であること。
+    EXPECT_EQ((std::vector<uint32_t>{52U, 31U}), limits);
+    // [確認_正常系] - 送出上限が、送信中 0 の PING 時の 10 + 42 (52) と、送信中 2 の 10 + 42 ÷ 2 (31) であること。
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
 

@@ -144,6 +144,7 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_flow_control_release(_, _, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_flow_control_on_received(_, _, _, _, _, _, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_flow_control_tick(_, _)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_flow_control_on_peer_freed(_, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_flow_control_refused(_, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_flow_control_on_packet(_, _, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_flow_control_send_query(_, _)).WillByDefault(Return());
@@ -151,6 +152,10 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_flow_control_piggyback_limit(_, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_flow_control_suppressed(_, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_flow_control_peer_state(_, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_flow_control_peer_mark_blocking(_, _, _)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_flow_control_note_queue_full(_, _)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_flow_control_collect_slow_peers_locked(_, _, _, _, _, _)).WillByDefault(Return(0U));
+    ON_CALL(*this, thread_recv_health_check_slow_peers(_, _)).WillByDefault(Return(0U));
     ON_CALL(*this, potr_internal_packet_build_flow_control(_, _, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_packet_build_flow_control_list(_, _, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_flow_control_report_limit(_, _)).WillByDefault(Return(0));

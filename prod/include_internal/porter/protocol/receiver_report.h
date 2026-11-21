@@ -44,13 +44,6 @@ typedef struct potr_internal_receiver
     int flow_unexclude_pending; /**< 除外を解く条件を満たし始めた時刻を記録中か (1: 記録中)。 */
 } potr_internal_receiver;
 
-/**
- * 止めていない間の積算の減算率の分母 (経過時間 ÷ 9)。
- * 積算 (flow_stall_accum_units) はこの定数倍 (1/9 [ms] 単位) で保持し、止めていた間は「経過時間 × 9」を加算、
- * 止めていない間は「経過時間」をそのまま減算することで、1 [ms] 刻みの判定でも端数による誤差なく減算する。
- */
-#define POTR_FLOW_ACCUM_DECAY_DIVISOR 9U
-
 /** 除外を解く条件 (受信報告の送出上限が次の通番より先にある状態) を維持する時間の倍率 (猶予時間の 10 倍)。 */
 #define POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER 10U
 
@@ -64,44 +57,9 @@ typedef struct potr_internal_receiver
 #define POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS \
     ((uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS * (uint64_t)POTR_INTERNAL_FLOW_STALL_GAP_MULTIPLIER)
 
-static_assert(POTR_FLOW_ACCUM_DECAY_DIVISOR == 9U, "porter: POTR_FLOW_ACCUM_DECAY_DIVISOR must be 9");
 static_assert(POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER == 10U, "porter: POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER must be 10");
 static_assert(POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS > (uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS,
               "porter: POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS must exceed POTR_INTERNAL_FLOW_RECHECK_MS");
-
-/**
- *  @brief          multicast と broadcast の送信者が除外できる受信者の数の上限を求めます。
- *
- *  上限は「excluded_count」と「active × excluded_percent ÷ 100 (切り捨て)」の大きいほうとします。
- *  ただし、「active − 1」を超えません (active が 0 または 1 の場合は 0)。
- *  無効 (0) の項目は 0 として計算し、両方が 0 の場合は 0 を返します。
- *
- *  @param[in]      active              活動中の受信者数 (受信報告が有効期限内に届いている受信者数。除外中を含む)。
- *  @param[in]      excluded_count      除外する数の上限 [台]。0 = 無効。
- *  @param[in]      excluded_percent    除外する数の上限 [%]。0 = 無効。
- *  @return         除外する数の上限 [台]。失敗モードのない計算のため結果コードの対象外です。
- */
-static inline size_t flow_excluded_limit(size_t active, uint32_t excluded_count, uint32_t excluded_percent)
-{
-    size_t by_count = (size_t)excluded_count;
-    size_t by_percent;
-    size_t limit;
-
-    if (active <= 1U)
-    {
-        return 0U;
-    }
-
-    by_percent = (size_t)(((uint64_t)active * (uint64_t)excluded_percent) / (uint64_t)POTR_PERCENT_MAX);
-    limit = (by_count > by_percent) ? by_count : by_percent;
-
-    if (limit > active - 1U)
-    {
-        limit = active - 1U;
-    }
-
-    return limit;
-}
 
 /**
  *  @brief          multicast と broadcast の送信者が監視する受信者の数を求めます。

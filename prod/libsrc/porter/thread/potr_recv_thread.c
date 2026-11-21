@@ -339,7 +339,14 @@ static void recv_thread_func(void *arg)
         }
         if (ctx->is_multi_peer)
         {
+            uint64_t slow_next_ms;
+
             thread_recv_health_check_peers(ctx);
+            slow_next_ms = thread_recv_health_check_slow_peers(ctx, now_ms);
+            if (slow_next_ms > now_ms && slow_next_ms - now_ms < wait_ms)
+            {
+                wait_ms = (uint32_t)(slow_next_ms - now_ms);
+            }
         }
         else if (ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
         {

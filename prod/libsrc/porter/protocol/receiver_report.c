@@ -676,21 +676,8 @@ static int monitoring_flow_suppressed_locked(potr_context *ctx, uint64_t now_ms,
          * - それ以外 (止めていない間): 積算 -= 経過時間 (経過時間 ÷ 9 [ms]、0 を下回らない)
          * 全体の送出時間のうち約 10% までの停止を一時的な遅れとして受け入れ、それを超える遅い受信者だけを除外する。
          */
-        if (elapsed_ms > 0U)
-        {
-            if (prev_stalled && stopping)
-            {
-                receiver->flow_stall_accum_units += elapsed_ms * (uint64_t)POTR_FLOW_ACCUM_DECAY_DIVISOR;
-            }
-            else if (elapsed_ms >= receiver->flow_stall_accum_units)
-            {
-                receiver->flow_stall_accum_units = 0U;
-            }
-            else
-            {
-                receiver->flow_stall_accum_units -= elapsed_ms;
-            }
-        }
+        receiver->flow_stall_accum_units =
+            flow_stall_accum_update(receiver->flow_stall_accum_units, elapsed_ms, prev_stalled && stopping);
     }
 
     /*

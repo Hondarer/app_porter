@@ -147,6 +147,95 @@ void thread_recv_health_check_peers(potr_context *ctx)
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
+uint64_t thread_recv_health_check_slow_peers(potr_context *ctx, uint64_t now_ms)
+{
+    potr_peer_id slow_peers[POTR_FLOW_SLOW_PEER_BATCH_MAX];
+    uint64_t slow_accum_ms[POTR_FLOW_SLOW_PEER_BATCH_MAX];
+    uint64_t next_check_ms = 0U;
+    uint64_t max_next_ms;
+    uint64_t queue_full_ms;
+    int32_t blocking_peers;
+    uint32_t grace_ms;
+    size_t count;
+    size_t i;
+    int disconnected = 0;
+
+    if (ctx == NULL || !ctx->is_multi_peer)
+    {
+        return 0U;
+    }
+
+    blocking_peers = cplat_atomic_load_i32(&ctx->flow_blocking_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    queue_full_ms = cplat_atomic_load_u64(&ctx->flow_queue_full_ms, CPLAT_MEMORY_ORDER_ACQUIRE);
+
+    /* 妨げが記録されているピアも、保留ありのキュー満杯記録もない間は、ロックを取得せず即座に戻る。 */
+    if (blocking_peers == 0 && queue_full_ms == 0U)
+    {
+        ctx->flow_slow_next_check_ms = 0U;
+        ctx->flow_slow_last_blocking_peers = 0;
+        return 0U;
+    }
+
+    /*
+     * 次の判定予定時刻に達していない間は、妨げの記録が新しく増えていない (flow_blocking_peers の増加も
+     * flow_queue_full_ms の新規記録もない) 限り、ロック取得と全ピア走査を省く。
+     */
+    if (queue_full_ms == 0U && blocking_peers <= ctx->flow_slow_last_blocking_peers &&
+        ctx->flow_slow_next_check_ms != 0U && now_ms < ctx->flow_slow_next_check_ms)
+    {
+        ctx->flow_slow_last_blocking_peers = blocking_peers;
+        return ctx->flow_slow_next_check_ms;
+    }
+
+    grace_ms = ctx->flow_control_config.grace_ms;
+    if (grace_ms == 0U)
+    {
+        grace_ms = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_GRACE_MS;
+    }
+
+    cplat_local_lock_lock(ctx->peers_mutex);
+    count = potr_internal_flow_control_collect_slow_peers_locked(ctx, now_ms, slow_peers, slow_accum_ms,
+                                                                 POTR_FLOW_SLOW_PEER_BATCH_MAX, &next_check_ms);
+
+    for (i = 0U; i < count; i++)
+    {
+        potr_internal_peer_context *peer = potr_internal_peer_find_by_id(ctx, slow_peers[i]);
+
+        if (peer == NULL)
+        {
+            continue;
+        }
+
+        POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                   "recv[service_id=%" PRId64 "]: disconnecting slow peer=%u (accum=%" PRIu64 "ms grace=%ums)",
+                   ctx->service.service_id, (unsigned)slow_peers[i], slow_accum_ms[i], (unsigned)grace_ms);
+
+        memset((void *)peer->remote_path_ping_state, 0, sizeof(peer->remote_path_ping_state));
+        thread_recv_disconnect_peer_all_paths(ctx, peer);
+        potr_internal_peer_free(ctx, peer);
+        disconnected = 1;
+    }
+
+    /* 判定間隔の上限を POTR_INTERNAL_FLOW_RECHECK_MS に抑え、猶予時間の判定が遅れすぎないようにする。 */
+    max_next_ms = now_ms + (uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS;
+    if (next_check_ms > max_next_ms)
+    {
+        next_check_ms = max_next_ms;
+    }
+
+    ctx->flow_slow_next_check_ms = next_check_ms;
+    ctx->flow_slow_last_blocking_peers = cplat_atomic_load_i32(&ctx->flow_blocking_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+    cplat_local_lock_unlock(ctx->peers_mutex);
+
+    if (disconnected != 0)
+    {
+        potr_internal_send_queue_wake_flow(&ctx->send_queue);
+    }
+
+    return next_check_ms;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
 void thread_recv_health_wake_tcp(potr_context *ctx, const int path_idx, const int state_changed)
 {
     if (state_changed && is_tcp_type(ctx->service.type))

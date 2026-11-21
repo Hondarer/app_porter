@@ -198,7 +198,7 @@ RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送信せず `POTR_EV
 
 ### タイムアウト検出 (受信スレッド)
 
-受信スレッド (`recv_thread_func()`) は、`cplat_socket_timed_wait_readable_multi()` から戻るたびに、受信期限を `thread_recv_health_check_service()` (1:1) または `thread_recv_health_check_peers()` (N:1) で確認し、停止の指示を読み直します。  
+受信スレッド (`recv_thread_func()`) は、`cplat_socket_timed_wait_readable_multi()` から戻るたびに、受信期限を `thread_recv_health_check_service()` (1:1) または `thread_recv_health_check_peers()` (N:1) で確認し、N:1 モードでは遅いピアの猶予時間の判定 (`thread_recv_health_check_slow_peers()`) も実行して、停止の指示を読み直します。  
 そのため、待機による無受信の検出の遅れと停止の遅れは、1 回の待機の上限を超えません。  
 1 回の待機の上限は、次の条件を上から順に適用して決めます。
 
@@ -207,6 +207,7 @@ RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送信せず `POTR_EV
 | 受信期限の監視 | 受信者、または `unicast_bidir` で `health_timeout_ms > 0` の場合 | `max(health_timeout_ms / 3, 100)` (`health_timeout_ms < 300` のときは `100` が下限) |
 | (受信期限を監視しない場合) | `health_timeout_ms == 0`、または `unicast_bidir` 以外の送信者 | `500` |
 | 順序の入れ替えの待ち時間 | 受信者、または `unicast_bidir` で `reorder_timeout_ms > 0` の場合 | 上の値と `reorder_timeout_ms` の小さいほう |
+| 遅いピアの猶予時間の判定 | `unicast_bidir_n1` のサーバーで、ほかのピアへの送信を妨げている遅いピアが残っている場合 (`thread_recv_health_check_slow_peers()` が返す次の判定予定時刻が現在時刻より後の場合) | 上の値と「次の判定予定時刻 − 現在時刻」の小さいほう (判定間隔の上限は `POTR_INTERNAL_FLOW_RECHECK_MS` = 50) |
 | 証明書の認証 | 証明書方式 (`POTR_AUTH_CERT`) で認証する場合 | 上の値と `100` の小さいほう |
 | 受信報告の送信の時刻 | 片方向通常モードの受信者で、受信報告を送る構成 (実効の `health_interval_ms` が 0 でない) であり、次の受信報告の予定時刻 (`next_report_ms`) が現在時刻より後の場合 | 上の値と「次の報告予定時刻 − 現在時刻」の小さいほう |
 | `multicast` と `broadcast` の送信側の監視の時刻 | `multicast` または `broadcast` の送信者で、次の監視対象一覧の送出予定時刻 (`flow_monitor_next_ms`) が現在時刻より後の場合 (詳細は [設定仕様](config.md#multicast-と-broadcast-の監視対象) および [プロトコル仕様](protocol.md#監視対象の一覧のパケット) を参照) | 上の値と「次の送出予定時刻 − 現在時刻」の小さいほう |
@@ -215,6 +216,7 @@ RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送信せず `POTR_EV
 Table: 受信スレッド (`recv_thread_func()`) の待機の上限を決める条件
 
 `health_timeout_ms` が 300 [ms] 未満の場合は、待機の上限の下限 (100 [ms]) が適用され、待機の上限が `health_timeout_ms` の 3 分の 1 より長くなります。  
+N:1 モードでほかのピアへの送信を妨げている遅いピアが記録されている間は、`thread_recv_health_check_slow_peers()` が次の判定予定時刻 (判定間隔の上限 `POTR_INTERNAL_FLOW_RECHECK_MS` = 50 [ms]) を返すため、待機の上限が短縮されます。妨げが記録されているピアがない間は 0 を返し、待機の上限には影響しません。  
 `ctx->flow_control` は、容量 (`flow_control_capacity`) が 0 でも、OS の受信バッファーに基づく送出上限を使う受信側では確保されます。  
 この送出上限は既定で有効のため、既定の構成の UDP の受信側 (RAW を除く) は、フロー制御を設定していなくても、待機の上限が `flow_control_request_interval_ms` (既定 200 [ms]) になります。
 
@@ -299,6 +301,7 @@ TCP 系の処理は次のとおりです。
 | TCP PING 送出 | `thread/potr_health_thread.c` | `tcp_health_thread_func()` |
 | UDP タイムアウト検出 (1:1) | `thread/thread_recv_health.c` | `thread_recv_health_check_service()` |
 | UDP タイムアウト検出 (N:1) | `thread/thread_recv_health.c` | `thread_recv_health_check_peers()` |
+| N:1 遅いピアの猶予時間判定と切断 | `thread/thread_recv_health.c` | `thread_recv_health_check_slow_peers()` |
 | TCP タイムアウト検出 | `thread/potr_recv_thread.c` | `tcp_recv_thread_func()` 内 |
 | health スレッド起動/停止 | `thread/potr_health_thread.h` | `potr_internal_health_thread_start/stop()` |
 | tcp_health スレッド起動/停止 | `thread/potr_health_thread.h` | `potr_internal_tcp_health_thread_start/stop()` |

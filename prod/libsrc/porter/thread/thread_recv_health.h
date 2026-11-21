@@ -27,6 +27,21 @@
 void thread_recv_health_check_peers(potr_context *ctx);
 
 /**
+ *  @brief          N:1 モードで、全体を妨げている遅いピアの積算を更新し、猶予時間に達したピアを切断します。
+ *  @param[in,out]  ctx             ピア テーブルを構成済みのコンテキスト。NULL は許可しません。
+ *  @param[in]      now_ms          現在の単調増加時刻 [ms]。
+ *  @return         妨げ中のピアが残っている場合の、次の判定予定時刻 [ms]。該当がなければ 0。
+ *                  時刻を返す値関数のため共通結果コードの適用対象外。
+ *  @note           切断手順と利用側への通知はヘルス チェックのタイムアウトによる切断と同じです。
+ *                  切断した場合は診断出力 (WARNING) にピア識別子、積算の値、猶予時間を記録し、
+ *                  送信キューの待機スレッドを起床させます。
+ *  @par            スレッド セーフ
+ *                  既存の受信スレッドから呼びます。内部で peers_mutex を保持して判定と切断を行います。
+ *                  呼び出し元は peers_mutex を保持しません。
+ */
+uint64_t thread_recv_health_check_slow_peers(potr_context *ctx, uint64_t now_ms);
+
+/**
  *  @brief          1:1 のパス・サービスの受信期限を監視します。
  *  @param[in,out]  slot            コンテキストの受信状態ビュー。NULL は許可しません。
  *  @note           パスの期限到達時は送信元学習を解除し、サービスの期限到達時はセッション・FIN・

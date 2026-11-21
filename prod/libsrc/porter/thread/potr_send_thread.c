@@ -923,6 +923,15 @@ static int defer_entry_if_blocked(potr_context *ctx, const potr_internal_payload
     peer = potr_internal_peer_find_by_id(ctx, entry->peer_id);
     if (peer != NULL)
     {
+        if (peer->flow_deferred_entries == 0)
+        {
+            uint64_t deferred_ms = 0U;
+
+            if (cplat_clock_get_monotonic_ms(&deferred_ms) == CPLAT_OK)
+            {
+                peer->flow_deferred_since_ms = deferred_ms;
+            }
+        }
         peer->flow_deferred_entries++;
     }
     cplat_local_lock_unlock(ctx->peers_mutex);
@@ -953,6 +962,10 @@ static void send_deferred_entry(potr_context *ctx, potr_internal_deferred_entry 
         if (peer->flow_deferred_entries > 0)
         {
             peer->flow_deferred_entries--;
+            if (peer->flow_deferred_entries == 0)
+            {
+                peer->flow_deferred_since_ms = 0U;
+            }
         }
 
         flush_packed_peer(ctx, peer, packed_len);

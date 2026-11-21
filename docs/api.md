@@ -25,7 +25,8 @@
 Table: PATH イベント時のコールバック引数の意味
 
 `path_states` は常にイベント発火後の状態です。`PATH_DISCONNECTED` のときも対象 path は 0 です。  
-`CONNECTED` / `DISCONNECTED` は path 論理接続状態の OR が 0->1 / 1->0 に変化したときのみ発火します。
+`CONNECTED` / `DISCONNECTED` は path 論理接続状態の OR が 0->1 / 1->0 に変化したときのみ発火します。  
+`unicast_bidir` の N:1 モードのサーバーでは、ヘルス チェックのタイムアウトや `potr_peer_disconnect()` による切断に加えて、フロー制御でほかのピアへの送信を妨げ続けている遅いピアをサーバーが自動的に切断する場合があります。このときも、ヘルス チェックのタイムアウトによる切断と同じく、`POTR_EVENT_PATH_DISCONNECTED` と `POTR_EVENT_DISCONNECTED` を通知します。
 
 ### potr_service_send() の戻り値
 
@@ -47,7 +48,7 @@ Table: potr_service_send の戻り値一覧
 `POTR_ERR_FULL` を返した場合、そのメッセージは 1 つも登録されていません。  
 1 件のメッセージが複数の断片になる場合も、一部の断片だけが登録されることはありません。`POTR_PEER_ALL` の送信は、全 peer の分を登録できなければ、どの peer 宛も登録しません。  
 利用側は、間隔をおいて再試行するか、メッセージを破棄するかを決めます。断片の数が `send_queue_depth` を超えるメッセージは、`POTR_SEND_BLOCKING` を指定しない送信では常に `POTR_ERR_FULL` になります。  
-`POTR_SEND_BLOCKING` を指定した送信は、空きができるまで待って登録し、送出の完了まで待ちます。N:1 モードで宛先の peer がフロー制御で抑制中の場合は、抑制の解除 (送出上限の更新または破棄を含む) まで待ちます。  
+`POTR_SEND_BLOCKING` を指定した送信は、空きができるまで待って登録し、送出の完了まで待ちます。N:1 モードで宛先の peer がフロー制御で抑制中の場合は、抑制の解除 (送出上限の更新または破棄を含む) またはピアの切断まで待ちます。  
 OS の受信バッファーに基づく送出上限は、容量 (`flow_control_capacity`) を設定していない構成でも既定で働きます。このため、N:1 モードのサーバーが 1 つの peer へ連続して送信すると、容量を設定していない構成でも、その peer から受けた送出上限に達して、`POTR_SEND_BLOCKING` を指定しない送信が `POTR_ERR_FULL` を返すことがあります。
 
 `POTR_ERR_DISCONNECTED` は「送信先が論理的に CONNECTED していない」ことを示します。  

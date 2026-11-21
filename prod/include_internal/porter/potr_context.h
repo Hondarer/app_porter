@@ -264,8 +264,13 @@ typedef struct potr_internal_peer_context
     uint64_t flow_query_next_ms; /**< このピアへ次に問い合わせを送出する時刻 [ms]。0 = 予定なし。peers_mutex で保護。 */
     uint64_t flow_query_interval_ms; /**< このピアへの現在の問い合わせ間隔 [ms]。peers_mutex で保護。 */
     uint64_t flow_last_data_send_ms; /**< このピアへ最後に DATA を送出した時刻 [ms]。0 = 未送出。peers_mutex で保護。 */
+    uint64_t flow_stall_accum_units; /**< N:1 サーバーで、妨げが起きた時点からこのピアが止める状態である時間の積算 [1/9 ms]。peers_mutex で保護。 */
+    uint64_t flow_stall_last_ms; /**< 最後にこのピアの積算を更新した時刻 [ms]。0 = 未記録。peers_mutex で保護。 */
+    uint64_t flow_deferred_since_ms; /**< このピア宛の保留エントリが 0 から 1 以上になった時刻 [ms]。0 = 保留なし。peers_mutex で保護。 */
     int flow_deferred_entries; /**< 送信スレッドが保留している、このピア宛のエントリ数。peers_mutex で保護。 */
     int flow_tracked; /**< potr_context::flow_tracked_peers に数えているか (1: 数えている)。peers_mutex で保護。 */
+    int flow_blocking; /**< ほかのピアへの送信を妨げている記録があるか (1: 記録中)。peers_mutex で保護。 */
+    int _pad_flow_blocking; /**< パディング (8 [byte] 境界に揃える)。 */
 
     /* NACK 重複抑制 */
     potr_internal_nack_dedup_entry nack_dedup_buf[POTR_NACK_DEDUP_SLOTS]; /**< NACK 重複抑制バッファー。 */
@@ -337,10 +342,13 @@ struct potr_context
     uint64_t flow_last_data_send_ms; /**< 送信側: 最後に DATA を送出した時刻 [ms]。0 = 未送出。送信スレッドだけが使用。 */
     struct potr_internal_deferred_entry *flow_deferred_head; /**< N:1 モードで保留中のエントリの先頭。送信スレッドだけが使用。 */
     struct potr_internal_deferred_entry *flow_deferred_tail; /**< N:1 モードで保留中のエントリの末尾。送信スレッドだけが使用。 */
+    cplat_atomic_u64 flow_queue_full_ms; /**< 送信側: N:1 モードで、保留エントリがある状態で送信キューが満杯になった最初の時刻 [ms]。0 = なし。アトミックに読み書きします。 */
     cplat_atomic_i32 flow_request_pending; /**< 送信側: 片方向 UDP で、受信者の管理表に抑制の要求、送出上限、積算、または除外が残っている可能性があるか。アトミックに読み書きします。 */
     cplat_atomic_i32 flow_tracked_peers; /**< 送信側: N:1 モードで、抑制の要求または送出上限を保持しているピアの数。peers_mutex の下で増減し、アトミックに読み取ります。 */
+    cplat_atomic_i32 flow_blocking_peers; /**< 送信側: N:1 モードで、ほかのピアへの送信を妨げている記録があるピアの数。peers_mutex の下で増減し、アトミックに読み取ります。 */
     cplat_atomic_i32 flow_deferred_total; /**< 送信側: N:1 モードで、送信スレッドが保留しているエントリの総数。送信スレッドだけが増減し、アトミックに読み取ります。 */
     int flow_receiver_limit_stalled; /**< 送信側: 片方向 unicast の受信者管理表で送出上限または初期の幅に達しているか (1: 達している)。送信スレッドだけが使用。 */
+    int _pad_flow_blocking_peers; /**< パディング (flow_judge_last_ms を 8 [byte] 境界に揃える)。 */
     uint64_t flow_judge_last_ms; /**< 送信側: multicast と broadcast で、前回 potr_internal_receiver_flow_suppressed() を判定した時刻 [ms]。callback_mutex で保護。 */
     int flow_judge_has_last; /**< 送信側: flow_judge_last_ms が有効か (1: 判定済み)。callback_mutex で保護。 */
     int flow_judge_last_suppressed; /**< 送信側: multicast と broadcast で、前回の判定で送出を止めたか (1: 止めた)。callback_mutex で保護。 */
@@ -418,6 +426,7 @@ struct potr_context
     int report_received; /**< REPORT を一度以上受理したか。callback_mutex で保護。 */
     int flow_monitor_changed; /**< 送信側: multicast と broadcast で、監視対象の一覧を最後に取り出した後に監視対象が変わったか (1: 変わった)。callback_mutex で保護。 */
     uint64_t flow_monitor_next_ms; /**< 送信側: multicast と broadcast で、監視対象の一覧を次に周期で送出する時刻 [ms]。0 = 未送出。UDP 受信スレッドだけが使用。 */
+    uint64_t flow_slow_next_check_ms; /**< 送信側: N:1 モードで、全体を妨げている遅いピアを次に判定する時刻 [ms]。0 = 未定。UDP 受信スレッドだけが使用。 */
     uint64_t last_ad_hoc_report_ms; /**< 受信側: 読み出しの遅れによる臨時の受信報告を最後に送出した時刻 [ms]。UDP 受信スレッドだけが使用。 */
     uint64_t recv_report_lag_detected; /**< 受信側: 読み出しの遅れを検出した回数。UDP 受信スレッドだけが使用。 */
     uint64_t recv_report_lag_sent; /**< 受信側: 読み出しの遅れにより臨時の受信報告を送出した回数。UDP 受信スレッドだけが使用。 */
@@ -427,6 +436,8 @@ struct potr_context
     uint32_t recv_report_consecutive_data; /**< 受信側: ソケットが空にならないまま続けて処理した採用済み送信者の DATA の数。UDP 受信スレッドだけが使用。 */
     int flow_monitored; /**< 受信側: multicast と broadcast で監視対象に指定されているか (1: 監視対象)。UDP 受信スレッドだけが使用。 */
     int has_ad_hoc_report; /**< 受信側: 読み出しの遅れによる臨時の受信報告を 1 回以上送出したか (1: 送出済み)。UDP 受信スレッドだけが使用。 */
+    int32_t flow_slow_last_blocking_peers; /**< 送信側: N:1 モードで、前回遅いピアを判定した時点の flow_blocking_peers。UDP 受信スレッドだけが使用。 */
+    int32_t _pad_flow_slow_check; /**< パディング (session_ts を 8 [byte] 境界に揃える)。 */
 
     /* 自セッション識別子 (potr_service_open 時に決定) */
     cplat_timespec session_ts; /**< 自セッション開始時刻。 */
@@ -650,6 +661,26 @@ static inline void potr_internal_flow_control_peer_untrack(potr_context *ctx, po
         /* 減算前の値は使わないため、戻り値は明示的に破棄する。 */
         (void)cplat_atomic_fetch_sub_i32(&ctx->flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
     }
+}
+
+/**
+ *  @brief          N:1 モードのピアの妨げの記録と積算を消し、妨げているピアの数から外します。
+ *  @param[in,out]  ctx     コンテキスト。
+ *  @param[in,out]  peer    対象のピア。
+ *
+ *  @par            スレッド セーフ
+ *  呼び出し元が peers_mutex を保持していること。失敗モードのない更新のため共通結果コードの適用対象外。
+ */
+static inline void potr_internal_flow_control_peer_clear_blocking(potr_context *ctx, potr_internal_peer_context *peer)
+{
+    if (peer->flow_blocking != 0)
+    {
+        peer->flow_blocking = 0;
+        /* 減算前の値は使わないため、戻り値は明示的に破棄する。 */
+        (void)cplat_atomic_fetch_sub_i32(&ctx->flow_blocking_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    }
+    peer->flow_stall_accum_units = 0U;
+    peer->flow_stall_last_ms = 0U;
 }
 
 /**

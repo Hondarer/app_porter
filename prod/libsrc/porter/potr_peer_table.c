@@ -436,16 +436,21 @@ void potr_internal_peer_path_clear(const potr_context *ctx, potr_internal_peer_c
 
 void potr_internal_peer_free(potr_context *ctx, potr_internal_peer_context *peer)
 {
+    potr_peer_id freed_peer_id;
+
     if (peer == NULL || !peer->active)
     {
         return;
     }
 
-    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_internal_peer_free: service_id=%" PRId64 " peer_id=%u freed",
-               ctx->service.service_id, (unsigned)peer->peer_id);
+    freed_peer_id = peer->peer_id;
 
-    /* 抑制の要求または送出上限を保持しているピアの数から外す。スロットの再利用時の初期化では数を戻さないためである。 */
+    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_internal_peer_free: service_id=%" PRId64 " peer_id=%u freed",
+               ctx->service.service_id, (unsigned)freed_peer_id);
+
+    /* 抑制の要求または送出上限を保持しているピアの数と妨げの記録から外す。スロットの再利用時の初期化では数を戻さないためである。 */
     potr_internal_flow_control_peer_untrack(ctx, peer);
+    potr_internal_flow_control_peer_clear_blocking(ctx, peer);
 
     potr_internal_window_dispose(&peer->send_window);
     potr_internal_window_dispose(&peer->recv_window);
@@ -462,4 +467,7 @@ void potr_internal_peer_free(potr_context *ctx, potr_internal_peer_context *peer
     }
     peer->active = 0;
     ctx->n_peers--;
+
+    /* 送信中のピア数と順番の許可の枠から外す。peers_mutex は呼び出し元が保持済み。 */
+    potr_internal_flow_control_on_peer_freed(ctx, freed_peer_id);
 }

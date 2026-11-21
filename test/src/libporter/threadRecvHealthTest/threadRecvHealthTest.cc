@@ -895,3 +895,153 @@ TEST(threadRecvHealthTest, clock_failure_preserves_path_state)
                                CPLAT_MEMORY_ORDER_ACQUIRE)); // [確認_異常系] - 呼び出し元へ入出力失敗を通知すること。
     EXPECT_EQ(123, ctx.peer_port[0]);                        // [確認_異常系] - パス状態を変更しないこと。
 }
+
+// 妨げ記録もキュー満杯記録もない場合はロックや収集を行わずに 0 を返すことの確認
+TEST(threadRecvHealthTest, slow_peers_idle_returns_zero_without_locking)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.is_multi_peer = 1;
+    // [状態] - N:1 サーバーで flow_blocking_peers と flow_queue_full_ms が 0 のコンテキストを用意する。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_collect_slow_peers_locked(_, _, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 妨げ記録がないため収集関数が呼ばれないこと。
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_peer_all_paths(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 切断通知が呼ばれないこと。
+    EXPECT_CALL(mock_porter, potr_internal_peer_free(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - ピア解放が呼ばれないこと。
+    // Act
+    uint64_t next_ms = thread_recv_health_check_slow_peers(&ctx, 1000U); // [手順] - 遅いピアの確認を呼ぶ。
+    // Assert
+    EXPECT_EQ(0U, next_ms); // [確認_正常系] - 次回確認時刻が 0 であること。
+}
+
+// 猶予時間に達した遅いピアをヘルス チェックのタイムアウトと同じ手順で切断し、送信側を起床させることの確認
+TEST(threadRecvHealthTest, slow_peers_disconnects_same_as_health_timeout)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_peer_context peer = {};
+    cplat_local_lock *lock = reinterpret_cast<cplat_local_lock *>(0x100);
+    ctx.service.service_id = 1;
+    ctx.is_multi_peer = 1;
+    ctx.peers_mutex = lock;
+    ctx.flow_control_config.grace_ms = 200U;
+    cplat_atomic_store_i32(&ctx.flow_blocking_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    peer.peer_id = 42U;
+    peer.active = 1;
+    peer.remote_path_ping_state[0] = POTR_PING_STATE_NORMAL;
+    // [状態] - 妨げ記録がある N:1 サーバーと、ピア 42 を用意する。
+    ON_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 42U)).WillByDefault(Return(&peer));
+    ON_CALL(mock_porter, potr_internal_flow_control_collect_slow_peers_locked(&ctx, 1200U, _, _, _, _))
+        .WillByDefault([](potr_context *, uint64_t, potr_peer_id *out_peers, uint64_t *out_accum_ms, size_t,
+                          uint64_t *next_check_ms) -> size_t {
+            out_peers[0] = 42U;
+            out_accum_ms[0] = 200U;
+            *next_check_ms = 1250U;
+            return 1U;
+        }); // [状態] - 収集関数がピア 42 (積算 200 [ms]) と次回確認時刻 1250 を返すようにする。
+    // Pre-Assert
+    InSequence seq;
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(lock)).Times(1).WillOnce(Return());
+    // [Pre-Assert確認_正常系] - peers_mutex を取得すること。
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_collect_slow_peers_locked(&ctx, 1200U, _, _, _, _)).Times(1);
+    // [Pre-Assert確認_正常系] - peers_mutex 保持下で切断対象を収集すること。
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_peer_all_paths(&ctx, &peer)).Times(1);
+    // [Pre-Assert確認_正常系] - ヘルス チェックのタイムアウトと同じ切断通知を呼ぶこと。
+    EXPECT_CALL(mock_porter, potr_internal_peer_free(&ctx, &peer)).Times(1);
+    // [Pre-Assert確認_正常系] - 切断通知の後にピアを解放すること。
+    EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(lock)).Times(1).WillOnce(Return());
+    // [Pre-Assert確認_正常系] - peers_mutex を解放すること。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_wake_flow(&ctx.send_queue)).Times(1);
+    // [Pre-Assert確認_正常系] - ロック解放後に送信キューの待機を起床させること。
+    // Act
+    uint64_t next_ms = thread_recv_health_check_slow_peers(&ctx, 1200U); // [手順] - 遅いピアの切断確認を呼ぶ。
+    // Assert
+    EXPECT_EQ(1250U, next_ms); // [確認_正常系] - 次回確認時刻 1250 が返ること。
+    EXPECT_EQ(0U, peer.remote_path_ping_state[0]);
+    // [確認_正常系] - ヘルス チェックのタイムアウトと同じく remote_path_ping_state が 0 クリアされること。
+}
+
+// 次の判定予定時刻に達する前はロックと走査を省き、判定間隔の上限が POTR_INTERNAL_FLOW_RECHECK_MS を超えないことの確認
+TEST(threadRecvHealthTest, slow_peers_skips_scan_before_next_check_ms_and_clamps_interval)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    cplat_local_lock *lock = reinterpret_cast<cplat_local_lock *>(0x100);
+    ctx.service.service_id = 1;
+    ctx.is_multi_peer = 1;
+    ctx.peers_mutex = lock;
+    ctx.flow_control_config.grace_ms = 200U;
+    cplat_atomic_store_i32(&ctx.flow_blocking_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    // [状態] - 妨げ記録が 1 件ある N:1 サーバーを用意する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(lock)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(lock)).WillByDefault(Return());
+    ON_CALL(mock_porter, potr_internal_flow_control_collect_slow_peers_locked(&ctx, _, _, _, _, _))
+        .WillByDefault([](potr_context *, uint64_t now_ms, potr_peer_id *, uint64_t *, size_t,
+                          uint64_t *next_check_ms) -> size_t {
+            *next_check_ms = now_ms + 200U;
+            return 0U;
+        }); // [状態] - 収集関数が 200 [ms] 後を返すようにする (POTR_INTERNAL_FLOW_RECHECK_MS を超える値)。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(lock)).Times(2);
+    // [Pre-Assert確認_正常系] - 初回と予定時刻到達後の 2 回だけロックを取得すること (間隔内の呼び出しは省く)。
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_collect_slow_peers_locked(&ctx, _, _, _, _, _)).Times(2);
+    // [Pre-Assert確認_正常系] - 初回 (1000) と予定時刻到達後 (1050) の 2 回だけ収集が呼ばれること。
+    // Act
+    uint64_t next1 = thread_recv_health_check_slow_peers(&ctx, 1000U); // [手順] - 時刻 1000 で初回判定する。
+    uint64_t next2 = thread_recv_health_check_slow_peers(&ctx, 1049U); // [手順] - 予定時刻 (1050) 未満の 1049 で呼ぶ。
+    uint64_t next3 = thread_recv_health_check_slow_peers(&ctx, 1050U); // [手順] - 予定時刻 (1050) で呼ぶ。
+    // Assert
+    EXPECT_EQ(1000U + (uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS, next1);
+    // [確認_正常系] - 200 [ms] 後の戻り値が POTR_INTERNAL_FLOW_RECHECK_MS (50 [ms]) で上限丸めされること。
+    EXPECT_EQ(next1, next2); // [確認_正常系] - 間隔内の呼び出しでは前回の予定時刻をそのまま返すこと。
+    EXPECT_EQ(1050U + (uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS, next3);
+    // [確認_正常系] - 予定時刻到達後の呼び出しで次の予定時刻へ進むこと。
+}
+
+// 判定予定時刻に達する前でも、妨げの記録が新しく増えた場合とキュー満杯が新しく記録された場合は即座に判定することの確認
+TEST(threadRecvHealthTest, slow_peers_scans_immediately_on_new_blocking_or_queue_full)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    cplat_local_lock *lock = reinterpret_cast<cplat_local_lock *>(0x100);
+    ctx.service.service_id = 1;
+    ctx.is_multi_peer = 1;
+    ctx.peers_mutex = lock;
+    ctx.flow_control_config.grace_ms = 200U;
+    cplat_atomic_store_i32(&ctx.flow_blocking_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    // [状態] - 妨げ記録が 1 件ある N:1 サーバーを用意する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(lock)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(lock)).WillByDefault(Return());
+    ON_CALL(mock_porter, potr_internal_flow_control_collect_slow_peers_locked(&ctx, _, _, _, _, _))
+        .WillByDefault([](potr_context *c, uint64_t now_ms, potr_peer_id *, uint64_t *, size_t,
+                          uint64_t *next_check_ms) -> size_t {
+            cplat_atomic_store_u64(&c->flow_queue_full_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
+            *next_check_ms = now_ms + (uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS;
+            return 0U;
+        }); // [状態] - 収集関数が flow_queue_full_ms を消費し、50 [ms] 後を返すようにする。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(lock)).Times(3);
+    // [Pre-Assert確認_正常系] - 初回、妨げ増加時、キュー満杯新規記録時の 3 回ロックを取得すること。
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_collect_slow_peers_locked(&ctx, _, _, _, _, _)).Times(3);
+    // [Pre-Assert確認_正常系] - 予定時刻未満でも新しい記録のたびに即座に収集が呼ばれること。
+    // Act
+    uint64_t next1 = thread_recv_health_check_slow_peers(&ctx, 1000U); // [手順] - 時刻 1000 で初回判定する (次回 1050)。
+    cplat_atomic_store_i32(&ctx.flow_blocking_peers, 2, CPLAT_MEMORY_ORDER_RELEASE);
+    uint64_t next2 = thread_recv_health_check_slow_peers(&ctx, 1010U); // [手順] - 妨げ記録増加後に時刻 1010 で呼ぶ。
+    cplat_atomic_store_u64(&ctx.flow_queue_full_ms, 1020U, CPLAT_MEMORY_ORDER_RELEASE);
+    uint64_t next3 = thread_recv_health_check_slow_peers(&ctx, 1020U); // [手順] - キュー満杯新規記録後に時刻 1020 で呼ぶ。
+    // Assert
+    EXPECT_EQ(1050U, next1); // [確認_正常系] - 初回の次回予定時刻が 1050 であること。
+    EXPECT_EQ(1060U, next2); // [確認_正常系] - 妨げ増加で時刻 1010 に即座に判定され次回が 1060 になること。
+    EXPECT_EQ(1070U, next3); // [確認_正常系] - キュー満杯記録で時刻 1020 に即座に判定され次回が 1070 になること。
+}

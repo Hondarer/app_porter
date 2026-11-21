@@ -1120,3 +1120,214 @@ TEST_F(potrSendTest, n1_send_skips_peer_state_when_no_peer_is_tracked)
     EXPECT_EQ(0U, ctx.send_queue.count);       // [確認_正常系] - ctx.send_queue.count が 0U であること。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
+
+// N:1 で、特定ピア宛の送信だけが止める状態で拒否された場合に妨げを記録せず、切断もしないことの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, n1_single_peer_suppressed_does_not_mark_blocking_or_disconnect)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_porter;
+    const char payload[] = "n1-single-suppressed"; // [状態] - 送信ペイロードを用意する。
+
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1;
+    cplat_atomic_store_i32(&ctx.flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    peers[0].active = 1;
+    peers[0].peer_id = 10U;
+    cplat_atomic_store_i32(&peers[0].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    ON_CALL(mock_porter, potr_internal_peer_find_by_id(_, 10U)).WillByDefault(Return(&peers[0]));
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _)).WillByDefault(Return(1));
+    // [状態] - ピア 10 が止める状態であるとする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_mark_blocking(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 特定ピア宛では妨げを記録しないこと。
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_peer_all_paths(_, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_peer_free(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 送信 API スレッドからは切断しないこと。
+
+    // Act
+    int actual_ret = potr_service_send(handle, 10U, payload, strlen(payload), 0);
+    // [手順] - ピア 10 を指定して非ブロッキング送信する。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_FULL, actual_ret); // [確認_正常系] - 戻り値が POTR_ERR_FULL であること。
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// N:1 で、全ピア宛 (POTR_PEER_ALL) の非ブロッキング送信が止める状態のピアで拒否された場合に妨げを記録し切断しないことの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, n1_peer_all_nonblocking_marks_blocking_without_disconnect)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_porter;
+    const char payload[] = "n1-all-nb"; // [状態] - 送信ペイロードを用意する。
+
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1;
+    cplat_atomic_store_i32(&ctx.flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    peers[0].active = 1;
+    peers[0].peer_id = 10U;
+    cplat_atomic_store_i32(&peers[0].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    peers[1].active = 1;
+    peers[1].peer_id = 11U;
+    cplat_atomic_store_i32(&peers[1].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _)).WillByDefault(Return(0));
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 11U, _, _)).WillByDefault(Return(1));
+    // [状態] - ピア 10 は送信可能、ピア 11 は止める状態とする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_mark_blocking(&ctx, 11U, _)).Times(1);
+    // [Pre-Assert確認_正常系] - 止める状態のピア 11 に対して妨げが 1 回記録されること。
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_peer_all_paths(_, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_peer_free(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 送信 API スレッドからは切断しないこと。
+
+    // Act
+    int actual_ret = potr_service_send(handle, POTR_PEER_ALL, payload, strlen(payload), 0);
+    // [手順] - POTR_PEER_ALL で非ブロッキング送信する。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_FULL, actual_ret); // [確認_正常系] - 戻り値が POTR_ERR_FULL であること。
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// N:1 で、全ピア宛 (POTR_PEER_ALL) のブロッキング送信が止める状態のピアで待たされた場合に妨げを記録し、
+// 切断は行わず、そのピアの切断後に待機から抜けて進むことの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, n1_peer_all_blocking_marks_blocking_and_proceeds_after_peer_disconnect)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_porter;
+    const char payload[] = "n1-all-blk"; // [状態] - 送信ペイロードを用意する。
+    std::atomic<int> mark_calls{0};
+    std::atomic<int> peer11_suppressed{1};
+    potr_internal_payload_elem elem = {};
+    int actual_ret = POTR_ERR_UNKNOWN;
+
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1;
+    cplat_atomic_store_i32(&ctx.flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    peers[0].active = 1;
+    peers[0].peer_id = 10U;
+    cplat_atomic_store_i32(&peers[0].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    peers[1].active = 1;
+    peers[1].peer_id = 11U;
+    cplat_atomic_store_i32(&peers[1].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _)).WillByDefault(Return(0));
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 11U, _, _))
+        .WillByDefault([&](potr_context *, potr_peer_id, uint64_t, int *deferred) {
+            *deferred = 0;
+            return peer11_suppressed.load();
+        });
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_mark_blocking(&ctx, 11U, _))
+        .WillByDefault([&](potr_context *, potr_peer_id, uint64_t) { mark_calls.fetch_add(1); });
+    // [状態] - ピア 11 が止める状態の間は待ち、切断後に 0 を返すようにする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_mark_blocking(&ctx, 11U, _)).Times(AtLeast(1));
+    // [Pre-Assert確認_正常系] - 待たされたピア 11 に妨げが記録されること。
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_peer_all_paths(_, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_peer_free(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 送信 API スレッドからは切断しないこと。
+
+    // Act
+    std::thread sender([&]() {
+        actual_ret = potr_service_send(handle, POTR_PEER_ALL, payload, strlen(payload), POTR_SEND_BLOCKING);
+    }); // [手順] - 別スレッドで POTR_PEER_ALL のブロッキング送信を開始する。
+    // ピア 10 の登録分を先に完了させる。
+    while (potr_internal_send_queue_try_pop(&ctx.send_queue, &elem) != POTR_OK)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    potr_internal_send_queue_complete(&ctx.send_queue);
+    // ピア 11 の妨げ記録が行われるまで待つ。
+    while (mark_calls.load() < 1)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    // 別スレッド (受信スレッド相当) でピア 11 が切断されたものとし、flow_changed を起床させる。
+    peer11_suppressed.store(0);
+    potr_internal_send_queue_wake_flow(&ctx.send_queue);
+    // ピア 11 宛の登録分を取り出して完了させる (送信スレッドでは切断済みピア宛は破棄される)。
+    while (potr_internal_send_queue_try_pop(&ctx.send_queue, &elem) != POTR_OK)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    potr_internal_send_queue_complete(&ctx.send_queue);
+    sender.join();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - ピア 11 の切断後にブロッキング送信が完了すること。
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// N:1 で、送信キューが満杯で保留エントリがある状態で、非ブロッキング送信とブロッキング送信の両方が
+// キュー満杯を記録し、切断は行わないことの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, n1_queue_full_with_deferred_notes_queue_full_for_nonblocking_and_blocking)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_log;
+    NiceMock<Mock_porter> mock_porter;
+    const char payload[] = "n1-qfull"; // [状態] - 送信ペイロードを用意する。
+    std::atomic<int> note_calls{0};
+    potr_internal_payload_elem elem = {};
+    int blocking_ret = POTR_ERR_UNKNOWN;
+
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1;
+    cplat_atomic_store_i32(&ctx.flow_deferred_total, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    peers[0].active = 1;
+    peers[0].peer_id = 10U;
+    cplat_atomic_store_i32(&peers[0].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    ON_CALL(mock_porter, potr_internal_peer_find_by_id(_, 10U)).WillByDefault(Return(&peers[0]));
+    ON_CALL(mock_porter, potr_internal_flow_control_note_queue_full(&ctx, _))
+        .WillByDefault([&](potr_context *, uint64_t) { note_calls.fetch_add(1); });
+
+    // 送信キューを満杯にする。
+    for (size_t i = 0U; i < ctx.send_queue.depth; i++)
+    {
+        ASSERT_EQ(POTR_OK, potr_internal_send_queue_push(&ctx.send_queue, 20U, 0U, payload, (uint16_t)strlen(payload),
+                                                         nullptr));
+    }
+    // [状態] - flow_deferred_total = 1 の状態で送信キューを満杯にする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_note_queue_full(&ctx, _)).Times(2);
+    // [Pre-Assert確認_正常系] - 非ブロッキングとブロッキングの 2 回、キュー満杯が記録されること。
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_peer_all_paths(_, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_peer_free(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 送信 API スレッドからは切断しないこと。
+
+    // Act
+    int nb_ret = potr_service_send(handle, 10U, payload, strlen(payload), 0);
+    // [手順] - 満杯の状態で非ブロッキング送信し、POTR_ERR_FULL になることを確認する。
+
+    std::thread sender([&]() {
+        blocking_ret = potr_service_send(handle, 10U, payload, strlen(payload), POTR_SEND_BLOCKING);
+    }); // [手順] - 満杯の状態でブロッキング送信を開始する。
+    while (note_calls.load() < 2)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    // 1 件取り出して完了させ (キューに空きを作り)、続けてブロッキング送信分も完了させる。
+    for (size_t i = 0U; i < ctx.send_queue.depth + 1U; i++)
+    {
+        while (potr_internal_send_queue_try_pop(&ctx.send_queue, &elem) != POTR_OK)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        potr_internal_send_queue_complete(&ctx.send_queue);
+    }
+    cplat_atomic_store_i32(&ctx.flow_deferred_total, 0, CPLAT_MEMORY_ORDER_RELEASE);
+    sender.join();
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_FULL, nb_ret); // [確認_正常系] - 非ブロッキング送信が POTR_ERR_FULL を返すこと。
+    EXPECT_EQ(POTR_OK, blocking_ret); // [確認_正常系] - ブロッキング送信が空き後に POTR_OK で完了すること。
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]

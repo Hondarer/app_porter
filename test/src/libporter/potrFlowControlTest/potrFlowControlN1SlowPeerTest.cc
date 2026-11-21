@@ -1,0 +1,345 @@
+/**
+ *******************************************************************************
+ *  @file           potrFlowControlN1SlowPeerTest.cc
+ *  @brief          N 対 1 サーバーで全体を妨げている遅いピアの記録・積算・切断対象判定を検証します。
+ *
+ *  potr_internal_flow_control_peer_mark_blocking()、potr_internal_flow_control_note_queue_full()、
+ *  および potr_internal_flow_control_collect_slow_peers_locked() の動作を、単調増加時刻 now_ms を
+ *  制御して検証します。
+ *******************************************************************************
+ */
+#include <cplat/base/platform.h>
+#if defined(PLATFORM_WINDOWS)
+    #define _HAS_STD_BYTE 0
+#endif /* PLATFORM_WINDOWS */
+#include <testfw.h>
+#include <mock_cplat.h>
+#include <mock_porter.h>
+#include <porter/porter_result.h>
+#include <porter/porter_const.h>
+#include <porter/potr_context.h>
+#include <porter/potr_flow_control.h>
+#include <cstring>
+#include <vector>
+using namespace testing;
+
+namespace
+{
+const int kMaxPeers = 8;
+} // namespace
+
+class potrFlowControlN1SlowPeerTest : public Test
+{
+  protected:
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx;
+    potr_internal_peer_context peer_slots[kMaxPeers];
+    uint64_t now_ms = 1000U;
+
+    // [サブ手順 名前=potrFlowControlN1SlowPeerTest.SetUp]
+    void SetUp() override
+    {
+        memset(&ctx, 0, sizeof(ctx));
+        memset(peer_slots, 0, sizeof(peer_slots));
+        ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+        ctx.service.service_id = 1;
+        ctx.role = POTR_ROLE_RECEIVER;
+        ctx.is_multi_peer = 1;
+        ctx.peers = peer_slots;
+        ctx.max_peers = kMaxPeers;
+        ctx.flow_control_config.grace_ms = 200U;
+        ctx.flow_control_config.excluded_receiver_count = 1U;
+        ctx.flow_control_config.excluded_receiver_percent = 10U;
+        ctx.flow_control_config.request_interval_ms = 200U;
+        ctx.flow_control_config.request_lifetime_ms = 10000U;
+        cplat_local_lock_create(&ctx.peers_mutex);
+        // [状態] - N:1 サーバー、猶予時間 200 [ms]、除外上限 1 台 / 10%、有効期限 10000 [ms] とする。
+
+        ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([this](uint64_t *out) {
+            *out = now_ms;
+            return CPLAT_OK;
+        }); // [状態] - 現在時刻を now_ms で制御する。
+
+        ON_CALL(mock_porter, potr_internal_peer_find_by_id(_, _))
+            .WillByDefault([this](const potr_context *, potr_peer_id id) -> potr_internal_peer_context * {
+                for (int i = 0; i < kMaxPeers; i++)
+                {
+                    if (peer_slots[i].active && peer_slots[i].peer_id == id)
+                    {
+                        return &peer_slots[i];
+                    }
+                }
+                return nullptr;
+            }); // [状態] - peer_slots からアクティブなピアを検索する。
+    }
+    // [サブ手順終了]
+
+    // [サブ手順 名前=potrFlowControlN1SlowPeerTest.TearDown]
+    void TearDown() override
+    {
+        for (int i = 0; i < kMaxPeers; i++)
+        {
+            if (peer_slots[i].send_window_mutex != nullptr)
+            {
+                cplat_local_lock_dispose(peer_slots[i].send_window_mutex);
+                peer_slots[i].send_window_mutex = nullptr;
+            }
+        }
+        if (ctx.peers_mutex != nullptr)
+        {
+            cplat_local_lock_dispose(ctx.peers_mutex);
+            ctx.peers_mutex = nullptr;
+        }
+    }
+    // [サブ手順終了]
+
+    potr_internal_peer_context *add_peer(int slot_idx, potr_peer_id peer_id)
+    {
+        potr_internal_peer_context *p = &peer_slots[slot_idx];
+        memset(p, 0, sizeof(*p));
+        p->peer_id = peer_id;
+        p->active = 1;
+        cplat_atomic_store_i32(&p->health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+        p->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNLIMITED;
+        cplat_local_lock_create(&p->send_window_mutex);
+        ctx.n_peers++;
+        return p;
+    }
+
+    void set_peer_stopping(potr_internal_peer_context *p, bool stopping)
+    {
+        cplat_local_lock_lock(ctx.peers_mutex);
+        p->flow_request_expire_ms = stopping ? (now_ms + 5000U) : 0U;
+        potr_internal_flow_control_peer_sync(&ctx, p);
+        cplat_local_lock_unlock(ctx.peers_mutex);
+    }
+
+    size_t collect_slow(std::vector<potr_peer_id> &out_peers, std::vector<uint64_t> &out_accum, uint64_t *next_check_ms)
+    {
+        potr_peer_id buf[POTR_FLOW_SLOW_PEER_BATCH_MAX] = {};
+        uint64_t accum[POTR_FLOW_SLOW_PEER_BATCH_MAX] = {};
+        cplat_local_lock_lock(ctx.peers_mutex);
+        size_t n = potr_internal_flow_control_collect_slow_peers_locked(&ctx, now_ms, buf, accum,
+                                                                        POTR_FLOW_SLOW_PEER_BATCH_MAX, next_check_ms);
+        cplat_local_lock_unlock(ctx.peers_mutex);
+        out_peers.assign(buf, buf + n);
+        out_accum.assign(accum, accum + n);
+        return n;
+    }
+};
+
+// 妨げの記録がないピアは、止める状態が猶予時間を超えて続いても切断対象にならないことの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, unblocked_slow_peer_is_never_collected)
+{
+    // Arrange
+    potr_internal_peer_context *p1 = add_peer(0, 10U);
+    add_peer(1, 20U);
+    set_peer_stopping(p1, true);
+    // [状態] - 接続中 2 ピアのうちピア 10 を止める状態にする。妨げは記録しない。
+    std::vector<potr_peer_id> slow_peers;
+    std::vector<uint64_t> slow_accum;
+    uint64_t next_ms = 999U;
+    // Pre-Assert
+    // Act
+    now_ms = 2000U;
+    size_t count = collect_slow(slow_peers, slow_accum, &next_ms);
+    // [手順] - 猶予時間 (200 [ms]) より長い 1000 [ms] 経過後に収集を呼ぶ。
+    // Assert
+    EXPECT_EQ(0U, count);   // [確認_正常系] - 妨げの記録がないため切断対象が 0 件であること。
+    EXPECT_EQ(0U, next_ms); // [確認_正常系] - 次回確認時刻が 0 (予定なし) であること。
+    EXPECT_EQ(0, p1->flow_blocking); // [確認_正常系] - ピア 10 の妨げフラグが 0 のままであること。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// 妨げが記録されたピアが止める状態を続けたとき、猶予時間未満では切断せず、達した時点で切断対象になることの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, accum_reaches_grace_and_collects_slow_peer)
+{
+    // Arrange
+    potr_internal_peer_context *p1 = add_peer(0, 10U);
+    add_peer(1, 20U);
+    set_peer_stopping(p1, true);
+    potr_internal_flow_control_peer_mark_blocking(&ctx, 10U, now_ms);
+    // [状態] - 接続中 2 ピアのうちピア 10 を止める状態にし、時刻 1000 で妨げを記録する。
+    std::vector<potr_peer_id> slow_peers;
+    std::vector<uint64_t> slow_accum;
+    uint64_t next_ms = 0U;
+    // Pre-Assert
+    // Act
+    now_ms = 1199U;
+    size_t count_before = collect_slow(slow_peers, slow_accum, &next_ms);
+    // [手順] - 199 [ms] 経過後 (猶予時間 200 [ms] 未満) に収集を呼ぶ。
+    uint64_t next_before = next_ms;
+    now_ms = 1200U;
+    size_t count_at_grace = collect_slow(slow_peers, slow_accum, &next_ms);
+    // [手順] - 200 [ms] 経過後 (猶予時間ちょうど) に収集を呼ぶ。
+    // Assert
+    EXPECT_EQ(0U, count_before);      // [確認_正常系] - 猶予時間未満では切断対象が 0 件であること。
+    EXPECT_EQ(1200U, next_before);    // [確認_正常系] - 次回確認時刻が猶予時間到達時刻 1200 であること。
+    ASSERT_EQ(1U, count_at_grace);    // [確認_正常系] - 猶予時間到達で切断対象が 1 件になること。
+    EXPECT_EQ(10U, slow_peers[0]);    // [確認_正常系] - 切断対象がピア 10 であること。
+    EXPECT_EQ(200U, slow_accum[0]);   // [確認_正常系] - 報告される積算時間が 200 [ms] であること。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// 止める状態のピア数が除外上限を超えている間は切断せず猶予時間で上限保持し、上限以下に戻ると切断することの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, stopping_peers_exceeding_limit_suppresses_disconnect_and_clamps_accum)
+{
+    // Arrange
+    potr_internal_peer_context *p1 = add_peer(0, 10U);
+    potr_internal_peer_context *p2 = add_peer(1, 20U);
+    add_peer(2, 30U);
+    add_peer(3, 40U);
+    // 接続 4 台、上限 1 台 (count=1, percent=10 -> max(1, 0) = 1)。
+    set_peer_stopping(p1, true);
+    set_peer_stopping(p2, true);
+    potr_internal_flow_control_peer_mark_blocking(&ctx, 10U, now_ms);
+    potr_internal_flow_control_peer_mark_blocking(&ctx, 20U, now_ms);
+    // [状態] - 接続中 4 ピア (除外上限 1) でピア 10 と 20 の 2 台を止める状態にし、時刻 1000 で妨げを記録する。
+    std::vector<potr_peer_id> slow_peers;
+    std::vector<uint64_t> slow_accum;
+    uint64_t next_ms = 0U;
+    // Pre-Assert
+    // Act
+    now_ms = 1500U;
+    size_t count_over_limit = collect_slow(slow_peers, slow_accum, &next_ms);
+    // [手順] - 500 [ms] 経過後 (同時停止 2 > 上限 1) に収集を呼ぶ。
+    uint64_t clamped_units = p1->flow_stall_accum_units;
+    set_peer_stopping(p2, false);
+    now_ms = 1500U;
+    size_t count_within_limit = collect_slow(slow_peers, slow_accum, &next_ms);
+    // [手順] - ピア 20 の止める状態を解き (同時停止 1 <= 上限 1)、同時刻で収集を呼ぶ。
+    // Assert
+    EXPECT_EQ(0U, count_over_limit);
+    // [確認_正常系] - 同時停止数が上限を超えている間は切断対象が 0 件であること。
+    EXPECT_EQ(200U * POTR_FLOW_ACCUM_DECAY_DIVISOR, clamped_units);
+    // [確認_正常系] - 積算が猶予時間 (200 × 9) を上限として保持されること。
+    ASSERT_EQ(1U, count_within_limit);
+    // [確認_正常系] - 同時停止数が上限以下に戻ると即座に切断対象が 1 件になること。
+    EXPECT_EQ(10U, slow_peers[0]); // [確認_正常系] - 残った止める状態のピア 10 が切断対象になること。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// 止める状態が解けると積算が経過時間 ÷ 9 で減り、0 に戻った時点で妨げの記録が消え、再度の妨げで記録し直されることの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, recovery_decays_accum_and_clears_blocking_at_zero)
+{
+    // Arrange
+    potr_internal_peer_context *p1 = add_peer(0, 10U);
+    add_peer(1, 20U);
+    set_peer_stopping(p1, true);
+    potr_internal_flow_control_peer_mark_blocking(&ctx, 10U, now_ms);
+    // [状態] - 接続中 2 ピアでピア 10 を止める状態にし、時刻 1000 で妨げを記録する。
+    std::vector<potr_peer_id> slow_peers;
+    std::vector<uint64_t> slow_accum;
+    uint64_t next_ms = 0U;
+    // Pre-Assert
+    // Act
+    now_ms = 1100U;
+    (void)collect_slow(slow_peers, slow_accum, &next_ms); // 100 [ms] 積算 (900 単位)
+    set_peer_stopping(p1, false);
+    now_ms = 1550U;
+    (void)collect_slow(slow_peers, slow_accum, &next_ms); // 450 [ms] 減算 -> 450 単位 (50 [ms] 相当)
+    uint64_t mid_units = p1->flow_stall_accum_units;
+    int mid_blocking = p1->flow_blocking;
+    now_ms = 2000U;
+    (void)collect_slow(slow_peers, slow_accum, &next_ms); // さらに 450 [ms] 減算 -> 0 単位で妨げ記録消去
+    uint64_t cleared_units = p1->flow_stall_accum_units;
+    int cleared_blocking = p1->flow_blocking;
+    int32_t blocking_peers_after_clear = cplat_atomic_load_i32(&ctx.flow_blocking_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
+
+    // 妨げ記録が消えた後に再び止める状態になっても、妨げが再記録されるまでは積算しない。
+    set_peer_stopping(p1, true);
+    now_ms = 2500U;
+    size_t count_without_remark = collect_slow(slow_peers, slow_accum, &next_ms);
+
+    // 再度妨げを記録すると、その時点 (2500) から新しく積算が始まり、200 [ms] 後に切断対象になる。
+    potr_internal_flow_control_peer_mark_blocking(&ctx, 10U, now_ms);
+    now_ms = 2700U;
+    size_t count_after_remark = collect_slow(slow_peers, slow_accum, &next_ms);
+
+    // Assert
+    EXPECT_EQ(450U, mid_units);       // [確認_正常系] - 450 [ms] 回復後に積算が 900 - 450 = 450 単位であること。
+    EXPECT_EQ(1, mid_blocking);       // [確認_正常系] - 積算が残っている間は妨げの記録が維持されること。
+    EXPECT_EQ(0U, cleared_units);     // [確認_正常系] - 合計 900 [ms] 回復後に積算が 0 に戻ること。
+    EXPECT_EQ(0, cleared_blocking);   // [確認_正常系] - 積算が 0 に戻った時点で妨げの記録が消えること。
+    EXPECT_EQ(0, blocking_peers_after_clear); // [確認_正常系] - flow_blocking_peers が 0 に戻ること。
+    EXPECT_EQ(0U, count_without_remark);
+    // [確認_正常系] - 記録消去後に再停止しても、再度の妨げ記録までは切断対象にならないこと。
+    ASSERT_EQ(1U, count_after_remark);
+    EXPECT_EQ(10U, slow_peers[0]); // [確認_正常系] - 妨げを再記録すると、そこから猶予時間後に切断対象になること。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// 送信キュー満杯の記録により、保留エントリを持つ止める状態のピアだけに妨げが記録され、猶予時間後に切断対象になることの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, queue_full_marks_deferred_stopping_peers_only)
+{
+    // Arrange
+    potr_internal_peer_context *p1 = add_peer(0, 10U);
+    potr_internal_peer_context *p2 = add_peer(1, 20U);
+    potr_internal_peer_context *p3 = add_peer(2, 30U);
+    ctx.flow_control_config.excluded_receiver_count = 2U;
+    set_peer_stopping(p1, true);
+    p1->flow_deferred_entries = 2;
+    p1->flow_deferred_since_ms = 1000U;
+    set_peer_stopping(p2, true);
+    p2->flow_deferred_entries = 0; // 止める状態だが保留なし
+    set_peer_stopping(p3, false);
+    p3->flow_deferred_entries = 1; // 保留ありだが止める状態でない
+    p3->flow_deferred_since_ms = 1000U;
+    // [状態] - ピア 10 (停止・保留あり)、ピア 20 (停止・保留なし)、ピア 30 (非停止・保留あり) を用意する。
+    std::vector<potr_peer_id> slow_peers;
+    std::vector<uint64_t> slow_accum;
+    uint64_t next_ms = 0U;
+    // Pre-Assert
+    // Act
+    potr_internal_flow_control_note_queue_full(&ctx, 1050U);
+    // [手順] - 時刻 1050 で送信キュー満杯を記録する。
+    now_ms = 1150U;
+    size_t count_mid = collect_slow(slow_peers, slow_accum, &next_ms);
+    // [手順] - 時刻 1150 (満杯から 100 [ms] 経過) に収集を呼ぶ。
+    now_ms = 1250U;
+    size_t count_grace = collect_slow(slow_peers, slow_accum, &next_ms);
+    // [手順] - 時刻 1250 (満杯から 200 [ms] 経過) に収集を呼ぶ。
+    // Assert
+    EXPECT_EQ(0U, count_mid);        // [確認_正常系] - 100 [ms] 経過時点ではまだ切断対象でないこと。
+    EXPECT_EQ(1, p1->flow_blocking); // [確認_正常系] - 停止かつ保留ありのピア 10 に妨げが記録されること。
+    EXPECT_EQ(0, p2->flow_blocking); // [確認_正常系] - 保留なしのピア 20 には妨げが記録されないこと。
+    EXPECT_EQ(0, p3->flow_blocking); // [確認_正常系] - 非停止のピア 30 には妨げが記録されないこと。
+    ASSERT_EQ(1U, count_grace);      // [確認_正常系] - 満杯時刻 1050 から 200 [ms] 後の 1250 で切断対象になること。
+    EXPECT_EQ(10U, slow_peers[0]);   // [確認_正常系] - 切断対象がピア 10 であること。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// 除外上限が無効 (count=0, percent=0) の場合と接続ピアが 1 台だけの場合は切断対象にならないことの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, excluded_limit_disabled_or_single_peer_never_disconnects)
+{
+    // Arrange
+    potr_internal_peer_context *p1 = add_peer(0, 10U);
+    set_peer_stopping(p1, true);
+    potr_internal_flow_control_peer_mark_blocking(&ctx, 10U, now_ms);
+    // [状態] - 接続中 1 ピアだけでピア 10 を止める状態にし、妨げを記録する。
+    std::vector<potr_peer_id> slow_peers;
+    std::vector<uint64_t> slow_accum;
+    uint64_t next_ms = 0U;
+    // Pre-Assert
+    // Act
+    now_ms = 1500U;
+    size_t count_single = collect_slow(slow_peers, slow_accum, &next_ms);
+    // [手順] - 接続 1 台で 500 [ms] 経過後に収集を呼ぶ。
+    add_peer(1, 20U);
+    ctx.flow_control_config.excluded_receiver_count = 0U;
+    ctx.flow_control_config.excluded_receiver_percent = 0U;
+    now_ms = 2000U;
+    size_t count_disabled = collect_slow(slow_peers, slow_accum, &next_ms);
+    // [手順] - ピア 20 を追加して接続 2 台にしたうえで除外上限を両方 0 (無効) にして収集を呼ぶ。
+    // Assert
+    EXPECT_EQ(0U, count_single);   // [確認_正常系] - 接続 1 台では上限 0 のため切断対象にならないこと。
+    EXPECT_EQ(0U, count_disabled); // [確認_正常系] - 除外上限が無効の場合は切断対象にならないこと。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]

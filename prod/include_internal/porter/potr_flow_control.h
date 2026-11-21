@@ -174,11 +174,16 @@ static inline uint64_t flow_send_limit_clamp_initial(uint64_t send_limit, uint32
 /** 受信バッファーの幅の下限 [パケット]。 */
 #define POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN 4U
 
+/** N:1 モードで順番の許可へ切り替えるピアごとの幅のしきい値、および 1 回の順番の許可のパケット数 [パケット]。 */
+#define POTR_FLOW_TURN_WIDTH 4U
+
 /** 受信バッファーの幅の計算で、1 パケットの見積もりに加える管理情報の量 [byte]。 */
 #define POTR_FLOW_RECEIVE_BUFFER_OVERHEAD 2048U
 
 static_assert(POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN >= 1U && POTR_FLOW_RECEIVE_BUFFER_OVERHEAD > 0U,
               "porter: receive buffer width parameters must be positive");
+static_assert(POTR_FLOW_TURN_WIDTH >= 1U && POTR_FLOW_TURN_WIDTH <= POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN,
+              "porter: POTR_FLOW_TURN_WIDTH must be between 1 and POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN");
 
 /**
  * 抑制中の状態を確認し直すまでの待機の上限 [ms]。
@@ -209,6 +214,87 @@ static_assert(POTR_INTERNAL_FLOW_LIMIT_RECHECK_MS > 0 &&
 #define POTR_PERCENT_CEIL_OFFSET (POTR_PERCENT_MAX - 1U)
 
 static_assert(POTR_PERCENT_MAX == 100U, "porter: POTR_PERCENT_MAX must be 100");
+
+/**
+ * 止めていない間の積算の減算率の分母 (経過時間 ÷ 9)。
+ * 積算 (flow_stall_accum_units) はこの定数倍 (1/9 [ms] 単位) で保持し、止めていた間は「経過時間 × 9」を加算、
+ * 止めていない間は「経過時間」をそのまま減算することで、1 [ms] 刻みの判定でも端数による誤差なく減算する。
+ */
+#define POTR_FLOW_ACCUM_DECAY_DIVISOR 9U
+
+/** N:1 モードで 1 回の周期判定で切断対象として収集するピア数の上限。 */
+#define POTR_FLOW_SLOW_PEER_BATCH_MAX 64U
+
+static_assert(POTR_FLOW_ACCUM_DECAY_DIVISOR == 9U, "porter: POTR_FLOW_ACCUM_DECAY_DIVISOR must be 9");
+static_assert(POTR_FLOW_SLOW_PEER_BATCH_MAX >= 1U && POTR_FLOW_SLOW_PEER_BATCH_MAX <= 256U,
+              "porter: POTR_FLOW_SLOW_PEER_BATCH_MAX out of range");
+
+/**
+ *  @brief          除外または切断できる相手 (受信者またはピア) の数の上限を求めます。
+ *
+ *  上限は「excluded_count」と「active × excluded_percent ÷ 100 (切り捨て)」の大きいほうとします。
+ *  ただし、「active − 1」を超えません (active が 0 または 1 の場合は 0)。
+ *  無効 (0) の項目は 0 として計算し、両方が 0 の場合は 0 を返します。
+ *
+ *  @param[in]      active              活動中の受信者数 (1 対 N) または接続中のピア数 (N 対 1)。
+ *  @param[in]      excluded_count      除外または切断する数の上限 [台]。0 = 無効。
+ *  @param[in]      excluded_percent    除外または切断する数の上限 [%]。0 = 無効。
+ *  @return         除外または切断する数の上限 [台]。失敗モードのない計算のため結果コードの対象外です。
+ */
+static inline size_t flow_excluded_limit(size_t active, uint32_t excluded_count, uint32_t excluded_percent)
+{
+    size_t by_count = (size_t)excluded_count;
+    size_t by_percent;
+    size_t limit;
+
+    if (active <= 1U)
+    {
+        return 0U;
+    }
+
+    by_percent = (size_t)(((uint64_t)active * (uint64_t)excluded_percent) / (uint64_t)POTR_PERCENT_MAX);
+    limit = (by_count > by_percent) ? by_count : by_percent;
+
+    if (limit > active - 1U)
+    {
+        limit = active - 1U;
+    }
+
+    return limit;
+}
+
+/**
+ *  @brief          止める状態の積算値 [1/9 ms] を、経過時間 [ms] に応じて更新します。
+ *
+ *  全体の送出時間のうち約 10% までの停止を一時的な遅れとして受け入れ、それを超える遅い相手だけを
+ *  除外または切断するための積算式です。
+ *  - stalled が非 0 (止める状態): 積算 + 経過時間 × POTR_FLOW_ACCUM_DECAY_DIVISOR
+ *  - stalled が 0 (止めていない): 積算 − 経過時間 (0 を下回らない)
+ *
+ *  @param[in]      accum_units 現在の積算値 [1/9 ms]。
+ *  @param[in]      elapsed_ms  前回の判定からの経過時間 [ms]。
+ *  @param[in]      stalled     止める状態として加算する場合は非 0、減算する場合は 0。
+ *  @return         更新後の積算値 [1/9 ms]。失敗モードのない計算のため結果コードの対象外です。
+ */
+static inline uint64_t flow_stall_accum_update(uint64_t accum_units, uint64_t elapsed_ms, int stalled)
+{
+    if (elapsed_ms == 0U)
+    {
+        return accum_units;
+    }
+
+    if (stalled != 0)
+    {
+        return accum_units + elapsed_ms * (uint64_t)POTR_FLOW_ACCUM_DECAY_DIVISOR;
+    }
+
+    if (elapsed_ms >= accum_units)
+    {
+        return 0U;
+    }
+
+    return accum_units - elapsed_ms;
+}
 
 /**
  *  @brief          OS の受信バッファーの大きさから、受信バッファーの幅 (収まると見積もった DATA パケットの数) を求めます。
@@ -361,8 +447,12 @@ extern "C"
      *  1 パケットの大きさは、max_payload と「そのセッションで受信した DATA パケット 1 個の展開後の大きさの最大値」の
      *  大きいほうを使います (セッションが変わると最大値は 0 に戻ります)。
      *  容量が 0 の受信側は受信バッファーの幅だけを、OS の受信バッファーに基づく送出上限を使わない受信側は
-     *  占有量による許可数だけを使います。N:1 モードでは、受信バッファーの幅を接続中のピア数で割ります
-     *  (すべてのピアが 1 つのソケットを共有するため)。幅は POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN 以上とします。\n
+     *  占有量による許可数だけを使います。受信バッファーの全体の幅は POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN 以上とします。
+     *  N:1 モードでは、すべてのピアが 1 つのソケットを共有するため、全体の幅を送信中のピア (直近の
+     *  flow_control_request_interval_ms の間に DATA または問い合わせを受けたピア) の数で割ります (送信中のピアがない場合は 1)。
+     *  ピアごとの幅が POTR_FLOW_TURN_WIDTH 以上の場合は全員にその幅で許可し、すでに知らせた送出上限は戻しません。
+     *  POTR_FLOW_TURN_WIDTH 未満の場合は順番の許可へ切り替え、同時に許可を持つピアの数を
+     *  「全体の幅 ÷ POTR_FLOW_TURN_WIDTH (切り捨て)」まで、1 回の許可を POTR_FLOW_TURN_WIDTH パケットとします。\n
      *  容量が 0 の受信側は、下の最初の送出と更新だけを行い、占有量の条件は常に満たすものとして扱います。\n
      *  multicast と broadcast の受信者は、送信者から受けた監視対象の一覧に自身が含まれている間だけ、
      *  最初の送出と更新を行います。監視対象でない間は、送出上限を知らせていないものとして扱い、
@@ -405,7 +495,9 @@ extern "C"
     /**
      *  @brief          再送周期が経過した抑制の要求を再送し、まだ知らせていない送出上限を送出し直します。
      *
-     *  N:1 モードでは、占有量が 0 になり、ピアが解放された相手の記録も解放します。\n
+     *  N:1 モードでは、占有量が 0 になり、ピアが解放された相手の記録も解放します。また、直近の
+     *  flow_control_request_interval_ms の間に DATA も問い合わせもないピアを送信中のピアの数から外し、
+     *  順番の許可で枠が空いた場合は待っているピアへ許可を送出します。\n
      *  multicast と broadcast の受信者は、監視対象の一覧を flow_control_request_lifetime_ms の間受け取っていない場合、
      *  監視対象でなくなったものとして扱い、送出上限を知らせていない状態に戻します。
      *
@@ -417,6 +509,22 @@ extern "C"
      *  (N:1 モードでは内部で peers_mutex を取得します)。
      */
     extern void potr_internal_flow_control_tick(potr_context *ctx, uint64_t now_ms);
+
+    /**
+     *  @brief          N:1 モードでピアが解放されたことを受信側のフロー制御へ反映します。
+     *
+     *  解放されたピアが送信中のピアに数えられていれば数から外します。順番の許可で許可を持っていたピアが
+     *  解放された場合は、空いた枠を待っている次のピアへ割り当てます。占有量が 0 で再開拒否中でない記録は
+     *  その場で解放します。\n
+     *  フロー制御が無効の場合、N:1 モード以外の場合、および ctx が NULL の場合は何もしません。
+     *
+     *  @param[in,out]  ctx     コンテキスト。
+     *  @param[in]      peer_id 解放されたピアの識別子。
+     *
+     *  @par            スレッド セーフ
+     *  呼び出し元が peers_mutex を保持し、fc->mutex を保持していないこと (内部で fc->mutex を取得します)。
+     */
+    extern void potr_internal_flow_control_on_peer_freed(potr_context *ctx, potr_peer_id peer_id);
 
     /**
      *  @brief          相手からの受信を再開しない状態かどうかを返します。
@@ -610,6 +718,66 @@ extern "C"
      */
     extern int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms,
                                                      int *deferred);
+
+    /**
+     *  @brief          N:1 モードで、指定したピアがほかのピアへの送信を妨げた時点を記録します。
+     *
+     *  全ピア宛 (POTR_PEER_ALL) の送信が、そのピアが止める状態であるために受け付けられなかった、
+     *  または待たされたときに呼びます。すでに妨げが記録されている場合は上書きしません。\n
+     *  記録だけを行い、ピアの切断は行いません。
+     *
+     *  @param[in,out]  ctx     コンテキスト。
+     *  @param[in]      peer_id 妨げたピアの識別子。
+     *  @param[in]      now_ms  妨げが起きた時刻 [ms]。
+     *
+     *  @par            スレッド セーフ
+     *  送信要求を受け付けたスレッドから呼びます。内部で peers_mutex を取得するため、呼び出し元は保持しないこと。
+     */
+    extern void potr_internal_flow_control_peer_mark_blocking(potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms);
+
+    /**
+     *  @brief          N:1 モードで、保留エントリがある状態で送信キューが満杯になった最初の時刻を記録します。
+     *
+     *  送信キューが満杯で、いずれかのピア宛のエントリが送信キューに保留されている状態で、
+     *  送信要求が受け付けられなかった、または待たされたときに呼びます。\n
+     *  アトミック操作で時刻を記録するだけで、ロックの取得、全ピアの走査、および切断は行いません。
+     *  記録された時刻は、周期処理 (potr_internal_flow_control_collect_slow_peers_locked()) が
+     *  保留エントリを持つ止める状態のピアへ反映します。
+     *
+     *  @param[in,out]  ctx     コンテキスト。
+     *  @param[in]      now_ms  満杯を観測した時刻 [ms] (0 は無視)。
+     *
+     *  @par            スレッド セーフ
+     *  任意のスレッドから呼べます。ロックを取得しません。
+     */
+    extern void potr_internal_flow_control_note_queue_full(potr_context *ctx, uint64_t now_ms);
+
+    /**
+     *  @brief          N:1 モードで、全体を妨げている遅いピアの積算を更新し、切断対象のピアを収集します。
+     *
+     *  妨げが記録されているピア、または保留エントリがある状態でキュー満杯が記録されたピアについて、
+     *  止める状態 (potr_internal_flow_control_peer_state() と同じ判定) である時間を積算します。
+     *  止める状態でない間は経過時間 ÷ 9 を減算し、積算が 0 に戻った時点で妨げの記録を消します。\n
+     *  同時に止める状態にあるピアの数が flow_excluded_limit() (接続中のピア数に対する上限) を
+     *  超えている間は切断対象にせず、積算を猶予時間 (grace_ms) で上限丸めします。\n
+     *  上限以下であれば、積算が猶予時間に達している妨げ中のピアを out_peers へ格納します。\n
+     *  妨げが記録されているピアがなく、キュー満杯の記録もない場合は、全ピアを走査せず即座に 0 を返します。
+     *
+     *  @param[in,out]  ctx             コンテキスト。
+     *  @param[in]      now_ms          現在の単調増加時刻 [ms]。
+     *  @param[out]     out_peers       切断対象のピア識別子の格納先。NULL は許可しません (max_out が 0 でない場合)。
+     *  @param[out]     out_accum_ms    各切断対象の積算時間 [ms] の格納先。不要なら NULL 可。
+     *  @param[in]      max_out         out_peers に格納できる最大件数。
+     *  @param[out]     next_check_ms   妨げ中のピアが残っている場合の、次の判定予定時刻 [ms] の格納先。
+     *                                  該当がない場合は 0。不要なら NULL 可。
+     *  @return         out_peers へ格納した切断対象の件数。件数を返す値関数のため共通結果コードの適用対象外。
+     *
+     *  @par            スレッド セーフ
+     *  受信スレッドの周期処理から呼びます。呼び出し元が peers_mutex を保持していること。
+     */
+    extern size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, uint64_t now_ms,
+                                                                       potr_peer_id *out_peers, uint64_t *out_accum_ms,
+                                                                       size_t max_out, uint64_t *next_check_ms);
 #ifdef __cplusplus
 }
 #endif
