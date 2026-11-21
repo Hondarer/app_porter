@@ -14,6 +14,7 @@ LIBS += mock_porter mock_cplat mock_libc
 INCDIR += $(MYAPP_DIR)/prod/libsrc/porter/thread
 ADD_SRCS += \
     $(MYAPP_DIR)/prod/libsrc/porter/thread/thread_recv_session.c \
+    $(MYAPP_DIR)/prod/libsrc/porter/thread/thread_recv_dispatch.c \
     $(MYAPP_DIR)/prod/libsrc/porter/potr_path_event.c \
     $(MYAPP_DIR)/prod/libsrc/porter/potr_notify.c
 

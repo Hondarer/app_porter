@@ -228,14 +228,15 @@ TEST(threadRecvReportTest, multicast_report_carries_send_limit)
     EXPECT_EQ(emitted[0].size(), emitted[1].size());      // [確認_正常系] - 報告の大きさが送出上限の有無で変わらないこと。
 }
 
-// unicast の受信者は、受信報告に送出上限を載せないことの確認
-TEST(threadRecvReportTest, unicast_report_does_not_carry_send_limit)
+// unicast の受信者も、送出上限がある場合は seq_num を 1、ack_num を送出上限とし、ない場合は 0 とすることの確認
+TEST(threadRecvReportTest, unicast_report_carries_send_limit)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
     std::vector<std::vector<uint8_t>> emitted;
+    int limit_held = 1;
     ctx.role = POTR_ROLE_RECEIVER;
     ctx.service.type = POTR_TYPE_UNICAST;
     ctx.service.src_port = 4000;
@@ -246,6 +247,11 @@ TEST(threadRecvReportTest, unicast_report_does_not_carry_send_limit)
     ctx.src_addr_resolved[0] = cplat_hton32(0x7f000001U);
     potr_internal_tx_session_init(&ctx.tx_session);
     // [状態] - 暗号化しない unicast の受信者で、経路 1 本とする。
+    ON_CALL(mock_porter, potr_internal_flow_control_report_limit(_, _))
+        .WillByDefault([&](potr_context *, uint32_t *send_limit) {
+            *send_limit = limit_held != 0 ? 0x12345678U : 0U;
+            return limit_held;
+        }); // [状態] - limit_held が 1 の間は送出上限 0x12345678 を返し、0 の間は送出上限がないことを返す。
     ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
         .WillByDefault([&](cplat_socket, const void *wire, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
                            cplat_error *) {
@@ -255,15 +261,19 @@ TEST(threadRecvReportTest, unicast_report_does_not_carry_send_limit)
             return CPLAT_OK;
         }); // [状態] - 送出したワイヤーを保存する。
     // Pre-Assert
-    EXPECT_CALL(mock_porter, potr_internal_flow_control_report_limit(_, _))
-        .Times(0); // [Pre-Assert確認_正常系] - potr_internal_flow_control_report_limit() が呼び出されないこと。
     // Act
     int actual_ret_start = thread_recv_report_tick(&ctx, 1000); // [手順] - 起動時の周期処理で、報告の予定を作る。
-    int actual_ret_first = thread_recv_report_tick(&ctx, 1100); // [手順] - 1 周期目の報告を送る。
+    int actual_ret_held = thread_recv_report_tick(&ctx, 1100);  // [手順] - 送出上限がある状態で、1 周期目の報告を送る。
+    limit_held = 0;
+    int actual_ret_none = thread_recv_report_tick(&ctx, 1200);  // [手順] - 送出上限がない状態で、2 周期目の報告を送る。
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret_start); // [確認_正常系] - 起動時の周期処理が成功すること。
-    EXPECT_EQ(POTR_OK, actual_ret_first); // [確認_正常系] - 報告を送れること。
-    ASSERT_EQ(1U, emitted.size());        // [確認_正常系] - 1 回送出すること。
-    EXPECT_EQ(0U, ReadWire32(emitted[0], 24U)); // [確認_正常系] - seq_num が 0 であること。
-    EXPECT_EQ(0U, ReadWire32(emitted[0], 28U)); // [確認_正常系] - ack_num が 0 であること。
+    EXPECT_EQ(POTR_OK, actual_ret_held);  // [確認_正常系] - 送出上限がある報告を送れること。
+    EXPECT_EQ(POTR_OK, actual_ret_none);  // [確認_正常系] - 送出上限がない報告を送れること。
+    ASSERT_EQ(2U, emitted.size());        // [確認_正常系] - 2 回送出すること。
+    EXPECT_EQ(1U, ReadWire32(emitted[0], 24U));           // [確認_正常系] - 1 回目の seq_num が 1 (送出上限あり) であること。
+    EXPECT_EQ(0x12345678U, ReadWire32(emitted[0], 28U));  // [確認_正常系] - 1 回目の ack_num が送出上限であること。
+    EXPECT_EQ(0U, ReadWire32(emitted[1], 24U));           // [確認_正常系] - 2 回目の seq_num が 0 (送出上限なし) であること。
+    EXPECT_EQ(0U, ReadWire32(emitted[1], 28U));           // [確認_正常系] - 2 回目の ack_num が 0 であること。
+    EXPECT_EQ(emitted[0].size(), emitted[1].size());      // [確認_正常系] - 報告の大きさが送出上限の有無で変わらないこと。
 }

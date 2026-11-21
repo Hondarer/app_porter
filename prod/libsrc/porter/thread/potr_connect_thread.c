@@ -153,6 +153,7 @@ static void reset_connection_state(potr_context *ctx)
 {
     ctx->peer_session_known = 0;
     ctx->frag_buf_len = 0;
+    ctx->frag_count = 0U;
     ctx->frag_compressed = 0;
     ctx->pending_fin = 0;
     cplat_atomic_store_i32(&ctx->tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELEASE);
@@ -196,6 +197,7 @@ static void reset_all_paths_disconnected(potr_context *ctx)
     ctx->peer_session_known = 0;
     memset(&ctx->replay_window, 0, sizeof(ctx->replay_window));
     ctx->frag_buf_len = 0;
+    ctx->frag_count = 0U;
     ctx->frag_compressed = 0;
     ctx->pending_fin = 0;
     ctx->send_window.next_seq = 0U;

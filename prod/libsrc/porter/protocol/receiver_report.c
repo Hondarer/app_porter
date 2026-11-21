@@ -356,6 +356,9 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
     if (ret == POTR_OK)
     {
         int handle_was_no_peer = 0;
+        int handle_was_unnotified = 0;
+        int report_applied_limit = 0;
+        uint32_t handle_base_seq = 0U;
 
         receiver->flow_last_packet_ms = now_ms;
         cplat_atomic_store_u64(&ctx->flow_last_packet_ms, now_ms, CPLAT_MEMORY_ORDER_RELEASE);
@@ -363,8 +366,11 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
         if (!monitoring && ctx->service.type == POTR_TYPE_UNICAST)
         {
             uint64_t prev_handle = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+            uint64_t prev_state = prev_handle & POTR_FLOW_SEND_LIMIT_STATE_MASK;
 
-            handle_was_no_peer = (prev_handle & POTR_FLOW_SEND_LIMIT_STATE_MASK) == POTR_FLOW_SEND_LIMIT_NO_PEER;
+            handle_was_no_peer = prev_state == POTR_FLOW_SEND_LIMIT_NO_PEER;
+            handle_was_unnotified = prev_state == POTR_FLOW_SEND_LIMIT_UNNOTIFIED;
+            handle_base_seq = (uint32_t)(prev_handle & 0xFFFFFFFFU);
 
             /* 受信者の管理表で追跡を始めた後は、ハンドル側の初期の幅を解除する。 */
             cplat_atomic_store_u64(&ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELEASE);
@@ -379,8 +385,9 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
             ctx->report_received = 1;
 
             /*
-             * 受信報告に載った送出上限は、監視対象を選ぶための順位付けだけに使い、送出を止める判定には使わない
-             * (受信報告の周期が長く、値が古いため)。送出上限がない受信報告では、余裕の記録を消す。
+             * multicast と broadcast では、受信報告の送出上限で余裕を更新して監視対象を選び直す。
+             * 監視対象が保持している送出上限より先へ進んでいる場合は、受信報告による回復として更新する。
+             * unicast では、未通知または相手なしの受信者の最初の通知として受理し、保持中なら先へ進んでいる場合だけ更新する。
              */
             if (monitoring)
             {
@@ -396,6 +403,44 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
                 }
 
                 monitor_select_locked(ctx, now_ms);
+
+                if (packet->seq_num == 1U && receiver->flow_monitored != 0 &&
+                    (receiver->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK) == POTR_FLOW_SEND_LIMIT_HELD)
+                {
+                    uint32_t held = (uint32_t)(receiver->flow_send_limit & 0xFFFFFFFFU);
+
+                    if ((int32_t)(packet->ack_num - held) > 0)
+                    {
+                        receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)packet->ack_num;
+                        receiver->flow_limit_received_ms = now_ms;
+                        cplat_atomic_store_i32(&ctx->flow_request_pending, 1, CPLAT_MEMORY_ORDER_RELEASE);
+                    }
+                }
+            }
+            else if (ctx->service.type == POTR_TYPE_UNICAST && packet->seq_num == 1U)
+            {
+                uint64_t recv_state = receiver->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK;
+
+                if (is_new_receiver || recv_state == POTR_FLOW_SEND_LIMIT_UNNOTIFIED ||
+                    recv_state == POTR_FLOW_SEND_LIMIT_NO_PEER)
+                {
+                    receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)packet->ack_num;
+                    receiver->flow_limit_received_ms = now_ms;
+                    receiver->flow_limit_stalled_ms = 0U;
+                    cplat_atomic_store_i32(&ctx->flow_request_pending, 1, CPLAT_MEMORY_ORDER_RELEASE);
+                    report_applied_limit = 1;
+                }
+                else if (recv_state == POTR_FLOW_SEND_LIMIT_HELD)
+                {
+                    uint32_t held = (uint32_t)(receiver->flow_send_limit & 0xFFFFFFFFU);
+
+                    if ((int32_t)(packet->ack_num - held) > 0)
+                    {
+                        receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)packet->ack_num;
+                        receiver->flow_limit_received_ms = now_ms;
+                        cplat_atomic_store_i32(&ctx->flow_request_pending, 1, CPLAT_MEMORY_ORDER_RELEASE);
+                    }
+                }
             }
         }
         else if (flow)
@@ -447,13 +492,20 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
             }
         }
 
-        if (!monitoring && !flow && ctx->service.type == POTR_TYPE_UNICAST)
+        if (!monitoring && !flow && !report_applied_limit && ctx->service.type == POTR_TYPE_UNICAST)
         {
             uint64_t recv_state = receiver->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK;
 
             if (is_new_receiver || recv_state == POTR_FLOW_SEND_LIMIT_NO_PEER)
             {
-                receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq;
+                /*
+                 * ハンドル側が未通知の間に最初のパケットを受けた場合は、セッションの最初の通番を引き継ぎ、
+                 * 最初の通知までに初期の幅を超えないようにする。ハンドル側が相手なしだった場合と、
+                 * 相手なしになった項目が戻る場合は、その時点で次に割り当てる通番を基準にする。
+                 */
+                uint32_t base_seq = (is_new_receiver && handle_was_unnotified) ? handle_base_seq : next_seq;
+
+                receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)base_seq;
                 receiver->flow_limit_received_ms = now_ms;
                 receiver->flow_limit_stalled_ms = 0U;
                 cplat_atomic_store_i32(&ctx->flow_request_pending, 1, CPLAT_MEMORY_ORDER_RELEASE);

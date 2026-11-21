@@ -41,6 +41,7 @@ typedef struct flow_account
 {
     struct flow_account *next; /**< 次の相手 (N:1 モードのみ)。 */
     uint64_t occupancy;        /**< コールバックから復帰していない DATA のバイト数。 */
+    uint64_t max_packet_size;  /**< 現在のセッションで受信した DATA パケット 1 個の展開後の大きさの最大値 [byte]。 */
     uint64_t next_request_ms;  /**< 抑制の要求を次に再送する時刻 [ms]。requesting が 1 の間だけ有効。 */
     uint64_t last_data_ms;     /**< 相手から最後に DATA を受理した時刻 [ms]。0 = 未受理。 */
     cplat_timespec session_ts; /**< 相手のセッション開始時刻。 */
@@ -49,14 +50,19 @@ typedef struct flow_account
     int requesting;            /**< 抑制を要求中か (1: 要求中, 0: 要求なし)。 */
     int refused;               /**< 容量超過で切断し、受信を再開しない状態か (1: 再開しない)。 */
     uint32_t next_seq;         /**< 次に受信する通番。has_next_seq が 1 の間だけ有効。 */
-    uint32_t notified_base;    /**< 前回フロー制御パケットを送出した時点の「次に受信する通番」。notified が 1 の間だけ有効。 */
-    uint32_t notified_limit;   /**< 前回送出した送出上限。notified が 1 の間だけ有効。 */
+    uint32_t notified_base;    /**< 前回フロー制御パケットまたは DATA 相乗りで送出上限を知らせた時点の「次に受信する通番」。notified が 1 の間だけ有効。 */
+    uint32_t notified_limit;   /**< 前回送出した送出上限 (フロー制御パケットと DATA 相乗りの両方を含む)。notified が 1 の間だけ有効。 */
     int has_next_seq;          /**< 次に受信する通番を受け取ったか (1: 受け取った)。 */
     int notified;              /**< 現在の通信で、相手へ送出上限を知らせたか (1: 知らせた)。 */
     int _pad;                  /**< パディング (構造体サイズを 8 [byte] の倍数に揃える)。 */
 } flow_account;
 
-/** 受信側のフロー制御の資源。mutex で保護する。 */
+/**
+ *  受信側のフロー制御の資源。mutex で保護する。
+ *  ロック順は peers_mutex (または tcp_recv_mutex) -> send_window_mutex (または peer->send_window_mutex)
+ *  -> fc->mutex -> (tcp_send_mutex または certificate_mutex -> callback_mutex) とする。
+ *  fc->mutex の内側で peers_mutex および send_window_mutex を取得してはならない。
+ */
 struct potr_internal_flow_control
 {
     cplat_local_lock *mutex;   /**< 占有量と状態の遷移、およびフロー制御パケットの送出を一組として保護する。 */
@@ -734,7 +740,9 @@ static uint32_t buffer_allowance(const potr_context *ctx, const struct potr_inte
 /*
  * 許可数を返す。占有量による許可数と、受信バッファーの幅による許可数の小さいほうとする。
  * 占有量による許可数は、占有量が要求のしきい値を超えている場合は 0、それ以外は
- * (要求のしきい値 − 占有量) ÷ max_payload (切り捨て) + 1 とする。容量が 0 の受信側では使わない。
+ * (要求のしきい値 − 占有量) ÷ 1 パケットの大きさ (切り捨て) + 1 とする。
+ * 1 パケットの大きさは、max_payload と「そのセッションで受信した DATA パケット 1 個の展開後の大きさの最大値」の
+ * 大きいほうとする。容量が 0 の受信側では使わない。
  * 受信バッファーの幅による許可数は、OS の受信バッファーに基づく送出上限を使わない受信側では使わない。
  * 資源は、どちらかを使う受信側にだけ生成する。fc->mutex を保持して呼ぶ (N:1 モードでは peers_mutex も)。
  */
@@ -751,8 +759,15 @@ static uint32_t send_allowance(const potr_context *ctx, const struct potr_intern
         }
         else
         {
-            /* 要求のしきい値は容量 (uint32_t) 以下、max_payload は 1 以上のため、商は uint32_t に収まる。 */
-            allowance = (uint32_t)((fc->suppress_bytes - account->occupancy) / fc->max_payload) + 1U;
+            uint64_t packet_size = fc->max_payload;
+
+            if (account->max_packet_size > packet_size)
+            {
+                packet_size = account->max_packet_size;
+            }
+
+            /* 要求のしきい値は容量 (uint32_t) 以下、packet_size は 1 以上のため、商は uint32_t に収まる。 */
+            allowance = (uint32_t)((fc->suppress_bytes - account->occupancy) / packet_size) + 1U;
         }
     }
 
@@ -847,6 +862,7 @@ static void adopt_session(struct potr_internal_flow_control *fc, flow_account *a
         account->notified = 0;
         account->has_next_seq = 0;
         account->last_data_ms = 0U;
+        account->max_packet_size = 0U;
         fc->monitored = 0;
     }
 
@@ -1026,7 +1042,8 @@ static int uses_query_udp(potr_type type)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer_id, uint32_t session_id,
-                                            const cplat_timespec *session_ts, uint32_t next_seq, int data_packet)
+                                            const cplat_timespec *session_ts, uint32_t next_seq, int data_packet,
+                                            size_t expanded_size)
 {
     struct potr_internal_flow_control *fc;
     flow_account *account;
@@ -1050,6 +1067,15 @@ void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer
     }
 
     adopt_session(fc, account, session_id, session_ts);
+
+    /*
+     * 圧縮した DATA パケットの展開後の大きさの最大値を、既存の fc->mutex の下でセッションごとに記録する。
+     * 占有量による許可数の計算で max_payload との大きいほうを使い、展開後の容量超過を防ぐ。
+     */
+    if (data_packet != 0 && (uint64_t)expanded_size > account->max_packet_size)
+    {
+        account->max_packet_size = (uint64_t)expanded_size;
+    }
 
     /* 送出上限を使わない受信側は、最初に送出できる時点で「上限なし」を 1 回だけ送出する。 */
     if (is_unlimited_mode(fc))
@@ -1707,6 +1733,7 @@ void potr_internal_flow_control_on_peer_packet(potr_context *ctx, struct potr_in
 {
     uint64_t now_ms;
     int is_limit_notification = 0;
+    int is_piggyback_limit = 0;
 
     if (ctx == NULL || pkt == NULL)
     {
@@ -1729,12 +1756,39 @@ void potr_internal_flow_control_on_peer_packet(potr_context *ctx, struct potr_in
     {
         is_limit_notification = 1;
     }
+    else if ((pkt->flags & POTR_FLAG_DATA) != 0U && (pkt->flags & POTR_FLAG_SEND_LIMIT) != 0U &&
+             (pkt->flags &
+              (POTR_FLAG_FIN | POTR_FLAG_NACK | POTR_FLAG_REJECT | POTR_FLAG_FLOW_CONTROL | POTR_FLAG_PING)) == 0U)
+    {
+        /* 送出上限を相乗りした DATA パケット。この関数内で送出上限を更新するため、問い合わせを重ねない。 */
+        is_piggyback_limit = 1;
+        is_limit_notification = 1;
+    }
 
     if (peer != NULL)
     {
         peer->flow_last_packet_ms = now_ms;
-        if (is_limit_notification == 0 &&
-            (peer->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK) == POTR_FLOW_SEND_LIMIT_NO_PEER)
+        if (is_piggyback_limit != 0)
+        {
+            uint64_t state = peer->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK;
+            uint32_t send_limit = pkt->ack_num;
+
+            /*
+             * 保持している送出上限より先へ進んでいる場合 (または未通知・相手なしの場合) だけ更新する。
+             * 再送された DATA に載っている古い値は、循環を考慮した差の比較で無視する。
+             */
+            if (state != POTR_FLOW_SEND_LIMIT_UNLIMITED &&
+                (state != POTR_FLOW_SEND_LIMIT_HELD ||
+                 (int32_t)(send_limit - (uint32_t)(peer->flow_send_limit & 0xFFFFFFFFU)) > 0))
+            {
+                peer->flow_limit_received_ms = now_ms;
+                peer->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)send_limit;
+                potr_internal_flow_control_peer_sync(ctx, peer);
+                potr_internal_send_queue_wake_flow(&ctx->send_queue);
+            }
+        }
+        else if (is_limit_notification == 0 &&
+                 (peer->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK) == POTR_FLOW_SEND_LIMIT_NO_PEER)
         {
             uint32_t next_seq = read_next_seq(&peer->send_window, peer->send_window_mutex);
 
@@ -1751,6 +1805,40 @@ void potr_internal_flow_control_on_peer_packet(potr_context *ctx, struct potr_in
     }
 
     cplat_atomic_store_u64(&ctx->flow_last_packet_ms, now_ms, CPLAT_MEMORY_ORDER_RELEASE);
+    if (is_piggyback_limit != 0)
+    {
+        uint32_t send_limit = pkt->ack_num;
+        uint64_t current = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+
+        for (;;)
+        {
+            uint64_t state = current & POTR_FLOW_SEND_LIMIT_STATE_MASK;
+
+            if (state == POTR_FLOW_SEND_LIMIT_UNLIMITED)
+            {
+                break;
+            }
+
+            if (state == POTR_FLOW_SEND_LIMIT_HELD &&
+                (int32_t)(send_limit - (uint32_t)(current & 0xFFFFFFFFU)) <= 0)
+            {
+                break;
+            }
+
+            /* 受けた時刻を先に書く。送出上限を読んだ送信スレッドが、対応する時刻を必ず読めるようにするためである。 */
+            cplat_atomic_store_u64(&ctx->flow_limit_received_ms, now_ms, CPLAT_MEMORY_ORDER_RELEASE);
+            if (cplat_atomic_compare_exchange_u64(&ctx->flow_send_limit, &current,
+                                                  POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)send_limit,
+                                                  CPLAT_MEMORY_ORDER_ACQ_REL) != 0)
+            {
+                potr_internal_send_queue_wake_flow(&ctx->send_queue);
+                break;
+            }
+        }
+
+        return;
+    }
+
     /*
      * 受信のたびに send_window_mutex を取得して送信スレッドと競合しないよう、
      * 「相手なし」の場合だけ通番を読む。読んだ後に状態が変わった場合は、比較交換が失敗して何もしない。
@@ -1770,6 +1858,49 @@ void potr_internal_flow_control_on_peer_packet(potr_context *ctx, struct potr_in
             potr_internal_flow_control_send_query(ctx, NULL);
         }
     }
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+int potr_internal_flow_control_piggyback_limit(potr_context *ctx, potr_peer_id peer_id, uint32_t *send_limit)
+{
+    struct potr_internal_flow_control *fc;
+    flow_account *account;
+    int held = 0;
+
+    if (send_limit == NULL)
+    {
+        return 0;
+    }
+
+    *send_limit = 0U;
+
+    /* 相乗りは unicast_bidir と unicast_bidir_n1 で送出上限を使う受信側だけが行う。対象外ではロックを取らない。 */
+    if (ctx == NULL || ctx->flow_control == NULL ||
+        (ctx->service.type != POTR_TYPE_UNICAST_BIDIR && ctx->service.type != POTR_TYPE_UNICAST_BIDIR_N1) ||
+        is_unlimited_mode(ctx->flow_control))
+    {
+        return 0;
+    }
+
+    fc = ctx->flow_control;
+    cplat_local_lock_lock(fc->mutex);
+    account = find_account(ctx, fc, peer_id, 0);
+
+    /* 送出上限をまだ計算していない相手と、容量超過で受信を再開しない相手には相乗りしない。 */
+    if (account != NULL && account->has_next_seq != 0 && account->refused == 0)
+    {
+        uint32_t limit = account->next_seq + send_allowance(ctx, fc, account);
+
+        *send_limit = limit;
+        account->notified = 1;
+        account->notified_base = account->next_seq;
+        account->notified_limit = limit;
+        held = 1;
+    }
+
+    cplat_local_lock_unlock(fc->mutex);
+
+    return held;
 }
 
 /*

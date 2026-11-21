@@ -34,6 +34,7 @@ typedef struct thread_recv_slot
     potr_internal_peer_context *peer; /* N:1 のピア (1:1 モードでは NULL) */
     potr_peer_id peer_id;             /* コールバック用ピア識別子 (1:1 は POTR_PEER_NA) */
     int flow_overflow;                /* 通知キューの容量を超える DATA を破棄したか (1: 破棄した)。呼び出し元が切断する */
+    size_t packet_expanded_size;      /* 処理中の DATA パケット 1 個の展開後の大きさの合計 [byte] */
     potr_internal_window *recv_window;
     potr_internal_window *send_window;   /* NACK 再送元 */
     cplat_local_lock *send_window_mutex; /* send_window 保護 */
@@ -52,6 +53,7 @@ typedef struct thread_recv_slot
     uint32_t *fin_target_seq;
     uint8_t *frag_buf;
     size_t *frag_buf_len;
+    size_t *frag_count;
     int *frag_compressed;
     cplat_atomic_i32 *health_alive;
     cplat_timespec *last_recv_ts;

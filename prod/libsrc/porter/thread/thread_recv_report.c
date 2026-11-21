@@ -74,11 +74,9 @@ int thread_recv_report_tick(potr_context *ctx, uint64_t now_ms)
     packet.flags = cplat_hton16(POTR_FLAG_REPORT);
 
     /*
-     * multicast と broadcast の受信者は、受信報告のヘッダーに、その時点の自身の送出上限を載せる。
-     * seq_num は有無 (1 = ack_num に送出上限がある)、ack_num は値である。送信者は、監視対象を選ぶための
-     * 順位付けだけに使う。パケットの数と大きさは変わらない。
+     * unicast、multicast、broadcast の受信者は、受信報告のヘッダーに、その時点の自身の送出上限を載せる。
+     * seq_num は有無 (1 = ack_num に送出上限がある)、ack_num は値である。パケットの数と大きさは変わらない。
      */
-    if (ctx->service.type == POTR_TYPE_MULTICAST || ctx->service.type == POTR_TYPE_BROADCAST)
     {
         uint32_t send_limit = 0U;
 

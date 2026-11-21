@@ -635,3 +635,54 @@ TEST(packetSealTest, preparing_session_preserves_authenticated_packet_and_resets
     EXPECT_EQ(POTR_OK, actual_ret_new); // [確認_正常系] - 追跡を再開するセッションの時刻が小さくても受理すること。
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_duplicate); // [確認_異常系] - 初期化後も重複を拒否すること。
 }
+
+// 送出上限を相乗りした暗号化 DATA で ack_num と POTR_FLAG_SEND_LIMIT が AAD として保護されることの確認
+TEST(packetSealTest, encrypted_data_send_limit_protects_ack_num_and_flags)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    potr_internal_tx_session session = {};
+    potr_internal_packet_session_hdr identity = {17, 23, 41, 7};
+    uint8_t payload[] = {0x11U, 0x22U, 0x33U, 0x44U};
+    uint8_t key[POTR_CRYPTO_KEY_SIZE] = {};
+    uint8_t wire[128] = {};
+    uint8_t tampered_ack[128] = {};
+    uint8_t tampered_flags[128] = {};
+    uint8_t plaintext[32] = {};
+    potr_packet packet = {};
+    potr_packet opened_ok = {};
+    potr_packet opened_bad_ack = {};
+    potr_packet opened_bad_flags = {};
+    size_t wire_len = sizeof(wire);
+    potr_internal_tx_session_init(&session);
+    ASSERT_EQ(POTR_OK, potr_internal_packet_build_packed(&packet, &identity, 9U, payload, sizeof(payload)));
+    // [状態確認] - DATA パケットを構築できること。
+    packet.flags = (uint16_t)(packet.flags | cplat_hton16(POTR_FLAG_SEND_LIMIT));
+    packet.ack_num = cplat_hton32(0x12345678U);
+    // [状態] - POTR_FLAG_SEND_LIMIT と送出上限 0x12345678 を設定する。
+    // Pre-Assert
+    // Act
+    int actual_ret_seal = potr_internal_packet_seal(&session, &packet, key, wire, &wire_len);
+    ASSERT_EQ(POTR_OK, potr_internal_packet_parse(&opened_ok, wire, wire_len));
+    int actual_ret_open = potr_internal_packet_open(&opened_ok, wire, key, plaintext, sizeof(plaintext));
+    // [手順] - 改ざん前の暗号化 DATA を開封する。
+    std::memcpy(tampered_ack, wire, wire_len);
+    tampered_ack[31] ^= 0x01U; // [状態] - ヘッダー内の ack_num (オフセット 28..31) を 1 ビット改ざんする。
+    ASSERT_EQ(POTR_OK, potr_internal_packet_parse(&opened_bad_ack, tampered_ack, wire_len));
+    int actual_ret_bad_ack = potr_internal_packet_open(&opened_bad_ack, tampered_ack, key, plaintext, sizeof(plaintext));
+    std::memcpy(tampered_flags, wire, wire_len);
+    tampered_flags[32] ^= 0x10U; // [状態] - ヘッダー内の flags (オフセット 32..33) の POTR_FLAG_SEND_LIMIT を反転する。
+    ASSERT_EQ(POTR_OK, potr_internal_packet_parse(&opened_bad_flags, tampered_flags, wire_len));
+    int actual_ret_bad_flags =
+        potr_internal_packet_open(&opened_bad_flags, tampered_flags, key, plaintext, sizeof(plaintext));
+    // [手順] - ack_num と flags をそれぞれ改ざんして開封を試みる。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret_seal); // [確認_正常系] - 暗号化に成功すること。
+    EXPECT_EQ(POTR_OK, actual_ret_open); // [確認_正常系] - 改ざん前の開封に成功すること。
+    EXPECT_EQ((uint16_t)(POTR_FLAG_DATA | POTR_FLAG_SEND_LIMIT), opened_ok.flags);
+    // [確認_正常系] - 復号後に POTR_FLAG_ENCRYPTED のみが外れ、POTR_FLAG_SEND_LIMIT が残ること。
+    EXPECT_EQ(0x12345678U, opened_ok.ack_num); // [確認_正常系] - 送出上限が復元されること。
+    EXPECT_EQ(0, std::memcmp(payload, opened_ok.payload, sizeof(payload))); // [確認_正常系] - 平文が一致すること。
+    EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_bad_ack);   // [確認_異常系] - ack_num の改ざんで認証に失敗すること。
+    EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_bad_flags); // [確認_異常系] - flags の改ざんで認証に失敗すること。
+}

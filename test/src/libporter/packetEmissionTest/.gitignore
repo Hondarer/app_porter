@@ -10,6 +10,7 @@
 /potr_tcp_control.c
 /receiver_report.c
 /seqnum.c
+/thread_recv_dispatch.c
 /thread_recv_report.c
 /thread_recv_session.c
 /thread_recv_validate.c

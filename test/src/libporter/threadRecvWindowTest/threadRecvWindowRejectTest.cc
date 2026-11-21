@@ -170,6 +170,7 @@ class threadRecvWindowRejectTest : public Test
         slot.fin_target_seq = &ctx.fin_target_seq;
         slot.frag_buf = ctx.frag_buf;
         slot.frag_buf_len = &ctx.frag_buf_len;
+        slot.frag_count = &ctx.frag_count;
         slot.frag_compressed = &ctx.frag_compressed;
         slot.health_alive = &ctx.health_alive;
         slot.last_recv_ts = &ctx.last_recv_ts;
@@ -511,9 +512,11 @@ TEST_F(threadRecvWindowRejectTest, drained_data_packets_report_next_seq_to_flow_
     // Pre-Assert
     {
         InSequence sequence;
-        EXPECT_CALL(mock_porter, potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 42U, _, 101U, 1)).Times(1);
+        EXPECT_CALL(mock_porter, potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 42U, _, 101U, 1, _))
+            .Times(1);
         // [Pre-Assert確認_正常系] - 通番 100 の取り出しの後に、次に受信する通番 101 で 1 回呼ばれること。
-        EXPECT_CALL(mock_porter, potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 42U, _, 102U, 1)).Times(1);
+        EXPECT_CALL(mock_porter, potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 42U, _, 102U, 1, _))
+            .Times(1);
         // [Pre-Assert確認_正常系] - 通番 101 の取り出しの後に、次に受信する通番 102 で 1 回呼ばれること。
     }
     // Act

@@ -144,6 +144,7 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_on_packet")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_send_query")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_on_peer_packet")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_piggyback_limit")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_suppressed")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_peer_state")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_packet_build_flow_control")
@@ -319,12 +320,13 @@ class Mock_porter
     MOCK_METHOD(void, potr_internal_flow_control_stop, (potr_context *ctx));
     MOCK_METHOD(int, potr_internal_flow_control_admit, (potr_context *ctx, potr_peer_id peer_id, uint32_t session_id, const cplat_timespec *session_ts, size_t len));
     MOCK_METHOD(void, potr_internal_flow_control_release, (potr_context *ctx, potr_peer_id peer_id, size_t len));
-    MOCK_METHOD(void, potr_internal_flow_control_on_received, (potr_context *ctx, potr_peer_id peer_id, uint32_t session_id, const cplat_timespec *session_ts, uint32_t next_seq, int data_packet));
+    MOCK_METHOD(void, potr_internal_flow_control_on_received, (potr_context *ctx, potr_peer_id peer_id, uint32_t session_id, const cplat_timespec *session_ts, uint32_t next_seq, int data_packet, size_t expanded_size));
     MOCK_METHOD(void, potr_internal_flow_control_tick, (potr_context *ctx, uint64_t now_ms));
     MOCK_METHOD(int, potr_internal_flow_control_refused, (potr_context *ctx, potr_peer_id peer_id, uint32_t session_id, const cplat_timespec *session_ts));
     MOCK_METHOD(void, potr_internal_flow_control_on_packet, (potr_context *ctx, struct potr_internal_peer_context *peer, const potr_packet *pkt));
     MOCK_METHOD(void, potr_internal_flow_control_send_query, (potr_context *ctx, struct potr_internal_peer_context *peer));
     MOCK_METHOD(void, potr_internal_flow_control_on_peer_packet, (potr_context *ctx, struct potr_internal_peer_context *peer, const potr_packet *pkt));
+    MOCK_METHOD(int, potr_internal_flow_control_piggyback_limit, (potr_context *ctx, potr_peer_id peer_id, uint32_t *send_limit));
     MOCK_METHOD(int, potr_internal_flow_control_suppressed, (potr_context *ctx, uint64_t now_ms, int *wait_ms, uint32_t *allowance));
     MOCK_METHOD(int, potr_internal_flow_control_peer_state, (potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms, int *deferred));
     MOCK_METHOD(int, potr_internal_packet_build_flow_control, (potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint8_t *payload, uint8_t state, uint32_t send_limit));

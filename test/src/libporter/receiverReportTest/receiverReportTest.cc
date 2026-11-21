@@ -1495,6 +1495,7 @@ TEST(receiverReportTest, unicast_last_packet_keeps_limit_and_no_peer_recovers_wi
     ctx.role = POTR_ROLE_SENDER;
     ctx.flow_control_config.request_lifetime_ms = 500U;
     ctx.send_window.next_seq = 10U;
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 10U, CPLAT_MEMORY_ORDER_RELAXED);
     report.flags = POTR_FLAG_REPORT;
     report.session_id = 1U;
     report.payload = report_payload;
@@ -1568,6 +1569,215 @@ TEST(receiverReportTest, unicast_idle_send_clamps_limit_at_lifetime)
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 100U, limit_before); // [確認_正常系] - 有効期限未満では短縮しないこと。
     EXPECT_EQ(0, at_boundary);                                 // [確認_正常系] - 1500 では初期の幅 4 の手前のため抑制しないこと。
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 14U, limit_after);   // [確認_正常系] - 有効期限ちょうどで 10 + 4 = 14 へ短縮すること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// unicast で受信報告の送出上限が未通知の初回通知として機能し、保持中は先へ進んだ場合だけ更新されることの確認
+TEST(receiverReportTest, unicast_report_recovers_send_limit_only_when_advancing)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000U;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.flow_control_config.request_lifetime_ms = 500U;
+    ctx.send_window.next_seq = 10U;
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 10U, CPLAT_MEMORY_ORDER_RELAXED);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_send_query(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 送出上限付きの受信報告では問い合わせを送出しないこと。
+    // Act
+    int ret_first = AcceptReport(&ctx, 1U, 1U, 50U);
+    uint64_t limit_first = ctx.receivers != nullptr ? ctx.receivers->flow_send_limit : 0U;
+    uint64_t received_first = ctx.receivers != nullptr ? ctx.receivers->flow_limit_received_ms : 0U;
+    int pending_first = cplat_atomic_load_i32(&ctx.flow_request_pending, CPLAT_MEMORY_ORDER_RELAXED);
+    // [手順] - 未通知の初回受信報告で送出上限 50 を受理する。
+    now_ms = 1100U;
+    int ret_older = AcceptReport(&ctx, 1U, 1U, 40U);
+    int ret_same = AcceptReport(&ctx, 1U, 1U, 50U);
+    uint64_t limit_after_stale = ctx.receivers != nullptr ? ctx.receivers->flow_send_limit : 0U;
+    uint64_t received_after_stale = ctx.receivers != nullptr ? ctx.receivers->flow_limit_received_ms : 0U;
+    // [手順] - 保持中の 50 より古い 40 と同じ 50 の受信報告を受理する。
+    now_ms = 1200U;
+    int ret_advance = AcceptReport(&ctx, 1U, 1U, 80U);
+    uint64_t limit_after_advance = ctx.receivers != nullptr ? ctx.receivers->flow_send_limit : 0U;
+    uint64_t received_after_advance = ctx.receivers != nullptr ? ctx.receivers->flow_limit_received_ms : 0U;
+    // [手順] - 先へ進んだ 80 の受信報告を受理する。
+    ctx.receivers->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | 0xFFFFFFF0U;
+    now_ms = 1300U;
+    int ret_wrap_advance = AcceptReport(&ctx, 1U, 1U, 0x10U);
+    uint64_t limit_after_wrap = ctx.receivers != nullptr ? ctx.receivers->flow_send_limit : 0U;
+    now_ms = 1400U;
+    int ret_wrap_older = AcceptReport(&ctx, 1U, 1U, 0xFFFFFFF8U);
+    uint64_t limit_after_wrap_older = ctx.receivers != nullptr ? ctx.receivers->flow_send_limit : 0U;
+    // [手順] - 通番の循環をまたぐ前進 (0xFFFFFFF0 -> 0x10) と後退 (0x10 -> 0xFFFFFFF8) を受理する。
+    ctx.receivers->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNLIMITED;
+    int ret_unlimited = AcceptReport(&ctx, 1U, 1U, 100U);
+    uint64_t limit_after_unlimited = ctx.receivers != nullptr ? ctx.receivers->flow_send_limit : 0U;
+    // [手順] - 「上限なし」の状態で送出上限付きの受信報告を受理する。
+    int ret_no_limit_report = AcceptReport(&ctx, 2U, 0U, 0U);
+    uint64_t limit_after_no_limit_report = FindReceiver(&ctx, 2U)->flow_send_limit;
+    int ret_existing_unnotified = AcceptReport(&ctx, 2U, 1U, 60U);
+    uint64_t limit_after_existing_unnotified = FindReceiver(&ctx, 2U)->flow_send_limit;
+    FindReceiver(&ctx, 2U)->flow_send_limit = POTR_FLOW_SEND_LIMIT_NO_PEER;
+    int ret_from_no_peer_with_limit = AcceptReport(&ctx, 2U, 1U, 70U);
+    uint64_t limit_after_no_peer_with_limit = FindReceiver(&ctx, 2U)->flow_send_limit;
+    // [手順] - 受信者 2 で送出上限なし受信報告、未通知からの送出上限付き受信報告、相手なしからの送出上限付き受信報告を受理する。
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_first);                                     // [確認_正常系] - 初回の受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 50U, limit_first);           // [確認_正常系] - 未通知から最初の通知として 50 を保持すること。
+    EXPECT_EQ(1000U, received_first);                                  // [確認_正常系] - 受理時刻 1000 を記録すること。
+    EXPECT_EQ(1, pending_first);                                       // [確認_正常系] - flow_request_pending を 1 にすること。
+    EXPECT_EQ(POTR_OK, ret_older);                                     // [確認_正常系] - 古い送出上限の受信報告も受理すること。
+    EXPECT_EQ(POTR_OK, ret_same);                                      // [確認_正常系] - 同じ送出上限の受信報告も受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 50U, limit_after_stale);     // [確認_正常系] - 古い値や同じ値で送出上限を上書きしないこと。
+    EXPECT_EQ(1000U, received_after_stale);                            // [確認_正常系] - 更新しない場合は受理時刻を変えないこと。
+    EXPECT_EQ(POTR_OK, ret_advance);                                   // [確認_正常系] - 先へ進んだ受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 80U, limit_after_advance);   // [確認_正常系] - 先へ進んだ 80 へ更新すること。
+    EXPECT_EQ(1200U, received_after_advance);                          // [確認_正常系] - 更新した時刻 1200 を記録すること。
+    EXPECT_EQ(POTR_OK, ret_wrap_advance);                              // [確認_正常系] - 循環をまたぐ前進を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 0x10U, limit_after_wrap);    // [確認_正常系] - 循環をまたぐ前進で 0x10 へ更新すること。
+    EXPECT_EQ(POTR_OK, ret_wrap_older);                                // [確認_正常系] - 循環をまたぐ古い値も受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 0x10U, limit_after_wrap_older); // [確認_正常系] - 循環をまたぐ古い値で戻さないこと。
+    EXPECT_EQ(POTR_OK, ret_unlimited);                                 // [確認_正常系] - 「上限なし」でも受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNLIMITED, limit_after_unlimited);  // [確認_正常系] - 「上限なし」を上書きしないこと。
+    EXPECT_EQ(POTR_OK, ret_no_limit_report);                           // [確認_正常系] - 送出上限なしの受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 10U, limit_after_no_limit_report);
+    // [確認_正常系] - 送出上限なしの受信報告を「上限なし」として扱わず未通知のままとすること。
+    EXPECT_EQ(POTR_OK, ret_existing_unnotified);                       // [確認_正常系] - 未通知の既存受信者への送出上限付き受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 60U, limit_after_existing_unnotified);
+    // [確認_正常系] - 未通知の既存受信者が最初の通知として 60 を保持すること。
+    EXPECT_EQ(POTR_OK, ret_from_no_peer_with_limit);                   // [確認_正常系] - 相手なしからの送出上限付き受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 70U, limit_after_no_peer_with_limit);
+    // [確認_正常系] - 相手なしから送出上限 70 を保持すること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// multicast の監視対象で、保持中の送出上限より先へ進んだ受信報告だけで更新し、非監視対象と未保持では更新しないことの確認
+TEST(receiverReportTest, multicast_monitored_report_recovers_send_limit_only_when_advancing)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000U;
+    SetupMonitoringSender(&ctx, 1U, 1U);
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    // Pre-Assert
+    // Act
+    int ret_init_1 = AcceptReport(&ctx, 1U, 1U, 110U);
+    int ret_init_2 = AcceptReport(&ctx, 2U, 1U, 180U);
+    uint64_t limit_before_fc = FindReceiver(&ctx, 1U)->flow_send_limit;
+    // [手順] - 受信者 1 (監視対象) と受信者 2 (非監視対象) の初回受信報告を受理する。
+    int ret_fc = AcceptFlowControl(&ctx, 1U, (uint8_t)POTR_FLOW_CONTROL_STATE_RESUME, 120U);
+    // [手順] - 監視対象の受信者 1 からフロー制御パケットで送出上限 120 を受理する。
+    cplat_atomic_store_i32(&ctx.flow_request_pending, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    now_ms = 1100U;
+    int ret_older = AcceptReport(&ctx, 1U, 1U, 115U);
+    int ret_same = AcceptReport(&ctx, 1U, 1U, 120U);
+    uint64_t limit_after_stale = FindReceiver(&ctx, 1U)->flow_send_limit;
+    uint64_t received_after_stale = FindReceiver(&ctx, 1U)->flow_limit_received_ms;
+    // [手順] - 監視対象の受信者 1 から古い 115 と同じ 120 の受信報告を受理する。
+    now_ms = 1200U;
+    int ret_advance = AcceptReport(&ctx, 1U, 1U, 135U);
+    uint64_t limit_after_advance = FindReceiver(&ctx, 1U)->flow_send_limit;
+    uint64_t received_after_advance = FindReceiver(&ctx, 1U)->flow_limit_received_ms;
+    int pending_after_advance = cplat_atomic_load_i32(&ctx.flow_request_pending, CPLAT_MEMORY_ORDER_RELAXED);
+    // [手順] - 監視対象の受信者 1 から先へ進んだ 135 の受信報告を受理する。
+    int ret_non_monitored = AcceptReport(&ctx, 2U, 1U, 200U);
+    uint64_t limit_non_monitored = FindReceiver(&ctx, 2U)->flow_send_limit;
+    // [手順] - 非監視対象の受信者 2 から送出上限 200 の受信報告を受理する。
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_init_1);                                    // [確認_正常系] - 受信者 1 の初回受信報告を受理すること。
+    EXPECT_EQ(POTR_OK, ret_init_2);                                    // [確認_正常系] - 受信者 2 の初回受信報告を受理すること。
+    EXPECT_EQ(0U, limit_before_fc);                                    // [確認_正常系] - 送出上限未保持の監視対象では受信報告で保持を始めないこと。
+    EXPECT_EQ(POTR_OK, ret_fc);                                        // [確認_正常系] - フロー制御パケットを受理すること。
+    EXPECT_EQ(POTR_OK, ret_older);                                     // [確認_正常系] - 古い送出上限の受信報告を受理すること。
+    EXPECT_EQ(POTR_OK, ret_same);                                      // [確認_正常系] - 同じ送出上限の受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 120U, limit_after_stale);    // [確認_正常系] - 古い値や同じ値で送出上限を上書きしないこと。
+    EXPECT_EQ(1000U, received_after_stale);                            // [確認_正常系] - 更新しない場合は受理時刻を変えないこと。
+    EXPECT_EQ(POTR_OK, ret_advance);                                   // [確認_正常系] - 先へ進んだ受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 135U, limit_after_advance);  // [確認_正常系] - 監視対象の送出上限が 135 へ更新されること。
+    EXPECT_EQ(1200U, received_after_advance);                          // [確認_正常系] - 更新時刻 1200 を記録すること。
+    EXPECT_EQ(1, pending_after_advance);                               // [確認_正常系] - flow_request_pending を 1 にすること。
+    EXPECT_EQ(POTR_OK, ret_non_monitored);                             // [確認_正常系] - 非監視対象の受信報告を受理すること。
+    EXPECT_EQ(0U, limit_non_monitored);                                // [確認_正常系] - 非監視対象の送出上限は保持しないこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// unicast で新しい受信者を作る際、ハンドル側が未通知なら基準通番を引き継ぎ、相手なしなら現在の通番を基準にすることの確認
+TEST(receiverReportTest, unicast_new_receiver_inherits_handle_initial_base_seq)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000U;
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.flow_control_config.request_lifetime_ms = 500U;
+    ctx.send_window.next_seq = 14U;
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 10U, CPLAT_MEMORY_ORDER_RELAXED);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - ハンドル側が未通知 (基準 10) で、すでに初期の幅 4 個を送出して next_seq が 14 に進んだ状態とする。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_send_query(&ctx, nullptr)).Times(1);
+    // [Pre-Assert確認_正常系] - ハンドル側が相手なしから復帰するときだけ問い合わせを 1 回送出すること。
+    // Act
+    int ret_report = AcceptReport(&ctx, 1U, 0U, 0U);
+    uint64_t limit_from_unnotified = FindReceiver(&ctx, 1U)->flow_send_limit;
+    int stalled_at_14 = potr_internal_receiver_flow_suppressed(&ctx, now_ms, 14U, &tracked, &until_ms);
+    // [手順] - 送出上限のない受信報告を受理し、基準 10 が引き継がれて通番 14 で止まることを確認する。
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_NO_PEER, CPLAT_MEMORY_ORDER_RELAXED);
+    ctx.send_window.next_seq = 30U;
+    int ret_from_no_peer = AcceptReport(&ctx, 2U, 0U, 0U);
+    uint64_t limit_from_no_peer = FindReceiver(&ctx, 2U)->flow_send_limit;
+    // [手順] - ハンドル側が相手なし、next_seq が 30 の状態で新しい受信者 2 の受信報告を受理する。
+    ctx.send_window.next_seq = 50U;
+    potr_packet nack = {};
+    uint8_t wire[POTR_PACKET_HEADER_WIRE_SIZE] = {};
+    nack.flags = POTR_FLAG_NACK;
+    nack.session_id = 3U;
+    int ret_after_unlimited = potr_internal_receiver_accept(&ctx, &nack, wire);
+    uint64_t limit_after_unlimited = FindReceiver(&ctx, 3U)->flow_send_limit;
+    // [手順] - ハンドル側が上限なし、next_seq が 50 の状態で新しい受信者 3 の NACK を受理する。
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_report);                                      // [確認_正常系] - 受信者 1 の受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 10U, limit_from_unnotified);
+    // [確認_正常系] - ハンドル側の未通知の基準 10 を引き継ぎ、14 へ進めないこと。
+    EXPECT_EQ(1, stalled_at_14);                                         // [確認_正常系] - 通番 14 で初期の幅 (10 + 4) に達して止まること。
+    EXPECT_EQ(POTR_OK, ret_from_no_peer);                                // [確認_正常系] - 受信者 2 の受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 30U, limit_from_no_peer);
+    // [確認_正常系] - ハンドル側が相手なしだった場合は、その時点の通番 30 を基準にすること。
+    EXPECT_EQ(POTR_OK, ret_after_unlimited);                             // [確認_正常系] - 受信者 3 の NACK を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 50U, limit_after_unlimited);
+    // [確認_正常系] - ハンドル側が上限なしだった場合は、その時点の通番 50 を基準にすること。
     // Cleanup
     FreeReceivers(&ctx);
 }

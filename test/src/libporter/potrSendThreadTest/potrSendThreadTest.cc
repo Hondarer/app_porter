@@ -1329,3 +1329,209 @@ TEST_F(potrSendThreadTcpTest, idle_sender_skips_flow_control_check)
     EXPECT_EQ(0U, ctx.flow_limit_stalled_ms); // [確認_正常系] - 送出上限を保持していない状態として、止まった時刻を 0 へ戻すこと。
 }
 // [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]
+
+// unicast_bidir で DATA 送出時に POTR_FLAG_SEND_LIMIT と ack_num へ送出上限を相乗りさせることの確認
+TEST(potrSendThreadTest, unicast_bidir_piggybacks_send_limit_on_data)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    std::vector<uint8_t> wire_buf(POTR_PACKET_HEADER_SIZE + 1400U);
+    std::vector<uint8_t> crypto_buf(POTR_PACKET_HEADER_SIZE + 1400U + POTR_CRYPTO_TAG_SIZE);
+    uint8_t payload[4] = {1U, 2U, 3U, 4U};
+    potr_internal_payload_elem elem = {};
+    potr_packet captured = {};
+    int flow_token = 0;
+    cplat_atomic_i32 completed;
+    cplat_atomic_store_i32(&completed, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 1;
+    ctx.sock[0] = (cplat_socket)5;
+    ctx.global.max_payload = 1400U;
+    ctx.send_wire_buf = wire_buf.data();
+    ctx.crypto_buf = crypto_buf.data();
+    ctx.crypto_buf_size = crypto_buf.size();
+    ctx.flow_control = reinterpret_cast<struct potr_internal_flow_control *>(&flow_token);
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELAXED);
+    elem.peer_id = POTR_PEER_NA;
+    elem.flags = 0U;
+    elem.payload_len = (uint16_t)sizeof(payload);
+    elem.payload = payload;
+    ON_CALL(mock_porter, potr_internal_send_queue_peek(_, _)).WillByDefault(Return(POTR_ERR_EMPTY));
+    // [状態] - unicast_bidir で flow_control を非 NULL にし、相乗り対象の構成にする。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
+        .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
+        .WillRepeatedly(Return(POTR_ERR_CANCELED));
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_piggyback_limit(&ctx, POTR_PEER_NA, _))
+        .WillOnce(DoAll(SetArgPointee<2>(123U), Return(1)));
+    // [Pre-Assert確認_正常系] - 送出上限の相乗り関数を 1 回呼び出し、123 を受け取ること。
+    EXPECT_CALL(mock_cplat, cplat_socket_sendto(ctx.sock[0], _, _, _, _, _))
+        .WillOnce([&](cplat_socket, const void *buf, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+                      cplat_error *) {
+            EXPECT_EQ(POTR_OK, potr_internal_packet_parse(&captured, buf, len));
+            if (sent != nullptr)
+            {
+                *sent = len;
+            }
+            return CPLAT_OK;
+        });
+    // [Pre-Assert確認_正常系] - 送出された DATA パケットを解析できること。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue))
+        .WillOnce([&](potr_internal_send_queue *) {
+            cplat_atomic_store_i32(&completed, 1, CPLAT_MEMORY_ORDER_RELEASE);
+        });
+    // Act
+    int actual_ret = potr_internal_send_thread_start(&ctx); // [手順] - 送信スレッドを開始する。
+    while (cplat_atomic_load_i32(&completed, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    potr_internal_send_thread_stop(&ctx); // [手順] - 送信スレッドを停止する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ((uint16_t)(POTR_FLAG_DATA | POTR_FLAG_SEND_LIMIT), captured.flags);
+    // [確認_正常系] - DATA フラグと POTR_FLAG_SEND_LIMIT の両方が立つこと。
+    EXPECT_EQ(123U, captured.ack_num); // [確認_正常系] - ack_num に送出上限 123 が載ること。
+}
+
+// unicast_bidir_n1 サーバーで DATA 送出時にピアごとの送出上限を相乗りさせることの確認
+TEST(potrSendThreadTest, unicast_bidir_n1_piggybacks_send_limit_on_data)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_peer_context peer = {};
+    std::vector<uint8_t> wire_buf(POTR_PACKET_HEADER_SIZE + 1400U);
+    std::vector<uint8_t> crypto_buf(POTR_PACKET_HEADER_SIZE + 1400U + POTR_CRYPTO_TAG_SIZE);
+    uint8_t payload[4] = {1U, 2U, 3U, 4U};
+    potr_internal_payload_elem elem = {};
+    potr_packet captured = {};
+    int flow_token = 0;
+    cplat_atomic_i32 completed;
+    cplat_atomic_store_i32(&completed, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1;
+    ctx.n_path = 1;
+    ctx.sock[0] = (cplat_socket)6;
+    ctx.global.max_payload = 1400U;
+    ctx.send_wire_buf = wire_buf.data();
+    ctx.crypto_buf = crypto_buf.data();
+    ctx.crypto_buf_size = crypto_buf.size();
+    ctx.flow_control = reinterpret_cast<struct potr_internal_flow_control *>(&flow_token);
+    delegate_real_cplat_local_lock_create(&ctx.peers_mutex);
+    delegate_real_cplat_local_lock_create(&peer.send_window_mutex);
+    peer.active = 1;
+    peer.peer_id = 5U;
+    peer.dest_addr[0].address = 0x0100007FU;
+    peer.dest_addr[0].port = cplat_hton16(9000);
+    elem.peer_id = 5U;
+    elem.flags = 0U;
+    elem.payload_len = (uint16_t)sizeof(payload);
+    elem.payload = payload;
+    ON_CALL(mock_porter, potr_internal_send_queue_peek(_, _)).WillByDefault(Return(POTR_ERR_EMPTY));
+    // [状態] - N:1 サーバーのピア 5 宛 DATA 送出で相乗り対象にする。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
+        .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
+        .WillRepeatedly(Return(POTR_ERR_CANCELED));
+    EXPECT_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 5U)).WillRepeatedly(Return(&peer));
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_piggyback_limit(&ctx, 5U, _))
+        .WillOnce(DoAll(SetArgPointee<2>(456U), Return(1)));
+    // [Pre-Assert確認_正常系] - ピア 5 の送出上限 456 を取得すること。
+    EXPECT_CALL(mock_cplat, cplat_socket_sendto(ctx.sock[0], _, _, _, _, _))
+        .WillOnce([&](cplat_socket, const void *buf, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+                      cplat_error *) {
+            EXPECT_EQ(POTR_OK, potr_internal_packet_parse(&captured, buf, len));
+            if (sent != nullptr)
+            {
+                *sent = len;
+            }
+            return CPLAT_OK;
+        });
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue))
+        .WillOnce([&](potr_internal_send_queue *) {
+            cplat_atomic_store_i32(&completed, 1, CPLAT_MEMORY_ORDER_RELEASE);
+        });
+    // Act
+    int actual_ret = potr_internal_send_thread_start(&ctx); // [手順] - 送信スレッドを開始する。
+    while (cplat_atomic_load_i32(&completed, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    potr_internal_send_thread_stop(&ctx); // [手順] - 送信スレッドを停止する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ((uint16_t)(POTR_FLAG_DATA | POTR_FLAG_SEND_LIMIT), captured.flags);
+    // [確認_正常系] - DATA フラグと POTR_FLAG_SEND_LIMIT の両方が立つこと。
+    EXPECT_EQ(456U, captured.ack_num); // [確認_正常系] - ack_num に送出上限 456 が載ること。
+    // Cleanup
+    delegate_real_cplat_local_lock_dispose(peer.send_window_mutex);
+    delegate_real_cplat_local_lock_dispose(ctx.peers_mutex);
+}
+
+// 片方向 unicast では flow_control があっても相乗り関数を呼ばず POTR_FLAG_SEND_LIMIT を立てないことの確認
+TEST(potrSendThreadTest, oneway_unicast_does_not_piggyback_send_limit)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    std::vector<uint8_t> wire_buf(POTR_PACKET_HEADER_SIZE + 1400U);
+    std::vector<uint8_t> crypto_buf(POTR_PACKET_HEADER_SIZE + 1400U + POTR_CRYPTO_TAG_SIZE);
+    uint8_t payload[4] = {1U, 2U, 3U, 4U};
+    potr_internal_payload_elem elem = {};
+    potr_packet captured = {};
+    int flow_token = 0;
+    cplat_atomic_i32 completed;
+    cplat_atomic_store_i32(&completed, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 1;
+    ctx.sock[0] = (cplat_socket)5;
+    ctx.global.max_payload = 1400U;
+    ctx.send_wire_buf = wire_buf.data();
+    ctx.crypto_buf = crypto_buf.data();
+    ctx.crypto_buf_size = crypto_buf.size();
+    ctx.flow_control = reinterpret_cast<struct potr_internal_flow_control *>(&flow_token);
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELAXED);
+    elem.peer_id = POTR_PEER_NA;
+    elem.flags = 0U;
+    elem.payload_len = (uint16_t)sizeof(payload);
+    elem.payload = payload;
+    ON_CALL(mock_porter, potr_internal_send_queue_peek(_, _)).WillByDefault(Return(POTR_ERR_EMPTY));
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
+        .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
+        .WillRepeatedly(Return(POTR_ERR_CANCELED));
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_piggyback_limit(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 片方向 unicast では相乗り関数を呼び出さないこと。
+    EXPECT_CALL(mock_cplat, cplat_socket_sendto(ctx.sock[0], _, _, _, _, _))
+        .WillOnce([&](cplat_socket, const void *buf, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+                      cplat_error *) {
+            EXPECT_EQ(POTR_OK, potr_internal_packet_parse(&captured, buf, len));
+            if (sent != nullptr)
+            {
+                *sent = len;
+            }
+            return CPLAT_OK;
+        });
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue))
+        .WillOnce([&](potr_internal_send_queue *) {
+            cplat_atomic_store_i32(&completed, 1, CPLAT_MEMORY_ORDER_RELEASE);
+        });
+    // Act
+    int actual_ret = potr_internal_send_thread_start(&ctx); // [手順] - 送信スレッドを開始する。
+    while (cplat_atomic_load_i32(&completed, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    potr_internal_send_thread_stop(&ctx); // [手順] - 送信スレッドを停止する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);             // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(POTR_FLAG_DATA, captured.flags);  // [確認_正常系] - POTR_FLAG_SEND_LIMIT が立たないこと。
+    EXPECT_EQ(0U, captured.ack_num);            // [確認_正常系] - ack_num が 0 であること。
+}

@@ -258,6 +258,7 @@ static void raw_session_disconnect(thread_recv_slot *slot)
     *slot->pending_fin = 0;
     *slot->fin_target_seq = 0;
     *slot->frag_buf_len = 0;
+    *slot->frag_count = 0U;
     *slot->frag_compressed = 0;
 }
 
@@ -288,6 +289,7 @@ static void slot_flow_overflow_disconnect(thread_recv_slot *slot)
     *slot->pending_fin = 0;
     *slot->fin_target_seq = 0U;
     *slot->frag_buf_len = 0U;
+    *slot->frag_count = 0U;
     *slot->frag_compressed = 0;
     *slot->reorder_pending = 0;
     *slot->peer_session_known = 0;
@@ -328,6 +330,7 @@ static int slot_drain_recv_window(thread_recv_slot *slot)
             size_t offset = 0;
             potr_packet elem;
 
+            slot->packet_expanded_size = 0U;
             while (potr_internal_packet_unpack_next(&pop_pkt, &offset, &elem) == POTR_OK)
             {
                 thread_recv_slot_deliver_payload_elem(slot, &elem);
@@ -346,7 +349,7 @@ static int slot_drain_recv_window(thread_recv_slot *slot)
          * 送出上限まで送り終えた相手への通知を判定する。フラグメントの途中のパケットも対象とする。
          */
         potr_internal_flow_control_on_received(ctx, slot->peer_id, *slot->peer_session_id, slot->peer_session_ts,
-                                               pop_pkt.seq_num + 1U, 1);
+                                               pop_pkt.seq_num + 1U, 1, slot->packet_expanded_size);
     }
 
     {
@@ -673,6 +676,7 @@ void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt
 
     potr_internal_window_recv_reset(slot->recv_window, 0U);
     *slot->frag_buf_len = 0U;
+    *slot->frag_count = 0U;
     *slot->frag_compressed = 0;
     *slot->reorder_pending = 0;
     *slot->peer_session_known = 0;

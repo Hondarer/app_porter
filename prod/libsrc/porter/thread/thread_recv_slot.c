@@ -29,6 +29,7 @@ void thread_recv_slot_init_ctx(thread_recv_slot *slot, potr_context *ctx)
     slot->peer = NULL;
     slot->peer_id = POTR_PEER_NA;
     slot->flow_overflow = 0;
+    slot->packet_expanded_size = 0U;
     slot->recv_window = &ctx->recv_window;
     slot->send_window = &ctx->send_window;
     slot->send_window_mutex = ctx->send_window_mutex;
@@ -47,6 +48,7 @@ void thread_recv_slot_init_ctx(thread_recv_slot *slot, potr_context *ctx)
     slot->fin_target_seq = &ctx->fin_target_seq;
     slot->frag_buf = ctx->frag_buf;
     slot->frag_buf_len = &ctx->frag_buf_len;
+    slot->frag_count = &ctx->frag_count;
     slot->frag_compressed = &ctx->frag_compressed;
     slot->health_alive = &ctx->health_alive;
     slot->last_recv_ts = &ctx->last_recv_ts;
@@ -63,6 +65,7 @@ void thread_recv_slot_init_peer(thread_recv_slot *slot, potr_context *ctx, potr_
     slot->peer = peer;
     slot->peer_id = peer->peer_id;
     slot->flow_overflow = 0;
+    slot->packet_expanded_size = 0U;
     slot->recv_window = &peer->recv_window;
     slot->send_window = &peer->send_window;
     slot->send_window_mutex = peer->send_window_mutex;
@@ -81,6 +84,7 @@ void thread_recv_slot_init_peer(thread_recv_slot *slot, potr_context *ctx, potr_
     slot->fin_target_seq = &peer->fin_target_seq;
     slot->frag_buf = peer->frag_buf;
     slot->frag_buf_len = &peer->frag_buf_len;
+    slot->frag_count = &peer->frag_count;
     slot->frag_compressed = &peer->frag_compressed;
     slot->health_alive = &peer->health_alive;
     slot->last_recv_ts = &peer->last_recv_ts;
@@ -107,7 +111,8 @@ static void slot_emit_data(thread_recv_slot *slot, const uint8_t *data, size_t l
     potr_internal_callback_emit(ctx, slot->peer_id, POTR_EVENT_DATA, data, len);
 }
 
-static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, size_t payload_len, int compressed)
+static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, size_t payload_len, int compressed,
+                              size_t packet_count)
 {
     potr_context *ctx = slot->ctx;
 
@@ -118,6 +123,14 @@ static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, si
         int ret = cplat_decompress(ctx->recv_compress_buf, &dec_len, payload, payload_len);
         if (ret == CPLAT_OK)
         {
+            size_t per_packet = dec_len;
+
+            if (packet_count > 1U)
+            {
+                per_packet = (dec_len + packet_count - 1U) / packet_count;
+            }
+
+            slot->packet_expanded_size += per_packet;
             POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: decompress %zu -> %zu bytes",
                        ctx->service.service_id, payload_len, dec_len);
             slot_emit_data(slot, ctx->recv_compress_buf, dec_len);
@@ -131,6 +144,11 @@ static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, si
     }
     else
     {
+        if (packet_count <= 1U)
+        {
+            slot->packet_expanded_size += payload_len;
+        }
+
         slot_emit_data(slot, payload, payload_len);
     }
 }
@@ -173,14 +191,18 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
                 {
                     *slot->frag_compressed = 0;
                 }
+
+                *slot->frag_count = 0U;
             }
 
             memcpy(slot->frag_buf + *slot->frag_buf_len, elem->payload, elem->payload_len);
             *slot->frag_buf_len += elem->payload_len;
+            (*slot->frag_count)++;
         }
         else
         {
             *slot->frag_buf_len = 0;
+            *slot->frag_count = 0U;
             *slot->frag_compressed = 0;
         }
     }
@@ -191,14 +213,17 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
         {
             memcpy(slot->frag_buf + *slot->frag_buf_len, elem->payload, elem->payload_len);
             *slot->frag_buf_len += elem->payload_len;
+            (*slot->frag_count)++;
 
             if (ctx->callback != NULL)
             {
-                slot_recv_deliver(slot, slot->frag_buf, *slot->frag_buf_len, *slot->frag_compressed);
+                slot_recv_deliver(slot, slot->frag_buf, *slot->frag_buf_len, *slot->frag_compressed,
+                                  *slot->frag_count);
             }
         }
 
         *slot->frag_buf_len = 0;
+        *slot->frag_count = 0U;
         *slot->frag_compressed = 0;
     }
     else
@@ -217,7 +242,7 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
                 is_compressed = 0;
             }
 
-            slot_recv_deliver(slot, elem->payload, (size_t)elem->payload_len, is_compressed);
+            slot_recv_deliver(slot, elem->payload, (size_t)elem->payload_len, is_compressed, 1U);
         }
     }
 }

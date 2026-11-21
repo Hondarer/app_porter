@@ -429,6 +429,22 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
         return build_result;
     }
 
+    /*
+     * unicast_bidir と unicast_bidir_n1 では、送出上限を使う場合に逆方向の DATA へ送出上限を相乗りさせる。
+     * ロック順は send_window_mutex -> fc->mutex とする。相乗りしない通信種別ではロックを増やさない。
+     */
+    if ((ctx->service.type == POTR_TYPE_UNICAST_BIDIR || ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1) &&
+        ctx->flow_control != NULL)
+    {
+        uint32_t send_limit = 0U;
+
+        if (potr_internal_flow_control_piggyback_limit(ctx, POTR_PEER_NA, &send_limit) != 0)
+        {
+            outer_pkt.flags |= cplat_hton16(POTR_FLAG_SEND_LIMIT);
+            outer_pkt.ack_num = cplat_hton32(send_limit);
+        }
+    }
+
     for (i = 0; i < ctx->n_path; i++)
     {
         size_t sent = 0;
@@ -529,6 +545,21 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
     {
         cplat_local_lock_unlock(peer->send_window_mutex);
         return;
+    }
+
+    /*
+     * N:1 サーバーでは、送出上限を使う場合に逆方向の DATA へ送出上限を相乗りさせる。
+     * ロック順は peers_mutex -> peer->send_window_mutex -> fc->mutex とする。
+     */
+    if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1 && ctx->flow_control != NULL)
+    {
+        uint32_t send_limit = 0U;
+
+        if (potr_internal_flow_control_piggyback_limit(ctx, peer->peer_id, &send_limit) != 0)
+        {
+            outer_pkt.flags |= cplat_hton16(POTR_FLAG_SEND_LIMIT);
+            outer_pkt.ack_num = cplat_hton32(send_limit);
+        }
     }
 
     /* N:1 はソケットのインデックスに対応する選択グループの経路へ送信する。 */

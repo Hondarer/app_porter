@@ -209,7 +209,7 @@ class potrFlowControlBufferTest : public Test
         {
             cplat_local_lock_lock(ctx.peers_mutex);
         }
-        potr_internal_flow_control_on_received(&ctx, peer_id, session_id, &sender_ts, next_seq, data_packet);
+        potr_internal_flow_control_on_received(&ctx, peer_id, session_id, &sender_ts, next_seq, data_packet, 0U);
         if (ctx.is_multi_peer)
         {
             cplat_local_lock_unlock(ctx.peers_mutex);

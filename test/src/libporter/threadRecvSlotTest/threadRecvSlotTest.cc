@@ -91,6 +91,8 @@ TEST(threadRecvSlotTest, compressed_message_at_max_message_size_delivers_data)
 
     // Assert
     EXPECT_EQ(plain, actual_delivered); // [確認_正常系] - 展開結果が元データと一致すること。
+    EXPECT_EQ(kMaxMessageSize, slot.packet_expanded_size);
+    // [確認_正常系] - 単一圧縮パケットの展開後の大きさが slot.packet_expanded_size に記録されること。
 }
 
 // max_message_size を 1 バイト超過する圧縮メッセージは展開失敗し DATA コールバックを呼ばないことの確認
@@ -200,6 +202,8 @@ TEST(threadRecvSlotTest, fragmented_compressed_message_at_max_message_size_deliv
 
     // Assert
     EXPECT_EQ(plain, actual_delivered); // [確認_正常系] - 展開結果が元データと一致すること。
+    EXPECT_EQ((kMaxMessageSize + 1U) / 2U, slot.packet_expanded_size);
+    // [確認_正常系] - 2 フラグメント圧縮メッセージの 1 パケットあたりの展開後の大きさが記録されること。
 }
 
 // 分割受信後に結合した圧縮メッセージが max_message_size + 1 のときは DATA コールバックを呼ばないことの確認

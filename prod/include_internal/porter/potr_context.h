@@ -229,6 +229,7 @@ typedef struct potr_internal_peer_context
     /* フラグメント結合 (ピアごと独立) */
     uint8_t *frag_buf;   /**< フラグメント結合バッファー (動的確保)。 */
     size_t frag_buf_len; /**< 現在のデータ長。 */
+    size_t frag_count;   /**< 結合中のフラグメント数。 */
     int frag_compressed; /**< 圧縮フラグ (非 0: 圧縮あり)。 */
 
     /* ヘルス チェック */
@@ -421,6 +422,7 @@ struct potr_context
     cplat_timespec path_last_recv_ts[POTR_MAX_PATH]; /**< パスごとの最終受信時刻。tv_sec == 0 は未受信。 */
 
     size_t frag_buf_len;      /**< フラグメント結合バッファーの現在のデータ長 [byte]。 */
+    size_t frag_count;        /**< 結合中のフラグメント数。 */
     int frag_compressed;      /**< フラグメント受信中の圧縮フラグ (非 0: 圧縮あり)。 */
     uint32_t _pad_frag;       /**< パディング (frag_buf を 8 [byte] 境界に揃える)。 */
     uint8_t *frag_buf;        /**< フラグメント結合バッファー (動的確保。max_message_size バイト)。 */

@@ -404,6 +404,7 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
     }
 
     peer->frag_buf_len = 0;
+    peer->frag_count = 0U;
     peer->frag_compressed = 0;
 
     /*

@@ -700,6 +700,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
                     potr_packet elem;
                     cplat_local_lock_unlock(ctx->recv_window_mutex);
 
+                    svc_slot->packet_expanded_size = 0U;
                     while (potr_internal_packet_unpack_next(&out, &offset, &elem) == POTR_OK)
                     {
                         thread_recv_slot_deliver_payload_elem(svc_slot, &elem);
@@ -723,7 +724,8 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
                      * 送出上限まで送り終えた相手への通知を判定する。呼び出し元が tcp_recv_mutex を保持している。
                      */
                     potr_internal_flow_control_on_received(ctx, POTR_PEER_NA, *svc_slot->peer_session_id,
-                                                           svc_slot->peer_session_ts, out.seq_num + 1U, 1);
+                                                           svc_slot->peer_session_ts, out.seq_num + 1U, 1,
+                                                           svc_slot->packet_expanded_size);
 
                     cplat_local_lock_lock(ctx->recv_window_mutex);
                 }

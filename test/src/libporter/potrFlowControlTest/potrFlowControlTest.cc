@@ -187,13 +187,18 @@ class potrFlowControlTest : public Test
     }
 
     // on_received を呼び出す。N:1 モードでは呼び出し元の契約に従い peers_mutex を保持する。
-    void received(potr_peer_id peer_id, uint32_t next_seq, int data_packet = 1, uint32_t session_id = 1U)
+    void received(potr_peer_id peer_id, uint32_t next_seq, int data_packet = 1, uint32_t session_id = 1U,
+                  size_t expanded_size = 0U, const cplat_timespec *ts = nullptr)
     {
+        if (ts == nullptr)
+        {
+            ts = &session_ts;
+        }
         if (ctx.is_multi_peer)
         {
             cplat_local_lock_lock(ctx.peers_mutex);
         }
-        potr_internal_flow_control_on_received(&ctx, peer_id, session_id, &session_ts, next_seq, data_packet);
+        potr_internal_flow_control_on_received(&ctx, peer_id, session_id, ts, next_seq, data_packet, expanded_size);
         if (ctx.is_multi_peer)
         {
             cplat_local_lock_unlock(ctx.peers_mutex);
@@ -1783,5 +1788,277 @@ TEST_F(potrFlowControlTest, idle_send_reduces_allowance_on_udp_and_not_tcp)
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 100U, limit_tcp);        // [確認_正常系] - TCP では短縮しないこと。
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 100U, peer_before);      // [確認_正常系] - N:1 で有効期限未満は短縮しないこと。
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 24U, peer_after);        // [確認_正常系] - N:1 で有効期限ちょうどで 20 + 4 へ短縮すること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 逆方向の DATA への相乗り送出: 送出上限の取得、「前回知らせた範囲」の更新による更新パケット抑止、抑制/解除の継続、対象外構成の確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, piggyback_limit_updates_range_and_respects_mode)
+{
+    // Arrange
+    uint32_t limit = 999U;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_RECEIVER;
+    // [状態] - 双方向 UDP 受信側 (容量 1000、要求しきい値 800、解除しきい値 600、max_payload 100 -> 許可数 9)。
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx)); // [状態確認] - 資源の生成に成功すること。
+    // Pre-Assert
+    // Act
+    int before_seq = potr_internal_flow_control_piggyback_limit(&ctx, POTR_PEER_NA, &limit);
+    uint32_t limit_before_seq = limit;
+    // [手順] - まだ通番を受け取っていない状態で相乗りを試みる。
+    potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 1U, &session_ts, 10U, 0, 0U);
+    int sent_after_initial = sendto_count;
+    // [手順] - 初回 PING で next_seq=10 を登録する (notified_base=10, notified_limit=19)。
+    potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 1U, &session_ts, 11U, 1, 0U);
+    potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 1U, &session_ts, 12U, 1, 0U);
+    potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 1U, &session_ts, 13U, 1, 0U);
+    potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 1U, &session_ts, 14U, 1, 0U);
+    int sent_before_piggyback = sendto_count;
+    // [手順] - 4 個受信 (14 - 10 = 4 < 9/2) で更新パケットはまだ出ない。
+    int piggybacked = potr_internal_flow_control_piggyback_limit(&ctx, POTR_PEER_NA, &limit);
+    uint32_t limit_piggybacked = limit;
+    // [手順] - 逆方向 DATA に相乗りする (notified_base=14, notified_limit=23 に更新される)。
+    potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 1U, &session_ts, 15U, 1, 0U);
+    int sent_after_fifth_data = sendto_count;
+    // [手順] - 5 個目の DATA (next_seq=15) を処理しても、前回知らせた範囲が 14..23 に更新済みのため更新パケットが出ないこと。
+    EXPECT_EQ(POTR_OK, potr_internal_flow_control_admit(&ctx, POTR_PEER_NA, 1U, &session_ts, 850U));
+    int sent_after_suppress = sendto_count;
+    potr_internal_flow_control_release(&ctx, POTR_PEER_NA, 300U);
+    int sent_after_resume = sendto_count;
+    // [手順] - 抑制の要求と解除は従来どおりフロー制御パケットで送出されることを確認する。
+    // Assert
+    EXPECT_EQ(0, before_seq);                    // [確認_正常系] - 通番未受領の間は相乗りしないこと。
+    EXPECT_EQ(0U, limit_before_seq);             // [確認_正常系] - 相乗りしない場合は 0 を格納すること。
+    EXPECT_EQ(1, sent_after_initial);            // [確認_正常系] - 初回通知はフロー制御パケット 1 回であること。
+    EXPECT_EQ(sent_after_initial, sent_before_piggyback);
+    // [確認_正常系] - 範囲の半分未満の受信では更新パケットを送出しないこと。
+    EXPECT_EQ(1, piggybacked);                   // [確認_正常系] - 通番受領後は相乗りできること。
+    EXPECT_EQ(23U, limit_piggybacked);           // [確認_正常系] - 14 + 9 = 23 が相乗りされること。
+    EXPECT_EQ(sent_before_piggyback, sent_after_fifth_data);
+    // [確認_正常系] - DATA 相乗りで前回知らせた範囲が更新され、5 個目の DATA で更新パケットを送出しないこと。
+    EXPECT_EQ(sent_after_fifth_data + 1, sent_after_suppress);
+    // [確認_正常系] - 抑制の要求はフロー制御パケットで送出されること。
+    EXPECT_EQ(sent_after_suppress + 1, sent_after_resume);
+    // [確認_正常系] - 解除はフロー制御パケットで送出されること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 対象外種別 (片方向・TCP) と上限なし構成では相乗りせず、fc->mutex も取得しないことの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, piggyback_limit_skips_non_bidir_and_unlimited_without_lock)
+{
+    // Arrange
+    uint32_t limit = 77U;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx)); // [状態確認] - unicast で資源を生成できること。
+    potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 1U, &session_ts, 10U, 0, 0U);
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_)).Times(0);
+    // [Pre-Assert確認_正常系] - 相乗り対象外の通信種別ではロックを取得しないこと。
+    // Act
+    int ret_unicast = potr_internal_flow_control_piggyback_limit(&ctx, POTR_PEER_NA, &limit);
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    int ret_tcp = potr_internal_flow_control_piggyback_limit(&ctx, POTR_PEER_NA, &limit);
+    // [手順] - unicast と tcp_bidir で相乗りを呼び出す。
+    // Assert
+    EXPECT_EQ(0, ret_unicast); // [確認_正常系] - 片方向 unicast では相乗りしないこと。
+    EXPECT_EQ(0, ret_tcp);     // [確認_正常系] - TCP では相乗りしないこと。
+    EXPECT_EQ(0U, limit);      // [確認_正常系] - 対象外では 0 を格納すること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 逆方向の DATA への相乗り受理: 未通知からの初回通知、先へ進む値の更新、古い値・同値・フラグなし・上限なしの無視 (1:1 と N:1)
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, piggyback_receive_advances_only_and_ignores_stale_or_unflagged)
+{
+    // Arrange
+    potr_packet pkt = {};
+    int wake_count = 0;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_SENDER;
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 0U, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_porter, potr_internal_send_queue_wake_flow(&ctx.send_queue)).WillByDefault([&](potr_internal_send_queue *) {
+        wake_count++;
+    });
+    // [状態] - 1:1 双方向 UDP で未通知状態にする。
+    // Pre-Assert
+    // Act
+    pkt.flags = (uint16_t)(POTR_FLAG_DATA | POTR_FLAG_SEND_LIMIT);
+    pkt.ack_num = 50U;
+    now_ms = 2000U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &pkt);
+    uint64_t after_first = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    int wake_after_first = wake_count;
+    // [手順] - 未通知状態で送出上限 50 の相乗り DATA を受理する。
+    pkt.ack_num = 45U;
+    now_ms = 2100U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &pkt);
+    uint64_t after_stale = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    pkt.ack_num = 50U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &pkt);
+    uint64_t after_equal = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    int wake_after_ignored = wake_count;
+    // [手順] - 再送などの古い値 (45) と同値 (50) を受理する。
+    pkt.flags = POTR_FLAG_DATA;
+    pkt.ack_num = 999U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &pkt);
+    uint64_t after_unflagged = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    // [手順] - POTR_FLAG_SEND_LIMIT が立っていない DATA は ack_num を無視する。
+    pkt.flags = (uint16_t)(POTR_FLAG_DATA | POTR_FLAG_SEND_LIMIT);
+    pkt.ack_num = 60U;
+    now_ms = 2200U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &pkt);
+    uint64_t after_advance = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    // [手順] - 先へ進む値 (60) を受理する。
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_HELD | 0xFFFFFFFEU, CPLAT_MEMORY_ORDER_RELEASE);
+    pkt.ack_num = 5U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &pkt);
+    uint64_t after_wrap = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    // [手順] - 循環をまたいで先へ進む値 (0xFFFFFFFE -> 5) を受理する。
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELEASE);
+    pkt.ack_num = 100U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &pkt);
+    uint64_t after_unlimited = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    // [手順] - 上限なし状態では相乗り DATA で上書きしない。
+    enable_multi_peer();
+    peer10->peer_id = 10U;
+    peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 0U;
+    pkt.flags = (uint16_t)(POTR_FLAG_DATA | POTR_FLAG_SEND_LIMIT);
+    pkt.ack_num = 70U;
+    cplat_local_lock_lock(ctx.peers_mutex);
+    potr_internal_flow_control_on_peer_packet(&ctx, peer10, &pkt);
+    uint64_t peer_first = peer10->flow_send_limit;
+    pkt.ack_num = 65U;
+    potr_internal_flow_control_on_peer_packet(&ctx, peer10, &pkt);
+    uint64_t peer_stale = peer10->flow_send_limit;
+    pkt.ack_num = 80U;
+    potr_internal_flow_control_on_peer_packet(&ctx, peer10, &pkt);
+    uint64_t peer_advance = peer10->flow_send_limit;
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    // [手順] - N:1 ピアでも初回受理、古い値の無視、先へ進む値の更新を確認する。
+    // Assert
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 50U, after_first);     // [確認_正常系] - 未通知から初回通知として 50 を保持すること。
+    EXPECT_EQ(1, wake_after_first);                              // [確認_正常系] - 初回通知で送信スレッドを起こすこと。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 50U, after_stale);     // [確認_正常系] - 古い値 45 を無視すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 50U, after_equal);     // [確認_正常系] - 同値 50 を無視すること。
+    EXPECT_EQ(wake_after_first, wake_after_ignored);             // [確認_正常系] - 無視したパケットでは送信スレッドを起こさないこと。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 50U, after_unflagged); // [確認_正常系] - フラグなしの ack_num を無視すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 60U, after_advance);   // [確認_正常系] - 先へ進む 60 へ更新すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 5U, after_wrap);       // [確認_正常系] - 循環をまたぐ 5 へ更新すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNLIMITED, after_unlimited);  // [確認_正常系] - 上限なしを上書きしないこと。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 70U, peer_first);      // [確認_正常系] - N:1 で未通知から 70 を保持すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 70U, peer_stale);      // [確認_正常系] - N:1 で古い値 65 を無視すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 80U, peer_advance);    // [確認_正常系] - N:1 で先へ進む 80 へ更新すること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 圧縮した DATA の展開後の大きさの最大値が max_payload より大きい場合に許可数が小さくなり、max_payload 以下では変わらないことの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, compressed_data_expanded_size_reduces_allowance_only_above_max_payload)
+{
+    // Arrange
+    uint32_t report_below = 0U;
+    uint32_t report_exact = 0U;
+    uint32_t report_above = 0U;
+    uint32_t report_after_smaller = 0U;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    // [状態] - 容量 1000、要求 80% (800 [byte])、max_payload 100 [byte] で start する (既定の許可数 800 ÷ 100 + 1 = 9)。
+    // [状態確認] - start の戻り値が POTR_OK であること。
+    // Pre-Assert
+    // Act
+    received(POTR_PEER_NA, 10U, 1, 1U, 80U);
+    int held_below = potr_internal_flow_control_report_limit(&ctx, &report_below);
+    // [手順] - max_payload (100) 未満の展開後サイズ 80 [byte] を受信する。
+    received(POTR_PEER_NA, 11U, 1, 1U, 100U);
+    int held_exact = potr_internal_flow_control_report_limit(&ctx, &report_exact);
+    // [手順] - max_payload (100) ちょうどの展開後サイズ 100 [byte] を受信する。
+    received(POTR_PEER_NA, 12U, 1, 1U, 400U);
+    int held_above = potr_internal_flow_control_report_limit(&ctx, &report_above);
+    // [手順] - max_payload を超える展開後サイズ 400 [byte] を受信する (許可数 800 ÷ 400 + 1 = 3)。
+    received(POTR_PEER_NA, 13U, 1, 1U, 50U);
+    int held_after_smaller = potr_internal_flow_control_report_limit(&ctx, &report_after_smaller);
+    // [手順] - より小さい 50 [byte] を受信しても、同一セッション内の最大値 400 [byte] が維持されることを確認する。
+    // Assert
+    EXPECT_EQ(1, held_below);          // [確認_正常系] - 80 [byte] 受信後に送出上限が取得できること。
+    EXPECT_EQ(19U, report_below);      // [確認_正常系] - max_payload 未満では 10 + 9 = 19 で変わらないこと。
+    EXPECT_EQ(1, held_exact);          // [確認_正常系] - 100 [byte] 受信後に送出上限が取得できること。
+    EXPECT_EQ(20U, report_exact);      // [確認_正常系] - max_payload ちょうどでは 11 + 9 = 20 で変わらないこと。
+    EXPECT_EQ(1, held_above);          // [確認_正常系] - 400 [byte] 受信後に送出上限が取得できること。
+    EXPECT_EQ(15U, report_above);      // [確認_正常系] - 400 [byte] により許可数が 3 へ減り、12 + 3 = 15 になること。
+    EXPECT_EQ(1, held_after_smaller);  // [確認_正常系] - 50 [byte] 受信後も送出上限が取得できること。
+    EXPECT_EQ(16U, report_after_smaller);
+    // [確認_正常系] - 最大値 400 [byte] が維持され、13 + 3 = 16 になること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// セッションの変更 (session_id または session_ts の変更) で展開後の大きさの最大値が 0 に戻ることの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, compressed_data_max_size_resets_on_session_change)
+{
+    // Arrange
+    cplat_timespec next_ts = session_ts;
+    next_ts.tv_sec += 1;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    // [状態] - 容量 1000、要求 80% (800 [byte])、max_payload 100 [byte] で start する。
+    // [状態確認] - start の戻り値が POTR_OK であること。
+    // Pre-Assert
+    // Act
+    received(POTR_PEER_NA, 10U, 1, 1U, 400U);
+    // [手順] - セッション 1 で展開後サイズ 400 [byte] を受信する (初回通知: 10 + 3 = 13)。
+    received(POTR_PEER_NA, 20U, 1, 2U, 0U);
+    // [手順] - session_id を 2 へ変えて受信する (最大値が 0 に戻り、初回通知: 20 + 9 = 29)。
+    received(POTR_PEER_NA, 21U, 1, 2U, 800U);
+    // [手順] - セッション 2 で展開後サイズ 800 [byte] を受信する (最大値 800、許可数 2)。
+    received(POTR_PEER_NA, 30U, 1, 2U, 0U, &next_ts);
+    // [手順] - session_ts を変えて受信する (最大値が 0 に戻り、初回通知: 30 + 9 = 39)。
+    // Assert
+    EXPECT_EQ((std::vector<uint32_t>{13U, 29U, 39U}), limits);
+    // [確認_正常系] - セッション 1 は許可数 3、session_id 変更後と session_ts 変更後は最大値が 0 に戻り許可数 9 になること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// N:1 モードで、展開後の大きさの最大値がピアごとに独立して保持・リセットされることの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, multi_peer_compressed_data_max_size_is_independent_per_peer)
+{
+    // Arrange
+    enable_multi_peer();
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    // [状態] - N:1 モード、容量 1000、要求 80% (800 [byte])、max_payload 100 [byte] で start する。
+    // [状態確認] - start の戻り値が POTR_OK であること。
+    uint32_t piggy_p10_before = 0U;
+    uint32_t piggy_p11_before = 0U;
+    uint32_t piggy_p10_after_reset = 0U;
+    uint32_t piggy_p11_after_reset = 0U;
+    // Pre-Assert
+    // Act
+    received(10U, 10U, 1, 1U, 400U);
+    // [手順] - ピア 10 (セッション 1) で展開後サイズ 400 [byte] を受信する (許可数 3、送出上限 13)。
+    received(11U, 10U, 1, 1U, 50U);
+    // [手順] - ピア 11 (セッション 1) で max_payload 以下の 50 [byte] を受信する (許可数 9、送出上限 19)。
+    cplat_local_lock_lock(ctx.peers_mutex);
+    int held_p10_before = potr_internal_flow_control_piggyback_limit(&ctx, 10U, &piggy_p10_before);
+    int held_p11_before = potr_internal_flow_control_piggyback_limit(&ctx, 11U, &piggy_p11_before);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    // [手順] - 各ピアの相乗り送出上限を取得する。
+    received(10U, 20U, 1, 2U, 0U);
+    // [手順] - ピア 10 だけセッションを 2 へ変更する (ピア 10 の最大値だけ 0 に戻り許可数 9)。
+    received(11U, 11U, 1, 1U, 800U);
+    // [手順] - ピア 11 で展開後サイズ 800 [byte] を受信する (ピア 11 の許可数 2)。
+    cplat_local_lock_lock(ctx.peers_mutex);
+    int held_p10_after = potr_internal_flow_control_piggyback_limit(&ctx, 10U, &piggy_p10_after_reset);
+    int held_p11_after = potr_internal_flow_control_piggyback_limit(&ctx, 11U, &piggy_p11_after_reset);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    // [手順] - セッション変更後の各ピアの相乗り送出上限を取得する。
+    // Assert
+    EXPECT_EQ(1, held_p10_before);           // [確認_正常系] - ピア 10 の送出上限が取得できること。
+    EXPECT_EQ(13U, piggy_p10_before);        // [確認_正常系] - ピア 10 は 400 [byte] により 10 + 3 = 13 であること。
+    EXPECT_EQ(1, held_p11_before);           // [確認_正常系] - ピア 11 の送出上限が取得できること。
+    EXPECT_EQ(19U, piggy_p11_before);        // [確認_正常系] - ピア 11 はピア 10 の影響を受けず 10 + 9 = 19 であること。
+    EXPECT_EQ(1, held_p10_after);            // [確認_正常系] - セッション変更後のピア 10 の送出上限が取得できること。
+    EXPECT_EQ(29U, piggy_p10_after_reset);   // [確認_正常系] - ピア 10 はセッション変更で最大値が 0 に戻り 20 + 9 = 29 であること。
+    EXPECT_EQ(1, held_p11_after);            // [確認_正常系] - ピア 11 の送出上限が取得できること。
+    EXPECT_EQ(13U, piggy_p11_after_reset);   // [確認_正常系] - ピア 11 は 800 [byte] により 11 + 2 = 13 であること。
 }
 // [サブ手順参照 名前=potrFlowControlTest.TearDown]

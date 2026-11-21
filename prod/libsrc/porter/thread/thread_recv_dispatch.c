@@ -231,7 +231,7 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
          * 送出上限の更新の判定は、DATA パケットの処理のたびに受信ウィンドウの取り出しで行う。
          */
         potr_internal_flow_control_on_received(ctx, slot->peer_id, *slot->peer_session_id, slot->peer_session_ts,
-                                               slot->recv_window->next_seq, 0);
+                                               slot->recv_window->next_seq, 0, 0U);
         return dispatch_ping(slot, pkt, path_idx);
     }
 

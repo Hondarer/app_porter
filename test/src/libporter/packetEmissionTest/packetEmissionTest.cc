@@ -9,6 +9,7 @@
 #include <porter/porter_result.h>
 #include <porter/protocol/packet_seal.h>
 #include "thread_recv_validate.h"
+#include "thread_recv_dispatch.h"
 #include "potr_send_thread.inject.h"
 #include "thread_recv_window.inject.h"
 #include "potr_recv_thread.inject.h"
@@ -550,4 +551,77 @@ TEST(packetEmissionTest, tcp_failover_replays_retained_window_before_new_data)
     {
         delegate_real_cplat_local_lock_dispose(ctx.tcp_send_mutex[i]);
     }
+}
+
+// 相乗りの受理が、採用している相手のセッションの DATA だけを対象にし、旧セッションの DATA を無視することの確認
+TEST(packetEmissionTest, piggyback_dispatch_accepts_only_adopted_session_data)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    thread_recv_slot slot = {};
+    cplat_ipv4_endpoint sender = {};
+    potr_packet stale_pkt = {};
+    potr_packet adopted_pkt = {};
+    uint8_t payload[8] = {};
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.global.window_size = 16U;
+    ctx.global.max_payload = 128U;
+    ctx.peer_session_known = 1;
+    ctx.peer_session_id = 200U;
+    ctx.peer_session_ts.tv_sec = 500;
+    ctx.peer_session_ts.tv_nsec = 100;
+    ASSERT_EQ(POTR_OK, potr_internal_window_init(&ctx.recv_window, 0U, 16U, 128U));
+    // [状態確認] - 採用中のセッション (ts=500.100, id=200) と受信ウィンドウを用意できること。
+    slot.ctx = &ctx;
+    slot.peer = nullptr;
+    slot.peer_id = POTR_PEER_NA;
+    slot.peer_session_known = &ctx.peer_session_known;
+    slot.peer_session_id = &ctx.peer_session_id;
+    slot.peer_session_ts = &ctx.peer_session_ts;
+    slot.recv_window = &ctx.recv_window;
+    slot.dest_addr = ctx.dest_addr;
+    slot.reorder_pending = &ctx.reorder_pending;
+    slot.reorder_nack_num = &ctx.reorder_nack_num;
+    slot.reorder_deadline_ts = &ctx.reorder_deadline_ts;
+    slot.pending_fin = &ctx.pending_fin;
+    slot.fin_target_seq = &ctx.fin_target_seq;
+    slot.frag_buf = ctx.frag_buf;
+    slot.frag_buf_len = &ctx.frag_buf_len;
+    slot.frag_count = &ctx.frag_count;
+    slot.frag_compressed = &ctx.frag_compressed;
+    slot.path_ping_state = ctx.path_ping_state;
+    slot.remote_path_ping_state = ctx.remote_path_ping_state;
+    slot.last_recv_ts = &ctx.last_recv_ts;
+    slot.path_last_recv_ts = ctx.path_last_recv_ts;
+    stale_pkt.flags = (uint16_t)(POTR_FLAG_DATA | POTR_FLAG_SEND_LIMIT);
+    stale_pkt.session_tv_sec = 400;
+    stale_pkt.session_tv_nsec = 0;
+    stale_pkt.session_id = 100U;
+    stale_pkt.seq_num = 0U;
+    stale_pkt.ack_num = 999U;
+    stale_pkt.payload = payload;
+    stale_pkt.payload_len = (uint16_t)sizeof(payload);
+    adopted_pkt = stale_pkt;
+    adopted_pkt.session_tv_sec = 500;
+    adopted_pkt.session_tv_nsec = 100;
+    adopted_pkt.session_id = 200U;
+    adopted_pkt.ack_num = 77U;
+    // [状態] - 旧セッションの DATA (ack_num=999) と採用中セッションの DATA (ack_num=77) を用意する。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &stale_pkt)).Times(0);
+    // [Pre-Assert確認_正常系] - 旧セッションの DATA では相乗り受理処理を呼び出さないこと。
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &adopted_pkt)).Times(1);
+    // [Pre-Assert確認_正常系] - 採用中セッションの DATA だけで相乗り受理処理を呼び出すこと。
+    // Act
+    int ret_stale = thread_recv_dispatch_packet(&slot, &stale_pkt, 0, &sender);
+    int ret_adopted = thread_recv_dispatch_packet(&slot, &adopted_pkt, 0, &sender);
+    // [手順] - 旧セッションと採用中セッションの相乗り DATA を順に振り分ける。
+    // Assert
+    EXPECT_EQ(0, ret_stale);   // [確認_正常系] - 旧セッションの DATA の振り分けが正常終了すること。
+    EXPECT_EQ(0, ret_adopted); // [確認_正常系] - 採用中セッションの DATA の振り分けが正常終了すること。
+    // Cleanup
+    potr_internal_window_dispose(&ctx.recv_window);
 }
