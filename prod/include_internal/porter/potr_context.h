@@ -270,7 +270,7 @@ typedef struct potr_internal_peer_context
     int flow_deferred_entries; /**< 送信スレッドが保留している、このピア宛のエントリ数。peers_mutex で保護。 */
     int flow_tracked; /**< potr_context::flow_tracked_peers に数えているか (1: 数えている)。peers_mutex で保護。 */
     int flow_blocking; /**< ほかのピアへの送信を妨げている記録があるか (1: 記録中)。peers_mutex で保護。 */
-    int _pad_flow_blocking; /**< パディング (8 [byte] 境界に揃える)。 */
+    int flow_last_stopping; /**< N:1 の前回積算判定時点で止める状態だったか。peers_mutex で保護。 */
 
     /* NACK 重複抑制 */
     potr_internal_nack_dedup_entry nack_dedup_buf[POTR_NACK_DEDUP_SLOTS]; /**< NACK 重複抑制バッファー。 */
@@ -681,6 +681,7 @@ static inline void potr_internal_flow_control_peer_clear_blocking(potr_context *
     }
     peer->flow_stall_accum_units = 0U;
     peer->flow_stall_last_ms = 0U;
+    peer->flow_last_stopping = 0;
 }
 
 /**

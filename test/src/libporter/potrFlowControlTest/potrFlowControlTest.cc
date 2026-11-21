@@ -23,6 +23,10 @@
 #include <cplat/net/byteorder.h>
 #include <cstring>
 #include <vector>
+extern "C"
+{
+#include "thread_recv_session.h"
+}
 using namespace testing;
 
 namespace
@@ -1709,7 +1713,7 @@ TEST_F(potrFlowControlTest, multi_peer_initial_width_query_and_no_peer_recovery)
     EXPECT_EQ(1, stalled);       // [確認_正常系] - 初期の幅 4 で止まること。
     EXPECT_EQ(1, queried);       // [確認_正常系] - 10 [ms] 後も止まり続けること。
     EXPECT_EQ(1, sent_after_10); // [確認_正常系] - 10 [ms] 後に問い合わせを 1 回送出すること。
-    EXPECT_EQ(1, kept);          // [確認_正常系] - PING が届いている間は破棄しないこと。
+    EXPECT_EQ(0, kept);          // [確認_正常系] - 未通知では PING が届いても停止開始からの期限で破棄すること。
     EXPECT_EQ(0, expired);       // [確認_正常系] - 何も届かずに有効期限が経過したら破棄すること。
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_NO_PEER, state_no_peer); // [確認_正常系] - 「相手なし」へ遷移すること。
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 20U, peer10->flow_send_limit);
@@ -2060,5 +2064,240 @@ TEST_F(potrFlowControlTest, multi_peer_compressed_data_max_size_is_independent_p
     EXPECT_EQ(29U, piggy_p10_after_reset);   // [確認_正常系] - ピア 10 はセッション変更で最大値が 0 に戻り 20 + 9 = 29 であること。
     EXPECT_EQ(1, held_p11_after);            // [確認_正常系] - ピア 11 の送出上限が取得できること。
     EXPECT_EQ(13U, piggy_p11_after_reset);   // [確認_正常系] - ピア 11 は 800 [byte] により 11 + 2 = 13 であること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// UDP の未通知ではパケットが届いていても停止開始から有効期限で相手なしへ移ることの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, udp_unnotified_activity_does_not_extend_deadline)
+{
+    // Arrange
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.send_window.next_seq = 4U;
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    int wait_ms = 0;
+    int expired[2] = {};
+    uint64_t states_after[2] = {};
+    const potr_type types[] = {POTR_TYPE_UNICAST, POTR_TYPE_UNICAST_BIDIR};
+    // [状態] - UDP のハンドル側 2 経路で初期幅を使い切る。
+    // Pre-Assert
+    // Act
+    for (size_t i = 0U; i < 2U; i++)
+    {
+        ctx.service.type = types[i];
+        ctx.flow_limit_stalled_ms = 0U;
+        cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED, CPLAT_MEMORY_ORDER_RELEASE);
+        (void)potr_internal_flow_control_suppressed(&ctx, 1000U, &wait_ms, &allowance);
+        cplat_atomic_store_u64(&ctx.flow_last_packet_ms, 1999U, CPLAT_MEMORY_ORDER_RELEASE);
+        cplat_atomic_store_u64(&ctx.flow_limit_received_ms, 1999U, CPLAT_MEMORY_ORDER_RELEASE);
+        expired[i] = potr_internal_flow_control_suppressed(&ctx, 2000U, &wait_ms, &allowance);
+        states_after[i] = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    }
+    // [手順] - 最初の通知を受けずにパケット受信時刻だけを更新し、停止開始から 1000 [ms] で判定する。
+    // Assert
+    for (size_t i = 0U; i < 2U; i++)
+    {
+        EXPECT_EQ(0, expired[i]); // [確認_正常系] - 受信の継続によらず停止を解くこと。(確認 2 回)
+        EXPECT_EQ(POTR_FLOW_SEND_LIMIT_NO_PEER, states_after[i]); // [確認_正常系] - 相手なしへ移ること。(確認 2 回)
+    }
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 期限判定に使う時刻の読み取り後に同値通知が入った場合、相手なしへの比較交換をやめることの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, expiry_rechecks_both_timestamps_before_compare_exchange)
+{
+    // Arrange
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.send_window.next_seq = 300U;
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    int lock_token = 0;
+    ctx.send_window_mutex = reinterpret_cast<cplat_local_lock *>(&lock_token);
+    const potr_type types[] = {POTR_TYPE_UNICAST, POTR_TYPE_UNICAST, POTR_TYPE_UNICAST_BIDIR, POTR_TYPE_UNICAST_BIDIR};
+    int suppressed[4] = {};
+    uint64_t states_after[4] = {};
+    int wait_ms = 0;
+    // [状態] - 2 通信種別と、通知時刻だけ・パケット時刻だけを更新する 4 条件を用意する。
+    // Pre-Assert
+    // Act
+    for (size_t i = 0U; i < 4U; i++)
+    {
+        ctx.service.type = types[i];
+        ctx.flow_limit_stalled_ms = 1000U;
+        cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_HELD | 300U, CPLAT_MEMORY_ORDER_RELEASE);
+        cplat_atomic_store_u64(&ctx.flow_limit_received_ms, 1000U, CPLAT_MEMORY_ORDER_RELEASE);
+        cplat_atomic_store_u64(&ctx.flow_last_packet_ms, 1000U, CPLAT_MEMORY_ORDER_RELEASE);
+        ON_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex)).WillByDefault([&](cplat_local_lock *) {
+            if (i % 2U == 0U)
+            {
+                cplat_atomic_store_u64(&ctx.flow_limit_received_ms, 2000U, CPLAT_MEMORY_ORDER_RELEASE);
+            }
+            else
+            {
+                cplat_atomic_store_u64(&ctx.flow_last_packet_ms, 2000U, CPLAT_MEMORY_ORDER_RELEASE);
+            }
+            cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_HELD | 300U, CPLAT_MEMORY_ORDER_RELEASE);
+        });
+        ON_CALL(mock_cplat, cplat_local_lock_unlock(ctx.send_window_mutex)).WillByDefault(Return());
+        suppressed[i] = potr_internal_flow_control_suppressed(&ctx, 2000U, &wait_ms, &allowance);
+        states_after[i] = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    }
+    ctx.send_window_mutex = nullptr;
+    // [手順] - 古い時刻を読んだ後の送信ウィンドウのロック取得時に、受信側と同じ順序で時刻と同値上限を書き込む。
+    // Assert
+    for (size_t i = 0U; i < 4U; i++)
+    {
+        EXPECT_EQ(1, suppressed[i]); // [確認_正常系] - 通知の競合を検出した判定では制限を外さないこと。(確認 4 回)
+        EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 300U, states_after[i]); // [確認_正常系] - 同値の新しい通知を消さないこと。(確認 4 回)
+    }
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 逆方向の初回 DATA より先に受けた TCP の上限なしを維持し、後続 6 DATA で初期幅に止まらないことの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, tcp_first_reverse_data_keeps_unlimited_notification)
+{
+    // Arrange
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.send_window.next_seq = 1U;
+    ctx.peer_session_known = 0;
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    thread_recv_slot slot = {};
+    slot.ctx = &ctx;
+    slot.peer_session_id = &ctx.peer_session_id;
+    slot.peer_session_ts = &ctx.peer_session_ts;
+    slot.peer_session_known = &ctx.peer_session_known;
+    slot.reorder_pending = &ctx.reorder_pending;
+    slot.pending_fin = &ctx.pending_fin;
+    slot.fin_target_seq = &ctx.fin_target_seq;
+    slot.recv_window = &ctx.recv_window;
+    const uint8_t unlimited_payload[POTR_FLOW_CONTROL_PAYLOAD_SIZE] = {POTR_FLOW_CONTROL_STATE_UNLIMITED};
+    potr_packet notification = {};
+    notification.flags = POTR_FLAG_FLOW_CONTROL;
+    notification.payload = unlimited_payload;
+    notification.payload_len = POTR_FLOW_CONTROL_PAYLOAD_SIZE;
+    potr_packet data = {};
+    data.flags = POTR_FLAG_DATA;
+    data.session_id = 42U;
+    data.session_tv_sec = 100;
+    int waits[6] = {};
+    int wait_ms = 0;
+    // [状態] - 自分の DATA 1 個を送出済みで、相手の受信セッションはまだ採用していない。
+    // Pre-Assert
+    // Act
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &notification);
+    int adopted = thread_recv_session_adopt(&slot, &data);
+    uint64_t retained = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    for (size_t i = 0U; i < 6U; i++)
+    {
+        ctx.send_window.next_seq = (uint32_t)i + 1U;
+        waits[i] = potr_internal_flow_control_suppressed(&ctx, 1001U, &wait_ms, &allowance);
+    }
+    // [手順] - 相手の上限なし通知、相手の初回 DATA 採用、後続 6 DATA の送出判定を順に行う。
+    // Assert
+    EXPECT_EQ(1, adopted); // [確認_正常系] - 相手の初回 DATA でセッションを採用すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNLIMITED, retained); // [確認_正常系] - 採用時に上限なしを取り消さないこと。
+    for (size_t i = 0U; i < 6U; i++)
+    {
+        EXPECT_EQ(0, waits[i]); // [確認_正常系] - 後続 DATA は初期幅で止まらないこと。(確認 6 回)
+    }
+    potr_internal_window_dispose(&ctx.recv_window);
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 未通知の期限切れ (相手なし) から、送出上限のないパケットで未通知 (現在通番) へ戻り、振動せず通知で回復することの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, udp_unnotified_no_peer_recovers_and_does_not_oscillate)
+{
+    // Arrange
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.send_window.next_seq = 4U;
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    now_ms = 1000U;
+    potr_packet ping_no_limit = {};
+    ping_no_limit.flags = POTR_FLAG_PING;
+    potr_packet notified = {};
+    notified.flags = POTR_FLAG_FLOW_CONTROL;
+    notified.payload = kResumePayload;
+    notified.payload_len = POTR_FLOW_CONTROL_PAYLOAD_SIZE;
+    int wait_ms = 0;
+    // [状態] - unicast_bidir と unicast_bidir_n1 ピアで、最初の 4 DATA が失われた状態を模擬する。
+    // Pre-Assert
+    // Act
+    ctx.flow_limit_stalled_ms = 0U;
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED, CPLAT_MEMORY_ORDER_RELEASE);
+    (void)potr_internal_flow_control_suppressed(&ctx, 1000U, &wait_ms, &allowance);
+    now_ms = 1999U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &ping_no_limit);
+    int bidir_expired = potr_internal_flow_control_suppressed(&ctx, 2000U, &wait_ms, &allowance);
+    now_ms = 2001U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &ping_no_limit);
+    uint64_t bidir_state_after_return = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    uint64_t bidir_stalled_after_return = ctx.flow_limit_stalled_ms;
+    uint32_t bidir_reopened_allowance = 0U;
+    int bidir_reopened = potr_internal_flow_control_suppressed(&ctx, 2001U, &wait_ms, &bidir_reopened_allowance);
+    ctx.send_window.next_seq = 8U;
+    int bidir_restopped = potr_internal_flow_control_suppressed(&ctx, 2010U, &wait_ms, &allowance);
+    now_ms = 2015U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &ping_no_limit);
+    int bidir_no_oscillation = potr_internal_flow_control_suppressed(&ctx, 3009U, &wait_ms, &allowance);
+    now_ms = 3009U;
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &notified);
+    int bidir_recovered = potr_internal_flow_control_suppressed(&ctx, 3009U, &wait_ms, &allowance);
+
+    enable_multi_peer();
+    int deferred = -1;
+    peer10->peer_id = 10U;
+    peer10->send_window.next_seq = 4U;
+    peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNNOTIFIED;
+    cplat_atomic_store_i32(&peer10->health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    now_ms = 1000U;
+    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred);
+    now_ms = 1999U;
+    cplat_local_lock_lock(ctx.peers_mutex);
+    potr_internal_flow_control_on_peer_packet(&ctx, peer10, &ping_no_limit);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    int n1_expired = potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred);
+    now_ms = 2001U;
+    cplat_local_lock_lock(ctx.peers_mutex);
+    potr_internal_flow_control_on_peer_packet(&ctx, peer10, &ping_no_limit);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    uint64_t n1_state_after_return = peer10->flow_send_limit;
+    uint64_t n1_stalled_after_return = peer10->flow_limit_stalled_ms;
+    int n1_reopened = potr_internal_flow_control_peer_state(&ctx, 10U, 2001U, &deferred);
+    peer10->send_window.next_seq = 8U;
+    int n1_restopped = potr_internal_flow_control_peer_state(&ctx, 10U, 2010U, &deferred);
+    now_ms = 2015U;
+    cplat_local_lock_lock(ctx.peers_mutex);
+    potr_internal_flow_control_on_peer_packet(&ctx, peer10, &ping_no_limit);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    int n1_no_oscillation = potr_internal_flow_control_peer_state(&ctx, 10U, 3009U, &deferred);
+    now_ms = 3009U;
+    cplat_local_lock_lock(ctx.peers_mutex);
+    potr_internal_flow_control_on_packet(&ctx, peer10, &notified);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    int n1_recovered = potr_internal_flow_control_peer_state(&ctx, 10U, 3009U, &deferred);
+    // [手順] - 期限切れ→上限なしパケットで未通知 (基準 4) へ復帰→追加 DATA 4 個→再停止後に新期限直前まで振動しないこと→通知で回復を確認する。
+    // Assert
+    EXPECT_EQ(0, bidir_expired); // [確認_正常系] - unicast_bidir が初期幅の停止期限で相手なしへ移ること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 4U, bidir_state_after_return);
+    // [確認_正常系] - unicast_bidir が復帰時に現在通番 4 を基準とする未通知へ戻ること。
+    EXPECT_EQ(0U, bidir_stalled_after_return); // [確認_正常系] - unicast_bidir の復帰直後の停止開始時刻が 0 であること。
+    EXPECT_EQ(0, bidir_reopened);              // [確認_正常系] - unicast_bidir が新しい初期幅で追加の DATA を送出できること。
+    EXPECT_EQ(POTR_FLOW_INITIAL_WIDTH, bidir_reopened_allowance);
+    // [確認_正常系] - unicast_bidir の復帰後の許可数が初期の幅 (4) であること。
+    EXPECT_EQ(1, bidir_restopped);      // [確認_正常系] - unicast_bidir が新しい初期幅を使い切ると再び止まること。
+    EXPECT_EQ(1, bidir_no_oscillation); // [確認_正常系] - unicast_bidir が新期限直前まで振動せず止まり続けること。
+    EXPECT_EQ(0, bidir_recovered);      // [確認_正常系] - unicast_bidir が相手の通知で回復すること。
+    EXPECT_EQ(0, n1_expired);           // [確認_正常系] - N:1 ピアが初期幅の停止期限で相手なしへ移ること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 4U, n1_state_after_return);
+    // [確認_正常系] - N:1 ピアが復帰時に現在通番 4 を基準とする未通知へ戻ること。
+    EXPECT_EQ(0U, n1_stalled_after_return); // [確認_正常系] - N:1 ピアの復帰直後の停止開始時刻が 0 であること。
+    EXPECT_EQ(0, n1_reopened);              // [確認_正常系] - N:1 ピアが新しい初期幅で追加の DATA を送出できること。
+    EXPECT_EQ(1, n1_restopped);             // [確認_正常系] - N:1 ピアが新しい初期幅を使い切ると再び止まること。
+    EXPECT_EQ(1, n1_no_oscillation);        // [確認_正常系] - N:1 ピアが新期限直前まで振動せず止まり続けること。
+    EXPECT_EQ(0, n1_recovered);             // [確認_正常系] - N:1 ピアが相手の通知で回復すること。
 }
 // [サブ手順参照 名前=potrFlowControlTest.TearDown]

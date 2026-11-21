@@ -39,6 +39,15 @@ uint8_t potr_internal_receiver_groups_locked(potr_context *ctx, uint64_t now_ms)
             receiver->retired_ms = receiver->last_report_ms + ctx->health_timeout_ms;
             receiver->flow_unexclude_pending = 0;
             receiver->flow_unexclude_since_ms = 0U;
+            if (receiver->flow_excluded)
+            {
+                /* 期限切れを検出した時点で解き、同一セッションの REPORT の再開時も除外を引き継がせない。 */
+                receiver->flow_excluded = 0;
+                receiver->flow_stall_accum_units = 0U;
+                POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                           "flow_control[service_id=%" PRId64 "]: receiver session=%u unexcluded (report expired)",
+                           ctx->service.service_id, (unsigned)receiver->session_id);
+            }
         }
         if (!receiver->active)
         {
@@ -585,6 +594,10 @@ static int monitoring_flow_suppressed_locked(potr_context *ctx, uint64_t now_ms,
     size_t limit_reached_count = 0U;
     int prev_stalled = 0;
     int exclusion_changed = 0;
+    size_t previous_stopping_count = 0U;
+    size_t current_stopping_count = 0U;
+    int previous_all_slow;
+    int current_all_slow;
 
     if (grace_ms == 0U)
     {
@@ -595,41 +608,65 @@ static int monitoring_flow_suppressed_locked(potr_context *ctx, uint64_t now_ms,
     unexclude_ms = (uint64_t)grace_ms * (uint64_t)POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER;
 
     /*
-     * 前回の判定で送出を止めており、かつ再判定間隔が許容上限未満の場合だけ「止めていた間」として扱う。
-     * 間隔が許容上限以上空いた場合は、送出する DATA がなく待っていた間とみなし、止めていない間として減算する。
+     * wait_flow_resume() は、取り出し済み DATA を保持したまま次の判定まで待つ。
+     * したがって前回「止める」を返した後の区間は、起床の遅れも含めて停止時間である。
+     * close 開始後は呼び出し元がこの判定を通らず、スレッド終了・致命的エラーでは待機から抜ける。
      */
     if (ctx->flow_judge_has_last != 0 && now_ms > ctx->flow_judge_last_ms)
     {
         elapsed_ms = now_ms - ctx->flow_judge_last_ms;
-        if (ctx->flow_judge_last_suppressed != 0 && elapsed_ms < POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS)
-        {
-            prev_stalled = 1;
-        }
+        prev_stalled = ctx->flow_judge_last_suppressed;
     }
 
-    /* 第 1 走査: 活動中の受信者数の集計、除外の解除、および非除外受信者の積算の更新。 */
+    /* 積算を変える前に前回と今回の停止数を求める。除外中の送出上限は REPORT の値で判定する。 */
     for (receiver = ctx->receivers; receiver != NULL; receiver = receiver->next)
     {
         uint64_t limit_until_ms = 0U;
-        potr_internal_send_limit_state limit_state;
-        int valid;
         int stopping;
 
         if (receiver->active)
         {
             active_count++;
         }
-
+        if (receiver->flow_last_stopping)
+        {
+            previous_stopping_count++;
+        }
         if (receiver->flow_excluded)
         {
-            /*
-             * 除外を解く条件: 受信報告に載った送出上限が次の通番より先にある状態 (循環を考慮した差が正) が、
-             * 猶予時間の 10 倍の間続いた時点で解く。活動中でなくなった場合や先にない状態になったら数え直す。
-             */
-            int ahead = receiver->active && receiver->flow_report_limit_known &&
-                        (int32_t)(receiver->flow_report_send_limit - next_seq) > 0;
+            stopping = receiver->active &&
+                       (receiver->flow_request_expire_ms > now_ms ||
+                        (receiver->flow_report_limit_known &&
+                         (int32_t)(receiver->flow_report_send_limit - next_seq) <= 0));
+        }
+        else
+        {
+            potr_internal_send_limit_state limit_state =
+                monitoring_judge_receiver_limit(ctx, receiver, now_ms, next_seq, &limit_until_ms);
 
-            if (ahead)
+            stopping = receiver->flow_request_expire_ms > now_ms || limit_state == POTR_SEND_LIMIT_REACHED;
+        }
+        if (stopping)
+        {
+            current_stopping_count++;
+        }
+    }
+    excluded_limit = flow_excluded_limit(active_count, ctx->flow_control_config.excluded_receiver_count,
+                                         ctx->flow_control_config.excluded_receiver_percent);
+    previous_all_slow = previous_stopping_count > excluded_limit;
+    current_all_slow = current_stopping_count > excluded_limit;
+
+    /* 第 1 走査: 除外の解除と、直前の区間の積算。全体が遅い区間は加算も減算もしない。 */
+    for (receiver = ctx->receivers; receiver != NULL; receiver = receiver->next)
+    {
+        if (receiver->flow_excluded)
+        {
+            int inactive = !receiver->active;
+            int ahead = receiver->flow_report_limit_known &&
+                        (int32_t)(receiver->flow_report_send_limit - next_seq) > 0;
+            int recovered = 0;
+
+            if (!inactive && ahead)
             {
                 if (!receiver->flow_unexclude_pending)
                 {
@@ -639,14 +676,7 @@ static int monitoring_flow_suppressed_locked(potr_context *ctx, uint64_t now_ms,
                 else if (now_ms >= receiver->flow_unexclude_since_ms &&
                          now_ms - receiver->flow_unexclude_since_ms >= unexclude_ms)
                 {
-                    receiver->flow_excluded = 0;
-                    receiver->flow_stall_accum_units = 0U;
-                    receiver->flow_unexclude_pending = 0;
-                    receiver->flow_unexclude_since_ms = 0U;
-                    exclusion_changed = 1;
-                    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
-                               "flow_control[service_id=%" PRId64 "]: receiver session=%u unexcluded",
-                               ctx->service.service_id, (unsigned)receiver->session_id);
+                    recovered = 1;
                 }
             }
             else
@@ -655,29 +685,38 @@ static int monitoring_flow_suppressed_locked(potr_context *ctx, uint64_t now_ms,
                 receiver->flow_unexclude_since_ms = 0U;
             }
 
-            if (receiver->flow_excluded)
+            if (inactive || recovered)
+            {
+                receiver->flow_excluded = 0;
+                receiver->flow_stall_accum_units = 0U;
+                receiver->flow_unexclude_pending = 0;
+                receiver->flow_unexclude_since_ms = 0U;
+                exclusion_changed = 1;
+                const char *reason = "report limit recovered";
+
+                if (inactive)
+                {
+                    reason = "receiver inactive (report expired)";
+                }
+                POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                           "flow_control[service_id=%" PRId64 "]: receiver session=%u unexcluded (%s)",
+                           ctx->service.service_id, (unsigned)receiver->session_id, reason);
+            }
+            else
             {
                 excluded_count++;
-                continue;
             }
 
-            /* 今回の判定で除外を解いた受信者は、直前の区間は除外中だったため積算を進めず、送出上限だけ更新する。 */
-            (void)monitoring_judge_receiver_limit(ctx, receiver, now_ms, next_seq, &limit_until_ms);
+            /* 除外を解いた項目も直前は除外中なので、この区間は積算しない。 */
             continue;
         }
 
-        limit_state = monitoring_judge_receiver_limit(ctx, receiver, now_ms, next_seq, &limit_until_ms);
-        valid = receiver->flow_request_expire_ms > now_ms;
-        stopping = valid || limit_state == POTR_SEND_LIMIT_REACHED;
-
-        /*
-         * 積算の式 (1/9 [ms] 単位):
-         * - 止めていた間 (前回の判定で止めており、かつ今回この受信者が止める状態): 積算 += 経過時間 × 9
-         * - それ以外 (止めていない間): 積算 -= 経過時間 (経過時間 ÷ 9 [ms]、0 を下回らない)
-         * 全体の送出時間のうち約 10% までの停止を一時的な遅れとして受け入れ、それを超える遅い受信者だけを除外する。
-         */
-        receiver->flow_stall_accum_units =
-            flow_stall_accum_update(receiver->flow_stall_accum_units, elapsed_ms, prev_stalled && stopping);
+        if (!previous_all_slow)
+        {
+            /* 積算は 1/9 [ms] 単位。前回停止なら経過時間 × 9、それ以外なら経過時間を減算する。 */
+            receiver->flow_stall_accum_units = flow_stall_accum_update(
+                receiver->flow_stall_accum_units, elapsed_ms, prev_stalled && receiver->flow_last_stopping);
+        }
     }
 
     /*
@@ -688,7 +727,7 @@ static int monitoring_flow_suppressed_locked(potr_context *ctx, uint64_t now_ms,
     excluded_limit = flow_excluded_limit(active_count, ctx->flow_control_config.excluded_receiver_count,
                                          ctx->flow_control_config.excluded_receiver_percent);
 
-    while (excluded_count < excluded_limit)
+    while (!previous_all_slow && !current_all_slow && excluded_count < excluded_limit)
     {
         potr_internal_receiver *victim = NULL;
 
@@ -764,6 +803,9 @@ static int monitoring_flow_suppressed_locked(potr_context *ctx, uint64_t now_ms,
 
         if (receiver->flow_excluded)
         {
+            receiver->flow_last_stopping = receiver->active &&
+                (receiver->flow_request_expire_ms > now_ms ||
+                 (receiver->flow_report_limit_known && (int32_t)(receiver->flow_report_send_limit - next_seq) <= 0));
             /* 除外中の受信者は、除外を解く条件を判定し続けるため tracked に数える。 */
             tracked_count++;
             continue;
@@ -778,6 +820,7 @@ static int monitoring_flow_suppressed_locked(potr_context *ctx, uint64_t now_ms,
         limit_state = monitoring_judge_receiver_limit(ctx, receiver, now_ms, next_seq, &limit_until_ms);
         valid = receiver->flow_request_expire_ms > now_ms;
         stopping = valid || limit_state == POTR_SEND_LIMIT_REACHED;
+        receiver->flow_last_stopping = stopping;
 
         if (limit_state == POTR_SEND_LIMIT_REACHED)
         {
@@ -805,7 +848,7 @@ static int monitoring_flow_suppressed_locked(potr_context *ctx, uint64_t now_ms,
             }
 
             /* まだ除外できる余地がある場合は、積算が猶予時間に達しうる時刻より後まで待たないようにする。 */
-            if (excluded_count < excluded_limit)
+            if (!current_all_slow && excluded_count < excluded_limit)
             {
                 uint64_t rem_units = (grace_units > receiver->flow_stall_accum_units)
                                          ? (grace_units - receiver->flow_stall_accum_units)
@@ -890,6 +933,12 @@ int potr_internal_receiver_flow_suppressed(potr_context *ctx, uint64_t now_ms, u
         if (receiver->flow_last_packet_ms > activity_ms)
         {
             activity_ms = receiver->flow_last_packet_ms;
+        }
+
+        if ((receiver->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK) == POTR_FLOW_SEND_LIMIT_UNNOTIFIED)
+        {
+            /* 最初の通知を受けないまま止まる場合、REPORT 等で期限を延ばさない。 */
+            activity_ms = 0U;
         }
 
         limit_state = flow_send_limit_judge(receiver->flow_send_limit, activity_ms, &receiver->flow_limit_stalled_ms,

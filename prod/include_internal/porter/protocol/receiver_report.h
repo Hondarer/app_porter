@@ -41,25 +41,15 @@ typedef struct potr_internal_receiver
     int32_t flow_margin; /**< 余裕 (受信報告に載った送出上限 − 受理した時点の次に割り当てる通番)。flow_margin_known が 1 の間だけ有効。 */
     int flow_margin_known; /**< 余裕の記録があるか (1: ある)。記録がない受信者は監視対象の候補にしない。 */
     int flow_excluded; /**< multicast と broadcast で、止める判定と監視対象から除外しているか (1: 除外中)。 */
+    int flow_last_stopping; /**< 前回の判定時点で止める状態だったか。除外中も活動中なら記録します。callback_mutex で保護。 */
     int flow_unexclude_pending; /**< 除外を解く条件を満たし始めた時刻を記録中か (1: 記録中)。 */
+    int _pad_flow_last_stopping; /**< パディング (構造体を 8 [byte] 境界に揃える)。 */
 } potr_internal_receiver;
 
 /** 除外を解く条件 (受信報告の送出上限が次の通番より先にある状態) を維持する時間の倍率 (猶予時間の 10 倍)。 */
 #define POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER 10U
 
-/**
- * 送出を止めている間の再判定間隔の許容倍率。
- * 送信スレッドは止めている間、最大 POTR_INTERNAL_FLOW_RECHECK_MS (50 [ms]) 間隔で判定し直すため、
- * OS のスケジューリング遅延を見込んでその 3 倍 (150 [ms]) 以上間隔が空いた場合は、
- * 送出する DATA がなく送信者が待っていた間とみなし、止めていた間として数えない。
- */
-#define POTR_INTERNAL_FLOW_STALL_GAP_MULTIPLIER 3U
-#define POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS \
-    ((uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS * (uint64_t)POTR_INTERNAL_FLOW_STALL_GAP_MULTIPLIER)
-
 static_assert(POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER == 10U, "porter: POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER must be 10");
-static_assert(POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS > (uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS,
-              "porter: POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS must exceed POTR_INTERNAL_FLOW_RECHECK_MS");
 
 /**
  *  @brief          multicast と broadcast の送信者が監視する受信者の数を求めます。
@@ -146,11 +136,12 @@ uint8_t potr_internal_receiver_groups_locked(potr_context *ctx, uint64_t now_ms)
  *  unicast では、「止める状態」の受信者が 1 台でもあれば抑制します。\n
  *  multicast と broadcast では、除外していない受信者のうち 1 台でも「止める状態」であれば抑制します。
  *  受信者ごとに、その受信者が止める状態で送信者が送出を止めていた時間を積算し、止めていない間は経過時間 ÷ 9 だけ
- *  減算します (0 を下回らない)。前回の判定から POTR_INTERNAL_FLOW_STALL_GAP_LIMIT_MS 以上空いた場合は、
- *  止めていない間として扱います。積算が猶予時間 (grace_ms) に達した受信者は、除外している数が
+ *  減算します (0 を下回らない)。経過区間には前回の判定時点の停止状態を使います。
+ *  前回の止める状態の数 (活動中の除外受信者を含む) が除外上限を超える区間は、全員の積算を据え置きます。
+ *  全体が遅い間は新しく除外せず、積算に基づく待機上限も適用しません。積算が猶予時間 (grace_ms) に達した受信者は、除外している数が
  *  flow_excluded_limit() の上限に達していない場合に除外し、監視対象からも外します。
  *  除外した受信者は、受信報告に載った送出上限が next_seq より先にある状態が猶予時間の 10 倍の間続いた時点で
- *  除外を解き、積算を 0 に戻します。\n
+ *  除外を解き、積算を 0 に戻します。活動中でなくなった除外受信者も、除外、積算、解除用の計時を戻します。\n
  *  multicast と broadcast で受信者ごとに保持する送出上限は、監視対象の受信者のものだけです (potr_internal_receiver_accept())。\n
  *  送出上限に達した時点から有効期限が経過しても次のフロー制御パケットを受理していない受信者は、
  *  その送出上限を破棄し、上限がないものとして扱います。

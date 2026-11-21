@@ -212,13 +212,17 @@ TEST_F(potrFlowControlN1SlowPeerTest, stopping_peers_exceeding_limit_suppresses_
     now_ms = 1500U;
     size_t count_within_limit = collect_slow(slow_peers, slow_accum, &next_ms);
     // [手順] - ピア 20 の止める状態を解き (同時停止 1 <= 上限 1)、同時刻で収集を呼ぶ。
+    now_ms = 1700U;
+    size_t count_after_grace = collect_slow(slow_peers, slow_accum, &next_ms);
+    // [手順] - 全体停止が終わった後の単独停止を 200 [ms] 積算する。
     // Assert
     EXPECT_EQ(0U, count_over_limit);
     // [確認_正常系] - 同時停止数が上限を超えている間は切断対象が 0 件であること。
-    EXPECT_EQ(200U * POTR_FLOW_ACCUM_DECAY_DIVISOR, clamped_units);
-    // [確認_正常系] - 積算が猶予時間 (200 × 9) を上限として保持されること。
-    ASSERT_EQ(1U, count_within_limit);
-    // [確認_正常系] - 同時停止数が上限以下に戻ると即座に切断対象が 1 件になること。
+    EXPECT_EQ(0U, clamped_units);
+    // [確認_正常系] - 全体が遅い間の積算が 0 のままであること。
+    EXPECT_EQ(0U, count_within_limit);
+    // [確認_正常系] - 同時停止数が上限以下に戻った直後はまだ切断しないこと。
+    ASSERT_EQ(1U, count_after_grace); // [確認_正常系] - 単独停止の猶予時間で切断対象が 1 件になること。
     EXPECT_EQ(10U, slow_peers[0]); // [確認_正常系] - 残った止める状態のピア 10 が切断対象になること。
 }
 // [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
@@ -241,6 +245,7 @@ TEST_F(potrFlowControlN1SlowPeerTest, recovery_decays_accum_and_clears_blocking_
     now_ms = 1100U;
     (void)collect_slow(slow_peers, slow_accum, &next_ms); // 100 [ms] 積算 (900 単位)
     set_peer_stopping(p1, false);
+    (void)collect_slow(slow_peers, slow_accum, &next_ms); // [手順] - 時刻 1100 で解除を判定し、次の区間から減算する。
     now_ms = 1550U;
     (void)collect_slow(slow_peers, slow_accum, &next_ms); // 450 [ms] 減算 -> 450 単位 (50 [ms] 相当)
     uint64_t mid_units = p1->flow_stall_accum_units;
@@ -341,5 +346,67 @@ TEST_F(potrFlowControlN1SlowPeerTest, excluded_limit_disabled_or_single_peer_nev
     // Assert
     EXPECT_EQ(0U, count_single);   // [確認_正常系] - 接続 1 台では上限 0 のため切断対象にならないこと。
     EXPECT_EQ(0U, count_disabled); // [確認_正常系] - 除外上限が無効の場合は切断対象にならないこと。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// N:1 ピアで、解除で起きた判定でも直前に止めていた区間を加算し、全体が遅い間は既存の積算を据え置くことの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, short_stops_accumulate_on_release_and_all_slow_freezes_accum)
+{
+    // Arrange
+    potr_internal_peer_context *p1 = add_peer(0, 10U);
+    potr_internal_peer_context *p2 = add_peer(1, 20U);
+    add_peer(2, 30U);
+    // 接続 3 台、除外上限 1 台。
+    set_peer_stopping(p1, true);
+    potr_internal_flow_control_peer_mark_blocking(&ctx, 10U, now_ms);
+    std::vector<potr_peer_id> slow_peers;
+    std::vector<uint64_t> slow_accum;
+    uint64_t next_ms = 0U;
+    uint64_t cycle_accum[5] = {};
+    // [状態] - 接続 3 ピア (上限 1) でピア 10 に妨げを記録し、40 [ms] 停止・20 [ms] 送出を繰り返す。
+    // Pre-Assert
+    // Act
+    for (uint64_t cycle = 0U; cycle < 5U; cycle++)
+    {
+        uint64_t start_ms = 1000U + cycle * 60U;
+        if (cycle > 0U)
+        {
+            set_peer_stopping(p1, true);
+            now_ms = start_ms;
+            (void)collect_slow(slow_peers, slow_accum, &next_ms);
+        }
+        set_peer_stopping(p1, false);
+        now_ms = start_ms + 40U;
+        (void)collect_slow(slow_peers, slow_accum, &next_ms);
+        now_ms = start_ms + 60U;
+        (void)collect_slow(slow_peers, slow_accum, &next_ms);
+        cycle_accum[cycle] = p1->flow_stall_accum_units;
+    }
+    // 全体が遅い間 (同時停止 2 > 上限 1) は既存の積算 (1700 単位) を加算も減算もせず据え置く。
+    set_peer_stopping(p1, true);
+    set_peer_stopping(p2, true);
+    now_ms = 1300U;
+    (void)collect_slow(slow_peers, slow_accum, &next_ms);
+    now_ms = 1600U;
+    size_t count_all_slow = collect_slow(slow_peers, slow_accum, &next_ms);
+    uint64_t accum_all_slow = p1->flow_stall_accum_units;
+    // ピア 20 が回復し単独停止に戻った後、残り 100 単位 (12 [ms]) で猶予時間 (1800 単位) に達する。
+    set_peer_stopping(p2, false);
+    now_ms = 1600U;
+    (void)collect_slow(slow_peers, slow_accum, &next_ms);
+    now_ms = 1612U;
+    size_t count_at_grace = collect_slow(slow_peers, slow_accum, &next_ms);
+    // [手順] - 解除後の判定での停止区間加算を 5 周期確認し、全体停止による据え置き後に単独停止で猶予時間へ到達させる。
+    // Assert
+    for (size_t cycle = 0U; cycle < 5U; cycle++)
+    {
+        EXPECT_EQ((cycle + 1U) * (40U * 9U - 20U), cycle_accum[cycle]);
+        // [確認_正常系] - 解除で起きた判定でも直前の 40 [ms] を加算し、1 周期で 340 単位ずつ増えること。(確認 5 回)
+    }
+    EXPECT_EQ(0U, count_all_slow);     // [確認_正常系] - 全体が遅い間は切断対象にならないこと。
+    EXPECT_EQ(1700U, accum_all_slow);  // [確認_正常系] - 全体が遅い間は既存の積算 1700 単位を据え置くこと。
+    ASSERT_EQ(1U, count_at_grace);     // [確認_正常系] - 単独停止へ戻った後に残りの積算で切断対象になること。
+    EXPECT_EQ(10U, slow_peers[0]);     // [確認_正常系] - 切断対象がピア 10 であること。
 }
 // [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]

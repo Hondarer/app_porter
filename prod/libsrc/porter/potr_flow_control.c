@@ -2434,6 +2434,26 @@ static uint64_t advance_query_timer(potr_context *ctx, struct potr_internal_peer
     return *next_ms;
 }
 
+/*
+ * 期限判定後の同値再通知を検出する。受信側は時刻を先に書いてから送出上限を書く。
+ * 時刻の読み直しと比較交換の間には競合の幅が残り、同じミリ秒内の同値通知も識別できない。
+ * 変化または比較交換の失敗時は制限を外さず、次の判定で新しい状態を使う。
+ */
+static int expire_limit_if_unchanged(potr_context *ctx, uint64_t send_limit, uint64_t received_ms,
+                                     uint64_t last_packet_ms)
+{
+    uint64_t expected = send_limit;
+
+    if (cplat_atomic_load_u64(&ctx->flow_limit_received_ms, CPLAT_MEMORY_ORDER_ACQUIRE) != received_ms ||
+        cplat_atomic_load_u64(&ctx->flow_last_packet_ms, CPLAT_MEMORY_ORDER_ACQUIRE) != last_packet_ms)
+    {
+        return 0;
+    }
+
+    return cplat_atomic_compare_exchange_u64(&ctx->flow_send_limit, &expected, POTR_FLOW_SEND_LIMIT_NO_PEER,
+                                              CPLAT_MEMORY_ORDER_ACQ_REL);
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
 int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, int *wait_ms, uint32_t *allowance)
 {
@@ -2510,21 +2530,25 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
                 /* 受信者からまだ 1 パケットも受けていない間の初期の幅を判定する。 */
                 uint64_t received_ms = cplat_atomic_load_u64(&ctx->flow_limit_received_ms, CPLAT_MEMORY_ORDER_ACQUIRE);
                 uint64_t last_pkt_ms = cplat_atomic_load_u64(&ctx->flow_last_packet_ms, CPLAT_MEMORY_ORDER_ACQUIRE);
-                uint64_t activity_ms = later_time(received_ms, last_pkt_ms);
+                uint64_t activity_ms = 0U;
                 uint64_t limit_until_ms = 0U;
                 potr_internal_send_limit_state limit_state;
 
+                if (handle_state != POTR_FLOW_SEND_LIMIT_UNNOTIFIED)
+                {
+                    activity_ms = later_time(received_ms, last_pkt_ms);
+                }
                 next_seq = read_next_seq(&ctx->send_window, ctx->send_window_mutex);
                 limit_state = flow_send_limit_judge(handle_limit, activity_ms, &ctx->flow_limit_stalled_ms, next_seq,
                                                     now_ms, ctx->flow_control_config.request_lifetime_ms,
                                                     &limit_until_ms, allowance);
                 if (limit_state == POTR_SEND_LIMIT_EXPIRED)
                 {
-                    uint64_t expected = handle_limit;
-
-                    /* 受信スレッドが先に更新していなければ「相手なし」へ遷移する。戻り値は使わない。 */
-                    (void)cplat_atomic_compare_exchange_u64(&ctx->flow_send_limit, &expected,
-                                                            POTR_FLOW_SEND_LIMIT_NO_PEER, CPLAT_MEMORY_ORDER_ACQ_REL);
+                    if (!expire_limit_if_unchanged(ctx, handle_limit, received_ms, last_pkt_ms))
+                    {
+                        *wait_ms = POTR_INTERNAL_FLOW_RECHECK_MS;
+                        return 1;
+                    }
                     ctx->flow_limit_stalled_ms = 0U;
                     ctx->flow_query_next_ms = 0U;
                     ctx->flow_query_interval_ms = 0U;
@@ -2577,6 +2601,7 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
         uint64_t send_limit = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
         uint64_t received_ms = cplat_atomic_load_u64(&ctx->flow_limit_received_ms, CPLAT_MEMORY_ORDER_ACQUIRE);
         uint64_t activity_ms = received_ms;
+        uint64_t last_pkt_ms = 0U;
         uint64_t limit_until_ms = 0U;
         potr_internal_send_limit_state limit_state;
         int request_valid = expire_ms > now_ms;
@@ -2584,7 +2609,7 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
 
         if (udp_query)
         {
-            uint64_t last_pkt_ms = cplat_atomic_load_u64(&ctx->flow_last_packet_ms, CPLAT_MEMORY_ORDER_ACQUIRE);
+            last_pkt_ms = cplat_atomic_load_u64(&ctx->flow_last_packet_ms, CPLAT_MEMORY_ORDER_ACQUIRE);
             activity_ms = later_time(received_ms, last_pkt_ms);
         }
 
@@ -2615,6 +2640,12 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
             }
         }
 
+        if (udp_query && (send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK) == POTR_FLOW_SEND_LIMIT_UNNOTIFIED)
+        {
+            /* 初期の幅での停止は、最初の通知以外のパケットによって期限を延ばさない。 */
+            activity_ms = 0U;
+        }
+
         limit_state = flow_send_limit_judge(send_limit, activity_ms, &ctx->flow_limit_stalled_ms, next_seq, now_ms,
                                             ctx->flow_control_config.request_lifetime_ms, &limit_until_ms,
                                             allowance);
@@ -2625,10 +2656,11 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
          */
         if (limit_state == POTR_SEND_LIMIT_EXPIRED && udp_query)
         {
-            uint64_t expected = send_limit;
-
-            (void)cplat_atomic_compare_exchange_u64(&ctx->flow_send_limit, &expected, POTR_FLOW_SEND_LIMIT_NO_PEER,
-                                                    CPLAT_MEMORY_ORDER_ACQ_REL);
+            if (!expire_limit_if_unchanged(ctx, send_limit, received_ms, last_pkt_ms))
+            {
+                *wait_ms = POTR_INTERNAL_FLOW_RECHECK_MS;
+                return 1;
+            }
             ctx->flow_limit_stalled_ms = 0U;
         }
 
@@ -2695,6 +2727,11 @@ static int peer_state_locked(potr_context *ctx, potr_internal_peer_context *peer
         now_ms >= peer->flow_last_data_send_ms + (uint64_t)ctx->flow_control_config.request_lifetime_ms)
     {
         peer->flow_send_limit = flow_send_limit_clamp_initial(peer->flow_send_limit, next_seq);
+    }
+
+    if ((peer->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK) == POTR_FLOW_SEND_LIMIT_UNNOTIFIED)
+    {
+        activity_ms = 0U;
     }
 
     limit_state = flow_send_limit_judge(peer->flow_send_limit, activity_ms, &peer->flow_limit_stalled_ms, next_seq,
@@ -2803,6 +2840,20 @@ void potr_internal_flow_control_peer_mark_blocking(potr_context *ctx, potr_peer_
     if (peer != NULL && peer->active &&
         cplat_atomic_load_i32(&peer->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) != 0 && peer->flow_blocking == 0)
     {
+        if (cplat_atomic_load_i32(&ctx->flow_blocking_peers, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+        {
+            int i;
+
+            /* 最初の妨げの時点を、積算区間の開始状態として全ピアについて記録する。 */
+            for (i = 0; i < ctx->max_peers; i++)
+            {
+                potr_internal_peer_context *other = &ctx->peers[i];
+
+                other->flow_last_stopping = other->active &&
+                    cplat_atomic_load_i32(&other->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
+                    peer_state_locked(ctx, other, now_ms, 0);
+            }
+        }
         peer->flow_blocking = 1;
         peer->flow_stall_accum_units = 0U;
         peer->flow_stall_last_ms = now_ms;
@@ -2836,6 +2887,7 @@ size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, u
     uint64_t grace_units;
     size_t connected_count = 0U;
     size_t stopping_count = 0U;
+    size_t previous_stopping_count = 0U;
     size_t limit;
     size_t count = 0U;
     uint64_t earliest = 0U;
@@ -2865,6 +2917,28 @@ size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, u
     }
     grace_units = (uint64_t)grace_ms * (uint64_t)POTR_FLOW_ACCUM_DECAY_DIVISOR;
 
+    /* 前回と今回の停止数を先に確定し、全体が遅かった区間の積算を据え置く。 */
+    for (i = 0; i < ctx->max_peers; i++)
+    {
+        potr_internal_peer_context *peer = &ctx->peers[i];
+
+        if (!peer->active || cplat_atomic_load_i32(&peer->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+        {
+            continue;
+        }
+        connected_count++;
+        if (peer->flow_last_stopping)
+        {
+            previous_stopping_count++;
+        }
+        if (peer_state_locked(ctx, peer, now_ms, 0))
+        {
+            stopping_count++;
+        }
+    }
+    limit = flow_excluded_limit(connected_count, ctx->flow_control_config.excluded_receiver_count,
+                                ctx->flow_control_config.excluded_receiver_percent);
+
     /* 第 1 走査: 接続中ピア数・同時停止ピア数の集計、キュー満杯による妨げの反映、積算の更新。 */
     for (i = 0; i < ctx->max_peers; i++)
     {
@@ -2876,12 +2950,7 @@ size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, u
             continue;
         }
 
-        connected_count++;
         stopping = peer_state_locked(ctx, peer, now_ms, 0);
-        if (stopping != 0)
-        {
-            stopping_count++;
-        }
 
         /* 送信キュー満杯の記録があり、保留エントリを持つ止める状態のピアには妨げを記録する。 */
         if (full_ms != 0U && peer->flow_deferred_entries > 0 && stopping != 0 && peer->flow_blocking == 0)
@@ -2895,6 +2964,7 @@ size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, u
             peer->flow_blocking = 1;
             peer->flow_stall_accum_units = 0U;
             peer->flow_stall_last_ms = since_ms;
+            peer->flow_last_stopping = stopping;
             /* 加算前の値は使わないため、戻り値は明示的に破棄する。 */
             (void)cplat_atomic_fetch_add_i32(&ctx->flow_blocking_peers, 1, CPLAT_MEMORY_ORDER_RELEASE);
         }
@@ -2908,7 +2978,12 @@ size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, u
                 elapsed_ms = now_ms - peer->flow_stall_last_ms;
             }
 
-            peer->flow_stall_accum_units = flow_stall_accum_update(peer->flow_stall_accum_units, elapsed_ms, stopping);
+            /* 解除で起床しても、直前に止めていた区間は前回の状態で加算する。 */
+            if (previous_stopping_count <= limit)
+            {
+                peer->flow_stall_accum_units = flow_stall_accum_update(
+                    peer->flow_stall_accum_units, elapsed_ms, peer->flow_last_stopping);
+            }
             peer->flow_stall_last_ms = now_ms;
 
             /* 止める状態が解けて積算が 0 に戻った時点で妨げの記録を消す。 */
@@ -2917,10 +2992,8 @@ size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, u
                 potr_internal_flow_control_peer_clear_blocking(ctx, peer);
             }
         }
+        peer->flow_last_stopping = stopping;
     }
-
-    limit = flow_excluded_limit(connected_count, ctx->flow_control_config.excluded_receiver_count,
-                                ctx->flow_control_config.excluded_receiver_percent);
 
     /* 第 2 走査: 上限判定、積算の上限丸め、切断対象の収集、次の判定時刻の算出。 */
     for (i = 0; i < ctx->max_peers; i++)
@@ -2934,9 +3007,9 @@ size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, u
             continue;
         }
 
-        if (stopping_count > limit)
+        if (previous_stopping_count > limit || stopping_count > limit)
         {
-            /* 同時に止める状態のピアが上限を超えている間は切断せず、猶予時間を上限として保持する。 */
+            /* 全体が遅い区間は積算を据え置き、新しい切断もしない。 */
             if (peer->flow_stall_accum_units > grace_units)
             {
                 peer->flow_stall_accum_units = grace_units;

@@ -1,2 +1,5 @@
 /packet_seal.c
 /potr_flow_control.c
+/potr_notify.c
+/potr_path_event.c
+/thread_recv_session.c

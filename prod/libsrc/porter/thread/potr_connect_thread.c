@@ -151,6 +151,8 @@ static void join_recv_thread(potr_context *ctx, int path_idx)
  */
 static void reset_connection_state(potr_context *ctx)
 {
+    uint32_t next_seq;
+
     ctx->peer_session_known = 0;
     ctx->frag_buf_len = 0;
     ctx->frag_count = 0U;
@@ -158,6 +160,20 @@ static void reset_connection_state(potr_context *ctx)
     ctx->pending_fin = 0;
     cplat_atomic_store_i32(&ctx->tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELEASE);
     cplat_atomic_store_i32(&ctx->tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELEASE);
+    if (ctx->send_window_mutex != NULL)
+    {
+        cplat_local_lock_lock(ctx->send_window_mutex);
+        next_seq = ctx->send_window.next_seq;
+        cplat_local_lock_unlock(ctx->send_window_mutex);
+    }
+    else
+    {
+        next_seq = ctx->send_window.next_seq;
+    }
+    /* 初回 DATA の採用では通知を取り消さないため、接続の公開前に未通知と要求なしへ戻す。 */
+    cplat_atomic_store_u64(&ctx->flow_request_expire_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq,
+                           CPLAT_MEMORY_ORDER_RELEASE);
 }
 
 /*
@@ -205,7 +221,8 @@ static void reset_all_paths_disconnected(potr_context *ctx)
     ctx->send_window.base_index = 0U;
     ctx->send_has_data = 0;
 
-    /* 自分の通番が 0 から始まり直すため、未通知 (初期の幅) へ戻す。 */
+    /* 自分の通番が 0 から始まり直すため、未通知 (初期の幅) と要求なしへ戻す。 */
+    cplat_atomic_store_u64(&ctx->flow_request_expire_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
     cplat_atomic_store_u64(&ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED, CPLAT_MEMORY_ORDER_RELEASE);
 
     if (ctx->send_window.valid != NULL)

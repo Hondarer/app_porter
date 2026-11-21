@@ -41,6 +41,12 @@ static void slot_clear_pending_fin(thread_recv_slot *slot)
  */
 static void slot_forget_flow_control(thread_recv_slot *slot)
 {
+    /* TCP は接続スレッドが接続単位で初期化する。初回 DATA より先に受けた通知も維持する。 */
+    if (slot->ctx->service.type == POTR_TYPE_TCP || slot->ctx->service.type == POTR_TYPE_TCP_BIDIR)
+    {
+        return;
+    }
+
     uint32_t next_seq;
 
     if (slot->peer != NULL)

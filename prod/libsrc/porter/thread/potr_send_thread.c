@@ -401,6 +401,8 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
     potr_internal_path_group_result selection;
     int i;
     int sent_any = 0;
+    int has_sent_time = 0;
+    uint64_t sent_ms = 0U;
     int window_pending = 1;
 
     if (is_tcp_type(ctx->service.type))
@@ -483,11 +485,10 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
             sent_any = 1;
             if (should_track_valid_data_send_time(ctx))
             {
-                uint64_t path_sent_ms;
-
-                if (cplat_clock_get_monotonic_ms(&path_sent_ms) == CPLAT_OK)
+                if (cplat_clock_get_monotonic_ms(&sent_ms) == CPLAT_OK)
                 {
-                    cplat_atomic_store_u64(&ctx->last_valid_data_send_ms[i], path_sent_ms,
+                    has_sent_time = 1;
+                    cplat_atomic_store_u64(&ctx->last_valid_data_send_ms[i], sent_ms,
                                            CPLAT_MEMORY_ORDER_RELAXED);
                 }
                 else
@@ -504,10 +505,11 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
     cplat_local_lock_unlock(ctx->send_window_mutex);
     if (!window_pending && (ctx->service.type == POTR_TYPE_UNICAST || ctx->service.type == POTR_TYPE_UNICAST_BIDIR))
     {
-        uint64_t sent_ms = 0U;
-
-        /* 送信が途切れた後の許可の短縮に使う時刻。取得失敗時は前回の時刻を保ち、戻り値は明示的に破棄する。 */
-        if (cplat_clock_get_monotonic_ms(&sent_ms) == CPLAT_OK)
+        /*
+         * 経路で取得した最新時刻を再利用する。成功経路がない場合も時刻を取得する。
+         * ウィンドウに保持した DATA の送出試行を記録する既存の動作を保つためである。取得失敗時は前回値を保つ。
+         */
+        if (has_sent_time || cplat_clock_get_monotonic_ms(&sent_ms) == CPLAT_OK)
         {
             ctx->flow_last_data_send_ms = sent_ms;
         }
