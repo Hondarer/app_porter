@@ -40,6 +40,15 @@
 
 #include "thread_connect_prepare.h"
 
+/**
+ * 接続の完了を待つ 1 回の待機の上限 [ms]。待機から戻るたびに停止の指示を確認するため、
+ * 待機による停止の遅れは、この値を超えない。
+ */
+#define TCP_CONNECT_POLL_SLICE_MS 100U
+
+static_assert(TCP_CONNECT_POLL_SLICE_MS > 0U && TCP_CONNECT_POLL_SLICE_MS <= POTR_WAIT_MS_MAX,
+              "porter: TCP_CONNECT_POLL_SLICE_MS out of range");
+
 /* Doxygen コメントは、ヘッダーに記載 */
 int thread_connect_read_first_packet(const cplat_socket fd, uint8_t *buf, const size_t max_buf, size_t *len_out,
                                      const int timeout_ms)
@@ -97,7 +106,7 @@ int thread_connect_read_first_packet(const cplat_socket fd, uint8_t *buf, const 
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
-int thread_connect_session_compare(const potr_context *ctx, const potr_packet *pkt)
+tcp_session_cmp thread_connect_session_compare(const potr_context *ctx, const potr_packet *pkt)
 {
     cplat_timespec pkt_session_ts;
     int ts_cmp;
@@ -264,9 +273,9 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
         {
             uint32_t poll_ms = timeout_ms - elapsed_ms;
             int wait_result;
-            if (poll_ms > 100U)
+            if (poll_ms > TCP_CONNECT_POLL_SLICE_MS)
             {
-                poll_ms = 100U;
+                poll_ms = TCP_CONNECT_POLL_SLICE_MS;
             }
             wait_result = cplat_socket_timed_wait_writable(sock, (int)poll_ms, NULL);
             if (wait_result == CPLAT_OK)

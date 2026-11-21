@@ -31,8 +31,8 @@ sequenceDiagram
     HT->>UDP: PING[seq=N] 送信 (期限を迎えた経路)
 
     UDP->>RRT: PING[seq=N] 受信
-    RRT->>RRT: last_recv_tv を更新<br>(タイムアウトカウンタリセット)
-    RRT->>RRT: notify_health_alive()<br>(health_alive=0 のとき CONNECTED 発火)
+    RRT->>RRT: last_recv_ts を更新<br>(タイムアウトカウンタリセット)
+    RRT->>RRT: thread_recv_sync_path_state()<br>(health_alive=0 のとき CONNECTED 発火)
     RRT->>RRT: next_seq〜N-1 を全スキャン<br>欠番を一括 NACK する
     Note over RRT: 欠番なければ返信なし
 
@@ -89,7 +89,7 @@ sequenceDiagram
     participant RAPP as アプリ<br>(受信側)
 
     S->>UDP: DATA 送信 (正常稼働中)
-    UDP->>RRT: DATA 受信 → last_recv_tv 更新
+    UDP->>RRT: DATA 受信 → last_recv_ts 更新
     RRT->>RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DATA, ...)
 
     Note over S, UDP: ここでネットワーク断が発生
@@ -99,7 +99,7 @@ sequenceDiagram
 
     Note over RRT: health_timeout_ms = 10000ms
 
-    RRT->>RRT: last_recv_tv から 10000ms 経過を検出
+    RRT->>RRT: last_recv_ts から 10000ms 経過を検出
 
     RRT->>RAPP: callback(service_id, POTR_PEER_NA, POTR_EVENT_DISCONNECTED, NULL, 0)
     RRT->>RRT: health_alive = 0<br>peer_session_known = 0<br>recv_window リセット

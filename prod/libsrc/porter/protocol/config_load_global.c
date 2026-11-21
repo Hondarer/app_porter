@@ -116,7 +116,7 @@ int potr_internal_config_load_global(const char *config_path, potr_global_config
      */
     cJSON_ArrayForEach(item, global_object)
     {
-        char value_buffer[32];
+        char value_buffer[POTR_INT64_STR_BUF_SIZE];
         const char *val = config_value_text(item, value_buffer, sizeof(value_buffer));
         const char *key = item->string;
 

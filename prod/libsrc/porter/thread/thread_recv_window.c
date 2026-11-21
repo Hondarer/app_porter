@@ -11,6 +11,7 @@
  *******************************************************************************
  */
 
+#include <assert.h>
 #include <inttypes.h>
 #include <string.h>
 
@@ -36,6 +37,21 @@
 
 /** NACK 重複抑制の時間窓 [ms]。この時間内の同一 ack_num の NACK は破棄する。 */
 #define POTR_NACK_DEDUP_MS 200U
+
+static_assert(POTR_NACK_DEDUP_MS > 0U && POTR_NACK_DEDUP_MS <= POTR_WAIT_MS_MAX,
+              "porter: POTR_NACK_DEDUP_MS out of range");
+
+/**
+ * 受信ウィンドウの使用率の警告のしきい値を表す分数の分子と分母。
+ * 使用率が NACK_STRETCH_WARN_NUM / NACK_STRETCH_WARN_DEN 以上の場合に警告する。
+ */
+#define NACK_STRETCH_WARN_NUM 8U
+#define NACK_STRETCH_WARN_DEN 10U
+
+static_assert(NACK_STRETCH_WARN_NUM >= 1U && NACK_STRETCH_WARN_NUM <= NACK_STRETCH_WARN_DEN,
+              "porter: recv_window utilization threshold must be in (0, 1]");
+static_assert((uint64_t)POTR_MAX_WINDOW_SIZE * NACK_STRETCH_WARN_DEN <= UINT32_MAX,
+              "porter: recv_window utilization comparison must fit in uint32_t");
 
 static void fill_own_session_hdr(const thread_recv_slot *slot, potr_internal_packet_session_hdr *shdr)
 {
@@ -509,10 +525,11 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
 
     /*
      * 使用率が 80 [%] 以上なら警告する。
-     * stretch は base_seq から到着した通番までの幅であり、浮動小数点演算を避けて 10 倍と 8 倍で比較する。
+     * stretch は base_seq から到着した通番までの幅であり、浮動小数点演算を避けて、
+     * 分母と分子をそれぞれ掛けて比較する。
      */
     stretch = (uint32_t)(pkt->seq_num - slot->recv_window->base_seq) + 1U;
-    if (stretch * 10U >= (uint32_t)slot->recv_window->window_size * 8U)
+    if (stretch * NACK_STRETCH_WARN_DEN >= (uint32_t)slot->recv_window->window_size * NACK_STRETCH_WARN_NUM)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
                    "recv[service_id=%" PRId64 "]: peer=%u recv_window utilization high (%u/%u >= 80%%)"

@@ -7,6 +7,7 @@ extern "C"
 {
 #endif
     int test_reorder_gap_ready(thread_recv_slot *slot, uint32_t nack_num);
+    int test_nack_is_duplicate(thread_recv_slot *slot, uint32_t ack_num);
 #ifdef __cplusplus
 }
 #endif

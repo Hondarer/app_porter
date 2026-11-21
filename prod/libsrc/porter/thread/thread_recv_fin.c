@@ -60,7 +60,8 @@ static int send_tcp_fin_ack(potr_context *ctx, uint32_t fin_target_seq)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int thread_recv_fin_on_packet(thread_recv_slot *slot, const potr_packet *pkt, uint32_t *fin_target_seq_out)
+thread_recv_fin_result thread_recv_fin_on_packet(thread_recv_slot *slot, const potr_packet *pkt,
+                                                 uint32_t *fin_target_seq_out)
 {
     if ((pkt->flags & POTR_FLAG_FIN) == 0)
     {

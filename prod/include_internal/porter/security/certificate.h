@@ -8,6 +8,7 @@
 #ifndef POTR_SECURITY_CERTIFICATE_H
 #define POTR_SECURITY_CERTIFICATE_H
 #include <porter/security/potr_auth.h>
+#include <porter/protocol/packet.h>
 #include <porter/protocol/packet_seal.h>
 #include <cplat/net/socket.h>
 #include <cplat/clock/timespec.h>
@@ -24,7 +25,7 @@ typedef struct potr_internal_certificate_state
     int identity_padding; /**< 8 バイト境界のパディング。 */
     uint8_t send_key[POTR_CRYPTO_KEY_SIZE]; /**< 自端から相手への鍵。 */
     uint8_t receive_key[POTR_CRYPTO_KEY_SIZE]; /**< 相手から自端への鍵。 */
-    uint8_t peer_identity[16]; /**< 相手のセッション識別子の NBO 表現。 */
+    uint8_t peer_identity[POTR_IDENTITY_SIZE]; /**< 相手のセッション識別子の NBO 表現。 */
     cplat_ipv4_endpoint destination[POTR_MAX_PATH]; /**< ハンドシェイク専用の返送先。 */
     uint64_t retry_ms; /**< ハンドシェイクを開始した単調増加時刻 [ms]。 */
     int established; /**< 鍵の導出が完了したか。 */

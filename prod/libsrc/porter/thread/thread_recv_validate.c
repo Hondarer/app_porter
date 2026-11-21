@@ -81,7 +81,7 @@ int thread_recv_replay_packet(potr_internal_replay_window *window, const potr_pa
     uint16_t flags;
     int ret;
 
-    memcpy(&flags, wire_header + 32U, sizeof(flags));
+    memcpy(&flags, wire_header + POTR_PACKET_FLAGS_OFFSET, sizeof(flags));
     if (!(cplat_ntoh16(flags) & POTR_FLAG_ENCRYPTED))
     {
         return POTR_OK;

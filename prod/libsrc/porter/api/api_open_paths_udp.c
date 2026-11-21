@@ -569,7 +569,7 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
     ctx->max_peers = (int)ctx->service.max_peers;
     if (ctx->max_peers <= 0)
     {
-        ctx->max_peers = 1024;
+        ctx->max_peers = (int)POTR_DEFAULT_MAX_PEERS;
     }
 
     result = potr_internal_peer_table_init(ctx);

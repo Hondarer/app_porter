@@ -17,10 +17,13 @@
 #include <porter/potr_context.h>
 #include <porter/protocol/packet.h>
 
-/* 成否ではなくセッションの新旧を分類する比較結果。共通結果コードの適用対象外である。 */
-#define TCP_SESSION_NEW  (1)
-#define TCP_SESSION_SAME (0)
-#define TCP_SESSION_OLD  (-1)
+/** 成否ではなくセッションの新旧を分類する比較結果。共通結果コードの適用対象外です。 */
+typedef enum tcp_session_cmp
+{
+    TCP_SESSION_OLD = -1, /**< 旧セッション (再送や遅延したパケットなど)。 */
+    TCP_SESSION_SAME = 0, /**< 採用済みと同じセッション (マルチパスの追加の経路)。 */
+    TCP_SESSION_NEW = 1   /**< 新しいセッション (初回、または送信者の再起動)。 */
+} tcp_session_cmp;
 
 /**
  *  @brief          最初の TCP パケットを読み取ります。
@@ -46,7 +49,7 @@ int thread_connect_read_first_packet(cplat_socket fd, uint8_t *buf, size_t max_b
  *                  呼び出し元が session_establish_mutex と tcp_recv_mutex をこの順で取得済みとします。
  *                  共有状態を更新しません。
  */
-int thread_connect_session_compare(const potr_context *ctx, const potr_packet *pkt);
+tcp_session_cmp thread_connect_session_compare(const potr_context *ctx, const potr_packet *pkt);
 
 /**
  *  @brief          接続期限と停止要求を監視して TCP 接続します。

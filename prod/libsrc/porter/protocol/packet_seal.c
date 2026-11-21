@@ -6,6 +6,7 @@
  *******************************************************************************
  */
 #include <cplat/base/platform.h>
+#include <assert.h>
 #include <string.h>
 #include <cplat/clock/clock.h>
 #include <cplat/crypto/crypto.h>
@@ -18,7 +19,24 @@
 #include <porter/protocol/packet.h>
 #include <porter/protocol/packet_seal.h>
 
+/** 1 秒あたりのナノ秒数 [ns/s]。 */
 #define NSEC_PER_SEC_U64 UINT64_C(1000000000)
+
+static_assert(NSEC_PER_SEC_U64 == UINT64_C(1000000000), "porter: NSEC_PER_SEC_U64 must be 10^9");
+
+/*
+ * AES-256-GCM のノンスの構成 [byte]。先頭にセッション識別子 (ネットワーク バイト オーダー) を置き、
+ * 続けて送出通番 (tx_counter、ネットワーク バイト オーダー) を置く。
+ */
+#define NONCE_SESSION_ID_SIZE POTR_PKT_SIZE_SESSION_ID
+#define NONCE_TX_COUNTER_OFF  NONCE_SESSION_ID_SIZE
+#define NONCE_TX_COUNTER_SIZE POTR_PKT_SIZE_TX_COUNTER
+
+static_assert(NONCE_TX_COUNTER_OFF + NONCE_TX_COUNTER_SIZE == POTR_CRYPTO_NONCE_SIZE,
+              "porter: nonce layout must fill POTR_CRYPTO_NONCE_SIZE");
+static_assert(POTR_CRYPTO_NONCE_SIZE == sizeof(((potr_packet *)0)->session_id) + sizeof(((potr_packet *)0)->tx_counter),
+              "porter: nonce must consist of session_id and tx_counter");
+static_assert(POTR_CRYPTO_KEY_SIZE > 0U && POTR_CRYPTO_TAG_SIZE > 0U, "porter: crypto sizes must be positive");
 
 static uint64_t to_network_u64(uint64_t value)
 {
@@ -136,8 +154,8 @@ int potr_internal_packet_seal(potr_internal_tx_session *session, const potr_pack
 
     if (key != NULL)
     {
-        memcpy(nonce, &header.session_id, 4U);
-        memcpy(nonce + 4U, &header.tx_counter, 8U);
+        memcpy(nonce, &header.session_id, NONCE_SESSION_ID_SIZE);
+        memcpy(nonce + NONCE_TX_COUNTER_OFF, &header.tx_counter, NONCE_TX_COUNTER_SIZE);
         if (cplat_crypto_encrypt(wire + POTR_PACKET_HEADER_SIZE, &output_len, packet->payload, payload_len,
                                   key, nonce, wire, POTR_PACKET_HEADER_SIZE) != CPLAT_OK)
         {
@@ -232,8 +250,8 @@ int potr_internal_packet_open(potr_packet *packet, const uint8_t *wire_header, c
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
-    memcpy(nonce, wire_header + 16U, 4U);
-    memcpy(nonce + 4U, wire_header + 40U, 8U);
+    memcpy(nonce, wire_header + POTR_PKT_OFF_SESSION_ID, NONCE_SESSION_ID_SIZE);
+    memcpy(nonce + NONCE_TX_COUNTER_OFF, wire_header + POTR_PKT_OFF_TX_COUNTER, NONCE_TX_COUNTER_SIZE);
     ret = cplat_crypto_decrypt(plaintext, &plaintext_len, packet->payload, packet->payload_len,
                                 key, nonce, wire_header, POTR_PACKET_HEADER_SIZE);
     if (ret != CPLAT_OK)
@@ -316,19 +334,21 @@ int potr_internal_replay_window_accept(potr_internal_replay_window *window, cons
     }
     if (packet->tx_counter > window->highest)
     {
-        uint64_t shifted[4] = {0};
+        uint64_t shifted[POTR_REPLAY_WINDOW_WORDS] = {0};
         size_t i;
 
         distance = packet->tx_counter - window->highest;
-        if (distance < 256U)
+        if (distance < POTR_REPLAY_WINDOW_BITS)
         {
-            /* 右辺のシフト数を 64 未満に保ち、ビットマップの記録を距離分だけ移動する。 */
-            for (i = 0U; i < 256U - (size_t)distance; i++)
+            /* 右辺のシフト数を POTR_REPLAY_WINDOW_WORD_BITS 未満に保ち、ビットマップの記録を距離分だけ移動する。 */
+            for (i = 0U; i < POTR_REPLAY_WINDOW_BITS - (size_t)distance; i++)
             {
-                if ((window->bitmap[i / 64U] & (UINT64_C(1) << (i % 64U))) != 0U)
+                if ((window->bitmap[i / POTR_REPLAY_WINDOW_WORD_BITS] &
+                     (UINT64_C(1) << (i % POTR_REPLAY_WINDOW_WORD_BITS))) != 0U)
                 {
                     size_t target = i + (size_t)distance;
-                    shifted[target / 64U] |= UINT64_C(1) << (target % 64U);
+                    shifted[target / POTR_REPLAY_WINDOW_WORD_BITS] |= UINT64_C(1)
+                                                                      << (target % POTR_REPLAY_WINDOW_WORD_BITS);
                 }
             }
         }
@@ -336,12 +356,12 @@ int potr_internal_replay_window_accept(potr_internal_replay_window *window, cons
         window->highest = packet->tx_counter;
     }
     distance = window->highest - packet->tx_counter;
-    if (distance >= 256U)
+    if (distance >= POTR_REPLAY_WINDOW_BITS)
     {
         return POTR_ERR_PROTOCOL;
     }
-    word = (size_t)(distance / 64U);
-    bit = UINT64_C(1) << (distance % 64U);
+    word = (size_t)(distance / POTR_REPLAY_WINDOW_WORD_BITS);
+    bit = UINT64_C(1) << (distance % POTR_REPLAY_WINDOW_WORD_BITS);
     if ((window->bitmap[word] & bit) != 0U)
     {
         return POTR_ERR_PROTOCOL;

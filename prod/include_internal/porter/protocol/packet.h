@@ -21,6 +21,7 @@
 #ifndef POTR_PROTOCOL_PACKET_H
 #define POTR_PROTOCOL_PACKET_H
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -35,11 +36,82 @@
 /** potr_packet のワイヤー フォーマットで payload_len が始まる位置 [byte]。 */
 #define POTR_PACKET_PAYLOAD_LEN_OFFSET 34U
 
+/** potr_packet のワイヤー フォーマットで flags が始まる位置 [byte]。 */
+#define POTR_PACKET_FLAGS_OFFSET 32U
+
+/*
+ * 外側パケットのワイヤー ヘッダーの各項目の位置 (POTR_PKT_OFF_*) と幅 (POTR_PKT_SIZE_*) [byte]。
+ * 並びと幅は potr_packet のメンバーと一致させる (packet.c の static_assert で確かめる)。
+ */
+#define POTR_PKT_OFF_SERVICE_ID        0U
+#define POTR_PKT_SIZE_SERVICE_ID       8U
+#define POTR_PKT_OFF_SESSION_TV_SEC    8U
+#define POTR_PKT_SIZE_SESSION_TV_SEC   8U
+#define POTR_PKT_OFF_SESSION_ID        16U
+#define POTR_PKT_SIZE_SESSION_ID       4U
+#define POTR_PKT_OFF_SESSION_TV_NSEC   20U
+#define POTR_PKT_SIZE_SESSION_TV_NSEC  4U
+#define POTR_PKT_OFF_SEQ_NUM           24U
+#define POTR_PKT_SIZE_SEQ_NUM          4U
+#define POTR_PKT_OFF_ACK_NUM           28U
+#define POTR_PKT_SIZE_ACK_NUM          4U
+#define POTR_PKT_OFF_FLAGS             POTR_PACKET_FLAGS_OFFSET
+#define POTR_PKT_SIZE_FLAGS            2U
+#define POTR_PKT_OFF_PAYLOAD_LEN       POTR_PACKET_PAYLOAD_LEN_OFFSET
+#define POTR_PKT_SIZE_PAYLOAD_LEN      2U
+#define POTR_PKT_OFF_PROTOCOL_VERSION  36U
+#define POTR_PKT_SIZE_PROTOCOL_VERSION 4U
+#define POTR_PKT_OFF_TX_COUNTER        40U
+#define POTR_PKT_SIZE_TX_COUNTER       8U
+#define POTR_PKT_OFF_TX_TV_SEC         48U
+#define POTR_PKT_SIZE_TX_TV_SEC        8U
+#define POTR_PKT_OFF_TX_TV_NSEC        56U
+#define POTR_PKT_SIZE_TX_TV_NSEC       4U
+#define POTR_PKT_OFF_RESERVED          60U
+#define POTR_PKT_SIZE_RESERVED         4U
+#define POTR_PKT_OFF_TX_MONO_NS        64U
+#define POTR_PKT_SIZE_TX_MONO_NS       8U
+
+/*
+ * パック コンテナー内のペイロード エレメントのヘッダーの各項目の幅と位置 [byte]。
+ * flags (POTR_ELEM_HDR_FLAGS_SIZE) の直後に payload_len (POTR_ELEM_HDR_PLEN_SIZE) を置く。
+ */
+#define POTR_ELEM_HDR_FLAGS_SIZE 2U
+#define POTR_ELEM_HDR_PLEN_OFF   POTR_ELEM_HDR_FLAGS_SIZE
+#define POTR_ELEM_HDR_PLEN_SIZE  4U
+
+static_assert(POTR_ELEM_HDR_PLEN_OFF + POTR_ELEM_HDR_PLEN_SIZE == POTR_PAYLOAD_ELEM_HDR_SIZE,
+              "porter: payload element header layout mismatch");
+
+/*
+ * セッション識別子 (session_tv_sec、session_id、session_tv_nsec) を並べたワイヤー表現の、
+ * 各項目の位置と幅、および全体の長さ [byte]。ヘッダーと同じ並びのネットワーク バイト オーダーとする。
+ */
+#define POTR_IDENTITY_TV_SEC_OFF   0U
+#define POTR_IDENTITY_TV_SEC_SIZE  8U
+#define POTR_IDENTITY_ID_OFF       (POTR_IDENTITY_TV_SEC_OFF + POTR_IDENTITY_TV_SEC_SIZE)
+#define POTR_IDENTITY_ID_SIZE      4U
+#define POTR_IDENTITY_TV_NSEC_OFF  (POTR_IDENTITY_ID_OFF + POTR_IDENTITY_ID_SIZE)
+#define POTR_IDENTITY_TV_NSEC_SIZE 4U
+#define POTR_IDENTITY_SIZE         (POTR_IDENTITY_TV_NSEC_OFF + POTR_IDENTITY_TV_NSEC_SIZE)
+
+static_assert(POTR_IDENTITY_ID_OFF == 8U && POTR_IDENTITY_TV_NSEC_OFF == 12U && POTR_IDENTITY_SIZE == 16U,
+              "porter: session identity layout mismatch");
+
 /**
  * フロー制御パケットのペイロード長 [byte]。
  * 先頭 1 [byte] が状態 (POTR_FLOW_CONTROL_STATE_*)、続く 4 [byte] が送出上限 (uint32、ネットワーク バイト オーダー)。
  */
 #define POTR_FLOW_CONTROL_PAYLOAD_SIZE 5U
+
+/** フロー制御パケットのペイロードで、状態 (1 [byte]) が始まる位置 [byte]。 */
+#define POTR_FLOW_CTRL_OFF_STATE 0U
+
+/** フロー制御パケットのペイロードで、送出上限 (4 [byte]) が始まる位置 [byte]。 */
+#define POTR_FLOW_CTRL_OFF_LIMIT 1U
+
+static_assert(POTR_FLOW_CTRL_OFF_LIMIT == POTR_FLOW_CONTROL_PAYLOAD_SIZE - 4U,
+              "porter: flow control send limit must occupy the last 4 bytes");
 
 /** 監視対象の一覧のペイロードで、受信者のセッション識別子の前に置く部分の長さ [byte] (状態 1 [byte] と台数 1 [byte])。 */
 #define POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE 2U
@@ -116,14 +188,16 @@ static inline int flow_control_payload_decode(const potr_packet *packet, uint8_t
         return POTR_ERR_PROTOCOL;
     }
 
-    *state = packet->payload[0];
+    *state = packet->payload[POTR_FLOW_CTRL_OFF_STATE];
     if (*state != POTR_FLOW_CONTROL_STATE_SUPPRESS && *state != POTR_FLOW_CONTROL_STATE_RESUME)
     {
         return POTR_ERR_PROTOCOL;
     }
 
-    *send_limit = ((uint32_t)packet->payload[1] << 24) | ((uint32_t)packet->payload[2] << 16) |
-                  ((uint32_t)packet->payload[3] << 8) | (uint32_t)packet->payload[4];
+    *send_limit = ((uint32_t)packet->payload[POTR_FLOW_CTRL_OFF_LIMIT] << 24) |
+                  ((uint32_t)packet->payload[POTR_FLOW_CTRL_OFF_LIMIT + 1U] << 16) |
+                  ((uint32_t)packet->payload[POTR_FLOW_CTRL_OFF_LIMIT + 2U] << 8) |
+                  (uint32_t)packet->payload[POTR_FLOW_CTRL_OFF_LIMIT + 3U];
 
     return POTR_OK;
 }
@@ -174,17 +248,17 @@ static inline void flow_control_monitor_entry(const potr_packet *packet, size_t 
     uint32_t session_id = 0U;
     size_t i;
 
-    for (i = 0U; i < 8U; i++)
+    for (i = POTR_IDENTITY_TV_SEC_OFF; i < POTR_IDENTITY_TV_SEC_OFF + POTR_IDENTITY_TV_SEC_SIZE; i++)
     {
         tv_sec = (tv_sec << 8) | (uint64_t)entry[i];
     }
 
-    for (i = 8U; i < 12U; i++)
+    for (i = POTR_IDENTITY_ID_OFF; i < POTR_IDENTITY_ID_OFF + POTR_IDENTITY_ID_SIZE; i++)
     {
         session_id = (session_id << 8) | (uint32_t)entry[i];
     }
 
-    for (i = 12U; i < 16U; i++)
+    for (i = POTR_IDENTITY_TV_NSEC_OFF; i < POTR_IDENTITY_TV_NSEC_OFF + POTR_IDENTITY_TV_NSEC_SIZE; i++)
     {
         tv_nsec = (tv_nsec << 8) | (uint32_t)entry[i];
     }

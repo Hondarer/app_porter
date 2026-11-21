@@ -73,6 +73,7 @@
 #include <cplat/runtime/shutdown.h>
 #include <cplat/sync/atomic.h>
 #include <cplat/sync/sync.h>
+#include <assert.h>
 #include <inttypes.h>
 #include <signal.h>
 #include <stdio.h>
@@ -83,27 +84,72 @@
 #include <porter.h>
 #include <porter/porter_result.h>
 
-/** 入力バッファー サイズ。POTR_MAX_MESSAGE_SIZE + 改行 + NUL。 */
+/** 入力バッファー サイズ [byte]。POTR_MAX_MESSAGE_SIZE + 改行 + NUL。 */
 #define INPUT_BUF_SIZE (POTR_MAX_MESSAGE_SIZE + 2U)
-/** プロンプト状態文字列のバッファー サイズ。 */
-#define PROMPT_STATE_SIZE 32
+/** プロンプト状態文字列のバッファー サイズ [byte]。 */
+#define PROMPT_STATE_SIZE 32U
 
 /** 受信コールバックを遅らせる時間の上限 [ms]。 */
 #define RECV_DELAY_MAX_MS 600000
 /** burst のメッセージの先頭に入れる識別子 (8 [byte])。 */
 #define BURST_MAGIC "PTBURST1"
 /** burst の識別子の長さ [byte]。 */
-#define BURST_MAGIC_SIZE 8U
+#define BURST_MAGIC_SIZE (sizeof(BURST_MAGIC) - 1U)
+/** burst のメッセージの通し番号の長さ [byte]。総件数も同じ長さとする。 */
+#define BURST_SEQ_SIZE sizeof(uint32_t)
 /** burst のメッセージのヘッダー長 [byte]。識別子 8、通し番号 4、総件数 4 (数値はリトル エンディアン)。 */
-#define BURST_HEADER_SIZE 16U
+#define BURST_HEADER_SIZE (BURST_MAGIC_SIZE + BURST_SEQ_SIZE + sizeof(uint32_t))
+/** burst で指定できる件数の下限。 */
+#define BURST_MIN_COUNT 1U
 /** burst で指定できる件数の上限。 */
-#define BURST_MAX_COUNT 1000000
+#define BURST_MAX_COUNT 1000000U
 /** burst で POTR_ERR_FULL を受けたときの、送り直しまでの待ち時間 [ms]。 */
 #define BURST_RETRY_WAIT_MS 1
 /** burst で 1 件が POTR_ERR_FULL のまま進まない場合に、送信を打ち切るまでの時間 [ms]。 */
 #define BURST_STALL_LIMIT_MS 60000U
 /** 受信側が burst の経過を表示する件数の間隔。 */
 #define BURST_PROGRESS_INTERVAL 1000U
+/** burst のメッセージの本体に繰り返して入れる英小文字の文字数。 */
+#define BURST_PATTERN_ALPHABET_COUNT 26U
+
+/** NUL バイト。 */
+#define TEXT_BYTE_NUL 0x00U
+/** ASCII の印字可能文字の下限。 */
+#define TEXT_ASCII_PRINTABLE_MIN 0x20U
+/** ASCII の DEL 文字。 */
+#define TEXT_ASCII_DEL 0x7FU
+/** UTF-8 に現れない無効なバイト (0xFE)。 */
+#define TEXT_UTF8_INVALID_FE 0xFEU
+/** UTF-8 に現れない無効なバイト (0xFF)。 */
+#define TEXT_UTF8_INVALID_FF 0xFFU
+
+/** 経路の状態の一覧の 1 経路分の最大の長さ [byte] (int の最大 11 文字 + カンマ 1 [byte])。 */
+#define PATH_STATE_ENTRY_MAX_BYTES 12U
+/** ログ レベル名を大文字へ変換して格納するバッファーの大きさ [byte]。 */
+#define TRACE_LEVEL_BUF_SIZE 16U
+/** 値を囲む引用符の文字数 (先頭と末尾の 2 文字)。 */
+#define QUOTE_PAIR_LEN 2U
+/** 位置引数 (role、config_path、service_id) の必須個数。 */
+#define POSITIONAL_ARG_COUNT 3U
+
+/** 送信の圧縮オプションの短い形式。 */
+#define OPT_COMPRESS_SHORT "-c"
+/** 送信の圧縮オプションの長い形式。 */
+#define OPT_COMPRESS_LONG "--compress"
+
+static_assert(PROMPT_STATE_SIZE >= sizeof("receiver:-9223372036854775808"), "porter-test: PROMPT_STATE_SIZE too small");
+static_assert(RECV_DELAY_MAX_MS >= 0, "porter-test: RECV_DELAY_MAX_MS must be non-negative");
+static_assert(BURST_MAGIC_SIZE == 8U, "porter-test: BURST_MAGIC must be 8 bytes");
+static_assert(BURST_HEADER_SIZE <= POTR_MAX_MESSAGE_SIZE, "porter-test: BURST_HEADER_SIZE exceeds max message size");
+static_assert((BURST_MAX_COUNT >= 1U) && (BURST_MAX_COUNT <= UINT32_MAX),
+              "porter-test: BURST_MAX_COUNT out of uint32 range");
+static_assert(BURST_MIN_COUNT <= BURST_MAX_COUNT, "porter-test: BURST_MIN_COUNT exceeds BURST_MAX_COUNT");
+static_assert(BURST_RETRY_WAIT_MS >= 1, "porter-test: BURST_RETRY_WAIT_MS must be positive");
+static_assert(BURST_STALL_LIMIT_MS >= (uint64_t)BURST_RETRY_WAIT_MS, "porter-test: stall limit below retry wait");
+static_assert(BURST_PROGRESS_INTERVAL >= 1U, "porter-test: BURST_PROGRESS_INTERVAL must be positive");
+static_assert(BURST_PATTERN_ALPHABET_COUNT == ('z' - 'a' + 1U), "porter-test: alphabet count mismatch");
+static_assert(PATH_STATE_ENTRY_MAX_BYTES >= 12U, "porter-test: PATH_STATE_ENTRY_MAX_BYTES too small");
+static_assert(TRACE_LEVEL_BUF_SIZE >= sizeof("CRITICAL"), "porter-test: TRACE_LEVEL_BUF_SIZE too small");
 
 /** REPL 継続フラグ。終了要求 callback で 0 に設定される。 */
 static cplat_atomic_i32 s_running = CPLAT_ATOMIC_INIT(1);
@@ -198,22 +244,22 @@ static int is_text_data(const void *data, size_t len)
     {
         unsigned char c = p[i];
 
-        if (c == 0x00)
+        if (c == (unsigned char)TEXT_BYTE_NUL)
         {
             return 0; /* NUL */
         }
 
-        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r')
+        if (c < TEXT_ASCII_PRINTABLE_MIN && c != '\t' && c != '\n' && c != '\r')
         {
             return 0; /* C0 制御文字 (タブ/改行/復帰以外) */
         }
 
-        if (c == 0x7F)
+        if (c == TEXT_ASCII_DEL)
         {
             return 0; /* DEL */
         }
 
-        if (c == 0xFE || c == 0xFF)
+        if (c == TEXT_UTF8_INVALID_FE || c == TEXT_UTF8_INVALID_FF)
         {
             return 0; /* UTF-8 無効バイト */
         }
@@ -321,7 +367,7 @@ static void on_burst_message(const void *data)
 {
     const unsigned char *bytes = (const unsigned char *)data;
     const uint32_t sequence = read_u32_le(bytes + BURST_MAGIC_SIZE);
-    const uint32_t total = read_u32_le(bytes + BURST_MAGIC_SIZE + 4U);
+    const uint32_t total = read_u32_le(bytes + BURST_MAGIC_SIZE + BURST_SEQ_SIZE);
 
     if (sequence == 0U)
     {
@@ -409,7 +455,7 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
     case POTR_EVENT_PATH_DISCONNECTED:
     {
         const char *event_str;
-        char states[POTR_MAX_PATH * 12U + 1U] = {0};
+        char states[POTR_MAX_PATH * PATH_STATE_ENTRY_MAX_BYTES + 1U] = {0};
         size_t offset = 0U;
         size_t i;
 
@@ -580,7 +626,7 @@ static int parse_trace_level(const char *str, cplat_trace_level *out)
         {"WARNING", CPLAT_TRACE_LEVEL_WARNING, 0U},   {"ERROR", CPLAT_TRACE_LEVEL_ERROR, 0U},
         {"CRITICAL", CPLAT_TRACE_LEVEL_CRITICAL, 0U},
     };
-    char upper[16];
+    char upper[TRACE_LEVEL_BUF_SIZE];
     size_t i;
     size_t j;
 
@@ -730,7 +776,8 @@ static char *strip_matching_quotes(char *value)
     trim_right(value);
 
     len = strlen(value);
-    if (len >= 2U && ((value[0] == '"' && value[len - 1U] == '"') || (value[0] == '\'' && value[len - 1U] == '\'')))
+    if (len >= QUOTE_PAIR_LEN &&
+        ((value[0] == '"' && value[len - 1U] == '"') || (value[0] == '\'' && value[len - 1U] == '\'')))
     {
         value[len - 1U] = '\0';
         value++;
@@ -758,8 +805,10 @@ static void print_interactive_help(void)
                                      "  file [-c|--compress] <path>             ファイルを送信します。\n");
     (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
                                      "  burst [-b|--blocking] <count> <bytes>   通し番号つきのメッセージを間隔なしで連続して送信します。\n");
-    (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                     "                                          bytes: 16 以上。-b で POTR_SEND_BLOCKING を使います。\n");
+    (void)cplat_pinned_prompt_printf(
+        s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+        "                                          bytes: %u 以上。-b で POTR_SEND_BLOCKING を使います。\n",
+        (unsigned)BURST_HEADER_SIZE);
     (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
                                      "  log <level>                             ログレベルを設定します。\n");
     (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
@@ -882,16 +931,19 @@ static void apply_send_command(potr_context *handle, int is_file, char *cursor)
 
     /* 圧縮オプション (-c または --compress) の有無を判定する。 */
     payload = skip_spaces(cursor);
-    if (strncmp(payload, "-c", 2) == 0 && (payload[2] == '\0' || payload[2] == ' ' || payload[2] == '\t'))
+    if (strncmp(payload, OPT_COMPRESS_SHORT, sizeof(OPT_COMPRESS_SHORT) - 1U) == 0 &&
+        (payload[sizeof(OPT_COMPRESS_SHORT) - 1U] == '\0' || payload[sizeof(OPT_COMPRESS_SHORT) - 1U] == ' ' ||
+         payload[sizeof(OPT_COMPRESS_SHORT) - 1U] == '\t'))
     {
         compress = 1;
-        payload = skip_spaces(payload + 2);
+        payload = skip_spaces(payload + (sizeof(OPT_COMPRESS_SHORT) - 1U));
     }
-    else if (strncmp(payload, "--compress", 10) == 0 &&
-             (payload[10] == '\0' || payload[10] == ' ' || payload[10] == '\t'))
+    else if (strncmp(payload, OPT_COMPRESS_LONG, sizeof(OPT_COMPRESS_LONG) - 1U) == 0 &&
+             (payload[sizeof(OPT_COMPRESS_LONG) - 1U] == '\0' || payload[sizeof(OPT_COMPRESS_LONG) - 1U] == ' ' ||
+              payload[sizeof(OPT_COMPRESS_LONG) - 1U] == '\t'))
     {
         compress = 1;
-        payload = skip_spaces(payload + 10);
+        payload = skip_spaces(payload + (sizeof(OPT_COMPRESS_LONG) - 1U));
     }
 
     if (is_file)
@@ -1045,11 +1097,12 @@ static void apply_burst_command(potr_context *handle, char *cursor)
         return;
     }
 
-    if (cplat_parse_int64(&count_value, count_token, 10) != CPLAT_OK || count_value < 1 ||
-        count_value > BURST_MAX_COUNT)
+    if (cplat_parse_int64(&count_value, count_token, 10) != CPLAT_OK || count_value < (int64_t)BURST_MIN_COUNT ||
+        count_value > (int64_t)BURST_MAX_COUNT)
     {
         (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                         "エラー: count は 1 から %d の整数で指定してください。\n", BURST_MAX_COUNT);
+                                         "エラー: count は %u から %u の整数で指定してください。\n",
+                                         (unsigned)BURST_MIN_COUNT, (unsigned)BURST_MAX_COUNT);
         return;
     }
 
@@ -1074,10 +1127,10 @@ static void apply_burst_command(potr_context *handle, char *cursor)
     }
 
     memcpy(buffer, BURST_MAGIC, BURST_MAGIC_SIZE);
-    write_u32_le(buffer + BURST_MAGIC_SIZE + 4U, count);
+    write_u32_le(buffer + BURST_MAGIC_SIZE + BURST_SEQ_SIZE, count);
     for (i = BURST_HEADER_SIZE; i < bytes; i++)
     {
-        buffer[i] = (unsigned char)('a' + (i % 26U));
+        buffer[i] = (unsigned char)('a' + (i % BURST_PATTERN_ALPHABET_COUNT));
     }
 
     if (blocking)
@@ -1660,10 +1713,11 @@ int main(int argc, char *argv[])
     }
 
     /* 位置引数は 3 個すべて指定するか、すべて省略して対話コンソールで開くかのいずれかとする。 */
-    if (positional_count != 0 && positional_count != 3)
+    if (positional_count != 0 && positional_count != (int)POSITIONAL_ARG_COUNT)
     {
         /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの出力の戻り値は明示的に破棄する。 */
-        (void)fprintf(stderr, "エラー: role、config_path、service_id は 3 個すべてを指定してください。\n\n");
+        (void)fprintf(stderr, "エラー: role、config_path、service_id は %u 個すべてを指定してください。\n\n",
+                      (unsigned)POSITIONAL_ARG_COUNT);
         (void)cplat_argparser_print_usage(stderr);
         return EXIT_FAILURE;
     }
@@ -1708,7 +1762,7 @@ int main(int argc, char *argv[])
     }
 
     /* 位置引数が指定された場合は起動時に open を実行する。失敗時も対話コンソールへ移行する。 */
-    if (positional_count == 3)
+    if (positional_count == (int)POSITIONAL_ARG_COUNT)
     {
         potr_role role;
 

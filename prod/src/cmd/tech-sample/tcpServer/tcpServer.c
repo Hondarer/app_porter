@@ -147,10 +147,10 @@ int main(int argc, char *argv[])
     }
 
     /* ポート番号は 16 bit の範囲だけを受け付ける。範囲外の値は、別のポートへの切り詰めや書式化の失敗を招くため。 */
-    if (port < 1 || port > 65535)
+    if (port < PORT_MIN || port > PORT_MAX)
     {
         /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの出力の戻り値は明示的に破棄する。 */
-        (void)fprintf(stderr, "エラー: --port には 1 から 65535 を指定してください。\n\n");
+        (void)fprintf(stderr, "エラー: --port には %d から %d を指定してください。\n\n", PORT_MIN, PORT_MAX);
         (void)cplat_argparser_print_usage(stderr);
         platform_cleanup();
         return EXIT_FAILURE;

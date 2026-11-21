@@ -8,10 +8,26 @@
 #ifndef POTR_PROTOCOL_PACKET_SEAL_H
 #define POTR_PROTOCOL_PACKET_SEAL_H
 
+#include <assert.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <cplat/sync/atomic.h>
 #include <porter/porter_type.h>
+
+/** リプレイ保護ウィンドウの受信記録で、1 要素 (uint64_t) が持つビット数。 */
+#define POTR_REPLAY_WINDOW_WORD_BITS 64U
+
+/** リプレイ保護ウィンドウが受信記録を保持する通番の範囲 (直近の通番の数)。 */
+#define POTR_REPLAY_WINDOW_BITS 256U
+
+/** リプレイ保護ウィンドウの受信記録の配列の要素数。 */
+#define POTR_REPLAY_WINDOW_WORDS (POTR_REPLAY_WINDOW_BITS / POTR_REPLAY_WINDOW_WORD_BITS)
+
+static_assert(POTR_REPLAY_WINDOW_WORD_BITS == sizeof(uint64_t) * CHAR_BIT,
+              "porter: replay window word must be 64 bits");
+static_assert(POTR_REPLAY_WINDOW_BITS % POTR_REPLAY_WINDOW_WORD_BITS == 0U,
+              "porter: replay window bits must be a multiple of the word bits");
 
 /** 送信側セッションの通番と単調増加時計の起点です。 */
 typedef struct potr_internal_tx_session
@@ -22,10 +38,10 @@ typedef struct potr_internal_tx_session
     cplat_atomic_i32 exhausted; /**< 枯渇検出後の N:1 ピア切断要求。 */
 } potr_internal_tx_session;
 
-/** 送信元セッションに属する直近 256 通番の認証済み受信記録です。 */
+/** 送信元セッションに属する直近 POTR_REPLAY_WINDOW_BITS 通番の認証済み受信記録です。 */
 typedef struct potr_internal_replay_window
 {
-    uint64_t bitmap[4]; /**< 最大通番からの距離をビット位置とする受信記録。 */
+    uint64_t bitmap[POTR_REPLAY_WINDOW_WORDS]; /**< 最大通番からの距離をビット位置とする受信記録。 */
     uint64_t highest; /**< 受信済み最大通番。 */
     int64_t session_tv_sec; /**< 送信元セッション開始時刻の秒部。 */
     int32_t session_tv_nsec; /**< 送信元セッション開始時刻のナノ秒部。 */

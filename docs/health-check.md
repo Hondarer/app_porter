@@ -64,9 +64,9 @@ Table: PING ペイロードにおけるパス受信状態の値と定義
 
 `path_ping_state[]` の更新タイミングは次のとおりです。
 
-- `update_path_health()`: 片方向 type 1-6 では有効な PING / DATA 受信時、双方向 type 7 では PING 受信時に `POTR_PING_STATE_NORMAL` に設定します。
-- `n1_update_path_health()`: type 8 で PING 受信時に `POTR_PING_STATE_NORMAL` に設定します。
-- `check_health_timeout()` / `n1_check_health_timeout()`: パス タイムアウト時に `POTR_PING_STATE_ABNORMAL` に設定します。
+- `thread_recv_update_path_health()` (`thread/thread_recv_session.c`): 片方向 type 1-6 では有効な PING / DATA 受信時、双方向 type 7 では PING 受信時に `POTR_PING_STATE_NORMAL` に設定します。
+- `thread_recv_update_path_health()` (`thread/thread_recv_session.c`): type 8 で PING 受信時に `POTR_PING_STATE_NORMAL` に設定します。
+- `thread_recv_health_check_service()` / `thread_recv_health_check_peers()` (`thread/thread_recv_health.c`): パス タイムアウト時に `POTR_PING_STATE_ABNORMAL` に設定します。
 - TCP PING 受信時: `POTR_PING_STATE_NORMAL` に設定します。
 - TCP PING タイムアウト時: `POTR_PING_STATE_ABNORMAL` に設定します。
 - セッション DISCONNECTED 発火時 / TCP 切断時: 全パスを `POTR_PING_STATE_UNDEFINED` にリセットします。
@@ -160,8 +160,8 @@ Table: TCP / TCP_BIDIR (type 9-10) の接続状態別の実装
 
 全通信種別で、未接続中の `DATA` は最終配送段の `health_alive` または `peer->health_alive` 判定で遮断されます。
 
-- type 1-7, 9-10: `deliver_payload_elem()` が `health_alive == 0` の間 `DATA` を破棄します。
-- type 8: `n1_deliver_payload_elem()` が `peer->health_alive == 0` の間 `DATA` を破棄します。
+- type 1-7, 9-10: `thread_recv_slot_deliver_payload_elem()` (`thread/thread_recv_slot.c`) が `health_alive == 0` の間 `DATA` を破棄します。
+- type 8: `thread_recv_slot_deliver_payload_elem()` (`thread/thread_recv_slot.c`) が `peer->health_alive == 0` の間 `DATA` を破棄します。
 - したがって、アプリ コールバックとして `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。
 
 双方向 UDP (type 7, 8) では、通信種別とサービス上書きを解決した最終的な `health_interval_ms = 0` の場合は CONNECTED が成立しないため、`POTR_EVENT_DATA` も発火しません。
@@ -190,7 +190,7 @@ N:1 モード (UNICAST_BIDIR_N1 のサーバー側) の処理は次のとおり�
 
 ### PING 受信時の処理 (受信スレッド)
 
-UNICAST_BIDIR_N1 (type 8) は `n1_notify_health_alive()` でそのピアを alive 状態にします。ギャップがある場合は NACK を優先送出します。
+UNICAST_BIDIR_N1 (type 8) は `thread_recv_sync_path_state()` (`thread/thread_recv_session.c`) でそのピアを alive 状態にします。ギャップがある場合は NACK を優先送出します。
 
 片方向 UDP (type 1-6) は有効な `PING` または `DATA` を受信すると最終受信時刻を更新し、タイムアウト計測をリセットします。双方向 UDP (type 7, 8) は従来どおり PING 受信時のみ更新します。
 
@@ -198,17 +198,35 @@ RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送信せず `POTR_EV
 
 ### タイムアウト検出 (受信スレッド)
 
-受信スレッドは `cplat_socket_timed_wait_readable_multi()` の待ち時間を `health_timeout_ms / 3` に設定し、定期的に `check_health_timeout()` (1:1) または `n1_check_health_timeout()` (N:1) を呼び出します。
+受信スレッド (`recv_thread_func()`) は、`cplat_socket_timed_wait_readable_multi()` から戻るたびに、受信期限を `thread_recv_health_check_service()` (1:1) または `thread_recv_health_check_peers()` (N:1) で確認し、停止の指示を読み直します。  
+そのため、待機による無受信の検出の遅れと停止の遅れは、1 回の待機の上限を超えません。  
+1 回の待機の上限は、次の条件を上から順に適用して決めます。
+
+| 条件 (`recv_thread_func()` 内の適用順) | 対象となる構成 | 待機の上限 [ms] |
+| --- | --- | --- |
+| 受信期限の監視 | 受信者、または `unicast_bidir` で `health_timeout_ms > 0` の場合 | `max(health_timeout_ms / 3, 100)` (`health_timeout_ms < 300` のときは `100` が下限) |
+| (受信期限を監視しない場合) | `health_timeout_ms == 0`、または `unicast_bidir` 以外の送信者 | `500` |
+| 順序の入れ替えの待ち時間 | 受信者、または `unicast_bidir` で `reorder_timeout_ms > 0` の場合 | 上の値と `reorder_timeout_ms` の小さいほう |
+| 証明書の認証 | 証明書方式 (`POTR_AUTH_CERT`) で認証する場合 | 上の値と `100` の小さいほう |
+| 受信報告の送信の時刻 | 片方向通常モードの受信者で、受信報告を送る構成 (実効の `health_interval_ms` が 0 でない) であり、次の受信報告の予定時刻 (`next_report_ms`) が現在時刻より後の場合 | 上の値と「次の報告予定時刻 − 現在時刻」の小さいほう |
+| `multicast` と `broadcast` の送信側の監視の時刻 | `multicast` または `broadcast` の送信者で、次の監視対象一覧の送出予定時刻 (`flow_monitor_next_ms`) が現在時刻より後の場合 (詳細は [設定仕様](config.md#multicast-と-broadcast-の監視対象) および [プロトコル仕様](protocol.md#監視対象の一覧のパケット) を参照) | 上の値と「次の送出予定時刻 − 現在時刻」の小さいほう |
+| フロー制御パケットを送出する受信側の要求の間隔 | フロー制御パケットを送出する受信側 (`flow_control != NULL`。容量が 0 でない、または OS の受信バッファーに基づく送出上限を使う受信側) の場合 (詳細は [設定仕様](config.md#再送周期と有効期限) および [設定仕様](config.md#os-の受信バッファーに基づく送出上限) を参照) | 上の値と `flow_control_request_interval_ms` の小さいほう |
+
+Table: 受信スレッド (`recv_thread_func()`) の待機の上限を決める条件
+
+`health_timeout_ms` が 300 [ms] 未満の場合は、待機の上限の下限 (100 [ms]) が適用され、待機の上限が `health_timeout_ms` の 3 分の 1 より長くなります。  
+`ctx->flow_control` は、容量 (`flow_control_capacity`) が 0 でも、OS の受信バッファーに基づく送出上限を使う受信側では確保されます。  
+この送出上限は既定で有効のため、既定の構成の UDP の受信側 (RAW を除く) は、フロー制御を設定していなくても、待機の上限が `flow_control_request_interval_ms` (既定 200 [ms]) になります。
 
 タイムアウト判定は CLOCK_MONOTONIC を使用します。
 
-片方向 UDP (type 1-6) は「最後に有効な PING / DATA を受信した時刻」を、双方向 UDP / TCP (type 7-10) は「最後に PING を受信した時刻」をタイムアウトの根拠とします。RAW 系も非 RAW 系も同じ `last_recv_tv_sec` / `path_last_recv_sec` を参照する点は共通です。
+片方向 UDP (type 1-6) は「最後に有効な PING / DATA を受信した時刻」を、双方向 UDP / TCP (type 7-10) は「最後に PING を受信した時刻」をタイムアウトの根拠とします。RAW 系も非 RAW 系も同じ `last_recv_ts` / `path_last_recv_ts` を参照する点は共通です。
 
 1:1 モードの判定は次のとおりです。
 
-1. パスごとに `path_last_recv_sec[i]` / `path_last_recv_nsec[i]` から経過時間を算出します。
+1. パスごとに `path_last_recv_ts[i]` から経過時間を算出します。
 2. `health_timeout_ms` 超過でそのパスの `peer_port[i]` をクリアします。
-3. 全体 (`last_recv_tv_sec` / `last_recv_tv_nsec`) が `health_timeout_ms` を超過すると `health_alive = 0` にして `POTR_EVENT_DISCONNECTED` を発火し、受信ウィンドウをリセットします。
+3. 全体 (`last_recv_ts`) が `health_timeout_ms` を超過すると `health_alive = 0` にして `POTR_EVENT_DISCONNECTED` を発火し、受信ウィンドウをリセットします。
 
 N:1 モードの判定は次のとおりです。
 
@@ -228,9 +246,9 @@ N:1 モードの判定は次のとおりです。
 
 UDP 系と同様に受信スレッドが判定します。TCP の両端がそれぞれ独立してタイムアウトを検出します。
 
-1. 受信ループは `health_interval_ms > 0 && health_timeout_ms > 0` の場合のみ `tcp_wait_readable()` で最大 `min(health_timeout_ms, 1000)` ms 待機します。
+1. 受信ループは `health_interval_ms > 0 && health_timeout_ms > 0` の場合 (受信タイムアウトを使う場合) に、`tcp_wait_readable()` で最大 `min(health_timeout_ms, 1000)` [ms] 待機します。フロー制御パケットを送出する受信側 (`flow_control != NULL`) では、待機の上限が `flow_control_request_interval_ms` との小さいほうになります。受信タイムアウトを使わない場合 (`use_recv_timeout` が 0) は、通常は待機の上限を設けず (`poll_ms` が 0) に受信を待ちますが、`flow_control != NULL` の場合は `poll_ms` が `flow_control_request_interval_ms` になり、ポーリングで待つ動作に変わります。TCP の通信種別は OS の受信バッファーに基づく送出上限の対象外 (`resolve_receive_buffer_percent()` が割合を 0 にする) のため、TCP の受信側で `flow_control` が確保されるのは、容量 (`flow_control_capacity`) が 0 でない場合だけです。
 2. PING を受信するたびに `tcp_last_ping_recv_ms[path_idx]` を現在時刻で更新します。
-3. `get_ms() - tcp_last_ping_recv_ms[path_idx] > ctx->health_timeout_ms` を超過するとタイムアウトと判定します。
+3. `cplat_clock_get_monotonic_ms()` で得た現在時刻 `- tcp_last_ping_recv_ms[path_idx] > ctx->health_timeout_ms` を超過するとタイムアウトと判定します。
 4. タイムアウト時はそのパスのソケットを `cplat_socket_shutdown()` / `cplat_socket_close()` で閉じ、`tcp_conn_fd[path_idx]` を `CPLAT_INVALID_SOCKET` にします。
 5. connect スレッド (`potr_connect_thread.c`) が `tcp_active_paths` をデクリメントして再接続ループへ遷移します。
 
@@ -262,7 +280,7 @@ DATA パケットの受信は `tcp_last_ping_recv_ms` をリセットしませ�
 UDP 系の処理は次のとおりです。
 
 - PING は優先グループにかかわらず全グループの全パス (`k = 0 〜 n_path - 1`) に対して送出します (待機グループの監視を含む)。
-- パスごとに最終受信時刻 (`path_last_recv_sec[k]` / `path_last_recv_nsec[k]`) を独立して追跡します。
+- パスごとに最終受信時刻 (`path_last_recv_ts[k]`) を独立して追跡します。
 - 特定パスのみタイムアウトした場合はそのパスの `peer_port[k]` だけをクリアし、他のパスの通信は継続します。
 - 全パスが揃ってタイムアウト (= 全体タイムアウト) になった場合に `POTR_EVENT_DISCONNECTED` を発火します。
 
@@ -279,8 +297,8 @@ TCP 系の処理は次のとおりです。
 | PING パケット構築 | `protocol/packet.c` | `potr_internal_packet_build_ping()` |
 | UDP PING 送出 | `thread/potr_health_thread.c` | `health_thread_func()` |
 | TCP PING 送出 | `thread/potr_health_thread.c` | `tcp_health_thread_func()` |
-| UDP タイムアウト検出 (1:1) | `thread/potr_recv_thread.c` | `check_health_timeout()` |
-| UDP タイムアウト検出 (N:1) | `thread/potr_recv_thread.c` | `n1_check_health_timeout()` |
+| UDP タイムアウト検出 (1:1) | `thread/thread_recv_health.c` | `thread_recv_health_check_service()` |
+| UDP タイムアウト検出 (N:1) | `thread/thread_recv_health.c` | `thread_recv_health_check_peers()` |
 | TCP タイムアウト検出 | `thread/potr_recv_thread.c` | `tcp_recv_thread_func()` 内 |
 | health スレッド起動/停止 | `thread/potr_health_thread.h` | `potr_internal_health_thread_start/stop()` |
 | tcp_health スレッド起動/停止 | `thread/potr_health_thread.h` | `potr_internal_tcp_health_thread_start/stop()` |

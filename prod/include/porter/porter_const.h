@@ -191,10 +191,19 @@
  *  @ingroup        POTR_PING_STATE
  *  @{
  */
-#define POTR_PING_STATE_UNDEFINED \
-    0U /**< 不定: 片方向のため PING を受信しない、またはまだ一度も PING を受信していない。 */
-#define POTR_PING_STATE_NORMAL   1U /**< 正常: 定周期で PING を受信中。 */
-#define POTR_PING_STATE_ABNORMAL 2U /**< 異常: PING タイムアウト (途絶)。 */
+/**
+ *  @brief          PING 受信状態です。
+ *
+ *  PING と受信報告のペイロードでは 1 [byte] で表します。
+ *  配列、引数、構造体のメンバーの型は、uint8_t のままとします。
+ */
+typedef enum potr_ping_state
+{
+    POTR_PING_STATE_UNDEFINED =
+        0,                       /**< 不定: 片方向のため PING を受信しない、またはまだ一度も PING を受信していない。 */
+    POTR_PING_STATE_NORMAL = 1,  /**< 正常: 定周期で PING を受信中。 */
+    POTR_PING_STATE_ABNORMAL = 2 /**< 異常: PING タイムアウト (途絶)。 */
+} potr_ping_state;
 /** @} */
 
 /** @defgroup POTR_FLOW_CONTROL フロー制御
@@ -210,10 +219,20 @@
  *  @ingroup        POTR_FLOW_CONTROL
  *  @{
  */
-#define POTR_FLOW_CONTROL_STATE_SUPPRESS 1U /**< フロー制御パケットの状態: 抑制の要求。 */
-#define POTR_FLOW_CONTROL_STATE_RESUME   2U /**< フロー制御パケットの状態: 解除。 */
-#define POTR_FLOW_CONTROL_STATE_MONITOR \
-    3U /**< フロー制御パケットの状態: 監視対象の一覧。multicast と broadcast の送信者が受信者へ送ります。 */
+/**
+ *  @brief          フロー制御パケットの状態です。
+ *
+ *  フロー制御パケットのペイロードでは 1 [byte] で表します。
+ *  引数と構造体のメンバーの型は、uint8_t のままとします。
+ */
+typedef enum potr_flow_control_state
+{
+    POTR_FLOW_CONTROL_STATE_SUPPRESS = 1, /**< フロー制御パケットの状態: 抑制の要求。 */
+    POTR_FLOW_CONTROL_STATE_RESUME = 2,   /**< フロー制御パケットの状態: 解除。 */
+    POTR_FLOW_CONTROL_STATE_MONITOR =
+        3 /**< フロー制御パケットの状態: 監視対象の一覧。multicast と broadcast の送信者が受信者へ送ります。 */
+} potr_flow_control_state;
+
 #define POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX \
     64U /**< multicast と broadcast の送信者が監視する受信者の台数の上限。flow_control_monitored_receiver_count の検査上限です。 */
 #define POTR_FLOW_CONTROL_DISABLED \

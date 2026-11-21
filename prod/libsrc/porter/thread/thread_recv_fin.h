@@ -20,12 +20,13 @@
 
 #include "thread_recv_slot.h"
 
-/** FIN ではない。 */
-#define THREAD_RECV_FIN_IGNORED 0
-/** 目標通番へ未到達のため pending とする。 */
-#define THREAD_RECV_FIN_PENDING 1
-/** 即時切断対象。発火は呼び出し側が行う。 */
-#define THREAD_RECV_FIN_FIRE 2
+/** 受信した FIN の処理区分。 */
+typedef enum thread_recv_fin_result
+{
+    THREAD_RECV_FIN_IGNORED = 0, /**< FIN ではない。 */
+    THREAD_RECV_FIN_PENDING = 1, /**< 目標通番へ未到達のため pending とする。 */
+    THREAD_RECV_FIN_FIRE = 2     /**< 即時切断対象。発火は呼び出し側が行う。 */
+} thread_recv_fin_result;
 
 /**
  *  @brief          受信した FIN を pending にするか、即時切断するかを判定します。
@@ -38,7 +39,8 @@
  *                  目標付き FIN で受信ウィンドウが未到達の場合は pending とし、切断は発火しません。
  *       呼び出し側が recv_window_mutex を保持している場合は、発火の前に解放してください。
  */
-int thread_recv_fin_on_packet(thread_recv_slot *slot, const potr_packet *pkt, uint32_t *fin_target_seq_out);
+thread_recv_fin_result thread_recv_fin_on_packet(thread_recv_slot *slot, const potr_packet *pkt,
+                                                 uint32_t *fin_target_seq_out);
 
 /**
  * @brief pending FIN が受信ウィンドウの目標通番へ到達したかどうかを判定します。

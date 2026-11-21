@@ -199,7 +199,7 @@ recv スレッド #i:
   recv_window_mutex を lock
   while potr_internal_window_recv_pop(recv_window, out) == SUCCESS:
     recv_window_mutex を unlock
-    deliver_payload_elem(out)   ← コールバック呼び出し前に unlock
+    thread_recv_slot_deliver_payload_elem(out)   ← コールバック呼び出し前に unlock
     recv_window_mutex を lock
   recv_window_mutex を unlock
 ```
@@ -512,7 +512,7 @@ RAW モードでは再送制御を行いません。送信ウィンドウへの�
 マルチキャスト・ブロードキャスト環境では、複数の受信者が同じ通番の NACK を短時間に送信する場合があります。  
 また、同一受信者が再送の到着を待たずに同じ NACK を複数回送信する場合もあります。
 
-送信者は直近 8 エントリのリング バッファーで NACK 受信履歴を管理し、同一通番の NACK が **200ms** 以内に再度到着した場合は処理をスキップします。
+送信者は直近 16 エントリのリング バッファーで NACK 受信履歴を管理し、同一通番の NACK が **200ms** 以内に再度到着した場合は処理をスキップします。
 
 ### REJECT の役割
 
@@ -562,7 +562,7 @@ FIN をペンディング中に期待する DATA が届かない場合、以下�
 
 | シナリオ | 解消パス |
 |---|---|
-| 欠番 DATA が後着した | 正常に `drain_recv_window()` → `pending_fin` 解消 |
+| 欠番 DATA が後着した | 正常に `slot_drain_recv_window()` → `pending_fin` 解消 |
 | 送信者が NACK に REJECT で応答 | `thread_recv_fin_fire()` で FIN を直ちに発火して解消 |
 | `reorder_timeout_ms` タイムアウト後 | NACK を再送し、REJECT またはヘルス チェックで解消 |
 | `health_timeout_ms` タイムアウト | ヘルス チェックが `DISCONNECTED` を発火 (既存フォールバック) |
@@ -695,22 +695,22 @@ Table: 双方向 UDP における PING パケットのフォーマット
 1:1 モードでは両端それぞれ、N:1 モードではサーバが各ピアごとに独立して次を行います:
   health_interval_ms 周期で PING 要求（ack_num=0）を送信する
   相手から PING 要求（ack_num=0）を受信したら直ちに PING 応答（ack_num=要求の seq_num）を返却する
-  last_recv_tv_sec を PING 応答受信時にも更新する
-  check_health_timeout() で last_recv_tv_sec を監視 → health_timeout_ms 超過で DISCONNECTED
+  last_recv_ts を PING 応答受信時にも更新する
+  thread_recv_health_check_service() で last_recv_ts を監視 → health_timeout_ms 超過で DISCONNECTED
 ```
 
 双方向 UDP の `CONNECTED` は、受信した PING ペイロードの `remote_path_ping_state[]` に少なくとも 1 つ `POTR_PING_STATE_NORMAL` が入った時点で成立します。これは「相手が自端からの PING を正常受信し、その状態を載せた PING を返してきた」ことを意味します。したがって `health_interval_ms = 0`、またはグローバル既定値として `udp_health_interval_ms = 0` かつサービス側で上書きしない構成では、初回 PING が送信されず `CONNECTED` は成立しません。
 
-#### 双方向 UDP で last_recv_tv_sec 監視だけで十分な理由
+#### 双方向 UDP で last_recv_ts 監視だけで十分な理由
 
 TCP では「OS レベルの接続が生存したままアプリケーション層がハングする」状況が起こり得るため、PING 応答の個別タイムアウト監視が必要です。
 
-UDP には接続概念がありません。相手のアプリケーションが停止すると、データ パケットも PING パケットも一切到着しなくなります。`last_recv_tv_sec` が更新されないため、`check_health_timeout()` のみで切断を検知できます。PING 応答の個別タイムアウト管理は不要です。
+UDP には接続概念がありません。相手のアプリケーションが停止すると、データ パケットも PING パケットも一切到着しなくなります。`last_recv_ts` が更新されないため、`thread_recv_health_check_service()` のみで切断を検知できます。PING 応答の個別タイムアウト管理は不要です。
 
 | モード | タイムアウト検知方法 | 理由 |
 |---|---|---|
-| UDP unicast | RECEIVER: `last_recv_tv_sec` 監視 | 片方向 type 1-6 は有効な `PING` / `DATA` 受信で更新 |
-| UDP unicast_bidir | 1:1 は両端、N:1 は各ピア単位で `last_recv_tv_sec` を監視 | 相手停止で当該相手からの全パケットが途絶える → timeout 発火 |
+| UDP unicast | RECEIVER: `last_recv_ts` 監視 | 片方向 type 1-6 は有効な `PING` / `DATA` 受信で更新 |
+| UDP unicast_bidir | 1:1 は両端、N:1 は各ピア単位で `last_recv_ts` を監視 | 相手停止で当該相手からの全パケットが途絶える → timeout 発火 |
 | TCP / TCP_bidir | SENDER: PING 応答タイムアウト監視 | OS 接続が生存したままアプリケーションがハングし得るため |
 
 Table: 通信モードごとのタイムアウト検知方法と選定理由
@@ -728,7 +728,7 @@ TCP では加えて、「OS 接続が生存したままアプリケーション�
 
 | 通信種別 | 役割 | 監視内容 |
 |---|---|---|
-| UDP unicast 等 | RECEIVER | `last_recv_tv_sec` が `udp_health_timeout_ms` を超えたら DISCONNECTED |
+| UDP unicast 等 | RECEIVER | `last_recv_ts` が `udp_health_timeout_ms` を超えたら DISCONNECTED |
 | TCP / TCP_BIDIR | SENDER | `tcp_health_interval_ms > 0` のとき、PING 応答 (`ack_num > 0`) が `tcp_health_timeout_ms` 以内に返却されなければ DISCONNECTED (health スレッド) |
 | TCP / TCP_BIDIR | RECEIVER | `tcp_health_interval_ms > 0` のとき、PING 要求 (`ack_num = 0`) が `tcp_health_timeout_ms` 以内に到着しなければ DISCONNECTED (recv スレッド) |
 | TCP_BIDIR | SENDER | `tcp_health_interval_ms > 0` のとき、PING 要求 (`ack_num = 0`) が `tcp_health_timeout_ms` 以内に到着しなければ DISCONNECTED (recv スレッド) |

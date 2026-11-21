@@ -241,7 +241,7 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
     limit = ctx->service.max_peers;
     if (limit == 0U)
     {
-        limit = 1024U;
+        limit = POTR_DEFAULT_MAX_PEERS;
     }
     if (!report && !flow && packet->flags != POTR_FLAG_NACK)
     {
@@ -344,7 +344,7 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
         receiver->session_tv_sec = packet->session_tv_sec;
         receiver->session_tv_nsec = packet->session_tv_nsec;
     }
-    memcpy(&wire_flags, wire_header + 32U, sizeof(wire_flags));
+    memcpy(&wire_flags, wire_header + POTR_PACKET_FLAGS_OFFSET, sizeof(wire_flags));
     if ((cplat_ntoh16(wire_flags) & POTR_FLAG_ENCRYPTED) != 0U)
     {
         ret = potr_internal_replay_window_accept(&receiver->replay_window, packet);

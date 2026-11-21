@@ -23,11 +23,21 @@
 #include <porter/protocol/packet_seal.h>
 #include <porter/protocol/receiver_report.h>
 
-/** 送信スレッドが抑制の状態を確認し直すまでの待機の上限 [ms]。close の開始を、この時間以内に検出する。 */
-#define FLOW_CONTROL_RECHECK_MS 50
-
 /** フロー制御パケットのワイヤー長の上限 [byte] (ヘッダー、状態と送出上限、認証タグ)。 */
 #define FLOW_CONTROL_WIRE_SIZE (POTR_PACKET_HEADER_SIZE + POTR_FLOW_CONTROL_PAYLOAD_SIZE + POTR_CRYPTO_TAG_SIZE)
+
+static_assert(FLOW_CONTROL_WIRE_SIZE <= POTR_PACKET_HEADER_SIZE + POTR_MAX_PAYLOAD + POTR_CRYPTO_TAG_SIZE,
+              "porter: FLOW_CONTROL_WIRE_SIZE exceeds the maximum wire size");
+static_assert(POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX >= 1U && POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX <= UINT8_MAX,
+              "porter: POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX must fit in the 1-byte count");
+static_assert(POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT <= POTR_PERCENT_MAX &&
+                  POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT <= POTR_PERCENT_MAX &&
+                  POTR_DEFAULT_FLOW_CONTROL_RECEIVER_PERCENT <= POTR_PERCENT_MAX &&
+                  POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_PERCENT <= POTR_PERCENT_MAX &&
+                  POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT <= POTR_PERCENT_MAX,
+              "porter: default flow control percent exceeds POTR_PERCENT_MAX");
+static_assert(POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT < POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT,
+              "porter: default resume percent must be below suppress percent");
 
 /** 監視対象の一覧のパケットのワイヤー長の上限 [byte] (ヘッダー、一覧、認証タグ)。 */
 #define FLOW_CONTROL_MONITOR_WIRE_SIZE \
@@ -173,7 +183,7 @@ static int resolve_receive_buffer_percent(const potr_service_def *service, const
         percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT;
     }
 
-    if (percent > 100U)
+    if (percent > POTR_PERCENT_MAX)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "flow_control: service_id=%" PRId64 " invalid receive_buffer_percent=%u (1 <= percent <= 100)",
@@ -238,7 +248,7 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (config->suppress_percent < 1U || config->suppress_percent > 100U || config->resume_percent < 1U ||
+    if (config->suppress_percent < 1U || config->suppress_percent > POTR_PERCENT_MAX || config->resume_percent < 1U ||
         config->resume_percent >= config->suppress_percent)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
@@ -269,14 +279,14 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (config->receiver_percent > 100U)
+    if (config->receiver_percent > POTR_PERCENT_MAX)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "flow_control: service_id=%" PRId64 " invalid receiver_percent=%u (max: 100)",
                    service->service_id, (unsigned)config->receiver_percent);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (config->monitored_receiver_percent > 100U ||
+    if (config->monitored_receiver_percent > POTR_PERCENT_MAX ||
         config->monitored_receiver_count > POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
@@ -1397,13 +1407,13 @@ void potr_internal_flow_control_on_packet(potr_context *ctx, struct potr_interna
 /* 残り時間 [ms] を、確認し直すまでの待機の上限に丸める。 */
 static int recheck_wait_ms(uint64_t now_ms, uint64_t until_ms)
 {
-    if (until_ms > now_ms && until_ms - now_ms < (uint64_t)FLOW_CONTROL_RECHECK_MS)
+    if (until_ms > now_ms && until_ms - now_ms < (uint64_t)POTR_INTERNAL_FLOW_RECHECK_MS)
     {
-        /* 差は FLOW_CONTROL_RECHECK_MS 未満であり、int に収まる。 */
+        /* 差は POTR_INTERNAL_FLOW_RECHECK_MS 未満であり、int に収まる。 */
         return (int)(until_ms - now_ms);
     }
 
-    return FLOW_CONTROL_RECHECK_MS;
+    return POTR_INTERNAL_FLOW_RECHECK_MS;
 }
 
 /*

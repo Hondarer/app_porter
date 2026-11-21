@@ -173,7 +173,7 @@ bootstrap PING を含む往復確認が成立して初めて logical connected �
 
 最終実装では path イベントの責務を次のように分離しています。
 
-- `prod/include/porter_type.h`  
+- `prod/include/porter/porter_type.h`  
   公開 enum と callback 契約の定義
 - `prod/libsrc/porter/potr_path_event.c`  
   path logical 状態の差分計算、発火順序制御、callback 直列化

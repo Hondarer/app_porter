@@ -13,6 +13,8 @@
 
 #include <cplat/base/platform.h>
 #include <cplat/crt/stdlib.h>
+#include <assert.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <inttypes.h>
 
@@ -113,8 +115,10 @@ static int push_message(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
     return result;
 }
 
-/** 抑制中のピアの状態を確認し直すまでの待機の上限 [ms]。 */
-#define SEND_FLOW_RECHECK_MS 50
+/* 送信フラグは int の flags 引数に論理和で渡すため、int に収まり、互いに重ならないことを確かめる。 */
+static_assert((POTR_SEND_COMPRESS | POTR_SEND_BLOCKING) <= (unsigned)INT_MAX &&
+                  (POTR_SEND_COMPRESS & POTR_SEND_BLOCKING) == 0U,
+              "porter: send flags must fit in int and must not overlap");
 
 /*
  * N:1 モードで、宛先のピアが抑制中 (有効な抑制の要求がある、または受けた送出上限に達している) かどうかを返す。
@@ -199,7 +203,7 @@ static int wait_peer_sendable(potr_context *ctx, potr_peer_id peer_id, int block
             }
         }
 
-        potr_internal_send_queue_wait_flow(&ctx->send_queue, &generation, SEND_FLOW_RECHECK_MS);
+        potr_internal_send_queue_wait_flow(&ctx->send_queue, &generation, POTR_INTERNAL_FLOW_RECHECK_MS);
     }
 }
 

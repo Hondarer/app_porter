@@ -16,6 +16,32 @@
 #include <porter/infra/potr_trace.h>
 #include <porter/security/certificate.h>
 
+/** 鍵の導出に使う文脈 (自他のセッション識別子を並べたもの) の長さ [byte]。 */
+#define CERT_SESSION_BIND_CONTEXT_SIZE (POTR_IDENTITY_SIZE * 2U)
+
+static_assert(CERT_SESSION_BIND_CONTEXT_SIZE == POTR_IDENTITY_SIZE + POTR_IDENTITY_SIZE,
+              "porter: session bind context must hold two session identities");
+
+/*
+ * DTLS (RFC 6347) のレコードの形式の値。レコード ヘッダーは 13 [byte] で、先頭に content type (1 [byte])、
+ * 位置 3 から epoch (2 [byte]) を置く。handshake のレコードでは、ヘッダーの直後に handshake の種別 (1 [byte]) を置く。
+ */
+#define DTLS_RECORD_HDR_LEN          13U
+#define DTLS_RECORD_OFF_CONTENT_TYPE 0U
+#define DTLS_RECORD_OFF_EPOCH        3U
+#define DTLS_HS_OFF_MSG_TYPE         DTLS_RECORD_HDR_LEN
+#define DTLS_CONTENT_TYPE_HANDSHAKE  22U
+#define DTLS_HS_CLIENT_HELLO         1U
+
+/**
+ * TCP の相互認証でバイト列を読む間に、close の要求と期限を確認し直すまでの待機の上限 [ms]。
+ * close の要求と期限切れの検出の遅れは、この値を超えない。
+ */
+#define CERT_HANDSHAKE_POLL_MS 100
+
+static_assert(CERT_HANDSHAKE_POLL_MS > 0 && CERT_HANDSHAKE_POLL_MS <= INT_MAX,
+              "porter: CERT_HANDSHAKE_POLL_MS out of range");
+
 /** 直近の DTLS flight を構成する出力レコード。状態が所有します。 */
 struct potr_internal_certificate_flight
 {
@@ -61,24 +87,24 @@ static uint64_t retry_interval(const potr_context *ctx)
     return POTR_DEFAULT_UDP_HEALTH_INTERVAL_MS;
 }
 
-static void identity_bytes(uint8_t out[16], int64_t seconds, uint32_t identifier, int32_t nanoseconds)
+static void identity_bytes(uint8_t out[POTR_IDENTITY_SIZE], int64_t seconds, uint32_t identifier, int32_t nanoseconds)
 {
     uint64_t value = (uint64_t)seconds;
     size_t i;
 
-    for (i = 0U; i < 8U; i++)
+    for (i = 0U; i < POTR_IDENTITY_TV_SEC_SIZE; i++)
     {
-        out[i] = (uint8_t)(value >> ((7U - i) * 8U));
+        out[POTR_IDENTITY_TV_SEC_OFF + i] = (uint8_t)(value >> ((POTR_IDENTITY_TV_SEC_SIZE - 1U - i) * 8U));
     }
     identifier = cplat_hton32(identifier);
     nanoseconds = (int32_t)cplat_hton32((uint32_t)nanoseconds);
-    memcpy(out + 8U, &identifier, 4U);
-    memcpy(out + 12U, &nanoseconds, 4U);
+    memcpy(out + POTR_IDENTITY_ID_OFF, &identifier, POTR_IDENTITY_ID_SIZE);
+    memcpy(out + POTR_IDENTITY_TV_NSEC_OFF, &nanoseconds, POTR_IDENTITY_TV_NSEC_SIZE);
 }
 
 static int matches_identity(const potr_internal_certificate_state *state, const potr_packet *packet)
 {
-    uint8_t identity[16];
+    uint8_t identity[POTR_IDENTITY_SIZE];
 
     identity_bytes(identity, packet->session_tv_sec, packet->session_id, packet->session_tv_nsec);
     return state->peer_known && memcmp(identity, state->peer_identity, sizeof(identity)) == 0;
@@ -212,10 +238,10 @@ static int advance_session(potr_internal_certificate_state *state,
     const uint8_t *input, size_t length)
 {
     potr_internal_auth_state result;
-    uint8_t context[32];
+    uint8_t context[CERT_SESSION_BIND_CONTEXT_SIZE];
     uint8_t client_key[POTR_CRYPTO_KEY_SIZE];
     uint8_t server_key[POTR_CRYPTO_KEY_SIZE];
-    uint8_t own_identity[16];
+    uint8_t own_identity[POTR_IDENTITY_SIZE];
     int ret;
 
     ret = potr_internal_auth_session_receive(state->session, input, length, &result);
@@ -239,13 +265,13 @@ static int advance_session(potr_internal_certificate_state *state,
     identity_bytes(own_identity, state->local_timestamp.tv_sec, state->local_identifier, (int32_t)state->local_timestamp.tv_nsec);
     if (state->client)
     {
-        memcpy(context, own_identity, 16U);
-        memcpy(context + 16U, state->peer_identity, 16U);
+        memcpy(context, own_identity, POTR_IDENTITY_SIZE);
+        memcpy(context + POTR_IDENTITY_SIZE, state->peer_identity, POTR_IDENTITY_SIZE);
     }
     else
     {
-        memcpy(context, state->peer_identity, 16U);
-        memcpy(context + 16U, own_identity, 16U);
+        memcpy(context, state->peer_identity, POTR_IDENTITY_SIZE);
+        memcpy(context + POTR_IDENTITY_SIZE, own_identity, POTR_IDENTITY_SIZE);
     }
     ret = potr_internal_auth_session_export_keys(state->session, context, sizeof(context), client_key, server_key);
     if (ret == POTR_OK)
@@ -457,7 +483,7 @@ static potr_internal_receiver *find_receiver(potr_context *ctx, const potr_packe
 
     if (limit == 0U)
     {
-        limit = 1024U;
+        limit = POTR_DEFAULT_MAX_PEERS;
     }
     for (receiver = ctx->receivers; receiver != NULL; receiver = receiver->next)
     {
@@ -592,9 +618,11 @@ int potr_internal_certificate_receive(potr_context *ctx, potr_packet *packet, co
         goto out_unlock;
     }
     /* DTLS の epoch 0 の ClientHello は、KEY 未受信の受信者による再試行も表します。 */
-    if (!is_client(ctx) && state->session != NULL && packet->payload_len > 13U &&
-        packet->payload[0] == 22U && packet->payload[3] == 0U && packet->payload[4] == 0U &&
-        packet->payload[13] == 1U && now_ms - state->retry_ms >= retry_interval(ctx))
+    if (!is_client(ctx) && state->session != NULL && packet->payload_len > DTLS_RECORD_HDR_LEN &&
+        packet->payload[DTLS_RECORD_OFF_CONTENT_TYPE] == DTLS_CONTENT_TYPE_HANDSHAKE &&
+        packet->payload[DTLS_RECORD_OFF_EPOCH] == 0U && packet->payload[DTLS_RECORD_OFF_EPOCH + 1U] == 0U &&
+        packet->payload[DTLS_HS_OFF_MSG_TYPE] == DTLS_HS_CLIENT_HELLO &&
+        now_ms - state->retry_ms >= retry_interval(ctx))
     {
         potr_internal_certificate_state_dispose(state);
     }
@@ -944,7 +972,7 @@ static int read_stream_bytes(potr_context *ctx, cplat_socket socket, uint8_t *by
         {
             return POTR_ERR_TIMEOUT;
         }
-        wait_result = cplat_socket_timed_wait_readable(socket, 100, NULL);
+        wait_result = cplat_socket_timed_wait_readable(socket, CERT_HANDSHAKE_POLL_MS, NULL);
         if (wait_result == CPLAT_ERR_TIMEOUT)
         {
             continue;

@@ -17,6 +17,8 @@
  */
 #ifndef POTR_FLOW_CONTROL_H
 #define POTR_FLOW_CONTROL_H
+#include <assert.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <cplat/clock/clock.h>
@@ -29,6 +31,10 @@
  *  1 つの 64 ビット値にまとめるのは、受信スレッドの書き込みと送信スレッドの読み取りをアトミックに 1 回で行うためである。
  */
 #define POTR_FLOW_SEND_LIMIT_HELD 0x100000000ULL
+
+static_assert((POTR_FLOW_SEND_LIMIT_HELD & (uint64_t)UINT32_MAX) == 0ULL &&
+                  POTR_FLOW_SEND_LIMIT_HELD > (uint64_t)UINT32_MAX,
+              "porter: POTR_FLOW_SEND_LIMIT_HELD must not overlap the 32-bit sequence number");
 
 /** 送信側の送出上限の判定結果。 */
 typedef enum potr_internal_send_limit_state
@@ -115,6 +121,26 @@ static inline potr_internal_send_limit_state flow_send_limit_judge(uint64_t send
 
 /** 受信バッファーの幅の計算で、1 パケットの見積もりに加える管理情報の量 [byte]。 */
 #define POTR_FLOW_RECEIVE_BUFFER_OVERHEAD 2048U
+
+static_assert(POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN >= 1U && POTR_FLOW_RECEIVE_BUFFER_OVERHEAD > 0U,
+              "porter: receive buffer width parameters must be positive");
+
+/**
+ * 抑制中の状態を確認し直すまでの待機の上限 [ms]。
+ * 送信の呼び出し (potr_service_send) と送信スレッドは、抑制の状態と close の開始を、この時間以内に確認し直す。
+ */
+#define POTR_INTERNAL_FLOW_RECHECK_MS 50
+
+static_assert(POTR_INTERNAL_FLOW_RECHECK_MS > 0 && POTR_INTERNAL_FLOW_RECHECK_MS < INT_MAX,
+              "porter: POTR_INTERNAL_FLOW_RECHECK_MS out of range");
+
+/** 百分率 [%] の上限。 */
+#define POTR_PERCENT_MAX 100U
+
+/** 百分率で求めた値を切り上げるために、割る前に加える値。 */
+#define POTR_PERCENT_CEIL_OFFSET (POTR_PERCENT_MAX - 1U)
+
+static_assert(POTR_PERCENT_MAX == 100U, "porter: POTR_PERCENT_MAX must be 100");
 
 /**
  *  @brief          OS の受信バッファーの大きさから、受信バッファーの幅 (収まると見積もった DATA パケットの数) を求めます。

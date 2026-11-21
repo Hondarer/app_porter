@@ -23,10 +23,13 @@
 #ifndef POTR_CONTEXT_H
 #define POTR_CONTEXT_H
 
+#include <assert.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include <cplat/base/platform.h>
+#include <cplat/base/wait.h>
 #include <cplat/clock/timespec.h>
 #include <cplat/sync/atomic.h>
 #include <cplat/sync/sync.h>
@@ -49,7 +52,17 @@
  * 待機の関数へ int で渡す設定値の上限 [ms] (INT_MAX - 1)。
  * INT_MAX は CPLAT_WAIT_FOREVER と同じ値で無期限の待機になるため、上限に含めない。
  */
-#define POTR_WAIT_MS_MAX 2147483646U
+#define POTR_WAIT_MS_MAX ((uint32_t)CPLAT_WAIT_FOREVER - 1U)
+
+static_assert(POTR_WAIT_MS_MAX > 0U && POTR_WAIT_MS_MAX < (uint32_t)INT_MAX, "porter: POTR_WAIT_MS_MAX overflow");
+
+/**
+ * サービスの最大ピア数の既定値。
+ * 設定ファイルで max_peers を省略した場合の値と、max_peers が 0 以下の場合に代わりに使う上限を兼ねる。
+ */
+#define POTR_DEFAULT_MAX_PEERS 1024U
+
+static_assert(POTR_DEFAULT_MAX_PEERS <= (uint32_t)INT_MAX, "porter: POTR_DEFAULT_MAX_PEERS must fit in int");
 
 /** TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) か判定します。失敗モードのない述語のため共通結果コードの適用対象外。 */
 static inline int is_tcp_type(potr_type t)
@@ -144,7 +157,10 @@ static inline void endpoint_clear(cplat_ipv4_endpoint *endpoint)
 }
 
 /** NACK 重複抑制リング バッファーのスロット数 (POTR_MAX_PATH × 2)。 */
-#define POTR_NACK_DEDUP_SLOTS 8U
+#define POTR_NACK_DEDUP_SLOTS (POTR_MAX_PATH * 2U)
+
+static_assert(POTR_NACK_DEDUP_SLOTS >= 1U && POTR_NACK_DEDUP_SLOTS <= UINT8_MAX,
+              "POTR_NACK_DEDUP_SLOTS must fit in uint8_t");
 
 /** NACK 重複抑制バッファーの 1 エントリ。 */
 typedef struct potr_internal_nack_dedup_entry
@@ -476,8 +492,11 @@ struct potr_context
         [POTR_MAX_PATH]; /**< TCP PING 最終受信時刻 (ms, CLOCK_MONOTONIC 基準)。path ごと。接続確立時に現在時刻で初期化。受信タイムアウト判定に使用。アトミックに読み書きします。 */
 
     /* 送信バッファー満杯ログ抑制 (TCP v2 送信スレッド用) */
-    int buf_full_suppress_cnt
-        [POTR_MAX_PATH]; /**< path ごとの送信バッファー満杯ログ抑制カウンター (0: 抑制なし、1-10: 抑制中)。 */
+    /**
+     * path ごとの送信バッファー満杯ログ抑制カウンター
+     * (0: 抑制なし、1 から POTR_TCP_BUF_FULL_SUPPRESS_COUNT: 抑制中)。
+     */
+    int buf_full_suppress_cnt[POTR_MAX_PATH];
 
     /*
      * 相手端へ PING で通知済みの経路状態 (TCP のみ)。

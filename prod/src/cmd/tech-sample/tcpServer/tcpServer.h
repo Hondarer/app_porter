@@ -14,6 +14,10 @@
 #ifndef TCP_SERVER_PRIVATE_H
 #define TCP_SERVER_PRIVATE_H
 
+#include <assert.h>
+#include <limits.h>
+#include <stdint.h>
+
 #include <cplat/base/platform.h>
 
 /*
@@ -73,14 +77,27 @@ typedef DWORD PidType;
  * ============================================================
  */
 
+/** 有効なポート番号の下限。 */
+#define PORT_MIN 1
+/** 有効なポート番号の上限 (16 bit の範囲)。 */
+#define PORT_MAX UINT16_MAX
 /** デフォルト待ち受けポート番号。 */
 #define DEFAULT_PORT 8080
 /** デフォルト prefork ワーカー数。 */
 #define DEFAULT_WORKERS 4
 /** デフォルト 1 ワーカーあたりの同時接続数。 */
 #define DEFAULT_CONNS_PER_WORKER 1
+/** 1 ワーカーあたりの同時接続数のうち、逐次処理モードを表す値。2 以上は多重処理モードになる。 */
+#define CONNS_PER_WORKER_SEQUENTIAL 1
 /** 送受信バッファー サイズ [byte]。 */
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 1024U
+/** listen() に指定する backlog (接続を待たせるキューの長さ)。 */
+#define LISTEN_BACKLOG 128
+
+static_assert((DEFAULT_PORT >= PORT_MIN) && (DEFAULT_PORT <= PORT_MAX), "tcpServer: DEFAULT_PORT out of range");
+static_assert(DEFAULT_WORKERS >= 1, "tcpServer: DEFAULT_WORKERS must be at least 1");
+static_assert(DEFAULT_CONNS_PER_WORKER >= 1, "tcpServer: DEFAULT_CONNS_PER_WORKER must be at least 1");
+static_assert((BUFFER_SIZE >= 2U) && (BUFFER_SIZE <= (size_t)INT_MAX), "tcpServer: BUFFER_SIZE invalid");
 
 /*
  * ============================================================

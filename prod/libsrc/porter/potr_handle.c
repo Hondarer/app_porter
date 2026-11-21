@@ -12,6 +12,38 @@
 #include <porter/potr_handle.h>
 #include <porter/potr_path_event.h>
 
+/** 登録表のエントリの状態。 */
+typedef enum handle_entry_state
+{
+    HANDLE_STATE_OPEN = 0,    /**< 利用できる。確保直後のゼロ初期化でこの状態になる。 */
+    HANDLE_STATE_CLOSING = 1, /**< close を開始し、新しい利用を受け付けない。 */
+    HANDLE_STATE_CLOSED = 2   /**< close を完了した。公開値を再利用しないため、エントリは残す。 */
+} handle_entry_state;
+
+/*
+ * 登録表の索引を求める際に、ポインター値の上位のビットを下位のビットへ混ぜるシフト量。
+ * uintptr_t のビット幅未満とする。値を変えると、索引の偏りが変わる。
+ */
+#define HANDLE_HASH_SHIFT_HIGH 17U
+#define HANDLE_HASH_SHIFT_LOW  9U
+
+static_assert(HANDLE_HASH_SHIFT_HIGH < sizeof(uintptr_t) * CHAR_BIT &&
+                  HANDLE_HASH_SHIFT_LOW < sizeof(uintptr_t) * CHAR_BIT,
+              "porter: handle hash shift must be less than the width of uintptr_t");
+
+/** 登録表の初期の容量 (バケットの数)。索引を下位ビットで求めるため、2 の累乗とする。 */
+#define HANDLE_TABLE_INIT_CAPACITY 64U
+
+/** 登録表の拡張倍率。拡張後も容量を 2 の累乗に保つため、2 の累乗とする。 */
+#define HANDLE_TABLE_GROWTH_FACTOR 2U
+
+static_assert(HANDLE_TABLE_INIT_CAPACITY >= 2U &&
+                  (HANDLE_TABLE_INIT_CAPACITY & (HANDLE_TABLE_INIT_CAPACITY - 1U)) == 0U,
+              "porter: HANDLE_TABLE_INIT_CAPACITY must be a power of two");
+static_assert(HANDLE_TABLE_GROWTH_FACTOR >= 2U &&
+                  (HANDLE_TABLE_GROWTH_FACTOR & (HANDLE_TABLE_GROWTH_FACTOR - 1U)) == 0U,
+              "porter: HANDLE_TABLE_GROWTH_FACTOR must be a power of two");
+
 /*
  * 登録表は負荷率 1 以下で拡張し、CLOSED の制御オブジェクトも保持する。
  * 通信資源を解放しても公開値を再利用しないため、古いハンドルが別接続を指さない。
@@ -23,7 +55,7 @@ struct potr_internal_handle
     cplat_local_lock *mutex;
     cplat_condvar *idle;
     size_t refs;
-    int state; /* 0: OPEN, 1: CLOSING, 2: CLOSED */
+    handle_entry_state state;
     int reserved;
 };
 
@@ -43,8 +75,8 @@ static void registry_init(void)
 static size_t bucket_for(const void *handle, size_t capacity)
 {
     uintptr_t value = (uintptr_t)handle;
-    value ^= value >> 17U;
-    value ^= value >> 9U;
+    value ^= value >> HANDLE_HASH_SHIFT_HIGH;
+    value ^= value >> HANDLE_HASH_SHIFT_LOW;
 
     return (size_t)value & (capacity - 1U);
 }
@@ -115,13 +147,13 @@ int potr_internal_handle_prepare(potr_context *ctx)
 
     if (s_count == s_capacity)
     {
-        size_t capacity = 64U;
+        size_t capacity = HANDLE_TABLE_INIT_CAPACITY;
         struct potr_internal_handle **buckets;
         size_t i;
 
         if (s_capacity != 0U)
         {
-            capacity = s_capacity * 2U;
+            capacity = s_capacity * HANDLE_TABLE_GROWTH_FACTOR;
         }
 
         buckets = NULL;
@@ -241,7 +273,7 @@ int potr_internal_handle_acquire(potr_context *handle, potr_context **ctx)
     {
         ret = POTR_ERR_OUT_OF_MEMORY;
     }
-    else if (entry->state != 0)
+    else if (entry->state != HANDLE_STATE_OPEN)
     {
         ret = POTR_ERR_CANCELED;
     }
@@ -307,14 +339,14 @@ int potr_internal_handle_begin_close(potr_context *handle, potr_context **ctx)
     {
         ret = POTR_ERR_UNSUPPORTED;
     }
-    else if (entry->state == 1)
+    else if (entry->state == HANDLE_STATE_CLOSING)
     {
         ret = POTR_ERR_CANCELED;
     }
     else
     {
         /* 新規参照を拒否してから先行 API の返却を待ち、通信資源を回収できる状態にする。 */
-        entry->state = 1;
+        entry->state = HANDLE_STATE_CLOSING;
 
         while (entry->refs != 0U)
         {
@@ -344,6 +376,6 @@ void potr_internal_handle_end_close(potr_context *ctx)
     entry = ctx->handle_owner;
     cplat_local_lock_lock(entry->mutex);
     entry->ctx = NULL;
-    entry->state = 2;
+    entry->state = HANDLE_STATE_CLOSED;
     cplat_local_lock_unlock(entry->mutex);
 }

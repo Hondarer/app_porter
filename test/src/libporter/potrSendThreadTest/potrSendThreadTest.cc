@@ -318,12 +318,12 @@ TEST_F(potrSendThreadTcpTest, suppress_counter_zero_stays_zero)
 }
 // [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]
 
-// 送信バッファー警告抑止カウンターが 9 から 10 になることの確認
+// 送信バッファー警告抑止カウンターが POTR_TCP_BUF_FULL_SUPPRESS_COUNT - 1 から POTR_TCP_BUF_FULL_SUPPRESS_COUNT になることの確認
 // [サブ手順参照 名前=potrSendThreadTcpTest.SetUp]
 TEST_F(potrSendThreadTcpTest, suppress_counter_below_limit_reaches_limit)
 {
     // Arrange
-    ctx.buf_full_suppress_cnt[0] = 9; // [状態] - 送信前の抑止カウンターを設定する。
+    ctx.buf_full_suppress_cnt[0] = POTR_TCP_BUF_FULL_SUPPRESS_COUNT - 1; // [状態] - 送信前の抑止カウンターを設定する。
 
     // Act
     // [サブ手順参照 名前=potrSendThreadTcpTest.runOneEntry]
@@ -331,16 +331,17 @@ TEST_F(potrSendThreadTcpTest, suppress_counter_below_limit_reaches_limit)
 
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret);              // [確認_正常系] - 開始に成功すること。
-    EXPECT_EQ(10, ctx.buf_full_suppress_cnt[0]); // [確認_正常系] - 送信後の抑止カウンターが 10 であること。
+    EXPECT_EQ(POTR_TCP_BUF_FULL_SUPPRESS_COUNT,
+              ctx.buf_full_suppress_cnt[0]); // [確認_正常系] - 送信後の抑止カウンターが POTR_TCP_BUF_FULL_SUPPRESS_COUNT であること。
 }
 // [サブ手順参照 名前=potrSendThreadTcpTest.TearDown]
 
-// 送信バッファー警告抑止カウンターが 10 から 0 になることの確認
+// 送信バッファー警告抑止カウンターが POTR_TCP_BUF_FULL_SUPPRESS_COUNT から 0 になることの確認
 // [サブ手順参照 名前=potrSendThreadTcpTest.SetUp]
 TEST_F(potrSendThreadTcpTest, suppress_counter_exceeding_limit_resets)
 {
     // Arrange
-    ctx.buf_full_suppress_cnt[0] = 10; // [状態] - 送信前の抑止カウンターを設定する。
+    ctx.buf_full_suppress_cnt[0] = POTR_TCP_BUF_FULL_SUPPRESS_COUNT; // [状態] - 送信前の抑止カウンターを設定する。
 
     // Act
     // [サブ手順参照 名前=potrSendThreadTcpTest.runOneEntry]

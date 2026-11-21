@@ -74,7 +74,7 @@ TEST(tcpServerWindowsTest, worker_closes_connection_when_send_fails)
     EXPECT_CALL(mock_winsock, select(_, _, _, 0, NotNull(), nullptr, nullptr, NotNull()))
         .WillOnce(Return(1)); // [Pre-Assert確認_異常系] - select() が 0、nullptr 以外、nullptr、nullptr、nullptr 以外を指定して 1 回呼び出されること。
                               // [Pre-Assert手順] - select() から、読み込み可能なソケットが 1 個あることを表す 1 を返す。
-    EXPECT_CALL(mock_winsock, recv(_, _, _, _, _, BUFFER_SIZE, 0))
+    EXPECT_CALL(mock_winsock, recv(_, _, _, _, _, (int)BUFFER_SIZE, 0))
         .WillOnce(Invoke(
             [&](const char *, const int, const char *, SOCKET s, char *buf, int, int) -> int
             {

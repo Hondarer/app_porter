@@ -27,12 +27,22 @@
 #include <cplat/crt/path.h>
 #include <cplat/crt/stdio.h>
 #include <cplat/sync/sync.h>
+#include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
 
 #include <porter/porter_spec.h>
 
 #include <porter/infra/potr_trace.h>
+
+/** ソケットの失敗のトレースで、呼び出し元の文脈を書式化するバッファーの大きさ [byte]。超える分は切り詰める。 */
+#define POTR_TRACE_CONTEXT_BUF_SIZE 256U
+
+/** ソケットの失敗のトレースで、エラーの説明を格納するバッファーの大きさ [byte]。超える分は切り詰める。 */
+#define POTR_TRACE_MESSAGE_BUF_SIZE 256U
+
+static_assert(POTR_TRACE_CONTEXT_BUF_SIZE >= 2U && POTR_TRACE_MESSAGE_BUF_SIZE >= 2U,
+              "porter: trace buffers must hold at least one character and NUL");
 
 /* ── グローバル トレーサー状態 ──────────────────────────────────────────────── */
 
@@ -83,8 +93,8 @@ cplat_tracer *potr_internal_trace_get(void)
 void potr_internal_trace_socket_failure_at(const char *file, const int line, const cplat_trace_level level,
                                            const cplat_error *detail, const char *format, ...)
 {
-    char context[256];
-    char message[256];
+    char context[POTR_TRACE_CONTEXT_BUF_SIZE];
+    char message[POTR_TRACE_MESSAGE_BUF_SIZE];
     va_list args;
 
     if ((file == NULL) || (detail == NULL) || (format == NULL))

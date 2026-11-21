@@ -47,8 +47,6 @@ int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uin
     for (i = 0; i < depth; i++)
     {
         q->entries[i].peer_id = POTR_PEER_NA;
-        q->entries[i].flags = 0;
-        q->entries[i].payload_len = 0;
         q->entries[i].payload = q->payload_pool + i * (size_t)max_payload;
     }
 
