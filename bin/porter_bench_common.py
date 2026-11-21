@@ -25,6 +25,8 @@ KEY_METRICS: dict[str, list[str]] = {
            "notify_p99_us", "cpu_time_ms", "send_full_count"],
     "P6": ["throughput_msg_s", "healthy_received_min", "healthy_disconnect_count", "slow_received_min",
            "slow_disconnect_count", "send_full_count"],
+    "P7": ["throughput_msg_s", "healthy_received_min", "healthy_disconnect_count", "stalled_received_min",
+           "stalled_disconnect_count", "stalled_disconnect_ms", "send_full_count"],
 }
 
 # 条件名の表記から取り除く、測定の長さだけを決めるパラメーターの接頭辞。
@@ -41,8 +43,13 @@ def read_result_rows(path: Path) -> Iterator[dict[str, str]]:
 
 
 def short_params(params: str) -> str:
-    """測定の長さだけを決めるパラメーターを除いた、条件の表記を返す。"""
+    """測定の長さだけを除く。設定の上書き (cfg.key=value) は指定順のまま残す。"""
     return ";".join(item for item in params.split(";") if not item.startswith(LENGTH_PARAMETER_PREFIXES))
+
+
+def config_params(params: str) -> str:
+    """設定の上書き (cfg.key=value) を、指定順のまま返す。"""
+    return ";".join(item for item in params.split(";") if item.startswith("cfg."))
 
 
 def format_change(new: float | None, base: float | None) -> str:

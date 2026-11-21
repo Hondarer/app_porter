@@ -4,6 +4,7 @@
 結果は `<結果ディレクトリ>/<版>/<条件名>.csv` の配置とする。版はディレクトリ名であり、
 `porter_bench_ab.py` の出力がこの配置になる。
 各回 (`run` 列が整数の行) の値から、条件と指標ごとに中央値、最小、最大を求める。
+設定の上書き (params の cfg. 項目) がある場合は条件名へ付け、異なる設定の結果を分ける。
 先頭の版を基準とし、ほかの版には基準に対する中央値の変化率を付ける。
 3 番目以降の版には、直前の版に対する変化率も付ける。
 最大が最小の 3 倍を超える組み合わせは、ばらつきの大きい条件として列挙する。
@@ -29,7 +30,7 @@ from typing import Sequence
 # 埋め込み版 Python (._pth) はスクリプトのディレクトリを sys.path に入れないため、明示的に追加する。
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from porter_bench_common import KEY_METRICS, configure_output_encoding, format_change, format_value, read_result_rows  # noqa: E402
+from porter_bench_common import KEY_METRICS, config_params, configure_output_encoding, format_change, format_value, read_result_rows  # noqa: E402
 
 # 最大が最小のこの倍率を超える組み合わせを、ばらつきが大きいと判定する。
 SPREAD_RATIO = 3.0
@@ -51,15 +52,16 @@ def comparison_pairs(variants: Sequence[str]) -> list[tuple[str, str]]:
 
 
 def collect_run_values(results_directory: Path, variants: Sequence[str]) -> tuple[RunValues, dict[str, str]]:
-    """各回の値を集める。条件名ごとの条件 (P1 から P5) も返す。"""
+    """各回の値を集める。条件名ごとの条件 (P1 から P7) も返す。"""
     runs: RunValues = {}
     conditions: dict[str, str] = {}
     for variant in variants:
         for path in sorted((results_directory / variant).glob("*.csv")):
-            label = path.stem
             for record in read_result_rows(path):
                 if not record.get("run", "").isdigit():
                     continue
+                overrides = config_params(record["params"])
+                label = f"{path.stem};{overrides}" if overrides else path.stem
                 conditions[label] = record["cond"]
                 try:
                     value = float(record["value"])

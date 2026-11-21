@@ -24,6 +24,7 @@ import porter_bench_summarize as summarize  # noqa: E402
 import porter_bench_summarize_variants as variants_summary  # noqa: E402
 
 HEADER = "os,version,cond,params,run,metric,value\n"
+P7_PARAMS = "clients=4;stalled_clients=1;bytes=1000;flags=normal;count=10000;warmup=1000;cb_sleep_ms=1000;stalled_capacity=65536;run_timeout_s=60"
 P5_PARAMS = "tcp_type=oneway;bytes=64;flags=normal;threads=1;count=100;warmup=10"
 
 
@@ -49,6 +50,25 @@ class CommonTest(unittest.TestCase):
     def test_short_params_drops_length_parameters(self) -> None:
         self.assertEqual("tcp_type=oneway;bytes=64;flags=normal;threads=1", common.short_params(P5_PARAMS))
 
+    def test_config_params_preserve_order_duplicates_and_disabled_value(self) -> None:
+        overrides = "cfg.window_size=64;cfg.flow_control_capacity=1048576;cfg.window_size=32;cfg.flow_control_receive_buffer_percent=-1"
+        params = f"{P7_PARAMS};{overrides}"
+        self.assertEqual(overrides, common.config_params(params))
+        self.assertTrue(common.short_params(params).endswith(overrides))
+        self.assertNotIn(";count=", common.short_params(params))
+        self.assertNotIn(";warmup=", common.short_params(params))
+        self.assertIn("stalled_clients=1", common.short_params(params))
+        self.assertEqual("", common.config_params(P5_PARAMS))
+
+    def test_p2_client_count_is_preserved(self) -> None:
+        for clients in (1, 4, 64):
+            params = f"bytes=64;reply=ext;clients={clients};count=10;warmup=0"
+            self.assertEqual(f"bytes=64;reply=ext;clients={clients}", common.short_params(params))
+
+    def test_p6_without_slow_receivers_needs_no_callback_sleep(self) -> None:
+        params = "receivers=3;slow_receivers=0;bytes=1000;count=10000;warmup=1000;cfg.window_size=64"
+        self.assertEqual("receivers=3;slow_receivers=0;bytes=1000;cfg.window_size=64", common.short_params(params))
+
     def test_format_change(self) -> None:
         self.assertEqual("+50.0%", common.format_change(150.0, 100.0))
         self.assertEqual("-25.0%", common.format_change(75.0, 100.0))
@@ -61,10 +81,15 @@ class CommonTest(unittest.TestCase):
         self.assertEqual("-", common.format_value(None))
 
     def test_key_metrics_cover_all_conditions(self) -> None:
-        self.assertEqual({"P1", "P2", "P3", "P4", "P5", "P6"}, set(common.KEY_METRICS))
+        self.assertEqual({"P1", "P2", "P3", "P4", "P5", "P6", "P7"}, set(common.KEY_METRICS))
         self.assertIn("send_full_count", common.KEY_METRICS["P5"])
         self.assertIn("healthy_received_min", common.KEY_METRICS["P6"])
         self.assertIn("send_full_count", common.KEY_METRICS["P6"])
+        self.assertEqual(
+            ["throughput_msg_s", "healthy_received_min", "healthy_disconnect_count", "stalled_received_min",
+             "stalled_disconnect_count", "stalled_disconnect_ms", "send_full_count"],
+            common.KEY_METRICS["P7"],
+        )
 
 
 class AggregateTest(unittest.TestCase):
@@ -79,6 +104,18 @@ class AggregateTest(unittest.TestCase):
         self.assertEqual({"min": "100.000", "median": "200.000", "max": "300.000"}, rows[base_key])
         target_key = ("linux", "target", "P5", P5_PARAMS, "throughput_msg_s")
         self.assertEqual("200.000", rows[target_key]["median"])
+
+    def test_p7_config_overrides_are_distinct_aggregate_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            for index, capacity in enumerate((65536, 1048576)):
+                params = f"{P7_PARAMS};cfg.window_size=64;cfg.flow_control_capacity={capacity}"
+                write(root / f"p7-{index}.csv", csv_text("target", [-1.0], metric="stalled_disconnect_ms",
+                                                     cond="P7", params=params))
+            rows = aggregate.collect_statistics(root)
+        self.assertEqual(2, len(rows))
+        self.assertEqual({"-1.000"}, {values["median"] for values in rows.values()})
+        self.assertTrue(all(key[2] == "P7" and ";cfg.window_size=64;cfg.flow_control_capacity=" in key[3] for key in rows))
 
     def test_main_writes_sorted_csv_and_skips_output_inside_results(self) -> None:
         with tempfile.TemporaryDirectory() as root_text:
@@ -122,6 +159,19 @@ class SummarizeTest(unittest.TestCase):
         )
         # データのない指標は「-」で表示する。
         self.assertIn("  api_p50_us: base=- | target=-", lines)
+
+    def test_p7_summary_keeps_config_and_all_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            params = f"{P7_PARAMS};cfg.window_size=64;cfg.flow_control_receive_buffer_percent=-1"
+            write(root / "p7.csv", csv_text("target", [-1.0], metric="stalled_disconnect_ms", cond="P7", params=params))
+            aggregate_path = root / "aggregate.csv"
+            with contextlib.redirect_stdout(io.StringIO()):
+                aggregate.main([str(root), str(aggregate_path)])
+            lines = summarize.summarize(aggregate_path, "base", "target")
+        self.assertTrue(lines[0].endswith(";cfg.window_size=64;cfg.flow_control_receive_buffer_percent=-1"))
+        self.assertEqual(1 + len(common.KEY_METRICS["P7"]), len(lines))
+        self.assertIn("  stalled_disconnect_ms: base=- | target=-1.000 [-1.000..-1.000]", lines)
 
     def test_missing_version_has_no_change_rate(self) -> None:
         with tempfile.TemporaryDirectory() as root_text:
@@ -181,6 +231,28 @@ class SummarizeVariantsTest(unittest.TestCase):
         self.assertIn("| p5-b64 | throughput_msg_s | 110.0 (100.0..120.0)", markdown)
         self.assertIn("| +100.0% |", markdown)
         self.assertIn("- p5-b64 throughput_msg_s target: 200.0, 220.0, 1000.0", markdown)
+
+    def test_p7_variants_separate_configs_with_same_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            contents = []
+            for capacity, value in ((65536, 1.0), (1048576, 0.0)):
+                params = f"{P7_PARAMS};cfg.flow_control_capacity={capacity}"
+                contents.append(csv_text("target", [value], metric="stalled_disconnect_count", cond="P7", params=params))
+            # 1 ファイルの複数の設定も、別の版の同名ファイルも、混ぜずに集計する。
+            write(root / "target" / "p7.csv", contents[0] + contents[1].split("\n", 1)[1])
+            write(root / "base" / "p7.csv", csv_text("base", [2.0], metric="stalled_disconnect_count", cond="P7",
+                                                   params=f"{P7_PARAMS};cfg.flow_control_capacity=65536"))
+            runs, conditions = variants_summary.collect_run_values(root, ["base", "target"])
+            count, _ = variants_summary.summarize_variants(root, ["base", "target"], root / "s.csv", root / "s.md")
+            output = (root / "s.csv").read_text(encoding="utf-8")
+        self.assertEqual(2, count)
+        self.assertEqual({"P7"}, set(conditions.values()))
+        self.assertEqual({"base": [2.0], "target": [1.0]},
+                         runs[("p7;cfg.flow_control_capacity=65536", "stalled_disconnect_count")])
+        self.assertEqual({"target": [0.0]},
+                         runs[("p7;cfg.flow_control_capacity=1048576", "stalled_disconnect_count")])
+        self.assertIn("p7;cfg.flow_control_capacity=65536,stalled_disconnect_count", output)
 
     def test_variants_default_to_sorted_subdirectories(self) -> None:
         with tempfile.TemporaryDirectory() as root_text:

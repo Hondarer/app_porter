@@ -13,31 +13,36 @@
  *  測定の手順と結果の見方は `app/porter/docs/performance-measurement.md` を参照してください。
  *
  *  @par            測定条件
+ *  @parblock
  *  | 条件 | 内容                                                                              |
  *  | ---- | --------------------------------------------------------------------------------- |
  *  | p1   | UDP の片方向送信 (`POTR_TYPE_UNICAST`)。送信スレッドごとに同時未完了数を制限する。 |
- *  | p2   | N:1 の双方向 UDP で 4 クライアントが要求を送り、サーバーが返信する。             |
+ *  | p2   | N:1 の双方向 UDP で指定数のクライアントが要求を送り、サーバーが返信する。             |
  *  | p3   | 受信コールバックが 1 件ごとに待機する場合の通知遅延とメモリ増加量を測る。         |
  *  | p4   | open、接続待ち、1 件の送受信、close を反復し、メモリ、ハンドル、スレッドの増加を測る。 |
  *  | p5   | p1 と同等の負荷を TCP で実行する。                                                |
  *  | p6   | マルチキャスト (`POTR_TYPE_MULTICAST`) の送信者 1 つと受信者 N 個をループバックで動かす。 |
+ *  | p7   | N:1 サーバーが全ピアへ送信し、受信を止めたクライアントの切断と健全なクライアントの受信を測る。 |
  *
  *  Table: 測定条件
+ *  @endparblock
  *
  *  @par            使用方法
     @code{.sh}
-    porter-bench --cond <p1|p2|p3|p4|p5|p6> [options]
+    porter-bench --cond <p1|p2|p3|p4|p5|p6|p7> [options]
     @endcode
  *
  *  @par            主なオプション
+ *  @parblock
  *  | オプション                       | 説明                                                         |
  *  | -------------------------------- | ------------------------------------------------------------ |
- *  | --cond \<p1\|p2\|p3\|p4\|p5\|p6\> | 測定条件 (必須)                                              |
+ *  | --cond \<p1\|p2\|p3\|p4\|p5\|p6\|p7\> | 測定条件 (必須)                                              |
  *  | --label \<name\>             | CSV の version 列に記録する名前 (既定値: current)             |
  *  | --out \<path\>               | CSV の出力先 (省略時は標準出力)                               |
  *  | --help                       | すべてのオプションを表示する                                 |
  *
  *  Table: porter-bench の主なコマンド ライン オプション
+ *  @endparblock
  *
  *  @par            終了コード
  *  | 値 | 意味                                                 |
@@ -981,6 +986,40 @@ static constexpr uint32_t kP6DefaultCount = 10000U;
 static constexpr uint32_t kP6DefaultWarmup = 1000U;
 static constexpr uint32_t kP6DefaultRunTimeoutS = 60U;
 
+/* ===== N:1 のクライアント数と P7 の既定定数 ===== */
+
+/** N:1 で使うクライアント数。各クライアントのソケットは OS が空きポートへ割り当てる。 */
+constexpr uint32_t kDefaultClients = 4U;
+/** コールバックの生成数と、同一プロセスで開くハンドル・スレッド数を制限する。 */
+constexpr uint32_t kMaxClients = 64U;
+/** P7 の受信を止めるクライアント数の既定値。健全なクライアントを 1 つ以上残す。 */
+constexpr uint32_t kP7DefaultStalledClients = 1U;
+/** P7 の停止クライアントのコールバック待機時間 [ms]。通知の消費を遅らせる。 */
+constexpr uint32_t kP7DefaultCbSleepMs = 1000U;
+/** P7 の停止クライアントの通知キュー容量 [byte]。既定ペイロードの数十件で抑制する。 */
+constexpr uint32_t kP7DefaultStalledCapacity = 65536U;
+/** P7 のペイロード長 [byte]。 */
+constexpr size_t kP7DefaultBytes = 1000U;
+/** P7 の測定件数。 */
+constexpr uint32_t kP7DefaultCount = 10000U;
+/** P7 の測定から除く件数。 */
+constexpr uint32_t kP7DefaultWarmup = 1000U;
+/** P7 の最初の送信からの制限時間 [s]。切断が起きない構成でも終了する。 */
+constexpr uint32_t kP7DefaultRunTimeoutS = 60U;
+/** P7 の全ハンドルで共通に使うサービス ID。 */
+constexpr int64_t kP7ServiceId = 1LL;
+/** P7 でクライアント番号をサーバーへ通知するメッセージの通番。 */
+constexpr uint32_t kP7RegistrationSeq = UINT32_MAX;
+
+static_assert(kMaxClients >= 64U, "porter-bench: client limit must support at least 64 clients");
+static_assert(kDefaultClients >= 1U && kDefaultClients <= kMaxClients, "porter-bench: clients out of range");
+static_assert(kP7DefaultStalledClients < kDefaultClients, "porter-bench: P7 needs a healthy client");
+static_assert(kP7DefaultCount > 0U && kP7DefaultWarmup <= UINT32_MAX - kP7DefaultCount,
+              "porter-bench: invalid P7 sequence range");
+static_assert(kP7DefaultBytes >= kPayloadHeaderBytes, "porter-bench: P7 payload too small");
+static_assert(kP7DefaultStalledCapacity > kP7DefaultBytes, "porter-bench: P7 capacity too small");
+static_assert(kP7DefaultCbSleepMs > 0U && kP7DefaultRunTimeoutS > 0U, "porter-bench: P7 waits must be positive");
+
 /* ===== コマンド ライン オプション ===== */
 
 struct Options
@@ -1006,9 +1045,14 @@ struct Options
     uint32_t receivers = kP6DefaultReceivers;
     uint32_t slow_receivers = kP6DefaultSlowReceivers;
     uint32_t run_timeout_s = kP6DefaultRunTimeoutS;
+    uint32_t clients = kDefaultClients;
+    uint32_t stalled_clients = kP7DefaultStalledClients;
+    uint32_t stalled_capacity = kP7DefaultStalledCapacity;
     uint16_t base_port = kDefaultBasePort;
     bool no_header = false;
-    unsigned char pad[1] = {}; // 明示的アラインメントのためのパディング。
+    bool cb_sleep_specified = false;
+    bool run_timeout_specified = false;
+    unsigned char pad[3] = {}; // 明示的アラインメントのためのパディング。
 };
 
 static std::string to_lower_str(std::string s)
@@ -1048,9 +1092,10 @@ static bool parse_u32(const char *s, uint32_t *out)
     {
         return false;
     }
+    errno = 0;
     char *endp = nullptr;
-    const unsigned long v = std::strtoul(s, &endp, 10);
-    if (endp == s || *endp != '\0')
+    const unsigned long long v = std::strtoull(s, &endp, 10);
+    if (errno == ERANGE || endp == s || *endp != '\0' || v > UINT32_MAX)
     {
         return false;
     }
@@ -1062,40 +1107,45 @@ static void print_usage(const char *prog)
 {
     std::fprintf(
         stderr,
-        "Usage: %s --cond <p1|p2|p3|p4|p5|p6> [options]\n"
+        "Usage: %s --cond <p1|p2|p3|p4|p5|p6|p7> [options]\n"
         "Options:\n"
-        "  --cond <p1|p2|p3|p4|p5|p6>  Benchmark condition (required)\n"
+        "  --cond <p1|p2|p3|p4|p5|p6|p7>  Benchmark condition (required)\n"
         "  --label <name>              Name recorded in the CSV version column (default: current)\n"
-        "  --bytes <N>                 Payload bytes (>=%zu; default: P1/P2/P4/P5=%zu, P3=%zu, P6=%zu)\n"
-        "  --flags <normal|compress|blocking|compress_blocking>  Send flags for P1/P5 (default: normal)\n"
+        "  --bytes <N>                 Payload bytes (>=%zu; default: P1/P2/P4/P5=%zu, P3=%zu, P6=%zu, P7=%zu)\n"
+        "  --flags <normal|compress|blocking|compress_blocking>  Send flags for P1/P5/P7 (default: normal)\n"
         "  --threads <N>               Sender thread count for P1/P5 (default: %u)\n"
-        "  --count <N>                 Measured items/cycles per run (default: P1/P3/P5=%u, P2=%u, P4=%u, P6=%u)\n"
+        "  --count <N>                 Measured items/cycles per run (default: P1/P3/P5=%u, P2=%u, P4=%u, P6=%u, P7=%u)\n"
         "  --runs <R>                  Runs inside process (default: %u)\n"
-        "  --warmup <W>                Warmup items/cycles excluded per run (default: P1/P2/P3/P5=%u, P4=%u, P6=%u)\n"
+        "  --warmup <W>                Warmup items/cycles excluded per run (default: P1/P2/P3/P5=%u, P4=%u, P6=%u, P7=%u)\n"
         "  --inflight <K>              Max concurrent in-flight msgs per thread for P1/P2/P5 (default: %u)\n"
         "  --port <P>                  Base loopback port (default: %u)\n"
+        "  --clients <N>               P2/P7 client count (1..%u; default: %u)\n"
+        "  --stalled-clients <M>       P7 stalled clients (0..N-1; default: %u)\n"
+        "  --stalled-capacity <bytes>  P7 stalled client notification capacity (default: %u)\n"
         "  --reply-mode <cb|ext>       P2 reply mode (default: ext)\n"
         "  --proto <udp|tcp>           P4 protocol (default: udp)\n"
         "  --tcp-type <bidir|oneway>   TCP type for P5 / P4 tcp (default: oneway)\n"
         "  --receive-buffer-limit <on|off>  Send limit by OS receive buffer on UDP receivers (default: on)\n"
-        "  --cb-sleep-ms <ms>          Callback sleep duration in ms for P3 and P6 slow receivers (default: %u)\n"
+        "  --cb-sleep-ms <ms>          Callback sleep in ms (P3/P6 default: %u; P7 default: %u)\n"
         "  --receivers <N>             P6 multicast receiver count (1..%u; default: %u)\n"
         "  --slow-receivers <M>        P6 slow receiver count sleeping in callback (default: %u)\n"
         "  --mcast-group <ip>          P6 multicast group address (default: %s)\n"
         "  --mcast-if <ip>             P6 multicast interface address (default: %s)\n"
-        "  --run-timeout-s <S>         P6 per-run timeout in seconds (default: %u)\n"
-        "  --config <key>=<value>      Override potr_global_config field (repeatable, applies to P1..P6)\n"
+        "  --run-timeout-s <S>         P6/P7 per-run timeout in seconds (defaults: %u/%u)\n"
+        "  --config <key>=<value>      Override potr_global_config field (repeatable, applies to P1..P7)\n"
         "  --out <path>                Write CSV to file instead of stdout\n"
         "  --no-header                 Omit CSV header row\n"
         "  --trace-level <none|error|warning|info|debug>  Porter stderr trace level (default: warning)\n",
-        prog, kPayloadHeaderBytes, kDefaultPayloadBytes, kP3DefaultBytes, kP6DefaultBytes,
+        prog, kPayloadHeaderBytes, kDefaultPayloadBytes, kP3DefaultBytes, kP6DefaultBytes, kP7DefaultBytes,
         static_cast<unsigned>(kDefaultThreads), static_cast<unsigned>(kDefaultCountP1P3P5),
         static_cast<unsigned>(kP2DefaultCount), static_cast<unsigned>(kP4DefaultCycles),
-        static_cast<unsigned>(kP6DefaultCount), static_cast<unsigned>(kDefaultRuns),
+        static_cast<unsigned>(kP6DefaultCount), kP7DefaultCount, static_cast<unsigned>(kDefaultRuns),
         static_cast<unsigned>(kDefaultWarmup), static_cast<unsigned>(kP4DefaultWarmup),
-        static_cast<unsigned>(kP6DefaultWarmup), static_cast<unsigned>(kDefaultInflight),
-        static_cast<unsigned>(kDefaultBasePort), static_cast<unsigned>(kDefaultCbSleepMs), kP6MaxReceivers,
-        kP6DefaultReceivers, kP6DefaultSlowReceivers, kP6DefaultMcastGroup, kP6DefaultMcastIf, kP6DefaultRunTimeoutS);
+        static_cast<unsigned>(kP6DefaultWarmup), kP7DefaultWarmup, static_cast<unsigned>(kDefaultInflight),
+        static_cast<unsigned>(kDefaultBasePort), kMaxClients, kDefaultClients, kP7DefaultStalledClients,
+        kP7DefaultStalledCapacity, static_cast<unsigned>(kDefaultCbSleepMs), kP7DefaultCbSleepMs, kP6MaxReceivers,
+        kP6DefaultReceivers, kP6DefaultSlowReceivers, kP6DefaultMcastGroup, kP6DefaultMcastIf, kP6DefaultRunTimeoutS,
+        kP7DefaultRunTimeoutS);
 }
 
 /* ===== P1 / P5 の実装 ===== */
@@ -1623,9 +1673,6 @@ struct P2ClientState
 
 struct P2Context
 {
-    /** p2 で、サーバーへ要求を送るクライアントの数。 */
-    static constexpr uint32_t kNumClients = 4U;
-    static_assert(kNumClients >= 1U, "porter-bench: kNumClients must be at least 1");
     potr_context *server = nullptr;
     std::atomic<uint64_t> server_send_errors{0ULL};
     std::atomic<uint64_t> last_reply_ns{0ULL};
@@ -1638,7 +1685,7 @@ struct P2Context
     std::condition_variable q_cv;
     std::deque<P2ReplyItem> q;
 
-    P2ClientState *clients[kNumClients]{};
+    std::vector<P2ClientState *> clients;
 
     uint32_t warmup = 0U;
     uint32_t count = 0U;
@@ -1755,7 +1802,7 @@ static void p2_client_cb(int64_t /*service_id*/, potr_peer_id /*peer_id*/, potr_
     const uint64_t tx_ns = read_u64_le(p);
     const uint32_t cid = read_u32_le(p + kPayloadSenderIdOffset);
     const uint32_t seq = read_u32_le(p + kPayloadSeqOffset);
-    if (cid >= P2Context::kNumClients)
+    if (cid >= ctx->clients.size())
     {
         return;
     }
@@ -1794,7 +1841,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
     {
         char pbuf[kParamsBufBytes];
         std::snprintf(pbuf, sizeof(pbuf), "bytes=%zu;reply=%s;clients=%u;count=%u;warmup=%u", bytes,
-                      opt.reply_mode.c_str(), P2Context::kNumClients, count, warmup);
+                      opt.reply_mode.c_str(), opt.clients, count, warmup);
         *out_params = pbuf;
     }
 
@@ -1805,7 +1852,8 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         ctx.cb_reply_mode = cb_mode;
         ctx.warmup = warmup;
         ctx.count = count;
-        for (uint32_t c = 0U; c < P2Context::kNumClients; ++c)
+        ctx.clients.resize(opt.clients, nullptr);
+        for (uint32_t c = 0U; c < opt.clients; ++c)
         {
             ctx.clients[c] = new P2ClientState();
             ctx.clients[c]->rtt_us.reserve(count);
@@ -1814,7 +1862,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
 
         auto cleanup_clients = [&]() {
             s_p2_context = nullptr;
-            for (uint32_t c = 0U; c < P2Context::kNumClients; ++c)
+            for (uint32_t c = 0U; c < opt.clients; ++c)
             {
                 delete ctx.clients[c];
                 ctx.clients[c] = nullptr;
@@ -1827,6 +1875,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         apply_global_config_overrides(&global, opt.config_overrides);
 
         potr_service_def srv_def = make_service_def(1LL, POTR_TYPE_UNICAST_BIDIR_N1, port, 0U, "", "127.0.0.1");
+        srv_def.max_peers = opt.clients;
         int rc = potr_service_open(&global, &srv_def, POTR_ROLE_RECEIVER, p2_server_cb, &ctx.server);
         if (rc != POTR_OK)
         {
@@ -1867,8 +1916,8 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             });
         }
 
-        potr_context *client_handles[P2Context::kNumClients]{};
-        for (uint32_t c = 0U; c < P2Context::kNumClients; ++c)
+        std::vector<potr_context *> client_handles(opt.clients, nullptr);
+        for (uint32_t c = 0U; c < opt.clients; ++c)
         {
             potr_service_def cdef = make_service_def(1LL, POTR_TYPE_UNICAST_BIDIR, port, 0U, "127.0.0.1", "127.0.0.1");
             rc = potr_service_open(&global, &cdef, POTR_ROLE_SENDER, p2_client_cb, &client_handles[c]);
@@ -1893,13 +1942,13 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             }
         }
 
-        /* サーバーと 4 クライアントの全員が POTR_EVENT_CONNECTED になるまで待つ。 */
+        /* サーバーと全クライアントが POTR_EVENT_CONNECTED になるまで待つ。 */
         bool all_conn = false;
         {
             std::unique_lock<std::mutex> lk(ctx.srv_conn_mtx);
             all_conn = ctx.srv_conn_cv.wait_for(lk, kConnectRecvTimeout, [&]() {
-                return ctx.srv_connected_peers >= P2Context::kNumClients &&
-                       ctx.cli_connected_count >= P2Context::kNumClients;
+                return ctx.srv_connected_peers >= opt.clients &&
+                       ctx.cli_connected_count >= opt.clients;
             });
         }
         if (!all_conn)
@@ -1907,7 +1956,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             std::fprintf(stderr, "[P2] run=%u stage=connect timeout (srv_peers=%u cli_conn=%u)\n", r + 1U,
                          ctx.srv_connected_peers, ctx.cli_connected_count);
             ctx.closing.store(true, std::memory_order_release);
-            for (uint32_t c = 0U; c < P2Context::kNumClients; ++c)
+            for (uint32_t c = 0U; c < opt.clients; ++c)
             {
                 potr_service_close(client_handles[c]);
             }
@@ -1928,8 +1977,8 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         uint64_t meas_start_ns = 0ULL;
 
         std::vector<std::thread> cthreads;
-        cthreads.reserve(P2Context::kNumClients);
-        for (uint32_t spawn_index = 0U; spawn_index < P2Context::kNumClients; ++spawn_index)
+        cthreads.reserve(opt.clients);
+        for (uint32_t spawn_index = 0U; spawn_index < opt.clients; ++spawn_index)
         {
             /* 値捕捉の 4 [byte] がラムダのパディングになるため、添字は捕捉せず引数で渡す。 */
             cthreads.emplace_back([&](uint32_t c) {
@@ -1988,7 +2037,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                 {
                     std::unique_lock<std::mutex> lk(bar_mtx);
                     ++bar_arrived;
-                    if (bar_arrived == P2Context::kNumClients)
+                    if (bar_arrived == opt.clients)
                     {
                         meas_start_ns = mono_now_ns();
                         ctx.last_reply_ns.store(meas_start_ns, std::memory_order_release);
@@ -1996,7 +2045,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                     }
                     else
                     {
-                        bar_cv.wait(lk, [&]() { return bar_arrived == P2Context::kNumClients; });
+                        bar_cv.wait(lk, [&]() { return bar_arrived == opt.clients; });
                     }
                 }
 
@@ -2028,12 +2077,12 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         for (;;)
         {
             size_t total_post = 0U;
-            for (uint32_t c = 0U; c < P2Context::kNumClients; ++c)
+            for (uint32_t c = 0U; c < opt.clients; ++c)
             {
                 std::lock_guard<std::mutex> lk(ctx.clients[c]->mtx);
                 total_post += ctx.clients[c]->rtt_us.size();
             }
-            if (total_post >= static_cast<size_t>(P2Context::kNumClients) * count)
+            if (total_post >= static_cast<size_t>(opt.clients) * count)
             {
                 break;
             }
@@ -2048,7 +2097,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         const uint64_t meas_end_ns = ctx.last_reply_ns.load(std::memory_order_acquire);
 
         ctx.closing.store(true, std::memory_order_release);
-        for (uint32_t c = 0U; c < P2Context::kNumClients; ++c)
+        for (uint32_t c = 0U; c < opt.clients; ++c)
         {
             potr_service_close(client_handles[c]);
         }
@@ -2061,11 +2110,11 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         potr_service_close(ctx.server);
 
         std::vector<double> all_rtts;
-        for (uint32_t c = 0U; c < P2Context::kNumClients; ++c)
+        for (uint32_t c = 0U; c < opt.clients; ++c)
         {
             all_rtts.insert(all_rtts.end(), ctx.clients[c]->rtt_us.begin(), ctx.clients[c]->rtt_us.end());
         }
-        const size_t expected = static_cast<size_t>(P2Context::kNumClients) * count;
+        const size_t expected = static_cast<size_t>(opt.clients) * count;
         const size_t received = all_rtts.size();
         const size_t dropped = (expected > received) ? (expected - received) : 0U;
         std::sort(all_rtts.begin(), all_rtts.end());
@@ -2858,11 +2907,15 @@ static bool run_p6(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
     }
 
     {
-        char pbuf[256];
+        char pbuf[kParamsBufBytes];
         std::snprintf(pbuf, sizeof(pbuf),
-                      "receivers=%u;slow_receivers=%u;bytes=%zu;count=%u;warmup=%u;cb_sleep_ms=%u", receivers,
-                      slow_receivers, bytes, count, warmup, cb_sleep_ms);
+                      "receivers=%u;slow_receivers=%u;bytes=%zu;count=%u;warmup=%u", receivers,
+                      slow_receivers, bytes, count, warmup);
         *out_params = pbuf;
+        if (slow_receivers > 0U)
+        {
+            *out_params += ";cb_sleep_ms=" + std::to_string(cb_sleep_ms);
+        }
     }
 
 #ifdef _WIN32
@@ -3215,6 +3268,491 @@ static bool run_p6(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
     return true;
 }
 
+/* ===== P7 の実装 (N:1 の全ピア宛送信と停止クライアント) ===== */
+
+/* 接続状態と受信数は P7Context::state_mtx で保護する。 */
+struct P7ClientState
+{
+    uint64_t last_meas_rx_ns = 0ULL;
+    potr_peer_id peer_id = POTR_PEER_NA;
+    uint32_t meas_received = 0U;
+    uint32_t server_disconnect_count = 0U;
+    uint32_t client_disconnect_count = 0U;
+    bool connected = false;
+    bool registered = false;
+    bool meas_last_received = false;
+    unsigned char pad[5] = {}; // 明示的アラインメントのためのパディング。
+};
+
+struct P7Context
+{
+    std::vector<P7ClientState> clients;
+    std::vector<potr_peer_id> connected_peers;
+    std::mutex state_mtx;
+    std::condition_variable state_cv;
+    uint64_t first_send_ns = 0ULL;
+    uint64_t first_stalled_disconnect_ns = 0ULL;
+    uint32_t warmup = 0U;
+    uint32_t count = 0U;
+    uint32_t stalled_clients = 0U;
+    uint32_t cb_sleep_ms = 0U;
+    bool closing = false;
+    unsigned char pad[7] = {}; // 明示的アラインメントのためのパディング。
+};
+
+static P7Context *s_p7_context = nullptr;
+
+static void p7_server_cb(int64_t /*service_id*/, potr_peer_id peer_id, potr_event event, const void *data, size_t len)
+{
+    P7Context *ctx = s_p7_context;
+    if (ctx == nullptr)
+    {
+        return;
+    }
+
+    const uint64_t event_ns = mono_now_ns();
+    std::lock_guard<std::mutex> lk(ctx->state_mtx);
+    if (ctx->closing)
+    {
+        return;
+    }
+
+    if (event == POTR_EVENT_CONNECTED)
+    {
+        if (std::find(ctx->connected_peers.begin(), ctx->connected_peers.end(), peer_id) == ctx->connected_peers.end())
+        {
+            ctx->connected_peers.push_back(peer_id);
+        }
+        ctx->state_cv.notify_all();
+    }
+    else if (event == POTR_EVENT_DATA && data != nullptr && len >= kPayloadHeaderBytes)
+    {
+        /* 接続順に依存せず、クライアントが通知した番号をサーバー側のピア ID と対応付ける。 */
+        const uint8_t *payload = static_cast<const uint8_t *>(data);
+        const uint32_t idx = read_u32_le(payload + kPayloadSenderIdOffset);
+        if (read_u32_le(payload + kPayloadSeqOffset) == kP7RegistrationSeq && idx < ctx->clients.size())
+        {
+            ctx->clients[idx].peer_id = peer_id;
+            ctx->clients[idx].registered = true;
+            ctx->state_cv.notify_all();
+        }
+    }
+    else if (event == POTR_EVENT_DISCONNECTED)
+    {
+        ctx->connected_peers.erase(std::remove(ctx->connected_peers.begin(), ctx->connected_peers.end(), peer_id),
+                                  ctx->connected_peers.end());
+        if (ctx->first_send_ns == 0ULL || event_ns < ctx->first_send_ns)
+        {
+            ctx->state_cv.notify_all();
+            return;
+        }
+        for (size_t idx = 0U; idx < ctx->clients.size(); ++idx)
+        {
+            P7ClientState &client = ctx->clients[idx];
+            if (client.registered && client.peer_id == peer_id)
+            {
+                ++client.server_disconnect_count;
+                if (idx < ctx->stalled_clients && ctx->first_stalled_disconnect_ns == 0ULL)
+                {
+                    ctx->first_stalled_disconnect_ns = event_ns;
+                }
+                break;
+            }
+        }
+        ctx->state_cv.notify_all();
+    }
+}
+
+static void p7_client_cb_at(uint32_t idx, potr_event event, const void *data, size_t len)
+{
+    const uint64_t rx_ns = mono_now_ns();
+    P7Context *ctx = s_p7_context;
+    if (ctx == nullptr || idx >= ctx->clients.size())
+    {
+        return;
+    }
+
+    std::unique_lock<std::mutex> lk(ctx->state_mtx);
+    if (ctx->closing)
+    {
+        return;
+    }
+
+    P7ClientState &client = ctx->clients[idx];
+    if (event == POTR_EVENT_CONNECTED)
+    {
+        client.connected = true;
+        ctx->state_cv.notify_all();
+        return;
+    }
+
+    if (event == POTR_EVENT_DISCONNECTED)
+    {
+        client.connected = false;
+        if (ctx->first_send_ns != 0ULL)
+        {
+            ++client.client_disconnect_count;
+        }
+        ctx->state_cv.notify_all();
+        return;
+    }
+
+    if (event != POTR_EVENT_DATA || data == nullptr || len < kPayloadHeaderBytes)
+    {
+        return;
+    }
+
+    const uint32_t seq = read_u32_le(static_cast<const uint8_t *>(data) + kPayloadSeqOffset);
+    if (idx < ctx->stalled_clients && ctx->cb_sleep_ms > 0U)
+    {
+        /* close 時は待機と未処理通知を打ち切り、容量分の通知に待機時間を掛けた終了遅延を防ぐ。 */
+        if (ctx->state_cv.wait_for(lk, std::chrono::milliseconds(ctx->cb_sleep_ms), [&]() { return ctx->closing; }))
+        {
+            return;
+        }
+    }
+
+    /* P6 と同じく、通番が測定範囲内の通知を数え、末尾の通番の到着時刻を保持する。 */
+    if (seq >= ctx->warmup && (seq - ctx->warmup) < ctx->count)
+    {
+        ++client.meas_received;
+        if ((seq - ctx->warmup) + 1U == ctx->count)
+        {
+            client.last_meas_rx_ns = rx_ns;
+            client.meas_last_received = true;
+        }
+        ctx->state_cv.notify_all();
+    }
+}
+
+/* P6 と同じく、利用者データを渡せない公開コールバックをクライアント番号ごとに生成する。 */
+template <size_t Index>
+static void p7_client_cb_thunk(int64_t /*service_id*/, potr_peer_id /*peer_id*/, potr_event event,
+                               const void *data, size_t len)
+{
+    p7_client_cb_at(static_cast<uint32_t>(Index), event, data, len);
+}
+
+template <size_t... Is>
+static constexpr std::array<potr_recv_fn, sizeof...(Is)> make_p7_callbacks(std::index_sequence<Is...>)
+{
+    return {{&p7_client_cb_thunk<Is>...}};
+}
+
+static constexpr auto kP7Callbacks = make_p7_callbacks(std::make_index_sequence<kMaxClients>{});
+
+static bool run_p7(const Options &opt, std::vector<RunMetrics> *out_runs, std::string *out_params)
+{
+    size_t bytes = opt.bytes;
+    if (bytes == 0U)
+    {
+        bytes = kP7DefaultBytes;
+    }
+    uint32_t count = opt.count;
+    if (count == 0U)
+    {
+        count = kP7DefaultCount;
+    }
+    uint32_t warmup = opt.warmup;
+    if (warmup == UINT32_MAX)
+    {
+        warmup = kP7DefaultWarmup;
+    }
+    if (bytes < kPayloadHeaderBytes || warmup > UINT32_MAX - count)
+    {
+        std::fprintf(stderr, "P7 requires bytes >= %zu and warmup + count <= UINT32_MAX\n", kPayloadHeaderBytes);
+        return false;
+    }
+    int send_flags = 0;
+    if (parse_send_flags(opt.flags, &send_flags) != 0)
+    {
+        std::fprintf(stderr, "Invalid --flags: %s\n", opt.flags.c_str());
+        return false;
+    }
+
+    *out_params = "clients=" + std::to_string(opt.clients) + ";stalled_clients=" + std::to_string(opt.stalled_clients)
+                  + ";bytes=" + std::to_string(bytes) + ";flags=" + opt.flags + ";count=" + std::to_string(count)
+                  + ";warmup=" + std::to_string(warmup) + ";cb_sleep_ms=" + std::to_string(opt.cb_sleep_ms)
+                  + ";stalled_capacity=" + std::to_string(opt.stalled_capacity)
+                  + ";run_timeout_s=" + std::to_string(opt.run_timeout_s);
+
+    for (uint32_t r = 0U; r < opt.runs; ++r)
+    {
+        const uint64_t port_number = static_cast<uint64_t>(opt.base_port) + static_cast<uint64_t>(r) * kRunPortStride;
+        if (port_number > UINT16_MAX)
+        {
+            std::fprintf(stderr, "P7 run port exceeds UINT16_MAX\n");
+            return false;
+        }
+        const uint16_t port = static_cast<uint16_t>(port_number);
+        P7Context ctx;
+        ctx.clients.resize(opt.clients);
+        ctx.connected_peers.reserve(opt.clients);
+        ctx.warmup = warmup;
+        ctx.count = count;
+        ctx.stalled_clients = opt.stalled_clients;
+        ctx.cb_sleep_ms = opt.cb_sleep_ms;
+        s_p7_context = &ctx;
+        potr_context *server = nullptr;
+        std::vector<potr_context *> handles(opt.clients, nullptr);
+
+        auto begin_close = [&]() {
+            {
+                std::lock_guard<std::mutex> lk(ctx.state_mtx);
+                ctx.closing = true;
+            }
+            ctx.state_cv.notify_all();
+        };
+        auto close_handle = [](potr_context *&handle) {
+            if (handle != nullptr)
+            {
+                const int ret = potr_service_close(handle);
+                if (ret != POTR_OK)
+                {
+                    std::fprintf(stderr, "[P7] stage=close err=%d (%s)\n", ret, potr_err_name(ret));
+                }
+                handle = nullptr;
+            }
+        };
+        auto cleanup_run = [&]() {
+            begin_close();
+            close_handle(server);
+            for (potr_context *&handle : handles)
+            {
+                close_handle(handle);
+            }
+            s_p7_context = nullptr;
+        };
+
+        potr_global_config global = make_default_global();
+        global.udp_health_interval_ms = kP2UdpHealthIntervalMs;
+        global.udp_health_timeout_ms = kP2UdpHealthTimeoutMs;
+        apply_global_config_overrides(&global, opt.config_overrides);
+        potr_service_def def = make_service_def(kP7ServiceId, POTR_TYPE_UNICAST_BIDIR_N1, port, 0U, "", "127.0.0.1");
+        def.max_peers = opt.clients;
+        int ret = potr_service_open(&global, &def, POTR_ROLE_RECEIVER, p7_server_cb, &server);
+        if (ret != POTR_OK)
+        {
+            std::fprintf(stderr, "[P7] stage=open_server err=%d (%s)\n", ret, potr_err_name(ret));
+            cleanup_run();
+            return false;
+        }
+        for (uint32_t idx = 0U; idx < opt.clients; ++idx)
+        {
+            potr_global_config client_global = global;
+            if (idx < opt.stalled_clients)
+            {
+                client_global.flow_control_capacity = opt.stalled_capacity;
+            }
+            def = make_service_def(kP7ServiceId, POTR_TYPE_UNICAST_BIDIR, port, 0U, "127.0.0.1", "127.0.0.1");
+            ret = potr_service_open(&client_global, &def, POTR_ROLE_SENDER, kP7Callbacks[idx], &handles[idx]);
+            if (ret != POTR_OK)
+            {
+                std::fprintf(stderr, "[P7] stage=open_client_%u err=%d (%s)\n", idx, ret, potr_err_name(ret));
+                cleanup_run();
+                return false;
+            }
+        }
+
+        /* 双方向の接続後、クライアント番号を受信したサーバーのピア ID と対応付ける。 */
+        std::vector<uint8_t> payload(bytes, 0U);
+        fill_payload_pattern(payload);
+        write_u32_le(payload.data() + kPayloadSeqOffset, kP7RegistrationSeq);
+        const auto connect_deadline = std::chrono::steady_clock::now() + kConnectRecvTimeout;
+        bool registered = true;
+        for (uint32_t idx = 0U; idx < opt.clients; ++idx)
+        {
+            write_u32_le(payload.data() + kPayloadSenderIdOffset, idx);
+            for (;;)
+            {
+                ret = potr_service_send(handles[idx], POTR_PEER_NA, payload.data(), bytes, 0);
+                if (ret == POTR_OK)
+                {
+                    break;
+                }
+                if ((ret != POTR_ERR_FULL && ret != POTR_ERR_DISCONNECTED) ||
+                    std::chrono::steady_clock::now() >= connect_deadline)
+                {
+                    registered = false;
+                    break;
+                }
+                std::this_thread::sleep_for(kRetrySleepDuration);
+            }
+            if (!registered)
+            {
+                break;
+            }
+        }
+        if (registered)
+        {
+            std::unique_lock<std::mutex> lk(ctx.state_mtx);
+            registered = ctx.state_cv.wait_until(lk, connect_deadline, [&]() {
+                return std::all_of(ctx.clients.begin(), ctx.clients.end(), [&](const P7ClientState &client) {
+                    return client.connected && client.registered &&
+                           std::find(ctx.connected_peers.begin(), ctx.connected_peers.end(), client.peer_id) !=
+                               ctx.connected_peers.end();
+                });
+            });
+        }
+        if (!registered)
+        {
+            std::fprintf(stderr, "[P7] stage=connect_or_register failed\n");
+            cleanup_run();
+            return false;
+        }
+
+        uint64_t full_count = 0ULL;
+        uint64_t meas_start_ns = 0ULL;
+        bool send_failed = false;
+        bool sender_done = false;
+        /* ハンドル値を固定して保持し、期限で行う close とポインター変数へのアクセスを競合させない。 */
+        potr_context *const send_handle = server;
+        std::chrono::steady_clock::time_point run_deadline{};
+        std::thread sender([&]() {
+            {
+                std::lock_guard<std::mutex> lk(ctx.state_mtx);
+                ctx.first_send_ns = mono_now_ns();
+                run_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(opt.run_timeout_s);
+            }
+            ctx.state_cv.notify_all();
+            write_u32_le(payload.data() + kPayloadSenderIdOffset, 0U);
+            for (uint32_t seq = 0U; seq < warmup + count; ++seq)
+            {
+                if (seq == warmup)
+                {
+                    meas_start_ns = mono_now_ns();
+                }
+                write_u32_le(payload.data() + kPayloadSeqOffset, seq);
+                for (;;)
+                {
+                    {
+                        std::lock_guard<std::mutex> lk(ctx.state_mtx);
+                        if (ctx.closing || std::chrono::steady_clock::now() >= run_deadline)
+                        {
+                            return;
+                        }
+                    }
+                    write_u64_le(payload.data(), mono_now_ns());
+                    const int send_ret = potr_service_send(send_handle, POTR_PEER_ALL, payload.data(), bytes, send_flags);
+                    if (send_ret == POTR_OK)
+                    {
+                        break;
+                    }
+                    if (send_ret == POTR_ERR_FULL || send_ret == POTR_ERR_DISCONNECTED || send_ret == POTR_ERR_TIMEOUT)
+                    {
+                        ++full_count;
+                        std::this_thread::sleep_for(kRetrySleepDuration);
+                        continue;
+                    }
+                    {
+                        std::lock_guard<std::mutex> lk(ctx.state_mtx);
+                        if (!ctx.closing)
+                        {
+                            std::fprintf(stderr, "[P7] stage=send seq=%u err=%d (%s)\n", seq, send_ret,
+                                         potr_err_name(send_ret));
+                            send_failed = true;
+                            ctx.state_cv.notify_all();
+                        }
+                    }
+                    return;
+                }
+            }
+            {
+                std::lock_guard<std::mutex> lk(ctx.state_mtx);
+                sender_done = true;
+            }
+            ctx.state_cv.notify_all();
+        });
+
+        bool all_healthy_done = false;
+        uint64_t meas_end_ns = 0ULL;
+        {
+            std::unique_lock<std::mutex> lk(ctx.state_mtx);
+            ctx.state_cv.wait(lk, [&]() { return ctx.first_send_ns != 0ULL; });
+            const bool completed = ctx.state_cv.wait_until(lk, run_deadline, [&]() {
+                all_healthy_done = std::all_of(ctx.clients.begin() + opt.stalled_clients, ctx.clients.end(),
+                                             [&](const P7ClientState &client) {
+                                                 return client.meas_received >= count && client.meas_last_received;
+                                             });
+                return send_failed || (sender_done && all_healthy_done);
+            });
+            all_healthy_done = completed && all_healthy_done;
+            for (size_t idx = opt.stalled_clients; idx < ctx.clients.size(); ++idx)
+            {
+                meas_end_ns = std::max(meas_end_ns, ctx.clients[idx].last_meas_rx_ns);
+            }
+            const uint64_t deadline_ns = ctx.first_send_ns + static_cast<uint64_t>(opt.run_timeout_s) * 1000000000ULL;
+            if (meas_end_ns > deadline_ns)
+            {
+                all_healthy_done = false;
+            }
+            ctx.closing = true;
+        }
+        ctx.state_cv.notify_all();
+        /* 公開 API が許す close との並行呼び出しで、待ち合わせ付きの send も中断する。 */
+        close_handle(server);
+        sender.join();
+        for (potr_context *&handle : handles)
+        {
+            close_handle(handle);
+        }
+        s_p7_context = nullptr;
+        if (send_failed)
+        {
+            return false;
+        }
+
+        uint32_t healthy_received_min = UINT32_MAX;
+        uint32_t stalled_received_min = 0U;
+        uint64_t healthy_disconnect_count = 0ULL;
+        uint32_t stalled_disconnect_count = 0U;
+        if (opt.stalled_clients > 0U)
+        {
+            stalled_received_min = UINT32_MAX;
+        }
+        for (size_t idx = 0U; idx < ctx.clients.size(); ++idx)
+        {
+            const P7ClientState &client = ctx.clients[idx];
+            if (idx < opt.stalled_clients)
+            {
+                stalled_received_min = std::min(stalled_received_min, client.meas_received);
+                if (client.server_disconnect_count > 0U)
+                {
+                    ++stalled_disconnect_count;
+                }
+            }
+            else
+            {
+                healthy_received_min = std::min(healthy_received_min, client.meas_received);
+                healthy_disconnect_count += static_cast<uint64_t>(client.server_disconnect_count)
+                                            + client.client_disconnect_count;
+            }
+        }
+        double throughput = 0.0;
+        if (all_healthy_done && meas_start_ns != 0ULL && meas_end_ns > meas_start_ns)
+        {
+            const double elapsed_s = static_cast<double>(meas_end_ns - meas_start_ns) / 1e9;
+            throughput = static_cast<double>(count) / elapsed_s;
+        }
+        double stalled_disconnect_ms = -1.0;
+        if (ctx.first_stalled_disconnect_ns >= ctx.first_send_ns && ctx.first_stalled_disconnect_ns != 0ULL)
+        {
+            stalled_disconnect_ms = static_cast<double>(ctx.first_stalled_disconnect_ns - ctx.first_send_ns) / 1e6;
+        }
+        RunMetrics rm;
+        rm.add("throughput_msg_s", throughput);
+        rm.add("healthy_received_min", static_cast<double>(healthy_received_min));
+        rm.add("healthy_disconnect_count", static_cast<double>(healthy_disconnect_count));
+        rm.add("stalled_received_min", static_cast<double>(stalled_received_min));
+        rm.add("stalled_disconnect_count", static_cast<double>(stalled_disconnect_count));
+        rm.add("stalled_disconnect_ms", stalled_disconnect_ms);
+        rm.add("send_full_count", static_cast<double>(full_count));
+        out_runs->push_back(std::move(rm));
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -3358,6 +3896,33 @@ int main(int argc, char **argv)
             const char *v = need_val("--cb-sleep-ms");
             if (v == nullptr || !parse_u32(v, &opt.cb_sleep_ms))
                 return EXIT_FAILURE;
+            opt.cb_sleep_specified = true;
+        }
+        else if (arg == "--clients")
+        {
+            const char *v = need_val("--clients");
+            if (v == nullptr || !parse_u32(v, &opt.clients) || opt.clients == 0U || opt.clients > kMaxClients)
+            {
+                std::fprintf(stderr, "Invalid --clients (expected 1..%u)\n", kMaxClients);
+                return EXIT_FAILURE;
+            }
+        }
+        else if (arg == "--stalled-clients")
+        {
+            const char *v = need_val("--stalled-clients");
+            if (v == nullptr || !parse_u32(v, &opt.stalled_clients))
+            {
+                return EXIT_FAILURE;
+            }
+        }
+        else if (arg == "--stalled-capacity")
+        {
+            const char *v = need_val("--stalled-capacity");
+            if (v == nullptr || !parse_u32(v, &opt.stalled_capacity) || opt.stalled_capacity == 0U)
+            {
+                std::fprintf(stderr, "Invalid --stalled-capacity (expected >= 1)\n");
+                return EXIT_FAILURE;
+            }
         }
         else if (arg == "--receivers")
         {
@@ -3409,6 +3974,7 @@ int main(int argc, char **argv)
                 print_usage(argv[0]);
                 return EXIT_FAILURE;
             }
+            opt.run_timeout_specified = true;
         }
         else if (arg == "--config")
         {
@@ -3448,10 +4014,27 @@ int main(int argc, char **argv)
     }
 
     if (opt.cond != "p1" && opt.cond != "p2" && opt.cond != "p3" && opt.cond != "p4" && opt.cond != "p5" &&
-        opt.cond != "p6")
+        opt.cond != "p6" && opt.cond != "p7")
     {
         print_usage(argv[0]);
         return EXIT_FAILURE;
+    }
+
+    if (opt.cond == "p7")
+    {
+        if (opt.stalled_clients >= opt.clients)
+        {
+            std::fprintf(stderr, "--stalled-clients must be less than --clients\n");
+            return EXIT_FAILURE;
+        }
+        if (!opt.cb_sleep_specified)
+        {
+            opt.cb_sleep_ms = kP7DefaultCbSleepMs;
+        }
+        if (!opt.run_timeout_specified)
+        {
+            opt.run_timeout_s = kP7DefaultRunTimeoutS;
+        }
     }
 
     cplat_trace_level tlevel = CPLAT_TRACE_LEVEL_WARNING;
@@ -3544,9 +4127,31 @@ int main(int argc, char **argv)
             exit_code = EXIT_FAILURE;
         }
     }
+    else if (opt.cond == "p7")
+    {
+        cond_upper = "P7";
+        if (!run_p7(opt, &runs, &params))
+        {
+            exit_code = EXIT_FAILURE;
+        }
+    }
 
     if (exit_code == EXIT_SUCCESS)
     {
+        for (const GlobalConfigOverride &ov : opt.config_overrides)
+        {
+            params += ";cfg.";
+            params += ov.field->name;
+            params += "=";
+            if (ov.field->allow_disabled && ov.value == POTR_FLOW_CONTROL_DISABLED)
+            {
+                params += "-1";
+            }
+            else
+            {
+                params += std::to_string(ov.value);
+            }
+        }
         emit_csv(out, opt.label, cond_upper, params, runs, !opt.no_header);
     }
 
