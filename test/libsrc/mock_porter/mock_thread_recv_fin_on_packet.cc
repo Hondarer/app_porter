@@ -5,10 +5,10 @@
 #include <testfw.h>
 #include <mock_porter.h>
 
-MOCK_WEAK_IMPL(int, thread_recv_fin_on_packet, thread_recv_slot *slot, const potr_packet *pkt,
+MOCK_WEAK_IMPL(thread_recv_fin_result, thread_recv_fin_on_packet, thread_recv_slot *slot, const potr_packet *pkt,
                uint32_t *fin_target_seq_out)
 {
-    int mock_ret = 0;
+    thread_recv_fin_result mock_ret = THREAD_RECV_FIN_IGNORED;
     if (_mock_porter != nullptr)
     {
         mock_ret = _mock_porter->thread_recv_fin_on_packet(slot, pkt, fin_target_seq_out);

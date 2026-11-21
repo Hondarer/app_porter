@@ -14,6 +14,8 @@
 #include <cplat/base/platform.h>
 #include <cplat/crt/stdlib.h>
 #include <porter/infra/potr_send_queue.h>
+#include <assert.h>
+#include <limits.h>
 #include <string.h>
 #include <inttypes.h>
 
@@ -39,6 +41,63 @@
 #include "thread_recv_dispatch.h"
 #include "thread_recv_health.h"
 #include "thread_recv_report.h"
+
+/**
+ * 受信期限を監視する場合の、待機の上限を求める除数。待機の上限は health_timeout_ms をこの値で割った値とする。
+ * 受信期限は待機から戻るたびに確認するため、待機による無受信の検出の遅れは、待機の上限を超えない。
+ */
+#define POTR_RECV_POLL_HEALTH_TIMEOUT_DIVISOR 3U
+
+/**
+ * 受信期限を監視する場合の、待機の上限の下限 [ms]。
+ * health_timeout_ms が 300 [ms] 未満の場合は、待機の上限がこの値になり、health_timeout_ms の 3 分の 1 より長くなる。
+ */
+#define POTR_RECV_POLL_MIN_MS 100U
+
+/**
+ * 受信期限を監視しない場合の、待機の上限 [ms]。
+ * 停止の指示は待機から戻るたびに読み直すため、待機による停止の遅れは、この値を超えない。
+ */
+#define POTR_RECV_POLL_UNMONITORED_MS 500U
+
+static_assert(POTR_RECV_POLL_HEALTH_TIMEOUT_DIVISOR >= 1U, "receive poll divisor must be positive");
+static_assert(POTR_RECV_POLL_MIN_MS > 0U, "receive poll minimum must be positive");
+static_assert(POTR_RECV_POLL_MIN_MS <= POTR_RECV_POLL_UNMONITORED_MS,
+              "receive poll minimum must not exceed the unmonitored poll interval");
+static_assert(POTR_RECV_POLL_UNMONITORED_MS <= (uint32_t)INT_MAX, "unmonitored poll interval must fit in int");
+
+/**
+ *  証明書で認証する場合の、待機の上限 [ms] です。受信期限の監視の有無によらず適用します。
+ *  相互認証の開始、DTLS の再送、周期的な再試行は、待機から戻るたびに処理するため、
+ *  待機によるこれらの処理の遅れは、この値を超えません。
+ *  制約の記載は app/porter/docs/health-check.md の「タイムアウト検出 (受信スレッド)」を参照してください。
+ */
+#define POTR_RECV_POLL_CERT_MS 100U
+
+static_assert(POTR_RECV_POLL_CERT_MS > 0U, "cert poll interval must be positive");
+static_assert(POTR_RECV_POLL_CERT_MS <= (uint32_t)INT_MAX, "cert poll interval must fit in int");
+
+/** 32 ビットの通番の空間の半分。通番の差がこの値未満の場合を「先」、以上の場合を「前」と判定する。 */
+#define POTR_SEQNUM_HALF_SPACE 0x80000000U
+
+static_assert(POTR_SEQNUM_HALF_SPACE == (1UL << 31), "porter: POTR_SEQNUM_HALF_SPACE must be half of 2^32");
+
+/**
+ * TCP の受信スレッドで受信期限を監視する場合の、ポーリングの間隔の上限 [ms]。
+ * health_timeout_ms がこの値未満の場合は、health_timeout_ms を間隔とする。
+ */
+#define RECV_TCP_POLL_INTERVAL_MS 1000U
+
+static_assert(RECV_TCP_POLL_INTERVAL_MS > 0U && RECV_TCP_POLL_INTERVAL_MS <= POTR_WAIT_MS_MAX,
+              "porter: RECV_TCP_POLL_INTERVAL_MS out of range");
+
+/** tcp_wait_readable() の結果。 */
+typedef enum tcp_wait_status
+{
+    TCP_WAIT_ERROR = -1,  /**< 待機に失敗した。 */
+    TCP_WAIT_TIMEOUT = 0, /**< 読み取り可能になる前に待機の時間が過ぎた。 */
+    TCP_WAIT_READY = 1    /**< 読み取り可能になった。 */
+} tcp_wait_status;
 
 /*
  * 片方向 UDP の REPORT と NACK は複数の返送元から届く。
@@ -240,15 +299,15 @@ static void recv_thread_func(void *arg)
     if ((ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR) &&
         ctx->health_timeout_ms > 0U)
     {
-        poll_ms = ctx->health_timeout_ms / 3U;
-        if (poll_ms < 100U)
+        poll_ms = ctx->health_timeout_ms / POTR_RECV_POLL_HEALTH_TIMEOUT_DIVISOR;
+        if (poll_ms < POTR_RECV_POLL_MIN_MS)
         {
-            poll_ms = 100U;
+            poll_ms = POTR_RECV_POLL_MIN_MS;
         }
     }
     else
     {
-        poll_ms = 500U;
+        poll_ms = POTR_RECV_POLL_UNMONITORED_MS;
     }
 
     /* reorder_timeout_ms が有効な場合は poll 間隔を短縮してタイムアウト精度を確保する。 */
@@ -287,9 +346,9 @@ static void recv_thread_func(void *arg)
             thread_recv_health_check_service(&svc_slot);
         }
         potr_internal_certificate_tick(ctx, now_ms);
-        if (ctx->service.auth == POTR_AUTH_CERT && wait_ms > 100U)
+        if (ctx->service.auth == POTR_AUTH_CERT && wait_ms > POTR_RECV_POLL_CERT_MS)
         {
-            wait_ms = 100U;
+            wait_ms = POTR_RECV_POLL_CERT_MS;
         }
         int report_ret = thread_recv_report_tick(ctx, now_ms);
         if (report_ret != POTR_OK)
@@ -451,21 +510,21 @@ static void recv_thread_func(void *arg)
 
 /*
  * TCP ソケットが読み取り可能になるまで最大 wait_ms [ms] 待機する。
- * 戻り値: 1 = データあり、0 = タイムアウト、-1 = エラー。
+ * 戻り値: TCP_WAIT_READY = データあり、TCP_WAIT_TIMEOUT = タイムアウト、TCP_WAIT_ERROR = エラー。
  */
-static int tcp_wait_readable(cplat_socket fd, int wait_ms)
+static tcp_wait_status tcp_wait_readable(cplat_socket fd, int wait_ms)
 {
     int rc = cplat_socket_timed_wait_readable(fd, wait_ms, NULL);
     if (rc == CPLAT_OK)
     {
-        return 1;
+        return TCP_WAIT_READY;
     }
     if (rc == CPLAT_ERR_TIMEOUT)
     {
-        return 0;
+        return TCP_WAIT_TIMEOUT;
     }
 
-    return -1;
+    return TCP_WAIT_ERROR;
 }
 
 /*
@@ -656,7 +715,7 @@ static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, cons
              * 通番の差を符号なしで求め、半周以上先を「ウィンドウ先頭より前」と判定する。
              * 先頭より前は、他の path で受信済みの重複である。
              */
-            if (pushed != POTR_OK && (uint32_t)(pkt.seq_num - ctx->recv_window.base_seq) < 0x80000000U)
+            if (pushed != POTR_OK && (uint32_t)(pkt.seq_num - ctx->recv_window.base_seq) < POTR_SEQNUM_HALF_SPACE)
             {
                 uint32_t recv_base = ctx->recv_window.base_seq;
 
@@ -779,13 +838,13 @@ static void tcp_recv_thread_func(void *arg)
 
     if (use_recv_timeout)
     {
-        if (ctx->health_timeout_ms < 1000U)
+        if (ctx->health_timeout_ms < RECV_TCP_POLL_INTERVAL_MS)
         {
             poll_ms = ctx->health_timeout_ms;
         }
         else
         {
-            poll_ms = 1000U;
+            poll_ms = RECV_TCP_POLL_INTERVAL_MS;
         }
     }
     else
@@ -840,7 +899,7 @@ static void tcp_recv_thread_func(void *arg)
 
             {
                 uint16_t wpl;
-                memcpy(&wpl, buf + 34, sizeof(wpl));
+                memcpy(&wpl, buf + POTR_PACKET_PAYLOAD_LEN_OFFSET, sizeof(wpl));
                 wire_payload_len = cplat_ntoh16(wpl);
             }
         }
@@ -922,7 +981,7 @@ static void tcp_recv_thread_func(void *arg)
             /* payload_len をヘッダー末尾の offset 34 から抽出する。 */
             {
                 uint16_t wpl;
-                memcpy(&wpl, buf + 34, sizeof(wpl));
+                memcpy(&wpl, buf + POTR_PACKET_PAYLOAD_LEN_OFFSET, sizeof(wpl));
                 wire_payload_len = cplat_ntoh16(wpl);
             }
 

@@ -264,7 +264,7 @@ Figure: TCP SENDER のスレッド構成 (path 数 = N の例)
 | スレッド | 数 | 役割 |
 |---|---|---|
 | connect スレッド | N | path ごとに起動。`connect()` で接続を確立し、成功したら recv / health スレッドを起動します。切断後は `reconnect_interval_ms` 待機して再試行します。 |
-| 送信スレッド | 1 | 全 path 共有。送信キューからエレメントを取り出し、全アクティブ path にループ送信します。各 path の送信前に `poll()` で書き込み可能を確認し、バッファー満杯の path はスキップします (他 path への送信は続行)。キューにある複数の DATA パケットは、path ごとに連結して 1 回の送信で書き込みます ([プロトコル](protocol.md) のパッキングの動作を参照)。 |
+| 送信スレッド | 1 | 全 path 共有。送信キューからエレメントを取り出し、全アクティブ path にループ送信します。各 path の送信前に `cplat_socket_timed_wait_writable()` で書き込み可能を確認し、バッファー満杯の path は、他 path へ書き込めた場合に限り今回のパケット列を飛ばします (どの path にも書き込めない場合は、空きを待って書き込みます)。キューにある複数の DATA パケットは、path ごとに連結して 1 回の送信で書き込みます ([プロトコル](protocol.md) のパッキングの動作を参照)。 |
 | recv スレッド | N | path ごとに起動。PING 応答 (`ack_num > 0`) を受信して対応する health スレッドに通知します。TCP 接続断を検知したら `tcp_active_paths` をデクリメントし、0 になった時点で `POTR_EVENT_DISCONNECTED` を発火します。 |
 | health スレッド | N | path ごとに起動。`tcp_health_interval_ms` 周期で PING 要求を送信します。`tcp_health_timeout_ms` 以内に応答を受信しなければその path の接続断と判定して `shutdown()` します。 |
 
@@ -365,9 +365,9 @@ RECEIVER 側は、接続時の session triplet(`session_id + session_tv_sec + se
 
 **送信スレッドのバッファー満杯対策**
 
-単一の送信スレッドが全 path に逐次 `tcp_send_all()` を呼び出すため、特定 path の TCP 送信バッファーが満杯になると他 path への送信も遅延します。  
-これを避けるため、各 path への送信前に `poll()` で書き込み可能かを確認し、書き込み不可の path はその送信をスキップします (他 path への冗長送信で補完)。  
-バッファー満杯を初回検出した時点で ERROR ログを 1 回出力し、書き込み可能が 10 回連続するまでログを抑制します (`buf_full_suppress_cnt[POTR_MAX_PATH]`)。
+単一の送信スレッドが、`tcp_write_all_paths()` から全 path に逐次 `tcp_write_path()` を呼び出すため、特定 path の TCP 送信バッファーが満杯になると他 path への送信も遅延します。  
+これを避けるため、各 path への書き込みの前に `cplat_socket_timed_wait_writable()` (待機なし) で書き込み可能かを確認し、書き込み不可の path は、他 path へ書き込めた場合に限り今回のパケット列を飛ばします (他 path への冗長送信で補完)。どの path にも書き込めない場合は、空きを待って書き込みます。  
+path を飛ばし、かつその path の警告を抑制していないときに WARNING ログを 1 回出力し、その path を書き込み可能と判定した回数の累計が `POTR_TCP_BUF_FULL_SUPPRESS_COUNT` (10) に達するまで、同じ path の警告を抑制します (`buf_full_suppress_cnt[POTR_MAX_PATH]`)。書き込み不可の判定は数えません。
 
 ## コンポーネント構成
 
@@ -523,7 +523,7 @@ porter の全状態は `potr_context` 構造体 (`potr_context *` の実体) に
 | フラグメント バッファー | フラグメント結合用バッファー (最大 65,535 バイト) |
 | 圧縮バッファー | 圧縮・展開作業バッファー (約 65 KB) |
 | 暗号バッファー | 暗号化・復号作業バッファー (max_payload + 16 バイト) |
-| NACK 重複抑制 | 直近 NACK のリング バッファー (8 要素) |
+| NACK 重複抑制 | 直近 NACK のリング バッファー (16 要素) |
 | リオーダー状態 | `reorder_pending` フラグ・待機通番・タイムアウト期限 (`reorder_timeout_ms > 0` のときのみ使用) |
 
 Table: potr_context が保持する情報カテゴリ
@@ -541,7 +541,7 @@ Table: potr_context が保持する情報カテゴリ
 > | `health_mutex[POTR_MAX_PATH]` / `health_wakeup[POTR_MAX_PATH]` | health スレッドのスリープ制御 (path ごと) |
 > | `tcp_state_mutex` / `tcp_state_cv` | `tcp_active_paths` カウンター保護・connect スレッドへの切断通知用 |
 > | `tcp_last_ping_recv_ms[POTR_MAX_PATH]` | PING 応答最終受信時刻 (ms, monotonic。path ごと。SENDER health スレッドが監視) |
-> | `buf_full_suppress_cnt[POTR_MAX_PATH]` | 送信バッファー満杯 ERROR ログの抑制カウンター (path ごと) |
+> | `buf_full_suppress_cnt[POTR_MAX_PATH]` | 送信バッファー満杯 WARNING ログの抑制カウンター (path ごと) |
 
 > **unicast_bidir について**: 1:1 モードの `POTR_ROLE_RECEIVER` は送信ウィンドウ・送信キュー・送信スレッド・ヘルス チェック スレッドも保持します。N:1 モードではさらに `is_multi_peer`、`peers`、`max_peers`、`peers_mutex` などの共有管理情報を持ち、各ピアの詳細状態は `potr_internal_peer_context` に分離されます。
 
@@ -844,9 +844,9 @@ Table: 通信種別ごとの特性比較
 
 | 機能ブロック | UDP | TCP | 備考 |
 |---|---|---|---|
-| `flush_packed()` | ✅ | ✅ | `is_tcp` フラグで送信部分を分岐。TCP は選択中のグループのアクティブ path にループ送信 |
+| `flush_packed()` | ✅ | ✅ | `is_tcp_type()` の判定で送信部分を分岐。TCP は選択中のグループのアクティブ path にループ送信 |
 | `health_thread_func()` | ✅ | ✅ | `is_tcp_type()` で分岐済み |
-| `deliver_payload_elem()` | ✅ | ✅ | 完全共有 |
+| `thread_recv_slot_deliver_payload_elem()` | ✅ | ✅ | 完全共有 |
 | `potr_internal_packet_parse()` | ✅ | ✅ | 完全共有 |
 | `potr_internal_window_recv_push/pop()` | ✅ | ✅ | TCP では複数 path からの重複排除に使用。`recv_window_mutex` で保護 |
 | `potr_internal_window_send_push()` | ✅ | ❌ | NACK 再送バッファー用。TCP は不要 (TCP がトランスポート保証) |
@@ -882,7 +882,7 @@ potr_service_send()
   -> フラグメント化 -> send_queue.push()
     -> send_thread_func() -> flush_packed()
         +- UDP: sock[i].sendto()                          (全 path)
-        +- TCP: tcp_send_all(tcp_conn_fd[i]) (全 path、send() 前に poll() でブロック回避)
+        +- TCP: tcp_write_all_paths() -> tcp_write_path(tcp_conn_fd[i]) (全 path、送信前に cplat_socket_timed_wait_writable() でブロック回避)
 ```
 
 ### TCP 受信フロー
@@ -963,7 +963,7 @@ Table: UDP と TCP の接続イベント発火条件比較
 
 **② セッション識別 (先読みパケットによる UDP との対称化)**
 
-アドレス フィルター通過後、`tcp_read_first_packet()` で最初のアプリケーション パケットをタイムアウト付きで受信し、パケット内の session triplet (`session_id`, `session_tv_sec`, `session_tv_nsec`) を取得します。`session_establish_mutex` を取得した上で `tcp_session_compare()` を呼び、3 種類に分類して処理します。
+アドレス フィルター通過後、`thread_connect_read_first_packet()` で最初のアプリケーション パケットをタイムアウト付きで受信し、パケット内の session triplet (`session_id`, `session_tv_sec`, `session_tv_nsec`) を取得します。`session_establish_mutex` を取得した上で `thread_connect_session_compare()` を呼び、3 種類に分類して処理します。
 
 | 分類 | 意味 | 処置 |
 |---|---|---|

@@ -6,3 +6,7 @@ int test_reorder_gap_ready(thread_recv_slot *slot, const uint32_t nack_num)
 {
     return reorder_gap_ready(slot, nack_num);
 }
+int test_nack_is_duplicate(thread_recv_slot *slot, const uint32_t ack_num)
+{
+    return nack_is_duplicate(slot, ack_num);
+}

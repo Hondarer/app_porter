@@ -12,6 +12,11 @@
 #include <porter/protocol/config.h>
 #include <porter/protocol/config_parse_common.h>
 
+/** サービス識別子の配列が満杯になった場合の拡張倍率。 */
+#define SERVICE_ID_LIST_GROWTH_FACTOR 2
+
+static_assert(SERVICE_ID_LIST_GROWTH_FACTOR >= 2, "porter: SERVICE_ID_LIST_GROWTH_FACTOR must be at least 2");
+
 /* Doxygen コメントは、ヘッダーに記載 */
 int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids_out, int *count_out)
 {
@@ -61,10 +66,10 @@ int potr_internal_config_list_service_ids(const char *config_path, int64_t **ids
             continue;
         }
 
-        /* 配列が満杯になった場合は容量を 2 倍に拡張する。 */
+        /* 配列が満杯になった場合は容量を SERVICE_ID_LIST_GROWTH_FACTOR 倍に拡張する。 */
         if (count >= capacity)
         {
-            int new_capacity = capacity * 2;
+            int new_capacity = capacity * SERVICE_ID_LIST_GROWTH_FACTOR;
             int64_t *new_ids = (int64_t *)cplat_realloc(ids, (size_t)new_capacity, sizeof(*ids));
             if (new_ids == NULL)
             {

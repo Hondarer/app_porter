@@ -17,6 +17,8 @@
  */
 #ifndef POTR_FLOW_CONTROL_H
 #define POTR_FLOW_CONTROL_H
+#include <assert.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <cplat/clock/clock.h>
@@ -42,6 +44,10 @@
 
 /** 送出上限または初期の幅で止まり始めてから、最初の問い合わせを送出するまでの時間 [ms]。 */
 #define POTR_FLOW_QUERY_INITIAL_INTERVAL_MS 10U
+
+static_assert((POTR_FLOW_SEND_LIMIT_HELD & (uint64_t)UINT32_MAX) == 0ULL &&
+                  POTR_FLOW_SEND_LIMIT_HELD > (uint64_t)UINT32_MAX,
+              "porter: POTR_FLOW_SEND_LIMIT_HELD must not overlap the 32-bit sequence number");
 
 /** 送信側の送出上限の判定結果。 */
 typedef enum potr_internal_send_limit_state
@@ -170,6 +176,39 @@ static inline uint64_t flow_send_limit_clamp_initial(uint64_t send_limit, uint32
 
 /** 受信バッファーの幅の計算で、1 パケットの見積もりに加える管理情報の量 [byte]。 */
 #define POTR_FLOW_RECEIVE_BUFFER_OVERHEAD 2048U
+
+static_assert(POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN >= 1U && POTR_FLOW_RECEIVE_BUFFER_OVERHEAD > 0U,
+              "porter: receive buffer width parameters must be positive");
+
+/**
+ * 抑制中の状態を確認し直すまでの待機の上限 [ms]。
+ * 送信スレッドは、抑制の要求で止まっている間、抑制の状態と close の開始を、この時間以内に確認し直す
+ * (potr_internal_flow_control_suppressed() が返す待機時間の上限)。
+ */
+#define POTR_INTERNAL_FLOW_RECHECK_MS 50
+
+static_assert(POTR_INTERNAL_FLOW_RECHECK_MS > 0 && POTR_INTERNAL_FLOW_RECHECK_MS < INT_MAX,
+              "porter: POTR_INTERNAL_FLOW_RECHECK_MS out of range");
+
+/**
+ * N:1 モードで、止める状態のピアを待っている間に、状態を確認し直すまでの待機の上限 [ms]。
+ * 送信の呼び出し (potr_service_send) と、保留中のエントリがある送信スレッドが使う。
+ * 相手の送出上限または初期の幅で止まっている間の問い合わせを、最初の問い合わせまでの時間
+ * (POTR_FLOW_QUERY_INITIAL_INTERVAL_MS) の精度で送出するため、同じ値にする。
+ */
+#define POTR_INTERNAL_FLOW_LIMIT_RECHECK_MS ((int)POTR_FLOW_QUERY_INITIAL_INTERVAL_MS)
+
+static_assert(POTR_INTERNAL_FLOW_LIMIT_RECHECK_MS > 0 &&
+                  POTR_INTERNAL_FLOW_LIMIT_RECHECK_MS <= POTR_INTERNAL_FLOW_RECHECK_MS,
+              "porter: POTR_INTERNAL_FLOW_LIMIT_RECHECK_MS out of range");
+
+/** 百分率 [%] の上限。 */
+#define POTR_PERCENT_MAX 100U
+
+/** 百分率で求めた値を切り上げるために、割る前に加える値。 */
+#define POTR_PERCENT_CEIL_OFFSET (POTR_PERCENT_MAX - 1U)
+
+static_assert(POTR_PERCENT_MAX == 100U, "porter: POTR_PERCENT_MAX must be 100");
 
 /**
  *  @brief          OS の受信バッファーの大きさから、受信バッファーの幅 (収まると見積もった DATA パケットの数) を求めます。

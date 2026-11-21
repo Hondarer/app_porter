@@ -57,9 +57,11 @@
 
 #else /* !DOXYGEN */
 
+    /* 静的ライブラリとしてビルドまたはリンクするかを表す (0 = 共有ライブラリ、1 = 静的ライブラリ)。 */
     #ifndef POTR_STATIC
         #define POTR_STATIC 0
     #endif /* POTR_STATIC */
+    /* DLL をエクスポートする側としてビルドするかを表す (0 = インポートする側、1 = DLL をエクスポートする側)。 */
     #ifndef POTR_EXPORTS
         #define POTR_EXPORTS 0
     #endif /* POTR_EXPORTS */

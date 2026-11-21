@@ -53,7 +53,7 @@ WARNING は、利用側が設定の読み込みより前にトレーサーを開
 | `window_size` | uint16 | 16 | スライディング ウィンドウ サイズ (2〜256) |
 | `max_payload` | uint16 | 1,400 | DATA パケットのペイロード上限バイト数 (64〜65,435) |
 | `max_message_size` | uint32 | 65,535 | 1 回の potr_service_send で送信できる最大メッセージ長 (バイト)。フラグメント化により max_payload を超えるメッセージを送受信できます。 |
-| `send_queue_depth` | uint32 | 1,024 | 非同期送信キューの最大エントリ数。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。 |
+| `send_queue_depth` | uint32 | 1,024 | 非同期送信キューの最大エントリ数 (2 以上)。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。2 未満の場合、サービスを開く処理は、通信種別と役割にかかわらず設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
 | `udp_health_interval_ms` | uint32 | 3,000 | UDP 通信種別の PING 送信判定間隔 (ms)。片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時に PING を送信し、双方向 UDP は設定周期ごとに PING を送信します。0 でヘルス チェック送信を無効化。双方向 UDP は定周期 PING の送受信で `CONNECTED` を成立させるため、実効 `health_interval_ms` が 0 のままでは接続確立しません。上限は 2,147,483,646 です。ヘルス チェックを使う種別 (送信側、`unicast_bidir` と `unicast_bidir_n1` の受信側) で実効値が上限を超える場合、サービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
 | `udp_health_timeout_ms`  | uint32 | 10,000 | UDP 通信種別の受信タイムアウト (ms)。片方向 type 1-6 では有効な `PING` / `DATA`、双方向 UDP では `PING` の最終受信から本値を超えたら DISCONNECTED。0 でタイムアウト検知を無効化 |
 | `tcp_health_interval_ms` | uint32 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。接続直後の bootstrap PING とは別に、設定周期ごとに PING を送信します。0 の場合は定周期 PING を無効化するが、初回接続確立用の bootstrap PING は送信します。上限は 2,147,483,646 です。実効値が上限を超える場合、`tcp`、`tcp_bidir` のサービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
@@ -99,7 +99,7 @@ Table: 構成別の reorder_timeout_ms 推奨設定
 
 - 設定値を大きくするほど、追い越しを吸収できるが NACK の遅延 (= 再送遅延) も増加します。
 - RAW モードでは DISCONNECTED の遅延にも直結するため、リアルタイム性の要件と合わせて調整してください。
-- タイムアウト経過後も欠落パケットが到着した場合は NACK なしで正常にウィンドウへ取り込まれます (次の `process_outer_pkt` 呼び出しで自動検出)。
+- タイムアウト経過後も欠落パケットが到着した場合は NACK なしで正常にウィンドウへ取り込まれます (次の `thread_recv_window_accept_outer()` (`thread/thread_recv_window.c`) 呼び出しで自動検出)。
 
 ### マルチキャスト/ブロードキャスト通常モードでの NACK 分散
 
@@ -469,7 +469,7 @@ Table: unicast_bidir_n1 専用の設定項目
 | `dst_port` | uint16 | 必須 | — | SENDER: 接続先ポート。RECEIVER: listen ポート |
 | `src_addr1` | 文字列 | 省略可 | — | SENDER: ローカル bind アドレス (省略で自動選択)。RECEIVER: 接続元 IP フィルター (省略でフィルターなし) |
 | `src_port` | uint16 | 省略可 | 0 | SENDER: ローカル bind ポート (`0` または省略でエフェメラル)。RECEIVER: 接続元ポート フィルター (`0` または省略でフィルターなし) |
-| `reconnect_interval_ms` | uint32 | 省略可 | 5,000 | SENDER の自動再接続間隔 (ms)。`0` で自動再接続なし。RECEIVER では無視。上限は 2,147,483,646 で、検査は SENDER だけで行います。超える場合、サービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します |
+| `reconnect_interval_ms` | uint32 | 省略可 | 5,000 | SENDER の自動再接続間隔 (ms)。`0` で自動再接続なし。RECEIVER では無視。上限は 2,147,483,646 で、検査は SENDER だけで行います。超える場合、サービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
 | `connect_timeout_ms` | uint32 | 省略可 | 10,000 | SENDER の TCP 接続タイムアウト (ms)。`0` で OS 既定値。RECEIVER では無視 |
 
 Table: tcp および tcp_bidir 専用の設定項目

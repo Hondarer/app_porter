@@ -132,7 +132,7 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, thread_recv_dispatch_packet(_, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, thread_recv_fin_fire(_, _)).WillByDefault(Return());
     ON_CALL(*this, thread_recv_fin_on_ack(_, _)).WillByDefault(Return());
-    ON_CALL(*this, thread_recv_fin_on_packet(_, _, _)).WillByDefault(Return(0));
+    ON_CALL(*this, thread_recv_fin_on_packet(_, _, _)).WillByDefault(Return(THREAD_RECV_FIN_IGNORED));
     ON_CALL(*this, thread_recv_fin_pending_reached(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, thread_recv_session_adopt(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, thread_recv_set_all_path_ping_states(_, _, _)).WillByDefault(Return(0));

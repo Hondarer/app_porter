@@ -12,6 +12,7 @@
 #include <porter/protocol/packet.h>
 #include <porter/protocol/packet_seal.h>
 #include <porter/porter_const.h>
+#include <porter/potr_flow_control.h>
 #include <porter/security/certificate.h>
 
 /** 片方向 UDP の返送元セッション。離脱後も再利用までリプレイ記録を保持します。 */
@@ -78,7 +79,7 @@ static inline size_t flow_monitor_count(size_t active, size_t candidates, uint32
     /* 受信者数は max_peers 以下、割合は 100 以下のため、乗算は桁あふれしない。 */
     if (receiver_percent != 0U)
     {
-        size_t by_percent = (active * (size_t)receiver_percent + 99U) / 100U;
+        size_t by_percent = (active * (size_t)receiver_percent + POTR_PERCENT_CEIL_OFFSET) / POTR_PERCENT_MAX;
 
         if (receiver_count == 0U || by_percent < threshold)
         {
@@ -93,7 +94,7 @@ static inline size_t flow_monitor_count(size_t active, size_t candidates, uint32
 
     if (monitored_percent != 0U)
     {
-        size_t by_percent = (active * (size_t)monitored_percent + 99U) / 100U;
+        size_t by_percent = (active * (size_t)monitored_percent + POTR_PERCENT_CEIL_OFFSET) / POTR_PERCENT_MAX;
 
         if (by_percent > count)
         {

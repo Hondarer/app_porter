@@ -16,6 +16,8 @@
 #include <cplat/crypto/random.h>
 #include <cplat/crypto/crypto.h>
 #include <cplat/runtime/memory_lock.h>
+#include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
@@ -48,6 +50,43 @@
 /** tcp_health_timeout_ms の上限 [ms]。POTR_TCP_FIRST_PKT_TIMEOUT_SCALE 倍しても POTR_WAIT_MS_MAX を超えない値。 */
 #define POTR_TCP_HEALTH_TIMEOUT_MS_MAX (POTR_WAIT_MS_MAX / POTR_TCP_FIRST_PKT_TIMEOUT_SCALE)
 
+static_assert(POTR_TCP_HEALTH_TIMEOUT_MS_MAX > 0U && POTR_TCP_HEALTH_TIMEOUT_MS_MAX <= POTR_WAIT_MS_MAX,
+              "porter: POTR_TCP_HEALTH_TIMEOUT_MS_MAX out of range");
+
+/** max_payload の下限 [byte]。 */
+#define POTR_MIN_MAX_PAYLOAD 64U
+
+/** window_size の下限 (パケット数)。 */
+#define POTR_MIN_WINDOW_SIZE 2U
+
+/** send_queue_depth の下限 (エントリ数)。 */
+#define POTR_MIN_SEND_QUEUE_DEPTH 2U
+
+static_assert(POTR_MIN_MAX_PAYLOAD <= POTR_DEFAULT_MAX_PAYLOAD, "porter: POTR_MIN_MAX_PAYLOAD exceeds default");
+static_assert(POTR_MIN_WINDOW_SIZE <= POTR_DEFAULT_WINDOW_SIZE, "porter: POTR_MIN_WINDOW_SIZE exceeds default");
+static_assert(POTR_MIN_SEND_QUEUE_DEPTH <= POTR_SEND_QUEUE_DEPTH, "porter: POTR_MIN_SEND_QUEUE_DEPTH exceeds default");
+
+/* 既定値が、検査する範囲に収まることを確かめる。 */
+static_assert(POTR_DEFAULT_WINDOW_SIZE >= POTR_MIN_WINDOW_SIZE && POTR_DEFAULT_WINDOW_SIZE <= POTR_MAX_WINDOW_SIZE,
+              "porter: POTR_DEFAULT_WINDOW_SIZE out of range");
+static_assert(POTR_DEFAULT_MAX_PAYLOAD >= POTR_MIN_MAX_PAYLOAD && POTR_DEFAULT_MAX_PAYLOAD <= POTR_MAX_PAYLOAD,
+              "porter: POTR_DEFAULT_MAX_PAYLOAD out of range");
+static_assert(POTR_DEFAULT_TTL <= UINT8_MAX, "porter: POTR_DEFAULT_TTL must fit in uint8_t");
+static_assert(POTR_DEFAULT_PACK_WAIT_MS <= POTR_WAIT_MS_MAX && POTR_DEFAULT_RECONNECT_INTERVAL_MS <= POTR_WAIT_MS_MAX &&
+                  POTR_DEFAULT_CONNECT_TIMEOUT_MS <= POTR_WAIT_MS_MAX &&
+                  POTR_DEFAULT_TCP_CLOSE_TIMEOUT_MS <= POTR_WAIT_MS_MAX &&
+                  POTR_DEFAULT_TCP_FIRST_PKT_TIMEOUT_MS <= POTR_WAIT_MS_MAX,
+              "porter: default wait exceeds POTR_WAIT_MS_MAX");
+static_assert(POTR_DEFAULT_UDP_HEALTH_INTERVAL_MS < POTR_DEFAULT_UDP_HEALTH_TIMEOUT_MS,
+              "porter: UDP health interval must be shorter than timeout");
+static_assert(POTR_DEFAULT_TCP_HEALTH_INTERVAL_MS < POTR_DEFAULT_TCP_HEALTH_TIMEOUT_MS,
+              "porter: TCP health interval must be shorter than timeout");
+static_assert(POTR_DEFAULT_TCP_HEALTH_TIMEOUT_MS <= POTR_TCP_HEALTH_TIMEOUT_MS_MAX,
+              "porter: POTR_DEFAULT_TCP_HEALTH_TIMEOUT_MS exceeds POTR_TCP_HEALTH_TIMEOUT_MS_MAX");
+
+/* 経路数の上限が、経路の集合を表す uint8_t のビット集合に収まることを確かめる。 */
+static_assert(POTR_MAX_PATH <= 8U, "porter: POTR_MAX_PATH must fit in the uint8_t path bitmask");
+
 /*
  * セッション識別子と開始時刻を生成してコンテキストに格納する。
  * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は (key, nonce) の再利用を招く。
@@ -71,14 +110,6 @@ static int generate_session(potr_context *ctx)
     }
 
     potr_internal_tx_session_init(&ctx->tx_session);
-    for (size_t path_idx = 0U; path_idx < POTR_MAX_PATH; path_idx++)
-    {
-        cplat_atomic_store_u64(&ctx->last_ping_send_ms[path_idx], 0U, CPLAT_MEMORY_ORDER_RELAXED);
-    }
-    for (size_t path_idx = 0U; path_idx < POTR_MAX_PATH; path_idx++)
-    {
-        cplat_atomic_store_u64(&ctx->last_valid_data_send_ms[path_idx], 0U, CPLAT_MEMORY_ORDER_RELAXED);
-    }
 
     return CPLAT_OK;
 }
@@ -170,20 +201,22 @@ static int open_validate_config(potr_context *ctx)
     }
 
     /* max_payload の許容範囲の正本は app/porter/docs/config.md の「global オブジェクト」節である。 */
-    if (ctx->global.max_payload < 64U || ctx->global.max_payload > POTR_MAX_PAYLOAD)
+    if (ctx->global.max_payload < POTR_MIN_MAX_PAYLOAD || ctx->global.max_payload > POTR_MAX_PAYLOAD)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_open: service_id=%" PRId64 " invalid max_payload=%u (range: 64..%u)",
-                   ctx->service.service_id, (unsigned)ctx->global.max_payload, (unsigned)POTR_MAX_PAYLOAD);
+                   "potr_service_open: service_id=%" PRId64 " invalid max_payload=%u (range: %u..%u)",
+                   ctx->service.service_id, (unsigned)ctx->global.max_payload, (unsigned)POTR_MIN_MAX_PAYLOAD,
+                   (unsigned)POTR_MAX_PAYLOAD);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
     /* window_size の許容範囲の正本は app/porter/docs/config.md の「global オブジェクト」節である。 */
-    if (ctx->global.window_size < 2U || ctx->global.window_size > POTR_MAX_WINDOW_SIZE)
+    if (ctx->global.window_size < POTR_MIN_WINDOW_SIZE || ctx->global.window_size > POTR_MAX_WINDOW_SIZE)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_open: service_id=%" PRId64 " invalid window_size=%u (range: 2..%u)",
-                   ctx->service.service_id, (unsigned)ctx->global.window_size, (unsigned)POTR_MAX_WINDOW_SIZE);
+                   "potr_service_open: service_id=%" PRId64 " invalid window_size=%u (range: %u..%u)",
+                   ctx->service.service_id, (unsigned)ctx->global.window_size, (unsigned)POTR_MIN_WINDOW_SIZE,
+                   (unsigned)POTR_MAX_WINDOW_SIZE);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
@@ -195,11 +228,12 @@ static int open_validate_config(potr_context *ctx)
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    if (ctx->global.send_queue_depth < 2U)
+    /* send_queue_depth の下限の正本は app/porter/docs/config.md の「global オブジェクト」節である。 */
+    if (ctx->global.send_queue_depth < POTR_MIN_SEND_QUEUE_DEPTH)
     {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_open: service_id=%" PRId64 " invalid send_queue_depth=%u (min: 2)",
-                   ctx->service.service_id, (unsigned)ctx->global.send_queue_depth);
+        POTR_TRACE(
+            CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " invalid send_queue_depth=%u (min: %u)",
+            ctx->service.service_id, (unsigned)ctx->global.send_queue_depth, (unsigned)POTR_MIN_SEND_QUEUE_DEPTH);
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
@@ -287,9 +321,6 @@ static int alloc_context_buffers(potr_context *ctx)
         return result;
     }
 
-    ctx->send_has_data = 0;
-    cplat_atomic_store_i32(&ctx->tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELAXED);
-    cplat_atomic_store_i32(&ctx->tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
     result = potr_internal_window_init(&ctx->recv_window, 0, ctx->global.window_size, ctx->global.max_payload);
     if (result != POTR_OK)
     {
@@ -351,7 +382,7 @@ static int alloc_context_buffers(potr_context *ctx)
         {
             batch_cap = POTR_TCP_BATCH_MAX_PACKETS;
         }
-        if (batch_cap >= 2U)
+        if (batch_cap >= POTR_TCP_BATCH_MIN_PACKETS)
         {
             ctx->tcp_batch_plain_buf = (uint8_t *)cplat_malloc(batch_cap * (size_t)ctx->global.max_payload);
             ctx->tcp_batch_wire_buf = (uint8_t *)cplat_malloc(batch_cap * ctx->crypto_buf_size);
@@ -501,8 +532,6 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
          * 片方向 UDP は open 直後の即時 PING を送らない。
          * 正本は app/porter/docs/config.md の「health_interval_ms と health_timeout_ms の関係」節である。
          */
-        cplat_atomic_store_i32(&ctx->health_send_immediate[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-
         if (type_uses_immediate_health_ping(ctx->service.type))
         {
             cplat_atomic_store_i32(&ctx->health_send_immediate[0], 1, CPLAT_MEMORY_ORDER_RELEASE);

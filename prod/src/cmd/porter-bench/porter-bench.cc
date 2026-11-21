@@ -111,6 +111,175 @@
 namespace
 {
 
+/* ===== 測定で使う定数 ===== */
+
+/* --- バッファーの大きさ [byte] --- */
+
+/** /proc/self/status の 1 行を読み込むバッファーの大きさ [byte]。超える行は分割して読まれる。 */
+constexpr size_t kProcStatusLineBytes = 512U;
+/** CSV の値を書式化するバッファーの大きさ [byte]。 */
+constexpr size_t kFormatValueBufBytes = 64U;
+/** CSV の params 列を書式化するバッファーの大きさ [byte]。 */
+constexpr size_t kParamsBufBytes = 256U;
+/** p4 のチェックポイントの列名の接尾辞 ("_c" とサイクル数) を書式化するバッファーの大きさ [byte]。 */
+constexpr size_t kCheckpointSuffixBytes = 32U;
+
+static_assert(kCheckpointSuffixBytes >= sizeof("_c4294967295"), "porter-bench: kCheckpointSuffixBytes too small");
+
+/* --- 計測用ペイロードの形式 --- */
+
+/** 計測用ペイロードのヘッダー長 [byte] (送信時刻 8、送信者の番号 4、通し番号 4)。--bytes の下限を兼ねる。 */
+constexpr size_t kPayloadHeaderBytes = 16U;
+/** 計測用ペイロードで、送信者の番号 (4 [byte]) が始まる位置 [byte]。送信時刻 (uint64_t) の直後に置く。 */
+constexpr size_t kPayloadSenderIdOffset = sizeof(uint64_t);
+/** 計測用ペイロードで、通し番号 (4 [byte]) が始まる位置 [byte]。送信者の番号の直後に置く。 */
+constexpr size_t kPayloadSeqOffset = kPayloadSenderIdOffset + sizeof(uint32_t);
+/** 計測用ペイロードのヘッダーの後ろに繰り返して入れる英大文字の文字数。 */
+constexpr size_t kAlphabetCount = 26U;
+
+static_assert(kPayloadHeaderBytes == kPayloadSeqOffset + sizeof(uint32_t),
+              "porter-bench: payload header must end after the sequence number");
+static_assert(kAlphabetCount == static_cast<size_t>('Z' - 'A' + 1), "porter-bench: alphabet count mismatch");
+
+/* --- 統計 --- */
+
+/** 傾き (最小二乗法) を求めるのに要る標本の最小数。 */
+constexpr size_t kMinSlopeSamples = 2U;
+
+static_assert(kMinSlopeSamples >= 2U, "porter-bench: a slope needs at least two samples");
+
+/* --- コマンド ライン オプションの既定値と範囲 --- */
+
+/** --threads の既定値 (p1 と p5 の送信スレッド数)。 */
+constexpr uint32_t kDefaultThreads = 1U;
+/** --runs の既定値 (1 プロセスの中で繰り返す回数)。 */
+constexpr uint32_t kDefaultRuns = 5U;
+/** --inflight の既定値 (p1、p2、p5 の、スレッドごとの同時未完了数の上限)。 */
+constexpr uint32_t kDefaultInflight = 16U;
+/** --cb-sleep-ms の既定値 (p3 の受信コールバックの待機の時間 [ms])。 */
+constexpr uint32_t kDefaultCbSleepMs = 1U;
+/** --port に指定できる上限 (ループバックの基準ポート番号)。 */
+constexpr uint32_t kBasePortMax = 60000U;
+/** --port の既定値 (ループバックの基準ポート番号)。 */
+constexpr uint16_t kDefaultBasePort = 19000U;
+/** --bytes の既定値 (p1、p2、p4、p5 のペイロード長 [byte])。 */
+constexpr size_t kDefaultPayloadBytes = 64U;
+/** --bytes の既定値 (p3 のペイロード長 [byte])。 */
+constexpr size_t kP3DefaultBytes = 5000U;
+/** --count の既定値 (p1、p3、p5 の測定件数)。 */
+constexpr uint32_t kDefaultCountP1P3P5 = 10000U;
+/** --count の既定値 (p2 の測定件数)。 */
+constexpr uint32_t kP2DefaultCount = 5000U;
+/** --count の既定値 (p4 の測定サイクル数)。 */
+constexpr uint32_t kP4DefaultCycles = 1000U;
+/** --warmup の既定値 (p1、p2、p3、p5 の、測定から除く件数)。 */
+constexpr uint32_t kDefaultWarmup = 1000U;
+/** --warmup の既定値 (p4 の、測定から除くサイクル数)。 */
+constexpr uint32_t kP4DefaultWarmup = 10U;
+
+static_assert(kDefaultRuns >= 1U, "porter-bench: kDefaultRuns must be at least 1");
+static_assert(kDefaultInflight >= 1U, "porter-bench: kDefaultInflight must be at least 1");
+static_assert(kDefaultBasePort >= 1U && kDefaultBasePort <= kBasePortMax,
+              "porter-bench: kDefaultBasePort out of range");
+static_assert(kDefaultPayloadBytes >= kPayloadHeaderBytes, "porter-bench: kDefaultPayloadBytes too small");
+static_assert(kP3DefaultBytes >= kPayloadHeaderBytes, "porter-bench: kP3DefaultBytes too small");
+
+/* --- porter の設定値 --- */
+
+/** 測定で使う reorder_timeout_ms [ms]。 */
+constexpr uint32_t kDefaultReorderTimeoutMs = 50U;
+/** 測定で使うサービスの max_peers。 */
+constexpr uint32_t kDefaultMaxPeers = 16U;
+/** p5 (TCP) の tcp_health_interval_ms [ms]。 */
+constexpr uint32_t kP5TcpHealthIntervalMs = 100U;
+/** p5 (TCP) の tcp_health_timeout_ms [ms]。 */
+constexpr uint32_t kP5TcpHealthTimeoutMs = 5000U;
+/** p5 (TCP) の tcp_close_timeout_ms [ms]。 */
+constexpr uint32_t kP5TcpCloseTimeoutMs = 5000U;
+/** p2 の udp_health_interval_ms [ms]。 */
+constexpr uint32_t kP2UdpHealthIntervalMs = 50U;
+/** p2 の udp_health_timeout_ms [ms]。 */
+constexpr uint32_t kP2UdpHealthTimeoutMs = 10000U;
+/** p4 (UDP) の udp_health_interval_ms [ms]。受信側が数 [ms] で接続を観測できるよう短くする。 */
+constexpr uint32_t kP4UdpHealthIntervalMs = 5U;
+/** p4 (UDP) の udp_health_timeout_ms [ms]。 */
+constexpr uint32_t kP4UdpHealthTimeoutMs = 5000U;
+/** p4 (TCP) の tcp_health_interval_ms [ms]。 */
+constexpr uint32_t kP4TcpHealthIntervalMs = 50U;
+/** p4 (TCP) の tcp_health_timeout_ms [ms]。 */
+constexpr uint32_t kP4TcpHealthTimeoutMs = 5000U;
+/** p4 (TCP) の tcp_close_timeout_ms [ms]。 */
+constexpr uint32_t kP4TcpCloseTimeoutMs = 5000U;
+
+static_assert(kP5TcpHealthIntervalMs < kP5TcpHealthTimeoutMs, "porter-bench: p5 health interval must be shorter");
+static_assert(kP2UdpHealthIntervalMs < kP2UdpHealthTimeoutMs, "porter-bench: p2 health interval must be shorter");
+static_assert(kP4UdpHealthIntervalMs < kP4UdpHealthTimeoutMs, "porter-bench: p4 UDP health interval must be shorter");
+static_assert(kP4TcpHealthIntervalMs < kP4TcpHealthTimeoutMs, "porter-bench: p4 TCP health interval must be shorter");
+
+/* --- ポートの割り当て --- */
+
+/** 繰り返しごとに基準ポートへ加える間隔 (p1、p2、p3、p5)。 */
+constexpr uint32_t kRunPortStride = 10U;
+/** p4 で、繰り返しごとに使うポートの範囲の幅。サイクルごとに範囲の中のポートを順に使う。 */
+constexpr uint32_t kP4RunPortRange = 200U;
+
+
+/* --- 送り直しの回数 --- */
+
+/** TCP の片方向で、接続の前に POTR_ERR_DISCONNECTED を受けた場合に送り直す回数の上限 (p1、p4、p5)。 */
+constexpr int kTcpDisconnectedMaxRetries = 2000;
+/** p1 と p5 で、1 件の送信を送り直す回数の上限。超えた場合は測定を打ち切る。 */
+constexpr int kP1FullMaxRetries = 10000;
+/** p2 と p4 で、POTR_ERR_FULL を受けて送り直す回数の上限。 */
+constexpr int kFullMaxRetries = 1000;
+/** p3 で、POTR_ERR_FULL を受けて送り直す回数の上限。 */
+constexpr int kP3FullMaxRetries = 60000;
+/** 送り直しの回数がこの値未満の間は、待たずにスレッドの実行を譲る。以上になると kRetrySleepDuration だけ待つ。 */
+constexpr int kRetryYieldThreshold = 32;
+
+static_assert(kRetryYieldThreshold >= 0, "porter-bench: kRetryYieldThreshold must be non-negative");
+
+/* --- 待機の時間 --- */
+
+/** 接続と受信を待つ時間の上限。 */
+constexpr auto kConnectRecvTimeout = std::chrono::seconds(10);
+/** 送り直しの前に待つ時間。 */
+constexpr auto kRetrySleepDuration = std::chrono::milliseconds(1);
+/** p1 と p5 で、ウォーム アップと測定の各段階で、送信の完了の通知を待つ時間の上限。 */
+constexpr auto kP1StageTimeout = std::chrono::seconds(15);
+/** p2 で、同時未完了数が上限を下回るのを待つ時間の上限。 */
+constexpr auto kP2InflightWaitTimeout = std::chrono::milliseconds(500);
+/** p2 で、ウォーム アップの返信がそろうのを待つ時間の上限。 */
+constexpr auto kP2WarmupDrainTimeout = std::chrono::seconds(2);
+/** p2 で、測定の返信がそろったかを確認する間隔。 */
+constexpr auto kP2DrainPollInterval = std::chrono::milliseconds(10);
+/** p3 で、ウォーム アップの受信がそろったかを確認する間隔。 */
+constexpr auto kP3WarmupPollInterval = std::chrono::milliseconds(5);
+/** p3 で、メモリの使用量を標本として取る間隔。 */
+constexpr auto kP3SamplerInterval = std::chrono::milliseconds(10);
+/** p3 で、受信がそろったかを確認する間隔。 */
+constexpr auto kP3DrainPollInterval = std::chrono::milliseconds(20);
+/** p3 で、受信がそろった後に待つ時間。 */
+constexpr auto kP3AfterDrainWait = std::chrono::seconds(1);
+/** 受信の通知が途絶えた場合に、待つのを打ち切るまでの時間 [ns] (2 [s]、p2 の測定と p3 のウォーム アップ)。 */
+constexpr uint64_t kQuietTimeout2sNs = 2000000000ULL;
+/** p3 で、受信の通知が途絶えた場合に、待つのを打ち切るまでの時間 [ns] (5 [s])。 */
+constexpr uint64_t kP3QuietTimeoutNs = 5000000000ULL;
+
+/* --- p4 の標本の間隔 --- */
+
+/** p4 で、チェックポイントの値を記録するサイクルの間隔。 */
+constexpr uint32_t kP4CheckpointInterval = 100U;
+/** p4 で、傾きの標本を取るサイクルの間隔。Windows のスレッド数の取得は重いため間引く。 */
+constexpr uint32_t kP4SampleInterval = 10U;
+
+static_assert(kP4CheckpointInterval >= 1U, "porter-bench: kP4CheckpointInterval must be at least 1");
+static_assert(kP4SampleInterval >= 1U, "porter-bench: kP4SampleInterval must be at least 1");
+
+#ifdef _WIN32
+/** p3 で timeBeginPeriod() に指定するタイマーの分解能 [ms]。 */
+constexpr UINT kWinTimerResolutionMs = 1U;
+#endif
 /* ===== OS 依存処理: 時刻、CPU 時間、メモリ、ハンドル、スレッド ===== */
 
 static uint64_t mono_now_ns()
@@ -289,7 +458,7 @@ static MemSample sample_memory(bool include_handles_threads = false)
     FILE *fp = std::fopen("/proc/self/status", "r");
     if (fp != nullptr)
     {
-        char buf[512];
+        char buf[kProcStatusLineBytes];
         while (std::fgets(buf, sizeof(buf), fp) != nullptr)
         {
             uint64_t val = 0;
@@ -430,7 +599,7 @@ static double median_unsorted(std::vector<double> v)
 static double linear_slope(const std::vector<double> &xs, const std::vector<double> &ys)
 {
     const size_t n = xs.size();
-    if (n < 2U || ys.size() != n)
+    if (n < kMinSlopeSamples || ys.size() != n)
     {
         return 0.0;
     }
@@ -477,7 +646,7 @@ struct RunMetrics
 
 static std::string format_value(double v)
 {
-    char buf[64];
+    char buf[kFormatValueBufBytes];
     std::snprintf(buf, sizeof(buf), "%.3f", v);
     return std::string(buf);
 }
@@ -544,45 +713,45 @@ static void emit_csv(FILE *out, const std::string &label, const std::string &con
 
 static void write_u64_le(uint8_t *dst, uint64_t v)
 {
-    for (int i = 0; i < 8; ++i)
+    for (size_t i = 0U; i < sizeof(uint64_t); ++i)
     {
-        dst[i] = static_cast<uint8_t>((v >> (i * 8)) & 0xFFU);
+        dst[i] = static_cast<uint8_t>((v >> (i * 8U)) & 0xFFU);
     }
 }
 
 static uint64_t read_u64_le(const uint8_t *src)
 {
     uint64_t v = 0;
-    for (int i = 0; i < 8; ++i)
+    for (size_t i = 0U; i < sizeof(uint64_t); ++i)
     {
-        v |= static_cast<uint64_t>(src[i]) << (i * 8);
+        v |= static_cast<uint64_t>(src[i]) << (i * 8U);
     }
     return v;
 }
 
 static void write_u32_le(uint8_t *dst, uint32_t v)
 {
-    for (int i = 0; i < 4; ++i)
+    for (size_t i = 0U; i < sizeof(uint32_t); ++i)
     {
-        dst[i] = static_cast<uint8_t>((v >> (i * 8)) & 0xFFU);
+        dst[i] = static_cast<uint8_t>((v >> (i * 8U)) & 0xFFU);
     }
 }
 
 static uint32_t read_u32_le(const uint8_t *src)
 {
     uint32_t v = 0;
-    for (int i = 0; i < 4; ++i)
+    for (size_t i = 0U; i < sizeof(uint32_t); ++i)
     {
-        v |= static_cast<uint32_t>(src[i]) << (i * 8);
+        v |= static_cast<uint32_t>(src[i]) << (i * 8U);
     }
     return v;
 }
 
 static void fill_payload_pattern(std::vector<uint8_t> &buf)
 {
-    for (size_t i = 16U; i < buf.size(); ++i)
+    for (size_t i = kPayloadHeaderBytes; i < buf.size(); ++i)
     {
-        buf[i] = static_cast<uint8_t>('A' + (i % 26U));
+        buf[i] = static_cast<uint8_t>('A' + (i % kAlphabetCount));
     }
 }
 
@@ -596,7 +765,7 @@ static potr_global_config make_default_global()
     potr_global_config g{};
     g.window_size = POTR_MAX_WINDOW_SIZE;
     g.max_payload = POTR_DEFAULT_MAX_PAYLOAD;
-    g.reorder_timeout_ms = 50U;
+    g.reorder_timeout_ms = kDefaultReorderTimeoutMs;
     g.max_message_size = POTR_MAX_MESSAGE_SIZE;
     g.send_queue_depth = POTR_SEND_QUEUE_DEPTH;
     g.udp_health_interval_ms = POTR_DEFAULT_UDP_HEALTH_INTERVAL_MS;
@@ -640,7 +809,7 @@ static potr_service_def make_service_def(int64_t service_id, potr_type type, uin
     d.pack_wait_ms = 0U;
     set_addr(d.src_addr[0], src_ip);
     set_addr(d.dst_addr[0], dst_ip);
-    d.max_peers = 16U;
+    d.max_peers = kDefaultMaxPeers;
     d.reconnect_interval_ms = POTR_DEFAULT_RECONNECT_INTERVAL_MS;
     d.connect_timeout_ms = POTR_DEFAULT_CONNECT_TIMEOUT_MS;
     return d;
@@ -825,16 +994,16 @@ struct Options
     std::string mcast_if = kP6DefaultMcastIf;
     std::vector<GlobalConfigOverride> config_overrides;
     size_t bytes = 0;         /* 0 means condition-specific default */
-    uint32_t threads = 1U;
+    uint32_t threads = kDefaultThreads;
     uint32_t count = 0U;      /* 0 means condition-specific default */
-    uint32_t runs = 5U;
+    uint32_t runs = kDefaultRuns;
     uint32_t warmup = UINT32_MAX; /* sentinel for condition-specific default */
-    uint32_t inflight = 16U;
-    uint32_t cb_sleep_ms = 1U;
+    uint32_t inflight = kDefaultInflight;
+    uint32_t cb_sleep_ms = kDefaultCbSleepMs;
     uint32_t receivers = kP6DefaultReceivers;
     uint32_t slow_receivers = kP6DefaultSlowReceivers;
     uint32_t run_timeout_s = kP6DefaultRunTimeoutS;
-    uint16_t base_port = 19000U;
+    uint16_t base_port = kDefaultBasePort;
     bool no_header = false;
     unsigned char pad[1] = {}; // 明示的アラインメントのためのパディング。
 };
@@ -894,19 +1063,19 @@ static void print_usage(const char *prog)
         "Options:\n"
         "  --cond <p1|p2|p3|p4|p5|p6>  Benchmark condition (required)\n"
         "  --label <name>              Name recorded in the CSV version column (default: current)\n"
-        "  --bytes <N>                 Payload bytes (>=16; default: P1/P2/P4/P5=64, P3=5000, P6=1000)\n"
+        "  --bytes <N>                 Payload bytes (>=%zu; default: P1/P2/P4/P5=%zu, P3=%zu, P6=%zu)\n"
         "  --flags <normal|compress|blocking|compress_blocking>  Send flags for P1/P5 (default: normal)\n"
-        "  --threads <N>               Sender thread count for P1/P5 (default: 1)\n"
-        "  --count <N>                 Measured items/cycles per run (default: P1/P3/P5/P6=10000, P2=5000, P4=1000)\n"
-        "  --runs <R>                  Runs inside process (default: 5)\n"
-        "  --warmup <W>                Warmup items/cycles excluded per run (default: P1/P2/P3/P5/P6=1000, P4=10)\n"
-        "  --inflight <K>              Max concurrent in-flight msgs per thread for P1/P2/P5 (default: 16)\n"
-        "  --port <P>                  Base loopback port (default: 19000)\n"
+        "  --threads <N>               Sender thread count for P1/P5 (default: %u)\n"
+        "  --count <N>                 Measured items/cycles per run (default: P1/P3/P5=%u, P2=%u, P4=%u, P6=%u)\n"
+        "  --runs <R>                  Runs inside process (default: %u)\n"
+        "  --warmup <W>                Warmup items/cycles excluded per run (default: P1/P2/P3/P5=%u, P4=%u, P6=%u)\n"
+        "  --inflight <K>              Max concurrent in-flight msgs per thread for P1/P2/P5 (default: %u)\n"
+        "  --port <P>                  Base loopback port (default: %u)\n"
         "  --reply-mode <cb|ext>       P2 reply mode (default: ext)\n"
         "  --proto <udp|tcp>           P4 protocol (default: udp)\n"
         "  --tcp-type <bidir|oneway>   TCP type for P5 / P4 tcp (default: oneway)\n"
         "  --receive-buffer-limit <on|off>  Send limit by OS receive buffer on UDP receivers (default: on)\n"
-        "  --cb-sleep-ms <ms>          Callback sleep duration in ms for P3 and P6 slow receivers (default: 1)\n"
+        "  --cb-sleep-ms <ms>          Callback sleep duration in ms for P3 and P6 slow receivers (default: %u)\n"
         "  --receivers <N>             P6 multicast receiver count (1..%u; default: %u)\n"
         "  --slow-receivers <M>        P6 slow receiver count sleeping in callback (default: %u)\n"
         "  --mcast-group <ip>          P6 multicast group address (default: %s)\n"
@@ -916,8 +1085,14 @@ static void print_usage(const char *prog)
         "  --out <path>                Write CSV to file instead of stdout\n"
         "  --no-header                 Omit CSV header row\n"
         "  --trace-level <none|error|warning|info|debug>  Porter stderr trace level (default: warning)\n",
-        prog, kP6MaxReceivers, kP6DefaultReceivers, kP6DefaultSlowReceivers, kP6DefaultMcastGroup, kP6DefaultMcastIf,
-        kP6DefaultRunTimeoutS);
+        prog, kPayloadHeaderBytes, kDefaultPayloadBytes, kP3DefaultBytes, kP6DefaultBytes,
+        static_cast<unsigned>(kDefaultThreads), static_cast<unsigned>(kDefaultCountP1P3P5),
+        static_cast<unsigned>(kP2DefaultCount), static_cast<unsigned>(kP4DefaultCycles),
+        static_cast<unsigned>(kP6DefaultCount), static_cast<unsigned>(kDefaultRuns),
+        static_cast<unsigned>(kDefaultWarmup), static_cast<unsigned>(kP4DefaultWarmup),
+        static_cast<unsigned>(kP6DefaultWarmup), static_cast<unsigned>(kDefaultInflight),
+        static_cast<unsigned>(kDefaultBasePort), static_cast<unsigned>(kDefaultCbSleepMs), kP6MaxReceivers,
+        kP6DefaultReceivers, kP6DefaultSlowReceivers, kP6DefaultMcastGroup, kP6DefaultMcastIf, kP6DefaultRunTimeoutS);
 }
 
 /* ===== P1 / P5 の実装 ===== */
@@ -989,14 +1164,14 @@ static void p1_receiver_cb(int64_t service_id, potr_peer_id peer_id, potr_event 
         return;
     }
 
-    if (data == nullptr || len < 16U)
+    if (data == nullptr || len < kPayloadHeaderBytes)
     {
         return;
     }
     const uint8_t *p = static_cast<const uint8_t *>(data);
     const uint64_t tx_ns = read_u64_le(p);
-    const uint32_t tid = read_u32_le(p + 8U);
-    const uint32_t seq = read_u32_le(p + 12U);
+    const uint32_t tid = read_u32_le(p + kPayloadSenderIdOffset);
+    const uint32_t seq = read_u32_le(p + kPayloadSeqOffset);
     if (tid >= ctx->threads)
     {
         return;
@@ -1083,19 +1258,19 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
         std::fprintf(stderr, "Invalid --flags: %s\n", opt.flags.c_str());
         return false;
     }
-    const size_t bytes = (opt.bytes > 0U) ? opt.bytes : 64U;
-    if (bytes < 16U)
+    const size_t bytes = (opt.bytes > 0U) ? opt.bytes : kDefaultPayloadBytes;
+    if (bytes < kPayloadHeaderBytes)
     {
-        std::fprintf(stderr, "--bytes must be >= 16\n");
+        std::fprintf(stderr, "--bytes must be >= %zu\n", kPayloadHeaderBytes);
         return false;
     }
-    const uint32_t count = (opt.count > 0U) ? opt.count : 10000U;
-    const uint32_t warmup = (opt.warmup != UINT32_MAX) ? opt.warmup : 1000U;
-    const uint32_t threads = (opt.threads > 0U) ? opt.threads : 1U;
-    const uint32_t inflight = (opt.inflight > 0U) ? opt.inflight : 16U;
+    const uint32_t count = (opt.count > 0U) ? opt.count : kDefaultCountP1P3P5;
+    const uint32_t warmup = (opt.warmup != UINT32_MAX) ? opt.warmup : kDefaultWarmup;
+    const uint32_t threads = (opt.threads > 0U) ? opt.threads : kDefaultThreads;
+    const uint32_t inflight = (opt.inflight > 0U) ? opt.inflight : kDefaultInflight;
 
     {
-        char pbuf[256];
+        char pbuf[kParamsBufBytes];
         if (is_tcp)
         {
             std::snprintf(pbuf, sizeof(pbuf),
@@ -1116,7 +1291,7 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
 
     for (uint32_t r = 0U; r < opt.runs; ++r)
     {
-        const uint16_t port = static_cast<uint16_t>(opt.base_port + r * 10U);
+        const uint16_t port = static_cast<uint16_t>(opt.base_port + r * kRunPortStride);
         P1Context ctx;
         ctx.threads = threads;
         ctx.warmup = warmup;
@@ -1142,9 +1317,9 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
         potr_global_config global = make_default_global();
         if (is_tcp)
         {
-            global.tcp_health_interval_ms = 100U;
-            global.tcp_health_timeout_ms = 5000U;
-            global.tcp_close_timeout_ms = 5000U;
+            global.tcp_health_interval_ms = kP5TcpHealthIntervalMs;
+            global.tcp_health_timeout_ms = kP5TcpHealthTimeoutMs;
+            global.tcp_close_timeout_ms = kP5TcpCloseTimeoutMs;
         }
         apply_global_config_overrides(&global, opt.config_overrides);
         potr_service_def def = make_service_def(1LL, ptype, port, 0U, "127.0.0.1", "127.0.0.1");
@@ -1174,7 +1349,7 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
         if (is_tcp)
         {
             std::unique_lock<std::mutex> lk(ctx.conn_mtx);
-            const bool ok = ctx.conn_cv.wait_for(lk, std::chrono::seconds(10), [&]() {
+            const bool ok = ctx.conn_cv.wait_for(lk, kConnectRecvTimeout, [&]() {
                 return ctx.receiver_connected && (!tcp_bidir || ctx.sender_connected);
             });
             if (!ok)
@@ -1208,11 +1383,11 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
             workers.emplace_back([&](uint32_t tid) {
                 std::vector<uint8_t> payload(bytes, 0U);
                 fill_payload_pattern(payload);
-                write_u32_le(payload.data() + 8U, tid);
+                write_u32_le(payload.data() + kPayloadSenderIdOffset, tid);
                 P1ThreadState *ts = ctx.tstates[tid];
 
                 auto send_one = [&](uint32_t seq, bool record_api, const char *stage) -> bool {
-                    write_u32_le(payload.data() + 12U, seq);
+                    write_u32_le(payload.data() + kPayloadSeqOffset, seq);
                     int retry = 0;
                     for (;;)
                     {
@@ -1235,26 +1410,27 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
                          * 待った時間を含まない。待った回数は send_full_count として出力する。
                          */
                         if (sret == POTR_ERR_FULL ||
-                            (sret == POTR_ERR_DISCONNECTED && is_tcp && !tcp_bidir && retry < 2000))
+                            (sret == POTR_ERR_DISCONNECTED && is_tcp && !tcp_bidir &&
+                             retry < kTcpDisconnectedMaxRetries))
                         {
                             if (sret == POTR_ERR_FULL && record_api)
                             {
                                 ctx.full_count.fetch_add(1ULL, std::memory_order_relaxed);
                             }
                             ++retry;
-                            if (retry > 10000)
+                            if (retry > kP1FullMaxRetries)
                             {
                                 std::fprintf(stderr, "[%s] run=%u thread=%u stage=%s seq=%u timeout err=%d (%s)\n",
                                              tag, r + 1U, tid, stage, seq, sret, potr_err_name(sret));
                                 return false;
                             }
-                            if (retry < 32)
+                            if (retry < kRetryYieldThreshold)
                             {
                                 std::this_thread::yield();
                             }
                             else
                             {
-                                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                std::this_thread::sleep_for(kRetrySleepDuration);
                             }
                             continue;
                         }
@@ -1269,7 +1445,7 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
                 {
                     {
                         std::unique_lock<std::mutex> lk(ts->mtx);
-                        const bool ok = ts->cv.wait_for(lk, std::chrono::seconds(15), [&]() {
+                        const bool ok = ts->cv.wait_for(lk, kP1StageTimeout, [&]() {
                             return (seq - ts->completed) < inflight || send_failed.load(std::memory_order_acquire);
                         });
                         if (!ok)
@@ -1289,7 +1465,7 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
                 if (!send_failed.load(std::memory_order_acquire))
                 {
                     std::unique_lock<std::mutex> lk(ts->mtx);
-                    const bool ok = ts->cv.wait_for(lk, std::chrono::seconds(15), [&]() {
+                    const bool ok = ts->cv.wait_for(lk, kP1StageTimeout, [&]() {
                         return ts->completed >= warmup || send_failed.load(std::memory_order_acquire);
                     });
                     if (!ok)
@@ -1327,7 +1503,7 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
                     const uint32_t seq = warmup + k;
                     {
                         std::unique_lock<std::mutex> lk(ts->mtx);
-                        const bool ok = ts->cv.wait_for(lk, std::chrono::seconds(15), [&]() {
+                        const bool ok = ts->cv.wait_for(lk, kP1StageTimeout, [&]() {
                             return (seq - ts->completed) < inflight || send_failed.load(std::memory_order_acquire);
                         });
                         if (!ok)
@@ -1349,7 +1525,7 @@ static bool run_p1_or_p5(const Options &opt, std::vector<RunMetrics> *out_runs, 
                 {
                     std::unique_lock<std::mutex> lk(ts->mtx);
                     const uint32_t target = warmup + count;
-                    const bool ok = ts->cv.wait_for(lk, std::chrono::seconds(15), [&]() {
+                    const bool ok = ts->cv.wait_for(lk, kP1StageTimeout, [&]() {
                         return ts->completed >= target || send_failed.load(std::memory_order_acquire);
                     });
                     if (!ok)
@@ -1444,7 +1620,9 @@ struct P2ClientState
 
 struct P2Context
 {
+    /** p2 で、サーバーへ要求を送るクライアントの数。 */
     static constexpr uint32_t kNumClients = 4U;
+    static_assert(kNumClients >= 1U, "porter-bench: kNumClients must be at least 1");
     potr_context *server = nullptr;
     std::atomic<uint64_t> server_send_errors{0ULL};
     std::atomic<uint64_t> last_reply_ns{0ULL};
@@ -1481,7 +1659,7 @@ static int p2_send_reply_retry(potr_context *srv, potr_peer_id peer_id, const vo
         {
             return POTR_OK;
         }
-        if (rc == POTR_ERR_FULL && retry < 1000)
+        if (rc == POTR_ERR_FULL && retry < kFullMaxRetries)
         {
             /* 送信キューに空きがない場合は、少し待って送り直す (P1 の send_one を参照)。 */
             if (s_p2_context != nullptr)
@@ -1489,13 +1667,13 @@ static int p2_send_reply_retry(potr_context *srv, potr_peer_id peer_id, const vo
                 s_p2_context->full_count.fetch_add(1ULL, std::memory_order_relaxed);
             }
             ++retry;
-            if (retry < 32)
+            if (retry < kRetryYieldThreshold)
             {
                 std::this_thread::yield();
             }
             else
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                std::this_thread::sleep_for(kRetrySleepDuration);
             }
             continue;
         }
@@ -1566,14 +1744,14 @@ static void p2_client_cb(int64_t /*service_id*/, potr_peer_id /*peer_id*/, potr_
         }
         return;
     }
-    if (data == nullptr || len < 16U)
+    if (data == nullptr || len < kPayloadHeaderBytes)
     {
         return;
     }
     const uint8_t *p = static_cast<const uint8_t *>(data);
     const uint64_t tx_ns = read_u64_le(p);
-    const uint32_t cid = read_u32_le(p + 8U);
-    const uint32_t seq = read_u32_le(p + 12U);
+    const uint32_t cid = read_u32_le(p + kPayloadSenderIdOffset);
+    const uint32_t seq = read_u32_le(p + kPayloadSeqOffset);
     if (cid >= P2Context::kNumClients)
     {
         return;
@@ -1599,19 +1777,19 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         std::fprintf(stderr, "Invalid --reply-mode: %s (expected cb or ext)\n", opt.reply_mode.c_str());
         return false;
     }
-    const size_t bytes = (opt.bytes > 0U) ? opt.bytes : 64U;
-    if (bytes < 16U)
+    const size_t bytes = (opt.bytes > 0U) ? opt.bytes : kDefaultPayloadBytes;
+    if (bytes < kPayloadHeaderBytes)
     {
-        std::fprintf(stderr, "--bytes must be >= 16\n");
+        std::fprintf(stderr, "--bytes must be >= %zu\n", kPayloadHeaderBytes);
         return false;
     }
-    const uint32_t count = (opt.count > 0U) ? opt.count : 5000U;
-    const uint32_t warmup = (opt.warmup != UINT32_MAX) ? opt.warmup : 1000U;
-    const uint32_t inflight = (opt.inflight > 0U) ? opt.inflight : 16U;
+    const uint32_t count = (opt.count > 0U) ? opt.count : kP2DefaultCount;
+    const uint32_t warmup = (opt.warmup != UINT32_MAX) ? opt.warmup : kDefaultWarmup;
+    const uint32_t inflight = (opt.inflight > 0U) ? opt.inflight : kDefaultInflight;
     const bool cb_mode = (opt.reply_mode == "cb");
 
     {
-        char pbuf[256];
+        char pbuf[kParamsBufBytes];
         std::snprintf(pbuf, sizeof(pbuf), "bytes=%zu;reply=%s;clients=%u;count=%u;warmup=%u", bytes,
                       opt.reply_mode.c_str(), P2Context::kNumClients, count, warmup);
         *out_params = pbuf;
@@ -1619,7 +1797,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
 
     for (uint32_t r = 0U; r < opt.runs; ++r)
     {
-        const uint16_t port = static_cast<uint16_t>(opt.base_port + r * 10U);
+        const uint16_t port = static_cast<uint16_t>(opt.base_port + r * kRunPortStride);
         P2Context ctx;
         ctx.cb_reply_mode = cb_mode;
         ctx.warmup = warmup;
@@ -1641,8 +1819,8 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         };
 
         potr_global_config global = make_default_global();
-        global.udp_health_interval_ms = 50U;
-        global.udp_health_timeout_ms = 10000U;
+        global.udp_health_interval_ms = kP2UdpHealthIntervalMs;
+        global.udp_health_timeout_ms = kP2UdpHealthTimeoutMs;
         apply_global_config_overrides(&global, opt.config_overrides);
 
         potr_service_def srv_def = make_service_def(1LL, POTR_TYPE_UNICAST_BIDIR_N1, port, 0U, "", "127.0.0.1");
@@ -1716,7 +1894,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         bool all_conn = false;
         {
             std::unique_lock<std::mutex> lk(ctx.srv_conn_mtx);
-            all_conn = ctx.srv_conn_cv.wait_for(lk, std::chrono::seconds(10), [&]() {
+            all_conn = ctx.srv_conn_cv.wait_for(lk, kConnectRecvTimeout, [&]() {
                 return ctx.srv_connected_peers >= P2Context::kNumClients &&
                        ctx.cli_connected_count >= P2Context::kNumClients;
             });
@@ -1754,11 +1932,11 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             cthreads.emplace_back([&](uint32_t c) {
                 std::vector<uint8_t> payload(bytes, 0U);
                 fill_payload_pattern(payload);
-                write_u32_le(payload.data() + 8U, c);
+                write_u32_le(payload.data() + kPayloadSenderIdOffset, c);
                 P2ClientState *cs = ctx.clients[c];
 
                 auto send_req = [&](uint32_t seq) {
-                    write_u32_le(payload.data() + 12U, seq);
+                    write_u32_le(payload.data() + kPayloadSeqOffset, seq);
                     int retry = 0;
                     for (;;)
                     {
@@ -1768,17 +1946,17 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                         {
                             return;
                         }
-                        if (sret == POTR_ERR_FULL && retry < 1000)
+                        if (sret == POTR_ERR_FULL && retry < kFullMaxRetries)
                         {
                             ctx.full_count.fetch_add(1ULL, std::memory_order_relaxed);
                             ++retry;
-                            if (retry < 32)
+                            if (retry < kRetryYieldThreshold)
                             {
                                 std::this_thread::yield();
                             }
                             else
                             {
-                                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                std::this_thread::sleep_for(kRetrySleepDuration);
                             }
                             continue;
                         }
@@ -1793,14 +1971,14 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                 {
                     {
                         std::unique_lock<std::mutex> lk(cs->mtx);
-                        cs->cv.wait_for(lk, std::chrono::milliseconds(500),
+                        cs->cv.wait_for(lk, kP2InflightWaitTimeout,
                                         [&]() { return (seq - cs->replies) < inflight; });
                     }
                     send_req(seq);
                 }
                 {
                     std::unique_lock<std::mutex> lk(cs->mtx);
-                    cs->cv.wait_for(lk, std::chrono::seconds(2), [&]() { return cs->replies >= warmup; });
+                    cs->cv.wait_for(lk, kP2WarmupDrainTimeout, [&]() { return cs->replies >= warmup; });
                 }
 
                 /* 全クライアントをそろえる。 */
@@ -1825,7 +2003,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                     const uint32_t seq = warmup + k;
                     {
                         std::unique_lock<std::mutex> lk(cs->mtx);
-                        cs->cv.wait_for(lk, std::chrono::milliseconds(500),
+                        cs->cv.wait_for(lk, kP2InflightWaitTimeout,
                                         [&]() { return (seq - cs->replies) < inflight; });
                     }
                     send_req(seq);
@@ -1858,11 +2036,11 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             }
             const uint64_t now = mono_now_ns();
             const uint64_t last = ctx.last_reply_ns.load(std::memory_order_acquire);
-            if (now > last && (now - last) >= 2000000000ULL)
+            if (now > last && (now - last) >= kQuietTimeout2sNs)
             {
                 break;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::this_thread::sleep_for(kP2DrainPollInterval);
         }
         const uint64_t meas_end_ns = ctx.last_reply_ns.load(std::memory_order_acquire);
 
@@ -1931,14 +2109,14 @@ static void p3_receiver_cb(int64_t /*service_id*/, potr_peer_id /*peer_id*/, pot
 {
     const uint64_t rx_ns = mono_now_ns();
     P3Context *ctx = s_p3_context;
-    if (ctx == nullptr || event != POTR_EVENT_DATA || data == nullptr || len < 16U)
+    if (ctx == nullptr || event != POTR_EVENT_DATA || data == nullptr || len < kPayloadHeaderBytes)
     {
         return;
     }
     ctx->last_rx_ns.store(rx_ns, std::memory_order_release);
     const uint8_t *p = static_cast<const uint8_t *>(data);
     const uint64_t tx_ns = read_u64_le(p);
-    const uint32_t seq = read_u32_le(p + 12U);
+    const uint32_t seq = read_u32_le(p + kPayloadSeqOffset);
 
     if (seq < ctx->warmup)
     {
@@ -1969,37 +2147,37 @@ static void p3_receiver_cb(int64_t /*service_id*/, potr_peer_id /*peer_id*/, pot
 
 static bool run_p3(const Options &opt, std::vector<RunMetrics> *out_runs, std::string *out_params)
 {
-    const size_t bytes = (opt.bytes > 0U) ? opt.bytes : 5000U;
-    if (bytes < 16U)
+    const size_t bytes = (opt.bytes > 0U) ? opt.bytes : kP3DefaultBytes;
+    if (bytes < kPayloadHeaderBytes)
     {
-        std::fprintf(stderr, "--bytes must be >= 16\n");
+        std::fprintf(stderr, "--bytes must be >= %zu\n", kPayloadHeaderBytes);
         return false;
     }
-    const uint32_t count = (opt.count > 0U) ? opt.count : 10000U;
-    const uint32_t warmup = (opt.warmup != UINT32_MAX) ? opt.warmup : 1000U;
+    const uint32_t count = (opt.count > 0U) ? opt.count : kDefaultCountP1P3P5;
+    const uint32_t warmup = (opt.warmup != UINT32_MAX) ? opt.warmup : kDefaultWarmup;
     const uint32_t cb_sleep_ms = opt.cb_sleep_ms;
 
     {
-        char pbuf[256];
+        char pbuf[kParamsBufBytes];
         std::snprintf(pbuf, sizeof(pbuf), "bytes=%zu;count=%u;warmup=%u;cb_sleep_ms=%u", bytes, count, warmup,
                       cb_sleep_ms);
         *out_params = pbuf;
     }
 
 #ifdef _WIN32
-    timeBeginPeriod(1U);
+    timeBeginPeriod(kWinTimerResolutionMs);
     struct WinTimerReset
     {
         ~WinTimerReset()
         {
-            timeEndPeriod(1U);
+            timeEndPeriod(kWinTimerResolutionMs);
         }
     } timer_reset;
 #endif
 
     for (uint32_t r = 0U; r < opt.runs; ++r)
     {
-        const uint16_t port = static_cast<uint16_t>(opt.base_port + r * 10U);
+        const uint16_t port = static_cast<uint16_t>(opt.base_port + r * kRunPortStride);
         P3Context ctx;
         ctx.warmup = warmup;
         ctx.count = count;
@@ -2036,7 +2214,7 @@ static bool run_p3(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         uint64_t full_count = 0ULL; /* 測定区間で POTR_ERR_FULL を受けた回数 */
 
         auto send_seq = [&](uint32_t seq, const char *stage) -> bool {
-            write_u32_le(payload.data() + 12U, seq);
+            write_u32_le(payload.data() + kPayloadSeqOffset, seq);
             int retry = 0;
             for (;;)
             {
@@ -2046,7 +2224,7 @@ static bool run_p3(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                 {
                     return true;
                 }
-                if (sret == POTR_ERR_FULL && retry < 60000)
+                if (sret == POTR_ERR_FULL && retry < kP3FullMaxRetries)
                 {
                     /* 送信キューに空きがない場合は、少し待って送り直す (P1 の send_one を参照)。 */
                     if (seq >= warmup)
@@ -2054,13 +2232,13 @@ static bool run_p3(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                         ++full_count;
                     }
                     ++retry;
-                    if (retry < 32)
+                    if (retry < kRetryYieldThreshold)
                     {
                         std::this_thread::yield();
                     }
                     else
                     {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        std::this_thread::sleep_for(kRetrySleepDuration);
                     }
                     continue;
                 }
@@ -2095,11 +2273,11 @@ static bool run_p3(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                 }
                 const uint64_t now = mono_now_ns();
                 const uint64_t last = ctx.last_rx_ns.load(std::memory_order_acquire);
-                if (now > last && (now - last) >= 2000000000ULL)
+                if (now > last && (now - last) >= kQuietTimeout2sNs)
                 {
                     break;
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                std::this_thread::sleep_for(kP3WarmupPollInterval);
             }
         }
 
@@ -2121,7 +2299,7 @@ static bool run_p3(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                 while (s.priv_bytes > pp && !peak_priv.compare_exchange_weak(pp, s.priv_bytes))
                 {
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                std::this_thread::sleep_for(kP3SamplerInterval);
             }
         });
 
@@ -2153,15 +2331,15 @@ static bool run_p3(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             }
             const uint64_t now = mono_now_ns();
             const uint64_t last = ctx.last_rx_ns.load(std::memory_order_acquire);
-            if (now > last && (now - last) >= 5000000000ULL && consumed >= rx)
+            if (now > last && (now - last) >= kP3QuietTimeoutNs && consumed >= rx)
             {
                 break;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            std::this_thread::sleep_for(kP3DrainPollInterval);
         }
 
         /* すべての通知を処理してから 1 [s] 待つ。 */
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(kP3AfterDrainWait);
         stop_sampler.store(true, std::memory_order_release);
         sampler.join();
 
@@ -2233,9 +2411,9 @@ static void p4_recv_cb(int64_t /*service_id*/, potr_peer_id /*peer_id*/, potr_ev
         ctx->recv_connected = true;
         ctx->cv.notify_all();
     }
-    else if (event == POTR_EVENT_DATA && data != nullptr && len >= 16U)
+    else if (event == POTR_EVENT_DATA && data != nullptr && len >= kPayloadHeaderBytes)
     {
-        const uint32_t seq = read_u32_le(static_cast<const uint8_t *>(data) + 12U);
+        const uint32_t seq = read_u32_le(static_cast<const uint8_t *>(data) + kPayloadSeqOffset);
         std::lock_guard<std::mutex> lk(ctx->mtx);
         if (seq == ctx->expected_seq)
         {
@@ -2270,17 +2448,17 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
     }
     const bool is_tcp = (opt.proto == "tcp");
     const bool tcp_bidir = (opt.tcp_type == "bidir");
-    const size_t bytes = (opt.bytes > 0U) ? opt.bytes : 64U;
-    if (bytes < 16U)
+    const size_t bytes = (opt.bytes > 0U) ? opt.bytes : kDefaultPayloadBytes;
+    if (bytes < kPayloadHeaderBytes)
     {
-        std::fprintf(stderr, "--bytes must be >= 16\n");
+        std::fprintf(stderr, "--bytes must be >= %zu\n", kPayloadHeaderBytes);
         return false;
     }
-    const uint32_t cycles = (opt.count > 0U) ? opt.count : 1000U;
-    const uint32_t warmup = (opt.warmup != UINT32_MAX) ? opt.warmup : 10U;
+    const uint32_t cycles = (opt.count > 0U) ? opt.count : kP4DefaultCycles;
+    const uint32_t warmup = (opt.warmup != UINT32_MAX) ? opt.warmup : kP4DefaultWarmup;
 
     {
-        char pbuf[256];
+        char pbuf[kParamsBufBytes];
         if (is_tcp)
         {
             std::snprintf(pbuf, sizeof(pbuf), "proto=tcp;tcp_type=%s;bytes=%zu;cycles=%u;warmup=%u",
@@ -2297,7 +2475,7 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
 
     for (uint32_t r = 0U; r < opt.runs; ++r)
     {
-        const uint16_t run_base_port = static_cast<uint16_t>(opt.base_port + r * 200U);
+        const uint16_t run_base_port = static_cast<uint16_t>(opt.base_port + r * kP4RunPortRange);
         std::vector<uint8_t> payload(bytes, 0U);
         fill_payload_pattern(payload);
 
@@ -2305,14 +2483,14 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         if (!is_tcp)
         {
             /* open と close の反復で、受信側が数 [ms] で POTR_EVENT_CONNECTED を観測できるよう、PING の間隔を短くする。 */
-            global.udp_health_interval_ms = 5U;
-            global.udp_health_timeout_ms = 5000U;
+            global.udp_health_interval_ms = kP4UdpHealthIntervalMs;
+            global.udp_health_timeout_ms = kP4UdpHealthTimeoutMs;
         }
         else
         {
-            global.tcp_health_interval_ms = 50U;
-            global.tcp_health_timeout_ms = 5000U;
-            global.tcp_close_timeout_ms = 5000U;
+            global.tcp_health_interval_ms = kP4TcpHealthIntervalMs;
+            global.tcp_health_timeout_ms = kP4TcpHealthTimeoutMs;
+            global.tcp_close_timeout_ms = kP4TcpCloseTimeoutMs;
         }
         apply_global_config_overrides(&global, opt.config_overrides);
 
@@ -2370,7 +2548,7 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
 
         for (uint32_t c = 0U; c < warmup + cycles; ++c)
         {
-            const uint16_t port = static_cast<uint16_t>(run_base_port + (c % 200U));
+            const uint16_t port = static_cast<uint16_t>(run_base_port + (c % kP4RunPortRange));
             P4Context ctx;
             ctx.expected_seq = c;
             s_p4_context = &ctx;
@@ -2400,7 +2578,7 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
 
             {
                 std::unique_lock<std::mutex> lk(ctx.mtx);
-                const bool conn_ok = ctx.cv.wait_for(lk, std::chrono::seconds(10), [&]() {
+                const bool conn_ok = ctx.cv.wait_for(lk, kConnectRecvTimeout, [&]() {
                     return ctx.recv_connected && (!(is_tcp && tcp_bidir) || ctx.send_connected);
                 });
                 if (!conn_ok)
@@ -2414,7 +2592,7 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             }
 
             write_u64_le(payload.data(), mono_now_ns());
-            write_u32_le(payload.data() + 12U, c);
+            write_u32_le(payload.data() + kPayloadSeqOffset, c);
             int retry = 0;
             for (;;)
             {
@@ -2424,11 +2602,11 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                     break;
                 }
                 /* 送信キューが満杯の場合と、TCP 片方向で接続前の場合は、少し待って送り直す。 */
-                if ((rc == POTR_ERR_DISCONNECTED && is_tcp && !tcp_bidir && retry < 2000) ||
-                    (rc == POTR_ERR_FULL && retry < 1000))
+                if ((rc == POTR_ERR_DISCONNECTED && is_tcp && !tcp_bidir && retry < kTcpDisconnectedMaxRetries) ||
+                    (rc == POTR_ERR_FULL && retry < kFullMaxRetries))
                 {
                     ++retry;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    std::this_thread::sleep_for(kRetrySleepDuration);
                     continue;
                 }
                 std::fprintf(stderr, "[P4] run=%u cycle=%u stage=send err=%d (%s)\n", r + 1U, c, rc, potr_err_name(rc));
@@ -2440,7 +2618,7 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
 
             {
                 std::unique_lock<std::mutex> lk(ctx.mtx);
-                const bool rx_ok = ctx.cv.wait_for(lk, std::chrono::seconds(10), [&]() { return ctx.data_received; });
+                const bool rx_ok = ctx.cv.wait_for(lk, kConnectRecvTimeout, [&]() { return ctx.data_received; });
                 if (!rx_ok)
                 {
                     std::fprintf(stderr, "[P4] run=%u cycle=%u stage=recv timeout\n", r + 1U, c);
@@ -2472,9 +2650,9 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             {
                 const uint32_t k = c - warmup + 1U;
                 close_us.push_back(static_cast<double>(t1 - t0) / 1000.0);
-                const bool is_cp = ((k % 100U) == 0U) || (k == cycles);
+                const bool is_cp = ((k % kP4CheckpointInterval) == 0U) || (k == cycles);
                 /* Windows のスレッド数取得 (Toolhelp32) は重いため、傾きの標本は 10 サイクルごとに取る。 */
-                if (is_cp || ((k % 10U) == 0U))
+                if (is_cp || ((k % kP4SampleInterval) == 0U))
                 {
                     record_sample(k, is_cp);
                 }
@@ -2493,7 +2671,7 @@ static bool run_p4(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
 
         for (const auto &cp : checkpoints)
         {
-            char suffix[32];
+            char suffix[kCheckpointSuffixBytes];
             std::snprintf(suffix, sizeof(suffix), "_c%u", cp.cycle);
             rm.add(std::string("rss_inc_bytes") + suffix, cp.rss_inc);
             rm.add(std::string("priv_inc_bytes") + suffix, cp.priv_inc);
@@ -3129,7 +3307,7 @@ int main(int argc, char **argv)
         {
             const char *v = need_val("--port");
             uint32_t u = 0U;
-            if (v == nullptr || !parse_u32(v, &u) || u == 0U || u > 60000U)
+            if (v == nullptr || !parse_u32(v, &u) || u == 0U || u > kBasePortMax)
                 return EXIT_FAILURE;
             opt.base_port = static_cast<uint16_t>(u);
         }

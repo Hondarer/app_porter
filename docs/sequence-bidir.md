@@ -120,7 +120,7 @@ Figure: unicast_bidir N:1 サーバーでの切断
 
 ## unicast_bidir ヘルス チェック タイムアウトによる切断検知
 
-`POTR_TYPE_UNICAST_BIDIR` において、相手側が停止した場合の切断検知シーケンスです。1:1 モードでは相手端単位、N:1 モードでは各 `peer_id` 単位で `last_recv_tv_sec` を監視し、`health_timeout_ms` 超過で切断を検知します。
+`POTR_TYPE_UNICAST_BIDIR` において、相手側が停止した場合の切断検知シーケンスです。1:1 モードでは相手端単位、N:1 モードでは各 `peer_id` 単位で `last_recv_ts` を監視し、`health_timeout_ms` 超過で切断を検知します。
 
 ```mermaid
 sequenceDiagram
@@ -132,7 +132,7 @@ sequenceDiagram
 
     A->>B: PING (ack_num=0, seq_num=N)
     Note over B: アプリケーションが停止<br>(パケットが一切到着しなくなる)
-    Note over A: health_timeout_ms 経過<br>last_recv_tv_sec が更新されない<br>check_health_timeout() → DISCONNECTED
+    Note over A: health_timeout_ms 経過<br>last_recv_ts が更新されない<br>thread_recv_health_check_service() → DISCONNECTED
     Note over A: POTR_EVENT_DISCONNECTED 発火
 ```
 

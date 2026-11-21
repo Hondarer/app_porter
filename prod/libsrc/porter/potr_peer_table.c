@@ -166,8 +166,6 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
 
 int potr_internal_peer_table_init(potr_context *ctx)
 {
-    int i;
-
     ctx->peers = (potr_internal_peer_context *)cplat_calloc((size_t)ctx->max_peers, sizeof(potr_internal_peer_context));
     if (ctx->peers == NULL)
     {
@@ -175,11 +173,6 @@ int potr_internal_peer_table_init(potr_context *ctx)
                    "potr_internal_peer_table_init: service_id=%" PRId64 " calloc failed (max_peers=%d)",
                    ctx->service.service_id, ctx->max_peers);
         return POTR_ERR_OUT_OF_MEMORY;
-    }
-
-    for (i = 0; i < ctx->max_peers; i++)
-    {
-        ctx->peers[i].active = 0;
     }
 
     if (cplat_local_lock_create(&ctx->peers_mutex) != CPLAT_OK)
@@ -361,8 +354,6 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
         return NULL;
     }
 
-    peer->send_has_data = 0;
-
     /* 送受信ウィンドウを初期化する。 */
     if (potr_internal_window_init(&peer->send_window, 0, ctx->global.window_size, ctx->global.max_payload) != POTR_OK)
     {
@@ -403,16 +394,11 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
         return NULL;
     }
 
-    peer->frag_buf_len = 0;
-    peer->frag_count = 0U;
-    peer->frag_compressed = 0;
-
     /*
      * 送信元アドレスを最初のパスとして記録する。
      * インデックス path_idx は ctx->sock[] のインデックスに対応する。
      */
     peer->dest_addr[path_idx] = *sender_addr;
-    peer->path_last_recv_ts[path_idx].tv_sec = 0; /* n1_update_path_recv() で更新される */
     peer->n_paths = 1;
 
     ctx->n_peers++;

@@ -23,9 +23,30 @@
 #include <cplat/crt/stdlib.h>
 #include <cplat/runtime/memory_lock.h>
 #include <porter/porter_result.h>
+#include <assert.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
+
+/**
+ * 設定ファイルを読み込む一時バッファー (chunk) の大きさ [byte]。動的バッファーの初期容量を兼ねる。
+ * fgets() へ int で渡すため、INT_MAX 以下とする。値を小さくすると、読み込みの呼び出し回数と拡張の回数が増える。
+ */
+#define POTR_CONFIG_READ_CHUNK_SIZE 1024U
+
+/** 設定ファイルの内容を連結する動的バッファーの拡張倍率。 */
+#define POTR_CONFIG_BUF_GROWTH_FACTOR 2U
+
+/**
+ * 64 bit 整数の十進表記を格納するバッファーの大きさ [byte]。
+ * 最小値 "-9223372036854775808" の 20 文字と終端の NUL を収めるため、21 以上とする。
+ */
+#define POTR_INT64_STR_BUF_SIZE 32U
+
+static_assert(POTR_CONFIG_READ_CHUNK_SIZE <= (unsigned)INT_MAX, "porter: POTR_CONFIG_READ_CHUNK_SIZE must fit in int");
+static_assert(POTR_CONFIG_BUF_GROWTH_FACTOR >= 2U, "porter: POTR_CONFIG_BUF_GROWTH_FACTOR must be at least 2");
+static_assert(POTR_INT64_STR_BUF_SIZE >= 21U, "porter: POTR_INT64_STR_BUF_SIZE must hold an int64 decimal string");
 
 /*
  * JSONC ファイルを読み込み、cJSON オブジェクトを構築する。
@@ -39,7 +60,7 @@
 static int config_read_jsonc(const char *path, cJSON **root_out)
 {
     FILE *fp;
-    char chunk[1024];
+    char chunk[POTR_CONFIG_READ_CHUNK_SIZE];
     char *text;
     size_t length;
     size_t capacity;
@@ -78,10 +99,10 @@ static int config_read_jsonc(const char *path, cJSON **root_out)
             size_t new_capacity = capacity;
             char *expanded;
 
-            /* 読み込み済みデータと追加チャンクを収容できる容量まで 2 倍ずつ拡張する。 */
+            /* 読み込み済みデータと追加チャンクを収容できる容量まで POTR_CONFIG_BUF_GROWTH_FACTOR 倍ずつ拡張する。 */
             while (new_capacity < length + size + 1U)
             {
-                if (new_capacity > SIZE_MAX / 2U)
+                if (new_capacity > SIZE_MAX / POTR_CONFIG_BUF_GROWTH_FACTOR)
                 {
                     cplat_secure_zero(text, length);
                     cplat_free(text);
@@ -89,7 +110,7 @@ static int config_read_jsonc(const char *path, cJSON **root_out)
                     return POTR_ERR_OUT_OF_MEMORY;
                 }
 
-                new_capacity *= 2U;
+                new_capacity *= POTR_CONFIG_BUF_GROWTH_FACTOR;
             }
 
             expanded = (char *)cplat_realloc(text, new_capacity, 1U);
@@ -144,11 +165,12 @@ static inline const char *config_value_text(const cJSON *item, char *buffer, siz
         return cjson_app_cJSON_GetStringValue(item);
     }
 
-    if (cjson_app_cJSON_HasExactInteger(item) && cjson_app_cJSON_GetInt64Value(item, &parsed) && buffer_size >= 32U)
+    if (cjson_app_cJSON_HasExactInteger(item) && cjson_app_cJSON_GetInt64Value(item, &parsed) &&
+        buffer_size >= POTR_INT64_STR_BUF_SIZE)
     {
         /*
-         * 直前で buffer_size >= 32 を確かめており、int64 の十進表記 (最大 21 byte) は切り詰められないため、
-         * 戻り値は明示的に破棄する。
+         * 直前で buffer_size >= POTR_INT64_STR_BUF_SIZE を確かめており、
+         * int64 の十進表記 (最大 21 byte) は切り詰められないため、戻り値は明示的に破棄する。
          */
         (void)snprintf(buffer, buffer_size, "%" PRId64, parsed);
         return buffer;

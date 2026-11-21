@@ -37,9 +37,14 @@
     #include <netinet/in.h>
     #include <signal.h>
     #include <errno.h>
+    #include <limits.h>
+    #include <assert.h>
 
     /** epoll_wait で一度に取得する最大イベント数。 */
-    #define MAX_EPOLL_EVENTS 64
+    #define MAX_EPOLL_EVENTS 64U
+
+static_assert((MAX_EPOLL_EVENTS >= 1U) && (MAX_EPOLL_EVENTS <= (unsigned int)INT_MAX),
+              "tcpServer: MAX_EPOLL_EVENTS must fit in int");
 
     #include "tcpServer.h"
 
@@ -122,7 +127,12 @@ static int create_listen_socket(int port)
         cplat_exit(1);
     }
 
-    if (listen(server_fd, 128) < 0)
+    /*
+     * backlog は、接続を待たせるキューの長さである。prefork モードでは、全ワーカーが処理中のときの接続が、ここで待つ。
+     * /proc/sys/net/core/somaxconn を超える分は切り詰められる。
+     * see: https://man7.org/linux/man-pages/man2/listen.2.html
+     */
+    if (listen(server_fd, LISTEN_BACKLOG) < 0)
     {
         perror("listen");
         cplat_exit(1);
@@ -155,7 +165,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
     /* 稼働状況は利用者が画面で確認する表示であり、失敗を伝える先がないため、この関数の printf の戻り値は明示的に破棄する。 */
     (void)printf("[ワーカー %d, PID %lu] 起動完了、接続待機\n", worker_id, (unsigned long)get_pid());
 
-    if (conns_per_worker == 1)
+    if (conns_per_worker == CONNS_PER_WORKER_SEQUENTIAL)
     {
         /* --- 従来の逐次処理 --- */
         struct sockaddr_in client_addr;
@@ -212,7 +222,7 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
         /* epoll イベントを監視し、新規接続の受け付けおよび既存接続のデータ送受信を多重処理する。 */
         while (running)
         {
-            int nfds = epoll_wait(epoll_fd, events, MAX_EPOLL_EVENTS, -1);
+            int nfds = epoll_wait(epoll_fd, events, (int)MAX_EPOLL_EVENTS, -1);
             if (nfds < 0)
             {
                 if (errno == EINTR)

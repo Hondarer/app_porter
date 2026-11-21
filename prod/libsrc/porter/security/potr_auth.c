@@ -4,6 +4,7 @@
  *  @brief          OpenSSL の証明書検証、メモリ入出力、鍵導出を集約します。
  *******************************************************************************
  */
+#include <assert.h>
 #include <limits.h>
 #include <string.h>
 #include <cplat/crt/stdio.h>
@@ -19,6 +20,27 @@
 #include <openssl/err.h>
 #include <porter/porter_result.h>
 #include <porter/security/potr_auth.h>
+
+/** OpenSSL の失敗の理由を付けた失敗の理由を格納するバッファーの大きさ [byte]。 */
+#define POTR_AUTH_FAILURE_TEXT_MAX 128U
+
+static_assert(POTR_AUTH_FAILURE_TEXT_MAX >= 2U, "porter: POTR_AUTH_FAILURE_TEXT_MAX too small");
+
+/*
+ * X509_cmp_current_time() の戻り値の分類。日時が現在時刻より前の場合は X509_CMP_TIME_BEFORE、
+ * 後の場合は X509_CMP_TIME_AFTER を返す (0 は日時の形式エラー)。
+ */
+#define X509_CMP_TIME_BEFORE (-1)
+#define X509_CMP_TIME_AFTER  1
+
+/* timeval から [ms] への換算に使う係数。 */
+#define POTR_AUTH_USEC_PER_SEC  1000000L
+#define POTR_AUTH_MSEC_PER_SEC  1000U
+#define POTR_AUTH_USEC_PER_MSEC 1000U
+#define POTR_AUTH_USEC_ROUND    (POTR_AUTH_USEC_PER_MSEC - 1U)
+
+static_assert(POTR_AUTH_USEC_PER_SEC == (long)POTR_AUTH_MSEC_PER_SEC * (long)POTR_AUTH_USEC_PER_MSEC,
+              "porter: time conversion factors mismatch");
 
 struct potr_internal_auth_credentials
 {
@@ -41,7 +63,8 @@ struct potr_internal_auth_session
     size_t max_record_size;
     potr_internal_auth_state state;
     int padding;
-    char failure_text[128]; /**< OpenSSL の失敗の理由を付けた失敗の理由。failure_reason が指す場合があります。 */
+    /** OpenSSL の失敗の理由を付けた失敗の理由。failure_reason が指す場合があります。 */
+    char failure_text[POTR_AUTH_FAILURE_TEXT_MAX];
 };
 
 /* パスフレーズの契約がないため、OpenSSL の既定の端末入力を起こさず失敗させる。 */
@@ -269,8 +292,8 @@ static int verify_certificate(X509_STORE_CTX *store, void *userdata)
     }
     /* 比較関数の 0 は日時の形式エラーであり、同時刻ではない。
      * see: https://docs.openssl.org/3.5/man3/X509_cmp_time/ */
-    else if (X509_cmp_current_time(X509_get0_notBefore(certificate)) != -1
-        || X509_cmp_current_time(X509_get0_notAfter(certificate)) != 1)
+    else if (X509_cmp_current_time(X509_get0_notBefore(certificate)) != X509_CMP_TIME_BEFORE ||
+             X509_cmp_current_time(X509_get0_notAfter(certificate)) != X509_CMP_TIME_AFTER)
     {
         error = X509_V_ERR_CERT_HAS_EXPIRED;
         session->failure_reason = verification_reason(error);
@@ -756,17 +779,18 @@ int potr_internal_auth_session_get_timeout_ms(potr_internal_auth_session *sessio
     {
         return POTR_OK;
     }
-    if (timeout.tv_sec < 0 || timeout.tv_usec < 0 || timeout.tv_usec >= 1000000L)
+    if (timeout.tv_sec < 0 || timeout.tv_usec < 0 || timeout.tv_usec >= POTR_AUTH_USEC_PER_SEC)
     {
         return POTR_ERR_UNKNOWN;
     }
     *has_timeout_out = 1;
-    if ((uint64_t)timeout.tv_sec > UINT32_MAX / 1000U)
+    if ((uint64_t)timeout.tv_sec > UINT32_MAX / POTR_AUTH_MSEC_PER_SEC)
     {
         *timeout_ms_out = UINT32_MAX;
         return POTR_OK;
     }
-    milliseconds = (uint64_t)timeout.tv_sec * 1000U + ((uint64_t)timeout.tv_usec + 999U) / 1000U;
+    milliseconds = (uint64_t)timeout.tv_sec * POTR_AUTH_MSEC_PER_SEC +
+                   ((uint64_t)timeout.tv_usec + POTR_AUTH_USEC_ROUND) / POTR_AUTH_USEC_PER_MSEC;
     if (milliseconds > UINT32_MAX)
     {
         milliseconds = UINT32_MAX;

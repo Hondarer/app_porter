@@ -27,9 +27,29 @@
 #include <porter/infra/potr_trace.h>
 #include <porter/protocol/config.h>
 #include <porter/protocol/config_parse_common.h>
+#include <porter/potr_context.h>
 
-/** サービスの最大ピア数の既定値。 */
-#define POTR_DEFAULT_MAX_PEERS 1024U
+/** 鍵の 16 進数表記で、1 [byte] を表す文字数。 */
+#define HEX_CHARS_PER_BYTE 2U
+
+/** 鍵の 16 進数表記の 1 [byte] 分を、終端の NUL を付けて格納するバッファーの大きさ [byte]。 */
+#define HEX_BYTE_STR_BUF_SIZE (HEX_CHARS_PER_BYTE + 1U)
+
+/** 送信元アドレスの経路キーの接頭辞と、その長さ (終端の NUL を含まない)。 */
+#define PATH_KEY_SRC_ADDR     "src_addr"
+#define PATH_KEY_SRC_ADDR_LEN (sizeof(PATH_KEY_SRC_ADDR) - 1U)
+
+/** 宛先アドレスの経路キーの接頭辞と、その長さ (終端の NUL を含まない)。 */
+#define PATH_KEY_DST_ADDR     "dst_addr"
+#define PATH_KEY_DST_ADDR_LEN (sizeof(PATH_KEY_DST_ADDR) - 1U)
+
+/** 優先グループの経路キーの接頭辞と、その長さ (終端の NUL を含まない)。 */
+#define PATH_KEY_GROUP     "path_group"
+#define PATH_KEY_GROUP_LEN (sizeof(PATH_KEY_GROUP) - 1U)
+
+static_assert(PATH_KEY_SRC_ADDR_LEN == PATH_KEY_DST_ADDR_LEN,
+              "porter: address path key prefixes must have the same length");
+static_assert(PATH_KEY_GROUP_LEN != PATH_KEY_SRC_ADDR_LEN, "porter: path key prefix lengths must differ");
 
 /**
  *  @brief          src を dst に終端 NUL 付きで切り詰めコピーします。
@@ -307,9 +327,9 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
         int is_hex = 1;
 
         /* 16 進数表記の鍵文字列であるか判定する。 */
-        if (hex_len == POTR_CRYPTO_KEY_SIZE * 2U)
+        if (hex_len == POTR_CRYPTO_KEY_SIZE * HEX_CHARS_PER_BYTE)
         {
-            for (i = 0; i < (int)(POTR_CRYPTO_KEY_SIZE * 2U); i++)
+            for (i = 0; i < (int)(POTR_CRYPTO_KEY_SIZE * HEX_CHARS_PER_BYTE); i++)
             {
                 if (!isxdigit((unsigned char)val[i]))
                 {
@@ -331,12 +351,12 @@ static void apply_service_kv(const char *key, const char *val, potr_service_def 
         {
             for (i = 0; i < (int)POTR_CRYPTO_KEY_SIZE; i++)
             {
-                char byte_str[3];
+                char byte_str[HEX_BYTE_STR_BUF_SIZE];
                 int64_t byte_val;
 
-                byte_str[0] = val[i * 2];
-                byte_str[1] = val[i * 2 + 1];
-                byte_str[2] = '\0';
+                byte_str[0] = val[i * (int)HEX_CHARS_PER_BYTE];
+                byte_str[1] = val[i * (int)HEX_CHARS_PER_BYTE + 1];
+                byte_str[HEX_CHARS_PER_BYTE] = '\0';
 
                 if (cplat_parse_int64(&byte_val, byte_str, 16) == CPLAT_OK)
                 {
@@ -389,13 +409,14 @@ static int parse_path_key(const char *key, size_t *path_idx, size_t *prefix_len)
     const char *cursor;
     uint32_t parsed;
 
-    if (strncmp(key, "src_addr", 8) == 0 || strncmp(key, "dst_addr", 8) == 0)
+    if (strncmp(key, PATH_KEY_SRC_ADDR, PATH_KEY_SRC_ADDR_LEN) == 0 ||
+        strncmp(key, PATH_KEY_DST_ADDR, PATH_KEY_DST_ADDR_LEN) == 0)
     {
-        *prefix_len = 8U;
+        *prefix_len = PATH_KEY_SRC_ADDR_LEN;
     }
-    else if (strncmp(key, "path_group", 10) == 0)
+    else if (strncmp(key, PATH_KEY_GROUP, PATH_KEY_GROUP_LEN) == 0)
     {
-        *prefix_len = 10U;
+        *prefix_len = PATH_KEY_GROUP_LEN;
     }
     else
     {
@@ -548,7 +569,7 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
     cJSON *services;
     cJSON *service;
     cJSON *item;
-    char id_text[32];
+    char id_text[POTR_INT64_STR_BUF_SIZE];
     int ret;
     int path_group_specified = 0;
 
@@ -573,7 +594,10 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* id_text は 32 byte で、int64 の十進表記 (最大 21 byte) は切り詰められないため、戻り値は明示的に破棄する。 */
+    /*
+     * id_text は POTR_INT64_STR_BUF_SIZE [byte] で、int64 の十進表記 (最大 21 byte) は切り詰められないため、
+     * 戻り値は明示的に破棄する。
+     */
     (void)snprintf(id_text, sizeof(id_text), "%" PRId64, service_id);
     service = cjson_app_cJSON_GetObjectItemCaseSensitive(services, id_text);
     if (service == NULL)
@@ -613,7 +637,7 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
         size_t path_idx = 0U;
         size_t prefix_len = 0U;
         int path_ret = parse_path_key(item->string, &path_idx, &prefix_len);
-        char value_buffer[32];
+        char value_buffer[POTR_INT64_STR_BUF_SIZE];
         const char *val = config_value_text(item, value_buffer, sizeof(value_buffer));
 
         if (path_ret == POTR_ERR_INVALID_ARGUMENT)
@@ -623,11 +647,11 @@ int potr_internal_config_load_service(const char *config_path, int64_t service_i
         }
         if (path_ret == POTR_OK)
         {
-            if (val == NULL && prefix_len != 10U)
+            if (val == NULL && prefix_len != PATH_KEY_GROUP_LEN)
             {
                 continue;
             }
-            if (prefix_len == 10U)
+            if (prefix_len == PATH_KEY_GROUP_LEN)
             {
                 uint8_t group;
 

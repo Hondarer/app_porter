@@ -49,6 +49,43 @@
     /** 名前付きパイプ名フォーマット。 */
     #define TCPSERVER_PIPE_NAME_FMT "\\\\.\\pipe\\tcpserver_worker_%d"
 
+    /** 名前付きパイプ名を格納する配列の大きさ [byte]。書式と int の最大桁数から決まる長さ以上とする。 */
+    #define TCPSERVER_PIPE_NAME_SIZE 64U
+
+    /** ポート番号の文字列を格納する配列の大きさ [byte]。 */
+    #define TCPSERVER_PORT_STR_SIZE 8U
+
+    /** ワーカーの起動のコマンド ラインで、実行ファイルのパスに加える固定の引数の領域 [byte]。 */
+    #define TCPSERVER_WORKER_CMDLINE_EXTRA_SIZE 128U
+
+    /** fork モードの子プロセスの起動のコマンド ラインで、実行ファイルのパスに加える固定の引数の領域 [byte]。 */
+    #define TCPSERVER_CHILD_CMDLINE_EXTRA_SIZE 64U
+
+    /** ワーカーごとの名前付きパイプの最大インスタンス数。 */
+    #define TCPSERVER_PIPE_MAX_INSTANCES 1U
+
+    /** 名前付きパイプの送受信バッファーの容量 [byte]。ソケットの複製情報 (WSAPROTOCOL_INFOW) を収める。 */
+    #define TCPSERVER_PIPE_BUF_SIZE 4096U
+
+    /**
+     * 多重接続のワーカーが名前付きパイプを確認する周期 [ms]。新しい接続の受け取りの、待機による遅れの上界になる。
+     * select() の tv_usec へ換算して渡すため、1000 [ms] 未満とする。
+     */
+    #define TCPSERVER_WORKER_PIPE_POLL_MS 10
+
+static_assert(TCPSERVER_PIPE_NAME_SIZE >= sizeof("\\\\.\\pipe\\tcpserver_worker_-2147483648"),
+              "tcpServer: TCPSERVER_PIPE_NAME_SIZE too small");
+static_assert(TCPSERVER_PORT_STR_SIZE >= sizeof("65535"), "tcpServer: TCPSERVER_PORT_STR_SIZE too small");
+static_assert((sizeof("\"\" --worker  --conns-per-worker ") - 1U) + (TCPSERVER_PIPE_NAME_SIZE - 1U) +
+                      (sizeof("-2147483648") - 1U) + 1U <=
+                  TCPSERVER_WORKER_CMDLINE_EXTRA_SIZE,
+              "tcpServer: TCPSERVER_WORKER_CMDLINE_EXTRA_SIZE too small");
+static_assert(TCPSERVER_CHILD_CMDLINE_EXTRA_SIZE >= sizeof("\"\" --child 18446744073709551615"),
+              "tcpServer: TCPSERVER_CHILD_CMDLINE_EXTRA_SIZE too small");
+static_assert(TCPSERVER_PIPE_BUF_SIZE >= sizeof(WSAPROTOCOL_INFOW), "tcpServer: TCPSERVER_PIPE_BUF_SIZE too small");
+static_assert(TCPSERVER_WORKER_PIPE_POLL_MS > 0 && TCPSERVER_WORKER_PIPE_POLL_MS < 1000,
+              "tcpServer: TCPSERVER_WORKER_PIPE_POLL_MS must be in (0, 1000)");
+
 /* NONE は通常の出力先へ送らず、テスト時のプロセス内フックでのみ記録する。 */
 static void prefork_trace(const char *stage, const DWORD worker_pid, const SOCKET connection, const int result)
 {
@@ -219,9 +256,12 @@ static SOCKET receive_socket(const HANDLE pipe)
 static SOCKET create_listen_socket(int port)
 {
     struct addrinfo hints = {0}, *result;
-    char port_str[8];
+    char port_str[TCPSERVER_PORT_STR_SIZE];
 
-    /* port は main() で 1 から 65535 に検査済みで、5 文字と終端が port_str[8] に収まるため、戻り値は明示的に破棄する。 */
+    /*
+     * port は main() で PORT_MIN から PORT_MAX に検査済みで、5 文字と終端が port_str に収まるため、
+     * 戻り値は明示的に破棄する。
+     */
     (void)sprintf_s(port_str, sizeof(port_str), "%d", port);
 
     hints.ai_family = AF_INET;
@@ -253,7 +293,12 @@ static SOCKET create_listen_socket(int port)
 
     freeaddrinfo(result);
 
-    if (listen(listen_socket, 128) == SOCKET_ERROR)
+    /*
+     * backlog は、接続を待たせるキューの長さである。prefork モードでは、全ワーカーが処理中のときの接続が、ここで待つ。
+     * 指定値は、下位のサービス プロバイダーが制限する。実際の値を得る標準の手段はない。
+     * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-listen
+     */
+    if (listen(listen_socket, LISTEN_BACKLOG) == SOCKET_ERROR)
     {
         (void)fprintf(stderr, "listen 失敗\n");
         cplat_exit(1);
@@ -305,7 +350,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
         return;
     }
 
-    if (conns_per_worker == 1)
+    if (conns_per_worker == CONNS_PER_WORKER_SEQUENTIAL)
     {
         /* --- 従来の逐次処理 --- */
         while (1)
@@ -366,12 +411,12 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
 
             if (active_count == 0)
             {
-                /* アクティブな接続がない場合は、少し待ってからパイプを再確認する。 */
-                cplat_sleep_ms(10);
+                /* アクティブな接続がない場合は、パイプを確認する周期だけ待ってからパイプを再確認する。 */
+                cplat_sleep_ms(TCPSERVER_WORKER_PIPE_POLL_MS);
                 continue;
             }
 
-            /* select() で全アクティブ ソケットを 10 [ms] のタイムアウト付きで監視する。 */
+            /* select() で全アクティブ ソケットを、パイプを確認する周期のタイムアウト付きで監視する。 */
             fd_set read_fds;
             FD_ZERO(&read_fds);
 
@@ -380,7 +425,8 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
                 CPLAT_FD_SET(active[i], &read_fds);
             }
 
-            struct timeval tv = {0, 10000}; /* 10 [ms] */
+            struct timeval tv = {0, TCPSERVER_WORKER_PIPE_POLL_MS *
+                                        1000}; /* パイプを確認する周期 ([ms] から [us] へ換算) */
 
             /*
              * Windows Sockets において select() の第 1 引数 nfds は互換性のためにのみ存在し、無視される。
@@ -405,7 +451,7 @@ static void worker_loop(const char *pipe_name, int conns_per_worker)
                  * 受信したデータをエコーバックする。送信の失敗と一部だけの送信は、エコーが成立しないため、
                  * 診断を出して切断と同じく接続を閉じる。
                  */
-                int n = recv(active[i], buf, BUFFER_SIZE, 0);
+                int n = recv(active[i], buf, (int)BUFFER_SIZE, 0);
                 int send_failed = 0;
 
                 if (n > 0 && send(active[i], buf, n, 0) != n)
@@ -620,8 +666,8 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
  */
 static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, int conns_per_worker)
 {
-    char pipe_name[64];
-    char cmdline[PLATFORM_PATH_MAX + 128];
+    char pipe_name[TCPSERVER_PIPE_NAME_SIZE];
+    char cmdline[PLATFORM_PATH_MAX + TCPSERVER_WORKER_CMDLINE_EXTRA_SIZE];
     char exepath[PLATFORM_PATH_MAX];
 
     /*
@@ -645,11 +691,12 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
     /* 各ワーカー向けの名前付きパイプと監視スレッドを作成し、ワーカー プロセスを起動する。 */
     for (int i = 0; i < n; i++)
     {
-        /* パイプ名は書式と int の最大桁数から pipe_name[64] に収まるため、戻り値は明示的に破棄する。 */
+        /* パイプ名は書式と int の最大桁数から pipe_name に収まるため、戻り値は明示的に破棄する。 */
         (void)sprintf_s(pipe_name, sizeof(pipe_name), TCPSERVER_PIPE_NAME_FMT, i);
 
-        workers[i].pipe = CreateNamedPipeU(pipe_name, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
-                                           PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4096, 4096, 0, NULL);
+        workers[i].pipe = CreateNamedPipeU(
+            pipe_name, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+            TCPSERVER_PIPE_MAX_INSTANCES, TCPSERVER_PIPE_BUF_SIZE, TCPSERVER_PIPE_BUF_SIZE, 0, NULL);
 
         if (workers[i].pipe == INVALID_HANDLE_VALUE)
         {
@@ -672,7 +719,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
 
         /*
          * 1 ワーカーあたりの同時接続数上限を指定してワーカー プロセスを起動する。
-         * 実行ファイルのパス (PLATFORM_PATH_MAX 未満) と固定の引数は cmdline[PLATFORM_PATH_MAX + 128] に収まるため、
+         * 実行ファイルのパス (PLATFORM_PATH_MAX 未満) と固定の引数は cmdline に収まるため、
          * 戻り値は明示的に破棄する。
          */
         (void)sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --worker %s --conns-per-worker %d", exepath, pipe_name,
@@ -719,7 +766,8 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
                     else if (error == ERROR_IO_PENDING)
                     {
                         HANDLE waits[] = {connection.hEvent, pi.hProcess};
-                        if (WaitForMultipleObjects(2, waits, FALSE, INFINITE) == WAIT_OBJECT_0)
+                        if (WaitForMultipleObjects((DWORD)(sizeof(waits) / sizeof(waits[0])), waits, FALSE, INFINITE) ==
+                            WAIT_OBJECT_0)
                         {
                             connected = GetOverlappedResult(workers[i].pipe, &connection, &ignored, FALSE) != 0;
                         }
@@ -904,10 +952,10 @@ void run_fork_server(int port)
             continue;
         }
 
-        char cmdline[PLATFORM_PATH_MAX + 64];
+        char cmdline[PLATFORM_PATH_MAX + TCPSERVER_CHILD_CMDLINE_EXTRA_SIZE];
         /*
          * 実行ファイルのパス (PLATFORM_PATH_MAX 未満) と固定の引数 (ソケットは最大 20 桁) は
-         * cmdline[PLATFORM_PATH_MAX + 64] に収まるため、戻り値は明示的に破棄する。
+         * cmdline に収まるため、戻り値は明示的に破棄する。
          */
         (void)sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --child %llu", exepath, (unsigned long long)client_socket);
 
@@ -999,7 +1047,8 @@ void run_prefork_server(int port, int num_workers, int conns_per_worker)
     #if defined(TCPSERVER_PREFORK_TEST)
         prefork_probe_before_wait();
     #endif
-        DWORD wait_result = WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
+        DWORD wait_result = WaitForMultipleObjects((DWORD)(sizeof(wait_handles) / sizeof(wait_handles[0])),
+                                                   wait_handles, FALSE, INFINITE);
         EnterCriticalSection(&worker->state_lock);
         int accepted = wait_result == WAIT_OBJECT_0 && worker->alive && worker->ack_ok;
         if (wait_result != WAIT_OBJECT_0)

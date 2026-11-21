@@ -12,7 +12,7 @@ UDP では `sendto()` 完了は OS の送信バッファーへの書き込み完
 
 ```text
 potr_service_send() 完了
-→ 送信スレッドが tcp_send_all() を完了
+→ 送信スレッドが tcp_write_path() を完了
 → sender が potr_service_close() で close
 → receiver 側 callback より先に切断処理へ進む
 ```
@@ -151,7 +151,7 @@ FIN_TARGET_VALID なし
 
 | シナリオ | 解消パス |
 |---|---|
-| 欠番 DATA が後着 | `potr_internal_window_recv_push()` → `drain_recv_window()` 末尾で `pending_fin` 解消 |
+| 欠番 DATA が後着 | `potr_internal_window_recv_push()` → `slot_drain_recv_window()` 末尾で `pending_fin` 解消 |
 | UDP で送信側が NACK に REJECT で応答 | `thread_recv_fin_fire()` で FIN を直ちに発火して解消 |
 | `reorder_timeout_ms` タイムアウト | NACK を再送し、REJECT またはヘルス チェックで解消 |
 | TCP close wait 中に FIN_ACK 未着 | `tcp_close_timeout_ms` 超過で強制 close、`potr_service_close()` は `POTR_ERR_TIMEOUT` |
@@ -179,7 +179,7 @@ Table: 通信種別別の FIN および FIN_ACK 対応状況
 | `prod/libsrc/porter/thread/thread_recv_fin.c` | UDP/TCP 共通の pending FIN 判定、切断発火、TCP の `FIN_ACK` 送受信 |
 | `prod/libsrc/porter/thread/potr_recv_thread.c` | 受信ループからの FIN 判定と発火の呼び出し、必要なロックの保持 |
 | `prod/libsrc/porter/protocol/packet.c` | `potr_internal_packet_build_fin()` / `potr_internal_packet_build_fin_ack()` |
-| `prod/libsrc/porter/protocol/config.c` | `tcp_close_timeout_ms` の読込 |
-| `prod/libsrc/porter/potr_context.h` | close wait 状態、`pending_fin` / `fin_target_seq` などの保持 |
+| `prod/libsrc/porter/protocol/config_load_global.c` | `tcp_close_timeout_ms` の読込 |
+| `prod/include_internal/porter/potr_context.h` | close wait 状態、`pending_fin` / `fin_target_seq` などの保持 |
 
 Table: FIN 順序制御の実装ファイルと役割

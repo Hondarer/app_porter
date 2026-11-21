@@ -41,6 +41,8 @@
 
 #include <cplat/base/platform.h>
 
+#include <assert.h>
+#include <limits.h>
 #include <string.h>
 #include <inttypes.h>
 
@@ -78,10 +80,10 @@ static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const p
     uint16_t flags_nbo = cplat_hton16(entry->flags);
     uint32_t plen_nbo = cplat_hton32((uint32_t)entry->payload_len);
 
-    memcpy(packed_buf + *packed_len, &flags_nbo, 2);
-    *packed_len += 2;
-    memcpy(packed_buf + *packed_len, &plen_nbo, 4);
-    *packed_len += 4;
+    memcpy(packed_buf + *packed_len, &flags_nbo, POTR_ELEM_HDR_FLAGS_SIZE);
+    *packed_len += POTR_ELEM_HDR_FLAGS_SIZE;
+    memcpy(packed_buf + *packed_len, &plen_nbo, POTR_ELEM_HDR_PLEN_SIZE);
+    *packed_len += POTR_ELEM_HDR_PLEN_SIZE;
     memcpy(packed_buf + *packed_len, entry->payload, entry->payload_len);
     *packed_len += entry->payload_len;
 }
@@ -93,9 +95,12 @@ static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const p
  * 受信側の重複検出は直近 256 通番の範囲で順不同の到着を受け入れ、DATA の順序は通番 (seq_num) で整列するため、
  * ずれの最大値をこの範囲内に保つ。
  */
-_Static_assert(POTR_TCP_BATCH_MAX_PACKETS * POTR_MAX_PATH <
-                   sizeof(((potr_internal_replay_window *)0)->bitmap) * 8U,
-               "porter: TCP batch skew must stay within the replay window");
+static_assert(POTR_TCP_BATCH_MAX_PACKETS * POTR_MAX_PATH <
+                  sizeof(((potr_internal_replay_window *)0)->bitmap) * CHAR_BIT,
+              "porter: TCP batch skew must stay within the replay window");
+static_assert(POTR_TCP_BATCH_MAX_BYTES >=
+                  POTR_PACKET_HEADER_WIRE_SIZE + POTR_DEFAULT_MAX_PAYLOAD + POTR_CRYPTO_TAG_SIZE,
+              "porter: POTR_TCP_BATCH_MAX_BYTES must hold a packet of the default max payload");
 
 /*
  * TCP の指定 path へ、packets の n_packets 個のパケットを順に封緘して連結し、1 回の送信呼び出しで書き込む。
@@ -207,10 +212,11 @@ static int tcp_write_all_paths(potr_context *ctx, const potr_packet *packets, si
 
         if (writable)
         {
+            /* 警告の後は、書き込み可能の判定を数え、POTR_TCP_BUF_FULL_SUPPRESS_COUNT 回で抑制を解く。 */
             if (ctx->buf_full_suppress_cnt[i] > 0)
             {
                 ++ctx->buf_full_suppress_cnt[i];
-                if (ctx->buf_full_suppress_cnt[i] > 10)
+                if (ctx->buf_full_suppress_cnt[i] > POTR_TCP_BUF_FULL_SUPPRESS_COUNT)
                 {
                     ctx->buf_full_suppress_cnt[i] = 0;
                 }
@@ -816,11 +822,11 @@ static int send_tcp_batch(potr_context *ctx, const potr_internal_payload_elem *f
 }
 
 /* 送信スレッド本体 */
-/** 保留中のエントリがある間に、抑制の状態を確認し直すまでの待機の上限 [ms]。 */
-#define FLOW_DEFERRED_RECHECK_MS ((int)POTR_FLOW_QUERY_INITIAL_INTERVAL_MS)
-
 /** 1 回の走査で送出を見送るピアの数の上限。超える分は次の走査で扱う。 */
 #define FLOW_DEFERRED_SKIP_MAX 16U
+
+static_assert(FLOW_DEFERRED_SKIP_MAX >= 1U && FLOW_DEFERRED_SKIP_MAX <= UINT32_MAX,
+              "porter: FLOW_DEFERRED_SKIP_MAX out of range");
 
 /**
  *  N:1 モードで、抑制中のピア宛のために送出を保留したエントリ。ペイロードは構造体の直後に置く。
@@ -1069,7 +1075,7 @@ static int pop_peer_mode(potr_context *ctx, potr_internal_payload_elem *first)
         return potr_internal_send_queue_pop(&ctx->send_queue, first, &ctx->send_thread_running);
     }
 
-    result = potr_internal_send_queue_peek_timed(&ctx->send_queue, first, FLOW_DEFERRED_RECHECK_MS);
+    result = potr_internal_send_queue_peek_timed(&ctx->send_queue, first, POTR_INTERNAL_FLOW_LIMIT_RECHECK_MS);
     if (result == POTR_ERR_TIMEOUT)
     {
         if (cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
@@ -1259,7 +1265,7 @@ static void send_thread_func(void *arg)
              * TCP 1:1 はまとめ送りで送る。パッキング待ちが設定され、先頭が分割されていないメッセージの場合は、
              * 待ち合わせを含む従来の処理で送る。
              */
-            if (ctx->tcp_batch_cap >= 2U &&
+            if (ctx->tcp_batch_cap >= POTR_TCP_BATCH_MIN_PACKETS &&
                 ((first.flags & POTR_FLAG_MORE_FRAG) != 0U || ctx->service.pack_wait_ms == 0U))
             {
                 flush_result = send_tcp_batch(ctx, &first, &n_dequeued, allowance);

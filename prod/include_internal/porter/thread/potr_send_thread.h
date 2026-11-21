@@ -26,6 +26,8 @@
 #ifndef POTR_SEND_THREAD_H
 #define POTR_SEND_THREAD_H
 
+#include <assert.h>
+
 #include <porter/porter_result.h>
 #include <porter/potr_context.h>
 
@@ -44,6 +46,24 @@
  *  1 回にまとめる数を下げます。2 個未満になる場合は、まとめ送りを使いません。
  */
 #define POTR_TCP_BATCH_MAX_BYTES 65536U
+
+/**
+ *  @brief          まとめ送りを使う、1 回にまとめる外側パケットの最小数です。
+ *
+ *  1 回にまとめる数 (tcp_batch_cap) がこの値未満の場合は、まとめ送りを使いません。
+ */
+#define POTR_TCP_BATCH_MIN_PACKETS 2U
+
+static_assert(POTR_TCP_BATCH_MIN_PACKETS <= POTR_TCP_BATCH_MAX_PACKETS,
+              "porter: POTR_TCP_BATCH_MIN_PACKETS must not exceed POTR_TCP_BATCH_MAX_PACKETS");
+
+/**
+ *  @brief          TCP の送信バッファー満杯の警告を抑制する回数です。
+ *
+ *  送信スレッドは、path を飛ばした警告を出力した後、その path を書き込み可能と判定した回数の累計が
+ *  この値に達するまで、同じ path の警告を出力しません。書き込み不可の判定は数えません。
+ */
+#define POTR_TCP_BUF_FULL_SUPPRESS_COUNT 10
 
 #ifdef __cplusplus
 extern "C"

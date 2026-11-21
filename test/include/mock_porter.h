@@ -308,7 +308,7 @@ class Mock_porter
                 (thread_recv_slot * slot, potr_packet *pkt, int path_idx, const cplat_ipv4_endpoint *sender));
     MOCK_METHOD(void, thread_recv_fin_fire, (thread_recv_slot * slot, uint32_t fin_target_seq));
     MOCK_METHOD(void, thread_recv_fin_on_ack, (potr_context * ctx, uint32_t ack_num));
-    MOCK_METHOD(int, thread_recv_fin_on_packet,
+    MOCK_METHOD(thread_recv_fin_result, thread_recv_fin_on_packet,
                 (thread_recv_slot * slot, const potr_packet *pkt, uint32_t *fin_target_seq_out));
     MOCK_METHOD(int, thread_recv_fin_pending_reached, (const thread_recv_slot *slot, uint32_t *fin_target_seq_out));
     MOCK_METHOD(int, thread_recv_session_adopt, (thread_recv_slot * slot, const potr_packet *pkt));
@@ -371,7 +371,7 @@ class Mock_porter
     MOCK_METHOD(int, thread_connect_read_first_packet,
                 (cplat_socket fd, uint8_t *buf, size_t max_buf, size_t *len_out, int timeout_ms));
 
-    MOCK_METHOD(int, thread_connect_session_compare, (const potr_context *ctx, const potr_packet *pkt));
+    MOCK_METHOD(tcp_session_cmp, thread_connect_session_compare, (const potr_context *ctx, const potr_packet *pkt));
 
     MOCK_METHOD(cplat_socket, thread_connect_with_timeout, (potr_context * ctx, int path_idx));
 
