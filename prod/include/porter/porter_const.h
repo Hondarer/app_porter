@@ -73,7 +73,7 @@
 #define POTR_FLAG_KEY \
     0x0400U /**< 一対多通信のグループ鍵を配布するパケット。受信者の証明書を検証した後、受信者用の鍵でグループ鍵を暗号化して送ります。 */
 #define POTR_FLAG_FLOW_CONTROL \
-    0x0800U /**< フロー制御パケット。受信側が送信側へ、抑制の要求または解除と、送出上限 (送信側がこの通番以上の新しい DATA を送出しない通番) を伝えます。送出する側自身のセッション識別子を使い、seq_num と ack_num は 0。状態が抑制の要求と解除の場合、ペイロードは 5 [byte] で、1 [byte] の状態 (POTR_FLOW_CONTROL_STATE_*) と 4 [byte] の送出上限 (ネットワーク バイト オーダー)。状態が監視対象の一覧 (POTR_FLOW_CONTROL_STATE_MONITOR) の場合は、multicast と broadcast の送信者が自身のセッション識別子で送り、ペイロードは 1 [byte] の状態、1 [byte] の台数、台数分の 16 [byte] の受信者のセッション識別子。暗号化有効時は、同じ向きの受信報告または PING と同じ方式で保護します。 */
+    0x0800U /**< フロー制御パケット。送出する側自身のセッション識別子を使い、seq_num と ack_num は 0。状態が抑制の要求 (1)、解除 (2)、上限なし (5) の場合、ペイロードは 5 [byte] で、1 [byte] の状態 (POTR_FLOW_CONTROL_STATE_*) と 4 [byte] の送出上限 (ネットワーク バイト オーダー。上限なしの場合は 0)。状態が問い合わせ (4) の場合、ペイロードは 1 [byte] の状態のみ。状態が監視対象の一覧 (3) の場合は、multicast と broadcast の送信者が自身のセッション識別子で送り、ペイロードは 1 [byte] の状態、1 [byte] の台数、台数分の 16 [byte] の受信者のセッション識別子。暗号化有効時は、同じ向きの受信報告または PING と同じ方式で保護します。 */
 
 /** @} */
 
@@ -102,7 +102,7 @@
  *  @ingroup        POTR_PROTOCOL
  *  @{
  */
-#define POTR_PROTOCOL_VERSION 3U /**< 現行の porter ワイヤー プロトコル バージョン。 */
+#define POTR_PROTOCOL_VERSION 4U /**< 現行の porter ワイヤー プロトコル バージョン。 */
 /** @} */
 
 /** @defgroup POTR_DEFAULT デフォルト値
@@ -216,6 +216,10 @@
 #define POTR_FLOW_CONTROL_STATE_RESUME   2U /**< フロー制御パケットの状態: 解除。 */
 #define POTR_FLOW_CONTROL_STATE_MONITOR \
     3U /**< フロー制御パケットの状態: 監視対象の一覧。multicast と broadcast の送信者が受信者へ送ります。 */
+#define POTR_FLOW_CONTROL_STATE_QUERY \
+    4U /**< フロー制御パケットの状態: 問い合わせ。送信側が受信側へ、現在の状態と送出上限の送出を求めます。 */
+#define POTR_FLOW_CONTROL_STATE_UNLIMITED \
+    5U /**< フロー制御パケットの状態: 上限なし。送出上限を使わない受信側が送信側へ知らせます。 */
 #define POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX \
     64U /**< multicast と broadcast の送信者が監視する受信者の台数の上限。flow_control_monitored_receiver_count の検査上限です。 */
 #define POTR_FLOW_CONTROL_DISABLED \

@@ -29,6 +29,8 @@ namespace
 {
 const uint8_t kSuppress = (uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS;
 const uint8_t kResume = (uint8_t)POTR_FLOW_CONTROL_STATE_RESUME;
+const uint8_t kQuery = (uint8_t)POTR_FLOW_CONTROL_STATE_QUERY;
+const uint8_t kUnlimited = (uint8_t)POTR_FLOW_CONTROL_STATE_UNLIMITED;
 const int kLinuxDefaultBuffer = 212992; // Linux の既定の OS の受信バッファーの大きさ [byte]
 const int kWindowsDefaultBuffer = 65536; // Windows の既定の OS の受信バッファーの大きさ [byte]
 const uint32_t kSenderSessionId = 1U;   // 採用している送信者のセッション識別子
@@ -346,26 +348,29 @@ TEST_F(potrFlowControlBufferTest, capacity_receiver_uses_smaller_allowance)
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
 
-// 受信バッファーの幅の割合が 0 (無効または対象外) で容量も 0 の場合に、大きさを取得せず資源を生成しないことの確認
+// 受信バッファーの幅の割合が 0 で容量も 0 の unicast 受信側が、大きさを取得せず「上限なし」を 1 回だけ送出することの確認
 // [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
 TEST_F(potrFlowControlBufferTest, disabled_receive_buffer_does_not_query_or_notify)
 {
     // Arrange
     ctx.flow_control_config.receive_buffer_percent = 0U;
-    // [状態] - 受信バッファーの幅の割合を 0 にする。
+    // [状態] - unicast 受信者で容量 0、受信バッファーの幅の割合を 0 にする。
     // Pre-Assert
     // Act
     int actual_ret = potr_internal_flow_control_start(&ctx); // [手順] - start を呼び出す。
     received(POTR_PEER_NA, 10U, 0); // [手順] - 次に受信する通番 10 で on_received を呼び出す。
+    received(POTR_PEER_NA, 11U, 1); // [手順] - 同じセッションで 2 回目の on_received を呼び出す。
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - start が POTR_OK であること。
-    EXPECT_EQ(0, receive_buffer_query_count);       // [確認_正常系] - OS の受信バッファーの大きさを取得しないこと。
-    EXPECT_EQ(nullptr, ctx.flow_control); // [確認_正常系] - 資源を生成しないこと。
-    EXPECT_TRUE(states.empty());          // [確認_正常系] - フロー制御パケットを送出しないこと。
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - start が POTR_OK であること。
+    EXPECT_EQ(0, receive_buffer_query_count); // [確認_正常系] - OS の受信バッファーの大きさを取得しないこと。
+    EXPECT_NE(nullptr, ctx.flow_control); // [確認_正常系] - 上限なしを送出するために資源を生成すること。
+    EXPECT_EQ(std::vector<uint8_t>{kUnlimited}, states); // [確認_正常系] - 状態「上限なし」を 1 回だけ送出すること。
+    EXPECT_EQ(std::vector<uint32_t>{0U}, limits);        // [確認_正常系] - 送出上限の欄が 0 であること。
+    EXPECT_EQ(1, sendto_count);                          // [確認_正常系] - 1 回だけ送出すること。
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
 
-// OS の受信バッファーの大きさを取得できなかった場合に、受信バッファーの幅を使わないことの確認
+// OS の受信バッファーの大きさを取得できなかった場合に、受信バッファーの幅を使わず上限なしまたは容量による許可数を使うことの確認
 // [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
 TEST_F(potrFlowControlBufferTest, query_failure_does_not_use_receive_buffer)
 {
@@ -375,16 +380,21 @@ TEST_F(potrFlowControlBufferTest, query_failure_does_not_use_receive_buffer)
     // Pre-Assert
     // Act
     int actual_ret_zero = potr_internal_flow_control_start(&ctx); // [手順] - 容量 0 で start を呼び出す。
-    struct potr_internal_flow_control *zero_capacity_resource = ctx.flow_control;
+    received(POTR_PEER_NA, 10U, 0); // [手順] - 容量 0 の状態で on_received を呼び出す。
+    std::vector<uint8_t> states_zero = states;
+    std::vector<uint32_t> limits_zero = limits;
+    potr_internal_flow_control_stop(&ctx);
+    clear_records();
     ctx.flow_control_config.capacity = 10000000U;
     int actual_ret_capacity = potr_internal_flow_control_start(&ctx); // [手順] - 容量 10000000 で start を呼び出す。
     received(POTR_PEER_NA, 10U, 0); // [手順] - 次に受信する通番 10 で on_received を呼び出す。
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret_zero);              // [確認_正常系] - 容量 0 の start が POTR_OK であること。
-    EXPECT_EQ(nullptr, zero_capacity_resource);       // [確認_正常系] - 容量 0 では資源を生成しないこと。
-    EXPECT_EQ(POTR_OK, actual_ret_capacity);          // [確認_正常系] - 容量を設定した start が POTR_OK であること。
-    EXPECT_NE(nullptr, ctx.flow_control);             // [確認_正常系] - 容量を設定した場合は資源を生成すること。
-    EXPECT_EQ(std::vector<uint32_t>{5725U}, limits);  // [確認_正常系] - 送出上限が 10 + 占有量による許可数 5715 であること。
+    EXPECT_EQ(POTR_OK, actual_ret_zero); // [確認_正常系] - 容量 0 の start が POTR_OK であること。
+    EXPECT_EQ(std::vector<uint8_t>{kUnlimited}, states_zero); // [確認_正常系] - 容量 0 では「上限なし」を送出すること。
+    EXPECT_EQ(std::vector<uint32_t>{0U}, limits_zero);        // [確認_正常系] - 「上限なし」の送出上限が 0 であること。
+    EXPECT_EQ(POTR_OK, actual_ret_capacity); // [確認_正常系] - 容量を設定した start が POTR_OK であること。
+    EXPECT_NE(nullptr, ctx.flow_control);    // [確認_正常系] - 容量を設定した場合は資源を生成すること。
+    EXPECT_EQ(std::vector<uint32_t>{5725U}, limits); // [確認_正常系] - 送出上限が 10 + 占有量による許可数 5715 であること。
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
 
@@ -804,5 +814,212 @@ TEST_F(potrFlowControlBufferTest, monitor_tick_is_noop_for_other_types)
     potr_internal_flow_control_monitor_tick(nullptr, 1000U); // [手順] - ctx を NULL にして monitor_tick を呼び出す。
     // Assert
     EXPECT_EQ(0, sendto_count); // [確認_正常系] - 送出しないこと。
+}
+// [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
+
+// multicast と broadcast の受信者が、送出上限を使わない構成で「上限なし」を送出しないことの確認
+// [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
+TEST_F(potrFlowControlBufferTest, multicast_and_broadcast_receivers_do_not_send_unlimited)
+{
+    // Arrange
+    ctx.flow_control_config.receive_buffer_percent = 0U;
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    // [状態] - multicast 受信者で容量 0、受信バッファーの幅の割合を 0 にする。
+    // Pre-Assert
+    // Act
+    int ret_mc = potr_internal_flow_control_start(&ctx); // [手順] - multicast で start を呼び出す。
+    struct potr_internal_flow_control *mc_fc = ctx.flow_control;
+    received(POTR_PEER_NA, 10U, 0); // [手順] - multicast で on_received を呼び出す。
+    ctx.service.type = POTR_TYPE_BROADCAST;
+    int ret_bc = potr_internal_flow_control_start(&ctx); // [手順] - broadcast で start を呼び出す。
+    struct potr_internal_flow_control *bc_fc = ctx.flow_control;
+    received(POTR_PEER_NA, 10U, 0); // [手順] - broadcast で on_received を呼び出す。
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_mc);  // [確認_正常系] - multicast の start が POTR_OK であること。
+    EXPECT_EQ(nullptr, mc_fc);   // [確認_正常系] - multicast では資源を生成しないこと。
+    EXPECT_EQ(POTR_OK, ret_bc);  // [確認_正常系] - broadcast の start が POTR_OK であること。
+    EXPECT_EQ(nullptr, bc_fc);   // [確認_正常系] - broadcast では資源を生成しないこと。
+    EXPECT_TRUE(states.empty()); // [確認_正常系] - フロー制御パケットを送出しないこと。
+    EXPECT_EQ(0, sendto_count);  // [確認_正常系] - ソケット送出を行わないこと。
+}
+// [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
+
+// 問い合わせに対して、解除、抑制の要求、上限なしの 3 通りの状態と送出上限を 1 回返送することの確認
+// [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
+TEST_F(potrFlowControlBufferTest, query_responds_with_resume_suppress_and_unlimited)
+{
+    // Arrange
+    uint8_t query_payload[POTR_FLOW_CONTROL_QUERY_PAYLOAD_SIZE] = {kQuery};
+    potr_packet query = {};
+    query.flags = POTR_FLAG_FLOW_CONTROL;
+    query.session_id = 1U;
+    query.session_tv_sec = (int64_t)sender_ts.tv_sec;
+    query.session_tv_nsec = (int32_t)sender_ts.tv_nsec;
+    query.payload = query_payload;
+    query.payload_len = POTR_FLOW_CONTROL_QUERY_PAYLOAD_SIZE;
+    ctx.peer_session_known = 1;
+    ctx.peer_session_id = 1U;
+    ctx.peer_session_ts = sender_ts;
+    ctx.flow_control_config.capacity = 1000U;
+    ctx.flow_control_config.suppress_percent = 80U;
+    ctx.flow_control_config.resume_percent = 50U;
+    ctx.flow_control_config.receive_buffer_percent = 0U;
+    ctx.global.max_payload = 100U;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    received(POTR_PEER_NA, 20U, 0); // [状態] - 容量 1000、要求なし、次に受信する通番 20 の状態にする (許可数 9)。
+    clear_records();
+    // Pre-Assert
+    // Act
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &query); // [手順] - 要求なしの状態で問い合わせを受ける。
+    std::vector<uint8_t> states_resume = states;
+    std::vector<uint32_t> limits_resume = limits;
+    ASSERT_EQ(POTR_OK, admit(850U)); // [手順] - 要求のしきい値 (800) を超えて抑制の要求中へ遷移させる。
+    clear_records();
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &query); // [手順] - 抑制の要求中の状態で問い合わせを受ける。
+    std::vector<uint8_t> states_suppress = states;
+    std::vector<uint32_t> limits_suppress = limits;
+    potr_internal_flow_control_stop(&ctx);
+    clear_records();
+    ctx.flow_control_config.capacity = 0U;
+    ctx.flow_control_config.receive_buffer_percent = 0U;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    // [状態] - 送出上限を使わない受信側 (容量 0、受信バッファーの幅の割合 0) に切り替える。
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &query); // [手順] - 送出上限を使わない状態で問い合わせを受ける。
+    // Assert
+    EXPECT_EQ(std::vector<uint8_t>{kResume}, states_resume);
+    // [確認_正常系] - 要求なしの応答が状態「解除」であること。
+    EXPECT_EQ(std::vector<uint32_t>{29U}, limits_resume);
+    // [確認_正常系] - 要求なしの送出上限が 20 + 9 = 29 であること。
+    EXPECT_EQ(std::vector<uint8_t>{kSuppress}, states_suppress);
+    // [確認_正常系] - 抑制の要求中の応答が状態「抑制の要求」であること。
+    EXPECT_EQ(std::vector<uint32_t>{20U}, limits_suppress);
+    // [確認_正常系] - 抑制の要求中の送出上限が 20 + 0 = 20 であること。
+    EXPECT_EQ(std::vector<uint8_t>{kUnlimited}, states);
+    // [確認_正常系] - 送出上限を使わない場合の応答が状態「上限なし」であること。
+    EXPECT_EQ(std::vector<uint32_t>{0U}, limits);
+    // [確認_正常系] - 上限なしの送出上限の欄が 0 であること。
+    EXPECT_EQ(1, sendto_count); // [確認_正常系] - 上限なしを 1 回送出すること。
+}
+// [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
+
+// 問い合わせに対して、要求なしの状態で解除と送出上限を 1 回返送し、採用していないセッションの問い合わせを受理しないことの確認
+// [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
+TEST_F(potrFlowControlBufferTest, query_responds_resume_and_ignores_other_sessions)
+{
+    // Arrange
+    uint8_t query_payload[POTR_FLOW_CONTROL_QUERY_PAYLOAD_SIZE] = {kQuery};
+    potr_packet adopted = {};
+    potr_packet other_id = {};
+    potr_packet other_ts = {};
+    adopted.flags = POTR_FLAG_FLOW_CONTROL;
+    adopted.session_id = 1U;
+    adopted.session_tv_sec = (int64_t)sender_ts.tv_sec;
+    adopted.session_tv_nsec = (int32_t)sender_ts.tv_nsec;
+    adopted.payload = query_payload;
+    adopted.payload_len = POTR_FLOW_CONTROL_QUERY_PAYLOAD_SIZE;
+    other_id = adopted;
+    other_id.session_id = 2U;
+    other_ts = adopted;
+    other_ts.session_tv_nsec = (int32_t)sender_ts.tv_nsec + 1;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    received(POTR_PEER_NA, 10U, 0); // [状態] - 幅 42、次に受信する通番 10 で採用する (送出上限 52)。
+    clear_records();
+    // Pre-Assert
+    // Act
+    ctx.peer_session_known = 0;
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &adopted); // [手順] - 相手セッション未採用の状態で問い合わせを受ける。
+    ctx.peer_session_known = 1;
+    ctx.peer_session_id = 1U;
+    ctx.peer_session_ts = sender_ts;
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &other_id); // [手順] - session_id が異なる問い合わせを受ける。
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &other_ts); // [手順] - session_ts が異なる問い合わせを受ける。
+    size_t count_before_adopted = states.size();
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &adopted); // [手順] - 採用しているセッションからの問い合わせを受ける。
+    // Assert
+    EXPECT_EQ(0U, count_before_adopted); // [確認_異常系] - 未採用および他セッションの問い合わせには応答しないこと。
+    EXPECT_EQ(std::vector<uint8_t>{kResume}, states); // [確認_正常系] - 採用しているセッションには状態「解除」で応答すること。
+    EXPECT_EQ(std::vector<uint32_t>{52U}, limits);    // [確認_正常系] - 送出上限が 10 + 42 = 52 であること。
+    EXPECT_EQ(1, sendto_count);                       // [確認_正常系] - 1 回だけ送出すること。
+}
+// [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
+
+// 送信側が「上限なし」を受けると保持していた送出上限と抑制の要求を解除することの確認
+// [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
+TEST_F(potrFlowControlBufferTest, sender_clears_limit_on_unlimited)
+{
+    // Arrange
+    uint8_t suppress_payload[POTR_FLOW_CONTROL_PAYLOAD_SIZE] = {kSuppress, 0U, 0U, 0U, 10U};
+    uint8_t unlimited_payload[POTR_FLOW_CONTROL_PAYLOAD_SIZE] = {kUnlimited, 0U, 0U, 0U, 0U};
+    potr_packet suppress_pkt = {};
+    potr_packet unlimited_pkt = {};
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    suppress_pkt.flags = POTR_FLAG_FLOW_CONTROL;
+    suppress_pkt.payload = suppress_payload;
+    suppress_pkt.payload_len = POTR_FLOW_CONTROL_PAYLOAD_SIZE;
+    unlimited_pkt.flags = POTR_FLAG_FLOW_CONTROL;
+    unlimited_pkt.payload = unlimited_payload;
+    unlimited_pkt.payload_len = POTR_FLOW_CONTROL_PAYLOAD_SIZE;
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &suppress_pkt);
+    // [状態] - 抑制の要求と送出上限 10 を保持した状態にする。
+    // Pre-Assert
+    // Act
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &unlimited_pkt); // [手順] - 状態「上限なし」を受ける。
+    int wait_ms = 0;
+    uint32_t allowance = 0U;
+    int suppressed = potr_internal_flow_control_suppressed(&ctx, now_ms, &wait_ms, &allowance);
+    // [手順] - 抑制の判定を行う。
+    // Assert
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNLIMITED, cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 送出上限の状態が「上限なし (通知済み)」になること。
+    EXPECT_EQ(0U, cplat_atomic_load_u64(&ctx.flow_request_expire_ms, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 抑制の要求の期限が 0 に戻ること。
+    EXPECT_EQ(0, suppressed);           // [確認_正常系] - 抑制されないこと。
+    EXPECT_EQ(UINT32_MAX, allowance);   // [確認_正常系] - 送出可能数が UINT32_MAX であること。
+}
+// [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
+
+// 受信側が最後の DATA 受理から有効期限の半分以上途切れた後の DATA で更新を送出し、未満および TCP では送出しないことの確認
+// [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
+TEST_F(potrFlowControlBufferTest, receiver_updates_after_half_lifetime_idle_gap)
+{
+    // Arrange
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    // [状態] - unicast 受信者、幅 42、有効期限 1000 [ms] (半分は 500 [ms]) で start する。
+    now_ms = 1000U;
+    received(POTR_PEER_NA, 10U, 1); // [状態] - 時刻 1000 に初回 DATA を受理する (送出上限 52 を初回送出)。
+    clear_records();
+    // Pre-Assert
+    // Act
+    now_ms = 1499U;
+    received(POTR_PEER_NA, 11U, 1); // [手順] - 半分未満 (499 [ms] 後) に次の DATA を受理する。
+    size_t count_before_half = states.size();
+    now_ms = 1999U;
+    received(POTR_PEER_NA, 12U, 1); // [手順] - 前回受理 (1499) からちょうど 500 [ms] 後に DATA を受理する。
+    std::vector<uint8_t> udp_states = states;
+    std::vector<uint32_t> udp_limits = limits;
+    potr_internal_flow_control_stop(&ctx);
+    clear_records();
+    ctx.service.type = POTR_TYPE_TCP;
+    ctx.flow_control_config.capacity = 100000U;
+    ctx.flow_control_config.receive_buffer_percent = 0U;
+    ctx.tcp_conn_fd[0] = 5;
+    cplat_local_lock_create(&ctx.tcp_send_mutex[0]);
+    ON_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    now_ms = 1000U;
+    received(POTR_PEER_NA, 10U, 1);
+    clear_records();
+    now_ms = 2000U;
+    received(POTR_PEER_NA, 11U, 1);
+    size_t tcp_count = states.size();
+    cplat_local_lock_dispose(ctx.tcp_send_mutex[0]);
+    ctx.tcp_send_mutex[0] = nullptr;
+    // [手順] - TCP 受信側では有効期限の半分以上たっても途中更新を送出しないことを確認する。
+    // Assert
+    EXPECT_EQ(0U, count_before_half);                // [確認_正常系] - 半分未満 (499 [ms]) では更新を送出しないこと。
+    EXPECT_EQ(std::vector<uint8_t>{kResume}, udp_states); // [確認_正常系] - ちょうど半分 (500 [ms]) で更新を送出すること。
+    EXPECT_EQ(std::vector<uint32_t>{54U}, udp_limits);    // [確認_正常系] - 送出上限が 12 + 42 = 54 であること。
+    EXPECT_EQ(0U, tcp_count);                        // [確認_正常系] - TCP では途絶による更新を送出しないこと。
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]

@@ -480,6 +480,16 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
     }
 
     cplat_local_lock_unlock(ctx->send_window_mutex);
+    if (!window_pending && (ctx->service.type == POTR_TYPE_UNICAST || ctx->service.type == POTR_TYPE_UNICAST_BIDIR))
+    {
+        uint64_t sent_ms = 0U;
+
+        /* 送信が途切れた後の許可の短縮に使う時刻。取得失敗時は前回の時刻を保ち、戻り値は明示的に破棄する。 */
+        if (cplat_clock_get_monotonic_ms(&sent_ms) == CPLAT_OK)
+        {
+            ctx->flow_last_data_send_ms = sent_ms;
+        }
+    }
     if (sent_any && should_track_valid_data_send_time(ctx))
     {
         potr_internal_health_thread_wake(ctx);
@@ -549,9 +559,15 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
             (void)cplat_socket_sendto(ctx->sock[k], ctx->crypto_buf, wire_len, &peer->dest_addr[k], &sent, NULL);
             if (window_pending)
             {
+                uint64_t sent_ms = 0U;
+
                 /* 満杯でも最古のエントリを追い出して格納し、NULL の場合だけ失敗する契約のため、戻り値は明示的に破棄する。 */
                 (void)potr_internal_window_send_push(&peer->send_window, &outer_pkt);
                 peer->send_has_data = 1;
+                if (cplat_clock_get_monotonic_ms(&sent_ms) == CPLAT_OK)
+                {
+                    peer->flow_last_data_send_ms = sent_ms;
+                }
                 cplat_local_lock_unlock(peer->send_window_mutex);
                 window_pending = 0;
             }
@@ -770,7 +786,7 @@ static int send_tcp_batch(potr_context *ctx, const potr_internal_payload_elem *f
 
 /* 送信スレッド本体 */
 /** 保留中のエントリがある間に、抑制の状態を確認し直すまでの待機の上限 [ms]。 */
-#define FLOW_DEFERRED_RECHECK_MS 50
+#define FLOW_DEFERRED_RECHECK_MS ((int)POTR_FLOW_QUERY_INITIAL_INTERVAL_MS)
 
 /** 1 回の走査で送出を見送るピアの数の上限。超える分は次の走査で扱う。 */
 #define FLOW_DEFERRED_SKIP_MAX 16U
@@ -1056,18 +1072,49 @@ static int pop_peer_mode(potr_context *ctx, potr_internal_payload_elem *first)
  */
 static int flow_control_sender_idle(potr_context *ctx)
 {
-    if (is_oneway_udp_type(ctx->service.type))
+    uint64_t limit_state;
+
+    if (is_raw_type(ctx->service.type))
+    {
+        return 1;
+    }
+
+    if (ctx->service.type == POTR_TYPE_MULTICAST || ctx->service.type == POTR_TYPE_BROADCAST)
     {
         return cplat_atomic_load_i32(&ctx->flow_request_pending, CPLAT_MEMORY_ORDER_ACQUIRE) == 0;
     }
 
-    if (cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE) != 0U ||
+    if (ctx->service.type == POTR_TYPE_UNICAST)
+    {
+        if (cplat_atomic_load_i32(&ctx->flow_request_pending, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+        {
+            return 0;
+        }
+
+        limit_state = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE) &
+                      POTR_FLOW_SEND_LIMIT_STATE_MASK;
+        if (limit_state != POTR_FLOW_SEND_LIMIT_UNLIMITED && limit_state != POTR_FLOW_SEND_LIMIT_NO_PEER)
+        {
+            return 0;
+        }
+
+        ctx->flow_limit_stalled_ms = 0U;
+        ctx->flow_query_next_ms = 0U;
+        ctx->flow_query_interval_ms = 0U;
+        return 1;
+    }
+
+    limit_state =
+        cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE) & POTR_FLOW_SEND_LIMIT_STATE_MASK;
+    if ((limit_state != POTR_FLOW_SEND_LIMIT_UNLIMITED && limit_state != POTR_FLOW_SEND_LIMIT_NO_PEER) ||
         cplat_atomic_load_u64(&ctx->flow_request_expire_ms, CPLAT_MEMORY_ORDER_ACQUIRE) != 0U)
     {
         return 0;
     }
 
     ctx->flow_limit_stalled_ms = 0U;
+    ctx->flow_query_next_ms = 0U;
+    ctx->flow_query_interval_ms = 0U;
 
     return 1;
 }

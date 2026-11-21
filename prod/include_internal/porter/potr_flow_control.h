@@ -24,32 +24,47 @@
 #include <porter/porter_type.h>
 
 /**
- *  送信側が保持する送出上限で、上限を保持していることを表すビット。
- *  保持値は、このビットと下位 32 ビットの通番の組とし、0 を「上限なし」とする。
+ *  送信側が保持する送出上限の状態を表す上位 32 ビットのマスクと値。
  *  1 つの 64 ビット値にまとめるのは、受信スレッドの書き込みと送信スレッドの読み取りをアトミックに 1 回で行うためである。
+ *  - 未通知 (0): 下位 32 ビットは基準通番 (最初に割り当てた通番)。有効な上限は「基準通番 + POTR_FLOW_INITIAL_WIDTH」。
+ *  - 上限あり (1): 下位 32 ビットは相手から受けた送出上限。
+ *  - 上限なし (2): 相手から「上限なし」を受けた。相手のセッションが変わるまで制限しない。
+ *  - 相手なし (3): 止まったまま有効期限の間、相手から何も届かなかった。制限しないが、パケットが届いたら未通知へ戻す。
  */
-#define POTR_FLOW_SEND_LIMIT_HELD 0x100000000ULL
+#define POTR_FLOW_SEND_LIMIT_STATE_MASK 0xFFFFFFFF00000000ULL
+#define POTR_FLOW_SEND_LIMIT_UNNOTIFIED 0x0000000000000000ULL
+#define POTR_FLOW_SEND_LIMIT_HELD       0x0000000100000000ULL
+#define POTR_FLOW_SEND_LIMIT_UNLIMITED  0x0000000200000000ULL
+#define POTR_FLOW_SEND_LIMIT_NO_PEER    0x0000000300000000ULL
+
+/** 送信側が相手から最初の通知を受けるまでの初期の幅 [パケット]。POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN と同じ値だが、意味が異なるため別定数とする。 */
+#define POTR_FLOW_INITIAL_WIDTH 4U
+
+/** 送出上限または初期の幅で止まり始めてから、最初の問い合わせを送出するまでの時間 [ms]。 */
+#define POTR_FLOW_QUERY_INITIAL_INTERVAL_MS 10U
 
 /** 送信側の送出上限の判定結果。 */
 typedef enum potr_internal_send_limit_state
 {
     POTR_SEND_LIMIT_OPEN = 0,    /**< 送出上限を保持していない、または送出上限に達していない。 */
     POTR_SEND_LIMIT_REACHED = 1, /**< 送出上限に達しており、止まった時点から有効期限が経過していない。 */
-    POTR_SEND_LIMIT_EXPIRED = 2  /**< 送出上限に達して止まった時点から、次のフロー制御パケットを受けずに有効期限が経過した。 */
+    POTR_SEND_LIMIT_EXPIRED = 2  /**< 送出上限に達して止まった時点から、次のパケットを受けずに有効期限が経過した。 */
 } potr_internal_send_limit_state;
 
 /**
- *  @brief          送信側が、相手から受けた送出上限に達しているかを判定します。
+ *  @brief          送信側が、相手から受けた送出上限 (または未通知時の初期の幅) に達しているかを判定します。
  *
  *  通番は循環を考慮した差で比較します。送出上限は、同じ通知の重複と古い通知の喪失で判定が変わらないよう、
  *  バイト数ではなく通番で表します。\n
- *  止まった時点 (stalled_ms) と最後にフロー制御パケットを受けた時刻 (received_ms) の遅い方から
- *  有効期限が経過した場合は POTR_SEND_LIMIT_EXPIRED を返します。呼び出し元は、その送出上限を破棄し、
- *  上限がないものとして扱います。送出上限の通知が失われた場合と、受信側が停止した場合に、
- *  送出が止まったままになることを防ぐためです。
+ *  状態が「上限なし」(POTR_FLOW_SEND_LIMIT_UNLIMITED) または「相手なし」(POTR_FLOW_SEND_LIMIT_NO_PEER) の場合は
+ *  制限せず POTR_SEND_LIMIT_OPEN を返します。\n
+ *  状態が「未通知」(POTR_FLOW_SEND_LIMIT_UNNOTIFIED) の場合は、「下位 32 ビット + POTR_FLOW_INITIAL_WIDTH」を上限とします。\n
+ *  状態が「上限あり」(POTR_FLOW_SEND_LIMIT_HELD) の場合は、下位 32 ビットを上限とします。\n
+ *  止まった時点 (stalled_ms) と最後にパケットを受けた時刻 (received_ms) の遅い方から
+ *  有効期限が経過した場合は POTR_SEND_LIMIT_EXPIRED を返します。
  *
- *  @param[in]      send_limit  保持している送出上限 (POTR_FLOW_SEND_LIMIT_HELD と通番の組。0 は上限なし)。
- *  @param[in]      received_ms 最後にフロー制御パケットを受けた時刻 [ms]。
+ *  @param[in]      send_limit  保持している送出上限 (上位 32 ビットの状態と下位 32 ビットの通番の組)。
+ *  @param[in]      received_ms 最後に判定対象パケットを受けた時刻 [ms]。
  *  @param[in,out]  stalled_ms  送出上限に達して止まった時刻 [ms] (0 は止まっていない)。
  *                              送出上限に達した最初の判定で now_ms を設定し、達していなければ 0 へ戻します。NULL は許可しません。
  *  @param[in]      next_seq    次に割り当てる DATA の通番。
@@ -69,18 +84,26 @@ static inline potr_internal_send_limit_state flow_send_limit_judge(uint64_t send
                                                                    uint64_t now_ms, uint64_t lifetime_ms,
                                                                    uint64_t *until_ms, uint32_t *allowance)
 {
+    uint64_t state = send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK;
     uint32_t limit;
     uint64_t since_ms;
 
     *allowance = UINT32_MAX;
 
-    if ((send_limit & POTR_FLOW_SEND_LIMIT_HELD) == 0U)
+    if (state == POTR_FLOW_SEND_LIMIT_UNLIMITED || state == POTR_FLOW_SEND_LIMIT_NO_PEER)
     {
         *stalled_ms = 0U;
         return POTR_SEND_LIMIT_OPEN;
     }
 
-    limit = (uint32_t)(send_limit & 0xFFFFFFFFU);
+    if (state == POTR_FLOW_SEND_LIMIT_UNNOTIFIED)
+    {
+        limit = (uint32_t)(send_limit & 0xFFFFFFFFU) + (uint32_t)POTR_FLOW_INITIAL_WIDTH;
+    }
+    else
+    {
+        limit = (uint32_t)(send_limit & 0xFFFFFFFFU);
+    }
 
     /* 通番は循環するため、差を符号付きで見て、送出上限が次の通番より先にあるかを判定する。 */
     if ((int32_t)(limit - next_seq) > 0)
@@ -108,6 +131,38 @@ static inline potr_internal_send_limit_state flow_send_limit_judge(uint64_t send
     }
 
     return POTR_SEND_LIMIT_EXPIRED;
+}
+
+/**
+ *  @brief          上限あり (POTR_FLOW_SEND_LIMIT_HELD) の送出上限を、「next_seq + 初期の幅」との小さいほうへ縮めます。
+ *
+ *  送信が途切れた後に未使用の許可を減らすために使います。上限あり以外の状態 (未通知、上限なし、相手なし) は
+ *  変更せずそのまま返します。通番は循環を考慮した差で比較します。
+ *
+ *  @param[in]      send_limit  現在の送出上限の状態と通番の組。
+ *  @param[in]      next_seq    次に割り当てる DATA の通番。
+ *  @return         縮めた後の送出上限の状態と通番の組。失敗モードのない計算のため共通結果コードの適用対象外。
+ */
+static inline uint64_t flow_send_limit_clamp_initial(uint64_t send_limit, uint32_t next_seq)
+{
+    uint32_t held;
+    uint32_t cap;
+
+    if ((send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK) != POTR_FLOW_SEND_LIMIT_HELD)
+    {
+        return send_limit;
+    }
+
+    held = (uint32_t)(send_limit & 0xFFFFFFFFU);
+    cap = next_seq + (uint32_t)POTR_FLOW_INITIAL_WIDTH;
+
+    /* 通番は循環するため、差を符号付きで見て小さいほうを選ぶ。 */
+    if ((int32_t)(cap - held) < 0)
+    {
+        return POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)cap;
+    }
+
+    return send_limit;
 }
 
 /** 受信バッファーの幅の下限 [パケット]。 */
@@ -200,10 +255,12 @@ extern "C"
      *                  受信に使う全経路のソケットから OS の受信バッファーの大きさ (SO_RCVBUF) を取得し、最も小さい値から
      *                  受信バッファーの幅を求めます。取得できなかった場合は、警告を診断出力に記録し、
      *                  このハンドルでは OS の受信バッファーに基づく送出上限を使いません。\n
-     *                  容量が 0 で、OS の受信バッファーに基づく送出上限も使わない場合は何も生成せず、以後の各関数は何もしません。
+     *                  容量が 0 で、OS の受信バッファーに基づく送出上限も使わない受信側 (multicast と broadcast の受信者、
+     *                  RAW 系、片方向送信者を除く) は、状態が「上限なし」の通知と問い合わせへの応答を行うために資源を生成します。
+     *                  それ以外の構成では何も生成せず、以後の各関数は何もしません。
      *                  UDP では経路のソケットを開いた後、受信スレッドと通知スレッドの起動前に呼びます。
      *  @param[in,out]  ctx     実効設定 (flow_control_config) と global.max_payload を設定済みのコンテキスト。
-     *  @return         成功時は POTR_OK、ctx が NULL の場合と、資源を生成する構成で max_payload が 0 の場合は
+     *  @return         成功時は POTR_OK、ctx が NULL の場合と、送出上限を使う構成で max_payload が 0 の場合は
      *                  POTR_ERR_INVALID_ARGUMENT、
      *                  メモリ確保失敗時は POTR_ERR_OUT_OF_MEMORY、同期資源の生成失敗時は POTR_ERR_UNKNOWN を返します。
      *                  失敗時は生成済みの資源を回収します。
@@ -338,19 +395,23 @@ extern "C"
                                                   const cplat_timespec *session_ts);
 
     /**
-     *  @brief          相手から受信したフロー制御パケットを、送信側の状態へ反映します。
+     *  @brief          相手から受信したフロー制御パケットを処理します。
      *
-     *  双方向 UDP と TCP、および multicast と broadcast の受信者 (監視対象の一覧) で使います。\n
+     *  双方向 UDP と TCP、片方向 UDP の受信者 (監視対象の一覧および問い合わせ) で使います。\n
      *  状態が監視対象の一覧 (POTR_FLOW_CONTROL_STATE_MONITOR) のパケットは、multicast と broadcast の受信者だけが受理し、
      *  一覧に自身のセッション識別子が含まれていれば監視対象として、含まれていなければ監視対象でないものとして動作します。
      *  監視対象になった時点で、送出上限をまだ知らせていない状態から始め、次に受信する通番が分かっていれば
      *  送出上限を送出します。そのほかの通信種別と役割、形式が不正な一覧は破棄します。\n
+     *  状態が問い合わせ (POTR_FLOW_CONTROL_STATE_QUERY) のパケットは、採用している相手のセッションからのものだけを受理し、
+     *  その時点の状態 (抑制の要求中は抑制の要求、そうでなければ解除、送出上限を使わないなら上限なし) と送出上限を
+     *  フロー制御パケットで 1 回送出します。\n
+     *  状態が上限なし (POTR_FLOW_CONTROL_STATE_UNLIMITED) のパケットでは、抑制の要求と送出上限を解除し、
+     *  送信スレッドへ通知します。\n
      *  抑制の要求と解除では、抑制の要求では期限を「現在時刻 + 有効期限」へ更新し、
      *  解除では要求なしへ戻します。状態の値によらず、その相手の送出上限を上書きし、受けた時刻を記録します。
      *  N:1 モードでは、要求または送出上限を保持しているピアの数 (potr_context::flow_tracked_peers) へ反映します。
      *  そのうえで、送信スレッドへ通知します。\n
-     *  形式が不正なパケット (ペイロードが POTR_FLOW_CONTROL_PAYLOAD_SIZE バイトでない、状態が不正など) と、
-     *  現在時刻を取得できない場合は無視します。\n
+     *  形式が不正なパケットと、現在時刻を取得できない場合は無視します。\n
      *  片方向 UDP の送信者は、受信者の管理表 (potr_internal_receiver_accept()) で期限と送出上限を管理します。
      *
      *  @param[in,out]  ctx     コンテキスト。
@@ -362,6 +423,36 @@ extern "C"
      */
     extern void potr_internal_flow_control_on_packet(potr_context *ctx, struct potr_internal_peer_context *peer,
                                                      const potr_packet *pkt);
+
+    /**
+     *  @brief          UDP の送信側が相手へ「問い合わせ」のフロー制御パケットを 1 回送出します。
+     *
+     *  multicast、broadcast、TCP、RAW 系では何もしません。
+     *
+     *  @param[in,out]  ctx     コンテキスト。
+     *  @param[in,out]  peer    N:1 モードの相手のピア。それ以外では NULL。
+     *
+     *  @par            スレッド セーフ
+     *  N:1 モードでは、呼び出し元が peers_mutex を保持していること。
+     */
+    extern void potr_internal_flow_control_send_query(potr_context *ctx, struct potr_internal_peer_context *peer);
+
+    /**
+     *  @brief          双方向 UDP (1:1 および N:1) で相手から何らかのパケットを受けたことを記録します。
+     *
+     *  最後にパケットを受けた時刻を更新します。状態が「相手なし」(POTR_FLOW_SEND_LIMIT_NO_PEER) の場合は、
+     *  その時点で次に割り当てる通番を基準とする「未通知」へ戻し、問い合わせを 1 回送出します
+     *  (ただし、受けたパケット自体が問い合わせ以外のフロー制御パケットの場合は、後続の通知処理に任せて問い合わせを送出しません)。
+     *
+     *  @param[in,out]  ctx     コンテキスト。
+     *  @param[in,out]  peer    N:1 モードの相手のピア。それ以外では NULL。
+     *  @param[in]      pkt     受信したパケット。
+     *
+     *  @par            スレッド セーフ
+     *  受信スレッドから呼びます。N:1 モードでは、呼び出し元が peers_mutex を保持していること。
+     */
+    extern void potr_internal_flow_control_on_peer_packet(potr_context *ctx, struct potr_internal_peer_context *peer,
+                                                          const potr_packet *pkt);
 
     /**
      *  @brief          受信報告に載せる、その時点の自身の送出上限を返します。

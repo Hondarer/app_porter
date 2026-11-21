@@ -203,8 +203,8 @@ static void reset_all_paths_disconnected(potr_context *ctx)
     ctx->send_window.base_index = 0U;
     ctx->send_has_data = 0;
 
-    /* 自分の通番が 0 から始まり直すため、相手から受けた送出上限は当てはまらなくなる。送出上限を破棄する。 */
-    cplat_atomic_store_u64(&ctx->flow_send_limit, 0U, CPLAT_MEMORY_ORDER_RELEASE);
+    /* 自分の通番が 0 から始まり直すため、未通知 (初期の幅) へ戻す。 */
+    cplat_atomic_store_u64(&ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED, CPLAT_MEMORY_ORDER_RELEASE);
 
     if (ctx->send_window.valid != NULL)
     {

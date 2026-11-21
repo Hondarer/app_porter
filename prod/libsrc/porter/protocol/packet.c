@@ -102,18 +102,43 @@ int potr_internal_packet_build_nack(potr_packet *packet, const potr_internal_pac
 int potr_internal_packet_build_flow_control(potr_packet *packet, const potr_internal_packet_session_hdr *shdr,
                                             uint8_t *payload, uint8_t state, uint32_t send_limit)
 {
-    if (packet == NULL || shdr == NULL || payload == NULL ||
-        (state != POTR_FLOW_CONTROL_STATE_SUPPRESS && state != POTR_FLOW_CONTROL_STATE_RESUME))
+    uint16_t payload_len;
+
+    if (packet == NULL || shdr == NULL || payload == NULL)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* 送出上限はネットワーク バイト オーダーで格納する。解析側の flow_control_payload_decode() と対称にする。 */
-    payload[0] = state;
-    payload[1] = (uint8_t)(send_limit >> 24);
-    payload[2] = (uint8_t)(send_limit >> 16);
-    payload[3] = (uint8_t)(send_limit >> 8);
-    payload[4] = (uint8_t)send_limit;
+    if (state == POTR_FLOW_CONTROL_STATE_QUERY)
+    {
+        if (send_limit != 0U)
+        {
+            return POTR_ERR_INVALID_ARGUMENT;
+        }
+
+        payload[0] = state;
+        payload_len = (uint16_t)POTR_FLOW_CONTROL_QUERY_PAYLOAD_SIZE;
+    }
+    else if (state == POTR_FLOW_CONTROL_STATE_SUPPRESS || state == POTR_FLOW_CONTROL_STATE_RESUME ||
+             state == POTR_FLOW_CONTROL_STATE_UNLIMITED)
+    {
+        if (state == POTR_FLOW_CONTROL_STATE_UNLIMITED && send_limit != 0U)
+        {
+            return POTR_ERR_INVALID_ARGUMENT;
+        }
+
+        /* 送出上限はネットワーク バイト オーダーで格納する。解析側の flow_control_payload_decode() と対称にする。 */
+        payload[0] = state;
+        payload[1] = (uint8_t)(send_limit >> 24);
+        payload[2] = (uint8_t)(send_limit >> 16);
+        payload[3] = (uint8_t)(send_limit >> 8);
+        payload[4] = (uint8_t)send_limit;
+        payload_len = (uint16_t)POTR_FLOW_CONTROL_PAYLOAD_SIZE;
+    }
+    else
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
 
     memset(packet, 0, POTR_PACKET_HEADER_SIZE);
     fill_session_hdr(packet, shdr);
@@ -121,7 +146,7 @@ int potr_internal_packet_build_flow_control(potr_packet *packet, const potr_inte
     packet->ack_num = 0;
     packet->flags = cplat_hton16(POTR_FLAG_FLOW_CONTROL);
     packet->payload = payload;
-    packet->payload_len = cplat_hton16((uint16_t)POTR_FLOW_CONTROL_PAYLOAD_SIZE);
+    packet->payload_len = cplat_hton16(payload_len);
 
     return POTR_OK;
 }

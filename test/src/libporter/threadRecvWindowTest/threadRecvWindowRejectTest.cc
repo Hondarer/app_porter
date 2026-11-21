@@ -550,3 +550,24 @@ TEST_F(threadRecvWindowRejectTest, new_session_adoption_clears_flow_control_stat
     // [確認_正常系] - 新しいセッションの採用で抑制の要求を取り消すこと。
 }
 // [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]
+
+// 新しいセッションを採用した場合に、その時点で次に割り当てる通番を基準とする「未通知」へ戻ることの確認
+// [サブ手順参照 名前=threadRecvWindowRejectTest.SetUp]
+TEST_F(threadRecvWindowRejectTest, new_session_adoption_resets_to_unnotified_at_next_seq)
+{
+    // Arrange
+    const PackedDataFixture new_session = makePackedDataPacket(200U, 43U, 1000, 500, "new");
+    ctx.send_window.next_seq = 50U;
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELEASE);
+    // [状態] - 送信ウィンドウの次の通番を 50、送出上限を「上限なし (通知済み)」にする。
+    // Pre-Assert
+    // Act
+    const int adopted_new = thread_recv_session_adopt(&slot, &new_session.packet);
+    // [手順] - 新しいセッション (識別子 43) のパケットで呼び出す。
+    // Assert
+    EXPECT_EQ(1, adopted_new); // [確認_正常系] - 新しいセッションを採用すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 50U,
+              cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 次の通番 50 を基準とする未通知へ戻ること。
+}
+// [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]

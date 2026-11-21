@@ -505,6 +505,7 @@ TEST(receiverReportTest, flow_suppressed_unicast_valid_and_expired)
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
     // [状態] - 単一スレッドのテストとして排他操作を置換する。
     potr_internal_receiver *receiver = AddReceiver(&ctx, 1, now_ms, 1300);
+    receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNLIMITED;
     size_t requesting_expired = 99;
     uint64_t until_expired = 99;
     // Pre-Assert
@@ -889,7 +890,7 @@ TEST(receiverReportTest, flow_suppressed_send_limit_expires_after_lifetime)
     EXPECT_EQ(1, actual_extended);    // [確認_正常系] - 止まった後に受理したパケットで抑制を続けること。
     EXPECT_EQ(1500U, until_extended); // [確認_正常系] - 破棄の時刻が受理した時刻 1200 + 300 になること。
     EXPECT_EQ(0, actual_expired);     // [確認_正常系] - 有効期限の経過後は抑制しないこと。
-    EXPECT_EQ(0U, receiver->flow_send_limit); // [確認_正常系] - 送出上限を破棄すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_NO_PEER, receiver->flow_send_limit); // [確認_正常系] - 有効期限経過後に「相手なし」へ遷移すること。
     EXPECT_EQ(0U, tracked_expired);   // [確認_正常系] - 破棄の後は、保持している受信者を数えないこと。
     // Cleanup
     FreeReceivers(&ctx);
@@ -1430,6 +1431,143 @@ TEST(receiverReportTest, suppress_without_report_becomes_candidate)
     EXPECT_EQ(0, ctx.receivers->flow_margin); // [確認_正常系] - 余裕が 0 であること。
     EXPECT_EQ(1, ctx.receivers->flow_monitored); // [確認_正常系] - 有効な要求で活動中として数え、監視対象になること。
     EXPECT_EQ(0U, ctx.receivers->flow_send_limit); // [確認_正常系] - 監視対象になる前に受けた送出上限は保持しないこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 片方向 UDP の送信者が、問い合わせを破棄し、「上限なし」で送出上限を解除することの確認
+TEST(receiverReportTest, flow_control_query_rejected_and_unlimited_clears_limit)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000;
+    uint8_t query_payload[POTR_FLOW_CONTROL_QUERY_PAYLOAD_SIZE] = {(uint8_t)POTR_FLOW_CONTROL_STATE_QUERY};
+    uint8_t wire[POTR_PACKET_HEADER_WIRE_SIZE] = {};
+    potr_packet query = {};
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.flow_control_config.request_lifetime_ms = 1000U;
+    query.flags = POTR_FLAG_FLOW_CONTROL;
+    query.session_id = 1U;
+    query.payload = query_payload;
+    query.payload_len = POTR_FLOW_CONTROL_QUERY_PAYLOAD_SIZE;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    ASSERT_EQ(POTR_OK, AcceptFlowControl(&ctx, 1U, (uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 50U));
+    // [状態] - 受信者 1 の抑制の要求と送出上限 50 を登録する。
+    // Pre-Assert
+    // Act
+    int query_ret = potr_internal_receiver_accept(&ctx, &query, wire);
+    // [手順] - 問い合わせパケットを potr_internal_receiver_accept() に渡す。
+    int unlimited_ret = AcceptFlowControl(&ctx, 1U, (uint8_t)POTR_FLOW_CONTROL_STATE_UNLIMITED, 0U);
+    // [手順] - 状態「上限なし」(送出上限 0) を potr_internal_receiver_accept() に渡す。
+    // Assert
+    EXPECT_EQ(POTR_ERR_PROTOCOL, query_ret); // [確認_異常系] - 送信者宛の問い合わせを POTR_ERR_PROTOCOL で破棄すること。
+    EXPECT_EQ(POTR_OK, unlimited_ret);       // [確認_正常系] - 状態「上限なし」を受理すること。
+    ASSERT_NE(nullptr, ctx.receivers);       // [確認_正常系] - 受信者 1 の記録があること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNLIMITED, ctx.receivers->flow_send_limit); // [確認_正常系] - 状態が「上限なし (通知済み)」になること。
+    EXPECT_EQ(0U, ctx.receivers->flow_request_expire_ms); // [確認_正常系] - 抑制の要求の期限が 0 に戻ること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 片方向 unicast で、受信報告の受理中は破棄せず、無応答で相手なしへ遷移し、再到着で未通知へ戻して問い合わせを送出することの確認
+TEST(receiverReportTest, unicast_last_packet_keeps_limit_and_no_peer_recovers_with_query)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000U;
+    uint8_t report_payload[POTR_MAX_PATH] = {};
+    uint8_t wire[POTR_PACKET_HEADER_WIRE_SIZE] = {};
+    potr_packet report = {};
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.flow_control_config.request_lifetime_ms = 500U;
+    ctx.send_window.next_seq = 10U;
+    report.flags = POTR_FLAG_REPORT;
+    report.session_id = 1U;
+    report.payload = report_payload;
+    report.payload_len = POTR_MAX_PATH;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理の時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_send_query(&ctx, nullptr)).Times(1);
+    // [Pre-Assert確認_正常系] - 相手なしからの復帰時に問い合わせを 1 回送出すること。
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_receiver_accept(&ctx, &report, wire));
+    // [手順] - 時刻 1000、次の通番 10 で初回 REPORT を受理する (未通知: 基準 10、上限 14)。
+    uint64_t state_initial = ctx.receivers->flow_send_limit;
+    int stalled = potr_internal_receiver_flow_suppressed(&ctx, 1000U, 14U, &tracked, &until_ms);
+    now_ms = 1400U;
+    ASSERT_EQ(POTR_OK, potr_internal_receiver_accept(&ctx, &report, wire));
+    int kept = potr_internal_receiver_flow_suppressed(&ctx, 1700U, 14U, &tracked, &until_ms);
+    // [手順] - 時刻 1400 に REPORT を受理し、元の期限 (1500) 後の時刻 1700 で判定する。
+    int expired = potr_internal_receiver_flow_suppressed(&ctx, 1900U, 14U, &tracked, &until_ms);
+    uint64_t state_no_peer = ctx.receivers->flow_send_limit;
+    // [手順] - 1400 から有効期限 500 [ms] 後の時刻 1900 で相手なしへ遷移させる。
+    ctx.send_window.next_seq = 40U;
+    now_ms = 2100U;
+    ASSERT_EQ(POTR_OK, potr_internal_receiver_accept(&ctx, &report, wire));
+    // [手順] - 相手なし状態で次の通番 40 のときに REPORT を再受理する。
+    // Assert
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 10U, state_initial); // [確認_正常系] - 初回 REPORT で基準 10 の未通知になること。
+    EXPECT_EQ(1, stalled); // [確認_正常系] - 初期の幅 4 に達した通番 14 で止まること。
+    EXPECT_EQ(1, kept);    // [確認_正常系] - REPORT 到着中は破棄しないこと。
+    EXPECT_EQ(0, expired); // [確認_正常系] - 無応答で有効期限経過後に破棄すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_NO_PEER, state_no_peer); // [確認_正常系] - 「相手なし」へ遷移すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 40U, ctx.receivers->flow_send_limit);
+    // [確認_正常系] - 再到着でその時点の通番 40 を基準とする未通知へ戻ること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 片方向 unicast で、最後の DATA 送出から有効期限以上途切れた場合に保持中の送出上限を初期の幅へ短縮することの確認
+TEST(receiverReportTest, unicast_idle_send_clamps_limit_at_lifetime)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.flow_control_config.request_lifetime_ms = 500U;
+    ctx.flow_last_data_send_ms = 1000U;
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 単一スレッドのテストとして排他操作を置換する。
+    potr_internal_receiver *receiver = AddReceiver(&ctx, 1, 1000U, 0);
+    HoldSendLimit(receiver, 100U, 1000U);
+    // [状態] - 受信者 1 が送出上限 100、最終 DATA 送出 1000、有効期限 500 [ms] の状態にする。
+    // Pre-Assert
+    // Act
+    int before = potr_internal_receiver_flow_suppressed(&ctx, 1499U, 10U, &tracked, &until_ms);
+    uint64_t limit_before = receiver->flow_send_limit;
+    int at_boundary = potr_internal_receiver_flow_suppressed(&ctx, 1500U, 10U, &tracked, &until_ms);
+    uint64_t limit_after = receiver->flow_send_limit;
+    // [手順] - 有効期限未満 (1499) とちょうど (1500) に、次の通番 10 で判定する。
+    // Assert
+    EXPECT_EQ(0, before);                                      // [確認_正常系] - 1499 では抑制しないこと。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 100U, limit_before); // [確認_正常系] - 有効期限未満では短縮しないこと。
+    EXPECT_EQ(0, at_boundary);                                 // [確認_正常系] - 1500 では初期の幅 4 の手前のため抑制しないこと。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 14U, limit_after);   // [確認_正常系] - 有効期限ちょうどで 10 + 4 = 14 へ短縮すること。
     // Cleanup
     FreeReceivers(&ctx);
 }

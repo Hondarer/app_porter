@@ -1272,7 +1272,8 @@ TEST(potrSendThreadTest, oneway_idle_sender_skips_flow_control_check)
     elem.flags = 0U;
     elem.payload_len = (uint16_t)sizeof(payload);
     elem.payload = payload;
-    // [状態] - flow_request_pending は 0 のまま (フロー制御パケットを受けていない) とする。
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELAXED);
+    // [状態] - flow_request_pending は 0、上限なし (通知済み) の状態とする。
     ON_CALL(mock_porter, potr_internal_send_queue_peek(_, _))
         .WillByDefault(Return(POTR_ERR_EMPTY)); // [状態] - 追加のエントリはないものとする。
     // Pre-Assert
@@ -1306,7 +1307,8 @@ TEST_F(potrSendThreadTcpTest, idle_sender_skips_flow_control_check)
 {
     // Arrange
     ctx.flow_limit_stalled_ms = 777U;
-    // [状態] - 要求の期限と送出上限は 0 のまま、送出上限で止まった時刻だけが前の送出上限の分として残っている状態にする。
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELAXED);
+    // [状態] - 要求の期限は 0、送出上限は「上限なし (通知済み)」、止まった時刻が残っている状態にする。
 
     // Pre-Assert
     EXPECT_CALL(mock_porter, potr_internal_flow_control_suppressed(_, _, _, _)).Times(0);

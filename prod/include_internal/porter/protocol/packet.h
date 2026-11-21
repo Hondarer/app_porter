@@ -36,10 +36,16 @@
 #define POTR_PACKET_PAYLOAD_LEN_OFFSET 34U
 
 /**
- * フロー制御パケットのペイロード長 [byte]。
+ * フロー制御パケット (抑制の要求、解除、上限なし) のペイロード長 [byte]。
  * 先頭 1 [byte] が状態 (POTR_FLOW_CONTROL_STATE_*)、続く 4 [byte] が送出上限 (uint32、ネットワーク バイト オーダー)。
  */
 #define POTR_FLOW_CONTROL_PAYLOAD_SIZE 5U
+
+/**
+ * フロー制御パケット (問い合わせ: POTR_FLOW_CONTROL_STATE_QUERY) のペイロード長 [byte]。
+ * 状態 1 [byte] のみ。
+ */
+#define POTR_FLOW_CONTROL_QUERY_PAYLOAD_SIZE 1U
 
 /** 監視対象の一覧のペイロードで、受信者のセッション識別子の前に置く部分の長さ [byte] (状態 1 [byte] と台数 1 [byte])。 */
 #define POTR_FLOW_CONTROL_MONITOR_HEADER_SIZE 2U
@@ -101,29 +107,54 @@ static inline void session_ts_from_hdr(int64_t tv_sec, int32_t tv_nsec, cplat_ti
  *  @brief          開封済みのフロー制御パケットから、状態と送出上限を取り出します。
  *  @param[in]      packet      開封済みのフロー制御パケット (payload_len はホスト バイト オーダー)。NULL は許可しません。
  *  @param[out]     state       状態 (POTR_FLOW_CONTROL_STATE_*) の格納先。NULL は許可しません。
- *  @param[out]     send_limit  送出上限の格納先。NULL は許可しません。
- *  @return         形式が正しい場合は POTR_OK、ペイロードが POTR_FLOW_CONTROL_PAYLOAD_SIZE バイトでない場合、
- *                  状態が POTR_FLOW_CONTROL_STATE_* のいずれでもない場合、seq_num または ack_num が 0 でない場合は
+ *  @param[out]     send_limit  送出上限の格納先。状態が問い合わせまたは上限なしの場合は 0 を格納します。NULL は許可しません。
+ *  @return         形式が正しい場合は POTR_OK、ペイロード長が状態に合わない場合 (問い合わせは 1 [byte]、
+ *                  抑制の要求・解除・上限なしは 5 [byte])、状態が不正な場合 (監視対象の一覧を含む)、
+ *                  上限なしで送出上限の欄が 0 でない場合、seq_num または ack_num が 0 でない場合は
  *                  POTR_ERR_PROTOCOL を返します。失敗時の出力は不定です。
  *
  *  送出上限はネットワーク バイト オーダーの 4 [byte] を、バイトの並びから組み立てます。
  */
 static inline int flow_control_payload_decode(const potr_packet *packet, uint8_t *state, uint32_t *send_limit)
 {
-    if (packet->payload == NULL || packet->payload_len != POTR_FLOW_CONTROL_PAYLOAD_SIZE || packet->seq_num != 0U ||
-        packet->ack_num != 0U)
+    uint32_t limit;
+
+    if (packet->payload == NULL || packet->payload_len == 0U || packet->seq_num != 0U || packet->ack_num != 0U)
     {
         return POTR_ERR_PROTOCOL;
     }
 
     *state = packet->payload[0];
-    if (*state != POTR_FLOW_CONTROL_STATE_SUPPRESS && *state != POTR_FLOW_CONTROL_STATE_RESUME)
+    if (*state == POTR_FLOW_CONTROL_STATE_QUERY)
+    {
+        if (packet->payload_len != POTR_FLOW_CONTROL_QUERY_PAYLOAD_SIZE)
+        {
+            return POTR_ERR_PROTOCOL;
+        }
+
+        *send_limit = 0U;
+        return POTR_OK;
+    }
+
+    if (packet->payload_len != POTR_FLOW_CONTROL_PAYLOAD_SIZE)
     {
         return POTR_ERR_PROTOCOL;
     }
 
-    *send_limit = ((uint32_t)packet->payload[1] << 24) | ((uint32_t)packet->payload[2] << 16) |
-                  ((uint32_t)packet->payload[3] << 8) | (uint32_t)packet->payload[4];
+    if (*state != POTR_FLOW_CONTROL_STATE_SUPPRESS && *state != POTR_FLOW_CONTROL_STATE_RESUME &&
+        *state != POTR_FLOW_CONTROL_STATE_UNLIMITED)
+    {
+        return POTR_ERR_PROTOCOL;
+    }
+
+    limit = ((uint32_t)packet->payload[1] << 24) | ((uint32_t)packet->payload[2] << 16) |
+            ((uint32_t)packet->payload[3] << 8) | (uint32_t)packet->payload[4];
+    if (*state == POTR_FLOW_CONTROL_STATE_UNLIMITED && limit != 0U)
+    {
+        return POTR_ERR_PROTOCOL;
+    }
+
+    *send_limit = limit;
 
     return POTR_OK;
 }
@@ -212,16 +243,19 @@ extern "C"
     /**
      *  @brief          フロー制御パケットを構築します。
      *  @param[out]     packet      構築結果を格納するパケット構造体へのポインター。
-     *  @param[in]      shdr        送出する側 (受信側) 自身のセッション識別ヘッダーへのポインター。
-     *  @param[out]     payload     ペイロードの格納先 (POTR_FLOW_CONTROL_PAYLOAD_SIZE [byte])。
+     *  @param[in]      shdr        送出する側自身のセッション識別ヘッダーへのポインター。
+     *  @param[out]     payload     ペイロードの格納先 (問い合わせは 1 [byte] 以上、それ以外は POTR_FLOW_CONTROL_PAYLOAD_SIZE [byte])。
      *                              packet->payload はこの領域を指すため、封緘が終わるまで有効であること。
-     *  @param[in]      state       状態 (POTR_FLOW_CONTROL_STATE_SUPPRESS または POTR_FLOW_CONTROL_STATE_RESUME)。
+     *  @param[in]      state       状態 (POTR_FLOW_CONTROL_STATE_SUPPRESS、POTR_FLOW_CONTROL_STATE_RESUME、
+     *                              POTR_FLOW_CONTROL_STATE_QUERY、または POTR_FLOW_CONTROL_STATE_UNLIMITED)。
      *  @param[in]      send_limit  送出上限 (送信側が送出してよい DATA の通番の上限。この通番以上を送出しない)。
-     *  @return         成功時は POTR_OK、引数または状態の値が不正な場合は POTR_ERR_INVALID_ARGUMENT を返します。
+     *                              状態が問い合わせまたは上限なしの場合は 0 を指定すること。
+     *  @return         成功時は POTR_OK、引数または状態の値が不正な場合、問い合わせまたは上限なしで send_limit が
+     *                  0 でない場合は POTR_ERR_INVALID_ARGUMENT を返します。
      *
-     *  受信側が送信側へ、抑制の要求または解除と、送出上限を伝えるパケットです。\n
      *  通番を消費せず、ウィンドウに登録しません (NACK・再送の対象外)。seq_num と ack_num は常に 0 です。\n
-     *  ペイロードは、先頭 1 [byte] が状態、続く 4 [byte] がネットワーク バイト オーダーの送出上限です。
+     *  状態が問い合わせの場合、ペイロードは状態 1 [byte] のみです。それ以外の場合、ペイロードは先頭 1 [byte] が状態、
+     *  続く 4 [byte] がネットワーク バイト オーダーの送出上限です。
      */
     extern int potr_internal_packet_build_flow_control(potr_packet *packet,
                                                        const potr_internal_packet_session_hdr *shdr,

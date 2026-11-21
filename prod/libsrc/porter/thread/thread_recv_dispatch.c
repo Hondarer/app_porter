@@ -148,6 +148,7 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
     {
         if (slot->peer != NULL)
         {
+            potr_internal_flow_control_on_peer_packet(ctx, slot->peer, pkt);
             thread_recv_window_on_nack(slot, pkt);
         }
 
@@ -173,6 +174,7 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
             slot->peer_session_ts->tv_sec == pkt_session_ts.tv_sec &&
             slot->peer_session_ts->tv_nsec == pkt_session_ts.tv_nsec)
         {
+            potr_internal_flow_control_on_peer_packet(ctx, slot->peer, pkt);
             potr_internal_flow_control_on_packet(ctx, slot->peer, pkt);
         }
 
@@ -203,6 +205,7 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
         return 0;
     }
 
+    potr_internal_flow_control_on_peer_packet(ctx, slot->peer, pkt);
     thread_recv_learn_sender_path(slot, path_idx, sender);
 
     {

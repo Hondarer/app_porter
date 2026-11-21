@@ -35,23 +35,55 @@ static void slot_clear_pending_fin(thread_recv_slot *slot)
 }
 
 /*
- * 新しいセッションを採用したため、その相手から受けていた抑制の要求と送出上限を取り消す。
+ * 新しいセッションを採用したため、その相手から受けていた抑制の要求を取り消し、送出上限を未通知 (初期の幅) へ戻す。
  * 送出上限は相手の受信の位置に基づく値であり、別のセッションには当てはまらないためである。
  * N:1 モードのピアは、呼び出し元が peers_mutex を保持している。
  */
 static void slot_forget_flow_control(thread_recv_slot *slot)
 {
+    uint32_t next_seq;
+
     if (slot->peer != NULL)
     {
+        if (slot->peer->send_window_mutex != NULL)
+        {
+            cplat_local_lock_lock(slot->peer->send_window_mutex);
+            next_seq = slot->peer->send_window.next_seq;
+            cplat_local_lock_unlock(slot->peer->send_window_mutex);
+        }
+        else
+        {
+            next_seq = slot->peer->send_window.next_seq;
+        }
+
         slot->peer->flow_request_expire_ms = 0U;
-        slot->peer->flow_send_limit = 0U;
+        slot->peer->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq;
         slot->peer->flow_limit_stalled_ms = 0U;
+        slot->peer->flow_query_next_ms = 0U;
+        slot->peer->flow_query_interval_ms = 0U;
         potr_internal_flow_control_peer_sync(slot->ctx, slot->peer);
         return;
     }
 
+    if (slot->ctx->service.type == POTR_TYPE_MULTICAST || slot->ctx->service.type == POTR_TYPE_BROADCAST)
+    {
+        return;
+    }
+
+    if (slot->ctx->send_window_mutex != NULL)
+    {
+        cplat_local_lock_lock(slot->ctx->send_window_mutex);
+        next_seq = slot->ctx->send_window.next_seq;
+        cplat_local_lock_unlock(slot->ctx->send_window_mutex);
+    }
+    else
+    {
+        next_seq = slot->ctx->send_window.next_seq;
+    }
+
     cplat_atomic_store_u64(&slot->ctx->flow_request_expire_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
-    cplat_atomic_store_u64(&slot->ctx->flow_send_limit, 0U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&slot->ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq,
+                           CPLAT_MEMORY_ORDER_RELEASE);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

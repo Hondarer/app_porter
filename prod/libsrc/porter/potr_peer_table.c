@@ -416,6 +416,9 @@ potr_internal_peer_context *potr_internal_peer_create(potr_context *ctx, const c
 
     ctx->n_peers++;
 
+    /* 新しいピアは未通知 (初期の幅) で始まるため、判定対象のピア数へ反映する。 */
+    potr_internal_flow_control_peer_sync(ctx, peer);
+
     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                "potr_internal_peer_create: service_id=%" PRId64 " peer_id=%u created (n_peers=%d)",
                ctx->service.service_id, (unsigned)peer->peer_id, ctx->n_peers);

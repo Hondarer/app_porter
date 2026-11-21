@@ -114,7 +114,7 @@ static int push_message(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
 }
 
 /** 抑制中のピアの状態を確認し直すまでの待機の上限 [ms]。 */
-#define SEND_FLOW_RECHECK_MS 50
+#define SEND_FLOW_RECHECK_MS ((int)POTR_FLOW_QUERY_INITIAL_INTERVAL_MS)
 
 /*
  * N:1 モードで、宛先のピアが抑制中 (有効な抑制の要求がある、または受けた送出上限に達している) かどうかを返す。

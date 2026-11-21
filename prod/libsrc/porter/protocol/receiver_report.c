@@ -224,6 +224,8 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
     int report;
     int flow;
     int monitoring;
+    int is_new_receiver = 0;
+    int need_query = 0;
     int ret = POTR_OK;
     uint32_t next_seq = 0U;
     uint8_t flow_state = 0U;
@@ -247,8 +249,9 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
     {
         return POTR_ERR_PROTOCOL;
     }
-    /* ペイロードが 5 [byte] でないフロー制御パケットと、状態が不正なフロー制御パケットは破棄する。 */
-    if (flow && flow_control_payload_decode(packet, &flow_state, &flow_send_limit) != POTR_OK)
+    /* ペイロードの形式が不正なフロー制御パケットと、受信側向けの問い合わせは破棄する。 */
+    if (flow && (flow_control_payload_decode(packet, &flow_state, &flow_send_limit) != POTR_OK ||
+                 flow_state == POTR_FLOW_CONTROL_STATE_QUERY))
     {
         return POTR_ERR_PROTOCOL;
     }
@@ -274,9 +277,9 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
         return POTR_ERR_IO;
     }
 
-    /* 余裕は、受信報告を受理した時点の次に割り当てる DATA の通番との差である。callback_mutex を取得する前に読む。 */
+    /* 余裕や未通知の基準に使う次に割り当てる DATA の通番を、callback_mutex を取得する前に読む。 */
     monitoring = is_monitoring_sender(ctx);
-    if (monitoring && report && packet->seq_num == 1U)
+    if ((monitoring && report && packet->seq_num == 1U) || (!monitoring && ctx->service.type == POTR_TYPE_UNICAST))
     {
         next_seq = read_send_next_seq(ctx);
     }
@@ -343,6 +346,7 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
         receiver->session_id = packet->session_id;
         receiver->session_tv_sec = packet->session_tv_sec;
         receiver->session_tv_nsec = packet->session_tv_nsec;
+        is_new_receiver = 1;
     }
     memcpy(&wire_flags, wire_header + 32U, sizeof(wire_flags));
     if ((cplat_ntoh16(wire_flags) & POTR_FLAG_ENCRYPTED) != 0U)
@@ -351,6 +355,21 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
     }
     if (ret == POTR_OK)
     {
+        int handle_was_no_peer = 0;
+
+        receiver->flow_last_packet_ms = now_ms;
+        cplat_atomic_store_u64(&ctx->flow_last_packet_ms, now_ms, CPLAT_MEMORY_ORDER_RELEASE);
+
+        if (!monitoring && ctx->service.type == POTR_TYPE_UNICAST)
+        {
+            uint64_t prev_handle = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+
+            handle_was_no_peer = (prev_handle & POTR_FLOW_SEND_LIMIT_STATE_MASK) == POTR_FLOW_SEND_LIMIT_NO_PEER;
+
+            /* 受信者の管理表で追跡を始めた後は、ハンドル側の初期の幅を解除する。 */
+            cplat_atomic_store_u64(&ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELEASE);
+        }
+
         if (report)
         {
             memcpy(receiver->path_state, packet->payload, POTR_MAX_PATH);
@@ -383,42 +402,73 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
         {
             int was_monitored = receiver->flow_monitored;
 
-            if (flow_state == POTR_FLOW_CONTROL_STATE_SUPPRESS)
+            if (flow_state == POTR_FLOW_CONTROL_STATE_UNLIMITED)
             {
-                receiver->flow_request_expire_ms = now_ms + ctx->flow_control_config.request_lifetime_ms;
+                receiver->flow_request_expire_ms = 0U;
+                receiver->flow_send_limit = monitoring ? 0U : POTR_FLOW_SEND_LIMIT_UNLIMITED;
+                receiver->flow_limit_stalled_ms = 0U;
+                receiver->flow_limit_received_ms = now_ms;
             }
             else
             {
-                receiver->flow_request_expire_ms = 0U;
-            }
-
-            /*
-             * 送出上限は、状態の値によらず上書きする。通番で表すため、重複して届いても判定は変わらない。
-             * multicast と broadcast では、監視対象の受信者の送出上限だけを保持する。
-             */
-            if (!monitoring || was_monitored)
-            {
-                receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)flow_send_limit;
-                receiver->flow_limit_received_ms = now_ms;
-            }
-
-            /*
-             * 監視対象でない受信者から抑制の要求を受けた場合は、受信報告を待たずに候補にするため、余裕を 0 として記録する。
-             * 次の受信報告で上書きする。
-             */
-            if (monitoring)
-            {
-                if (!was_monitored && flow_state == POTR_FLOW_CONTROL_STATE_SUPPRESS)
+                if (flow_state == POTR_FLOW_CONTROL_STATE_SUPPRESS)
                 {
-                    receiver->flow_margin = 0;
-                    receiver->flow_margin_known = 1;
+                    receiver->flow_request_expire_ms = now_ms + ctx->flow_control_config.request_lifetime_ms;
+                }
+                else
+                {
+                    receiver->flow_request_expire_ms = 0U;
                 }
 
-                monitor_select_locked(ctx, now_ms);
+                /*
+                 * 送出上限は、状態の値によらず上書きする。通番で表すため、重複して届いても判定は変わらない。
+                 * multicast と broadcast では、監視対象の受信者の送出上限だけを保持する。
+                 */
+                if (!monitoring || was_monitored)
+                {
+                    receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)flow_send_limit;
+                    receiver->flow_limit_received_ms = now_ms;
+                }
+
+                /*
+                 * 監視対象でない受信者から抑制の要求を受けた場合は、受信報告を待たずに候補にするため、余裕を 0 として記録する。
+                 * 次の受信報告で上書きする。
+                 */
+                if (monitoring)
+                {
+                    if (!was_monitored && flow_state == POTR_FLOW_CONTROL_STATE_SUPPRESS)
+                    {
+                        receiver->flow_margin = 0;
+                        receiver->flow_margin_known = 1;
+                    }
+
+                    monitor_select_locked(ctx, now_ms);
+                }
+            }
+        }
+
+        if (!monitoring && !flow && ctx->service.type == POTR_TYPE_UNICAST)
+        {
+            uint64_t recv_state = receiver->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK;
+
+            if (is_new_receiver || recv_state == POTR_FLOW_SEND_LIMIT_NO_PEER)
+            {
+                receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq;
+                receiver->flow_limit_received_ms = now_ms;
+                receiver->flow_limit_stalled_ms = 0U;
+                cplat_atomic_store_i32(&ctx->flow_request_pending, 1, CPLAT_MEMORY_ORDER_RELEASE);
+                if (!is_new_receiver || handle_was_no_peer)
+                {
+                    need_query = 1;
+                }
             }
         }
     }
     cplat_local_lock_unlock(ctx->callback_mutex);
+    if (need_query != 0)
+    {
+        potr_internal_flow_control_send_query(ctx, NULL);
+    }
     return ret;
 }
 
@@ -430,13 +480,17 @@ int potr_internal_receiver_flow_suppressed(potr_context *ctx, uint64_t now_ms, u
     size_t active_count = 0U;
     size_t stopping_count = 0U;
     size_t tracked_count = 0U;
+    size_t limit_reached_count = 0U;
     uint64_t earliest_ms = 0U;
     int suppressed = 0;
+    int monitoring;
 
     if (ctx == NULL || tracked == NULL || until_ms == NULL)
     {
         return 0;
     }
+
+    monitoring = (ctx->service.type == POTR_TYPE_MULTICAST || ctx->service.type == POTR_TYPE_BROADCAST);
 
     cplat_local_lock_lock(ctx->callback_mutex);
 
@@ -451,19 +505,63 @@ int potr_internal_receiver_flow_suppressed(potr_context *ctx, uint64_t now_ms, u
         uint64_t limit_until_ms = 0U;
         uint32_t allowance = 0U;
         int valid = receiver->flow_request_expire_ms > now_ms;
-        potr_internal_send_limit_state limit_state = flow_send_limit_judge(
-            receiver->flow_send_limit, receiver->flow_limit_received_ms, &receiver->flow_limit_stalled_ms, next_seq,
-            now_ms, ctx->flow_control_config.request_lifetime_ms, &limit_until_ms, &allowance);
+        potr_internal_send_limit_state limit_state;
         int stopping;
 
-        /* 送出上限に達した時点から有効期限が経過しても次のフロー制御パケットが届かない場合は、送出上限を破棄する。 */
-        if (limit_state == POTR_SEND_LIMIT_EXPIRED)
+        if (monitoring)
         {
-            receiver->flow_send_limit = 0U;
-            receiver->flow_limit_stalled_ms = 0U;
+            if (receiver->flow_send_limit == 0U)
+            {
+                receiver->flow_limit_stalled_ms = 0U;
+                limit_state = POTR_SEND_LIMIT_OPEN;
+            }
+            else
+            {
+                limit_state = flow_send_limit_judge(
+                    receiver->flow_send_limit, receiver->flow_limit_received_ms, &receiver->flow_limit_stalled_ms,
+                    next_seq, now_ms, ctx->flow_control_config.request_lifetime_ms, &limit_until_ms, &allowance);
+            }
+
+            /* multicast と broadcast の送出上限の破棄は従来どおりとする。 */
+            if (limit_state == POTR_SEND_LIMIT_EXPIRED)
+            {
+                receiver->flow_send_limit = 0U;
+                receiver->flow_limit_stalled_ms = 0U;
+            }
+        }
+        else
+        {
+            uint64_t activity_ms = receiver->flow_limit_received_ms;
+
+            /* 片方向 unicast で最後の DATA 送出から有効期限以上途切れた場合、保持中の送出上限を初期の幅へ縮める。 */
+            if (ctx->flow_last_data_send_ms != 0U &&
+                now_ms >= ctx->flow_last_data_send_ms + (uint64_t)ctx->flow_control_config.request_lifetime_ms)
+            {
+                receiver->flow_send_limit = flow_send_limit_clamp_initial(receiver->flow_send_limit, next_seq);
+            }
+
+            if (receiver->flow_last_packet_ms > activity_ms)
+            {
+                activity_ms = receiver->flow_last_packet_ms;
+            }
+
+            limit_state = flow_send_limit_judge(receiver->flow_send_limit, activity_ms, &receiver->flow_limit_stalled_ms,
+                                                next_seq, now_ms, ctx->flow_control_config.request_lifetime_ms,
+                                                &limit_until_ms, &allowance);
+
+            /* unicast で有効期限の間、相手から何も届かなかった場合は「相手なし」へ遷移する。 */
+            if (limit_state == POTR_SEND_LIMIT_EXPIRED)
+            {
+                receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_NO_PEER;
+                receiver->flow_limit_stalled_ms = 0U;
+            }
         }
 
         stopping = valid || limit_state == POTR_SEND_LIMIT_REACHED;
+        if (limit_state == POTR_SEND_LIMIT_REACHED)
+        {
+            limit_reached_count++;
+        }
 
         /*
          * 「止める状態」の受信者は、受信報告の有無にかかわらず活動中として数える。
@@ -474,10 +572,22 @@ int potr_internal_receiver_flow_suppressed(potr_context *ctx, uint64_t now_ms, u
             active_count++;
         }
 
-        /* 要求か送出上限が残っている間は、送出のたびに判定し直す必要がある。 */
-        if (valid || receiver->flow_send_limit != 0U)
+        /* 要求、未通知、または送出上限が残っている間は、送出のたびに判定し直す必要がある。 */
+        if (monitoring)
         {
-            tracked_count++;
+            if (valid || receiver->flow_send_limit != 0U)
+            {
+                tracked_count++;
+            }
+        }
+        else
+        {
+            uint64_t state = receiver->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK;
+
+            if (valid || state == POTR_FLOW_SEND_LIMIT_UNNOTIFIED || state == POTR_FLOW_SEND_LIMIT_HELD)
+            {
+                tracked_count++;
+            }
         }
 
         if (stopping)
@@ -497,6 +607,7 @@ int potr_internal_receiver_flow_suppressed(potr_context *ctx, uint64_t now_ms, u
     }
 
     cplat_local_lock_unlock(ctx->callback_mutex);
+    ctx->flow_receiver_limit_stalled = (limit_reached_count != 0U);
 
     if (stopping_count != 0U)
     {

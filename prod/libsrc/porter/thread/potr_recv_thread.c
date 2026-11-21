@@ -211,6 +211,11 @@ static int sender_handle_packet(thread_recv_slot *slot, const potr_packet *pkt)
         potr_internal_send_queue_wake_flow(&ctx->send_queue);
         return 1;
     }
+    if (pkt->flags == POTR_FLAG_NACK && ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
+    {
+        potr_internal_flow_control_on_peer_packet(ctx, NULL, pkt);
+    }
+
     thread_recv_window_on_nack(slot, pkt);
 
     if (ctx->service.type != POTR_TYPE_UNICAST_BIDIR)
