@@ -496,10 +496,20 @@ int potr_internal_flow_control_start(potr_context *ctx)
     fc->resume_bytes = fc->capacity * ctx->flow_control_config.resume_percent / 100U;
     fc->max_payload = ctx->global.max_payload;
     fc->receive_buffer_used = buffer_used;
+    ctx->flow_receive_buffer_width = 0U;
+    ctx->flow_monitored = 0;
     if (buffer_used != 0)
     {
+        uint64_t effective_width;
+
         fc->receive_buffer_width = flow_receive_buffer_width(buffer_size, ctx->flow_control_config.receive_buffer_percent,
                                                              (uint32_t)ctx->global.max_payload);
+        effective_width = fc->receive_buffer_width;
+        if (effective_width < (uint64_t)POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN)
+        {
+            effective_width = (uint64_t)POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN;
+        }
+        ctx->flow_receive_buffer_width = (uint32_t)effective_width;
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "flow_control[service_id=%" PRId64 "]: OS receive buffer=%" PRIu64 " width=%" PRIu64 " packets",
                    ctx->service.service_id, buffer_size, fc->receive_buffer_width);
@@ -525,6 +535,8 @@ void potr_internal_flow_control_stop(potr_context *ctx)
 
     fc = ctx->flow_control;
     ctx->flow_control = NULL;
+    ctx->flow_receive_buffer_width = 0U;
+    ctx->flow_monitored = 0;
     account = fc->accounts;
 
     while (account != NULL)
@@ -863,8 +875,8 @@ static uint8_t current_state(const flow_account *account)
  * multicast と broadcast の受信者は、送信者のセッションが変わった場合、監視対象の一覧を受け取っていない状態に戻す。
  * fc->mutex を保持して呼ぶ。
  */
-static void adopt_session(struct potr_internal_flow_control *fc, flow_account *account, uint32_t session_id,
-                          const cplat_timespec *session_ts)
+static void adopt_session(potr_context *ctx, struct potr_internal_flow_control *fc, flow_account *account,
+                          uint32_t session_id, const cplat_timespec *session_ts)
 {
     if (account->session_id != session_id || account->session_ts.tv_sec != session_ts->tv_sec ||
         account->session_ts.tv_nsec != session_ts->tv_nsec)
@@ -874,6 +886,7 @@ static void adopt_session(struct potr_internal_flow_control *fc, flow_account *a
         account->last_data_ms = 0U;
         account->max_packet_size = 0U;
         fc->monitored = 0;
+        ctx->flow_monitored = 0;
     }
 
     account->session_id = session_id;
@@ -947,7 +960,7 @@ int potr_internal_flow_control_admit(potr_context *ctx, potr_peer_id peer_id, ui
         return POTR_OK;
     }
 
-    adopt_session(fc, account, session_id, session_ts);
+    adopt_session(ctx, fc, account, session_id, session_ts);
 
     if (account->refused != 0 || (uint64_t)len > fc->capacity - account->occupancy)
     {
@@ -1076,7 +1089,7 @@ void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer
         return;
     }
 
-    adopt_session(fc, account, session_id, session_ts);
+    adopt_session(ctx, fc, account, session_id, session_ts);
 
     /*
      * 圧縮した DATA パケットの展開後の大きさの最大値を、既存の fc->mutex の下でセッションごとに記録する。
@@ -1323,6 +1336,7 @@ void potr_internal_flow_control_tick(potr_context *ctx, uint64_t now_ms)
             now_ms >= fc->monitor_received_ms + (uint64_t)ctx->flow_control_config.request_lifetime_ms)
         {
             fc->monitored = 0;
+            ctx->flow_monitored = 0;
             fc->service.notified = 0;
             POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
                        "flow_control[service_id=%" PRId64 "]: monitored receiver list expired, no longer monitored",
@@ -1442,12 +1456,13 @@ static void on_monitor_list(potr_context *ctx, const potr_packet *pkt)
     account = &fc->service;
 
     /* 送信者のセッションが変わった場合は、一覧を受け取っていない状態から反映する。 */
-    adopt_session(fc, account, pkt->session_id, &sender_ts);
+    adopt_session(ctx, fc, account, pkt->session_id, &sender_ts);
     fc->monitor_received_ms = now_ms;
 
     if (included != 0 && fc->monitored == 0)
     {
         fc->monitored = 1;
+        ctx->flow_monitored = 1;
         account->notified = 0;
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "flow_control[service_id=%" PRId64 "]: selected as monitored receiver",
                    ctx->service.service_id);
@@ -1461,6 +1476,7 @@ static void on_monitor_list(potr_context *ctx, const potr_packet *pkt)
     else if (included == 0 && fc->monitored != 0)
     {
         fc->monitored = 0;
+        ctx->flow_monitored = 0;
         account->notified = 0;
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "flow_control[service_id=%" PRId64 "]: no longer monitored receiver",
                    ctx->service.service_id);
@@ -1516,7 +1532,7 @@ static void on_query(potr_context *ctx, struct potr_internal_peer_context *peer,
     account = find_account(ctx, fc, peer_id, 1);
     if (account != NULL)
     {
-        adopt_session(fc, account, pkt->session_id, &sender_ts);
+        adopt_session(ctx, fc, account, pkt->session_id, &sender_ts);
         if (is_unlimited_mode(fc))
         {
             notify_unlimited(ctx, fc, account);

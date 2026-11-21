@@ -31,37 +31,15 @@ int thread_recv_report_interval(const potr_context *ctx, uint64_t *interval_ms)
     return POTR_OK;
 }
 
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int thread_recv_report_tick(potr_context *ctx, uint64_t now_ms)
+/* 受信報告パケットを組み立て、全経路へ送出する。 */
+static int send_report(potr_context *ctx)
 {
-    uint64_t interval_ms;
     potr_packet packet;
     potr_internal_packet_session_hdr shdr;
     uint8_t states[POTR_MAX_PATH];
     int ret;
     int i;
 
-    if (ctx->role != POTR_ROLE_RECEIVER || !is_oneway_udp_type(ctx->service.type) ||
-        is_raw_type(ctx->service.type) || ctx->health_interval_ms == 0U)
-    {
-        return POTR_OK;
-    }
-    if (ctx->next_report_ms != 0U && now_ms < ctx->next_report_ms)
-    {
-        return POTR_OK;
-    }
-    ret = thread_recv_report_interval(ctx, &interval_ms);
-    if (ret != POTR_OK)
-    {
-        return ret;
-    }
-    if (ctx->next_report_ms == 0U)
-    {
-        ctx->next_report_ms = now_ms + interval_ms;
-        return POTR_OK;
-    }
-    ctx->next_report_ms = now_ms + interval_ms;
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
     session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
@@ -120,5 +98,108 @@ int thread_recv_report_tick(potr_context *ctx, uint64_t now_ms)
         /* REPORT は次の周期に送り直すため、戻り値は明示的に破棄する。 */
         (void)cplat_socket_sendto(ctx->sock[i], wire, wire_len, &destination, &sent, NULL);
     }
+
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int thread_recv_report_tick(potr_context *ctx, uint64_t now_ms)
+{
+    uint64_t interval_ms;
+    int ret;
+
+    if (ctx->role != POTR_ROLE_RECEIVER || !is_oneway_udp_type(ctx->service.type) ||
+        is_raw_type(ctx->service.type) || ctx->health_interval_ms == 0U)
+    {
+        return POTR_OK;
+    }
+    if (ctx->next_report_ms != 0U && now_ms < ctx->next_report_ms)
+    {
+        return POTR_OK;
+    }
+    ret = thread_recv_report_interval(ctx, &interval_ms);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+    if (ctx->next_report_ms == 0U)
+    {
+        ctx->next_report_ms = now_ms + interval_ms;
+        return POTR_OK;
+    }
+    ctx->next_report_ms = now_ms + interval_ms;
+
+    return send_report(ctx);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int thread_recv_report_on_adopted(potr_context *ctx)
+{
+    ctx->recv_report_consecutive_data = 0U;
+
+    if (!thread_recv_report_tracks_lag(ctx) || ctx->flow_monitored != 0)
+    {
+        return POTR_OK;
+    }
+
+    /* 採用時の 1 回は間隔の制限の対象外とし、last_ad_hoc_report_ms と next_report_ms を変えない。 */
+    return send_report(ctx);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int thread_recv_report_on_data_accepted(potr_context *ctx, uint64_t now_ms)
+{
+    uint32_t threshold;
+    uint64_t interval_ms;
+    int ret;
+
+    if (!thread_recv_report_tracks_lag(ctx))
+    {
+        return POTR_OK;
+    }
+
+    ctx->recv_report_accepted_data++;
+
+    /* 監視対象の受信者、および OS の受信バッファーの幅がない構成では、遅れの検出と臨時の送出を行わない。 */
+    if (ctx->flow_monitored != 0 || ctx->flow_receive_buffer_width < 2U)
+    {
+        return POTR_OK;
+    }
+
+    ctx->recv_report_consecutive_data++;
+    threshold = ctx->flow_receive_buffer_width / 2U;
+
+    if (ctx->recv_report_consecutive_data < threshold)
+    {
+        return POTR_OK;
+    }
+
+    ctx->recv_report_consecutive_data = 0U;
+    ctx->recv_report_lag_detected++;
+
+    interval_ms = ctx->flow_control_config.request_interval_ms;
+    if (interval_ms == 0U)
+    {
+        interval_ms = (uint64_t)POTR_DEFAULT_FLOW_CONTROL_REQUEST_INTERVAL_MS;
+    }
+
+    if (ctx->has_ad_hoc_report != 0 && now_ms < ctx->last_ad_hoc_report_ms + interval_ms)
+    {
+        return POTR_OK;
+    }
+
+    ret = send_report(ctx);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+
+    ctx->has_ad_hoc_report = 1;
+    ctx->last_ad_hoc_report_ms = now_ms;
+    ctx->recv_report_lag_sent++;
+
     return POTR_OK;
 }

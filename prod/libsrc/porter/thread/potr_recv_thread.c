@@ -385,27 +385,56 @@ static void recv_thread_func(void *arg)
                 wait_ms = ctx->flow_control_config.request_interval_ms;
             }
         }
-        poll_result =
-            cplat_socket_timed_wait_readable_multi(ctx->sock, (size_t)ctx->n_path, (int)wait_ms, ready, &detail);
-        if (poll_result == CPLAT_ERR_TIMEOUT)
         {
-            if (!ctx->is_multi_peer && ctx->global.reorder_timeout_ms > 0U &&
-                (ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR))
+            cplat_timespec wait_start = {0};
+            cplat_timespec wait_end = {0};
+            int track_lag = thread_recv_report_tracks_lag(ctx);
+            int has_wait_start = 0;
+
+            if (track_lag != 0)
             {
-                thread_recv_window_check_reorder_timeout(&svc_slot);
+                ctx->recv_report_wait_loops++;
+                has_wait_start = (cplat_clock_get_monotonic(&wait_start) == CPLAT_OK);
             }
 
-            continue;
-        }
-        if (poll_result != CPLAT_OK)
-        {
-            if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+            poll_result =
+                cplat_socket_timed_wait_readable_multi(ctx->sock, (size_t)ctx->n_path, (int)wait_ms, ready, &detail);
+            if (poll_result == CPLAT_ERR_TIMEOUT)
             {
+                if (track_lag != 0)
+                {
+                    thread_recv_report_reset_consecutive(ctx);
+                }
+
+                if (!ctx->is_multi_peer && ctx->global.reorder_timeout_ms > 0U &&
+                    (ctx->role == POTR_ROLE_RECEIVER || ctx->service.type == POTR_TYPE_UNICAST_BIDIR))
+                {
+                    thread_recv_window_check_reorder_timeout(&svc_slot);
+                }
+
+                continue;
+            }
+            if (poll_result != CPLAT_OK)
+            {
+                if (cplat_atomic_load_i32(&ctx->running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+                {
+                    break;
+                }
+                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv[service_id=%" PRId64 "]: socket poll failed: rc=%d",
+                           ctx->service.service_id, poll_result);
                 break;
             }
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv[service_id=%" PRId64 "]: socket poll failed: rc=%d",
-                       ctx->service.service_id, poll_result);
-            break;
+
+            if (track_lag != 0)
+            {
+                int has_wait_end = (cplat_clock_get_monotonic(&wait_end) == CPLAT_OK);
+
+                if (has_wait_start == 0 || has_wait_end == 0 ||
+                    thread_recv_report_wait_was_immediate(&wait_start, &wait_end) == 0)
+                {
+                    thread_recv_report_reset_consecutive(ctx);
+                }
+            }
         }
 
         for (i = 0; i < ctx->n_path; i++)
@@ -497,6 +526,15 @@ static void recv_thread_func(void *arg)
              */
             (void)thread_recv_dispatch_packet(&svc_slot, &pkt, i, &sender_addr);
         }
+    }
+
+    if (thread_recv_report_tracks_lag(ctx) != 0)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                   "recv[service_id=%" PRId64 "]: ad-hoc report stats: lag_detected=%" PRIu64 " lag_sent=%" PRIu64
+                   " data_accepted=%" PRIu64 " wait_loops=%" PRIu64,
+                   ctx->service.service_id, ctx->recv_report_lag_detected, ctx->recv_report_lag_sent,
+                   ctx->recv_report_accepted_data, ctx->recv_report_wait_loops);
     }
 
     return;

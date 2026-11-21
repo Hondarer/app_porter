@@ -277,3 +277,289 @@ TEST(threadRecvReportTest, unicast_report_carries_send_limit)
     EXPECT_EQ(0U, ReadWire32(emitted[1], 28U));           // [確認_正常系] - 2 回目の ack_num が 0 であること。
     EXPECT_EQ(emitted[0].size(), emitted[1].size());      // [確認_正常系] - 報告の大きさが送出上限の有無で変わらないこと。
 }
+
+// 連続 DATA が「幅 ÷ 2」個に達したときだけ検出され、ソケットが空になると 0 に戻ることの確認
+TEST(threadRecvReportTest, ad_hoc_report_lag_threshold_and_reset_on_empty)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    int sendto_count = 0;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.service.src_port = 4000;
+    ctx.service.service_id = 9;
+    ctx.health_interval_ms = 1000;
+    ctx.flow_control_config.request_interval_ms = 200;
+    ctx.flow_receive_buffer_width = 10U;
+    ctx.n_path = 1;
+    ctx.sock[0] = static_cast<cplat_socket>(7);
+    ctx.src_addr_resolved[0] = cplat_hton32(0x7f000001U);
+    potr_internal_tx_session_init(&ctx.tx_session);
+    // [状態] - multicast 受信者で受信バッファーの幅を 10 (しきい値 5) とする。
+    ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
+        .WillByDefault([&](cplat_socket, const void *, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+                           cplat_error *) {
+            sendto_count++;
+            *sent = len;
+            return CPLAT_OK;
+        }); // [状態] - 送出回数を数える。
+    // Pre-Assert
+    // Act
+    int actual_ret = POTR_OK;
+    for (int i = 0; i < 4; i++)
+    {
+        actual_ret = thread_recv_report_on_data_accepted(&ctx, 1000U);
+    }
+    uint32_t consecutive_before_reset = ctx.recv_report_consecutive_data;
+    uint64_t detected_before_reset = ctx.recv_report_lag_detected;
+    thread_recv_report_reset_consecutive(&ctx);
+    uint32_t consecutive_after_reset = ctx.recv_report_consecutive_data;
+    for (int i = 0; i < 4; i++)
+    {
+        actual_ret = thread_recv_report_on_data_accepted(&ctx, 1000U);
+    }
+    uint64_t detected_at_four = ctx.recv_report_lag_detected;
+    actual_ret = thread_recv_report_on_data_accepted(&ctx, 1000U);
+    // [手順] - 4 回連続で処理した後に空として 0 に戻し、さらに 5 回連続で処理する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);          // [確認_正常系] - 判定処理が成功すること。
+    EXPECT_EQ(4U, consecutive_before_reset); // [確認_正常系] - リセット前の連続数が 4 であること。
+    EXPECT_EQ(0U, detected_before_reset);    // [確認_正常系] - しきい値未満では検出しないこと。
+    EXPECT_EQ(0U, consecutive_after_reset);  // [確認_正常系] - ソケットが空になると連続数が 0 に戻ること。
+    EXPECT_EQ(0U, detected_at_four);         // [確認_正常系] - リセット後 4 回ではまだ検出しないこと。
+    EXPECT_EQ(1U, ctx.recv_report_lag_detected); // [確認_正常系] - 5 回目で 1 回検出すること。
+    EXPECT_EQ(1U, ctx.recv_report_lag_sent);     // [確認_正常系] - 臨時の受信報告を 1 回送出すること。
+    EXPECT_EQ(1, sendto_count);                  // [確認_正常系] - 実際に 1 回送出すること。
+    EXPECT_EQ(0U, ctx.recv_report_consecutive_data); // [確認_正常系] - 検出後に連続数が 0 に戻ること。
+    EXPECT_EQ(9U, ctx.recv_report_accepted_data);    // [確認_正常系] - 処理した DATA の総数が 9 であること。
+}
+
+// 待機の所要時間がしきい値未満かどうかを秒の繰り上がりを含めて判定することの確認
+TEST(threadRecvReportTest, ad_hoc_report_wait_was_immediate_boundary)
+{
+    // Arrange
+    cplat_timespec start = {10, 0};
+    cplat_timespec below = {10, POTR_RECV_POLL_IMMEDIATE_THRESHOLD_NS - 1LL};
+    cplat_timespec exact = {10, POTR_RECV_POLL_IMMEDIATE_THRESHOLD_NS};
+    cplat_timespec wrap_start = {10, POTR_NSEC_PER_SEC - 10000LL};
+    cplat_timespec wrap_below = {11, 10000LL};
+    cplat_timespec wrap_above = {11, POTR_RECV_POLL_IMMEDIATE_THRESHOLD_NS};
+    cplat_timespec far_after = {13, 0};
+    // Pre-Assert
+    // Act
+    int actual_zero = thread_recv_report_wait_was_immediate(&start, &start);
+    int actual_below = thread_recv_report_wait_was_immediate(&start, &below);
+    int actual_exact = thread_recv_report_wait_was_immediate(&start, &exact);
+    int actual_wrap_below = thread_recv_report_wait_was_immediate(&wrap_start, &wrap_below);
+    int actual_wrap_above = thread_recv_report_wait_was_immediate(&wrap_start, &wrap_above);
+    int actual_far = thread_recv_report_wait_was_immediate(&start, &far_after);
+    int actual_null = thread_recv_report_wait_was_immediate(nullptr, &start);
+    // [手順] - しきい値未満、しきい値ちょうど、秒の繰り上がり前後、複数秒差、NULL で判定する。
+    // Assert
+    EXPECT_EQ(1, actual_zero);       // [確認_正常系] - 差 0 は待たずに返ったと判定すること。
+    EXPECT_EQ(1, actual_below);      // [確認_正常系] - しきい値未満は待たずに返ったと判定すること。
+    EXPECT_EQ(0, actual_exact);      // [確認_正常系] - しきい値ちょうどは待ったと判定すること。
+    EXPECT_EQ(1, actual_wrap_below); // [確認_正常系] - 秒をまたいでもしきい値未満なら待たずに返ったと判定すること。
+    EXPECT_EQ(0, actual_wrap_above); // [確認_正常系] - 秒をまたいでしきい値以上なら待ったと判定すること。
+    EXPECT_EQ(0, actual_far);        // [確認_正常系] - 2 秒以上の差は待ったと判定すること。
+    EXPECT_EQ(0, actual_null);       // [確認_異常系] - NULL は 0 を返すこと。
+}
+
+// 幅がない構成、監視対象の受信者、対象外の通信種別では臨時の受信報告を送出しないことの確認
+TEST(threadRecvReportTest, ad_hoc_report_skipped_without_width_or_when_monitored)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.service.src_port = 4000;
+    ctx.service.service_id = 9;
+    ctx.health_interval_ms = 1000;
+    ctx.flow_control_config.request_interval_ms = 200;
+    ctx.n_path = 1;
+    ctx.sock[0] = static_cast<cplat_socket>(7);
+    ctx.src_addr_resolved[0] = cplat_hton32(0x7f000001U);
+    potr_internal_tx_session_init(&ctx.tx_session);
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 幅がない構成、監視対象、unicast、報告無効では一切送出しないこと。
+    // Act
+    ctx.flow_receive_buffer_width = 0U;
+    for (int i = 0; i < 10; i++)
+    {
+        EXPECT_EQ(POTR_OK, thread_recv_report_on_data_accepted(&ctx, 1000U));
+        // [確認_正常系 回数=10] - 幅がない構成での処理が成功すること。
+    }
+    ctx.flow_receive_buffer_width = 6U;
+    ctx.flow_monitored = 1;
+    EXPECT_EQ(POTR_OK, thread_recv_report_on_adopted(&ctx)); // [確認_正常系] - 監視対象の採用時処理が成功すること。
+    for (int i = 0; i < 10; i++)
+    {
+        EXPECT_EQ(POTR_OK, thread_recv_report_on_data_accepted(&ctx, 2000U));
+        // [確認_正常系 回数=10] - 監視対象での処理が成功すること。
+    }
+    ctx.flow_monitored = 0;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    EXPECT_EQ(POTR_OK, thread_recv_report_on_adopted(&ctx)); // [確認_正常系] - unicast の採用時処理が成功すること。
+    for (int i = 0; i < 6; i++)
+    {
+        EXPECT_EQ(POTR_OK, thread_recv_report_on_data_accepted(&ctx, 3000U));
+        // [確認_正常系 回数=6] - unicast での処理が成功すること。
+    }
+    ctx.service.type = POTR_TYPE_BROADCAST;
+    ctx.health_interval_ms = 0U;
+    EXPECT_EQ(POTR_OK, thread_recv_report_on_adopted(&ctx)); // [確認_正常系] - 報告無効の採用時処理が成功すること。
+    for (int i = 0; i < 6; i++)
+    {
+        EXPECT_EQ(POTR_OK, thread_recv_report_on_data_accepted(&ctx, 4000U));
+        // [確認_正常系 回数=6] - 報告無効での処理が成功すること。
+    }
+    // [手順] - 幅 0、監視対象、unicast、受信報告無効の各構成で採用と連続 DATA を処理する。
+    // Assert
+    EXPECT_EQ(0U, ctx.recv_report_lag_detected); // [確認_正常系] - 検出回数が 0 であること。
+    EXPECT_EQ(0U, ctx.recv_report_lag_sent);     // [確認_正常系] - 送出回数が 0 であること。
+}
+
+// 間隔の制限で送出が抑えられて検出回数だけが増えることと、採用時の送出が制限の対象外であることの確認
+TEST(threadRecvReportTest, ad_hoc_report_interval_limit_and_adoption_exempt)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    int sendto_count = 0;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_BROADCAST;
+    ctx.service.src_port = 4000;
+    ctx.service.service_id = 9;
+    ctx.health_interval_ms = 1000;
+    ctx.flow_control_config.request_interval_ms = 200;
+    ctx.flow_receive_buffer_width = 4U;
+    ctx.n_path = 1;
+    ctx.sock[0] = static_cast<cplat_socket>(7);
+    ctx.src_addr_resolved[0] = cplat_hton32(0x7f000001U);
+    potr_internal_tx_session_init(&ctx.tx_session);
+    // [状態] - broadcast 受信者で幅 4 (しきい値 2)、制限間隔 200 [ms] とする。
+    ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
+        .WillByDefault([&](cplat_socket, const void *, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+                           cplat_error *) {
+            sendto_count++;
+            *sent = len;
+            return CPLAT_OK;
+        }); // [状態] - 送出回数を数える。
+    // Pre-Assert
+    // Act
+    int actual_ret_adopt1 = thread_recv_report_on_adopted(&ctx);
+    int sent_after_adopt1 = sendto_count;
+    // [手順] - 最初の送信者採用で臨時の受信報告を送出する。
+    int actual_ret_lag1 = thread_recv_report_on_data_accepted(&ctx, 1000U);
+    actual_ret_lag1 = thread_recv_report_on_data_accepted(&ctx, 1000U);
+    int sent_after_lag1 = sendto_count;
+    // [手順] - 採用直後の時刻 1000 でしきい値に達する DATA を処理する。
+    int actual_ret_lag2 = thread_recv_report_on_data_accepted(&ctx, 1199U);
+    actual_ret_lag2 = thread_recv_report_on_data_accepted(&ctx, 1199U);
+    int sent_after_lag2 = sendto_count;
+    // [手順] - 制限間隔未満の時刻 1199 で再びしきい値に達する DATA を処理する。
+    int actual_ret_adopt2 = thread_recv_report_on_adopted(&ctx);
+    int sent_after_adopt2 = sendto_count;
+    // [手順] - 制限間隔内に新しい送信者を採用する。
+    int actual_ret_lag3 = thread_recv_report_on_data_accepted(&ctx, 1200U);
+    actual_ret_lag3 = thread_recv_report_on_data_accepted(&ctx, 1200U);
+    int sent_after_lag3 = sendto_count;
+    // [手順] - 前回の遅れ送出からちょうど 200 [ms] 後の時刻 1200 でしきい値に達する DATA を処理する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret_adopt1); // [確認_正常系] - 1 回目の採用時送出が成功すること。
+    EXPECT_EQ(POTR_OK, actual_ret_lag1);   // [確認_正常系] - 1 回目の遅れ検出が成功すること。
+    EXPECT_EQ(POTR_OK, actual_ret_lag2);   // [確認_正常系] - 制限間隔内の遅れ検出が成功すること。
+    EXPECT_EQ(POTR_OK, actual_ret_adopt2); // [確認_正常系] - 制限間隔内の採用時送出が成功すること。
+    EXPECT_EQ(POTR_OK, actual_ret_lag3);   // [確認_正常系] - 制限間隔経過後の遅れ検出が成功すること。
+    EXPECT_EQ(1, sent_after_adopt1);       // [確認_正常系] - 採用時に 1 回送出すること。
+    EXPECT_EQ(2, sent_after_lag1);         // [確認_正常系] - 採用時の送出は遅れ送出の間隔制限に影響しないこと。
+    EXPECT_EQ(2, sent_after_lag2);         // [確認_正常系] - 間隔未満では送出しないこと。
+    EXPECT_EQ(3, sent_after_adopt2);       // [確認_正常系] - 制限間隔内でも採用時は制限の対象外として送出すること。
+    EXPECT_EQ(4, sent_after_lag3);         // [確認_正常系] - 制限間隔ちょうどで再び遅れ送出すること。
+    EXPECT_EQ(3U, ctx.recv_report_lag_detected); // [確認_正常系] - 検出回数が 3 であること。
+    EXPECT_EQ(2U, ctx.recv_report_lag_sent);     // [確認_正常系] - 遅れによる送出回数が 2 であること。
+}
+
+// 臨時の受信報告が周期の受信報告と同じ形式であり、周期の予定時刻を変更しないことの確認
+TEST(threadRecvReportTest, ad_hoc_report_matches_periodic_format_and_preserves_next_report_ms)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    std::vector<std::vector<uint8_t>> emitted;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.service.src_port = 4000;
+    ctx.service.service_id = 9;
+    ctx.session_id = 321;
+    ctx.session_ts.tv_sec = 50;
+    ctx.session_ts.tv_nsec = 60;
+    ctx.health_interval_ms = 500;
+    ctx.flow_control_config.request_interval_ms = 200;
+    ctx.flow_receive_buffer_width = 4U;
+    ctx.n_path = 1;
+    ctx.sock[0] = static_cast<cplat_socket>(7);
+    ctx.src_addr_resolved[0] = cplat_hton32(0x7f000001U);
+    cplat_atomic_store_u8(&ctx.path_ping_state[0], POTR_PING_STATE_NORMAL, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_u8(&ctx.path_ping_state[1], POTR_PING_STATE_ABNORMAL, CPLAT_MEMORY_ORDER_RELAXED);
+    potr_internal_tx_session_init(&ctx.tx_session);
+    // [状態] - multicast 受信者で送出上限と経路状態を設定する。
+    ON_CALL(mock_cplat, cplat_random_bytes(_, _)).WillByDefault([](void *out, size_t size) {
+        std::memset(out, 0, size);
+        return CPLAT_OK;
+    }); // [状態] - 周期報告のばらつきを 0 にする。
+    ON_CALL(mock_porter, potr_internal_flow_control_report_limit(_, _))
+        .WillByDefault([](potr_context *, uint32_t *send_limit) {
+            *send_limit = 0x11223344U;
+            return 1;
+        }); // [状態] - 送出上限 0x11223344 を返す。
+    ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
+        .WillByDefault([&](cplat_socket, const void *wire, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+                           cplat_error *) {
+            const auto *bytes = static_cast<const uint8_t *>(wire);
+            emitted.emplace_back(bytes, bytes + len);
+            *sent = len;
+            return CPLAT_OK;
+        }); // [状態] - 送出したワイヤーを保存する。
+    // Pre-Assert
+    // Act
+    int actual_ret_init = thread_recv_report_tick(&ctx, 1000U);
+    uint64_t next_after_init = ctx.next_report_ms;
+    int actual_ret_adopt = thread_recv_report_on_adopted(&ctx);
+    uint64_t next_after_adopt = ctx.next_report_ms;
+    int actual_ret_lag = thread_recv_report_on_data_accepted(&ctx, 1100U);
+    actual_ret_lag = thread_recv_report_on_data_accepted(&ctx, 1100U);
+    uint64_t next_after_lag = ctx.next_report_ms;
+    int actual_ret_periodic = thread_recv_report_tick(&ctx, 1500U);
+    // [手順] - 周期予定の確立後、採用時・遅れ検出時の臨時送出と周期送出を行う。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret_init);     // [確認_正常系] - 予定確立が成功すること。
+    EXPECT_EQ(POTR_OK, actual_ret_adopt);    // [確認_正常系] - 採用時送出が成功すること。
+    EXPECT_EQ(POTR_OK, actual_ret_lag);      // [確認_正常系] - 遅れ送出が成功すること。
+    EXPECT_EQ(POTR_OK, actual_ret_periodic); // [確認_正常系] - 周期送出が成功すること。
+    EXPECT_EQ(1500U, next_after_init);       // [確認_正常系] - 初期予定時刻が 1500 であること。
+    EXPECT_EQ(1500U, next_after_adopt);      // [確認_正常系] - 採用時送出で予定時刻が変わらないこと。
+    EXPECT_EQ(1500U, next_after_lag);        // [確認_正常系] - 遅れ送出で予定時刻が変わらないこと。
+    ASSERT_EQ(3U, emitted.size());           // [確認_正常系] - 臨時 2 回と周期 1 回の計 3 回送出すること。
+    for (size_t i = 0; i < 3U; i++)
+    {
+        potr_packet packet = {};
+        ASSERT_EQ(POTR_OK, potr_internal_packet_parse(&packet, emitted[i].data(), emitted[i].size()));
+        // [確認_正常系 回数=3] - すべての受信報告を解析できること。
+        EXPECT_EQ(POTR_FLAG_REPORT, packet.flags);     // [確認_正常系 回数=3] - 種別が REPORT であること。
+        EXPECT_EQ(321U, packet.session_id);            // [確認_正常系 回数=3] - セッション識別子が一致すること。
+        EXPECT_EQ(1U, packet.seq_num);                 // [確認_正常系 回数=3] - 送出上限あり (1) であること。
+        EXPECT_EQ(0x11223344U, packet.ack_num);        // [確認_正常系 回数=3] - 送出上限の値が一致すること。
+        EXPECT_EQ(POTR_MAX_PATH, packet.payload_len);  // [確認_正常系 回数=3] - ペイロード長が一致すること。
+        EXPECT_EQ(POTR_PING_STATE_NORMAL, packet.payload[0]);   // [確認_正常系 回数=3] - 経路 0 の状態が一致すること。
+        EXPECT_EQ(POTR_PING_STATE_ABNORMAL, packet.payload[1]); // [確認_正常系 回数=3] - 経路 1 の状態が一致すること。
+        EXPECT_EQ(emitted[2].size(), emitted[i].size());        // [確認_正常系 回数=3] - 周期報告とワイヤー長が一致すること。
+    }
+}

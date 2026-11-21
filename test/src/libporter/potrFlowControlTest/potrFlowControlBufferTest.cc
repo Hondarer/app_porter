@@ -1023,3 +1023,45 @@ TEST_F(potrFlowControlBufferTest, receiver_updates_after_half_lifetime_idle_gap)
     EXPECT_EQ(0U, tcp_count);                        // [確認_正常系] - TCP では途絶による更新を送出しないこと。
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
+
+// コンテキストの flow_receive_buffer_width と flow_monitored が開始・監視対象切替・期限切れ・終了に追従することの確認
+// [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
+TEST_F(potrFlowControlBufferTest, context_width_and_monitored_state_track_flow_control)
+{
+    // Arrange
+    enable_multicast_receiver();
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    // [状態] - multicast 受信者で Linux 既定の受信バッファー (幅 42) で start する。
+    // [状態確認] - start の戻り値が POTR_OK であること。
+    uint32_t width_after_start = ctx.flow_receive_buffer_width;
+    int monitored_after_start = ctx.flow_monitored;
+    std::vector<uint8_t> included_payload;
+    std::vector<uint8_t> excluded_payload;
+    potr_packet included = make_list(included_payload, 1);
+    potr_packet excluded = make_list(excluded_payload, 0);
+    received(POTR_PEER_NA, 10U, 0);
+    // Pre-Assert
+    // Act
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &included);
+    int monitored_when_included = ctx.flow_monitored;
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &excluded);
+    int monitored_when_excluded = ctx.flow_monitored;
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &included);
+    potr_internal_flow_control_tick(&ctx, now_ms + 1000U);
+    int monitored_after_expiry = ctx.flow_monitored;
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &included);
+    received(POTR_PEER_NA, 0U, 0, 2U);
+    int monitored_after_session_change = ctx.flow_monitored;
+    potr_internal_flow_control_stop(&ctx);
+    // [手順] - 監視対象の一覧の適用・除外・期限切れ・セッション変更・stop を順に実行する。
+    // Assert
+    EXPECT_EQ(42U, width_after_start);               // [確認_正常系] - 開始後に幅 42 が設定されること。
+    EXPECT_EQ(0, monitored_after_start);             // [確認_正常系] - 開始直後は監視対象でないこと。
+    EXPECT_EQ(1, monitored_when_included);           // [確認_正常系] - 自身を含む一覧で監視対象になること。
+    EXPECT_EQ(0, monitored_when_excluded);           // [確認_正常系] - 自身を含まない一覧で監視対象でなくなること。
+    EXPECT_EQ(0, monitored_after_expiry);            // [確認_正常系] - 一覧の有効期限切れで監視対象でなくなること。
+    EXPECT_EQ(0, monitored_after_session_change);    // [確認_正常系] - 送信者セッション変更で監視対象でなくなること。
+    EXPECT_EQ(0U, ctx.flow_receive_buffer_width);    // [確認_正常系] - stop 後に幅が 0 に戻ること。
+    EXPECT_EQ(0, ctx.flow_monitored);                // [確認_正常系] - stop 後に監視対象状態が 0 に戻ること。
+}
+// [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]

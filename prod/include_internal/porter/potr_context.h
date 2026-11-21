@@ -415,6 +415,15 @@ struct potr_context
     int report_received; /**< REPORT を一度以上受理したか。callback_mutex で保護。 */
     int flow_monitor_changed; /**< 送信側: multicast と broadcast で、監視対象の一覧を最後に取り出した後に監視対象が変わったか (1: 変わった)。callback_mutex で保護。 */
     uint64_t flow_monitor_next_ms; /**< 送信側: multicast と broadcast で、監視対象の一覧を次に周期で送出する時刻 [ms]。0 = 未送出。UDP 受信スレッドだけが使用。 */
+    uint64_t last_ad_hoc_report_ms; /**< 受信側: 読み出しの遅れによる臨時の受信報告を最後に送出した時刻 [ms]。UDP 受信スレッドだけが使用。 */
+    uint64_t recv_report_lag_detected; /**< 受信側: 読み出しの遅れを検出した回数。UDP 受信スレッドだけが使用。 */
+    uint64_t recv_report_lag_sent; /**< 受信側: 読み出しの遅れにより臨時の受信報告を送出した回数。UDP 受信スレッドだけが使用。 */
+    uint64_t recv_report_accepted_data; /**< 受信側: 受信スレッドが処理した採用済み送信者の DATA の総数。UDP 受信スレッドだけが使用。 */
+    uint64_t recv_report_wait_loops; /**< 受信側: 受信スレッドがソケットの待機を行った周回の総数。UDP 受信スレッドだけが使用。 */
+    uint32_t flow_receive_buffer_width; /**< 受信側: OS の受信バッファーに基づく受信バッファーの幅 [パケット]。0 = 幅なし。 */
+    uint32_t recv_report_consecutive_data; /**< 受信側: ソケットが空にならないまま続けて処理した採用済み送信者の DATA の数。UDP 受信スレッドだけが使用。 */
+    int flow_monitored; /**< 受信側: multicast と broadcast で監視対象に指定されているか (1: 監視対象)。UDP 受信スレッドだけが使用。 */
+    int has_ad_hoc_report; /**< 受信側: 読み出しの遅れによる臨時の受信報告を 1 回以上送出したか (1: 送出済み)。UDP 受信スレッドだけが使用。 */
 
     /* 自セッション識別子 (potr_service_open 時に決定) */
     cplat_timespec session_ts; /**< 自セッション開始時刻。 */

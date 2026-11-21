@@ -15,7 +15,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <cplat/clock/clock.h>
 #include <porter/porter_const.h>
+#include <porter/porter_result.h>
 #include <porter/protocol/packet.h>
 #include <porter/potr_context.h>
 #include <porter/infra/potr_trace.h>
@@ -23,6 +25,7 @@
 
 #include "thread_recv_dispatch.h"
 #include "thread_recv_fin.h"
+#include "thread_recv_report.h"
 #include "thread_recv_session.h"
 #include "thread_recv_window.h"
 
@@ -200,42 +203,101 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
         }
     }
 
-    if (thread_recv_session_adopt(slot, pkt) == 0)
     {
-        return 0;
-    }
+        int was_known = *slot->peer_session_known;
+        uint32_t prev_session_id = *slot->peer_session_id;
+        cplat_timespec prev_session_ts = *slot->peer_session_ts;
+        int adopted_new_session;
 
-    potr_internal_flow_control_on_peer_packet(ctx, slot->peer, pkt);
-    thread_recv_learn_sender_path(slot, path_idx, sender);
+        if (thread_recv_session_adopt(slot, pkt) == 0)
+        {
+            return 0;
+        }
 
-    {
-        const char *pkt_kind_str;
+        adopted_new_session =
+            (slot->peer == NULL &&
+             (was_known == 0 || *slot->peer_session_id != prev_session_id ||
+              slot->peer_session_ts->tv_sec != prev_session_ts.tv_sec ||
+              slot->peer_session_ts->tv_nsec != prev_session_ts.tv_nsec));
+
+        potr_internal_flow_control_on_peer_packet(ctx, slot->peer, pkt);
+        thread_recv_learn_sender_path(slot, path_idx, sender);
+
+        {
+            const char *pkt_kind_str;
+
+            if ((pkt->flags & POTR_FLAG_PING) != 0)
+            {
+                pkt_kind_str = "PING";
+            }
+            else
+            {
+                pkt_kind_str = "DATA";
+            }
+
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: peer=%u %s seq=%u path=%d",
+                       ctx->service.service_id, (unsigned)slot->peer_id, pkt_kind_str, (unsigned)pkt->seq_num,
+                       path_idx);
+        }
 
         if ((pkt->flags & POTR_FLAG_PING) != 0)
         {
-            pkt_kind_str = "PING";
+            int ping_ret;
+
+            /*
+             * 新しい通信として採用した相手へ、まだ知らせていない送出上限を、最初に送出できる時点で知らせる。
+             * 送出上限の更新の判定は、DATA パケットの処理のたびに受信ウィンドウの取り出しで行う。
+             */
+            potr_internal_flow_control_on_received(ctx, slot->peer_id, *slot->peer_session_id, slot->peer_session_ts,
+                                                   slot->recv_window->next_seq, 0, 0U);
+            ping_ret = dispatch_ping(slot, pkt, path_idx);
+            if (adopted_new_session != 0 && *slot->peer_session_known != 0)
+            {
+                int report_ret = thread_recv_report_on_adopted(ctx);
+
+                if (report_ret != POTR_OK)
+                {
+                    cplat_atomic_store_i32(&ctx->fatal_error, report_ret, CPLAT_MEMORY_ORDER_RELEASE);
+                    potr_internal_send_queue_abort(&ctx->send_queue, report_ret);
+                }
+            }
+
+            return ping_ret;
         }
-        else
+
+        thread_recv_window_accept_outer(slot, pkt, path_idx);
+
+        if (slot->peer == NULL && *slot->peer_session_known != 0)
         {
-            pkt_kind_str = "DATA";
+            if (adopted_new_session != 0)
+            {
+                int report_ret = thread_recv_report_on_adopted(ctx);
+
+                if (report_ret != POTR_OK)
+                {
+                    cplat_atomic_store_i32(&ctx->fatal_error, report_ret, CPLAT_MEMORY_ORDER_RELEASE);
+                    potr_internal_send_queue_abort(&ctx->send_queue, report_ret);
+                    return 0;
+                }
+            }
+
+            if (thread_recv_report_tracks_lag(ctx) != 0)
+            {
+                uint64_t now_ms = 0U;
+
+                if (cplat_clock_get_monotonic_ms(&now_ms) == CPLAT_OK)
+                {
+                    int report_ret = thread_recv_report_on_data_accepted(ctx, now_ms);
+
+                    if (report_ret != POTR_OK)
+                    {
+                        cplat_atomic_store_i32(&ctx->fatal_error, report_ret, CPLAT_MEMORY_ORDER_RELEASE);
+                        potr_internal_send_queue_abort(&ctx->send_queue, report_ret);
+                    }
+                }
+            }
         }
-
-        POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: peer=%u %s seq=%u path=%d",
-                   ctx->service.service_id, (unsigned)slot->peer_id, pkt_kind_str, (unsigned)pkt->seq_num, path_idx);
     }
-
-    if ((pkt->flags & POTR_FLAG_PING) != 0)
-    {
-        /*
-         * 新しい通信として採用した相手へ、まだ知らせていない送出上限を、最初に送出できる時点で知らせる。
-         * 送出上限の更新の判定は、DATA パケットの処理のたびに受信ウィンドウの取り出しで行う。
-         */
-        potr_internal_flow_control_on_received(ctx, slot->peer_id, *slot->peer_session_id, slot->peer_session_ts,
-                                               slot->recv_window->next_seq, 0, 0U);
-        return dispatch_ping(slot, pkt, path_idx);
-    }
-
-    thread_recv_window_accept_outer(slot, pkt, path_idx);
 
     return 0;
 }
