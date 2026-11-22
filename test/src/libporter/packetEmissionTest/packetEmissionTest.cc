@@ -625,3 +625,64 @@ TEST(packetEmissionTest, piggyback_dispatch_accepts_only_adopted_session_data)
     // Cleanup
     potr_internal_window_dispose(&ctx.recv_window);
 }
+
+// 新しい通信として採用した相手から DATA より先に PING を受理した時点で、最初の送出上限通知処理を呼び出すことの確認
+TEST(packetEmissionTest, ping_adoption_triggers_initial_flow_control_notification)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    thread_recv_slot slot = {};
+    cplat_ipv4_endpoint sender = {};
+    potr_packet ping_pkt = {};
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.global.window_size = 64U;
+    ctx.global.max_payload = 128U;
+    ctx.peer_session_known = 0;
+    ASSERT_EQ(POTR_OK, potr_internal_window_init(&ctx.recv_window, 0U, 64U, 128U));
+    // [状態確認] - 未採用状態 (peer_session_known=0) と受信ウィンドウを用意できること。
+    slot.ctx = &ctx;
+    slot.peer = nullptr;
+    slot.peer_id = POTR_PEER_NA;
+    slot.peer_session_known = &ctx.peer_session_known;
+    slot.peer_session_id = &ctx.peer_session_id;
+    slot.peer_session_ts = &ctx.peer_session_ts;
+    slot.recv_window = &ctx.recv_window;
+    slot.dest_addr = ctx.dest_addr;
+    slot.reorder_pending = &ctx.reorder_pending;
+    slot.reorder_nack_num = &ctx.reorder_nack_num;
+    slot.reorder_deadline_ts = &ctx.reorder_deadline_ts;
+    slot.pending_fin = &ctx.pending_fin;
+    slot.fin_target_seq = &ctx.fin_target_seq;
+    slot.frag_buf = ctx.frag_buf;
+    slot.frag_buf_len = &ctx.frag_buf_len;
+    slot.frag_count = &ctx.frag_count;
+    slot.frag_compressed = &ctx.frag_compressed;
+    slot.path_ping_state = ctx.path_ping_state;
+    slot.remote_path_ping_state = ctx.remote_path_ping_state;
+    slot.last_recv_ts = &ctx.last_recv_ts;
+    slot.path_last_recv_ts = ctx.path_last_recv_ts;
+    ping_pkt.flags = POTR_FLAG_PING;
+    ping_pkt.session_tv_sec = 600;
+    ping_pkt.session_tv_nsec = 200;
+    ping_pkt.session_id = 300U;
+    ping_pkt.seq_num = 0U;
+    ON_CALL(mock_porter, potr_internal_flow_control_refused(_, _, _, _)).WillByDefault(Return(0));
+    // [状態] - 未採用の相手 (ts=600.200, id=300) から DATA より先に届く PING パケットを用意する。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter,
+                potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 300U, &ctx.peer_session_ts, 0U, 0, 0U))
+        .Times(1);
+    // [Pre-Assert確認_正常系] - PING で相手セッションを採用した時点で、data_packet=0 で最初の送出上限通知処理が 1 回呼び出されること。
+    // Act
+    int actual_ret = thread_recv_dispatch_packet(&slot, &ping_pkt, 0, &sender);
+    // [手順] - DATA より先に PING を受信ディスパッチへ渡す。
+    // Assert
+    EXPECT_EQ(0, actual_ret);             // [確認_正常系] - PING の振り分けが正常終了すること。
+    EXPECT_EQ(1, ctx.peer_session_known); // [確認_正常系] - 新しい相手のセッションが採用されること。
+    EXPECT_EQ(300U, ctx.peer_session_id); // [確認_正常系] - 採用したセッション識別子が 300 であること。
+    // Cleanup
+    potr_internal_window_dispose(&ctx.recv_window);
+}

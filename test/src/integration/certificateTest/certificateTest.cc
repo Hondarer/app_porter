@@ -2,8 +2,10 @@
 #include <mock_openssl.h>
 #include <porter.h>
 #include <porter/potr_context.h>
+#include <porter/potr_flow_control.h>
 #include <porter/potr_handle.h>
 #include <porter/protocol/packet.h>
+#include <porter/protocol/packet_seal.h>
 #include <cplat/crt/string.h>
 #include <cplat/runtime/memory_lock.h>
 #include <array>
@@ -459,4 +461,183 @@ TEST(certificate_group_test, retries_handshake_until_group_key_is_available)
 
     // Assert
     EXPECT_TRUE(actual_delivered); // [確認_正常系] - KEY を再取得して DATA の復号を再開すること。
+}
+
+// 証明書方式の multicast で監視対象の一覧をグループ鍵で封緘・検証して受理し、別のグループ鍵の一覧を破棄することの確認
+TEST(certificate_packet_test, monitor_list_sealed_with_group_key_is_verified_and_wrong_key_is_rejected)
+{
+    // Arrange
+    testing::NiceMock<Mock_openssl> mock_openssl;
+    potr_context sender_ctx{};
+    potr_context wrong_sender_ctx{};
+    potr_context receiver_ctx{};
+    potr_internal_receiver sender_receiver{};
+    potr_internal_receiver wrong_sender_receiver{};
+    std::array<uint8_t, POTR_CRYPTO_KEY_SIZE> group_key{};
+    std::array<uint8_t, POTR_CRYPTO_KEY_SIZE> wrong_group_key{};
+    group_key.fill(0x5AU);
+    wrong_group_key.fill(0xA5U);
+    constexpr int64_t kServiceId = 41;
+    constexpr int64_t kSenderSec = 500;
+    constexpr int32_t kSenderNsec = 100;
+    constexpr uint32_t kSenderSessionId = 1001U;
+    constexpr int64_t kReceiverSec = 600;
+    constexpr int32_t kReceiverNsec = 200;
+    constexpr uint32_t kReceiverSessionId = 2002U;
+    sender_ctx.service.type = POTR_TYPE_MULTICAST;
+    sender_ctx.service.auth = POTR_AUTH_CERT;
+    sender_ctx.service.service_id = kServiceId;
+    sender_ctx.role = POTR_ROLE_SENDER;
+    sender_ctx.n_path = 1;
+    sender_ctx.session_id = kSenderSessionId;
+    sender_ctx.session_ts.tv_sec = kSenderSec;
+    sender_ctx.session_ts.tv_nsec = kSenderNsec;
+    sender_ctx.group_key_known = 1;
+    std::memcpy(sender_ctx.group_key, group_key.data(), POTR_CRYPTO_KEY_SIZE);
+    sender_receiver.certificate.established = 1;
+    sender_ctx.receivers = &sender_receiver;
+    potr_internal_tx_session_init(&sender_ctx.tx_session);
+    ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&sender_ctx.certificate_mutex));
+    // [状態確認] - 正しい送信者の証明書保護ロックを生成できること。
+    ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&sender_ctx.callback_mutex));
+    // [状態確認] - 正しい送信者の状態保護ロックを生成できること。
+
+    wrong_sender_ctx.service.type = POTR_TYPE_MULTICAST;
+    wrong_sender_ctx.service.auth = POTR_AUTH_CERT;
+    wrong_sender_ctx.service.service_id = kServiceId;
+    wrong_sender_ctx.role = POTR_ROLE_SENDER;
+    wrong_sender_ctx.n_path = 1;
+    wrong_sender_ctx.session_id = kSenderSessionId;
+    wrong_sender_ctx.session_ts.tv_sec = kSenderSec;
+    wrong_sender_ctx.session_ts.tv_nsec = kSenderNsec;
+    wrong_sender_ctx.group_key_known = 1;
+    std::memcpy(wrong_sender_ctx.group_key, wrong_group_key.data(), POTR_CRYPTO_KEY_SIZE);
+    wrong_sender_receiver.certificate.established = 1;
+    wrong_sender_ctx.receivers = &wrong_sender_receiver;
+    potr_internal_tx_session_init(&wrong_sender_ctx.tx_session);
+    ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&wrong_sender_ctx.certificate_mutex));
+    // [状態確認] - 別鍵の送信者の証明書保護ロックを生成できること。
+    ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&wrong_sender_ctx.callback_mutex));
+    // [状態確認] - 別鍵の送信者の状態保護ロックを生成できること。
+
+    std::array<uint8_t, POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX + POTR_CRYPTO_TAG_SIZE> recv_crypto_buf{};
+    receiver_ctx.service.type = POTR_TYPE_MULTICAST;
+    receiver_ctx.service.auth = POTR_AUTH_CERT;
+    receiver_ctx.service.service_id = kServiceId;
+    receiver_ctx.role = POTR_ROLE_RECEIVER;
+    receiver_ctx.n_path = 1;
+    receiver_ctx.session_id = kReceiverSessionId;
+    receiver_ctx.session_ts.tv_sec = kReceiverSec;
+    receiver_ctx.session_ts.tv_nsec = kReceiverNsec;
+    receiver_ctx.peer_session_known = 1;
+    receiver_ctx.peer_session_id = kSenderSessionId;
+    receiver_ctx.peer_session_ts.tv_sec = kSenderSec;
+    receiver_ctx.peer_session_ts.tv_nsec = kSenderNsec;
+    receiver_ctx.group_key_known = 1;
+    std::memcpy(receiver_ctx.group_key, group_key.data(), POTR_CRYPTO_KEY_SIZE);
+    receiver_ctx.certificate.established = 1;
+    receiver_ctx.certificate.peer_known = 1;
+    {
+        uint64_t sec_val = (uint64_t)kSenderSec;
+        for (size_t i = 0U; i < 8U; i++)
+        {
+            receiver_ctx.certificate.peer_identity[i] = (uint8_t)(sec_val >> ((7U - i) * 8U));
+        }
+        uint32_t sid_be = cplat_hton32(kSenderSessionId);
+        uint32_t nsec_be = cplat_hton32((uint32_t)kSenderNsec);
+        std::memcpy(receiver_ctx.certificate.peer_identity + 8U, &sid_be, sizeof(sid_be));
+        std::memcpy(receiver_ctx.certificate.peer_identity + 12U, &nsec_be, sizeof(nsec_be));
+    }
+    receiver_ctx.recv_crypto_buf = recv_crypto_buf.data();
+    receiver_ctx.crypto_buf_size = recv_crypto_buf.size();
+    receiver_ctx.global.max_payload = 100U;
+    receiver_ctx.flow_control_config.capacity = 1000U;
+    receiver_ctx.flow_control_config.suppress_percent = 80U;
+    receiver_ctx.flow_control_config.resume_percent = 60U;
+    receiver_ctx.flow_control_config.request_interval_ms = 200U;
+    receiver_ctx.flow_control_config.request_lifetime_ms = 1000U;
+    ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&receiver_ctx.certificate_mutex));
+    // [状態確認] - 受信者の証明書保護ロックを生成できること。
+    ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&receiver_ctx.callback_mutex));
+    // [状態確認] - 受信者の状態保護ロックを生成できること。
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&receiver_ctx));
+    // [状態確認] - 受信者のフロー制御資源を開始できること。
+
+    potr_internal_packet_session_hdr sender_hdr{};
+    sender_hdr.service_id = kServiceId;
+    sender_hdr.session_tv_sec = kSenderSec;
+    sender_hdr.session_tv_nsec = kSenderNsec;
+    sender_hdr.session_id = kSenderSessionId;
+    potr_internal_packet_session_hdr receiver_entry{};
+    receiver_entry.service_id = kServiceId;
+    receiver_entry.session_tv_sec = kReceiverSec;
+    receiver_entry.session_tv_nsec = kReceiverNsec;
+    receiver_entry.session_id = kReceiverSessionId;
+    std::array<uint8_t, POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX> payload_buf{};
+    potr_packet list_pkt{};
+    ASSERT_EQ(POTR_OK,
+              potr_internal_packet_build_flow_control_list(&list_pkt, &sender_hdr, payload_buf.data(), &receiver_entry,
+                                                           1U));
+    // [状態確認] - 受信者自身を含む監視対象の一覧パケットを組み立てられること。
+    std::array<uint8_t, POTR_PACKET_HEADER_SIZE + POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX + POTR_CRYPTO_TAG_SIZE>
+        wrong_wire{};
+    std::array<uint8_t, POTR_PACKET_HEADER_SIZE + POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX + POTR_CRYPTO_TAG_SIZE>
+        valid_wire{};
+    size_t wrong_wire_len = wrong_wire.size();
+    size_t valid_wire_len = valid_wire.size();
+    potr_packet parsed_wrong{};
+    potr_packet parsed_valid{};
+    // [状態] - 証明書方式 multicast で同じグループ鍵を持つ送信者・受信者と、別のグループ鍵を持つ送信者を用意する。
+
+    // Pre-Assert
+    // Act
+    int actual_wrong_seal =
+        potr_internal_packet_seal_for_context(&wrong_sender_ctx, &wrong_sender_ctx.tx_session, &list_pkt,
+                                              wrong_wire.data(), &wrong_wire_len);
+    ASSERT_EQ(POTR_OK, potr_internal_packet_parse(&parsed_wrong, wrong_wire.data(), wrong_wire_len));
+    // [状態確認] - 別のグループ鍵で封緘したパケットを解析できること。
+    int actual_wrong_auth =
+        thread_recv_authenticate_packet(&receiver_ctx, &parsed_wrong, wrong_wire.data(), "test", 0);
+    if (actual_wrong_auth == POTR_OK)
+    {
+        potr_internal_flow_control_on_packet(&receiver_ctx, nullptr, &parsed_wrong);
+    }
+    int monitored_after_wrong = receiver_ctx.flow_monitored;
+    // [手順] - 別のグループ鍵で封緘した監視対象の一覧を受信者で検証する。
+
+    int actual_valid_seal =
+        potr_internal_packet_seal_for_context(&sender_ctx, &sender_ctx.tx_session, &list_pkt, valid_wire.data(),
+                                              &valid_wire_len);
+    ASSERT_EQ(POTR_OK, potr_internal_packet_parse(&parsed_valid, valid_wire.data(), valid_wire_len));
+    // [状態確認] - 正しいグループ鍵で封緘したパケットを解析できること。
+    int actual_valid_auth =
+        thread_recv_authenticate_packet(&receiver_ctx, &parsed_valid, valid_wire.data(), "test", 0);
+    if (actual_valid_auth == POTR_OK)
+    {
+        potr_internal_flow_control_on_packet(&receiver_ctx, nullptr, &parsed_valid);
+    }
+    int monitored_after_valid = receiver_ctx.flow_monitored;
+    // [手順] - 正しいグループ鍵で封緘した監視対象の一覧を受信者で検証し、受理させる。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_wrong_seal); // [確認_正常系] - 別のグループ鍵でも封緘自体は成功すること。
+    EXPECT_EQ(POTR_ERR_PROTOCOL, actual_wrong_auth);
+    // [確認_異常系] - 別のグループ鍵で封緘した監視対象の一覧は検証に失敗して破棄されること。
+    EXPECT_EQ(0, monitored_after_wrong);
+    // [確認_異常系] - 検証失敗の一覧では監視対象として受理されないこと。
+    EXPECT_EQ(POTR_OK, actual_valid_seal); // [確認_正常系] - 正しいグループ鍵で監視対象の一覧を封緘できること。
+    EXPECT_EQ(POTR_OK, actual_valid_auth); // [確認_正常系] - 正しいグループ鍵で監視対象の一覧の検証に成功すること。
+    EXPECT_EQ((uint16_t)POTR_FLAG_FLOW_CONTROL, parsed_valid.flags);
+    // [確認_正常系] - 復号後に POTR_FLAG_ENCRYPTED が外れ、POTR_FLAG_FLOW_CONTROL が残ること。
+    EXPECT_EQ(1, monitored_after_valid);
+    // [確認_正常系] - 検証に成功した監視対象の一覧を受理し、監視対象として登録されること。
+
+    // Cleanup
+    potr_internal_flow_control_stop(&receiver_ctx);
+    cplat_local_lock_dispose(receiver_ctx.callback_mutex);
+    cplat_local_lock_dispose(receiver_ctx.certificate_mutex);
+    cplat_local_lock_dispose(wrong_sender_ctx.callback_mutex);
+    cplat_local_lock_dispose(wrong_sender_ctx.certificate_mutex);
+    cplat_local_lock_dispose(sender_ctx.callback_mutex);
+    cplat_local_lock_dispose(sender_ctx.certificate_mutex);
 }

@@ -15,7 +15,7 @@ porter は JSONC 形式のテキスト ファイルでサービスを定義し�
 {
   // 全サービス共通の設定
   "global": {
-    "window_size": 16,
+    "window_size": 64,
   },
   "services": {
     // キーはサービス ID の十進文字列
@@ -50,7 +50,7 @@ WARNING は、利用側が設定の読み込みより前にトレーサーを開
 
 | キー | 型 | 既定値 | 説明 |
 |---|---|---|---|
-| `window_size` | uint16 | 16 | スライディング ウィンドウ サイズ (2〜256) |
+| `window_size` | uint16 | 64 | スライディング ウィンドウ サイズ (2〜256) |
 | `max_payload` | uint16 | 1,400 | DATA パケットのペイロード上限バイト数 (64〜65,435) |
 | `max_message_size` | uint32 | 65,535 | 1 回の potr_service_send で送信できる最大メッセージ長 (バイト)。フラグメント化により max_payload を超えるメッセージを送受信できます。 |
 | `send_queue_depth` | uint32 | 1,024 | 非同期送信キューの最大エントリ数 (2 以上)。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。2 未満の場合、サービスを開く処理は、通信種別と役割にかかわらず設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
@@ -82,6 +82,8 @@ Table: global オブジェクトの設定項目一覧
 evict 済みの通番を受信者が NACK で要求した場合、REJECT を返します。
 
 通信の安定性を高めるには、往復遅延時間と送信レートに応じてウィンドウ サイズを調整してください。
+
+既定値 (`window_size` = 64、`max_payload` = 1,400) では、送信と受信の保持領域として、セッションごとに約 190 KB (64 ビット環境で 189,568 byte) を確保します。`unicast_bidir_n1` のサーバーは、接続するピアごとに同じ領域を確保します。
 
 ### max_payload の影響
 
@@ -941,7 +943,7 @@ Table: 主な設定エラーの条件一覧
 // サンプル設定の例
 {
   "global": {
-    "window_size": 16,
+    "window_size": 64,
     "max_payload": 1400,
     "udp_health_interval_ms": 3000,
     "udp_health_timeout_ms": 10000

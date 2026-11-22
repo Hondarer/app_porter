@@ -465,6 +465,56 @@ TEST_F(potrRecvThreadTcpDataTest, pending_fin_triggered_by_data_stops_tcp_recv_l
 }
 // [サブ手順参照 名前=potrRecvThreadTcpDataTest.TearDown]
 
+// TCP 受信スレッドが順序整列済み DATA を配信した直後に potr_internal_flow_control_on_received を呼び出すことの確認
+// [サブ手順参照 名前=potrRecvThreadTcpDataTest.SetUp]
+TEST_F(potrRecvThreadTcpDataTest, tcp_recv_data_calls_flow_control_on_received)
+{
+    // Arrange
+    potr_packet pkt = {};
+    pkt.flags = POTR_FLAG_DATA;
+    pkt.seq_num = 100U;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_TCP;
+    ctx.peer_session_id = 77U;
+    ctx.peer_session_ts.tv_sec = 500;
+    ctx.peer_session_ts.tv_nsec = 600;
+    ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
+        .WillByDefault([](thread_recv_slot *slot, potr_context *context) {
+            slot->ctx = context;
+            slot->peer_session_id = &context->peer_session_id;
+            slot->peer_session_ts = &context->peer_session_ts;
+        }); // [状態] - 受信スロットに相手セッション識別子と時刻のポインターを結び付ける。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_packet_parse(_, _, _))
+        .WillOnce(DoAll(SetArgPointee<0>(pkt), Return(POTR_OK)));
+    // [Pre-Assert確認_正常系] - 先読みした DATA パケットを 1 回解析すること。
+    // [Pre-Assert手順] - 通番 100 の DATA パケットを返す。
+    EXPECT_CALL(mock_porter, potr_internal_window_recv_push(&ctx.recv_window, _)).WillOnce(Return(POTR_OK));
+    // [Pre-Assert確認_正常系] - 受信ウィンドウへの投入が 1 回呼び出されること。
+    // [Pre-Assert手順] - 投入成功 (POTR_OK) を返す。
+    EXPECT_CALL(mock_porter, potr_internal_window_recv_pop(&ctx.recv_window, _))
+        .WillOnce(DoAll(SetArgPointee<1>(pkt), Return(POTR_OK)))
+        .WillOnce(Return(POTR_ERR_NOT_FOUND));
+    // [Pre-Assert確認_正常系] - 受信ウィンドウからの取り出しが 2 回呼び出されること。
+    // [Pre-Assert手順] - 1 回目は通番 100 の DATA を返し、2 回目は空 (POTR_ERR_NOT_FOUND) を返す。
+    EXPECT_CALL(mock_porter, potr_internal_packet_unpack_next(_, _, _)).WillOnce(Return(POTR_ERR_NOT_FOUND));
+    // [Pre-Assert確認_正常系] - ペイロードの取り出しが 1 回呼び出されること。
+    // [Pre-Assert手順] - 取り出す要素なしを返す。
+    EXPECT_CALL(mock_porter,
+                potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 77U, &ctx.peer_session_ts, 101U, 1, 0U))
+        .Times(1);
+    // [Pre-Assert確認_正常系] - TCP DATA 配信後に次通番 101、data_packet=1 でフロー制御通知処理が 1 回呼び出されること。
+    // Act
+    int actual_ret = potr_internal_tcp_recv_thread_start(&ctx, 0); // [手順] - TCP 受信処理を準備する。
+    ASSERT_NE(nullptr, entry);                                     // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);                                              // [手順] - TCP 受信ループを同期実行する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - TCP 受信スレッド開始準備が成功すること。
+    EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.running[0], CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_正常系] - 後続の読み取り失敗で受信ループが終了すること。
+}
+// [サブ手順参照 名前=potrRecvThreadTcpDataTest.TearDown]
+
 // N:1 モードで遅いピアとして拒否中のセッションからの PING と DATA を破棄し、ピアを作らないことの確認
 TEST(potrRecvThreadTest, n1_drops_ping_and_data_from_rejected_slow_peer_without_creating_peer)
 {

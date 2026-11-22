@@ -2,7 +2,7 @@
 {
   // すべてのサービスに共通する既定値。
   "global": {
-    "window_size": 16,
+    "window_size": 64,
     "max_payload": 1400,
     "udp_health_interval_ms": 3000,
     "udp_health_timeout_ms": 10000,

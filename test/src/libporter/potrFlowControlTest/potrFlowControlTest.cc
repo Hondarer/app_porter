@@ -2309,3 +2309,98 @@ TEST_F(potrFlowControlTest, udp_unnotified_no_peer_recovers_and_does_not_oscilla
     EXPECT_EQ(0, n1_recovered);             // [確認_正常系] - N:1 ピアが相手の通知で回復すること。
 }
 // [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// TCP 受信側が DATA 受信に伴い、解除または抑制の要求と送出上限を cplat_socket_send_all で送出することの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, tcp_receiver_on_received_sends_resume_and_suppress_with_limit)
+{
+    // Arrange
+    int send_all_count = 0;
+    ctx.service.type = POTR_TYPE_TCP;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.tcp_conn_fd[0] = (cplat_socket)7;
+    ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&ctx.tcp_send_mutex[0]));
+    // [状態確認] - TCP 送信用ロックを生成できること。
+    ON_CALL(mock_cplat, cplat_socket_send_all(ctx.tcp_conn_fd[0], _, _, _))
+        .WillByDefault([&](cplat_socket, const void *, size_t, cplat_error *) {
+            send_all_count++;
+            return CPLAT_OK;
+        }); // [状態] - TCP 経路の cplat_socket_send_all() 呼び出し回数を記録して成功を返す。
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    // [状態] - 容量 1000、要求 80%、解除 60%、max_payload 100 の TCP 受信側を開始する (許可数 9)。
+    // [状態確認] - start の戻り値が POTR_OK であること。
+    // Pre-Assert
+    // Act
+    received(POTR_PEER_NA, 1U, 1);
+    int send_all_after_resume = send_all_count;
+    std::vector<uint8_t> states_resume = states;
+    std::vector<uint32_t> limits_resume = limits;
+    // [手順] - 占有量 0 で DATA 受信 (next_seq=1) を通知する。
+    potr_internal_flow_control_stop(&ctx);
+    clear_records();
+    send_all_count = 0;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    // [状態確認] - 抑制の要求の検証用に再度 start できること。
+    EXPECT_EQ(POTR_OK, admit(POTR_PEER_NA, 850U));
+    clear_records();
+    send_all_count = 0;
+    received(POTR_PEER_NA, 1U, 1);
+    int send_all_after_suppress = send_all_count;
+    std::vector<uint8_t> states_suppress = states;
+    std::vector<uint32_t> limits_suppress = limits;
+    // [手順] - 占有量 850 (要求しきい値超過) の状態で DATA 受信 (next_seq=1) を通知する。
+    // Assert
+    EXPECT_EQ(1, send_all_after_resume);                  // [確認_正常系] - 解除通知が cplat_socket_send_all() で 1 回送出されること。
+    EXPECT_EQ(0, sendto_count);                           // [確認_正常系] - UDP の cplat_socket_sendto() は使わないこと。
+    EXPECT_EQ(std::vector<uint8_t>{kResume}, states_resume);
+    // [確認_正常系] - しきい値以下では状態が解除 (RESUME) であること。
+    EXPECT_EQ(std::vector<uint32_t>{10U}, limits_resume); // [確認_正常系] - 送出上限が 1 + 9 = 10 であること。
+    EXPECT_EQ(1, send_all_after_suppress);                // [確認_正常系] - 抑制の要求が cplat_socket_send_all() で 1 回送出されること。
+    EXPECT_EQ(std::vector<uint8_t>{kSuppress}, states_suppress);
+    // [確認_正常系] - しきい値超過では状態が抑制の要求 (SUPPRESS) であること。
+    EXPECT_EQ(std::vector<uint32_t>{1U}, limits_suppress); // [確認_正常系] - 要求中の送出上限が 1 + 0 = 1 であること。
+    // Cleanup
+    potr_internal_flow_control_stop(&ctx);
+    cplat_local_lock_dispose(ctx.tcp_send_mutex[0]);
+    ctx.tcp_send_mutex[0] = nullptr;
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 送出上限を使わない TCP 受信側が DATA 受信に伴い「上限なし」を 1 回だけ送出することの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, tcp_receiver_without_limit_sends_unlimited_once)
+{
+    // Arrange
+    int send_all_count = 0;
+    ctx.service.type = POTR_TYPE_TCP;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.flow_control_config.capacity = 0U;
+    ctx.flow_control_config.receive_buffer_percent = 0U;
+    ctx.tcp_conn_fd[0] = (cplat_socket)7;
+    ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&ctx.tcp_send_mutex[0]));
+    // [状態確認] - TCP 送信用ロックを生成できること。
+    ON_CALL(mock_cplat, cplat_socket_send_all(ctx.tcp_conn_fd[0], _, _, _))
+        .WillByDefault([&](cplat_socket, const void *, size_t, cplat_error *) {
+            send_all_count++;
+            return CPLAT_OK;
+        }); // [状態] - TCP 経路の cplat_socket_send_all() 呼び出し回数を記録して成功を返す。
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    // [状態] - 容量 0・受信バッファー上限なしの TCP 受信側を開始する。
+    // [状態確認] - 上限なし通知用の資源が生成され POTR_OK を返すこと。
+    // Pre-Assert
+    // Act
+    received(POTR_PEER_NA, 1U, 1);
+    received(POTR_PEER_NA, 2U, 1);
+    // [手順] - 同じセッションで DATA 受信を 2 回続けて通知する。
+    // Assert
+    EXPECT_EQ(1, send_all_count); // [確認_正常系] - cplat_socket_send_all() で 1 回だけ送出されること。
+    EXPECT_EQ(0, sendto_count);   // [確認_正常系] - UDP の cplat_socket_sendto() は使わないこと。
+    EXPECT_EQ(std::vector<uint8_t>{(uint8_t)POTR_FLOW_CONTROL_STATE_UNLIMITED}, states);
+    // [確認_正常系] - 状態が上限なし (UNLIMITED) のパケットを 1 回だけ組み立てること。
+    EXPECT_EQ(std::vector<uint32_t>{0U}, limits); // [確認_正常系] - 上限なしの送出上限の欄が 0 であること。
+    // Cleanup
+    potr_internal_flow_control_stop(&ctx);
+    cplat_local_lock_dispose(ctx.tcp_send_mutex[0]);
+    ctx.tcp_send_mutex[0] = nullptr;
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]

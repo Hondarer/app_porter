@@ -115,7 +115,7 @@
  *  @ingroup        POTR_DEFAULT
  *  @{
  */
-#define POTR_DEFAULT_WINDOW_SIZE  16U   /**< デフォルト ウィンドウ サイズ (パケット数)。 */
+#define POTR_DEFAULT_WINDOW_SIZE  64U   /**< デフォルト ウィンドウ サイズ (パケット数)。 */
 #define POTR_DEFAULT_MAX_PAYLOAD  1400U /**< デフォルト最大ペイロード長 [byte]。 */
 #define POTR_DEFAULT_TTL          1U    /**< デフォルト マルチキャスト TTL。 */
 #define POTR_DEFAULT_PACK_WAIT_MS 0U    /**< デフォルト パッキング待ち時間 [ms]。0 = 即時送信。 */

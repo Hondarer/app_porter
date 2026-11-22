@@ -764,3 +764,94 @@ TEST(potrConnectThreadTest, tcp_reconnect_resets_flow_control_to_unnotified)
     EXPECT_EQ(0U, expire_at_reconnect); // [確認_正常系] - 切断後の再接続では抑制要求なしから始まること。
     potr_internal_connect_thread_stop(&ctx);
 }
+
+// TCP 再接続時に、保持していた送出上限と抑制要求を破棄して未通知 (初期の幅) と要求なしへ戻すことの確認
+TEST(potrConnectThreadTest, tcp_reconnect_discards_held_send_limit_and_suppression)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.service.type = POTR_TYPE_TCP;
+    ctx.service.service_id = 13;
+    ctx.service.reconnect_interval_ms = 1U;
+    ctx.n_path = 1;
+    for (int i = 0; i < (int)POTR_MAX_PATH; i++)
+    {
+        ctx.sock[i] = CPLAT_INVALID_SOCKET;
+        ctx.tcp_conn_fd[i] = CPLAT_INVALID_SOCKET;
+        ctx.tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
+    }
+    const uint64_t kHeldSendLimit = POTR_FLOW_SEND_LIMIT_HELD | 120U;
+    cplat_atomic_store_u64(&ctx.flow_send_limit, kHeldSendLimit, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&ctx.flow_request_expire_ms, 9999U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    int connect_count = 0;
+    uint64_t limit_at_first_connect = 0U;
+    uint64_t expire_at_first_connect = 0U;
+    uint64_t limit_at_reconnect = 0U;
+    uint64_t expire_at_reconnect = 0U;
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_))
+        .WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
+    ON_CALL(mock_porter, thread_connect_with_timeout(_, _))
+        .WillByDefault(
+            [&](potr_context *, int) -> cplat_socket
+            {
+                connect_count++;
+                if (connect_count <= 2)
+                {
+                    return static_cast<cplat_socket>(7 + connect_count);
+                }
+                cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_INVALID_SOCKET;
+            });
+    ON_CALL(mock_porter, potr_internal_certificate_connect(_, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(mock_porter, potr_internal_start_connected_threads(_, _, _))
+        .WillByDefault(
+            [&](potr_context *c, int, const potr_internal_connected_threads_ops *)
+            {
+                if (connect_count == 1)
+                {
+                    limit_at_first_connect = cplat_atomic_load_u64(&c->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+                    expire_at_first_connect =
+                        cplat_atomic_load_u64(&c->flow_request_expire_ms, CPLAT_MEMORY_ORDER_ACQUIRE);
+                    /* 1 回目の接続中に送出上限 (120) と抑制要求を保持した状態を模擬する。 */
+                    cplat_atomic_store_u64(&c->flow_send_limit, kHeldSendLimit, CPLAT_MEMORY_ORDER_RELEASE);
+                    cplat_atomic_store_u64(&c->flow_request_expire_ms, 8888U, CPLAT_MEMORY_ORDER_RELEASE);
+                }
+                else if (connect_count == 2)
+                {
+                    limit_at_reconnect = cplat_atomic_load_u64(&c->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+                    expire_at_reconnect = cplat_atomic_load_u64(&c->flow_request_expire_ms, CPLAT_MEMORY_ORDER_ACQUIRE);
+                    cplat_atomic_store_i32(&c->connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                }
+                return POTR_OK;
+            });
+    ON_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, _)).WillByDefault(Return(CPLAT_ERR_TIMEOUT));
+    // [状態] - TCP SENDER で 1 回目の接続中に保持した送出上限 (HELD | 120) と抑制要求を受け、切断後に再接続する。
+    // Pre-Assert
+    // Act
+    int actual_ret = potr_internal_connect_thread_start(&ctx); // [手順] - 接続管理処理を準備する。
+    ASSERT_NE(nullptr, entry);                                 // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);                                          // [手順] - 1 回目の接続、切断、再接続を同期実行する。
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 接続管理処理の準備に成功すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED, limit_at_first_connect);
+    // [確認_正常系] - 初回接続の公開前に未通知 (初期の幅) へ初期化されること。
+    EXPECT_EQ(0U, expire_at_first_connect); // [確認_正常系] - 初回接続の公開前に抑制要求なしへ初期化されること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED, limit_at_reconnect);
+    // [確認_正常系] - 再接続時に保持していた送出上限が破棄され、未通知 (初期の幅) へ戻ること。
+    EXPECT_EQ(0U, expire_at_reconnect); // [確認_正常系] - 再接続時に保持していた抑制要求が破棄されること。
+    potr_internal_connect_thread_stop(&ctx);
+}
