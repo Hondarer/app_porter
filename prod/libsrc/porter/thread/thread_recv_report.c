@@ -52,15 +52,17 @@ static int send_report(potr_context *ctx)
     packet.flags = cplat_hton16(POTR_FLAG_REPORT);
 
     /*
-     * unicast、multicast、broadcast の受信者は、受信報告のヘッダーに、その時点の自身の送出上限を載せる。
-     * seq_num は有無 (1 = ack_num に送出上限がある)、ack_num は値である。パケットの数と大きさは変わらない。
+     * unicast、multicast、broadcast の受信者は、受信報告のヘッダーに、その時点の自身の許可数の上限と送出上限を載せる。
+     * seq_num は許可数の上限 (1 以上 = ack_num に送出上限がある、0 = ない)、ack_num は送出上限である。
+     * パケットの数と大きさは変わらない。
      */
     {
         uint32_t send_limit = 0U;
+        uint32_t max_allowance = 0U;
 
-        if (potr_internal_flow_control_report_limit(ctx, &send_limit) != 0)
+        if (potr_internal_flow_control_report_limit(ctx, &send_limit, &max_allowance) != 0 && max_allowance != 0U)
         {
-            packet.seq_num = cplat_hton32(1U);
+            packet.seq_num = cplat_hton32(max_allowance);
             packet.ack_num = cplat_hton32(send_limit);
         }
     }

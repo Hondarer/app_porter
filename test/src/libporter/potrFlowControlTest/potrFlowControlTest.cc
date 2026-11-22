@@ -1966,33 +1966,41 @@ TEST_F(potrFlowControlTest, compressed_data_expanded_size_reduces_allowance_only
     uint32_t report_exact = 0U;
     uint32_t report_above = 0U;
     uint32_t report_after_smaller = 0U;
+    uint32_t max_below = 0U;
+    uint32_t max_exact = 0U;
+    uint32_t max_above = 0U;
+    uint32_t max_after_smaller = 0U;
     ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
     // [状態] - 容量 1000、要求 80% (800 [byte])、max_payload 100 [byte] で start する (既定の許可数 800 ÷ 100 + 1 = 9)。
     // [状態確認] - start の戻り値が POTR_OK であること。
     // Pre-Assert
     // Act
     received(POTR_PEER_NA, 10U, 1, 1U, 80U);
-    int held_below = potr_internal_flow_control_report_limit(&ctx, &report_below);
+    int held_below = potr_internal_flow_control_report_limit(&ctx, &report_below, &max_below);
     // [手順] - max_payload (100) 未満の展開後サイズ 80 [byte] を受信する。
     received(POTR_PEER_NA, 11U, 1, 1U, 100U);
-    int held_exact = potr_internal_flow_control_report_limit(&ctx, &report_exact);
+    int held_exact = potr_internal_flow_control_report_limit(&ctx, &report_exact, &max_exact);
     // [手順] - max_payload (100) ちょうどの展開後サイズ 100 [byte] を受信する。
     received(POTR_PEER_NA, 12U, 1, 1U, 400U);
-    int held_above = potr_internal_flow_control_report_limit(&ctx, &report_above);
+    int held_above = potr_internal_flow_control_report_limit(&ctx, &report_above, &max_above);
     // [手順] - max_payload を超える展開後サイズ 400 [byte] を受信する (許可数 800 ÷ 400 + 1 = 3)。
     received(POTR_PEER_NA, 13U, 1, 1U, 50U);
-    int held_after_smaller = potr_internal_flow_control_report_limit(&ctx, &report_after_smaller);
+    int held_after_smaller = potr_internal_flow_control_report_limit(&ctx, &report_after_smaller, &max_after_smaller);
     // [手順] - より小さい 50 [byte] を受信しても、同一セッション内の最大値 400 [byte] が維持されることを確認する。
     // Assert
     EXPECT_EQ(1, held_below);          // [確認_正常系] - 80 [byte] 受信後に送出上限が取得できること。
     EXPECT_EQ(19U, report_below);      // [確認_正常系] - max_payload 未満では 10 + 9 = 19 で変わらないこと。
+    EXPECT_EQ(9U, max_below);          // [確認_正常系] - max_payload 未満では許可数の上限が 9 であること。
     EXPECT_EQ(1, held_exact);          // [確認_正常系] - 100 [byte] 受信後に送出上限が取得できること。
     EXPECT_EQ(20U, report_exact);      // [確認_正常系] - max_payload ちょうどでは 11 + 9 = 20 で変わらないこと。
+    EXPECT_EQ(9U, max_exact);          // [確認_正常系] - max_payload ちょうどでは許可数の上限が 9 であること。
     EXPECT_EQ(1, held_above);          // [確認_正常系] - 400 [byte] 受信後に送出上限が取得できること。
     EXPECT_EQ(15U, report_above);      // [確認_正常系] - 400 [byte] により許可数が 3 へ減り、12 + 3 = 15 になること。
+    EXPECT_EQ(3U, max_above);          // [確認_正常系] - 400 [byte] により許可数の上限が 3 へ減ること。
     EXPECT_EQ(1, held_after_smaller);  // [確認_正常系] - 50 [byte] 受信後も送出上限が取得できること。
     EXPECT_EQ(16U, report_after_smaller);
     // [確認_正常系] - 最大値 400 [byte] が維持され、13 + 3 = 16 になること。
+    EXPECT_EQ(3U, max_after_smaller);  // [確認_正常系] - 最大値 400 [byte] が維持され、許可数の上限が 3 であること。
 }
 // [サブ手順参照 名前=potrFlowControlTest.TearDown]
 

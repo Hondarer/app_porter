@@ -99,8 +99,8 @@ int thread_recv_report_interval(const potr_context *ctx, uint64_t *interval_ms);
  *  @param[in]      now_ms 単調増加時刻 [ms]。
  *  @return         成功時 POTR_OK、封緘失敗時は封緘関数の結果、乱数取得失敗時 POTR_ERR_IO。
  *  @note           片方向の通常モードの受信者のみ送ります。UDP 受信スレッドから呼び出します。
- *                  unicast、multicast、broadcast の受信者は、その時点の自身の送出上限
- *                  (potr_internal_flow_control_report_limit()) を、seq_num (有無) と ack_num (値) に載せます。
+ *                  unicast、multicast、broadcast の受信者は、その時点の自身の送出上限と許可数の上限
+ *                  (potr_internal_flow_control_report_limit()) を、seq_num (許可数の上限) と ack_num (送出上限) に載せます。
  *                  ソケットの送出失敗は次の報告周期で再試行します。所有権は移動しません。
  */
 int thread_recv_report_tick(potr_context *ctx, uint64_t now_ms);

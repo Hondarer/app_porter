@@ -316,16 +316,13 @@ TEST(receiverReportTest, malformed_report_does_not_register)
     states[0] = 255;
     int actual_ret_state = potr_internal_receiver_accept(&ctx, &packet, wire);
     states[0] = POTR_PING_STATE_NORMAL;
-    packet.seq_num = 2;
-    int actual_ret_sequence = potr_internal_receiver_accept(&ctx, &packet, wire);
     packet.seq_num = 0;
     packet.ack_num = 1;
     int actual_ret_ack_without_limit = potr_internal_receiver_accept(&ctx, &packet, wire);
-    // [手順] - ペイロード長、経路状態、送出上限の有無 (seq_num が 2)、送出上限がないのに ack_num が 0 でない報告を順に検査する。
+    // [手順] - ペイロード長、経路状態、送出上限がない (seq_num が 0) のに ack_num が 0 でない報告を順に検査する。
     // Assert
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_length); // [確認_異常系] - 長さ不正を破棄すること。
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_state); // [確認_異常系] - 未定義の経路状態を破棄すること。
-    EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_sequence); // [確認_異常系] - seq_num が 0 と 1 以外の報告を破棄すること。
     EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret_ack_without_limit);
     // [確認_異常系] - seq_num が 0 (送出上限なし) で ack_num が 0 でない報告を破棄すること。
     EXPECT_EQ(nullptr, ctx.receivers); // [確認_異常系] - 不正報告を登録しないこと。
@@ -968,6 +965,7 @@ namespace
 struct monitor_count_case
 {
     size_t candidates;
+    size_t budget_count;
     size_t monitored_count; // 構造体に詰め物が入らないよう size_t で持ち、呼び出しで uint32_t へ変換する
     size_t max_payload;
     size_t expected;
@@ -984,7 +982,7 @@ void SetupMonitoringSender(potr_context *ctx, uint32_t monitored_count)
     ctx->flow_control_config.request_lifetime_ms = 300U;
 }
 
-// 受信報告を 1 件受理させる。seq_num が 1 の場合は ack_num を送出上限として載せる。
+// 受信報告を 1 件受理させる。seq_num が 0 でない場合は許可数の上限、ack_num を送出上限として載せる。
 int AcceptReport(potr_context *ctx, uint32_t session_id, uint32_t seq_num, uint32_t ack_num)
 {
     uint8_t states[POTR_MAX_PATH] = {};
@@ -1029,36 +1027,39 @@ potr_internal_receiver *FindReceiver(potr_context *ctx, uint32_t session_id)
 }
 } // namespace
 
-// 監視する数を、下限、上限 (64 と max_payload による制限)、候補の数のそれぞれで求めることの確認
+// 監視する数を、予算による数、下限、上限 (64 と max_payload による制限)、候補の数のそれぞれで求めることの確認
 TEST(receiverReportTest, monitor_count_cases)
 {
     // Arrange
     const monitor_count_case cases[] = {
-        {3U, 4U, 1400U, 3U},   // 下限 4 より候補が少ない場合は候補の数 3
-        {100U, 1U, 1400U, 1U}, // 既定の下限 1 で候補が多い場合は 1
-        {100U, 4U, 1400U, 4U}, // 下限 4 で候補が多い場合は 4
-        {100U, 20U, 1400U, 20U}, // 下限 20 で候補が多い場合は 20
-        {10U, 0U, 1400U, 0U},  // 下限 0 (下限なし) の場合は 0
-        {0U, 4U, 1400U, 0U},   // 候補がいない場合は 0
-        {100U, 100U, 1400U, 64U}, // 下限が 64 を超える場合は上限 64
-        {100U, 10U, 100U, 6U}, // max_payload 100 の上限 (100 − 2) ÷ 16 = 6
-        {3U, 10U, 100U, 3U},   // max_payload 上限 6 より候補 3 が小さい場合は 3
+        {3U, 0U, 4U, 1400U, 3U},     // 下限 4 より候補が少ない場合は候補の数 3
+        {100U, 0U, 1U, 1400U, 1U},   // 既定の下限 1 で予算 0 の場合は 1
+        {100U, 0U, 4U, 1400U, 4U},   // 下限 4 で予算 0 の場合は 4
+        {100U, 0U, 20U, 1400U, 20U}, // 下限 20 で予算 0 の場合は 20
+        {10U, 0U, 0U, 1400U, 0U},    // 予算 0 かつ下限 0 (下限なし) の場合は 0
+        {0U, 5U, 4U, 1400U, 0U},     // 候補がいない場合は 0
+        {100U, 0U, 100U, 1400U, 64U}, // 下限が 64 を超える場合は上限 64
+        {100U, 0U, 10U, 100U, 6U},   // max_payload 100 の上限 (100 − 2) ÷ 16 = 6
+        {3U, 0U, 10U, 100U, 3U},     // max_payload 上限 6 より候補 3 が小さい場合は 3
+        {100U, 20U, 1U, 1400U, 20U}, // 予算 20 が下限 1 より大きい場合は予算 20
+        {100U, 80U, 1U, 1400U, 64U}, // 予算 80 が上限 64 を超える場合は上限 64
+        {10U, 5U, 0U, 1400U, 5U},    // 下限 0 でも予算 5 がある場合は 5
     };
     const size_t case_count = sizeof(cases) / sizeof(cases[0]);
     size_t actual[sizeof(cases) / sizeof(cases[0])] = {};
-    // [状態] - 9 通りの入力を用意する (ループ 9 回)。
+    // [状態] - 12 通りの入力を用意する (ループ 12 回)。
     // Pre-Assert
     // Act
     for (size_t i = 0; i < case_count; i++)
     {
-        actual[i] = flow_monitor_count(cases[i].candidates, (uint32_t)cases[i].monitored_count,
+        actual[i] = flow_monitor_count(cases[i].candidates, cases[i].budget_count, (uint32_t)cases[i].monitored_count,
                                        (uint32_t)cases[i].max_payload);
     }
     // [手順] - 入力ごとに flow_monitor_count() を呼び出し、監視する数を記録する。
     // Assert
     for (size_t i = 0; i < case_count; i++)
     {
-        EXPECT_EQ(cases[i].expected, actual[i]); // [確認_正常系] - 監視する数が期待値であること。(確認 9 回)
+        EXPECT_EQ(cases[i].expected, actual[i]); // [確認_正常系] - 監視する数が期待値であること。(確認 12 回)
     }
 }
 
@@ -1379,7 +1380,7 @@ TEST(receiverReportTest, monitor_list_other_types_and_null_arguments)
     EXPECT_EQ(0U, count_null_changed); // [確認_異常系] - changed が NULL で 0 台であること。
 }
 
-// 受信報告を受けていない受信者の抑制の要求で、受信報告を待たずに監視対象の候補になることの確認
+// 受信報告を受けていない受信者の抑制の要求では、余裕 0 を記録するが許可数の上限が 0 のため候補から外れ、受信報告後に監視対象になることの確認
 TEST(receiverReportTest, suppress_without_report_becomes_candidate)
 {
     // Arrange
@@ -1399,15 +1400,24 @@ TEST(receiverReportTest, suppress_without_report_becomes_candidate)
     // Pre-Assert
     // Act
     int actual_ret = AcceptFlowControl(&ctx, 2U, (uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 105U);
+    int active_before_report = ctx.receivers != nullptr ? ctx.receivers->active : -1;
+    int margin_known_before = ctx.receivers != nullptr ? ctx.receivers->flow_margin_known : -1;
+    int32_t margin_before = ctx.receivers != nullptr ? ctx.receivers->flow_margin : -1;
+    int monitored_before = ctx.receivers != nullptr ? ctx.receivers->flow_monitored : -1;
+    uint64_t limit_before = ctx.receivers != nullptr ? ctx.receivers->flow_send_limit : 99U;
     // [手順] - 受信報告を受けていない受信者 2 から、抑制の要求を受理する。
+    int actual_ret_report = AcceptReport(&ctx, 2U, 42U, 120U);
+    // [手順] - その後、許可数の上限 42 の受信報告を受理する。
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 抑制の要求を受理すること。
     ASSERT_NE(nullptr, ctx.receivers); // [確認_正常系] - 受信者 2 の記録があること。
-    EXPECT_EQ(0, ctx.receivers->active); // [確認_正常系] - 受信報告を受けていないため、受信報告による活動中でないこと。
-    EXPECT_EQ(1, ctx.receivers->flow_margin_known); // [確認_正常系] - 余裕の記録があること。
-    EXPECT_EQ(0, ctx.receivers->flow_margin); // [確認_正常系] - 余裕が 0 であること。
-    EXPECT_EQ(1, ctx.receivers->flow_monitored); // [確認_正常系] - 有効な要求で活動中として数え、監視対象になること。
-    EXPECT_EQ(0U, ctx.receivers->flow_send_limit); // [確認_正常系] - 監視対象になる前に受けた送出上限は保持しないこと。
+    EXPECT_EQ(0, active_before_report); // [確認_正常系] - 受信報告を受けていないため、受信報告による活動中でないこと。
+    EXPECT_EQ(1, margin_known_before); // [確認_正常系] - 余裕の記録があること。
+    EXPECT_EQ(0, margin_before); // [確認_正常系] - 余裕が 0 であること。
+    EXPECT_EQ(0, monitored_before); // [確認_正常系] - 許可数の上限が 0 の間は候補から外れること。
+    EXPECT_EQ(0U, limit_before); // [確認_正常系] - 監視対象になる前に受けた送出上限は保持しないこと。
+    EXPECT_EQ(POTR_OK, actual_ret_report); // [確認_正常系] - 受信報告を受理すること。
+    EXPECT_EQ(1, ctx.receivers->flow_monitored); // [確認_正常系] - 許可数の上限 42 の受信報告後に監視対象になること。
     // Cleanup
     FreeReceivers(&ctx);
 }
@@ -1648,7 +1658,7 @@ TEST(receiverReportTest, unicast_report_recovers_send_limit_only_when_advancing)
     FreeReceivers(&ctx);
 }
 
-// multicast の監視対象で、保持中の送出上限より先へ進んだ受信報告だけで更新し、非監視対象と未保持では更新しないことの確認
+// multicast の監視対象で、未保持なら受信報告の送出上限を保持し、保持中なら先へ進んだ受信報告だけで更新し、非監視対象では保持しないことの確認
 TEST(receiverReportTest, multicast_monitored_report_recovers_send_limit_only_when_advancing)
 {
     // Arrange
@@ -1692,7 +1702,7 @@ TEST(receiverReportTest, multicast_monitored_report_recovers_send_limit_only_whe
     // Assert
     EXPECT_EQ(POTR_OK, ret_init_1);                                    // [確認_正常系] - 受信者 1 の初回受信報告を受理すること。
     EXPECT_EQ(POTR_OK, ret_init_2);                                    // [確認_正常系] - 受信者 2 の初回受信報告を受理すること。
-    EXPECT_EQ(0U, limit_before_fc);                                    // [確認_正常系] - 送出上限未保持の監視対象では受信報告で保持を始めないこと。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 110U, limit_before_fc);      // [確認_正常系] - 送出上限未保持の監視対象は受信報告の送出上限 110 を保持すること。
     EXPECT_EQ(POTR_OK, ret_fc);                                        // [確認_正常系] - フロー制御パケットを受理すること。
     EXPECT_EQ(POTR_OK, ret_older);                                     // [確認_正常系] - 古い送出上限の受信報告を受理すること。
     EXPECT_EQ(POTR_OK, ret_same);                                      // [確認_正常系] - 同じ送出上限の受信報告を受理すること。
@@ -2625,5 +2635,447 @@ TEST(receiverReportTest, unnotified_reports_cannot_extend_initial_stop_lifetime)
     EXPECT_EQ(3010U, new_deadline); // [確認_正常系] - 次の停止開始から新しく有効期限を数えること。
     EXPECT_EQ(POTR_OK, notified_report); // [確認_正常系] - 相手の採用後の最初の通知を受理すること。
     EXPECT_EQ(0, notified_open); // [確認_正常系] - 通知によって停止が解けること。
+    FreeReceivers(&ctx);
+}
+
+// 送信側が受信報告の seq_num (許可数の上限) を 1 以上で受理・保持し、0 またはセッション変更で 0 に戻すことの確認
+TEST(receiverReportTest, report_max_allowance_validation_storage_and_session_reset)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context mcast_ctx = {};
+    potr_context ucast_ctx = {};
+    uint64_t now_ms = 1000U;
+    SetupMonitoringSender(&mcast_ctx, 1U);
+    mcast_ctx.service.max_peers = 1U;
+    mcast_ctx.health_timeout_ms = 100U;
+    mcast_ctx.send_window.next_seq = 100U;
+    ucast_ctx.service.type = POTR_TYPE_UNICAST;
+    ucast_ctx.role = POTR_ROLE_SENDER;
+    ucast_ctx.flow_control_config.request_lifetime_ms = 500U;
+    ucast_ctx.send_window.next_seq = 10U;
+    cplat_atomic_store_u64(&ucast_ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 10U,
+                           CPLAT_MEMORY_ORDER_RELAXED);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - multicast (max_peers=1, health_timeout_ms=100) と unicast の送信者を用意する。
+    // Pre-Assert
+    // Act
+    int ret_mcast_first = AcceptReport(&mcast_ctx, 1U, 42U, 120U);
+    auto *r1 = FindReceiver(&mcast_ctx, 1U);
+    uint32_t max_after_first = r1 != nullptr ? r1->flow_report_max_allowance : 0U;
+    int32_t margin_after_first = r1 != nullptr ? r1->flow_margin : -1;
+    int monitored_after_first = r1 != nullptr ? r1->flow_monitored : 0;
+    // [手順] - multicast で seq_num=42, ack_num=120 の受信報告を受理する。
+    if (r1 != nullptr)
+    {
+        HoldSendLimit(r1, 120U, now_ms);
+    }
+    now_ms = 1020U;
+    int ret_mcast_recover = AcceptReport(&mcast_ctx, 1U, 208U, 150U);
+    uint32_t max_after_recover = r1 != nullptr ? r1->flow_report_max_allowance : 0U;
+    uint64_t limit_after_recover = r1 != nullptr ? r1->flow_send_limit : 0U;
+    // [手順] - 監視対象が送出上限 120 を保持した状態で seq_num=208, ack_num=150 を受理する。
+    now_ms = 1040U;
+    int ret_mcast_clear = AcceptReport(&mcast_ctx, 1U, 0U, 0U);
+    uint32_t max_after_clear = r1 != nullptr ? r1->flow_report_max_allowance : 99U;
+    int margin_known_after_clear = r1 != nullptr ? r1->flow_margin_known : 1;
+    // [手順] - seq_num=0, ack_num=0 の受信報告を受理して 0 へ戻す。
+    now_ms = 1060U;
+    int ret_mcast_restore = AcceptReport(&mcast_ctx, 1U, 42U, 160U);
+    now_ms = 1200U;
+    potr_packet nack = {};
+    uint8_t wire[POTR_PACKET_HEADER_SIZE] = {};
+    nack.flags = POTR_FLAG_NACK;
+    nack.session_id = 2U;
+    int ret_reused_nack = potr_internal_receiver_accept(&mcast_ctx, &nack, wire);
+    auto *r2 = FindReceiver(&mcast_ctx, 2U);
+    uint32_t max_after_session_change = r2 != nullptr ? r2->flow_report_max_allowance : 99U;
+    // [手順] - セッション 1 の期限切れ後に別セッション 2 の NACK でエントリを再利用させ、0 に戻ることを確認する。
+    now_ms = 1300U;
+    int ret_ucast_first = AcceptReport(&ucast_ctx, 10U, 84U, 200U);
+    auto *ru = FindReceiver(&ucast_ctx, 10U);
+    uint32_t ucast_max_first = ru != nullptr ? ru->flow_report_max_allowance : 0U;
+    uint64_t ucast_limit_first = ru != nullptr ? ru->flow_send_limit : 0U;
+    now_ms = 1350U;
+    int ret_ucast_advance = AcceptReport(&ucast_ctx, 10U, 84U, 250U);
+    uint64_t ucast_limit_advance = ru != nullptr ? ru->flow_send_limit : 0U;
+    // [手順] - unicast で seq_num=84 の受信報告による初回通知と送出上限の回復を確認する。
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_mcast_first);             // [確認_正常系] - seq_num=42 の受信報告を受理すること。
+    EXPECT_EQ(42U, max_after_first);                 // [確認_正常系] - 許可数の上限 42 を保持すること。
+    EXPECT_EQ(20, margin_after_first);               // [確認_正常系] - 余裕 120 - 100 = 20 を記録すること。
+    EXPECT_EQ(1, monitored_after_first);             // [確認_正常系] - 監視対象に選ばれること。
+    EXPECT_EQ(POTR_OK, ret_mcast_recover);           // [確認_正常系] - seq_num=208 の受信報告を受理すること。
+    EXPECT_EQ(208U, max_after_recover);              // [確認_正常系] - 許可数の上限を 208 へ更新すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 150U, limit_after_recover);
+    // [確認_正常系] - seq_num > 1 でも監視対象の送出上限が 150 へ回復すること。
+    EXPECT_EQ(POTR_OK, ret_mcast_clear);             // [確認_正常系] - seq_num=0, ack_num=0 を受理すること。
+    EXPECT_EQ(0U, max_after_clear);                  // [確認_正常系] - seq_num=0 で許可数の上限が 0 に戻ること。
+    EXPECT_EQ(0, margin_known_after_clear);          // [確認_正常系] - seq_num=0 で余裕の記録が消えること。
+    EXPECT_EQ(POTR_OK, ret_mcast_restore);           // [確認_正常系] - 再設定の受信報告を受理すること。
+    EXPECT_EQ(POTR_OK, ret_reused_nack);             // [確認_正常系] - 新しいセッションの NACK を受理すること。
+    EXPECT_EQ(0U, max_after_session_change);         // [確認_正常系] - セッションが変わったら許可数の上限が 0 に戻ること。
+    EXPECT_EQ(POTR_OK, ret_ucast_first);             // [確認_正常系] - unicast で seq_num=84 の初回受信報告を受理すること。
+    EXPECT_EQ(84U, ucast_max_first);                 // [確認_正常系] - unicast でも許可数の上限 84 を保持すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 200U, ucast_limit_first);
+    // [確認_正常系] - unicast で seq_num=84 の初回受信報告が送出上限 200 を設定すること。
+    EXPECT_EQ(POTR_OK, ret_ucast_advance);           // [確認_正常系] - unicast で先へ進んだ受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 250U, ucast_limit_advance);
+    // [確認_正常系] - unicast で seq_num=84 でも送出上限が 250 へ回復すること。
+    // Cleanup
+    FreeReceivers(&mcast_ctx);
+    FreeReceivers(&ucast_ctx);
+}
+
+// 予算 (flow_control_feedback_percent)、下限、上限 (64 台・max_payload・候補数) により監視する数が決まることの確認
+TEST(receiverReportTest, monitor_budget_table_limits_and_feedback_percent)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    uint64_t now_ms = 1000U;
+    struct budget_table_case
+    {
+        size_t receivers;
+        uint32_t max_allowance;
+        uint32_t feedback_percent;
+        uint32_t min_count;
+        uint32_t max_payload;
+        size_t expected;
+    };
+    const budget_table_case cases[] = {
+        {30U, 42U, 5U, 1U, 1400U, 1U},    // 仕様の表: 許可数の上限 42、予算 5%、下限 1 -> 1 台
+        {30U, 84U, 5U, 1U, 1400U, 2U},    // 許可数の上限 84、予算 5%、下限 1 -> 2 台
+        {30U, 208U, 5U, 1U, 1400U, 5U},   // 仕様の表: 許可数の上限 208、予算 5%、下限 1 -> 5 台
+        {30U, 834U, 5U, 1U, 1400U, 20U},  // 仕様の表: 許可数の上限 834、予算 5%、下限 1 -> 20 台
+        {30U, 84U, 50U, 1U, 1400U, 20U},  // 予算 50% (切り上げ丸め: ceil(2e6/84)=23810, 20 台で 476200 <= 500000) -> 20 台
+        {5U, 42U, 5U, 3U, 1400U, 3U},     // 予算では 1 台だが、下限 3 による引き上げ -> 3 台
+        {5U, 84U, 5U, 0U, 1400U, 2U},     // 下限 0 でも予算 5% で 2 台
+        {70U, 5000U, 100U, 1U, 1400U, 64U}, // 予算上は 70 台以上だが、64 台の上限に収める -> 64 台
+        {20U, 834U, 5U, 1U, 100U, 6U},    // max_payload 100 の上限 (100 - 2) / 16 = 6 台に収める -> 6 台
+        {3U, 834U, 5U, 1U, 1400U, 3U},    // 予算上は 20 台だが、候補の数 3 台に収める -> 3 台
+    };
+    const size_t case_count = sizeof(cases) / sizeof(cases[0]);
+    size_t actual[sizeof(cases) / sizeof(cases[0])] = {};
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 10 通りの構成を用意する (ループ 10 回)。
+    // Pre-Assert
+    // Act
+    for (size_t i = 0U; i < case_count; i++)
+    {
+        potr_context ctx = {};
+        potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX] = {};
+        int changed = 0;
+
+        SetupMonitoringSender(&ctx, cases[i].min_count);
+        ctx.flow_control_config.feedback_percent = cases[i].feedback_percent;
+        ctx.global.max_payload = (uint16_t)cases[i].max_payload;
+        ctx.send_window.next_seq = 100U;
+        for (size_t r = 0U; r < cases[i].receivers; r++)
+        {
+            AcceptReport(&ctx, (uint32_t)(r + 1U), cases[i].max_allowance, (uint32_t)(110U + r));
+        }
+        actual[i] = potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX,
+                                                        &changed);
+        FreeReceivers(&ctx);
+    }
+    // [手順] - 各構成で受信報告を受理し、監視対象の一覧の台数を取得する。
+    // Assert
+    for (size_t i = 0U; i < case_count; i++)
+    {
+        EXPECT_EQ(cases[i].expected, actual[i]); // [確認_正常系] - 監視する数が期待値と一致すること。(確認 10 回)
+    }
+}
+
+// 許可数の上限が異なる受信者が混ざる場合の合計計算と、許可数の上限 0 の受信者が候補から外れることの確認
+TEST(receiverReportTest, monitor_budget_mixed_allowances_and_zero_excluded)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX] = {};
+    uint64_t now_ms = 1000U;
+    int changed = 0;
+    SetupMonitoringSender(&ctx, 1U);
+    ctx.flow_control_config.feedback_percent = 5U;
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 予算 5% (= 50,000)、下限 1 の multicast 送信者を用意する。
+    // Pre-Assert
+    // Act
+    AcceptReport(&ctx, 1U, 100U, 110U); // 余裕 10, cost = 20,000
+    AcceptReport(&ctx, 2U, 84U, 120U);  // 余裕 20, cost = 23,810 (累計 43,810 <= 50,000)
+    AcceptReport(&ctx, 3U, 208U, 130U); // 余裕 30, cost = 9,616  (累計 53,426 > 50,000)
+    AcceptReport(&ctx, 4U, 0U, 0U);     // 許可数の上限 0 (候補外)
+    // [手順] - 異なる許可数の上限を持つ 3 台と、許可数の上限 0 の 1 台から受信報告を受理する。
+    size_t count_mixed =
+        potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed);
+    int mon_1_mixed = FindReceiver(&ctx, 1U)->flow_monitored;
+    int mon_2_mixed = FindReceiver(&ctx, 2U)->flow_monitored;
+    int mon_3_mixed = FindReceiver(&ctx, 3U)->flow_monitored;
+    int mon_4_mixed = FindReceiver(&ctx, 4U)->flow_monitored;
+    // [手順] - 監視対象の一覧を取得する。
+    AcceptReport(&ctx, 1U, 0U, 0U);
+    AcceptReport(&ctx, 2U, 0U, 0U);
+    AcceptReport(&ctx, 3U, 0U, 0U);
+    size_t count_all_zero =
+        potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed);
+    // [手順] - 全受信者の許可数の上限を 0 にしたうえで一覧を取得する。
+    // Assert
+    EXPECT_EQ(2U, count_mixed);    // [確認_正常系] - 累計が予算 5% に収まる 2 台が選ばれること。
+    EXPECT_EQ(1, mon_1_mixed);     // [確認_正常系] - 余裕 10 の受信者 1 が監視対象であること。
+    EXPECT_EQ(1, mon_2_mixed);     // [確認_正常系] - 余裕 20 の受信者 2 が監視対象であること。
+    EXPECT_EQ(0, mon_3_mixed);     // [確認_正常系] - 予算を超える受信者 3 が監視対象外であること。
+    EXPECT_EQ(0, mon_4_mixed);     // [確認_正常系] - 許可数の上限 0 の受信者 4 が候補から外れること。
+    EXPECT_EQ(0U, count_all_zero); // [確認_正常系] - 全員が許可数の上限 0 の場合は 0 台になること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 余裕が同じ場合の優先順位 (1. 現在の監視対象、2. 監視対象でなくなってからの時間、3. 管理表の順) の確認
+TEST(receiverReportTest, monitor_tie_break_three_levels)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000U;
+    SetupMonitoringSender(&ctx, 1U);
+    ctx.flow_control_config.feedback_percent = 5U;
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - 許可数の上限 42 (監視する数 1 台) の受信者 4 台を管理表へ登録する (先頭から 4, 3, 2, 1 の順)。
+    AcceptReport(&ctx, 1U, 42U, 110U); // 余裕 10 -> 監視対象 (1 台目)
+    AcceptReport(&ctx, 2U, 42U, 150U); // 余裕 50
+    AcceptReport(&ctx, 3U, 42U, 160U); // 余裕 60
+    AcceptReport(&ctx, 4U, 42U, 170U); // 余裕 70
+    // Pre-Assert
+    // Act
+    // 第 1 段階: 現在の監視対象 (session 1) が、同じ余裕 10 の非監視対象 (session 4、管理表の先頭) より優先される。
+    now_ms = 1010U;
+    AcceptReport(&ctx, 4U, 42U, 110U);
+    int s1_mon_step1 = FindReceiver(&ctx, 1U)->flow_monitored;
+    int s4_mon_step1 = FindReceiver(&ctx, 4U)->flow_monitored;
+    // [手順] - 現在の監視対象 (受信者 1、余裕 10) に対し、受信者 4 も余裕 10 にする。
+
+    // 受信者 1 を時刻 1020 に、受信者 2 を時刻 1030 にそれぞれ監視対象から外す。
+    now_ms = 1020U;
+    AcceptReport(&ctx, 2U, 42U, 105U); // 余裕 5 -> 受信者 2 が監視対象、受信者 1 が時刻 1020 に外れる
+    now_ms = 1030U;
+    AcceptReport(&ctx, 1U, 42U, 130U); // 受信者 1 の余裕を 30 へ
+    AcceptReport(&ctx, 4U, 42U, 130U); // 受信者 4 の余裕を 30 へ
+    AcceptReport(&ctx, 3U, 42U, 130U); // 受信者 3 の余裕を 30 へ
+    AcceptReport(&ctx, 2U, 42U, 140U); // 受信者 2 の余裕を 40 へ -> 受信者 2 が時刻 1030 に外れ、未監視の 4 と 3 が同率
+    // 受信者 4 と 3 はどちらも一度も監視対象になっていないため、管理表の先頭に近い受信者 4 が選ばれる (第 2・第 3 段階)。
+    int s4_mon_step2 = FindReceiver(&ctx, 4U)->flow_monitored;
+    int s3_mon_step2 = FindReceiver(&ctx, 3U)->flow_monitored;
+    // [手順] - 一度も監視対象になっていない受信者 4・3 と、外れた受信者 1 (1020)・2 (1030) の間で選び直す。
+
+    // 次に受信者 4 (現在監視対象) を余裕 50 にし、未監視の受信者 3、時刻 1020 に外れた 1、時刻 1030 に外れた 2 を余裕 30 で並べる。
+    now_ms = 1040U;
+    AcceptReport(&ctx, 2U, 42U, 130U); // 受信者 2 も余裕 30 に揃える (まだ 4 が監視対象のまま)
+    AcceptReport(&ctx, 4U, 42U, 150U); // 受信者 4 が時刻 1040 に外れる -> 一度も監視されていない受信者 3 が選ばれる
+    int s3_mon_step3 = FindReceiver(&ctx, 3U)->flow_monitored;
+    // [手順] - 受信者 4 を外し、未監視の受信者 3 が外れた履歴のある 1・2 より優先されることを確認する。
+
+    // 最後に受信者 3 を余裕 50 にして外し、外れた時刻 1020 の 1、1030 の 2、1040 の 4 を余裕 30 で並べる。
+    now_ms = 1050U;
+    AcceptReport(&ctx, 4U, 42U, 130U); // 受信者 4 も余裕 30 へ戻す (現在監視対象は 3)
+    AcceptReport(&ctx, 3U, 42U, 150U); // 受信者 3 が外れる -> 外れた時刻が最も古い 1 (1020) が選ばれる
+    int s1_mon_step4 = FindReceiver(&ctx, 1U)->flow_monitored;
+    int s2_mon_step4 = FindReceiver(&ctx, 2U)->flow_monitored;
+    int s4_mon_step4 = FindReceiver(&ctx, 4U)->flow_monitored;
+    // [手順] - 全員が監視履歴を持つ状態で、監視対象でなくなってからの時間が最も長い受信者 1 が選ばれることを確認する。
+    // Assert
+    EXPECT_EQ(1, s1_mon_step1); // [確認_正常系] - 余裕が同じ場合は現在の監視対象 (受信者 1) を優先すること。
+    EXPECT_EQ(0, s4_mon_step1); // [確認_正常系] - 非監視対象の受信者 4 は現在の監視対象を押しのけないこと。
+    EXPECT_EQ(1, s4_mon_step2); // [確認_正常系] - 未監視同士が同率の場合は管理表の先頭に近い受信者 4 を優先すること。
+    EXPECT_EQ(0, s3_mon_step2); // [確認_正常系] - 管理表の後方の受信者 3 は選ばれないこと。
+    EXPECT_EQ(1, s3_mon_step3); // [確認_正常系] - 一度も監視対象になっていない受信者 3 が外れた履歴のある 1・2 より優先されること。
+    EXPECT_EQ(1, s1_mon_step4); // [確認_正常系] - 外れた時刻が最も古い受信者 1 (1020) が選ばれること。
+    EXPECT_EQ(0, s2_mon_step4); // [確認_正常系] - 外れた時刻が新しい受信者 2 (1030) は選ばれないこと。
+    EXPECT_EQ(0, s4_mon_step4); // [確認_正常系] - 外れた時刻が最も新しい受信者 4 (1040) は選ばれないこと。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// 監視対象でない受信者からの NACK と抑制の要求で余裕 0 として選び直し、次の受信報告で上書きすること、および監視対象・除外中は書き換えないことの確認
+TEST(receiverReportTest, monitor_nack_and_suppress_update_margin_for_non_monitored_only)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000U;
+    uint8_t wire[POTR_PACKET_HEADER_SIZE] = {};
+    SetupMonitoringSender(&ctx, 1U);
+    ctx.flow_control_config.feedback_percent = 5U;
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    AcceptReport(&ctx, 1U, 42U, 120U); // 余裕 20 -> 監視対象
+    AcceptReport(&ctx, 2U, 42U, 160U); // 余裕 60 -> 非監視対象
+    AcceptReport(&ctx, 3U, 42U, 170U); // 余裕 70 -> 除外中にする
+    FindReceiver(&ctx, 3U)->flow_excluded = 1;
+    // [状態] - 受信者 1 (監視対象、余裕 20)、受信者 2 (非監視、余裕 60)、受信者 3 (除外中、余裕 70) を用意する。
+    // Pre-Assert
+    // Act
+    potr_packet nack1 = {};
+    nack1.flags = POTR_FLAG_NACK;
+    nack1.session_id = 1U;
+    int ret_nack_monitored = potr_internal_receiver_accept(&ctx, &nack1, wire);
+    int32_t margin_s1_after_nack = FindReceiver(&ctx, 1U)->flow_margin;
+    // [手順] - すでに監視対象の受信者 1 から NACK を受理する。
+
+    potr_packet nack3 = {};
+    nack3.flags = POTR_FLAG_NACK;
+    nack3.session_id = 3U;
+    int ret_nack_excluded = potr_internal_receiver_accept(&ctx, &nack3, wire);
+    int ret_suppress_excluded = AcceptFlowControl(&ctx, 3U, (uint8_t)POTR_FLOW_CONTROL_STATE_SUPPRESS, 100U);
+    int32_t margin_s3_after = FindReceiver(&ctx, 3U)->flow_margin;
+    int mon_s3_after = FindReceiver(&ctx, 3U)->flow_monitored;
+    // [手順] - 除外中の受信者 3 から NACK と抑制の要求を受理する。
+
+    potr_packet nack2 = {};
+    nack2.flags = POTR_FLAG_NACK;
+    nack2.session_id = 2U;
+    int ret_nack_non_monitored = potr_internal_receiver_accept(&ctx, &nack2, wire);
+    int32_t margin_s2_after_nack = FindReceiver(&ctx, 2U)->flow_margin;
+    int mon_s2_after_nack = FindReceiver(&ctx, 2U)->flow_monitored;
+    int mon_s1_after_nack2 = FindReceiver(&ctx, 1U)->flow_monitored;
+    // [手順] - 監視対象でない受信者 2 から NACK を受理する。
+
+    int ret_report_s2 = AcceptReport(&ctx, 2U, 42U, 180U);
+    int32_t margin_s2_after_report = FindReceiver(&ctx, 2U)->flow_margin;
+    int mon_s1_after_report2 = FindReceiver(&ctx, 1U)->flow_monitored;
+    int mon_s2_after_report2 = FindReceiver(&ctx, 2U)->flow_monitored;
+    // [手順] - 受信者 2 から余裕 80 の受信報告を受理し、余裕が上書きされて受信者 1 に戻ることを確認する。
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_nack_monitored);     // [確認_正常系] - 監視対象の NACK を受理すること。
+    EXPECT_EQ(20, margin_s1_after_nack);        // [確認_正常系] - 監視対象の余裕は 0 に書き換えないこと。
+    EXPECT_EQ(POTR_OK, ret_nack_excluded);      // [確認_正常系] - 除外中の NACK を受理すること。
+    EXPECT_EQ(POTR_OK, ret_suppress_excluded);  // [確認_正常系] - 除外中の抑制の要求を受理すること。
+    EXPECT_EQ(70, margin_s3_after);             // [確認_正常系] - 除外中の受信者の余裕は 0 に書き換えないこと。
+    EXPECT_EQ(0, mon_s3_after);                 // [確認_正常系] - 除外中の受信者は監視対象にならないこと。
+    EXPECT_EQ(POTR_OK, ret_nack_non_monitored); // [確認_正常系] - 非監視対象の NACK を受理すること。
+    EXPECT_EQ(0, margin_s2_after_nack);         // [確認_正常系] - 非監視対象の NACK で余裕を 0 として記録すること。
+    EXPECT_EQ(1, mon_s2_after_nack);            // [確認_正常系] - 余裕 0 になった受信者 2 が監視対象に選ばれること。
+    EXPECT_EQ(0, mon_s1_after_nack2);           // [確認_正常系] - 受信者 1 が監視対象から外れること。
+    EXPECT_EQ(POTR_OK, ret_report_s2);          // [確認_正常系] - 次の受信報告を受理すること。
+    EXPECT_EQ(80, margin_s2_after_report);      // [確認_正常系] - 次の受信報告で余裕が 80 に上書きされること。
+    EXPECT_EQ(1, mon_s1_after_report2);         // [確認_正常系] - 余裕が小さい受信者 1 が再び監視対象になること。
+    EXPECT_EQ(0, mon_s2_after_report2);         // [確認_正常系] - 受信者 2 が監視対象から外れること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// multicast の監視対象で、同じ送出上限の受信報告や NACK が届き続ける間は有効期限後も破棄せず止まり続け、
+// 何も届かない場合だけ有効期限後に破棄し、破棄後の受信報告で送出上限を保持し直すことの確認
+TEST(receiverReportTest, multicast_monitored_limit_expiry_uses_last_packet_and_reholds_on_report)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000U;
+    uint8_t wire[POTR_PACKET_HEADER_SIZE] = {};
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    SetupMonitoringSender(&ctx, 1U);
+    ctx.flow_control_config.request_lifetime_ms = 500U;
+    ctx.flow_control_config.excluded_receiver_count = 0U;
+    ctx.flow_control_config.excluded_receiver_percent = 0U;
+    ctx.health_timeout_ms = 10000U;
+    ctx.send_window.next_seq = 100U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    }); // [状態] - 受理時刻を制御する。
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    // [状態] - multicast 送信者 (有効期限 500 [ms]、除外無効、次の通番 100) を用意する。
+    // Pre-Assert
+    // Act
+    int ret_first = AcceptReport(&ctx, 1U, 42U, 100U);
+    auto *r1 = FindReceiver(&ctx, 1U);
+    int sup_initial = potr_internal_receiver_flow_suppressed(&ctx, 1000U, 100U, &tracked, &until_ms);
+    // [手順] - 時刻 1000 に送出上限 100 の受信報告を受理し、送出上限 100 で止まることを確認する。
+    now_ms = 1300U;
+    int ret_same_report = AcceptReport(&ctx, 1U, 42U, 100U);
+    int sup_after_same_report = potr_internal_receiver_flow_suppressed(&ctx, 1600U, 100U, &tracked, &until_ms);
+    uint64_t limit_after_same_report = r1 != nullptr ? r1->flow_send_limit : 0U;
+    // [手順] - 時刻 1300 に同じ送出上限 100 の受信報告を受け、元の有効期限 (1500) を過ぎた時刻 1600 で判定する。
+    now_ms = 1700U;
+    potr_packet nack = {};
+    nack.flags = POTR_FLAG_NACK;
+    nack.session_id = 1U;
+    int ret_nack = potr_internal_receiver_accept(&ctx, &nack, wire);
+    int sup_after_nack = potr_internal_receiver_flow_suppressed(&ctx, 2100U, 100U, &tracked, &until_ms);
+    uint64_t limit_after_nack = r1 != nullptr ? r1->flow_send_limit : 0U;
+    // [手順] - 時刻 1700 に NACK を受け、時刻 2100 (1700 + 500 = 2200 未満) で判定する。
+    int sup_at_expiry = potr_internal_receiver_flow_suppressed(&ctx, 2200U, 100U, &tracked, &until_ms);
+    uint64_t limit_at_expiry = r1 != nullptr ? r1->flow_send_limit : 99U;
+    // [手順] - 何も届かないまま時刻 2200 (1700 + 500) に達した時点で判定し、破棄されることを確認する。
+    cplat_atomic_store_i32(&ctx.flow_request_pending, 0, CPLAT_MEMORY_ORDER_RELAXED);
+    now_ms = 2300U;
+    int ret_rehold = AcceptReport(&ctx, 1U, 42U, 100U);
+    uint64_t limit_after_rehold = r1 != nullptr ? r1->flow_send_limit : 0U;
+    int pending_after_rehold = cplat_atomic_load_i32(&ctx.flow_request_pending, CPLAT_MEMORY_ORDER_RELAXED);
+    int sup_after_rehold = potr_internal_receiver_flow_suppressed(&ctx, 2300U, 100U, &tracked, &until_ms);
+    // [手順] - 破棄後の時刻 2300 に送出上限 100 の受信報告を受け、保持し直して再び止まることを確認する。
+    now_ms = 2350U;
+    int ret_older = AcceptReport(&ctx, 1U, 42U, 95U);
+    uint64_t limit_after_older = r1 != nullptr ? r1->flow_send_limit : 0U;
+    now_ms = 2360U;
+    int ret_advance = AcceptReport(&ctx, 1U, 42U, 120U);
+    uint64_t limit_after_advance = r1 != nullptr ? r1->flow_send_limit : 0U;
+    // [手順] - 保持し直した後に古い値 95 を無視し、先へ進んだ値 120 で更新することを確認する。
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_first);                                    // [確認_正常系] - 初回受信報告を受理すること。
+    EXPECT_EQ(1, sup_initial);                                        // [確認_正常系] - 送出上限 100 で止まること。
+    EXPECT_EQ(POTR_OK, ret_same_report);                              // [確認_正常系] - 同じ送出上限の受信報告を受理すること。
+    EXPECT_EQ(1, sup_after_same_report);                              // [確認_正常系] - 同じ送出上限の受信報告が届き続ける間は有効期限後も止まり続けること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 100U, limit_after_same_report);
+    // [確認_正常系] - 同じ送出上限の受信報告で送出上限が破棄されないこと。
+    EXPECT_EQ(POTR_OK, ret_nack);                                     // [確認_正常系] - NACK を受理すること。
+    EXPECT_EQ(1, sup_after_nack);                                     // [確認_正常系] - NACK が届いている間も有効期限後も止まり続けること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 100U, limit_after_nack);    // [確認_正常系] - NACK で送出上限が破棄されないこと。
+    EXPECT_EQ(0, sup_at_expiry);                                      // [確認_正常系] - 何も届かない場合は有効期限の後に止まらなくなること。
+    EXPECT_EQ(0U, limit_at_expiry);                                   // [確認_正常系] - 有効期限の後に送出上限を破棄 (0) すること。
+    EXPECT_EQ(POTR_OK, ret_rehold);                                   // [確認_正常系] - 破棄後の受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 100U, limit_after_rehold);  // [確認_正常系] - 破棄後の受信報告で送出上限 100 を保持し直すこと。
+    EXPECT_EQ(1, pending_after_rehold);                               // [確認_正常系] - 保持し直しで flow_request_pending を 1 にすること。
+    EXPECT_EQ(1, sup_after_rehold);                                   // [確認_正常系] - 保持し直した送出上限 100 で再び止まること。
+    EXPECT_EQ(POTR_OK, ret_older);                                    // [確認_正常系] - 古い値の受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 100U, limit_after_older);   // [確認_正常系] - 保持中は古い値 95 で上書きしないこと。
+    EXPECT_EQ(POTR_OK, ret_advance);                                  // [確認_正常系] - 先へ進んだ値の受信報告を受理すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 120U, limit_after_advance); // [確認_正常系] - 保持中に先へ進んだ値 120 で更新すること。
+    // Cleanup
     FreeReceivers(&ctx);
 }

@@ -160,7 +160,7 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, thread_recv_health_check_slow_peers(_, _)).WillByDefault(Return(0U));
     ON_CALL(*this, potr_internal_packet_build_flow_control(_, _, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_packet_build_flow_control_list(_, _, _, _, _)).WillByDefault(Return(0));
-    ON_CALL(*this, potr_internal_flow_control_report_limit(_, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_flow_control_report_limit(_, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_flow_control_monitor_tick(_, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_check_space(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_send_queue_wait_flow(_, _, _)).WillByDefault(Return());

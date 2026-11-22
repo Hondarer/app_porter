@@ -1899,21 +1899,27 @@ static void on_monitor_list(potr_context *ctx, const potr_packet *pkt)
     adopt_session(ctx, fc, account, pkt->session_id, &sender_ts);
     fc->monitor_received_ms = now_ms;
 
-    if (included != 0 && fc->monitored == 0)
+    if (included != 0)
     {
-        fc->monitored = 1;
-        ctx->flow_monitored = 1;
-        account->notified = 0;
-        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "flow_control[service_id=%" PRId64 "]: selected as monitored receiver",
-                   ctx->service.service_id);
+        if (fc->monitored == 0)
+        {
+            fc->monitored = 1;
+            ctx->flow_monitored = 1;
+            account->notified = 0;
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "flow_control[service_id=%" PRId64 "]: selected as monitored receiver",
+                       ctx->service.service_id);
+        }
 
-        /* 次に受信する通番が分かっていれば、最初の送出を行う。分からなければ、次の DATA か PING の受理で行う。 */
+        /*
+         * 自身を含む一覧を受けるたびに、その時点の状態と送出上限を 1 回送出する。
+         * 次に受信する通番がまだ分からない場合は、次の DATA か PING の受理で行う。
+         */
         if (account->has_next_seq != 0 && account->refused == 0)
         {
             notify_state(ctx, fc, account, current_state(account));
         }
     }
-    else if (included == 0 && fc->monitored != 0)
+    else if (fc->monitored != 0)
     {
         fc->monitored = 0;
         ctx->flow_monitored = 0;
@@ -2388,9 +2394,71 @@ int potr_internal_flow_control_piggyback_limit(potr_context *ctx, potr_peer_id p
 }
 
 /*
- * 送出上限または初期の幅で止まっている間、問い合わせを送出する時刻を管理し、期限に達したら問い合わせを送出する。
- * 最初の問い合わせは止まり始めてから 10 ms 後、以後は 2 倍ずつ延ばし flow_control_request_interval_ms を上限とする。
- * 次に問い合わせを送出する時刻 [ms] を返す。
+ * 監視対象の一覧のパケットを組み立て、DATA と同じ宛先へ全経路から送出する。
+ */
+static void send_monitor_list(potr_context *ctx, const potr_internal_packet_session_hdr *list, size_t count)
+{
+    potr_internal_packet_session_hdr shdr;
+    uint8_t payload[POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX];
+    potr_packet packet;
+    int i;
+
+    shdr.service_id = ctx->service.service_id;
+    shdr.session_id = ctx->session_id;
+    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+
+    if (potr_internal_packet_build_flow_control_list(&packet, &shdr, payload, list, count) != POTR_OK)
+    {
+        return;
+    }
+
+    /* 宛先は DATA と同じ (マルチキャスト グループまたはブロードキャスト) とし、全経路へ送出する。 */
+    for (i = 0; i < ctx->n_path; i++)
+    {
+        uint8_t wire[FLOW_CONTROL_MONITOR_WIRE_SIZE];
+        size_t wire_len = sizeof(wire);
+        size_t sent = 0U;
+
+        if (ctx->sock[i] == CPLAT_INVALID_SOCKET || endpoint_is_unset(&ctx->dest_addr[i]))
+        {
+            continue;
+        }
+
+        /* 証明書方式でハンドシェイクが完了していない間は、封緘に失敗するため送出しない。次の周期で送出し直す。 */
+        if (potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &packet, wire, &wire_len) != POTR_OK)
+        {
+            continue;
+        }
+
+        /* 一覧は周期ごとに送出し直し、受信者は期限内の最新の一覧で動作するため、戻り値は明示的に破棄する。 */
+        (void)cplat_socket_sendto(ctx->sock[i], wire, wire_len, &ctx->dest_addr[i], &sent, NULL);
+    }
+}
+
+/*
+ * multicast と broadcast の送信者が監視対象の送出上限で止まっている間に、最新の監視対象の一覧を 1 回送出し直す。
+ * 受信スレッドが管理する周期送出の時刻 (flow_monitor_next_ms) は変更しない。
+ */
+static void send_monitor_list_on_stall(potr_context *ctx, uint64_t now_ms)
+{
+    potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX];
+    size_t count;
+    int changed = 0;
+
+    count = potr_internal_receiver_monitor_list(ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed);
+    if (count == 0U)
+    {
+        return;
+    }
+
+    send_monitor_list(ctx, list, count);
+}
+
+/*
+ * 送出上限または初期の幅で止まっている間、問い合わせ (multicast と broadcast では監視対象の一覧) を
+ * 送出する時刻を管理し、期限に達したら送出する。
+ * 最初の送出は止まり始めてから 10 ms 後、以後は 2 倍ずつ延ばし flow_control_request_interval_ms を上限とする。
+ * 次に送出する時刻 [ms] を返す。
  */
 static uint64_t advance_query_timer(potr_context *ctx, struct potr_internal_peer_context *peer, uint64_t now_ms)
 {
@@ -2420,7 +2488,14 @@ static uint64_t advance_query_timer(potr_context *ctx, struct potr_internal_peer
     {
         uint64_t next_interval;
 
-        potr_internal_flow_control_send_query(ctx, peer);
+        if (ctx->service.type == POTR_TYPE_MULTICAST || ctx->service.type == POTR_TYPE_BROADCAST)
+        {
+            send_monitor_list_on_stall(ctx, now_ms);
+        }
+        else
+        {
+            potr_internal_flow_control_send_query(ctx, peer);
+        }
         next_interval = (*interval_ms > 0U) ? (*interval_ms * 2U) : initial_ms;
         if (next_interval > max_interval_ms)
         {
@@ -2574,6 +2649,8 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
              */
             if (cplat_atomic_load_i32(&ctx->flow_request_pending, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
             {
+                ctx->flow_query_next_ms = 0U;
+                ctx->flow_query_interval_ms = 0U;
                 return 0;
             }
 
@@ -2581,10 +2658,21 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
 
             /* send_window_mutex と callback_mutex を重ねて保持しないよう、通番を先に読む。 */
             next_seq = read_next_seq(&ctx->send_window, ctx->send_window_mutex);
+            ctx->flow_receiver_limit_stalled = 0;
             suppressed = potr_internal_receiver_flow_suppressed(ctx, now_ms, next_seq, &tracked, &until_ms);
             if (tracked != 0U)
             {
                 cplat_atomic_store_i32(&ctx->flow_request_pending, 1, CPLAT_MEMORY_ORDER_RELEASE);
+            }
+
+            if (suppressed != 0 && ctx->flow_receiver_limit_stalled != 0)
+            {
+                until_ms = earlier_time(until_ms, advance_query_timer(ctx, NULL, now_ms));
+            }
+            else
+            {
+                ctx->flow_query_next_ms = 0U;
+                ctx->flow_query_interval_ms = 0U;
             }
 
             if (suppressed == 0)
@@ -3209,19 +3297,76 @@ int potr_internal_flow_control_slow_peer_rejected_locked(potr_context *ctx, uint
     return 0;
 }
 
+/*
+ * 占有量が 0 のときの、占有量による許可数 (容量から決まる最大の許可数) を返す。
+ * 容量が 0 の受信側では UINT32_MAX を返す。
+ * 1 パケットの大きさは、occupancy_allowance() と同じく max_payload と展開後の大きさの最大値の大きいほうを使う。
+ * fc->mutex を保持して呼ぶ。
+ */
+static uint32_t max_occupancy_allowance(const struct potr_internal_flow_control *fc, const flow_account *account)
+{
+    uint64_t packet_size;
+
+    if (fc->capacity == 0U)
+    {
+        return UINT32_MAX;
+    }
+
+    packet_size = fc->max_payload;
+    if (account->max_packet_size > packet_size)
+    {
+        packet_size = account->max_packet_size;
+    }
+
+    /* 要求のしきい値は容量 (uint32_t) 以下、packet_size は 1 以上のため、商は uint32_t に収まる。 */
+    return (uint32_t)(fc->suppress_bytes / packet_size) + 1U;
+}
+
+/*
+ * 受信報告の seq_num に載せる許可数の上限を返す。
+ * 受信バッファーの幅 (OS の受信バッファーに基づく送出上限を使う場合) と、
+ * 容量から決まる最大の許可数 (容量を設定している場合) の小さいほうとする。
+ * どちらか一方だけを使う場合はその値となり、送出上限を使う受信側では必ず 1 以上になる。
+ * fc->mutex を保持して呼ぶ (片方向 UDP 受信者のみ対象)。
+ */
+static uint32_t report_max_allowance(const struct potr_internal_flow_control *fc, const flow_account *account)
+{
+    uint32_t allowance = max_occupancy_allowance(fc, account);
+
+    if (fc->receive_buffer_used != 0)
+    {
+        uint32_t width = (uint32_t)total_buffer_width(fc);
+
+        if (width < allowance)
+        {
+            allowance = width;
+        }
+    }
+
+    return allowance;
+}
+
 /* Doxygen コメントは、ヘッダーに記載 */
-int potr_internal_flow_control_report_limit(potr_context *ctx, uint32_t *send_limit)
+int potr_internal_flow_control_report_limit(potr_context *ctx, uint32_t *send_limit, uint32_t *max_allowance)
 {
     struct potr_internal_flow_control *fc;
     flow_account *account;
     int held = 0;
 
-    if (send_limit == NULL)
+    if (send_limit != NULL)
+    {
+        *send_limit = 0U;
+    }
+
+    if (max_allowance != NULL)
+    {
+        *max_allowance = 0U;
+    }
+
+    if (send_limit == NULL || max_allowance == NULL)
     {
         return 0;
     }
-
-    *send_limit = 0U;
 
     /* 送出上限を使わない受信側は、送出上限を持たない。 */
     if (ctx == NULL || ctx->flow_control == NULL || ctx->is_multi_peer || is_unlimited_mode(ctx->flow_control))
@@ -3237,6 +3382,7 @@ int potr_internal_flow_control_report_limit(potr_context *ctx, uint32_t *send_li
     if (account->has_next_seq != 0 && account->refused == 0)
     {
         *send_limit = account->next_seq + send_allowance(ctx, fc, account);
+        *max_allowance = report_max_allowance(fc, account);
         held = 1;
     }
 
@@ -3249,12 +3395,8 @@ int potr_internal_flow_control_report_limit(potr_context *ctx, uint32_t *send_li
 void potr_internal_flow_control_monitor_tick(potr_context *ctx, uint64_t now_ms)
 {
     potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX];
-    potr_internal_packet_session_hdr shdr;
-    uint8_t payload[POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX];
-    potr_packet packet;
     size_t count;
     int changed = 0;
-    int i;
 
     if (ctx == NULL || ctx->role != POTR_ROLE_SENDER ||
         (ctx->service.type != POTR_TYPE_MULTICAST && ctx->service.type != POTR_TYPE_BROADCAST))
@@ -3276,36 +3418,6 @@ void potr_internal_flow_control_monitor_tick(potr_context *ctx, uint64_t now_ms)
         return;
     }
 
-    shdr.service_id = ctx->service.service_id;
-    shdr.session_id = ctx->session_id;
-    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
-
-    if (potr_internal_packet_build_flow_control_list(&packet, &shdr, payload, list, count) != POTR_OK)
-    {
-        return;
-    }
-
-    /* 宛先は DATA と同じ (マルチキャスト グループまたはブロードキャスト) とし、全経路へ送出する。 */
-    for (i = 0; i < ctx->n_path; i++)
-    {
-        uint8_t wire[FLOW_CONTROL_MONITOR_WIRE_SIZE];
-        size_t wire_len = sizeof(wire);
-        size_t sent = 0U;
-
-        if (ctx->sock[i] == CPLAT_INVALID_SOCKET || endpoint_is_unset(&ctx->dest_addr[i]))
-        {
-            continue;
-        }
-
-        /* 証明書方式でハンドシェイクが完了していない間は、封緘に失敗するため送出しない。次の周期で送出し直す。 */
-        if (potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &packet, wire, &wire_len) != POTR_OK)
-        {
-            continue;
-        }
-
-        /* 一覧は周期ごとに送出し直し、受信者は期限内の最新の一覧で動作するため、戻り値は明示的に破棄する。 */
-        (void)cplat_socket_sendto(ctx->sock[i], wire, wire_len, &ctx->dest_addr[i], &sent, NULL);
-    }
-
+    send_monitor_list(ctx, list, count);
     ctx->flow_monitor_next_ms = now_ms + (uint64_t)ctx->flow_control_config.request_interval_ms;
 }

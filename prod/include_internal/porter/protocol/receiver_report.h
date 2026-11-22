@@ -30,20 +30,23 @@ typedef struct potr_internal_receiver
     uint64_t flow_limit_stalled_ms; /**< 送出が送出上限に達して止まった時刻 [ms]。0 = 止まっていない。 */
     uint64_t flow_stall_accum_units; /**< multicast と broadcast で、この受信者が止める状態で送信者が送出を止めていた時間の積算 [1/9 ms] (POTR_FLOW_ACCUM_DECAY_DIVISOR 倍)。 */
     uint64_t flow_unexclude_since_ms; /**< 除外を解く条件を満たし始めた時刻 [ms]。flow_unexclude_pending が 1 の間だけ有効。 */
+    uint64_t flow_unmonitored_ms; /**< 監視対象でなくなった時刻 [ms]。flow_ever_monitored が 1 で非監視対象の間だけ有効。 */
     int64_t session_tv_sec; /**< 受信者のセッション開始秒。 */
     int32_t session_tv_nsec; /**< 受信者のセッション開始ナノ秒部。 */
     uint32_t session_id; /**< 受信者のセッション識別子。 */
     uint32_t flow_report_send_limit; /**< 受信報告に載った送出上限の絶対値。flow_report_limit_known が 1 の間だけ有効。 */
+    uint32_t flow_report_max_allowance; /**< 受信報告に載った許可数の上限。0 = 送出上限なし (または未受信)。 */
     int flow_report_limit_known; /**< 受信報告に載った送出上限の記録があるか (1: ある)。 */
     uint8_t path_state[POTR_MAX_PATH]; /**< 受信者が報告した経路受信状態。 */
     int active; /**< 期限内に REPORT を受信したエントリ。 */
     int flow_monitored; /**< multicast と broadcast で、監視対象に選んでいるか (1: 監視対象)。 */
+    int flow_ever_monitored; /**< multicast と broadcast で、一度でも監視対象になったことがあるか (1: ある、0: ない)。 */
     int32_t flow_margin; /**< 余裕 (受信報告に載った送出上限 − 受理した時点の次に割り当てる通番)。flow_margin_known が 1 の間だけ有効。 */
     int flow_margin_known; /**< 余裕の記録があるか (1: ある)。記録がない受信者は監視対象の候補にしない。 */
     int flow_excluded; /**< multicast と broadcast で、止める判定と監視対象から除外しているか (1: 除外中)。 */
     int flow_last_stopping; /**< 前回の判定時点で止める状態だったか。除外中も活動中なら記録します。callback_mutex で保護。 */
     int flow_unexclude_pending; /**< 除外を解く条件を満たし始めた時刻を記録中か (1: 記録中)。 */
-    int _pad_flow_last_stopping; /**< パディング (構造体を 8 [byte] 境界に揃える)。 */
+    int _pad; /**< パディング (構造体サイズを 8 [byte] の倍数に揃える)。 */
 } potr_internal_receiver;
 
 /** 除外を解く条件 (受信報告の送出上限が次の通番より先にある状態) を維持する時間の倍率 (猶予時間の 10 倍)。 */
@@ -51,21 +54,64 @@ typedef struct potr_internal_receiver
 
 static_assert(POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER == 10U, "porter: POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER must be 10");
 
+/** 監視対象の受信者が、許可数の上限の半分を受信するたびに送出上限を更新する回数 (1 窓あたり 2 回)。 */
+#define POTR_FLOW_MONITOR_UPDATES_PER_WINDOW 2U
+
+/** 通知の見込み (2 ÷ 許可数の上限) を整数で積算するためのスケール (100 [%] を 1,000,000 として表す)。 */
+#define POTR_FLOW_MONITOR_BUDGET_SCALE 1000000ULL
+
+/** 予算 (flow_control_feedback_percent) 1 [%] あたりのスケール値。 */
+#define POTR_FLOW_MONITOR_BUDGET_PER_PERCENT (POTR_FLOW_MONITOR_BUDGET_SCALE / (uint64_t)POTR_PERCENT_MAX)
+
+/** 1 台あたりの通知の見込みを求める際の分子 (2 × 1,000,000)。 */
+#define POTR_FLOW_MONITOR_UNIT_NUMERATOR \
+    ((uint64_t)POTR_FLOW_MONITOR_UPDATES_PER_WINDOW * POTR_FLOW_MONITOR_BUDGET_SCALE)
+
+static_assert(POTR_FLOW_MONITOR_UPDATES_PER_WINDOW == 2U, "porter: POTR_FLOW_MONITOR_UPDATES_PER_WINDOW must be 2");
+static_assert(POTR_FLOW_MONITOR_BUDGET_SCALE % (uint64_t)POTR_PERCENT_MAX == 0ULL &&
+                  POTR_FLOW_MONITOR_BUDGET_PER_PERCENT > 0ULL,
+              "porter: POTR_FLOW_MONITOR_BUDGET_SCALE must be a positive multiple of POTR_PERCENT_MAX");
+static_assert(POTR_FLOW_MONITOR_UNIT_NUMERATOR / POTR_FLOW_MONITOR_BUDGET_SCALE ==
+                  (uint64_t)POTR_FLOW_MONITOR_UPDATES_PER_WINDOW,
+              "porter: POTR_FLOW_MONITOR_UNIT_NUMERATOR must not overflow");
+
+/**
+ *  @brief          受信者 1 台の通知の見込み (2 ÷ 許可数の上限) をスケール済み整数で求めます。
+ *
+ *  割り算は切り上げで安全側 (通知の見込みを大きめに見積もり、監視する数が少なくなる側) に丸めます。
+ *
+ *  @param[in]      max_allowance   受信者の許可数の上限 (1 以上)。0 の場合は UINT64_MAX を返します。
+ *  @return         POTR_FLOW_MONITOR_BUDGET_SCALE 倍した通知の見込み。失敗モードのない計算のため結果コードの対象外です。
+ */
+static inline uint64_t flow_monitor_receiver_cost(uint32_t max_allowance)
+{
+    if (max_allowance == 0U)
+    {
+        return UINT64_MAX;
+    }
+
+    /* 切り上げで通知の見込みを大きめに見積もり、監視する数が少なくなる安全側へ丸める。 */
+    return (POTR_FLOW_MONITOR_UNIT_NUMERATOR + (uint64_t)max_allowance - 1ULL) / (uint64_t)max_allowance;
+}
+
 /**
  *  @brief          multicast と broadcast の送信者が監視する受信者の数を求めます。
  *
- *  監視する数は monitored_count (監視する数の下限) とします。
+ *  監視する数は、予算 (flow_control_feedback_percent) から求めた数 (budget_count) と
+ *  monitored_count (監視する数の下限) の大きいほうとします。
  *  ただし、「監視する数の上限」(POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX と「(max_payload − 2) ÷ 16」の小さいほう) と、
  *  候補の受信者数を超えません。
  *
- *  @param[in]      candidates          余裕の記録がある活動中の受信者数 (候補の数)。
+ *  @param[in]      candidates          余裕と許可数の上限 (1 以上) の記録がある活動中の受信者数 (候補の数)。
+ *  @param[in]      budget_count        予算 (flow_control_feedback_percent) の条件を満たす最大の数。
  *  @param[in]      monitored_count     監視する受信者の台数の下限。0 = 下限なし。
  *  @param[in]      max_payload         送信者の実効 max_payload [byte]。
  *  @return         監視する数。失敗モードのない計算のため結果コードの対象外です。
  */
-static inline size_t flow_monitor_count(size_t candidates, uint32_t monitored_count, uint32_t max_payload)
+static inline size_t flow_monitor_count(size_t candidates, size_t budget_count, uint32_t monitored_count,
+                                        uint32_t max_payload)
 {
-    size_t count = (size_t)monitored_count;
+    size_t count = (budget_count > (size_t)monitored_count) ? budget_count : (size_t)monitored_count;
     size_t limit = (size_t)POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX;
 
     /* 監視対象の一覧を 1 個のパケットで知らせるための上限。max_payload は検査済み (64 以上) で、2 を引いても負にならない。 */
@@ -99,17 +145,18 @@ extern "C"
  *  抑制の要求では「到着時刻 + 有効期限」とし、解除では要求なしへ戻します。
  *  状態の値によらず、返送元の送出上限を上書きし、受理した時刻を記録します。
  *  ただし multicast と broadcast では、送出上限を保持するのは監視対象の受信者だけです。
- *  監視対象でない受信者から抑制の要求を受けた場合は、その受信者の余裕を 0 として記録し、監視対象を選び直します。\n
- *  受信報告では、seq_num が 1 の場合に ack_num を送出上限として扱います。
+ *  監視対象でない受信者 (除外している受信者を除く) から NACK または抑制の要求を受けた場合は、
+ *  その受信者の余裕を 0 として記録し、監視対象を選び直します (次の受信報告で上書きします)。\n
+ *  受信報告では、seq_num を許可数の上限として保持し、seq_num が 0 でない場合に ack_num を送出上限として扱います。
  *  unicast では、未通知または相手なしの受信者の最初の通知として送出上限を保持し、保持している送出上限がある場合は
  *  より先へ進んでいる場合だけ更新します。
  *  multicast と broadcast では、その時点の次に割り当てる DATA の通番との循環を考慮した差を余裕として記録し、
  *  seq_num が 0 の場合は余裕の記録を消します。余裕の記録を更新するたびに監視対象を選び直し、
- *  監視対象から外れた受信者の送出上限は破棄します。監視対象が送出上限を保持しており、受信報告の送出上限が
- *  保持している値より先へ進んでいる場合は更新します。\n
+ *  監視対象から外れた受信者の送出上限は破棄します。監視対象が送出上限を保持していない場合は、
+ *  受信報告の送出上限を保持し、保持している場合はより先へ進んでいる場合だけ更新します。\n
  *  unicast で新しい受信者の項目を作る時点で、ハンドル側が未通知だった場合はハンドル側の基準通番を引き継ぎます。\n
  *  ペイロードが POTR_FLOW_CONTROL_PAYLOAD_SIZE バイトでないパケットと、状態が不正なパケットは POTR_ERR_PROTOCOL とします。
- *  受信報告で、seq_num が 0 と 1 以外の場合と、seq_num が 0 で ack_num が 0 でない場合も POTR_ERR_PROTOCOL とします。
+ *  受信報告で、seq_num が 0 なのに ack_num が 0 でない場合も POTR_ERR_PROTOCOL とします。
  *  @param[in,out]  ctx 送信者。NULL は許可しません。
  *  @param[in]      packet 開封済みパケット。NULL は許可しません。
  *  @param[in]      wire_header 受信ヘッダー。NULL は許可しません。
@@ -143,8 +190,9 @@ uint8_t potr_internal_receiver_groups_locked(potr_context *ctx, uint64_t now_ms)
  *  除外した受信者は、受信報告に載った送出上限が next_seq より先にある状態が猶予時間の 10 倍の間続いた時点で
  *  除外を解き、積算を 0 に戻します。活動中でなくなった除外受信者も、除外、積算、解除用の計時を戻します。\n
  *  multicast と broadcast で受信者ごとに保持する送出上限は、監視対象の受信者のものだけです (potr_internal_receiver_accept())。\n
- *  送出上限に達した時点から有効期限が経過しても次のフロー制御パケットを受理していない受信者は、
- *  その送出上限を破棄し、上限がないものとして扱います。
+ *  送出上限に達した時点から有効期限が経過しても、相手から何らかのパケット (フロー制御パケット、受信報告、NACK) が
+ *  届いている間は破棄しません。何も届かずに有効期限が経過した受信者は、送出上限を破棄し、
+ *  上限がないものとして扱います (unicast では相手なしへ遷移します)。
  *
  *  @param[in,out]  ctx 送信者。NULL は許可しません。
  *  @param[in]      now_ms 単調増加時刻 [ms]。
@@ -162,9 +210,13 @@ int potr_internal_receiver_flow_suppressed(potr_context *ctx, uint64_t now_ms, u
 /**
  *  @brief          multicast と broadcast の送信者が、監視対象を選び直し、その一覧を返します。
  *
- *  余裕の記録がある活動中の受信者のうち、余裕が小さいほうから flow_monitor_count() の数の受信者を監視対象にします。
+ *  余裕と許可数の上限 (1 以上) の記録がある、除外していない活動中の受信者を候補とします。
+ *  候補を余裕が小さい順 (同じ場合は現在の監視対象、次に監視対象でなくなってからの時間が長い順、
+ *  それも同じ場合は管理表の順) に並べ、先頭から「2 ÷ 許可数の上限」の合計が予算
+ *  (flow_control_feedback_percent ÷ 100) 以下である最大の数を求め、flow_monitor_count() で
+ *  下限・上限・候補数に収めた数の受信者を監視対象にします。
  *  活動中の受信者は、受信報告で活動中と判定している受信者と、有効な抑制の要求を送ってきている受信者です。
- *  監視対象から外れた受信者の送出上限は破棄します。\n
+ *  監視対象から外れた受信者の送出上限は破棄し、外れた時刻を記録します。\n
  *  順位付けに使う余裕は、受信報告から求めた値だけです。フロー制御パケットの送出上限は、更新の直後の値になり、
  *  受信報告から求めた値より常に大きくなるため使いません。
  *

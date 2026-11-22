@@ -337,8 +337,8 @@ struct potr_context
     cplat_atomic_u64 flow_limit_received_ms; /**< 送信側: 最後にフロー制御パケットを受けた時刻 [ms]。アトミックに読み書きします。 */
     cplat_atomic_u64 flow_last_packet_ms; /**< 送信側: 相手から最後に何らかのパケットを受けた時刻 [ms]。アトミックに読み書きします。 */
     uint64_t flow_limit_stalled_ms; /**< 送信側: 送出上限に達して止まった時刻 [ms]。0 = 止まっていない。送信スレッドだけが使用。 */
-    uint64_t flow_query_next_ms; /**< 送信側: 次に問い合わせを送出する時刻 [ms]。0 = 予定なし。送信スレッドだけが使用。 */
-    uint64_t flow_query_interval_ms; /**< 送信側: 現在の問い合わせ間隔 [ms]。送信スレッドだけが使用。 */
+    uint64_t flow_query_next_ms; /**< 送信側: 次に問い合わせ (multicast と broadcast では監視対象の一覧) を送出する時刻 [ms]。0 = 予定なし。送信スレッドだけが使用。 */
+    uint64_t flow_query_interval_ms; /**< 送信側: 現在の問い合わせ (multicast と broadcast では監視対象の一覧の送出し直し) の間隔 [ms]。送信スレッドだけが使用。 */
     uint64_t flow_last_data_send_ms; /**< 送信側: 最後に DATA を送出した時刻 [ms]。0 = 未送出。送信スレッドだけが使用。 */
     struct potr_internal_deferred_entry *flow_deferred_head; /**< N:1 モードで保留中のエントリの先頭。送信スレッドだけが使用。 */
     struct potr_internal_deferred_entry *flow_deferred_tail; /**< N:1 モードで保留中のエントリの末尾。送信スレッドだけが使用。 */
@@ -347,7 +347,7 @@ struct potr_context
     cplat_atomic_i32 flow_tracked_peers; /**< 送信側: N:1 モードで、抑制の要求または送出上限を保持しているピアの数。peers_mutex の下で増減し、アトミックに読み取ります。 */
     cplat_atomic_i32 flow_blocking_peers; /**< 送信側: N:1 モードで、ほかのピアへの送信を妨げている記録があるピアの数。peers_mutex の下で増減し、アトミックに読み取ります。 */
     cplat_atomic_i32 flow_deferred_total; /**< 送信側: N:1 モードで、送信スレッドが保留しているエントリの総数。送信スレッドだけが増減し、アトミックに読み取ります。 */
-    int flow_receiver_limit_stalled; /**< 送信側: 片方向 unicast の受信者管理表で送出上限または初期の幅に達しているか (1: 達している)。送信スレッドだけが使用。 */
+    int flow_receiver_limit_stalled; /**< 送信側: 片方向 UDP (unicast、multicast、broadcast) の受信者管理表で送出上限または初期の幅に達しているか (1: 達している)。送信スレッドだけが使用。 */
     int _pad_flow_blocking_peers; /**< パディング (flow_judge_last_ms を 8 [byte] 境界に揃える)。 */
     uint64_t flow_judge_last_ms; /**< 送信側: multicast と broadcast で、前回 potr_internal_receiver_flow_suppressed() を判定した時刻 [ms]。callback_mutex で保護。 */
     int flow_judge_has_last; /**< 送信側: flow_judge_last_ms が有効か (1: 判定済み)。callback_mutex で保護。 */

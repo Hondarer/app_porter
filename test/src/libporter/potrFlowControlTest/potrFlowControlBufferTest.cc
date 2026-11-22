@@ -438,41 +438,49 @@ TEST_F(potrFlowControlBufferTest, multi_peer_divides_width_by_peer_count)
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
 
-// 受信報告に載せる送出上限を、送信者を採用した後に返し、それ以外では返さないことの確認
+// 受信報告に載せる送出上限と許可数の上限を、送信者を採用した後に返し、それ以外では返さないことの確認
 // [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
 TEST_F(potrFlowControlBufferTest, report_limit_after_adoption)
 {
     // Arrange
     uint32_t limit_none = 99U;
+    uint32_t max_none = 99U;
     uint32_t limit_adopted = 0U;
+    uint32_t max_adopted = 0U;
     uint32_t limit_disabled = 99U;
-    int held_disabled = potr_internal_flow_control_report_limit(&ctx, &limit_disabled);
+    uint32_t max_disabled = 99U;
+    int held_disabled = potr_internal_flow_control_report_limit(&ctx, &limit_disabled, &max_disabled);
     // [状態] - 資源を生成する前 (フロー制御パケットを送出しない受信側) に report_limit を呼び出す。
     ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
     // [状態] - 容量 0、幅 42 で start する。
     // [状態確認] - start の戻り値が POTR_OK であること。
     // Pre-Assert
     // Act
-    int held_none = potr_internal_flow_control_report_limit(&ctx, &limit_none);
+    int held_none = potr_internal_flow_control_report_limit(&ctx, &limit_none, &max_none);
     // [手順] - 送信者を採用する前に report_limit を呼び出す。
     received(POTR_PEER_NA, 10U, 0);
-    int held_adopted = potr_internal_flow_control_report_limit(&ctx, &limit_adopted);
+    int held_adopted = potr_internal_flow_control_report_limit(&ctx, &limit_adopted, &max_adopted);
     // [手順] - 次に受信する通番 10 で採用した後に report_limit を呼び出す。
-    int held_null_limit = potr_internal_flow_control_report_limit(&ctx, nullptr);
-    int held_null_ctx = potr_internal_flow_control_report_limit(nullptr, &limit_none);
-    // [手順] - send_limit と ctx を順に NULL にして report_limit を呼び出す。
+    int held_null_limit = potr_internal_flow_control_report_limit(&ctx, nullptr, &max_none);
+    int held_null_max = potr_internal_flow_control_report_limit(&ctx, &limit_none, nullptr);
+    int held_null_ctx = potr_internal_flow_control_report_limit(nullptr, &limit_none, &max_none);
+    // [手順] - send_limit、max_allowance、ctx を順に NULL にして report_limit を呼び出す。
     // Assert
     EXPECT_EQ(0, held_disabled);    // [確認_正常系] - 資源がない受信側では送出上限がないこと。
-    EXPECT_EQ(0U, limit_disabled);  // [確認_正常系] - 資源がない受信側で 0 を格納すること。
+    EXPECT_EQ(0U, limit_disabled);  // [確認_正常系] - 資源がない受信側で送出上限に 0 を格納すること。
+    EXPECT_EQ(0U, max_disabled);    // [確認_正常系] - 資源がない受信側で許可数の上限に 0 を格納すること。
     EXPECT_EQ(0, held_none);        // [確認_正常系] - 採用前は送出上限がないこと。
+    EXPECT_EQ(0U, max_none);        // [確認_正常系] - 採用前は許可数の上限が 0 であること。
     EXPECT_EQ(1, held_adopted);     // [確認_正常系] - 採用後は送出上限があること。
     EXPECT_EQ(52U, limit_adopted);  // [確認_正常系] - 送出上限が 10 + 42 であること。
+    EXPECT_EQ(42U, max_adopted);    // [確認_正常系] - 許可数の上限が幅 42 であること。
     EXPECT_EQ(0, held_null_limit);  // [確認_異常系] - send_limit が NULL で 0 であること。
+    EXPECT_EQ(0, held_null_max);    // [確認_異常系] - max_allowance が NULL で 0 であること。
     EXPECT_EQ(0, held_null_ctx);    // [確認_異常系] - ctx が NULL で 0 であること。
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
 
-// multicast の受信者が、監視対象でない間は送出上限を送出せず、受信報告には送出上限を載せることの確認
+// multicast の受信者が、監視対象でない間は送出上限を送出せず、受信報告には送出上限と許可数の上限を載せることの確認
 // [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
 TEST_F(potrFlowControlBufferTest, multicast_receiver_not_monitored_does_not_notify)
 {
@@ -482,17 +490,20 @@ TEST_F(potrFlowControlBufferTest, multicast_receiver_not_monitored_does_not_noti
     // [状態] - multicast の受信者で、容量 0、幅 42 で start する。
     // [状態確認] - start の戻り値が POTR_OK であること。
     uint32_t report_limit = 0U;
+    uint32_t max_allowance = 0U;
     // Pre-Assert
     // Act
     received(POTR_PEER_NA, 10U, 0); // [手順] - 次に受信する通番 10 で、PING の受理として on_received を呼び出す。
     received(POTR_PEER_NA, 52U);    // [手順] - 次に受信する通番 52 で on_received を呼び出す。
     potr_internal_flow_control_tick(&ctx, now_ms + 1000U); // [手順] - tick を呼び出す。
-    int held = potr_internal_flow_control_report_limit(&ctx, &report_limit); // [手順] - report_limit を呼び出す。
+    int held = potr_internal_flow_control_report_limit(&ctx, &report_limit, &max_allowance);
+    // [手順] - report_limit を呼び出す。
     // Assert
     EXPECT_TRUE(states.empty());  // [確認_正常系] - フロー制御パケットを組み立てないこと。
     EXPECT_EQ(0, sendto_count);   // [確認_正常系] - 送出しないこと。
     EXPECT_EQ(1, held);           // [確認_正常系] - 受信報告に載せる送出上限があること。
     EXPECT_EQ(94U, report_limit); // [確認_正常系] - 受信報告に載せる送出上限が 52 + 42 であること。
+    EXPECT_EQ(42U, max_allowance); // [確認_正常系] - 受信報告に載せる許可数の上限が幅 42 であること。
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
 
@@ -1063,5 +1074,298 @@ TEST_F(potrFlowControlBufferTest, context_width_and_monitored_state_track_flow_c
     EXPECT_EQ(0, monitored_after_session_change);    // [確認_正常系] - 送信者セッション変更で監視対象でなくなること。
     EXPECT_EQ(0U, ctx.flow_receive_buffer_width);    // [確認_正常系] - stop 後に幅が 0 に戻ること。
     EXPECT_EQ(0, ctx.flow_monitored);                // [確認_正常系] - stop 後に監視対象状態が 0 に戻ること。
+}
+// [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
+
+// 許可数の上限が、幅だけ・容量だけ・両方・どちらもなしの各構成で仕様どおり決まり、占有量が変わっても変わらないことの確認
+// [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
+TEST_F(potrFlowControlBufferTest, report_limit_max_allowance_by_configuration_and_occupancy)
+{
+    // Arrange
+    uint32_t limit_width_only = 0U;
+    uint32_t max_width_only = 0U;
+    uint32_t limit_cap_only = 0U;
+    uint32_t max_cap_only = 0U;
+    uint32_t limit_mid_occ = 0U;
+    uint32_t max_mid_occ = 0U;
+    uint32_t limit_high_occ = 0U;
+    uint32_t max_high_occ = 0U;
+    uint32_t limit_refused = 99U;
+    uint32_t max_refused = 99U;
+    uint32_t limit_both_cap_smaller = 0U;
+    uint32_t max_both_cap_smaller = 0U;
+    uint32_t limit_both_width_smaller = 0U;
+    uint32_t max_both_width_smaller = 0U;
+    uint32_t limit_neither = 99U;
+    uint32_t max_neither = 99U;
+    // [状態] - 構成を順に切り替えて potr_internal_flow_control_report_limit() の出力を採取する。
+    // Pre-Assert
+    // Act
+    // 1. 幅だけ (容量 0、OS の受信バッファー幅 42)
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    received(POTR_PEER_NA, 10U, 0);
+    int held_width_only = potr_internal_flow_control_report_limit(&ctx, &limit_width_only, &max_width_only);
+    potr_internal_flow_control_stop(&ctx);
+    // [手順] - 幅だけの構成で採用後に report_limit を呼ぶ。
+
+    // 2. 容量だけ (容量 10000、要求 80% = 8000、max_payload 1400 -> 最大許可数 8000 ÷ 1400 + 1 = 6)
+    ctx.flow_control_config.capacity = 10000U;
+    ctx.flow_control_config.receive_buffer_percent = 0U;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    received(POTR_PEER_NA, 10U, 0);
+    int held_cap_only = potr_internal_flow_control_report_limit(&ctx, &limit_cap_only, &max_cap_only);
+    int ret_admit_mid = potr_internal_flow_control_admit(&ctx, POTR_PEER_NA, kSenderSessionId, &sender_ts, 5000U);
+    int held_mid_occ = potr_internal_flow_control_report_limit(&ctx, &limit_mid_occ, &max_mid_occ);
+    int ret_admit_high = potr_internal_flow_control_admit(&ctx, POTR_PEER_NA, kSenderSessionId, &sender_ts, 3500U);
+    int held_high_occ = potr_internal_flow_control_report_limit(&ctx, &limit_high_occ, &max_high_occ);
+    int ret_admit_over = potr_internal_flow_control_admit(&ctx, POTR_PEER_NA, kSenderSessionId, &sender_ts, 2000U);
+    int held_refused = potr_internal_flow_control_report_limit(&ctx, &limit_refused, &max_refused);
+    potr_internal_flow_control_stop(&ctx);
+    // [手順] - 容量だけの構成で、占有量 0・5000・8500 (しきい値超過)・容量超過 (refused) の順に report_limit を呼ぶ。
+
+    // 3. 両方 (幅 42、容量から決まる最大許可数 6 -> 小さいほうの 6)
+    ctx.flow_control_config.capacity = 10000U;
+    ctx.flow_control_config.receive_buffer_percent = 100U;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    received(POTR_PEER_NA, 10U, 0);
+    int held_both_cap_smaller =
+        potr_internal_flow_control_report_limit(&ctx, &limit_both_cap_smaller, &max_both_cap_smaller);
+    potr_internal_flow_control_stop(&ctx);
+    // [手順] - 両方ありで容量側が小さい構成で report_limit を呼ぶ。
+
+    // 4. 両方 (幅 42、容量 200000 -> 要求 160000 -> 最大許可数 115 -> 小さいほうの 42)
+    ctx.flow_control_config.capacity = 200000U;
+    ctx.flow_control_config.receive_buffer_percent = 100U;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    received(POTR_PEER_NA, 10U, 0);
+    int held_both_width_smaller =
+        potr_internal_flow_control_report_limit(&ctx, &limit_both_width_smaller, &max_both_width_smaller);
+    potr_internal_flow_control_stop(&ctx);
+    // [手順] - 両方ありで幅側が小さい構成で report_limit を呼ぶ。
+
+    // 5. どちらもなし (容量 0、幅の割合 0 -> 上限なしモード)
+    ctx.flow_control_config.capacity = 0U;
+    ctx.flow_control_config.receive_buffer_percent = 0U;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    received(POTR_PEER_NA, 10U, 0);
+    int held_neither = potr_internal_flow_control_report_limit(&ctx, &limit_neither, &max_neither);
+    potr_internal_flow_control_stop(&ctx);
+    // [手順] - どちらもなしの構成で report_limit を呼ぶ。
+
+    // Assert
+    EXPECT_EQ(1, held_width_only);          // [確認_正常系] - 幅だけで送出上限ありになること。
+    EXPECT_EQ(52U, limit_width_only);       // [確認_正常系] - 幅だけで送出上限が 10 + 42 であること。
+    EXPECT_EQ(42U, max_width_only);         // [確認_正常系] - 幅だけで許可数の上限が 42 であること。
+    EXPECT_EQ(1, held_cap_only);            // [確認_正常系] - 容量だけで送出上限ありになること。
+    EXPECT_EQ(16U, limit_cap_only);         // [確認_正常系] - 容量だけで占有量 0 の送出上限が 10 + 6 であること。
+    EXPECT_EQ(6U, max_cap_only);            // [確認_正常系] - 容量だけで許可数の上限が 6 であること。
+    EXPECT_EQ(POTR_OK, ret_admit_mid);      // [確認_正常系] - 占有量 5000 の加算が成功すること。
+    EXPECT_EQ(1, held_mid_occ);             // [確認_正常系] - 占有量 5000 でも送出上限ありになること。
+    EXPECT_EQ(13U, limit_mid_occ);          // [確認_正常系] - 占有量 5000 で送出上限が 10 + 3 に減ること。
+    EXPECT_EQ(6U, max_mid_occ);             // [確認_正常系] - 占有量 5000 でも許可数の上限が 6 のままであること。
+    EXPECT_EQ(POTR_OK, ret_admit_high);     // [確認_正常系] - 占有量 8500 の加算が成功すること。
+    EXPECT_EQ(1, held_high_occ);            // [確認_正常系] - しきい値超過でも送出上限ありになること。
+    EXPECT_EQ(10U, limit_high_occ);         // [確認_正常系] - しきい値超過で許可数 0 (送出上限 = next_seq = 10) になること。
+    EXPECT_EQ(6U, max_high_occ);            // [確認_正常系] - 許可数 0 の間も許可数の上限が 6 のままであること。
+    EXPECT_EQ(POTR_ERR_FULL, ret_admit_over); // [確認_正常系] - 容量超過で POTR_ERR_FULL になること。
+    EXPECT_EQ(0, held_refused);             // [確認_正常系] - 容量超過 (refused) で送出上限なしになること。
+    EXPECT_EQ(0U, limit_refused);           // [確認_正常系] - 容量超過で送出上限が 0 になること。
+    EXPECT_EQ(0U, max_refused);             // [確認_正常系] - 容量超過で許可数の上限が 0 になること。
+    EXPECT_EQ(1, held_both_cap_smaller);    // [確認_正常系] - 両方あり (容量側が小) で送出上限ありになること。
+    EXPECT_EQ(16U, limit_both_cap_smaller); // [確認_正常系] - 両方あり (容量側が小) で送出上限が 10 + 6 であること。
+    EXPECT_EQ(6U, max_both_cap_smaller);    // [確認_正常系] - 両方あり (容量側が小) で許可数の上限が 6 であること。
+    EXPECT_EQ(1, held_both_width_smaller);  // [確認_正常系] - 両方あり (幅側が小) で送出上限ありになること。
+    EXPECT_EQ(52U, limit_both_width_smaller); // [確認_正常系] - 両方あり (幅側が小) で送出上限が 10 + 42 であること。
+    EXPECT_EQ(42U, max_both_width_smaller); // [確認_正常系] - 両方あり (幅側が小) で許可数の上限が 42 であること。
+    EXPECT_EQ(0, held_neither);             // [確認_正常系] - どちらもなしで送出上限なしになること。
+    EXPECT_EQ(0U, limit_neither);           // [確認_正常系] - どちらもなしで送出上限が 0 になること。
+    EXPECT_EQ(0U, max_neither);             // [確認_正常系] - どちらもなしで許可数の上限が 0 になること。
+}
+// [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
+
+// 監視対象の受信者が、自身を含む一覧を受けるたびにその時点の状態 (解除または抑制の要求) と送出上限を 1 回送出し、
+// 採用していない送信者の一覧と自身を含まない一覧では送出しないことの確認
+// [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
+TEST_F(potrFlowControlBufferTest, monitor_list_responds_every_time_with_current_state_and_limit)
+{
+    // Arrange
+    enable_multicast_receiver();
+    ctx.flow_control_config.capacity = 1000U;
+    ctx.global.max_payload = 100U;
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
+    // [状態] - multicast の受信者で、容量 1000 (要求 80%、解除 60%)、max_payload 100 (許可数 9)、幅 42 で start する。
+    // [状態確認] - start の戻り値が POTR_OK であること。
+    std::vector<uint8_t> included_payload;
+    std::vector<uint8_t> other_sender_payload;
+    std::vector<uint8_t> excluded_payload;
+    potr_packet included = make_list(included_payload, 1, kSenderSessionId);
+    potr_packet other_sender = make_list(other_sender_payload, 1, kSenderSessionId + 1U);
+    potr_packet excluded = make_list(excluded_payload, 0, kSenderSessionId);
+    received(POTR_PEER_NA, 10U, 0); // [状態] - 次に受信する通番 10 で送信者を採用する。
+    // Pre-Assert
+    // Act
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &included);
+    size_t count_first = states.size();
+    uint8_t state_first = states.empty() ? 0U : states.back();
+    uint32_t limit_first = limits.empty() ? 0U : limits.back();
+    // [手順] - 1 回目の自身を含む一覧を渡す (監視対象になり、初回応答として解除 + 19 を送出)。
+    received(POTR_PEER_NA, 12U, 1); // [手順] - 範囲の半分未満の通番 12 で on_received を呼び出す (自動更新は起きない)。
+    size_t count_before_second = states.size();
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &included);
+    size_t count_second = states.size();
+    uint8_t state_second = states.empty() ? 0U : states.back();
+    uint32_t limit_second = limits.empty() ? 0U : limits.back();
+    // [手順] - すでに監視対象の状態で 2 回目の自身を含む一覧を渡す (解除 + 21 を 1 回送出)。
+    for (int i = 0; i < 9; i++)
+    {
+        admit(100U);
+    }
+    // [手順] - 100 [byte] を 9 回 (占有量 900 > 800) admit し、抑制の要求中へ遷移させる。
+    size_t count_before_suppress_list = states.size();
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &included);
+    size_t count_after_suppress_list = states.size();
+    uint8_t state_suppress_list = states.empty() ? 0U : states.back();
+    uint32_t limit_suppress_list = limits.empty() ? 0U : limits.back();
+    // [手順] - 抑制の要求中に 3 回目の自身を含む一覧を渡す (抑制の要求 + 12 を 1 回送出)。
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &other_sender);
+    size_t count_after_other_sender = states.size();
+    // [手順] - 採用していない送信者のセッションからの一覧を渡す。
+    potr_internal_flow_control_on_packet(&ctx, nullptr, &excluded);
+    size_t count_after_excluded = states.size();
+    int monitored_after_excluded = ctx.flow_monitored;
+    // [手順] - 採用している送信者から自身を含まない一覧を渡す。
+    // Assert
+    EXPECT_EQ(1U, count_first);                    // [確認_正常系] - 1 回目の一覧で 1 回送出すること。
+    EXPECT_EQ(kResume, state_first);               // [確認_正常系] - 1 回目の状態が解除であること。
+    EXPECT_EQ(19U, limit_first);                   // [確認_正常系] - 1 回目の送出上限が 10 + 9 = 19 であること。
+    EXPECT_EQ(1U, count_before_second);            // [確認_正常系] - 範囲の半分未満では自動更新を送出しないこと。
+    EXPECT_EQ(2U, count_second);                   // [確認_正常系] - 監視対象のまま 2 回目の一覧を受けても 1 回送出すること。
+    EXPECT_EQ(kResume, state_second);              // [確認_正常系] - 2 回目の状態が解除であること。
+    EXPECT_EQ(21U, limit_second);                  // [確認_正常系] - 2 回目の送出上限が 12 + 9 = 21 であること。
+    EXPECT_EQ(count_before_suppress_list + 1U, count_after_suppress_list);
+    // [確認_正常系] - 抑制の要求中に一覧を受けた場合も 1 回送出すること。
+    EXPECT_EQ(kSuppress, state_suppress_list);     // [確認_正常系] - 抑制の要求中は状態が抑制の要求であること。
+    EXPECT_EQ(12U, limit_suppress_list);           // [確認_正常系] - 抑制の要求中の送出上限が 12 + 0 = 12 であること。
+    EXPECT_EQ(count_after_suppress_list, count_after_other_sender);
+    // [確認_異常系] - 採用していない送信者のセッションからの一覧では送出しないこと。
+    EXPECT_EQ(count_after_suppress_list, count_after_excluded);
+    // [確認_正常系] - 自身を含まない一覧では送出しないこと。
+    EXPECT_EQ(0, monitored_after_excluded);        // [確認_正常系] - 自身を含まない一覧で監視対象から外れること。
+}
+// [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
+
+// multicast と broadcast の送信者が、監視対象の送出上限で止まっている間だけ 10 [ms] から 2 倍ずつ
+// (上限 flow_control_request_interval_ms) で一覧を送出し直し、抑制の要求だけや解除後は送出し直さず間隔を戻すことの確認
+// [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
+TEST_F(potrFlowControlBufferTest, multicast_stalled_resends_monitor_list_with_backoff_and_resets)
+{
+    // Arrange
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 1;
+    ctx.flow_control_config.request_interval_ms = 200U;
+    ctx.flow_control_config.request_lifetime_ms = 1000U;
+    ctx.flow_monitor_next_ms = 5000U;
+    cplat_atomic_store_i32(&ctx.flow_request_pending, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    int mock_suppressed = 1;
+    int mock_limit_stalled = 1;
+    int wait_ms = -1;
+    uint32_t allowance = 0U;
+    std::vector<size_t> built_counts;
+    ON_CALL(mock_porter, potr_internal_receiver_flow_suppressed(_, _, _, _, _))
+        .WillByDefault([&](potr_context *c, uint64_t t, uint32_t, size_t *tracked, uint64_t *until_ms) -> int {
+            *tracked = 1U;
+            *until_ms = mock_suppressed ? (t + 1000U) : 0U;
+            c->flow_receiver_limit_stalled = mock_limit_stalled;
+            return mock_suppressed;
+        }); // [状態] - 受信者管理表の判定結果 (送出上限停止、抑制要求のみ、解除) を制御する。
+    ON_CALL(mock_porter, potr_internal_receiver_monitor_list(_, _, _, _, _))
+        .WillByDefault([&](potr_context *, uint64_t, potr_internal_packet_session_hdr *list, size_t,
+                           int *changed) -> size_t {
+            list[0].session_id = 1U;
+            *changed = 0;
+            return 1U;
+        }); // [状態] - 監視対象 1 台を返す。
+    ON_CALL(mock_porter, potr_internal_packet_build_flow_control_list(_, _, _, _, _))
+        .WillByDefault([&](potr_packet *packet, const potr_internal_packet_session_hdr *, uint8_t *payload,
+                           const potr_internal_packet_session_hdr *, size_t count) {
+            built_counts.push_back(count);
+            memset(packet, 0, POTR_PACKET_HEADER_SIZE);
+            payload[0] = (uint8_t)POTR_FLOW_CONTROL_STATE_MONITOR;
+            packet->payload = payload;
+            packet->payload_len = cplat_hton16((uint16_t)1U);
+            return POTR_OK;
+        }); // [状態] - 一覧パケットの組み立て回数と台数を記録する。
+    // [状態] - multicast 送信者、再送周期 200 [ms]、flow_monitor_next_ms = 5000 とする。
+    // Pre-Assert
+    // Act
+    int sup_0 = potr_internal_flow_control_suppressed(&ctx, 1000U, &wait_ms, &allowance);
+    int wait_0 = wait_ms;
+    int sent_0 = sendto_count;
+    (void)potr_internal_flow_control_suppressed(&ctx, 1009U, &wait_ms, &allowance);
+    int sent_9 = sendto_count;
+    (void)potr_internal_flow_control_suppressed(&ctx, 1010U, &wait_ms, &allowance);
+    int wait_10 = wait_ms;
+    int sent_10 = sendto_count;
+    (void)potr_internal_flow_control_suppressed(&ctx, 1029U, &wait_ms, &allowance);
+    int sent_29 = sendto_count;
+    (void)potr_internal_flow_control_suppressed(&ctx, 1030U, &wait_ms, &allowance);
+    int wait_30 = wait_ms;
+    int sent_30 = sendto_count;
+    (void)potr_internal_flow_control_suppressed(&ctx, 1070U, &wait_ms, &allowance);
+    (void)potr_internal_flow_control_suppressed(&ctx, 1150U, &wait_ms, &allowance);
+    (void)potr_internal_flow_control_suppressed(&ctx, 1310U, &wait_ms, &allowance);
+    int sent_before_cap = sendto_count;
+    (void)potr_internal_flow_control_suppressed(&ctx, 1509U, &wait_ms, &allowance);
+    int sent_cap_before = sendto_count;
+    (void)potr_internal_flow_control_suppressed(&ctx, 1510U, &wait_ms, &allowance);
+    int sent_cap = sendto_count;
+    uint64_t monitor_next_after_stall = ctx.flow_monitor_next_ms;
+    // [手順] - 送出上限で止まり続け、10, 20, 40, 80, 160, 200 [ms] (上限) で一覧を送出し直すことを確認する。
+    mock_limit_stalled = 0;
+    int sup_suppress_only = potr_internal_flow_control_suppressed(&ctx, 1600U, &wait_ms, &allowance);
+    (void)potr_internal_flow_control_suppressed(&ctx, 1800U, &wait_ms, &allowance);
+    int sent_suppress_only = sendto_count;
+    // [手順] - 抑制の要求だけで止まっている状態に切り替え、送出し直さないことを確認する。
+    mock_limit_stalled = 1;
+    (void)potr_internal_flow_control_suppressed(&ctx, 2000U, &wait_ms, &allowance);
+    int wait_after_suppress_reset = wait_ms;
+    (void)potr_internal_flow_control_suppressed(&ctx, 2010U, &wait_ms, &allowance);
+    int sent_after_suppress_reset = sendto_count;
+    // [手順] - 再び送出上限で止まり、間隔が 10 [ms] に戻っていることを確認する。
+    mock_suppressed = 0;
+    mock_limit_stalled = 0;
+    int sup_open = potr_internal_flow_control_suppressed(&ctx, 2015U, &wait_ms, &allowance);
+    mock_suppressed = 1;
+    mock_limit_stalled = 1;
+    ctx.service.type = POTR_TYPE_BROADCAST;
+    (void)potr_internal_flow_control_suppressed(&ctx, 2100U, &wait_ms, &allowance);
+    int wait_broadcast = wait_ms;
+    (void)potr_internal_flow_control_suppressed(&ctx, 2110U, &wait_ms, &allowance);
+    int sent_broadcast = sendto_count;
+    // [手順] - 停止解除後に間隔が元に戻ることと、broadcast でも同様に 10 [ms] 後に送出し直すことを確認する。
+    // Assert
+    EXPECT_EQ(1, sup_0);                      // [確認_正常系] - 送出上限で抑制を返すこと。
+    EXPECT_EQ(10, wait_0);                    // [確認_正常系] - 最初の送出し直しまでの 10 [ms] を返すこと。
+    EXPECT_EQ(0, sent_0);                     // [確認_正常系] - 止まった直後は送出し直さないこと。
+    EXPECT_EQ(0, sent_9);                     // [確認_正常系] - 10 [ms] 未満では送出し直さないこと。
+    EXPECT_EQ(1, sent_10);                    // [確認_正常系] - 10 [ms] 後に 1 回目の一覧を送出し直すこと。
+    EXPECT_EQ(20, wait_10);                   // [確認_正常系] - 次の間隔が 2 倍の 20 [ms] になること。
+    EXPECT_EQ(1, sent_29);                    // [確認_正常系] - 20 [ms] 未満では 2 回目を送出し直さないこと。
+    EXPECT_EQ(2, sent_30);                    // [確認_正常系] - さらに 20 [ms] 後に 2 回目を送出し直すこと。
+    EXPECT_EQ(40, wait_30);                   // [確認_正常系] - 次の間隔が 40 [ms] になること。
+    EXPECT_EQ(5, sent_before_cap);            // [確認_正常系] - 40, 80, 160 [ms] 後に計 5 回送出し直すこと。
+    EXPECT_EQ(5, sent_cap_before);            // [確認_正常系] - 上限 200 [ms] 未満では 6 回目を送出し直さないこと。
+    EXPECT_EQ(6, sent_cap);                   // [確認_正常系] - 上限 200 [ms] 後に 6 回目を送出し直すこと。
+    EXPECT_EQ(5000U, monitor_next_after_stall);
+    // [確認_正常系] - 既存の周期送出時刻 flow_monitor_next_ms を変更しないこと。
+    EXPECT_EQ(1, sup_suppress_only);          // [確認_正常系] - 抑制の要求だけでも抑制を返すこと。
+    EXPECT_EQ(6, sent_suppress_only);         // [確認_正常系] - 抑制の要求だけでは一覧を送出し直さないこと。
+    EXPECT_EQ(10, wait_after_suppress_reset); // [確認_正常系] - 送出上限停止が解けた後は間隔が 10 [ms] に戻ること。
+    EXPECT_EQ(7, sent_after_suppress_reset);  // [確認_正常系] - 再停止の 10 [ms] 後に 7 回目を送出し直すこと。
+    EXPECT_EQ(0, sup_open);                   // [確認_正常系] - 停止解除時は 0 を返すこと。
+    EXPECT_EQ(10, wait_broadcast);            // [確認_正常系] - broadcast でも再停止時は 10 [ms] に戻ること。
+    EXPECT_EQ(8, sent_broadcast);             // [確認_正常系] - broadcast でも 10 [ms] 後に一覧を送出し直すこと。
+    EXPECT_EQ(8U, built_counts.size());       // [確認_正常系] - 監視対象の一覧パケットを 8 回組み立てること。
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]

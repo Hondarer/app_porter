@@ -173,7 +173,7 @@ uint32_t ReadWire32(const std::vector<uint8_t> &wire, size_t offset)
 }
 } // namespace
 
-// multicast の受信者が、送出上限がある場合は seq_num を 1、ack_num を送出上限とし、ない場合は 0 とすることの確認
+// multicast の受信者が、送出上限がある場合は seq_num を許可数の上限、ack_num を送出上限とし、ない場合は 0 とすることの確認
 TEST(threadRecvReportTest, multicast_report_carries_send_limit)
 {
     // Arrange
@@ -197,11 +197,12 @@ TEST(threadRecvReportTest, multicast_report_carries_send_limit)
         std::memset(out, 0, size);
         return CPLAT_OK;
     }); // [状態] - 報告間隔のばらつきを 0 にする。
-    ON_CALL(mock_porter, potr_internal_flow_control_report_limit(_, _))
-        .WillByDefault([&](potr_context *, uint32_t *send_limit) {
+    ON_CALL(mock_porter, potr_internal_flow_control_report_limit(_, _, _))
+        .WillByDefault([&](potr_context *, uint32_t *send_limit, uint32_t *max_allowance) {
             *send_limit = limit_held != 0 ? 0x12345678U : 0U;
+            *max_allowance = limit_held != 0 ? 42U : 0U;
             return limit_held;
-        }); // [状態] - limit_held が 1 の間は送出上限 0x12345678 を返し、0 の間は送出上限がないことを返す。
+        }); // [状態] - limit_held が 1 の間は送出上限 0x12345678 と許可数の上限 42 を返し、0 の間は送出上限がないことを返す。
     ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
         .WillByDefault([&](cplat_socket, const void *wire, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
                            cplat_error *) {
@@ -221,14 +222,14 @@ TEST(threadRecvReportTest, multicast_report_carries_send_limit)
     EXPECT_EQ(POTR_OK, actual_ret_held);  // [確認_正常系] - 送出上限がある報告を送れること。
     EXPECT_EQ(POTR_OK, actual_ret_none);  // [確認_正常系] - 送出上限がない報告を送れること。
     ASSERT_EQ(2U, emitted.size());        // [確認_正常系] - 2 回送出すること。
-    EXPECT_EQ(1U, ReadWire32(emitted[0], 24U));           // [確認_正常系] - 1 回目の seq_num が 1 (送出上限あり) であること。
+    EXPECT_EQ(42U, ReadWire32(emitted[0], 24U));          // [確認_正常系] - 1 回目の seq_num が許可数の上限 (42) であること。
     EXPECT_EQ(0x12345678U, ReadWire32(emitted[0], 28U));  // [確認_正常系] - 1 回目の ack_num が送出上限であること。
     EXPECT_EQ(0U, ReadWire32(emitted[1], 24U));           // [確認_正常系] - 2 回目の seq_num が 0 (送出上限なし) であること。
     EXPECT_EQ(0U, ReadWire32(emitted[1], 28U));           // [確認_正常系] - 2 回目の ack_num が 0 であること。
     EXPECT_EQ(emitted[0].size(), emitted[1].size());      // [確認_正常系] - 報告の大きさが送出上限の有無で変わらないこと。
 }
 
-// unicast の受信者も、送出上限がある場合は seq_num を 1、ack_num を送出上限とし、ない場合は 0 とすることの確認
+// unicast の受信者も、送出上限がある場合は seq_num を許可数の上限、ack_num を送出上限とし、ない場合は 0 とすることの確認
 TEST(threadRecvReportTest, unicast_report_carries_send_limit)
 {
     // Arrange
@@ -247,11 +248,12 @@ TEST(threadRecvReportTest, unicast_report_carries_send_limit)
     ctx.src_addr_resolved[0] = cplat_hton32(0x7f000001U);
     potr_internal_tx_session_init(&ctx.tx_session);
     // [状態] - 暗号化しない unicast の受信者で、経路 1 本とする。
-    ON_CALL(mock_porter, potr_internal_flow_control_report_limit(_, _))
-        .WillByDefault([&](potr_context *, uint32_t *send_limit) {
+    ON_CALL(mock_porter, potr_internal_flow_control_report_limit(_, _, _))
+        .WillByDefault([&](potr_context *, uint32_t *send_limit, uint32_t *max_allowance) {
             *send_limit = limit_held != 0 ? 0x12345678U : 0U;
+            *max_allowance = limit_held != 0 ? 208U : 0U;
             return limit_held;
-        }); // [状態] - limit_held が 1 の間は送出上限 0x12345678 を返し、0 の間は送出上限がないことを返す。
+        }); // [状態] - limit_held が 1 の間は送出上限 0x12345678 と許可数の上限 208 を返し、0 の間は送出上限がないことを返す。
     ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
         .WillByDefault([&](cplat_socket, const void *wire, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
                            cplat_error *) {
@@ -271,7 +273,7 @@ TEST(threadRecvReportTest, unicast_report_carries_send_limit)
     EXPECT_EQ(POTR_OK, actual_ret_held);  // [確認_正常系] - 送出上限がある報告を送れること。
     EXPECT_EQ(POTR_OK, actual_ret_none);  // [確認_正常系] - 送出上限がない報告を送れること。
     ASSERT_EQ(2U, emitted.size());        // [確認_正常系] - 2 回送出すること。
-    EXPECT_EQ(1U, ReadWire32(emitted[0], 24U));           // [確認_正常系] - 1 回目の seq_num が 1 (送出上限あり) であること。
+    EXPECT_EQ(208U, ReadWire32(emitted[0], 24U));         // [確認_正常系] - 1 回目の seq_num が許可数の上限 (208) であること。
     EXPECT_EQ(0x12345678U, ReadWire32(emitted[0], 28U));  // [確認_正常系] - 1 回目の ack_num が送出上限であること。
     EXPECT_EQ(0U, ReadWire32(emitted[1], 24U));           // [確認_正常系] - 2 回目の seq_num が 0 (送出上限なし) であること。
     EXPECT_EQ(0U, ReadWire32(emitted[1], 28U));           // [確認_正常系] - 2 回目の ack_num が 0 であること。
@@ -515,11 +517,12 @@ TEST(threadRecvReportTest, ad_hoc_report_matches_periodic_format_and_preserves_n
         std::memset(out, 0, size);
         return CPLAT_OK;
     }); // [状態] - 周期報告のばらつきを 0 にする。
-    ON_CALL(mock_porter, potr_internal_flow_control_report_limit(_, _))
-        .WillByDefault([](potr_context *, uint32_t *send_limit) {
+    ON_CALL(mock_porter, potr_internal_flow_control_report_limit(_, _, _))
+        .WillByDefault([](potr_context *, uint32_t *send_limit, uint32_t *max_allowance) {
             *send_limit = 0x11223344U;
+            *max_allowance = 84U;
             return 1;
-        }); // [状態] - 送出上限 0x11223344 を返す。
+        }); // [状態] - 送出上限 0x11223344 と許可数の上限 84 を返す。
     ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
         .WillByDefault([&](cplat_socket, const void *wire, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
                            cplat_error *) {
@@ -555,7 +558,7 @@ TEST(threadRecvReportTest, ad_hoc_report_matches_periodic_format_and_preserves_n
         // [確認_正常系 回数=3] - すべての受信報告を解析できること。
         EXPECT_EQ(POTR_FLAG_REPORT, packet.flags);     // [確認_正常系 回数=3] - 種別が REPORT であること。
         EXPECT_EQ(321U, packet.session_id);            // [確認_正常系 回数=3] - セッション識別子が一致すること。
-        EXPECT_EQ(1U, packet.seq_num);                 // [確認_正常系 回数=3] - 送出上限あり (1) であること。
+        EXPECT_EQ(84U, packet.seq_num);                // [確認_正常系 回数=3] - 許可数の上限 (84) が一致すること。
         EXPECT_EQ(0x11223344U, packet.ack_num);        // [確認_正常系 回数=3] - 送出上限の値が一致すること。
         EXPECT_EQ(POTR_MAX_PATH, packet.payload_len);  // [確認_正常系 回数=3] - ペイロード長が一致すること。
         EXPECT_EQ(POTR_PING_STATE_NORMAL, packet.payload[0]);   // [確認_正常系 回数=3] - 経路 0 の状態が一致すること。

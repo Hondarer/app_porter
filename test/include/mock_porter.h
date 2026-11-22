@@ -344,7 +344,7 @@ class Mock_porter
     MOCK_METHOD(int, potr_internal_flow_control_slow_peer_rejected_locked, (potr_context *ctx, uint32_t session_id, const cplat_timespec *session_ts, uint64_t now_ms));
     MOCK_METHOD(int, potr_internal_packet_build_flow_control, (potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint8_t *payload, uint8_t state, uint32_t send_limit));
     MOCK_METHOD(int, potr_internal_packet_build_flow_control_list, (potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint8_t *payload, const potr_internal_packet_session_hdr *receivers, size_t count));
-    MOCK_METHOD(int, potr_internal_flow_control_report_limit, (potr_context *ctx, uint32_t *send_limit));
+    MOCK_METHOD(int, potr_internal_flow_control_report_limit, (potr_context *ctx, uint32_t *send_limit, uint32_t *max_allowance));
     MOCK_METHOD(void, potr_internal_flow_control_monitor_tick, (potr_context *ctx, uint64_t now_ms));
     MOCK_METHOD(int, potr_internal_send_queue_check_space, (potr_internal_send_queue *q, size_t entries));
     MOCK_METHOD(void, potr_internal_send_queue_wait_flow, (potr_internal_send_queue *q, uint64_t *generation, int timeout_ms));

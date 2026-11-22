@@ -1133,7 +1133,14 @@ static int flow_control_sender_idle(potr_context *ctx)
 
     if (ctx->service.type == POTR_TYPE_MULTICAST || ctx->service.type == POTR_TYPE_BROADCAST)
     {
-        return cplat_atomic_load_i32(&ctx->flow_request_pending, CPLAT_MEMORY_ORDER_ACQUIRE) == 0;
+        if (cplat_atomic_load_i32(&ctx->flow_request_pending, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+        {
+            return 0;
+        }
+
+        ctx->flow_query_next_ms = 0U;
+        ctx->flow_query_interval_ms = 0U;
+        return 1;
     }
 
     if (ctx->service.type == POTR_TYPE_UNICAST)

@@ -110,23 +110,75 @@ static int receiver_counted_active(const potr_internal_receiver *receiver, uint6
 }
 
 /*
- * 監視対象を選び直す。余裕の記録がある活動中の受信者のうち、余裕が小さいほうから監視する数の受信者を監視対象にする。
- * 遅い受信者から選ぶのは、送出を決めるのが、遅いほうから「しきい値」番目の受信者であるためである。
- * それより速い監視対象は、速さの順位が入れ替わったときに、次の「しきい値」番目の受信者の送出上限が
- * すでに届いているようにするための予備である。
- * 余裕が同じ受信者は、管理表の先頭に近いほうを先に選ぶ。監視対象から外れた受信者の送出上限は破棄する。
+ * 監視対象の候補かどうかを返す。除外していない活動中の受信者で、余裕の記録と 1 以上の許可数の上限があるもの。
+ * 許可数の上限が 0 (送出上限なし、または未受信) の受信者は送出上限を知らせないため、候補から外す。
+ * callback_mutex を保持して呼ぶ。
+ */
+static int is_monitor_candidate(const potr_internal_receiver *receiver, uint64_t now_ms)
+{
+    return !receiver->flow_excluded && receiver_counted_active(receiver, now_ms) && receiver->flow_margin_known &&
+           receiver->flow_report_max_allowance != 0U;
+}
+
+/*
+ * 監視対象の優先順位で、a が b より先であれば 1、そうでなければ 0 を返す。
+ * 1. 余裕が小さい順
+ * 2. 現在の監視対象を優先
+ * 3. 監視対象でなくなってからの時間が長い順 (一度も監視対象になっていない受信者を最優先)
+ * 4. 管理表の順 (index が小さいほう)
+ */
+static int receiver_monitor_precedes(const potr_internal_receiver *a, size_t a_index, const potr_internal_receiver *b,
+                                     size_t b_index)
+{
+    if (a->flow_margin != b->flow_margin)
+    {
+        return a->flow_margin < b->flow_margin;
+    }
+
+    if (a->flow_monitored != b->flow_monitored)
+    {
+        return a->flow_monitored > b->flow_monitored;
+    }
+
+    if (!a->flow_monitored)
+    {
+        if (a->flow_ever_monitored != b->flow_ever_monitored)
+        {
+            return !a->flow_ever_monitored;
+        }
+
+        if (a->flow_ever_monitored && a->flow_unmonitored_ms != b->flow_unmonitored_ms)
+        {
+            return a->flow_unmonitored_ms < b->flow_unmonitored_ms;
+        }
+    }
+
+    return a_index < b_index;
+}
+
+/*
+ * 監視対象を選び直す。候補を優先順に並べ、先頭から「2 ÷ 許可数の上限」を足した合計が予算
+ * (flow_control_feedback_percent ÷ 100) 以下である最大の数を求め、下限と上限、候補の数に収めた台数を監視対象にする。
+ * 監視対象から外れた受信者の送出上限は破棄し、外れた時刻を記録する。
  * 監視対象が変わった場合は ctx->flow_monitor_changed を 1 にする。callback_mutex を保持して呼ぶ。
  */
 static void monitor_select_locked(potr_context *ctx, uint64_t now_ms)
 {
+    potr_internal_receiver *ordered[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX];
     potr_internal_receiver *receiver;
+    potr_internal_receiver *cut_receiver = NULL;
+    size_t cut_index = 0U;
     size_t candidate_count = 0U;
+    size_t max_limit;
+    size_t ordered_count = 0U;
+    size_t budget_count = 0U;
     size_t target;
     size_t picked;
     size_t index;
-    int32_t cut_margin = 0;
-    size_t cut_index = 0U;
-    int have_cut = 0;
+    uint32_t feedback_percent;
+    uint64_t budget;
+    uint64_t cost_sum = 0U;
+    int budget_exceeded = 0;
 
     if (!is_monitoring_sender(ctx))
     {
@@ -135,62 +187,92 @@ static void monitor_select_locked(potr_context *ctx, uint64_t now_ms)
 
     for (receiver = ctx->receivers; receiver != NULL; receiver = receiver->next)
     {
-        if (!receiver->flow_excluded && receiver_counted_active(receiver, now_ms) && receiver->flow_margin_known)
+        if (is_monitor_candidate(receiver, now_ms))
         {
             candidate_count++;
         }
     }
 
-    target = flow_monitor_count(candidate_count, ctx->flow_control_config.monitored_receiver_count,
-                                ctx->global.max_payload);
-
-    /*
-     * (余裕, 管理表の位置) の順で、小さいほうから target 番目の候補を求める。
-     * 監視する数は POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX 以下のため、走査の回数は受信者数の 64 倍以下である。
-     */
-    for (picked = 0U; picked < target; picked++)
+    feedback_percent = ctx->flow_control_config.feedback_percent;
+    if (feedback_percent == 0U)
     {
-        int found = 0;
-        int32_t best_margin = 0;
+        feedback_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_FEEDBACK_PERCENT;
+    }
+    budget = (uint64_t)feedback_percent * POTR_FLOW_MONITOR_BUDGET_PER_PERCENT;
+
+    /* 候補から最大でも 1 パケット上限 (64 と max_payload 上限、候補数の最小値) までを優先順に抽出する。 */
+    max_limit = flow_monitor_count(candidate_count, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX,
+                                   POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, ctx->global.max_payload);
+
+    for (picked = 0U; picked < max_limit; picked++)
+    {
+        potr_internal_receiver *best = NULL;
         size_t best_index = 0U;
 
         for (receiver = ctx->receivers, index = 0U; receiver != NULL; receiver = receiver->next, index++)
         {
-            if (receiver->flow_excluded || !receiver_counted_active(receiver, now_ms) || !receiver->flow_margin_known)
+            if (!is_monitor_candidate(receiver, now_ms))
             {
                 continue;
             }
 
-            if (have_cut && (receiver->flow_margin < cut_margin ||
-                             (receiver->flow_margin == cut_margin && index <= cut_index)))
+            if (cut_receiver != NULL && !receiver_monitor_precedes(cut_receiver, cut_index, receiver, index))
             {
                 continue;
             }
 
-            if (!found || receiver->flow_margin < best_margin)
+            if (best == NULL || receiver_monitor_precedes(receiver, index, best, best_index))
             {
-                found = 1;
-                best_margin = receiver->flow_margin;
+                best = receiver;
                 best_index = index;
             }
         }
 
-        if (!found)
+        if (best == NULL)
         {
             break;
         }
 
-        cut_margin = best_margin;
+        ordered[ordered_count++] = best;
+        cut_receiver = best;
         cut_index = best_index;
-        have_cut = 1;
+
+        if (!budget_exceeded)
+        {
+            uint64_t cost = flow_monitor_receiver_cost(best->flow_report_max_allowance);
+
+            /* 切り上げで求めた通知の見込みの累積和が予算以下である間だけ予算内の台数へ数える。 */
+            if (cost <= budget && cost_sum <= budget - cost)
+            {
+                cost_sum += cost;
+                budget_count++;
+            }
+            else
+            {
+                budget_exceeded = 1;
+            }
+        }
     }
 
-    for (receiver = ctx->receivers, index = 0U; receiver != NULL; receiver = receiver->next, index++)
+    target = flow_monitor_count(candidate_count, budget_count, ctx->flow_control_config.monitored_receiver_count,
+                                ctx->global.max_payload);
+    if (target > ordered_count)
     {
-        int selected = have_cut && !receiver->flow_excluded && receiver_counted_active(receiver, now_ms) &&
-                       receiver->flow_margin_known &&
-                       (receiver->flow_margin < cut_margin ||
-                        (receiver->flow_margin == cut_margin && index <= cut_index));
+        target = ordered_count;
+    }
+
+    for (receiver = ctx->receivers; receiver != NULL; receiver = receiver->next)
+    {
+        int selected = 0;
+
+        for (picked = 0U; picked < target; picked++)
+        {
+            if (ordered[picked] == receiver)
+            {
+                selected = 1;
+                break;
+            }
+        }
 
         if (selected == receiver->flow_monitored)
         {
@@ -198,6 +280,7 @@ static void monitor_select_locked(potr_context *ctx, uint64_t now_ms)
         }
 
         receiver->flow_monitored = selected;
+        receiver->flow_ever_monitored = 1;
         ctx->flow_monitor_changed = 1;
 
         if (selected)
@@ -208,7 +291,8 @@ static void monitor_select_locked(potr_context *ctx, uint64_t now_ms)
         }
         else
         {
-            /* 監視対象から外れた受信者の送出上限は、送信者が使わないため破棄する。 */
+            /* 監視対象から外れた受信者の送出上限は、送信者が使わないため破棄し、外れた時刻を記録する。 */
+            receiver->flow_unmonitored_ms = now_ms;
             receiver->flow_send_limit = 0U;
             receiver->flow_limit_stalled_ms = 0U;
             POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
@@ -262,8 +346,8 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
     }
     if (report)
     {
-        /* seq_num は送出上限の有無 (1 = ack_num に送出上限がある、0 = ない)。ない場合の ack_num は 0 である。 */
-        if (packet->payload == NULL || packet->payload_len != POTR_MAX_PATH || packet->seq_num > 1U ||
+        /* seq_num は許可数の上限 (1 以上 = ack_num に送出上限がある、0 = ない)。ない場合の ack_num は 0 である。 */
+        if (packet->payload == NULL || packet->payload_len != POTR_MAX_PATH ||
             (packet->seq_num == 0U && packet->ack_num != 0U))
         {
             return POTR_ERR_PROTOCOL;
@@ -284,7 +368,7 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
 
     /* 余裕や未通知の基準に使う次に割り当てる DATA の通番を、callback_mutex を取得する前に読む。 */
     monitoring = is_monitoring_sender(ctx);
-    if ((monitoring && report && packet->seq_num == 1U) || (!monitoring && ctx->service.type == POTR_TYPE_UNICAST))
+    if ((monitoring && report && packet->seq_num != 0U) || (!monitoring && ctx->service.type == POTR_TYPE_UNICAST))
     {
         next_seq = read_send_next_seq(ctx);
     }
@@ -387,6 +471,7 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
             receiver->last_report_ms = now_ms;
             receiver->active = 1;
             receiver->retired_ms = 0U;
+            receiver->flow_report_max_allowance = packet->seq_num;
             ctx->report_received = 1;
 
             /*
@@ -396,7 +481,7 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
              */
             if (monitoring)
             {
-                if (packet->seq_num == 1U)
+                if (packet->seq_num != 0U)
                 {
                     /* 通番は循環するため、差を符号付きで見る。除外している受信者についても絶対値を更新する。 */
                     receiver->flow_margin = (int32_t)(packet->ack_num - next_seq);
@@ -420,20 +505,33 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
 
                 monitor_select_locked(ctx, now_ms);
 
-                if (packet->seq_num == 1U && receiver->flow_monitored != 0 &&
-                    (receiver->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK) == POTR_FLOW_SEND_LIMIT_HELD)
+                if (packet->seq_num != 0U && receiver->flow_monitored != 0)
                 {
-                    uint32_t held = (uint32_t)(receiver->flow_send_limit & 0xFFFFFFFFU);
-
-                    if ((int32_t)(packet->ack_num - held) > 0)
+                    if ((receiver->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK) != POTR_FLOW_SEND_LIMIT_HELD)
                     {
+                        /*
+                         * 送出上限を保持していない監視対象 (破棄の後、または監視対象に選ばれた直後) に、
+                         * 送出上限を載せた受信報告が届いた場合は、その値を送出上限として保持する。
+                         */
                         receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)packet->ack_num;
                         receiver->flow_limit_received_ms = now_ms;
+                        receiver->flow_limit_stalled_ms = 0U;
                         cplat_atomic_store_i32(&ctx->flow_request_pending, 1, CPLAT_MEMORY_ORDER_RELEASE);
+                    }
+                    else
+                    {
+                        uint32_t held = (uint32_t)(receiver->flow_send_limit & 0xFFFFFFFFU);
+
+                        if ((int32_t)(packet->ack_num - held) > 0)
+                        {
+                            receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)packet->ack_num;
+                            receiver->flow_limit_received_ms = now_ms;
+                            cplat_atomic_store_i32(&ctx->flow_request_pending, 1, CPLAT_MEMORY_ORDER_RELEASE);
+                        }
                     }
                 }
             }
-            else if (ctx->service.type == POTR_TYPE_UNICAST && packet->seq_num == 1U)
+            else if (ctx->service.type == POTR_TYPE_UNICAST && packet->seq_num != 0U)
             {
                 uint64_t recv_state = receiver->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK;
 
@@ -492,12 +590,12 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
                 }
 
                 /*
-                 * 監視対象でない受信者から抑制の要求を受けた場合は、受信報告を待たずに候補にするため、余裕を 0 として記録する。
-                 * 次の受信報告で上書きする。
+                 * 監視対象でない受信者 (除外中を除く) から抑制の要求を受けた場合は、受信報告を待たずに候補にするため、
+                 * 余裕を 0 として記録する。次の受信報告で上書きする。
                  */
                 if (monitoring)
                 {
-                    if (!was_monitored && flow_state == POTR_FLOW_CONTROL_STATE_SUPPRESS)
+                    if (!receiver->flow_excluded && !was_monitored && flow_state == POTR_FLOW_CONTROL_STATE_SUPPRESS)
                     {
                         receiver->flow_margin = 0;
                         receiver->flow_margin_known = 1;
@@ -506,6 +604,16 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
                     monitor_select_locked(ctx, now_ms);
                 }
             }
+        }
+        else if (monitoring && !receiver->flow_excluded && !receiver->flow_monitored)
+        {
+            /*
+             * 監視対象でない受信者 (除外中を除く) から NACK を受けた場合は、遅れの合図として余裕を 0 で記録し、
+             * 次の受信報告を待たずに監視対象を選び直す。余裕の記録は次の受信報告で上書きする。
+             */
+            receiver->flow_margin = 0;
+            receiver->flow_margin_known = 1;
+            monitor_select_locked(ctx, now_ms);
         }
 
         if (!monitoring && !flow && !report_applied_limit && ctx->service.type == POTR_TYPE_UNICAST)
@@ -550,6 +658,7 @@ static potr_internal_send_limit_state monitoring_judge_receiver_limit(const potr
                                                                       uint64_t *limit_until_ms)
 {
     uint32_t allowance = 0U;
+    uint64_t activity_ms;
     potr_internal_send_limit_state limit_state;
 
     *limit_until_ms = 0U;
@@ -559,11 +668,20 @@ static potr_internal_send_limit_state monitoring_judge_receiver_limit(const potr
         return POTR_SEND_LIMIT_OPEN;
     }
 
-    limit_state = flow_send_limit_judge(receiver->flow_send_limit, receiver->flow_limit_received_ms,
-                                        &receiver->flow_limit_stalled_ms, next_seq, now_ms,
-                                        ctx->flow_control_config.request_lifetime_ms, limit_until_ms, &allowance);
+    /*
+     * 相手から何らかのパケット (フロー制御パケット、受信報告、NACK) が届いている間は破棄しない。
+     * 何も届かない場合だけ、有効期限の経過後に送出上限を破棄する。
+     */
+    activity_ms = receiver->flow_limit_received_ms;
+    if (receiver->flow_last_packet_ms > activity_ms)
+    {
+        activity_ms = receiver->flow_last_packet_ms;
+    }
 
-    /* multicast と broadcast の送出上限の破棄は従来どおりとする。 */
+    limit_state = flow_send_limit_judge(receiver->flow_send_limit, activity_ms, &receiver->flow_limit_stalled_ms,
+                                        next_seq, now_ms, ctx->flow_control_config.request_lifetime_ms, limit_until_ms,
+                                        &allowance);
+
     if (limit_state == POTR_SEND_LIMIT_EXPIRED)
     {
         receiver->flow_send_limit = 0U;
@@ -785,6 +903,8 @@ static int monitoring_flow_suppressed_locked(potr_context *ctx, uint64_t now_ms,
                 if (receiver->flow_excluded && receiver->flow_monitored)
                 {
                     receiver->flow_monitored = 0;
+                    receiver->flow_ever_monitored = 1;
+                    receiver->flow_unmonitored_ms = now_ms;
                     receiver->flow_send_limit = 0U;
                     receiver->flow_limit_stalled_ms = 0U;
                     ctx->flow_monitor_changed = 1;
