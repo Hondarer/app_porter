@@ -40,7 +40,8 @@ JSON 数値の `-0` は数値の 0 として扱います。
 これらの変換失敗だけで設定ファイル全体をエラーにすることはなく、読み込んだ構成への制約検査は別に行います。
 
 解釈できない値は、項目名と値を WARNING のトレースへ出力します。`services` の項目では、サービス ID も出力します。  
-対象は `global` の 10 項目 (`window_size`、`max_payload`、`udp_health_interval_ms`、`udp_health_timeout_ms`、`tcp_health_interval_ms`、`tcp_health_timeout_ms`、`tcp_close_timeout_ms`、`reorder_timeout_ms`、`max_message_size`、`send_queue_depth`) と、`services` の 7 項目 (`dst_port`、`src_port`、`ttl`、`pack_wait_ms`、`health_interval_ms`、`health_timeout_ms`、`reconnect_interval_ms`) の計 17 項目です。  
+`global` の対象は、次の 22 項目です。`window_size`、`max_payload`、`udp_health_interval_ms`、`udp_health_timeout_ms`、`tcp_health_interval_ms`、`tcp_health_timeout_ms`、`tcp_close_timeout_ms`、`reorder_timeout_ms`、`max_message_size`、`send_queue_depth`、`flow_control_capacity`、`flow_control_suppress_percent`、`flow_control_resume_percent`、`flow_control_request_interval_ms`、`flow_control_request_lifetime_ms`、`flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_grace_ms`、`flow_control_feedback_percent`、`flow_control_monitored_receiver_count`、`flow_control_receive_buffer_percent`、`udp_receive_buffer_size`。  
+`services` の対象は、次の 19 項目です。`dst_port`、`src_port`、`ttl`、`pack_wait_ms`、`health_interval_ms`、`health_timeout_ms`、`reconnect_interval_ms`、`flow_control_capacity`、`flow_control_suppress_percent`、`flow_control_resume_percent`、`flow_control_request_interval_ms`、`flow_control_request_lifetime_ms`、`flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_grace_ms`、`flow_control_feedback_percent`、`flow_control_monitored_receiver_count`、`flow_control_receive_buffer_percent`、`udp_receive_buffer_size`。  
 `max_peers` と `connect_timeout_ms` の解釈できない値、および JSON の型が文字列と数値のどちらでもない値は、WARNING を出力しません。  
 WARNING は、利用側が設定の読み込みより前にトレーサーを開始した場合だけ出力されます。
 
@@ -64,12 +65,12 @@ WARNING は、利用側が設定の読み込みより前にトレーサーを開
 | `flow_control_suppress_percent` | uint32 | 80 | 受信側が抑制を要求するしきい値 (%)。1〜100 |
 | `flow_control_resume_percent` | uint32 | 50 | 受信側が解除するしきい値 (%)。1 以上、`flow_control_suppress_percent` 未満 |
 | `flow_control_request_interval_ms` | uint32 | 200 | 受信側が抑制の要求を再送する周期 (ms)。1 以上、2,147,483,646 以下 |
-| `flow_control_request_lifetime_ms` | uint32 | 1,000 | 送信側が抑制の要求を有効とみなす時間 (ms)。送出上限に達して止まった時点から、次のフロー制御パケットを待つ時間にも使います。`flow_control_request_interval_ms` より大きく、2,147,483,646 以下の値 |
-| `flow_control_excluded_receiver_count` | uint32 | 1 | `multicast` / `broadcast` の送信側が除外する受信者の数の上限 (台)。`0` で既定値を使用。`-1` で台数による上限を無効にします |
-| `flow_control_excluded_receiver_percent` | uint32 | 10 | `multicast` / `broadcast` の送信側が除外する受信者の数の上限 (%)。1〜100。`0` で既定値を使用。`-1` で割合による上限を無効にします |
-| `flow_control_grace_ms` | uint32 | 200 | `multicast` / `broadcast` の送信側で、遅い受信者が全体の送出を止めてよい猶予時間 (ms)。1 以上、2,147,483,646 以下 |
+| `flow_control_request_lifetime_ms` | uint32 | 1,000 | 送信側が抑制の要求を有効とみなす時間 (ms)。送出上限で止まっている間に、相手からのパケットが途絶えたとみなして送出上限を破棄するまでの時間にも使います。失われた通知は、問い合わせで回復します。`flow_control_request_interval_ms` より大きく、2,147,483,646 以下の値 |
+| `flow_control_excluded_receiver_count` | uint32 | 1 | `multicast` / `broadcast` の送信側が除外する受信者の数、および `unicast_bidir_n1` のサーバーが切断するピアの数の上限 (台)。`0` で既定値を使用。`-1` で台数による上限を無効にします |
+| `flow_control_excluded_receiver_percent` | uint32 | 10 | `multicast` / `broadcast` の送信側が除外する受信者の数、および `unicast_bidir_n1` のサーバーが切断するピアの数の上限 (%)。1〜100。`0` で既定値を使用。`-1` で割合による上限を無効にします |
+| `flow_control_grace_ms` | uint32 | 200 | `multicast` / `broadcast` の送信側、および `unicast_bidir_n1` のサーバーで、遅い相手が全体の送出を止めてよい猶予時間 (ms)。1 以上、2,147,483,646 以下 |
 | `flow_control_feedback_percent` | uint32 | 5 | `multicast` / `broadcast` の送信側が監視対象から受けるフロー制御パケットの数の予算 (DATA 100 パケットあたりの数)。1〜100。監視する数は、各候補の「2 ÷ 許可数の上限」の合計がこの予算に収まる範囲で自動で最大にします |
-| `flow_control_monitored_receiver_count` | uint32 | 4 | `multicast` / `broadcast` の送信側が監視対象として選ぶ受信者の台数の下限。0〜64。予算から決まる数がこの値より小さい場合に引き上げます。0 で下限なし |
+| `flow_control_monitored_receiver_count` | uint32 | 4 | `multicast` / `broadcast` の送信側が監視対象として選ぶ受信者の台数の下限。0〜64。予算から決まる数がこの値より小さい場合に引き上げます。0 は下限を指定しないことです |
 | `flow_control_receive_buffer_percent` | uint32 | 100 | 受信側が、OS の受信バッファーの大きさのうち、受信バッファーの幅の計算に使う割合 (%)。1〜100。`-1` で OS の受信バッファーに基づく送出上限を使わない |
 | `udp_receive_buffer_size` | uint32 | 4,194,304 | UDP のソケットを開くときに OS へ要求する受信バッファーの大きさ (バイト)。`0` で既定値を使用。`-1` で要求しない。TCP のソケットには適用しない |
 
@@ -137,7 +138,7 @@ RAW モード (`unicast_raw` / `multicast_raw` / `broadcast_raw`) は、フロ�
 |---|---|
 | `flow_control_capacity`、`flow_control_suppress_percent`、`flow_control_resume_percent`、`flow_control_request_interval_ms` | 受信側 (双方向の通信種別では両端) |
 | `flow_control_request_lifetime_ms` | 送信側 (双方向の通信種別では両端)。`multicast` / `broadcast` の受信側は、監視対象の一覧の有効期限にも使います |
-| `flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_grace_ms` | `multicast` / `broadcast` の送信側 |
+| `flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_grace_ms` | `multicast` / `broadcast` の送信側、および `unicast_bidir_n1` のサーバー |
 | `flow_control_feedback_percent`、`flow_control_monitored_receiver_count` | `multicast` / `broadcast` の送信側 |
 | `flow_control_receive_buffer_percent` | `unicast`、`multicast`、`broadcast`、`unicast_bidir`、`unicast_bidir_n1` の受信側 (双方向の通信種別では両端) |
 
@@ -145,7 +146,7 @@ Table: フロー制御の設定を使う側
 
 #### 値の決まり方
 
-- `global` の値は、そのまま使います。`flow_control_capacity` の `0` は「無効」、`flow_control_monitored_receiver_count` の `0` は「下限なし」です。
+- `global` の値は、そのまま使います。`flow_control_capacity` の `0` は「無効」、`flow_control_monitored_receiver_count` の `0` は「下限を指定しない」です。
 - サービス側の `0` と省略は、「`global` の値を使用」です。
 - サービス側で「無効」にする場合は、`-1` を指定します。`-1` を指定できるのは、サービス側の `flow_control_capacity`、`flow_control_monitored_receiver_count` と、`global` とサービス側の `flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_receive_buffer_percent`、`udp_receive_buffer_size` だけです。その他の項目は、負号付きの値を受け付けません。
 - `flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_receive_buffer_percent`、`udp_receive_buffer_size` は既定で有効で、`0` が「既定値を使用」(サービス側では「`global` の値を使用」) を表すため、`global` でも `-1` で無効 (要求しない) にできます。
@@ -191,7 +192,7 @@ Table: フロー制御の設定を使う側
 | 余裕で受け止める量 | 目安 |
 |---|---|
 | 圧縮した DATA の展開による増加 | 展開後の大きさと `max_payload` の差 |
-| 最初の送出上限が届く前に送出された DATA | 接続の直後に送信側がまとめて送出する量 |
+| 最初の送出上限が届く前に送出された DATA | 初期の幅 (4 パケット) |
 | 送出上限を 1 パケット分超える送出と、フラグメントの途中にある DATA | `max_message_size` 程度 |
 
 Table: 容量の余裕で受け止める量
@@ -199,7 +200,7 @@ Table: 容量の余裕で受け止める量
 余裕が `max_message_size` 未満の構成は、サービスを開く処理が設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。フラグメントの途中にあった最大長のメッセージ 1 件が、送出上限で止まった後に完成するだけで、容量を超えるためです。  
 既定の要求のしきい値 (80%) では、容量が `max_message_size` の 5 倍以上であることに相当します。要求のしきい値を 100% にした構成は、余裕が 0 になるため、容量が 0 でない限り設定エラーになります。
 
-送出上限は、容量の超過を完全には防ぎません。圧縮した DATA、最初の送出上限が届く前の送出、一対多で除外された受信者、一対多で監視対象に選ばれていない受信者は、抑制の要求が働き、それでも容量を超えた場合は切断になります。  
+送出上限は、容量の超過を完全には防ぎません。圧縮した DATA、最初の送出上限が届く前の初期の幅 (4 パケット) の送出、一対多で除外された受信者、一対多で監視対象に選ばれていない受信者は、抑制の要求が働き、それでも容量を超えた場合は切断になります。  
 余裕が不足する場合は、容量を大きくするか、`flow_control_suppress_percent` を小さくします。
 
 - 容量は、メモリ使用量の厳密な上限ではありません。占有量は DATA のバイト数だけを数え、通知ごとの管理情報は含みません。
@@ -210,7 +211,7 @@ Table: 容量の余裕で受け止める量
 | 設定 | 既定値 | 意味 |
 |---|---|---|
 | `flow_control_request_interval_ms` | 200 ms | 受信側が、要求中の間に抑制の要求を再送する周期です。フロー制御が有効な受信側は、受信スレッドの待ち時間の上限をこの値にします。 |
-| `flow_control_request_lifetime_ms` | 1,000 ms | 送信側が、受けた抑制の要求を有効とみなす時間です。送出上限に達して止まった時点から、次のフロー制御パケットを待つ時間にも使います。 |
+| `flow_control_request_lifetime_ms` | 1,000 ms | 送信側が、受けた抑制の要求を有効とみなす時間です。送出上限で止まっている間に、相手からのパケットが途絶えたとみなして送出上限を破棄するまでの時間にも使います。 |
 
 Table: 抑制の要求の再送周期と有効期限
 
@@ -218,7 +219,9 @@ Table: 抑制の要求の再送周期と有効期限
 
 - `flow_control_request_interval_ms` と `flow_control_request_lifetime_ms` は、送信側と受信側で同じ値を構成してください。受信側の再送周期が送信側の有効期限以上の場合、要求の再送の間に抑制が外れます。この組み合わせは、片側の構成からは検査できません。
 - 経路の損失が多い場合は、有効期限を再送周期の 5 倍以上に保ったまま、再送周期を短くします。再送周期を短くすると、抑制の要求のパケットが増えます。
-- 受信側が停止したときに、送信側が早く送出を再開する必要がある場合は、有効期限を短くします。有効期限を短くすると、要求の喪失が続いたときに抑制が外れやすくなります。
+- 受信側が停止したときに、送信側が早く送出を再開する必要がある場合は、有効期限を短くします。有効期限を短くすると、抑制の要求の喪失が続いたときに、抑制が外れやすくなります。
+
+通知された送出上限で止まっている間は、相手から何らかのパケット (フロー制御パケット、受信報告、NACK、PING、DATA) が届いている限り、有効期限が経過しても送出上限を破棄しません。失われた通知は、問い合わせで回復します。最初の問い合わせは、止まり始めてから 10 ms 後に送り、以後の間隔は 2 倍ずつ延ばして、`flow_control_request_interval_ms` を上限とします。有効期限の間、相手から何も届かない場合は、相手がいないものとして送出上限を破棄します。破棄の後に相手からパケットが届いた場合は、その時点から初期の幅 (4 パケット) までに送出を抑え、問い合わせを送ります。最初の通知を受ける前の初期の幅で止まっている間は、相手からパケットが届いていても、有効期限の後に相手がいないものとして扱います。
 
 #### OS の受信バッファーに基づく送出上限
 
@@ -245,8 +248,8 @@ Table: OS の受信バッファーに基づく送出上限が働く受信側
 
 - OS の受信バッファーの大きさは、サービスを開くときに、受信に使うソケットから取得した値 (cplat の `cplat_socket_get_receive_buffer_size()` が返す、OS の `SO_RCVBUF` の取得値) です。経路が複数ある場合は、最も小さい値を使います。
 - 認証タグ長は、暗号化の有無によらず加えます。
-- `unicast_bidir_n1` のサーバーは、すべてのピアが 1 つのソケットを共有するため、幅を接続中のピア数で割ります (切り捨て)。
-- 幅が 4 未満になる場合は、4 とします。
+- 幅が 4 未満になる場合は、4 とします。この下限は、全体の幅に適用します。
+- `unicast_bidir_n1` のサーバーは、すべてのピアが 1 つのソケットを共有するため、全体の幅を送信中のピアの数で割ります (切り捨て)。ピアごとの幅が 4 未満になる場合は、順番に、4 パケットずつ許可します。順番の許可の規則は、[プロトコル仕様](protocol.md) の「N 対 1 サーバーの幅の配分と順番の許可」を参照してください。
 - ソケットから大きさを取得できなかった場合は、警告を診断出力に記録し、そのサービスでは OS の受信バッファーに基づく送出上限を使いません。
 - 容量 (`flow_control_capacity`) も指定した受信側は、占有量による許可数と受信バッファーの幅の小さいほうを許可数にします。
 
@@ -254,25 +257,33 @@ Table: OS の受信バッファーに基づく送出上限が働く受信側
 
 | 構成 | OS の受信バッファーの大きさ | 受信バッファーの幅 | 送出上限の更新 |
 |---|---|---|---|
-| Linux の既定、`max_payload` 1,400 | 212,992 byte | 42 パケット | 約 21 パケットにつき 1 個 |
-| Windows の既定、`max_payload` 1,400 | 65,536 byte | 13 パケット | 約 6 パケットにつき 1 個 |
-| Linux の既定、`unicast_bidir_n1` のサーバーでピアが 4 つ | 212,992 byte | ピアごとに 10 パケット | ピアごとに約 5 パケットにつき 1 個 |
+| 要求しない Linux (`net.core.rmem_default`)、`max_payload` 1,400 | 212,992 byte | 42 パケット | 21 パケットにつき 1 個 |
+| 既定の要求 4 MiB で、Linux の `net.core.rmem_max` が既定 (212,992) のまま、`max_payload` 1,400 | 425,984 byte (取得値) | 84 パケット | 42 パケットにつき 1 個 |
+| 取得値が 4 MiB、`max_payload` 1,400 | 4,194,304 byte | 約 834 パケット | 約 417 パケットにつき 1 個 |
+| 要求しない Windows、`max_payload` 1,400 | 65,536 byte | 13 パケット | 約 6 パケットにつき 1 個 |
+| 既定の要求 4 MiB のあと、Linux の `net.core.rmem_max` が既定のままの `unicast_bidir_n1` のサーバーで、送信中のピアが 4 つ | 425,984 byte (取得値) | ピアごとに 21 パケット | ピアごとに約 10 パケットにつき 1 個 |
 
 Table: 受信バッファーの幅の例
 
-受信側は、前回知らせた範囲の半分を受信するたびに送出上限を更新するため、更新のフロー制御パケットは「受信バッファーの幅 ÷ 2」パケットにつき 1 個です。更新を減らすには、OS の受信バッファーを大きくします (Linux では `net.core.rmem_max` と `net.core.rmem_default`)。幅は OS の受信バッファーの大きさに比例します。  
+受信側は、前回知らせた範囲の半分を受信するたびに送出上限を更新するため、更新のフロー制御パケットは「受信バッファーの幅 ÷ 2」パケットにつき 1 個です。幅が大きいほど更新が減り、一時的な遅れを受け止められます。あふれの回避と処理件数を両立させるには、OS の受信バッファーを大きくします。幅は、OS の受信バッファーの大きさに比例します。
+
+Linux は、`SO_RCVBUF` の設定値を 2 倍にして保持し、設定値は `net.core.rmem_max` で切り詰めます。`net.core.rmem_max` が既定 (212,992) のままの場合、4 MiB の要求は 212,992 に切り詰められ、取得値は 425,984 byte になります。要求しない場合の取得値は、`net.core.rmem_default` の 212,992 byte です。したがって、要求によって受信バッファーの幅は約 2 倍 (42 パケットから約 84 パケット) になります。幅をさらに大きくするには、`net.core.rmem_max` を大きくする必要があります。`net.core.rmem_max` を 4 MiB 以上にすると、4 MiB の要求は切り詰められず、取得値は 8,388,608 byte、幅は約 1,670 パケットになります。Windows では、4 MiB の要求がそのまま受け付けられ、幅は約 834 パケットになります。
+
+仮想化された環境などでは、ホスト側のネットワーク アダプターの設定 (受信バッファー、受信キューなど) の見直しが必要になる場合があります。ホスト側の設定は porter の責務の外です。あふれがホスト側で起きると、porter のフロー制御では防げません。
+
 `flow_control_receive_buffer_percent` を小さくすると、幅が小さくなり、あふれに対する余裕が増える代わりに、更新が増えます。
 
-`unicast_bidir_n1` のサーバーは、幅をピア数で割るため、ピアが多いほど更新が増え、処理件数が下がります (同じホストの Linux で、4 つのクライアントが要求を送りサーバーが返信する測定では、無効にした場合に比べて約 16% の低下)。処理件数を優先する場合は、OS の受信バッファーを大きくするか、サーバーとクライアントの `flow_control_receive_buffer_percent` を無効にします。無効にした場合、連続送信による OS の受信バッファーのあふれは防げません。
+`unicast_bidir_n1` のサーバーは、幅を送信中のピアの数で割るため、送信中のピアが多いほど更新が増え、処理件数が下がります (同じホストの Linux で、4 つのクライアントが要求を送りサーバーが返信する測定では、無効にした場合に比べて約 16% の低下)。処理件数を優先する場合は、OS の受信バッファーを大きくするか、サーバーとクライアントの `flow_control_receive_buffer_percent` を無効にします。無効にした場合、連続送信による OS の受信バッファーのあふれは防げません。
 
-OS の受信バッファーに基づく送出上限は、あふれを完全には防ぎません。次の場合は、従来どおり欠落が起き、保持範囲を超えると切断になります。
+OS の受信バッファーに基づく送出上限は、あふれを完全には防ぎません。次の場合は、欠落が起き、保持範囲を超えると切断になります。
 
-- 最初の送出上限が届く前の送出: 送信側は、送出上限を受けるまで制限なく送出します。
-- 送出上限の通知が続けて失われた場合: 送信側は、有効期限の後に送出上限を破棄し、次の通知が届くまで制限なく送出します。
+- 一対多の送信側が、初期の幅を適用せず、受信側の最初の受信報告を処理する前に送出する場合。
 - `multicast` と `broadcast` で、監視対象に選ばれていない受信者と、除外された受信者。
-- `multicast` と `broadcast` で、受信者が急に遅くなった場合: 次の受信報告で監視対象に選ばれるまで (既定で最長 4.5 秒)、その受信者は守られません。
-- `unicast_bidir_n1` のサーバーで、幅の下限 (4) が働く数のピアが、同時に連続して送信した場合。
+- `multicast` と `broadcast` で、監視対象に選ばれていない受信者が、臨時の受信報告、または NACK か抑制の要求による選び直しより前に遅れた場合。
+- `unicast_bidir_n1` のサーバーで、多数のピアが、最初の送出上限を受ける前に、同時に初期の幅 (4 パケット) の分を送出した場合。
 - 再送、PING など、DATA 以外のパケットが多い場合。
+
+一対多の送信側を除き、最初の送出上限が届く前に送出できるのは、初期の幅 (4 パケット) までです。失われた通知は、問い合わせで回復します。届いている間の送出上限の破棄と、未通知のときの扱いは、「再送周期と有効期限」のとおりです。
 
 これらの場合に欠落が問題になるときは、次のいずれかで避けます。
 
@@ -349,13 +360,14 @@ Table: 除外する数の上限の例
 
 | 受信者の OS の受信バッファー | 許可数の上限 | 予算 5% に収まる数 | 監視する数 (既定の下限 4 台を適用) |
 |---|---|---|---|
-| Linux の既定 (212,992 byte) | 42 | 1 | 4 (候補が 4 台未満の場合は、全員) |
+| 要求しない Linux (212,992 byte) | 42 | 1 | 4 (候補が 4 台未満の場合は、全員) |
+| 既定の要求後、`net.core.rmem_max` が既定の Linux (425,984 byte) | 84 | 2 | 4 (候補が 4 台未満の場合は、全員) |
 | 1 MiB | 約 208 | 5 | 5 |
 | 4 MiB | 約 834 | 20 | 20 |
 
 Table: 監視する数の例
 
-- `flow_control_monitored_receiver_count` は監視する数の下限です。既定値は 4 台です。受信者が 4 台以下の構成では、OS の受信バッファーの大きさによらず、全員を監視します。`0` (下限なし) の場合、予算の条件を満たす数がそのまま監視する数になります。
+- `flow_control_monitored_receiver_count` は監視する数の下限です。既定値は 4 台です。受信者が 4 台以下の構成では、OS の受信バッファーの大きさによらず、全員を監視します。`0` は下限を指定しないことです。予算の条件を満たす数が、そのまま監視する数になります。
 - 予算だけで決めると、受信バッファーの幅が小さい場合に、監視する数が 1 台か 2 台になり、監視対象でない受信者が、あふれによる欠落から回復できずに、切断になることがあります。受信者が多い構成では、予算による数が下限を上回る場合に、予算による数になります。
 - 監視対象の外の健全な受信者が合図を送る間もなく遅れた場合 (OS が受信スレッドを止めた場合など) は、OS の受信バッファーがあふれ、再送で回復します。あふれを確実に防ぐ受信者を増やすには、OS の受信バッファーを大きくするか、`flow_control_monitored_receiver_count` または `flow_control_feedback_percent` を大きくします。
 - 受信者が再起動すると、古いセッションの項目が `health_timeout_ms` の間、活動中の受信者として残ります。古い項目が監視対象に選ばれている場合、その間、監視対象の 1 台分が働きません。
@@ -373,7 +385,7 @@ Table: 監視する数の例
 
 Table: 通信モデル別のヘルス チェック動作
 
-一方向 UDP (type 1-6) の RECEIVER は、有効な `PING` または `DATA` を受信すると `health_alive` を立てて `POTR_EVENT_CONNECTED` を発火します。`health_interval_ms = 0` で PING 送信が無効でも、有効な `DATA` が到着すれば CONNECTED します。双方向 UDP は従来どおり PING ベースで CONNECTED します。TCP は `health_interval_ms = 0` でも bootstrap PING の往復により CONNECTED できますが、定周期 PING と timeout 監視は無効になります。
+一方向 UDP (type 1-6) の RECEIVER は、有効な `PING` または `DATA` を受信すると `health_alive` を立てて `POTR_EVENT_CONNECTED` を発火します。`health_interval_ms = 0` で PING 送信が無効でも、有効な `DATA` が到着すれば CONNECTED します。双方向 UDP は、PING の送受信で CONNECTED します。TCP は `health_interval_ms = 0` でも bootstrap PING の往復により CONNECTED できますが、定周期 PING と timeout 監視は無効になります。
 
 双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は、相手が返してきた PING ペイロードに `POTR_PING_STATE_NORMAL` が含まれて初めて `CONNECTED` します。したがって実効 `health_interval_ms = 0` で PING 自動送信が無効な構成では、`health_timeout_ms` の有無にかかわらず初回 `CONNECTED` に到達しません。
 
@@ -411,7 +423,7 @@ Table: ヘルス チェック設定値とその効果
 | `flow_control_request_interval_ms`、`flow_control_request_lifetime_ms` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用 |
 | `flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でその上限を無効にします。 |
 | `flow_control_grace_ms`、`flow_control_feedback_percent` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用 |
-| `flow_control_monitored_receiver_count` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` で監視する数の下限を無効 (下限なし) にします。 |
+| `flow_control_monitored_receiver_count` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` で監視する数の下限を指定しないようにします。 |
 | `flow_control_receive_buffer_percent` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でこのサービスの受信側は OS の受信バッファーに基づく送出上限を使いません。 |
 | `udp_receive_buffer_size` | uint32 | 省略可 | グローバルの `udp_receive_buffer_size` をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でこのサービスの UDP ソケットでは OS へ受信バッファーの大きさを要求しません。TCP のソケットには適用しません。 |
 
