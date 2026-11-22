@@ -138,7 +138,7 @@ Table: UNICAST_BIDIR (type 7) の接続状態別の実装
 
 | 状態 | 実装 |
 |---|---|
-| CONNECTED 前 | サーバー/クライアントとも `PING` を送信します。`peer_id` 指定送信は `peer->health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返します。`POTR_PEER_ALL` は接続済み peer が 0 件なら `POTR_ERR_DISCONNECTED` を返します。受信側は `peer->health_alive == 0` の間 `n1_deliver_payload_elem()` で `DATA` を配送しません。未知 peer の初回 `DATA` では peer を生成せずに破棄し、初回 `PING` でのみ peer slot と session 状態を生成します。 |
+| CONNECTED 前 | サーバー/クライアントとも `PING` を送信します。`peer_id` 指定送信は `peer->health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返します。`POTR_PEER_ALL` は接続済み peer が 0 件なら `POTR_ERR_DISCONNECTED` を返します。受信側は `peer->health_alive == 0` の間 `thread_recv_slot_deliver_payload_elem()` (`thread/thread_recv_slot.c`) で `DATA` を配送しません。未知 peer の初回 `DATA` では peer を生成せずに破棄し、初回 `PING` でのみ peer slot と session 状態を生成します。 |
 | CONNECTED 後 | 対象 peer の `health_alive == 1` になり、その peer に対する送受信が有効になります。 |
 | CONNECTED 解除 | ピア単位で `health_timeout_ms` 超過または `FIN` 受信時に `peer->health_alive == 0` となり、`potr_internal_peer_free()` でピアを削除します。以後はその peer を未接続として扱い、再接続は再度 `PING` 起点で行います。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。未知 peer の初回 `DATA` でも peer table は前進しません。 |
@@ -149,7 +149,7 @@ Table: UNICAST_BIDIR_N1 (type 8) の接続状態別の実装
 
 | 状態 | 実装 |
 |---|---|
-| CONNECTED 前 | TCP 接続確立後に各 path が bootstrap PING を送信し、その応答 `PING` の `remote_path_ping_state[]` に `POTR_PING_STATE_NORMAL` が載ると論理 CONNECTED へ遷移します。`health_interval_ms > 0` の場合のみ tcp_health スレッドが定周期 `PING` を送信します。`potr_service_send()` は `tcp_active_paths == 0` または `health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返します。受信側は `health_alive == 0` の間 `deliver_payload_elem()` で `DATA` を破棄します。 |
+| CONNECTED 前 | TCP 接続確立後に各 path が bootstrap PING を送信し、その応答 `PING` の `remote_path_ping_state[]` に `POTR_PING_STATE_NORMAL` が載ると論理 CONNECTED へ遷移します。`health_interval_ms > 0` の場合のみ tcp_health スレッドが定周期 `PING` を送信します。`potr_service_send()` は `tcp_active_paths == 0` または `health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返します。受信側は `health_alive == 0` の間 `thread_recv_slot_deliver_payload_elem()` (`thread/thread_recv_slot.c`) で `DATA` を破棄します。 |
 | CONNECTED 後 | `health_alive == 1` になり、`potr_service_send()` が成功します。受信側も `DATA` を配送します。送信スレッドは各 path へ `DATA` を書き込む前に、その path で相手端へ通知済みの経路状態が現在と同じかを確かめ、異なれば最新の経路状態を載せた `PING` を先に書き込みます。TCP はストリーム内の順序を保つため、相手端は `DATA` より先に `PING` を処理して CONNECTED になり、CONNECTED 前の破棄で `DATA` を失いません。 |
 | CONNECTED 解除 | path ごとの PING タイムアウトや TCP 切断で `tcp_active_paths` が減少し、全 path が失われると connect スレッドが `health_alive == 0` に戻して `POTR_EVENT_DISCONNECTED` を発火します。加えて正常 close では、recv スレッドが protocol-level `FIN` を受信して最後の DATA 配送完了後に `FIN_ACK` を返信し、その直後に `POTR_EVENT_DISCONNECTED` を発火します。以後は再び CONNECTED 前と同じ扱いになり、再接続後に `PING` 交換で CONNECTED へ復帰します。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。 |
