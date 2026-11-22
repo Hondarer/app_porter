@@ -25,7 +25,7 @@
     // multicast と broadcast の送信側が監視対象から受けるフロー制御パケットの予算 (DATA 100 パケットあたりの数) と、
     // 監視する数の下限 (台数)。説明は docs/config.md の「multicast と broadcast の監視対象」を参照。
     // "flow_control_feedback_percent": 5,
-    // "flow_control_monitored_receiver_count": 1,
+    // "flow_control_monitored_receiver_count": 4,
   },
   "services": {
     // 一方向ユニキャスト: ループバックで動作確認。

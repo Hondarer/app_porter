@@ -95,7 +95,7 @@ Table: 構成機能の機能要件一覧
 | `flow_control_excluded_receiver_percent` | 10 | 除外する数の上限を決める割合 [%] | 割合による上限の指定を無効にする |
 | `flow_control_grace_ms` | 200 | 遅い相手が全体の送出を止められる猶予時間 [ms] | 受け付けない |
 | `flow_control_feedback_percent` | 5 | 監視対象から受けるフロー制御パケット数の予算。データ 100 パケットあたりの数 | 受け付けない |
-| `flow_control_monitored_receiver_count` | 1 | 一対多の通信種別で監視する受信側の数の下限 [台] | サービスごとの下限の指定を無効にする |
+| `flow_control_monitored_receiver_count` | 4 | 一対多の通信種別で監視する受信側の数の下限 [台] | サービスごとの下限の指定を無効にする |
 | `flow_control_receive_buffer_percent` | 100 | OS が保持できる量に基づく受け入れられる範囲の見積もりに使う割合 [%] | OS が保持できる量に基づく範囲を無効にする |
 | `udp_receive_buffer_size` | 4,194,304 | OS へ要求する UDP の受信バッファーの大きさ [バイト] | OS へ大きさを要求しない |
 

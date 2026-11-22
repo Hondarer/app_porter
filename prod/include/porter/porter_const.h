@@ -261,7 +261,7 @@ typedef enum potr_flow_control_state
 #define POTR_DEFAULT_FLOW_CONTROL_FEEDBACK_PERCENT \
     5U /**< multicast と broadcast の送信側が監視対象から受けるフロー制御パケットの数の予算のデフォルト (DATA 100 パケットあたりの数)。 */
 #define POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT \
-    1U /**< multicast と broadcast の送信側が監視する受信者の台数の下限のデフォルト [台]。 */
+    4U /**< multicast と broadcast の送信側が監視する受信者の台数の下限のデフォルト [台]。受信者が 4 台以下の構成では、OS の受信バッファーの大きさによらず、全員を監視します。 */
 #define POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT \
     100U /**< OS の受信バッファーの大きさのうち、受信バッファーの幅の計算に使う割合のデフォルト [%]。 */
 /** @} */

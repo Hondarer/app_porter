@@ -1033,8 +1033,8 @@ TEST(receiverReportTest, monitor_count_cases)
     // Arrange
     const monitor_count_case cases[] = {
         {3U, 0U, 4U, 1400U, 3U},     // 下限 4 より候補が少ない場合は候補の数 3
-        {100U, 0U, 1U, 1400U, 1U},   // 既定の下限 1 で予算 0 の場合は 1
-        {100U, 0U, 4U, 1400U, 4U},   // 下限 4 で予算 0 の場合は 4
+        {100U, 0U, 1U, 1400U, 1U},   // 下限 1 で予算 0 の場合は 1
+        {100U, 0U, 4U, 1400U, 4U},   // 既定の下限 4 で予算 0 の場合は 4
         {100U, 0U, 20U, 1400U, 20U}, // 下限 20 で予算 0 の場合は 20
         {10U, 0U, 0U, 1400U, 0U},    // 予算 0 かつ下限 0 (下限なし) の場合は 0
         {0U, 5U, 4U, 1400U, 0U},     // 候補がいない場合は 0
@@ -2750,10 +2750,11 @@ TEST(receiverReportTest, monitor_budget_table_limits_and_feedback_percent)
         size_t expected;
     };
     const budget_table_case cases[] = {
-        {30U, 42U, 5U, 1U, 1400U, 1U},    // 仕様の表: 許可数の上限 42、予算 5%、下限 1 -> 1 台
+        {30U, 42U, 5U, 1U, 1400U, 1U},    // 予算 5% に収まる数: 許可数の上限 42、下限 1 -> 1 台
+        {30U, 42U, 5U, 4U, 1400U, 4U},    // 仕様の表: 許可数の上限 42、予算 5%、下限 4 -> 4 台
         {30U, 84U, 5U, 1U, 1400U, 2U},    // 許可数の上限 84、予算 5%、下限 1 -> 2 台
-        {30U, 208U, 5U, 1U, 1400U, 5U},   // 仕様の表: 許可数の上限 208、予算 5%、下限 1 -> 5 台
-        {30U, 834U, 5U, 1U, 1400U, 20U},  // 仕様の表: 許可数の上限 834、予算 5%、下限 1 -> 20 台
+        {30U, 208U, 5U, 1U, 1400U, 5U},   // 仕様の表の予算 5% に収まる数: 許可数の上限 208、下限 1 -> 5 台
+        {30U, 834U, 5U, 1U, 1400U, 20U},  // 仕様の表の予算 5% に収まる数: 許可数の上限 834、下限 1 -> 20 台
         {30U, 84U, 50U, 1U, 1400U, 20U},  // 予算 50% (切り上げ丸め: ceil(2e6/84)=23810, 20 台で 476200 <= 500000) -> 20 台
         {5U, 42U, 5U, 3U, 1400U, 3U},     // 予算では 1 台だが、下限 3 による引き上げ -> 3 台
         {5U, 84U, 5U, 0U, 1400U, 2U},     // 下限 0 でも予算 5% で 2 台
@@ -2769,7 +2770,7 @@ TEST(receiverReportTest, monitor_budget_table_limits_and_feedback_percent)
     }); // [状態] - 受理時刻を制御する。
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
-    // [状態] - 10 通りの構成を用意する (ループ 10 回)。
+    // [状態] - 11 通りの構成を用意する (ループ 11 回)。
     // Pre-Assert
     // Act
     for (size_t i = 0U; i < case_count; i++)
@@ -2794,7 +2795,7 @@ TEST(receiverReportTest, monitor_budget_table_limits_and_feedback_percent)
     // Assert
     for (size_t i = 0U; i < case_count; i++)
     {
-        EXPECT_EQ(cases[i].expected, actual[i]); // [確認_正常系] - 監視する数が期待値と一致すること。(確認 10 回)
+        EXPECT_EQ(cases[i].expected, actual[i]); // [確認_正常系] - 監視する数が期待値と一致すること。(確認 11 回)
     }
 }
 

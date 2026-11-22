@@ -743,8 +743,8 @@ TEST(configLoadGlobalTest, monitor_and_receive_buffer_keys_default_when_omitted)
 
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 設定の読み込みが成功すること。
-    EXPECT_EQ(POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT, global.flow_control_monitored_receiver_count); // [確認_正常系] - global.flow_control_monitored_receiver_count が既定値 (1) であること。
-    EXPECT_EQ(1U, global.flow_control_monitored_receiver_count); // [確認_正常系] - global.flow_control_monitored_receiver_count の既定値が 1U であること。
+    EXPECT_EQ(POTR_DEFAULT_FLOW_CONTROL_MONITORED_RECEIVER_COUNT, global.flow_control_monitored_receiver_count); // [確認_正常系] - global.flow_control_monitored_receiver_count が既定値 (4) であること。
+    EXPECT_EQ(4U, global.flow_control_monitored_receiver_count); // [確認_正常系] - global.flow_control_monitored_receiver_count の既定値が 4U であること。
     EXPECT_EQ(POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT, global.flow_control_receive_buffer_percent); // [確認_正常系] - global.flow_control_receive_buffer_percent が既定値 (100) であること。
 }
 
