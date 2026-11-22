@@ -54,7 +54,7 @@ class potrFlowControlN1WidthTest : public Test
     uint64_t now_ms = 1000U;
     size_t buffer_size = 212992U; // 既定は Linux 相当 (全体の幅 42)
     int sendto_count = 0;
-    int fixture_padding = 0;
+    int sendto_result = CPLAT_OK;
     std::vector<SentRecord> records;
     std::map<potr_peer_id, std::unique_ptr<potr_internal_peer_context>> peers;
     std::map<uint32_t, potr_peer_id> session_to_peer;
@@ -101,8 +101,8 @@ class potrFlowControlN1WidthTest : public Test
                 {
                     *sent = len;
                 }
-                return CPLAT_OK;
-            }); // [状態] - ソケット送出を成功させ、送出回数を数える。
+                return sendto_result;
+            }); // [状態] - ソケット送出の戻り値を制御し、送出回数を数える。
 
         ON_CALL(mock_porter, potr_internal_packet_build_flow_control(_, _, _, _, _))
             .WillByDefault([this](potr_packet *packet, const potr_internal_packet_session_hdr *shdr, uint8_t *payload,
@@ -621,5 +621,113 @@ TEST_F(potrFlowControlN1WidthTest, turn_mode_newly_active_peer_gets_grant_when_s
     EXPECT_EQ(4U, records[0].peer_id);
     EXPECT_EQ(kResume, records[0].state);
     EXPECT_EQ(44U, records[0].send_limit); // [確認_正常系] - 空き枠に対してピア 4 へ 40 + 4 = 44 が送出されること。
+}
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
+
+// 許可を使い終えた時点の送出失敗後、query で待機中の送信中ピアへ再割り当てすることの確認
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.SetUp]
+TEST_F(potrFlowControlN1WidthTest, failed_turn_grant_retries_on_query)
+{
+    // Arrange
+    buffer_size = kPacketEstimateBytes * 2U;
+    add_peer(1U);
+    add_peer(2U);
+    add_peer(3U);
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx)); // [状態確認] - 開始に成功すること。
+    received(1U, 10U, 1);
+    received(2U, 20U, 1);
+    received(3U, 30U, 1);
+    // [状態] - 全体幅 4、枠 1。ピア 1 が許可 14 を持ち、2 と 3 は許可数 0 で待つ。
+    sendto_result = CPLAT_ERR_UNKNOWN;
+    // Pre-Assert
+    // Act
+    received(1U, 14U, 1); // [手順] - 最後の許可を使い終えた際の割り当ての送出をすべて失敗させる。
+    uint32_t failed_limit = 0U;
+    int failed_held = piggyback(2U, &failed_limit);
+    sendto_result = CPLAT_OK;
+    clear_records();
+    now_ms += 10U;
+    send_query(2U); // [手順] - 活動期限が来る前に query を受理し、送出は成功させる。
+    uint32_t recovered_limit = 0U;
+    int recovered_held = piggyback(2U, &recovered_limit);
+    // Assert
+    EXPECT_EQ(1, failed_held); // [確認_異常系] - 失敗後も既存の通知状態を保持すること。
+    EXPECT_EQ(20U, failed_limit); // [確認_異常系] - 送出失敗ではピア 2 の許可が進まないこと。
+    EXPECT_EQ(1, recovered_held); // [確認_正常系] - 再試行後に相乗りの上限を取得できること。
+    EXPECT_EQ(24U, recovered_limit); // [確認_正常系] - ピア 2 に 4 DATA の許可が出ること。
+    ASSERT_EQ(1U, records.size()); // [確認_正常系] - 再試行の通知を 1 回送出すること。
+    EXPECT_EQ(2U, records[0].peer_id); // [確認_正常系] - 最も長く待つピア 2 へ送出すること。
+}
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
+
+// 許可を使い終えた時点の送出失敗後、tick で待機中の送信中ピアへ再割り当てすることの確認
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.SetUp]
+TEST_F(potrFlowControlN1WidthTest, failed_turn_grant_retries_on_tick)
+{
+    // Arrange
+    buffer_size = kPacketEstimateBytes * 2U;
+    add_peer(1U);
+    add_peer(2U);
+    add_peer(3U);
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx)); // [状態確認] - 開始に成功すること。
+    received(1U, 10U, 1);
+    received(2U, 20U, 1);
+    received(3U, 30U, 1);
+    // [状態] - 全体幅 4、枠 1。ピア 1 が許可 14 を持ち、2 と 3 は許可数 0 で待つ。
+    sendto_result = CPLAT_ERR_UNKNOWN;
+    // Pre-Assert
+    // Act
+    received(1U, 14U, 1); // [手順] - 最後の許可を使い終えた際の割り当ての送出をすべて失敗させる。
+    uint32_t failed_limit = 0U;
+    int failed_held = piggyback(2U, &failed_limit);
+    sendto_result = CPLAT_OK;
+    clear_records();
+    now_ms += 10U;
+    potr_internal_flow_control_tick(&ctx, now_ms); // [手順] - 活動期限が来る前に tick を受理し、送出は成功させる。
+    uint32_t recovered_limit = 0U;
+    int recovered_held = piggyback(2U, &recovered_limit);
+    // Assert
+    EXPECT_EQ(1, failed_held); // [確認_異常系] - 失敗後も既存の通知状態を保持すること。
+    EXPECT_EQ(20U, failed_limit); // [確認_異常系] - 送出失敗ではピア 2 の許可が進まないこと。
+    EXPECT_EQ(1, recovered_held); // [確認_正常系] - 再試行後に相乗りの上限を取得できること。
+    EXPECT_EQ(24U, recovered_limit); // [確認_正常系] - ピア 2 に 4 DATA の許可が出ること。
+    ASSERT_EQ(1U, records.size()); // [確認_正常系] - 再試行の通知を 1 回送出すること。
+    EXPECT_EQ(2U, records[0].peer_id); // [確認_正常系] - 最も長く待つピア 2 へ送出すること。
+}
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
+
+// 許可を使い終えた時点の送出失敗後、data で待機中の送信中ピアへ再割り当てすることの確認
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.SetUp]
+TEST_F(potrFlowControlN1WidthTest, failed_turn_grant_retries_on_data)
+{
+    // Arrange
+    buffer_size = kPacketEstimateBytes * 2U;
+    add_peer(1U);
+    add_peer(2U);
+    add_peer(3U);
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx)); // [状態確認] - 開始に成功すること。
+    received(1U, 10U, 1);
+    received(2U, 20U, 1);
+    received(3U, 30U, 1);
+    // [状態] - 全体幅 4、枠 1。ピア 1 が許可 14 を持ち、2 と 3 は許可数 0 で待つ。
+    sendto_result = CPLAT_ERR_UNKNOWN;
+    // Pre-Assert
+    // Act
+    received(1U, 14U, 1); // [手順] - 最後の許可を使い終えた際の割り当ての送出をすべて失敗させる。
+    uint32_t failed_limit = 0U;
+    int failed_held = piggyback(2U, &failed_limit);
+    sendto_result = CPLAT_OK;
+    clear_records();
+    now_ms += 10U;
+    received(2U, 20U, 1); // [手順] - 活動期限が来る前に data を受理し、送出は成功させる。
+    uint32_t recovered_limit = 0U;
+    int recovered_held = piggyback(2U, &recovered_limit);
+    // Assert
+    EXPECT_EQ(1, failed_held); // [確認_異常系] - 失敗後も既存の通知状態を保持すること。
+    EXPECT_EQ(20U, failed_limit); // [確認_異常系] - 送出失敗ではピア 2 の許可が進まないこと。
+    EXPECT_EQ(1, recovered_held); // [確認_正常系] - 再試行後に相乗りの上限を取得できること。
+    EXPECT_EQ(24U, recovered_limit); // [確認_正常系] - ピア 2 に 4 DATA の許可が出ること。
+    ASSERT_EQ(1U, records.size()); // [確認_正常系] - 再試行の通知を 1 回送出すること。
+    EXPECT_EQ(2U, records[0].peer_id); // [確認_正常系] - 最も長く待つピア 2 へ送出すること。
 }
 // [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]

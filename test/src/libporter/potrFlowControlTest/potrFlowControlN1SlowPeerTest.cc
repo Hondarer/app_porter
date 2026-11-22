@@ -483,6 +483,16 @@ TEST_F(potrFlowControlN1SlowPeerTest, slow_peer_reject_table_full_overwrites_old
 {
     // Arrange
     const cplat_timespec base_ts = {2000, 0};
+    std::vector<potr_internal_peer_context> connected(POTR_FLOW_SLOW_PEER_REJECT_MAX + 2U);
+    for (auto &peer : connected)
+    {
+        peer.active = 1;
+        cplat_atomic_store_i32(&peer.health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    }
+    ctx.peers = connected.data();
+    ctx.max_peers = (int)connected.size();
+    ctx.flow_control_config.excluded_receiver_count = POTR_FLOW_SLOW_PEER_REJECT_MAX + 1U;
+    // [状態] - 除外上限を物理上限より大きくし、128 件の物理上限による上書きを確認する。
     // [状態] - 拒否期間 (2000 [ms]) 内に POTR_FLOW_SLOW_PEER_REJECT_MAX + 1 件のセッションを記録する条件を用意する。
     // Pre-Assert
     // Act
@@ -581,5 +591,77 @@ TEST_F(potrFlowControlN1SlowPeerTest, slow_peer_reaccepted_and_slow_again_is_dis
     EXPECT_EQ(11U, second_peer);         // [確認_正常系] - 2 回目の切断対象が再接続したピア 11 であること。
     EXPECT_EQ(1, second_rejected);       // [確認_正常系] - 2 回目の切断後の拒否期間内は再び拒否されること。
     EXPECT_EQ(0, after_second_expiry);   // [確認_正常系] - 2 回目の拒否期間経過後は再び受け入れられること。
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// 除外上限 1 件を超える拒否記録を追加すると、最古の記録だけを消すことの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, slow_peer_reject_retains_excluded_limit_1)
+{
+    // Arrange
+    const cplat_timespec ts = {2000, 0};
+    ctx.flow_control_config.excluded_receiver_count = 1U;
+    for (int i = 0; i < 2; i++)
+    {
+        add_peer(i, (potr_peer_id)(i + 1));
+    }
+    // [状態] - 接続中のピアを 2 台、除外する数の上限を 1 件にする。
+    int retained[2] = {};
+    // Pre-Assert
+    // Act
+    cplat_local_lock_lock(ctx.peers_mutex);
+    for (uint32_t i = 0U; i < 2U; i++)
+    {
+        potr_internal_flow_control_slow_peer_record_locked(&ctx, i + 1U, &ts, 1000U);
+    }
+    for (uint32_t i = 0U; i < 2U; i++)
+    {
+        retained[i] = potr_internal_flow_control_slow_peer_rejected_locked(&ctx, i + 1U, &ts, 1000U);
+    }
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    // [手順] - 同じ時刻に 2 件を順に記録し、各セッションを照合する。
+    // Assert
+    EXPECT_EQ(1U, ctx.flow_slow_rejected_count); // [確認_正常系] - 保持数が除外上限と一致すること。
+    EXPECT_EQ(0, retained[0]); // [確認_正常系] - 最初の記録を消すこと。
+    for (size_t i = 1U; i < 2U; i++)
+    {
+        EXPECT_EQ(1, retained[i]); // [確認_正常系 回数=1] - 新しい記録を保持すること。
+    }
+}
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]
+
+// 除外上限 3 件を超える拒否記録を追加すると、最古の記録だけを消すことの確認
+// [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.SetUp]
+TEST_F(potrFlowControlN1SlowPeerTest, slow_peer_reject_retains_excluded_limit_3)
+{
+    // Arrange
+    const cplat_timespec ts = {2000, 0};
+    ctx.flow_control_config.excluded_receiver_count = 3U;
+    for (int i = 0; i < 4; i++)
+    {
+        add_peer(i, (potr_peer_id)(i + 1));
+    }
+    // [状態] - 接続中のピアを 4 台、除外する数の上限を 3 件にする。
+    int retained[4] = {};
+    // Pre-Assert
+    // Act
+    cplat_local_lock_lock(ctx.peers_mutex);
+    for (uint32_t i = 0U; i < 4U; i++)
+    {
+        potr_internal_flow_control_slow_peer_record_locked(&ctx, i + 1U, &ts, 1000U);
+    }
+    for (uint32_t i = 0U; i < 4U; i++)
+    {
+        retained[i] = potr_internal_flow_control_slow_peer_rejected_locked(&ctx, i + 1U, &ts, 1000U);
+    }
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    // [手順] - 同じ時刻に 4 件を順に記録し、各セッションを照合する。
+    // Assert
+    EXPECT_EQ(3U, ctx.flow_slow_rejected_count); // [確認_正常系] - 保持数が除外上限と一致すること。
+    EXPECT_EQ(0, retained[0]); // [確認_正常系] - 最初の記録を消すこと。
+    for (size_t i = 1U; i < 4U; i++)
+    {
+        EXPECT_EQ(1, retained[i]); // [確認_正常系 回数=3] - 新しい記録を保持すること。
+    }
 }
 // [サブ手順参照 名前=potrFlowControlN1SlowPeerTest.TearDown]

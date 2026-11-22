@@ -108,17 +108,33 @@ static int push_message(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
 
         if (wait != 0)
         {
-            if (ctx->is_multi_peer &&
-                cplat_atomic_load_i32(&ctx->flow_deferred_total, CPLAT_MEMORY_ORDER_ACQUIRE) > 0)
+            if (ctx->is_multi_peer)
             {
-                result = potr_internal_send_queue_push(&ctx->send_queue, peer_id, elem_flags, ptr, (uint16_t)chunk,
-                                                       last_ticket);
-                if (result == POTR_ERR_FULL)
+                uint64_t generation = 0U;
+
+                for (;;)
                 {
+                    result = potr_internal_send_queue_push(&ctx->send_queue, peer_id, elem_flags, ptr,
+                                                           (uint16_t)chunk, last_ticket);
+                    if (result != POTR_ERR_FULL)
+                    {
+                        break;
+                    }
+
+                    /*
+                     * キューの mutex を解放した後に保留と妨げを記録する。
+                     * キューの mutex の内側から peers_mutex を取得しない。
+                     * 待機開始後に保留が増える場合も、区切りごとに満杯と保留を確かめ直す。
+                     */
                     note_queue_full_if_deferred(ctx);
-                    result = potr_internal_send_queue_push_wait(&ctx->send_queue, peer_id, elem_flags, ptr,
-                                                                (uint16_t)chunk, &ctx->send_thread_running,
-                                                                last_ticket);
+                    if (cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+                    {
+                        result = POTR_ERR_CANCELED;
+                        break;
+                    }
+
+                    potr_internal_send_queue_wait_flow(&ctx->send_queue, &generation,
+                                                       POTR_INTERNAL_FLOW_LIMIT_RECHECK_MS);
                 }
             }
             else

@@ -241,7 +241,7 @@ static void monitor_select_locked(potr_context *ctx, uint64_t now_ms)
         {
             uint64_t cost = flow_monitor_receiver_cost(best->flow_report_max_allowance);
 
-            /* 切り上げで求めた通知の見込みの累積和が予算以下である間だけ予算内の台数へ数える。 */
+            /* 切り捨てで求めた通知の見込みの累積和が予算以下である間だけ予算内の台数へ数える。 */
             if (cost <= budget && cost_sum <= budget - cost)
             {
                 cost_sum += cost;
@@ -454,8 +454,13 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
 
         if (!monitoring && ctx->service.type == POTR_TYPE_UNICAST)
         {
-            uint64_t prev_handle = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
-            uint64_t prev_state = prev_handle & POTR_FLOW_SEND_LIMIT_STATE_MASK;
+            uint64_t prev_handle;
+            uint64_t prev_state;
+
+            /* callback_mutex -> flow_limit_mutex。末端のロックの内側でほかのロックを取得しない。 */
+            cplat_local_lock_lock(ctx->flow_limit_mutex);
+            prev_handle = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+            prev_state = prev_handle & POTR_FLOW_SEND_LIMIT_STATE_MASK;
 
             handle_was_no_peer = prev_state == POTR_FLOW_SEND_LIMIT_NO_PEER;
             handle_was_unnotified = prev_state == POTR_FLOW_SEND_LIMIT_UNNOTIFIED;
@@ -463,6 +468,7 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
 
             /* 受信者の管理表で追跡を始めた後は、ハンドル側の初期の幅を解除する。 */
             cplat_atomic_store_u64(&ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELEASE);
+            cplat_local_lock_unlock(ctx->flow_limit_mutex);
         }
 
         if (report)
@@ -1121,6 +1127,7 @@ size_t potr_internal_receiver_monitor_list(potr_context *ctx, uint64_t now_ms, p
 {
     potr_internal_receiver *receiver;
     size_t count = 0U;
+    int unnotified = 0;
 
     if (ctx == NULL || list == NULL || changed == NULL)
     {
@@ -1149,6 +1156,10 @@ size_t potr_internal_receiver_monitor_list(potr_context *ctx, uint64_t now_ms, p
     {
         if (receiver->flow_monitored)
         {
+            if (receiver->flow_send_limit == 0U)
+            {
+                unnotified = 1;
+            }
             list[count].service_id = 0;
             list[count].session_id = receiver->session_id;
             list[count].session_tv_sec = receiver->session_tv_sec;
@@ -1157,6 +1168,7 @@ size_t potr_internal_receiver_monitor_list(potr_context *ctx, uint64_t now_ms, p
         }
     }
 
+    cplat_atomic_store_i32(&ctx->flow_monitor_unnotified, unnotified, CPLAT_MEMORY_ORDER_RELEASE);
     *changed = ctx->flow_monitor_changed;
     ctx->flow_monitor_changed = 0;
 

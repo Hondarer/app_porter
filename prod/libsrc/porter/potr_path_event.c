@@ -65,6 +65,12 @@ int potr_internal_callback_mutex_init(potr_context *ctx)
     {
         return POTR_ERR_UNKNOWN;
     }
+    if (cplat_local_lock_create(&ctx->flow_limit_mutex) != CPLAT_OK)
+    {
+        cplat_local_lock_dispose(ctx->callback_mutex);
+        ctx->callback_mutex = NULL;
+        return POTR_ERR_UNKNOWN;
+    }
 
     return POTR_OK;
 }
@@ -73,6 +79,11 @@ int potr_internal_callback_mutex_init(potr_context *ctx)
 
 void potr_internal_callback_mutex_dispose(potr_context *ctx)
 {
+    if (ctx->flow_limit_mutex != NULL)
+    {
+        cplat_local_lock_dispose(ctx->flow_limit_mutex);
+        ctx->flow_limit_mutex = NULL;
+    }
     if (ctx->callback_mutex != NULL)
     {
         cplat_local_lock_dispose(ctx->callback_mutex);

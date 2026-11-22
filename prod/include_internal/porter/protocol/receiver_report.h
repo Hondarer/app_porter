@@ -57,13 +57,13 @@ static_assert(POTR_FLOW_UNEXCLUDE_GRACE_MULTIPLIER == 10U, "porter: POTR_FLOW_UN
 /** 監視対象の受信者が、許可数の上限の半分を受信するたびに送出上限を更新する回数 (1 窓あたり 2 回)。 */
 #define POTR_FLOW_MONITOR_UPDATES_PER_WINDOW 2U
 
-/** 通知の見込み (2 ÷ 許可数の上限) を整数で積算するためのスケール (100 [%] を 1,000,000 として表す)。 */
-#define POTR_FLOW_MONITOR_BUDGET_SCALE 1000000ULL
+/** 通知の見込み (2 ÷ 許可数の上限) を整数で積算するためのスケール (100 [%] を 1,000,000,000 として表す)。 */
+#define POTR_FLOW_MONITOR_BUDGET_SCALE 1000000000ULL
 
 /** 予算 (flow_control_feedback_percent) 1 [%] あたりのスケール値。 */
 #define POTR_FLOW_MONITOR_BUDGET_PER_PERCENT (POTR_FLOW_MONITOR_BUDGET_SCALE / (uint64_t)POTR_PERCENT_MAX)
 
-/** 1 台あたりの通知の見込みを求める際の分子 (2 × 1,000,000)。 */
+/** 1 台あたりの通知の見込みを求める際の分子 (2 × 1,000,000,000)。 */
 #define POTR_FLOW_MONITOR_UNIT_NUMERATOR \
     ((uint64_t)POTR_FLOW_MONITOR_UPDATES_PER_WINDOW * POTR_FLOW_MONITOR_BUDGET_SCALE)
 
@@ -75,10 +75,13 @@ static_assert(POTR_FLOW_MONITOR_UNIT_NUMERATOR / POTR_FLOW_MONITOR_BUDGET_SCALE 
                   (uint64_t)POTR_FLOW_MONITOR_UPDATES_PER_WINDOW,
               "porter: POTR_FLOW_MONITOR_UNIT_NUMERATOR must not overflow");
 
+static_assert(POTR_FLOW_MONITOR_UNIT_NUMERATOR <= UINT64_MAX / POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX,
+              "porter: monitor cost sum must fit in uint64_t");
+
 /**
  *  @brief          受信者 1 台の通知の見込み (2 ÷ 許可数の上限) をスケール済み整数で求めます。
  *
- *  割り算は切り上げで安全側 (通知の見込みを大きめに見積もり、監視する数が少なくなる側) に丸めます。
+ *  割り算は切り捨てます。実際の合計が予算を超える誤差は、監視する数 ÷ 1,000,000,000 未満です。
  *
  *  @param[in]      max_allowance   受信者の許可数の上限 (1 以上)。0 の場合は UINT64_MAX を返します。
  *  @return         POTR_FLOW_MONITOR_BUDGET_SCALE 倍した通知の見込み。失敗モードのない計算のため結果コードの対象外です。
@@ -90,8 +93,7 @@ static inline uint64_t flow_monitor_receiver_cost(uint32_t max_allowance)
         return UINT64_MAX;
     }
 
-    /* 切り上げで通知の見込みを大きめに見積もり、監視する数が少なくなる安全側へ丸める。 */
-    return (POTR_FLOW_MONITOR_UNIT_NUMERATOR + (uint64_t)max_allowance - 1ULL) / (uint64_t)max_allowance;
+    return POTR_FLOW_MONITOR_UNIT_NUMERATOR / (uint64_t)max_allowance;
 }
 
 /**

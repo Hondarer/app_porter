@@ -2750,12 +2750,13 @@ TEST(receiverReportTest, monitor_budget_table_limits_and_feedback_percent)
         size_t expected;
     };
     const budget_table_case cases[] = {
+        {6U, 240U, 5U, 4U, 1400U, 6U},     // 6 × 2 / 240 = 5% の等号境界でも 6 台
         {30U, 42U, 5U, 1U, 1400U, 1U},    // 予算 5% に収まる数: 許可数の上限 42、下限 1 -> 1 台
         {30U, 42U, 5U, 4U, 1400U, 4U},    // 仕様の表: 許可数の上限 42、予算 5%、下限 4 -> 4 台
         {30U, 84U, 5U, 1U, 1400U, 2U},    // 許可数の上限 84、予算 5%、下限 1 -> 2 台
         {30U, 208U, 5U, 1U, 1400U, 5U},   // 仕様の表の予算 5% に収まる数: 許可数の上限 208、下限 1 -> 5 台
         {30U, 834U, 5U, 1U, 1400U, 20U},  // 仕様の表の予算 5% に収まる数: 許可数の上限 834、下限 1 -> 20 台
-        {30U, 84U, 50U, 1U, 1400U, 20U},  // 予算 50% (切り上げ丸め: ceil(2e6/84)=23810, 20 台で 476200 <= 500000) -> 20 台
+        {30U, 84U, 50U, 1U, 1400U, 21U},  // 21 × 2 / 84 = 50% の等号境界で 21 台
         {5U, 42U, 5U, 3U, 1400U, 3U},     // 予算では 1 台だが、下限 3 による引き上げ -> 3 台
         {5U, 84U, 5U, 0U, 1400U, 2U},     // 下限 0 でも予算 5% で 2 台
         {70U, 5000U, 100U, 1U, 1400U, 64U}, // 予算上は 70 台以上だが、64 台の上限に収める -> 64 台
@@ -2770,7 +2771,7 @@ TEST(receiverReportTest, monitor_budget_table_limits_and_feedback_percent)
     }); // [状態] - 受理時刻を制御する。
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
-    // [状態] - 11 通りの構成を用意する (ループ 11 回)。
+    // [状態] - 12 通りの構成を用意する (ループ 12 回)。
     // Pre-Assert
     // Act
     for (size_t i = 0U; i < case_count; i++)
@@ -2795,7 +2796,7 @@ TEST(receiverReportTest, monitor_budget_table_limits_and_feedback_percent)
     // Assert
     for (size_t i = 0U; i < case_count; i++)
     {
-        EXPECT_EQ(cases[i].expected, actual[i]); // [確認_正常系] - 監視する数が期待値と一致すること。(確認 11 回)
+        EXPECT_EQ(cases[i].expected, actual[i]); // [確認_正常系 回数=12] - 監視する数が期待値と一致すること。
     }
 }
 
@@ -3077,6 +3078,77 @@ TEST(receiverReportTest, multicast_monitored_limit_expiry_uses_last_packet_and_r
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 100U, limit_after_older);   // [確認_正常系] - 保持中は古い値 95 で上書きしないこと。
     EXPECT_EQ(POTR_OK, ret_advance);                                  // [確認_正常系] - 先へ進んだ値の受信報告を受理すること。
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 120U, limit_after_advance); // [確認_正常系] - 保持中に先へ進んだ値 120 で更新すること。
+    // Cleanup
+    FreeReceivers(&ctx);
+}
+
+// NACK で新たに選んだ受信者は最初の通知待ちとなり、通知・活動期限・除外・選び直しで待ちが解けることの確認
+TEST(receiverReportTest, monitor_unnotified_tracks_selection_notification_and_retirement)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    SetupMonitoringSender(&ctx, 1U);
+    ctx.flow_control_config.feedback_percent = 1U;
+    ctx.send_window.next_seq = 100U;
+    uint64_t now_ms = 1000U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    });
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    AcceptReport(&ctx, 1U, 42U, 120U);
+    AcceptReport(&ctx, 2U, 42U, 180U);
+    auto *r1 = FindReceiver(&ctx, 1U);
+    auto *r2 = FindReceiver(&ctx, 2U);
+    ASSERT_NE(nullptr, r1); // [状態確認] - 受信者 1 を登録できること。
+    ASSERT_NE(nullptr, r2); // [状態確認] - 受信者 2 を登録できること。
+    potr_internal_packet_session_hdr list[POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX] = {};
+    int changed = 0;
+    int pending[5] = {};
+    potr_packet nack = {};
+    uint8_t wire[POTR_PACKET_HEADER_SIZE] = {};
+    nack.flags = POTR_FLAG_NACK;
+    nack.session_id = 2U;
+    // [状態] - 受信者 1 を監視中とし、余裕が多い受信者 2 は対象外にする。
+    // Pre-Assert
+    // Act
+    int nack_ret = potr_internal_receiver_accept(&ctx, &nack, wire);
+    (void)potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed);
+    pending[0] = cplat_atomic_load_i32(&ctx.flow_monitor_unnotified, CPLAT_MEMORY_ORDER_ACQUIRE);
+    AcceptFlowControl(&ctx, 2U, POTR_FLOW_CONTROL_STATE_RESUME, 180U);
+    (void)potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed);
+    pending[1] = cplat_atomic_load_i32(&ctx.flow_monitor_unnotified, CPLAT_MEMORY_ORDER_ACQUIRE);
+    // [手順] - NACK で受信者 2 を選んだ直後と、最初の通知の受理後に未通知状態を取得する。
+    r2->flow_send_limit = 0U;
+    r2->flow_excluded = 1;
+    (void)potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed);
+    r1->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | 120U;
+    (void)potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed);
+    pending[2] = cplat_atomic_load_i32(&ctx.flow_monitor_unnotified, CPLAT_MEMORY_ORDER_ACQUIRE);
+    // [手順] - 通知を待つ受信者 2 が除外された後は、通知済みの受信者 1 だけを監視する。
+    r2->flow_excluded = 0;
+    r1->flow_margin = 0;
+    r2->flow_margin = 100;
+    (void)potr_internal_receiver_monitor_list(&ctx, now_ms, list, POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed);
+    pending[3] = cplat_atomic_load_i32(&ctx.flow_monitor_unnotified, CPLAT_MEMORY_ORDER_ACQUIRE);
+    // [手順] - 未通知の受信者 2 が余裕の順位によって対象外となる場合も確認する。
+    r1->flow_send_limit = 0U;
+    now_ms = 2000U;
+    size_t after_expiry = potr_internal_receiver_monitor_list(&ctx, now_ms, list,
+                                                              POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, &changed);
+    pending[4] = cplat_atomic_load_i32(&ctx.flow_monitor_unnotified, CPLAT_MEMORY_ORDER_ACQUIRE);
+    // [手順] - 活動期限を過ぎた後に一覧を取得する。
+    // Assert
+    EXPECT_EQ(POTR_OK, nack_ret); // [確認_正常系] - NACK を受理すること。
+    EXPECT_EQ(1, pending[0]); // [確認_正常系] - 新しく選んだ受信者の最初の通知を待つこと。
+    EXPECT_EQ(0, pending[1]); // [確認_正常系] - 最初の通知で待ちが解けること。
+    EXPECT_EQ(0, pending[2]); // [確認_正常系] - 除外された未通知受信者を待たないこと。
+    EXPECT_EQ(0, pending[3]); // [確認_正常系] - 対象外の未通知受信者を待たないこと。
+    EXPECT_EQ(0U, after_expiry); // [確認_正常系] - 活動期限後は監視対象がなくなること。
+    EXPECT_EQ(0, pending[4]); // [確認_正常系] - 活動中でなくなった受信者を待たないこと。
     // Cleanup
     FreeReceivers(&ctx);
 }

@@ -1297,8 +1297,8 @@ TEST_F(potrSendTest, n1_queue_full_with_deferred_notes_queue_full_for_nonblockin
     // [状態] - flow_deferred_total = 1 の状態で送信キューを満杯にする。
 
     // Pre-Assert
-    EXPECT_CALL(mock_porter, potr_internal_flow_control_note_queue_full(&ctx, _)).Times(2);
-    // [Pre-Assert確認_正常系] - 非ブロッキングとブロッキングの 2 回、キュー満杯が記録されること。
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_note_queue_full(&ctx, _)).Times(AtLeast(2));
+    // [Pre-Assert確認_正常系] - 非ブロッキングとブロッキングで計 2 回以上、キュー満杯が記録されること。待機中は再確認ごとに記録する。
     EXPECT_CALL(mock_porter, thread_recv_disconnect_peer_all_paths(_, _)).Times(0);
     EXPECT_CALL(mock_porter, potr_internal_peer_free(_, _)).Times(0);
     // [Pre-Assert確認_正常系] - 送信 API スレッドからは切断しないこと。
@@ -1329,5 +1329,69 @@ TEST_F(potrSendTest, n1_queue_full_with_deferred_notes_queue_full_for_nonblockin
     // Assert
     EXPECT_EQ(POTR_ERR_FULL, nb_ret); // [確認_正常系] - 非ブロッキング送信が POTR_ERR_FULL を返すこと。
     EXPECT_EQ(POTR_OK, blocking_ret); // [確認_正常系] - ブロッキング送信が空き後に POTR_OK で完了すること。
+}
+// [サブ手順参照 名前=potrSendTest.TearDown]
+
+// 空き待ちを始めた後に保留へ移った場合も、キュー満杯の妨げを記録することの確認
+// [サブ手順参照 名前=potrSendTest.SetUp]
+TEST_F(potrSendTest, n1_queue_full_detects_deferred_after_wait_started)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    const char payload[] = "wait-then-defer";
+    std::atomic<int> waits{0};
+    std::atomic<int> notes{0};
+    int actual_ret = POTR_ERR_UNKNOWN;
+    potr_internal_payload_elem elem = {};
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.is_multi_peer = 1;
+    peers[0].active = 1;
+    peers[0].peer_id = 10U;
+    cplat_atomic_store_i32(&peers[0].health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_porter, potr_internal_peer_find_by_id(_, 10U)).WillByDefault(Return(&peers[0]));
+    ON_CALL(mock_porter, potr_internal_flow_control_note_queue_full(&ctx, _))
+        .WillByDefault([&](potr_context *, uint64_t) { notes.fetch_add(1); });
+    ON_CALL(mock_cplat, cplat_condvar_timed_wait(ctx.send_queue.flow_changed, _, _))
+        .WillByDefault([&](cplat_condvar *cv, cplat_local_lock *lock, int ms) {
+            waits.fetch_add(1);
+            return delegate_real_cplat_condvar_timed_wait(cv, lock, ms);
+        }); // [状態] - 実物の待機を使い、空き待ちへ入った回数を記録する。
+    for (size_t i = 0U; i < ctx.send_queue.depth; i++)
+    {
+        ASSERT_EQ(POTR_OK, potr_internal_send_queue_push(&ctx.send_queue, 20U, 0U, payload,
+                                                         (uint16_t)strlen(payload), nullptr));
+        // [状態確認] - 8 枠すべての登録に成功すること。
+    }
+    // [状態] - 保留が 0 の状態で送信キューの 8 枠を満杯にする。
+    // Pre-Assert
+    // Act
+    std::thread sender([&]() {
+        actual_ret = potr_service_send(handle, 10U, payload, strlen(payload), POTR_SEND_BLOCKING);
+    });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (waits.load() == 0 && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::yield();
+    }
+    int waits_before_defer = waits.load();
+    int notes_before_defer = notes.load();
+    int pop_ret = potr_internal_send_queue_try_pop(&ctx.send_queue, &elem);
+    cplat_atomic_store_i32(&ctx.flow_deferred_total, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    potr_internal_send_queue_defer(&ctx.send_queue);
+    // [手順] - 空き待ち開始後に 1 件を保留へ移し、プールの全枠を占有したままにする。
+    while (notes.load() == 0 && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::yield();
+    }
+    int notes_after_defer = notes.load();
+    potr_internal_send_queue_abort(&ctx.send_queue, POTR_ERR_CANCELED);
+    sender.join();
+    // Assert
+    EXPECT_GT(waits_before_defer, 0); // [確認_正常系] - 保留を増やす前に空き待ちへ入っていること。
+    EXPECT_EQ(0, notes_before_defer); // [確認_正常系] - 保留がない間は妨げを記録しないこと。
+    EXPECT_EQ(POTR_OK, pop_ret); // [確認_正常系] - 保留へ移すエントリを取り出せること。
+    EXPECT_GT(notes_after_defer, 0); // [確認_正常系] - 待機開始後の保留も満杯の妨げとして記録すること。
+    EXPECT_EQ(POTR_ERR_CANCELED, actual_ret); // [確認_正常系] - 終了要求で待機を解除できること。
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]

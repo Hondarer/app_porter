@@ -45,6 +45,11 @@
 /** 送出上限または初期の幅で止まり始めてから、最初の問い合わせを送出するまでの時間 [ms]。 */
 #define POTR_FLOW_QUERY_INITIAL_INTERVAL_MS 10U
 
+/** 問い合わせと一覧の送出し直しで、間隔を延ばす倍率。 */
+#define POTR_FLOW_QUERY_BACKOFF_MULTIPLIER 2U
+
+static_assert(POTR_FLOW_QUERY_BACKOFF_MULTIPLIER == 2U, "porter: query backoff must double");
+
 static_assert((POTR_FLOW_SEND_LIMIT_HELD & (uint64_t)UINT32_MAX) == 0ULL &&
                   POTR_FLOW_SEND_LIMIT_HELD > (uint64_t)UINT32_MAX,
               "porter: POTR_FLOW_SEND_LIMIT_HELD must not overlap the 32-bit sequence number");
@@ -229,6 +234,7 @@ static_assert(POTR_PERCENT_MAX == 100U, "porter: POTR_PERCENT_MAX must be 100");
  * N:1 モードで、全体を妨げている遅いピアとして切断したセッションの受け入れ拒否記録の上限数。
  * 除外する数の上限は接続中のピア数で変わるため固定長とし、既定の max_peers (POTR_DEFAULT_MAX_PEERS = 1024) と
  * 既定の割合 (10% -> 102) を収めつつ、コンテキスト内の固定配列と線形探索を小さく保つ 128 とする。
+ * 保持数は記録時点の除外上限と物理上限の小さいほう (下限 1)。除外上限が 128 を超えても 128 件までしか保持しない。
  */
 #define POTR_FLOW_SLOW_PEER_REJECT_MAX 128U
 
@@ -692,6 +698,8 @@ extern "C"
      *  監視対象を選び直し (potr_internal_receiver_monitor_list())、監視対象が変わった時点と、
      *  flow_control_request_interval_ms の周期で、監視対象の一覧のパケット (状態が POTR_FLOW_CONTROL_STATE_MONITOR) を
      *  DATA と同じ宛先へ全経路から送出します。監視対象が 0 台の間は送出しません。\n
+     *  最初の送出上限が未通知の監視対象がいる間も、停止中の問い合わせと同じ間隔で再送します。
+     *  全員の上限を保持した場合や未通知の相手が対象から外れた場合は、再送の間隔を元に戻します。
      *  multicast と broadcast の送信者以外では何もしません。
      *
      *  @param[in,out]  ctx     コンテキスト。

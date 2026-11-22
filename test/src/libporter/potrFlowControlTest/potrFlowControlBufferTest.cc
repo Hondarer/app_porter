@@ -1369,3 +1369,133 @@ TEST_F(potrFlowControlBufferTest, multicast_stalled_resends_monitor_list_with_ba
     EXPECT_EQ(8U, built_counts.size());       // [確認_正常系] - 監視対象の一覧パケットを 8 回組み立てること。
 }
 // [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
+
+// MULTICAST で最初の上限通知まで 10、20、40 [ms] 間隔で一覧を再送し、通知完了・対象離脱で再送をやめることの確認
+// [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
+TEST_F(potrFlowControlBufferTest, multicast_unnotified_monitor_retries_and_stops)
+{
+    // Arrange
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 1;
+    int pending = 1;
+    int changed = 1;
+    size_t list_count = 1U;
+    ON_CALL(mock_porter, potr_internal_receiver_monitor_list(_, _, _, _, _))
+        .WillByDefault([&](potr_context *c, uint64_t, potr_internal_packet_session_hdr *list, size_t, int *out) {
+            list[0].session_id = 1U;
+            *out = changed;
+            cplat_atomic_store_i32(&c->flow_monitor_unnotified, pending, CPLAT_MEMORY_ORDER_RELEASE);
+            return list_count;
+        }); // [状態] - 監視対象の台数、変更、最初の通知の有無を制御する。
+    ON_CALL(mock_porter, potr_internal_packet_build_flow_control_list(_, _, _, _, _))
+        .WillByDefault([](potr_packet *packet, const potr_internal_packet_session_hdr *, uint8_t *payload,
+                          const potr_internal_packet_session_hdr *, size_t) {
+            memset(packet, 0, POTR_PACKET_HEADER_SIZE);
+            payload[0] = (uint8_t)POTR_FLOW_CONTROL_STATE_MONITOR;
+            packet->payload = payload;
+            packet->payload_len = cplat_hton16((uint16_t)1U);
+            return POTR_OK;
+        }); // [状態] - 一覧パケットを封緘できるようにする。
+    const uint64_t times[] = {1000U, 1009U, 1010U, 1029U, 1030U, 1069U, 1070U};
+    const int expected[] = {1, 1, 2, 2, 3, 3, 4};
+    int counts[7] = {};
+    // Pre-Assert
+    // Act
+    for (size_t i = 0U; i < 7U; i++)
+    {
+        potr_internal_flow_control_monitor_tick(&ctx, times[i]);
+        counts[i] = sendto_count;
+        changed = 0;
+    }
+    // [手順] - 停止させず、初回一覧と 10、20、40 [ms] 後の再送を確認する。
+    pending = 0;
+    potr_internal_flow_control_monitor_tick(&ctx, 1071U);
+    uint64_t interval_after_notification = ctx.flow_monitor_retry_interval_ms;
+    potr_internal_flow_control_monitor_tick(&ctx, 1150U);
+    int count_after_notification = sendto_count;
+    pending = 1;
+    changed = 1;
+    potr_internal_flow_control_monitor_tick(&ctx, 1160U);
+    changed = 0;
+    pending = 0;
+    list_count = 0U;
+    potr_internal_flow_control_monitor_tick(&ctx, 1161U);
+    potr_internal_flow_control_monitor_tick(&ctx, 1370U);
+    // [手順] - 最初の通知完了後に再送をやめ、新しい監視対象も外れたら再送をやめる。
+    // Assert
+    for (size_t i = 0U; i < 7U; i++)
+    {
+        EXPECT_EQ(expected[i], counts[i]); // [確認_正常系 回数=7] - 初回と 10、20、40 [ms] 後だけ送出すること。
+    }
+    EXPECT_EQ(0U, interval_after_notification); // [確認_正常系] - 通知完了で間隔を元へ戻すこと。
+    EXPECT_EQ(4, count_after_notification); // [確認_正常系] - 通知完了後は再送しないこと。
+    EXPECT_EQ(5, sendto_count); // [確認_正常系] - 対象から外れた後は再送しないこと。
+    EXPECT_EQ(0U, ctx.flow_monitor_retry_next_ms); // [確認_正常系] - 対象がなくなると再送予定を消すこと。
+}
+// [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]
+
+// BROADCAST で最初の上限通知まで 10、20、40 [ms] 間隔で一覧を再送し、通知完了・対象離脱で再送をやめることの確認
+// [サブ手順参照 名前=potrFlowControlBufferTest.SetUp]
+TEST_F(potrFlowControlBufferTest, broadcast_unnotified_monitor_retries_and_stops)
+{
+    // Arrange
+    ctx.service.type = POTR_TYPE_BROADCAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 1;
+    int pending = 1;
+    int changed = 1;
+    size_t list_count = 1U;
+    ON_CALL(mock_porter, potr_internal_receiver_monitor_list(_, _, _, _, _))
+        .WillByDefault([&](potr_context *c, uint64_t, potr_internal_packet_session_hdr *list, size_t, int *out) {
+            list[0].session_id = 1U;
+            *out = changed;
+            cplat_atomic_store_i32(&c->flow_monitor_unnotified, pending, CPLAT_MEMORY_ORDER_RELEASE);
+            return list_count;
+        }); // [状態] - 監視対象の台数、変更、最初の通知の有無を制御する。
+    ON_CALL(mock_porter, potr_internal_packet_build_flow_control_list(_, _, _, _, _))
+        .WillByDefault([](potr_packet *packet, const potr_internal_packet_session_hdr *, uint8_t *payload,
+                          const potr_internal_packet_session_hdr *, size_t) {
+            memset(packet, 0, POTR_PACKET_HEADER_SIZE);
+            payload[0] = (uint8_t)POTR_FLOW_CONTROL_STATE_MONITOR;
+            packet->payload = payload;
+            packet->payload_len = cplat_hton16((uint16_t)1U);
+            return POTR_OK;
+        }); // [状態] - 一覧パケットを封緘できるようにする。
+    const uint64_t times[] = {1000U, 1009U, 1010U, 1029U, 1030U, 1069U, 1070U};
+    const int expected[] = {1, 1, 2, 2, 3, 3, 4};
+    int counts[7] = {};
+    // Pre-Assert
+    // Act
+    for (size_t i = 0U; i < 7U; i++)
+    {
+        potr_internal_flow_control_monitor_tick(&ctx, times[i]);
+        counts[i] = sendto_count;
+        changed = 0;
+    }
+    // [手順] - 停止させず、初回一覧と 10、20、40 [ms] 後の再送を確認する。
+    pending = 0;
+    potr_internal_flow_control_monitor_tick(&ctx, 1071U);
+    uint64_t interval_after_notification = ctx.flow_monitor_retry_interval_ms;
+    potr_internal_flow_control_monitor_tick(&ctx, 1150U);
+    int count_after_notification = sendto_count;
+    pending = 1;
+    changed = 1;
+    potr_internal_flow_control_monitor_tick(&ctx, 1160U);
+    changed = 0;
+    pending = 0;
+    list_count = 0U;
+    potr_internal_flow_control_monitor_tick(&ctx, 1161U);
+    potr_internal_flow_control_monitor_tick(&ctx, 1370U);
+    // [手順] - 最初の通知完了後に再送をやめ、新しい監視対象も外れたら再送をやめる。
+    // Assert
+    for (size_t i = 0U; i < 7U; i++)
+    {
+        EXPECT_EQ(expected[i], counts[i]); // [確認_正常系 回数=7] - 初回と 10、20、40 [ms] 後だけ送出すること。
+    }
+    EXPECT_EQ(0U, interval_after_notification); // [確認_正常系] - 通知完了で間隔を元へ戻すこと。
+    EXPECT_EQ(4, count_after_notification); // [確認_正常系] - 通知完了後は再送しないこと。
+    EXPECT_EQ(5, sendto_count); // [確認_正常系] - 対象から外れた後は再送しないこと。
+    EXPECT_EQ(0U, ctx.flow_monitor_retry_next_ms); // [確認_正常系] - 対象がなくなると再送予定を消すこと。
+}
+// [サブ手順参照 名前=potrFlowControlBufferTest.TearDown]

@@ -50,7 +50,7 @@ extern "C"
     } potr_internal_prepared_path_events;
 
     /**
-     *  @brief          コールバック直列化用ミューテックスを生成します。
+     *  @brief          コールバック直列化用と、通知受理・期限切れ遷移用のミューテックスを生成します。
      *  @return         成功時は POTR_OK、生成失敗時は POTR_ERR_UNKNOWN を返します。
      *  @note           起動前に呼び、成功後のロックはコンテキストが所有します。
      *  @param[in,out]  ctx  対象のセッション コンテキストへのポインター。
@@ -58,7 +58,7 @@ extern "C"
     extern int potr_internal_callback_mutex_init(potr_context *ctx);
 
     /**
-     *  @brief          コールバック直列化用ミューテックスを破棄します。
+     *  @brief          コールバック直列化用と、通知受理・期限切れ遷移用のミューテックスを破棄します。
      *  @param[in,out]  ctx  対象のセッション コンテキストへのポインター。
      */
     extern void potr_internal_callback_mutex_dispose(potr_context *ctx);

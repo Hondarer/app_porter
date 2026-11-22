@@ -333,6 +333,7 @@ struct potr_context
     struct potr_internal_flow_control *flow_control; /**< 受信側のフロー制御の資源。NULL は無効 (容量が 0 で、OS の受信バッファーに基づく送出上限も使わない)。 */
     potr_internal_flow_control_config flow_control_config; /**< フロー制御の実効設定。スレッド起動後は不変。 */
     cplat_atomic_u64 flow_request_expire_ms; /**< 送信側: 相手から受けた抑制の要求の期限 [ms]。0 = 要求なし。双方向 UDP (1:1) と TCP で使用。アトミックに読み書きします。 */
+    cplat_local_lock *flow_limit_mutex; /**< 通知受理と期限切れ遷移を直列化する末端のロック。内側でほかのロックを取得しない。 */
     cplat_atomic_u64 flow_send_limit; /**< 送信側: 相手の送出上限の状態と通番の組 (POTR_FLOW_SEND_LIMIT_*)。flow_limit_received_ms の後に書き込みます。アトミックに読み書きします。 */
     cplat_atomic_u64 flow_limit_received_ms; /**< 送信側: 最後にフロー制御パケットを受けた時刻 [ms]。アトミックに読み書きします。 */
     cplat_atomic_u64 flow_last_packet_ms; /**< 送信側: 相手から最後に何らかのパケットを受けた時刻 [ms]。アトミックに読み書きします。 */
@@ -425,7 +426,12 @@ struct potr_context
     uint64_t next_report_ms; /**< 次の報告予定時刻 [ms]。UDP 受信スレッドだけが使用。 */
     int report_received; /**< REPORT を一度以上受理したか。callback_mutex で保護。 */
     int flow_monitor_changed; /**< 送信側: multicast と broadcast で、監視対象の一覧を最後に取り出した後に監視対象が変わったか (1: 変わった)。callback_mutex で保護。 */
-    uint64_t flow_monitor_next_ms; /**< 送信側: multicast と broadcast で、監視対象の一覧を次に周期で送出する時刻 [ms]。0 = 未送出。UDP 受信スレッドだけが使用。 */
+    cplat_atomic_i32 flow_monitor_unnotified; /**< 監視対象に最初の送出上限を未受理の受信者がいるか。一覧を取得するときに更新。 */
+    uint32_t _pad_flow_monitor; /**< flow_monitor_periodic_next_ms を 8 [byte] 境界へそろえる。 */
+    uint64_t flow_monitor_periodic_next_ms; /**< 監視対象の一覧の次の周期送出時刻 [ms]。UDP 受信スレッドだけが使用。 */
+    uint64_t flow_monitor_retry_next_ms; /**< 最初の上限通知を待つ間の一覧の次の再送時刻 [ms]。UDP 受信スレッドだけが使用。 */
+    uint64_t flow_monitor_retry_interval_ms; /**< 最初の上限通知を待つ間の一覧の再送間隔 [ms]。UDP 受信スレッドだけが使用。 */
+    uint64_t flow_monitor_next_ms; /**< 送信側: multicast と broadcast で、監視対象の一覧を次に周期または未通知中の再送で送出する時刻 [ms]。0 = 未送出。UDP 受信スレッドだけが使用。 */
     uint64_t flow_slow_next_check_ms; /**< 送信側: N:1 モードで、全体を妨げている遅いピアを次に判定する時刻 [ms]。0 = 未定。UDP 受信スレッドだけが使用。 */
     uint64_t last_ad_hoc_report_ms; /**< 受信側: 読み出しの遅れによる臨時の受信報告を最後に送出した時刻 [ms]。UDP 受信スレッドだけが使用。 */
     uint64_t recv_report_lag_detected; /**< 受信側: 読み出しの遅れを検出した回数。UDP 受信スレッドだけが使用。 */

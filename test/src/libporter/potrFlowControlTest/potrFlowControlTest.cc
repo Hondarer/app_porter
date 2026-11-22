@@ -23,6 +23,9 @@
 #include <cplat/net/byteorder.h>
 #include <cstring>
 #include <vector>
+#include <atomic>
+#include <chrono>
+#include <thread>
 extern "C"
 {
 #include "thread_recv_session.h"
@@ -61,6 +64,7 @@ class potrFlowControlTest : public Test
     void SetUp() override
     {
         memset(&ctx, 0, sizeof(ctx));
+        cplat_local_lock_create(&ctx.flow_limit_mutex);
         ctx.service.type = POTR_TYPE_UNICAST;
         ctx.service.service_id = 1;
         ctx.service.src_port = 5000;
@@ -140,6 +144,8 @@ class potrFlowControlTest : public Test
             cplat_local_lock_dispose(ctx.peers_mutex);
             ctx.peers_mutex = nullptr;
         }
+        cplat_local_lock_dispose(ctx.flow_limit_mutex);
+        ctx.flow_limit_mutex = nullptr;
         delete peer10;
         delete peer11;
     }
@@ -2113,14 +2119,12 @@ TEST_F(potrFlowControlTest, udp_unnotified_activity_does_not_extend_deadline)
 
 // 期限判定に使う時刻の読み取り後に同値通知が入った場合、相手なしへの比較交換をやめることの確認
 // [サブ手順参照 名前=potrFlowControlTest.SetUp]
-TEST_F(potrFlowControlTest, expiry_rechecks_both_timestamps_before_compare_exchange)
+TEST_F(potrFlowControlTest, expiry_rechecks_both_timestamps_after_limit_lock)
 {
     // Arrange
     ctx.role = POTR_ROLE_SENDER;
     ctx.send_window.next_seq = 300U;
     cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
-    int lock_token = 0;
-    ctx.send_window_mutex = reinterpret_cast<cplat_local_lock *>(&lock_token);
     const potr_type types[] = {POTR_TYPE_UNICAST, POTR_TYPE_UNICAST, POTR_TYPE_UNICAST_BIDIR, POTR_TYPE_UNICAST_BIDIR};
     int suppressed[4] = {};
     uint64_t states_after[4] = {};
@@ -2135,7 +2139,7 @@ TEST_F(potrFlowControlTest, expiry_rechecks_both_timestamps_before_compare_excha
         cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_HELD | 300U, CPLAT_MEMORY_ORDER_RELEASE);
         cplat_atomic_store_u64(&ctx.flow_limit_received_ms, 1000U, CPLAT_MEMORY_ORDER_RELEASE);
         cplat_atomic_store_u64(&ctx.flow_last_packet_ms, 1000U, CPLAT_MEMORY_ORDER_RELEASE);
-        ON_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex)).WillByDefault([&](cplat_local_lock *) {
+        ON_CALL(mock_cplat, cplat_local_lock_lock(ctx.flow_limit_mutex)).WillByDefault([&](cplat_local_lock *) {
             if (i % 2U == 0U)
             {
                 cplat_atomic_store_u64(&ctx.flow_limit_received_ms, 2000U, CPLAT_MEMORY_ORDER_RELEASE);
@@ -2146,17 +2150,16 @@ TEST_F(potrFlowControlTest, expiry_rechecks_both_timestamps_before_compare_excha
             }
             cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_HELD | 300U, CPLAT_MEMORY_ORDER_RELEASE);
         });
-        ON_CALL(mock_cplat, cplat_local_lock_unlock(ctx.send_window_mutex)).WillByDefault(Return());
+        ON_CALL(mock_cplat, cplat_local_lock_unlock(ctx.flow_limit_mutex)).WillByDefault(Return());
         suppressed[i] = potr_internal_flow_control_suppressed(&ctx, 2000U, &wait_ms, &allowance);
         states_after[i] = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
     }
-    ctx.send_window_mutex = nullptr;
-    // [手順] - 古い時刻を読んだ後の送信ウィンドウのロック取得時に、受信側と同じ順序で時刻と同値上限を書き込む。
+    // [手順] - 古い時刻を読んだ後の通知と共通のロック取得時に、受信側と同じ順序で時刻と同値上限を書き込む。
     // Assert
     for (size_t i = 0U; i < 4U; i++)
     {
-        EXPECT_EQ(1, suppressed[i]); // [確認_正常系] - 通知の競合を検出した判定では制限を外さないこと。(確認 4 回)
-        EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 300U, states_after[i]); // [確認_正常系] - 同値の新しい通知を消さないこと。(確認 4 回)
+        EXPECT_EQ(1, suppressed[i]); // [確認_正常系 回数=4] - 通知の競合を検出した判定では制限を外さないこと。
+        EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 300U, states_after[i]); // [確認_正常系 回数=4] - 同値の新しい通知を消さないこと。
     }
 }
 // [サブ手順参照 名前=potrFlowControlTest.TearDown]
@@ -2402,5 +2405,111 @@ TEST_F(potrFlowControlTest, tcp_receiver_without_limit_sends_unlimited_once)
     potr_internal_flow_control_stop(&ctx);
     cplat_local_lock_dispose(ctx.tcp_send_mutex[0]);
     ctx.tcp_send_mutex[0] = nullptr;
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 期限切れ遷移のロック取得後に通知が到着しても、遷移と通知受理が同じロックで直列化されることの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, expiry_and_same_value_notification_are_serialized)
+{
+    // Arrange
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.send_window.next_seq = 300U;
+    ctx.flow_limit_stalled_ms = 1000U;
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_HELD | 300U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&ctx.flow_limit_received_ms, 1000U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&ctx.flow_last_packet_ms, 1000U, CPLAT_MEMORY_ORDER_RELEASE);
+    now_ms = 2000U;
+    const auto expiry_thread = std::this_thread::get_id();
+    std::atomic<int> expiry_locked{0};
+    std::atomic<int> notification_attempted{0};
+    std::atomic<int> notification_acquired{0};
+    uint64_t state_before_expiry_unlock = 0U;
+    int acquired_before_expiry_unlock = -1;
+    potr_packet pkt = {};
+    pkt.flags = POTR_FLAG_FLOW_CONTROL;
+    pkt.payload = kResumePayload;
+    pkt.payload_len = sizeof(kResumePayload);
+    ON_CALL(mock_cplat, cplat_local_lock_lock(ctx.flow_limit_mutex))
+        .WillByDefault([&](cplat_local_lock *lock) {
+            bool expiring = std::this_thread::get_id() == expiry_thread;
+            if (!expiring)
+            {
+                notification_attempted.store(1);
+            }
+            delegate_real_cplat_local_lock_lock(lock);
+            if (expiring)
+            {
+                expiry_locked.store(1);
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+                while (notification_attempted.load() == 0 && std::chrono::steady_clock::now() < deadline)
+                {
+                    std::this_thread::yield();
+                }
+            }
+            else
+            {
+                notification_acquired.store(1);
+            }
+        }); // [状態] - 期限切れ側が実ロックを取得した直後に、通知側にも同じロックの取得を試みさせる。
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(ctx.flow_limit_mutex))
+        .WillByDefault([&](cplat_local_lock *lock) {
+            if (std::this_thread::get_id() == expiry_thread)
+            {
+                state_before_expiry_unlock = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+                acquired_before_expiry_unlock = notification_acquired.load();
+            }
+            delegate_real_cplat_local_lock_unlock(lock);
+        }); // [状態] - 期限切れ側のロック解放直前に、状態と通知側が取得できたかを記録する。
+    int wait_ms = 0;
+    // Pre-Assert
+    // Act
+    std::thread receiver([&]() {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (expiry_locked.load() == 0 && std::chrono::steady_clock::now() < deadline)
+        {
+            std::this_thread::yield();
+        }
+        potr_internal_flow_control_on_packet(&ctx, nullptr, &pkt);
+    });
+    (void)potr_internal_flow_control_suppressed(&ctx, now_ms, &wait_ms, &allowance);
+    receiver.join();
+    // [手順] - 期限切れ遷移と同値の解除通知を別スレッドから同時に実行する。
+    // Assert
+    EXPECT_EQ(1, notification_attempted.load()); // [確認_正常系] - 遷移中に通知側がロック取得を試みたこと。
+    EXPECT_EQ(0, acquired_before_expiry_unlock); // [確認_正常系] - 遷移側が解放するまで通知側は取得できないこと。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_NO_PEER, state_before_expiry_unlock); // [確認_正常系] - ロック内で期限切れへ遷移したこと。
+    EXPECT_EQ(1, notification_acquired.load()); // [確認_正常系] - 解放後に通知側が取得できること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 300U,
+              cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 直後の同値通知が最後に保持されること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 相乗り上限が同値または過去の通番なら、専用ロックを取らず上限を保持することの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, unchanged_piggyback_limit_does_not_lock)
+{
+    // Arrange
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_HELD | 300U, CPLAT_MEMORY_ORDER_RELEASE);
+    potr_packet pkt = {};
+    pkt.flags = POTR_FLAG_DATA | POTR_FLAG_SEND_LIMIT;
+    // [状態] - 上限 300 を保持し、DATA に同値と過去の上限を載せる。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.flow_limit_mutex)).Times(0);
+    // [Pre-Assert確認_正常系] - 上限が進まない DATA では通知・期限切れ用ロックを取得しないこと。
+    // Act
+    pkt.ack_num = 300U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &pkt);
+    pkt.ack_num = 299U;
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &pkt);
+    // [手順] - 同値と過去の相乗り上限を順に受理する。
+    // Assert
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 300U,
+              cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 保持している送出上限を戻さないこと。
 }
 // [サブ手順参照 名前=potrFlowControlTest.TearDown]
