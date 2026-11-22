@@ -607,6 +607,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
                 {
                     peer->flow_last_data_send_ms = sent_ms;
                 }
+                potr_internal_flow_control_peer_sync(ctx, peer);
                 cplat_local_lock_unlock(peer->send_window_mutex);
                 window_pending = 0;
             }
@@ -935,6 +936,7 @@ static int defer_entry_if_blocked(potr_context *ctx, const potr_internal_payload
             }
         }
         peer->flow_deferred_entries++;
+        potr_internal_flow_control_peer_sync(ctx, peer);
     }
     cplat_local_lock_unlock(ctx->peers_mutex);
 

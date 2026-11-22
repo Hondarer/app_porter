@@ -392,10 +392,9 @@ TEST_F(potrFlowControlN1WidthTest, turn_mode_slot_limit_remaining_and_fair_order
 }
 // [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
 
-// 順番の許可で、許可を持ったまま送信をやめたピアが期限切れになると枠に数えず、待っているピアへ許可すること、
-// および切断でも枠が空いて次のピアへ許可することの確認
+// 順番の許可では、送信をやめたピアの未使用許可も数え続け、切断した時点で空き分を渡すことの確認
 // [サブ手順参照 名前=potrFlowControlN1WidthTest.SetUp]
-TEST_F(potrFlowControlN1WidthTest, turn_mode_idle_and_disconnected_holder_frees_slot)
+TEST_F(potrFlowControlN1WidthTest, turn_mode_idle_holder_keeps_budget_until_disconnect)
 {
     // Arrange
     buffer_size = kPacketEstimateBytes * 2U; // 計算幅 2 -> 全体の幅の下限 4 -> 同時枠数 = 4 ÷ 4 = 1
@@ -422,13 +421,17 @@ TEST_F(potrFlowControlN1WidthTest, turn_mode_idle_and_disconnected_holder_frees_
     send_query(2U); // ピア 2 の活動時刻を更新
     send_query(3U); // ピア 3 の活動時刻を更新
     clear_records();
+    free_peer(1U); // [手順] - 送信中でない許可保持者を切断し、空いた 4 パケットをピア 2 へ渡す。
+    std::vector<SentRecord> after_free_holder = records;
+    clear_records();
     free_peer(2U); // [手順] - 許可を持つピア 2 を切断する (送信中 1 -> 通常モードへ戻る)。
     std::vector<SentRecord> after_free_to_normal = records;
     send_query(3U); // [手順] - 通常モードへ戻った後にピア 3 から問い合わせを受ける (幅 4 -> limit 34)。
     // Assert
-    ASSERT_EQ(1U, after_tick.size()); // [確認_正常系] - ピア 1 の期限切れで待っていたピア 2 へ 1 回許可が出ること。
-    EXPECT_EQ(2U, after_tick[0].peer_id);
-    EXPECT_EQ(24U, after_tick[0].send_limit); // [確認_正常系] - ピア 2 へ 20 + 4 = 24 が知らされること。
+    EXPECT_TRUE(after_tick.empty()); // [確認_正常系] - 送信中でなくなっても未使用許可を再利用しないこと。
+    ASSERT_EQ(1U, after_free_holder.size()); // [確認_正常系] - 保持者の切断で次の待機ピアへ許可すること。
+    EXPECT_EQ(2U, after_free_holder[0].peer_id); // [確認_正常系] - 最も長く待ったピア 2 を選ぶこと。
+    EXPECT_EQ(24U, after_free_holder[0].send_limit); // [確認_正常系] - ピア 2 へ 20 + 4 = 24 を知らせること。
     EXPECT_TRUE(after_free_to_normal.empty());
     // [確認_正常系] - 順番の許可から通常の配分へ戻った時点では即時に一斉送出せず次の契機を待つこと。
     ASSERT_EQ(1U, records.size());
@@ -493,6 +496,10 @@ TEST_F(potrFlowControlN1WidthTest, mode_switch_over_quota_and_return_to_normal_v
     received(3U, 34U, 1); // [手順] - ピア 3 が使い終える (残り枠 1/2 -> 空き 1 ができてピア 4 へ 40 + 4 = 44)。
     std::vector<SentRecord> after_p3_done = records;
     clear_records();
+    received(1U, 14U, 1); // [手順] - 旧許可を 4 パケットまで使い、合計を全体の幅より小さくする。
+    send_query(4U); // [手順] - 問い合わせで空き 4 パケットを最も長く待ったピア 4 へ割り当てる。
+    std::vector<SentRecord> after_query = records;
+    clear_records();
     // 次に、ピア 1 と 2 が期限切れになり送信中 2 (ピア 3, 4) へ減って通常モードへ戻るケース
     now_ms = 1200U; // ピア 1 (1000) は期限切れ、ピア 2 (1100) は 1200 でまだ有効、3/4 (1100) も有効
     received(4U, 44U, 1); // ピア 4 が使い終える (時刻 1200、送信中 3、枠が空く -> ピア 3 へ 34 + 4 = 38)
@@ -502,9 +509,10 @@ TEST_F(potrFlowControlN1WidthTest, mode_switch_over_quota_and_return_to_normal_v
     // [手順] - tick で期限切れを落とし、通常モード (幅 8) へ戻す。待っていたピア 4 へ通常配分が知らされる。
     // Assert
     EXPECT_EQ(0U, count_while_full); // [確認_正常系] - 枠超過から上限ちょうどへ減った段階では新規許可を出さないこと。
-    ASSERT_EQ(1U, after_p3_done.size());
-    EXPECT_EQ(4U, after_p3_done[0].peer_id);
-    EXPECT_EQ(44U, after_p3_done[0].send_limit); // [確認_正常系] - 枠に空きができた時点でピア 4 へ 40 + 4 = 44 が出ること。
+    EXPECT_TRUE(after_p3_done.empty()); // [確認_正常系] - 旧許可の合計が全体の幅と等しい間は新しい許可を出さないこと。
+    ASSERT_EQ(1U, after_query.size()); // [確認_正常系] - 空きができた後の問い合わせで 1 回許可すること。
+    EXPECT_EQ(4U, after_query[0].peer_id); // [確認_正常系] - 未受領のピア 4 を先に選ぶこと。
+    EXPECT_EQ(44U, after_query[0].send_limit); // [確認_正常系] - 空き分 4 パケットを割り当てること。
     ASSERT_EQ(1U, records.size());
     EXPECT_EQ(4U, records[0].peer_id);
     EXPECT_EQ(52U, records[0].send_limit); // [確認_正常系] - 通常モード復帰後の tick で待っていたピア 4 へ 44 + 8 = 52 が出ること。
@@ -543,11 +551,15 @@ TEST_F(potrFlowControlN1WidthTest, turn_mode_initial_width_data_and_capacity_lim
     // Assert
     EXPECT_EQ(0U, count_after_initial_burst);
     // [確認_正常系] - 許可を持たないピア 2 の初期の幅の残りの DATA で、他ピアへ誤って許可を出さないこと。
-    ASSERT_EQ(1U, records.size());
+    ASSERT_EQ(2U, records.size()); // [確認_正常系] - 容量による許可が小さい場合、残りの枠を次のピアへ割り当てること。
     EXPECT_EQ(2U, records[0].peer_id);
     EXPECT_EQ(kResume, records[0].state);
     EXPECT_EQ(5U, records[0].send_limit);
     // [確認_正常系] - 容量設定ありのピア 2 へ 3 + min(4, 2) = 5 の許可が出ること。
+    EXPECT_EQ(3U, records[1].peer_id); // [確認_正常系] - もう 1 台の未受領ピアへ残りを渡すこと。
+    EXPECT_EQ(3U, records[1].send_limit); // [確認_正常系] - ピア 3 の許可は残り枠の 2 パケットまでであること。
+    EXPECT_EQ(4U, (records[0].send_limit - 3U) + (records[1].send_limit - 1U));
+    // [確認_正常系] - 未使用許可の合計が全体の幅 4 を超えないこと。
 }
 // [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
 
@@ -729,5 +741,156 @@ TEST_F(potrFlowControlN1WidthTest, failed_turn_grant_retries_on_data)
     EXPECT_EQ(24U, recovered_limit); // [確認_正常系] - ピア 2 に 4 DATA の許可が出ること。
     ASSERT_EQ(1U, records.size()); // [確認_正常系] - 再試行の通知を 1 回送出すること。
     EXPECT_EQ(2U, records[0].peer_id); // [確認_正常系] - 最も長く待つピア 2 へ送出すること。
+}
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
+
+// 順番の許可で、許可の残りが半分以下になっても使い切るまでは補充せず、使い切った時点で
+// 枠に余裕があれば待機中および残り半分以下の別ピアへ最古受領順に合計が全体の幅を超えない範囲で補充し、
+// 枠に余裕がなければ補充しないことの確認
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.SetUp]
+TEST_F(potrFlowControlN1WidthTest, turn_mode_refills_on_exhaustion_including_half_remaining_and_skips_when_full)
+{
+    // Arrange
+    buffer_size = kPacketEstimateBytes * 10U; // 全体の幅 10 (送信中 3 でピアごとの幅 3 < 4 -> 順番の許可)
+    add_peer(1U);
+    add_peer(2U);
+    add_peer(3U);
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx)); // [状態確認] - 開始に成功すること。
+    received(1U, 10U, 1); // 通常 (幅 10): limit 20 (残り 10)
+    received(2U, 20U, 1); // 通常 (幅 5): limit 25 (残り 5)
+    received(3U, 30U, 1); // 順番切替 (幅 3 < 4)、枠超過 (used=15 >= 10): limit 30 (残り 0)
+    clear_records();
+    // [状態] - 全体の幅 10、送信中 3 台 (順番の許可)。ピア 1 が残り 10、ピア 2 が残り 5、ピア 3 が残り 0。
+    // Pre-Assert
+    // Act
+    // 枠に余裕がない状態 (used=12 -> 10 >= 10) でピア 2 が残り半分以下になっても使い切っても補充されない。
+    received(2U, 23U, 1); // [手順] - 枠に余裕がない状態でピア 2 が残り 2 まで消費する。
+    received(2U, 25U, 1); // [手順] - 枠に余裕がない状態 (used=10 >= 10) でピア 2 が使い切る。
+    size_t count_when_full = records.size();
+    // ピア 1 が旧許可を使い終えると used=0 (< 10) になり、ピア 3 へ 4 (limit 34)、ピア 1 へ 4 (limit 24)、
+    // ピア 2 へ残り枠の 2 (limit 27) が配られる (used=10)。
+    // 状態: ピア 3 (limit 34, 残り 4, 最古)、ピア 1 (limit 24, 残り 4)、ピア 2 (limit 27, 残り 2, 最新)。
+    received(1U, 20U, 1);
+    clear_records();
+
+    received(3U, 32U, 1); // [手順] - ピア 3 が 2 パケット消費する (残り 2 <= 半分、used=8 < 10)。
+    size_t count_at_half_p3 = records.size();
+    received(1U, 22U, 1); // [手順] - ピア 1 も 2 パケット消費する (残り 2 <= 半分、used=6 < 10)。
+    size_t count_at_half_p1 = records.size();
+    received(2U, 27U, 1); // [手順] - ピア 2 が残り 2 パケットを使い切る (used=4 < 10、空き 6)。
+    // Assert
+    EXPECT_EQ(0U, count_when_full);  // [確認_正常系] - 枠に余裕がない状態では使い切っても補充しないこと。
+    EXPECT_EQ(0U, count_at_half_p3); // [確認_正常系] - 枠に余裕があっても残り半分以下になった時点では補充しないこと。
+    EXPECT_EQ(0U, count_at_half_p1); // [確認_正常系] - 別ピアが残り半分以下になっても使い切るまでは補充しないこと。
+    ASSERT_EQ(3U, records.size());
+    // [確認_正常系] - 使い切った時点で残り半分以下の別ピアと使い切ったピアの 3 台へ補充すること。
+    EXPECT_EQ(3U, records[0].peer_id);
+    EXPECT_EQ(36U, records[0].send_limit);
+    // [確認_正常系] - 最古受領で残り半分のピア 3 へ 2 パケットを足し limit 36 とすること。
+    EXPECT_EQ(1U, records[1].peer_id);
+    EXPECT_EQ(26U, records[1].send_limit);
+    // [確認_正常系] - 次に古い残り半分のピア 1 へ 2 パケットを足し limit 26 とすること。
+    EXPECT_EQ(2U, records[2].peer_id);
+    EXPECT_EQ(29U, records[2].send_limit);
+    // [確認_正常系] - 使い切ったピア 2 へ残り枠の 2 パケットを足し limit 29 とすること。
+    EXPECT_EQ(10U, (records[0].send_limit - 32U) + (records[1].send_limit - 22U) + (records[2].send_limit - 27U));
+    // [確認_正常系] - 補充後の未使用許可の合計が全体の幅 10 を超えないこと。
+}
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
+
+// 順番の許可で、送信をやめたピアの未使用の許可は最後の DATA から有効期限未満の間は数えられ、
+// 有効期限以上経過した周期処理で合計から外れて待っているピアへ許可が出ることの確認
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.SetUp]
+TEST_F(potrFlowControlN1WidthTest, turn_mode_expired_idle_grant_excluded_and_dispatched_on_tick)
+{
+    // Arrange
+    buffer_size = kPacketEstimateBytes * 6U; // 全体の幅 6 (送信中 2 以上でピアごとの幅 <= 3 < 4 -> 順番の許可)
+    add_peer(1U);
+    add_peer(2U);
+    add_peer(3U);
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx)); // [状態確認] - 開始に成功すること。
+    now_ms = 1000U;
+    received(1U, 10U, 1); // 通常 (幅 6): ピア 1 へ limit 16 (未使用 6, last_data_ms = 1000)
+    now_ms = 1100U;
+    received(2U, 20U, 1); // 順番切替 (幅 3 < 4): used = 6 >= 6 -> ピア 2 へ limit 20 (待ち)
+    received(3U, 30U, 1); // 順番 (幅 2 < 4): used = 6 >= 6 -> ピア 3 へ limit 30 (待ち)
+    clear_records();
+    // [状態] - 全体の幅 6、有効期限 1000 [ms]。ピア 1 が未使用の許可 6 を持ち、ピア 2・3 が待っている。
+    // Pre-Assert
+    // Act
+    now_ms = 1250U;
+    potr_internal_flow_control_tick(&ctx, now_ms);
+    // [手順] - ピア 1 が送信中でなくなる時刻 1250 (最後の DATA から 250 [ms] < 1000 [ms]) で tick を呼ぶ。
+    std::vector<SentRecord> after_inactive_tick = records;
+    clear_records();
+    now_ms = 1900U;
+    send_query(2U); // [手順] - 有効期限前の時刻 1900 にピア 2 から問い合わせを受ける (送信中を維持)。
+    send_query(3U); // [手順] - 有効期限前の時刻 1900 にピア 3 から問い合わせを受ける (送信中を維持)。
+    std::vector<SentRecord> before_expiry_queries = records;
+    clear_records();
+    now_ms = 1999U;
+    potr_internal_flow_control_tick(&ctx, now_ms);
+    // [手順] - 有効期限 1 [ms] 前の時刻 1999 (経過 999 [ms] < 1000 [ms]) で tick を呼ぶ。
+    std::vector<SentRecord> just_before_expiry = records;
+    clear_records();
+    now_ms = 2000U;
+    potr_internal_flow_control_tick(&ctx, now_ms);
+    // [手順] - 有効期限ちょうどの時刻 2000 (経過 1000 [ms] >= 1000 [ms]) で tick を呼ぶ。
+    // Assert
+    EXPECT_TRUE(after_inactive_tick.empty());
+    // [確認_正常系] - 送信中でなくなっても有効期限未満の間は許可が出ないこと。
+    ASSERT_EQ(2U, before_expiry_queries.size());
+    EXPECT_EQ(20U, before_expiry_queries[0].send_limit);
+    // [確認_正常系] - 有効期限前の問い合わせではピア 2 へ許可が出ないこと。
+    EXPECT_EQ(30U, before_expiry_queries[1].send_limit);
+    // [確認_正常系] - 有効期限前の問い合わせではピア 3 へ許可が出ないこと。
+    EXPECT_TRUE(just_before_expiry.empty());
+    // [確認_正常系] - 有効期限 1 [ms] 前の周期処理では許可が出ないこと。
+    ASSERT_EQ(2U, records.size());
+    // [確認_正常系] - 有効期限経過の周期処理で空いた 6 パケットが 2 ピアへ配られること。
+    EXPECT_EQ(2U, records[0].peer_id);
+    EXPECT_EQ(24U, records[0].send_limit); // [確認_正常系] - 管理表順でピア 2 へ 20 + 4 = 24 が配られること。
+    EXPECT_EQ(3U, records[1].peer_id);
+    EXPECT_EQ(32U, records[1].send_limit); // [確認_正常系] - 残りの 2 パケットがピア 3 へ 30 + 2 = 32 で配られること。
+    EXPECT_EQ(6U, (records[0].send_limit - 20U) + (records[1].send_limit - 30U));
+    // [確認_正常系] - 配った許可の合計が全体の幅 6 を超えないこと。
+}
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
+
+// 順番の許可で、一度も DATA を受けていないピアの未使用の許可は有効期限が過ぎても数え続けることの確認
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.SetUp]
+TEST_F(potrFlowControlN1WidthTest, turn_mode_no_data_peer_grant_never_expires)
+{
+    // Arrange
+    buffer_size = kPacketEstimateBytes * 4U; // 全体の幅 4
+    add_peer(1U);
+    add_peer(2U);
+    add_peer(3U);
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx)); // [状態確認] - 開始に成功すること。
+    now_ms = 1000U;
+    received(1U, 10U, 0); // PING のみ (DATA 未受信, last_data_ms = 0): 通常 (幅 4) で limit 14 (未使用 4)
+    now_ms = 1100U;
+    received(2U, 20U, 1); // 送信中 1 (通常、幅 4): limit 24 (未使用 4)
+    received(3U, 30U, 1); // 送信中 2 (順番切替、幅 2 < 4): used = 8 >= 4 -> limit 30 (待ち)
+    received(2U, 24U, 1); // ピア 2 が使い切る: used = 4 (ピア 1 のみ) >= 4 -> 許可は出ない
+    clear_records();
+    // [状態] - 全体の幅 4、有効期限 1000 [ms]。DATA 未受信のピア 1 が未使用 4 を持ち、ピア 2・3 が待っている。
+    // Pre-Assert
+    // Act
+    now_ms = 2500U;
+    send_query(2U); // [手順] - 有効期限を大きく超えた時刻 2500 にピア 2 から問い合わせを受ける。
+    send_query(3U); // [手順] - 有効期限を大きく超えた時刻 2500 にピア 3 から問い合わせを受ける。
+    std::vector<SentRecord> query_records = records;
+    clear_records();
+    potr_internal_flow_control_tick(&ctx, now_ms);
+    // [手順] - 有効期限を大きく超えた時刻 2500 で周期処理を呼ぶ。
+    // Assert
+    ASSERT_EQ(2U, query_records.size());
+    EXPECT_EQ(24U, query_records[0].send_limit);
+    // [確認_正常系] - DATA 未受信のピア 1 の許可が数えられ、ピア 2 の問い合わせで許可が進まないこと。
+    EXPECT_EQ(30U, query_records[1].send_limit);
+    // [確認_正常系] - DATA 未受信のピア 1 の許可が数えられ、ピア 3 の問い合わせで許可が進まないこと。
+    EXPECT_TRUE(records.empty());
+    // [確認_正常系] - 周期処理でも DATA 未受信のピア 1 の許可が外れず、新規許可が出ないこと。
 }
 // [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]

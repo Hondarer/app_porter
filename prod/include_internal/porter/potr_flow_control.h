@@ -182,6 +182,19 @@ static inline uint64_t flow_send_limit_clamp_initial(uint64_t send_limit, uint32
 /** N:1 モードで順番の許可へ切り替えるピアごとの幅のしきい値、および 1 回の順番の許可のパケット数 [パケット]。 */
 #define POTR_FLOW_TURN_WIDTH 4U
 
+/**
+ * 順番の許可で、DATA の受理により補充を試みる契機となる残りパケット数の上限 [パケット]。
+ * 許可の残りがこの値を上回る値からこの値以下へ減った時点で、枠に余裕があれば補充を試みる。
+ * POTR_FLOW_TURN_WIDTH / 2U で半分消費時の補充、0U で使い切った時点の補充となる。
+ */
+#define POTR_FLOW_TURN_REFILL_TRIGGER_REMAINING 0U
+
+/**
+ * 順番の許可で、補充の対象とするピアの残りパケット数の上限 [パケット]。
+ * 補充の試行時に、許可の残りがこの値以下のピアへ、最も長く許可を受けていない順に空いた枠を配る。
+ */
+#define POTR_FLOW_TURN_REFILL_CANDIDATE_REMAINING (POTR_FLOW_TURN_WIDTH / 2U)
+
 /** 受信バッファーの幅の計算で、1 パケットの見積もりに加える管理情報の量 [byte]。 */
 #define POTR_FLOW_RECEIVE_BUFFER_OVERHEAD 2048U
 
@@ -189,6 +202,9 @@ static_assert(POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN >= 1U && POTR_FLOW_RECEIVE_BUFF
               "porter: receive buffer width parameters must be positive");
 static_assert(POTR_FLOW_TURN_WIDTH >= 1U && POTR_FLOW_TURN_WIDTH <= POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN,
               "porter: POTR_FLOW_TURN_WIDTH must be between 1 and POTR_FLOW_RECEIVE_BUFFER_WIDTH_MIN");
+static_assert((POTR_FLOW_TURN_REFILL_TRIGGER_REMAINING + 1U) <= (POTR_FLOW_TURN_REFILL_CANDIDATE_REMAINING + 1U) &&
+                  POTR_FLOW_TURN_REFILL_CANDIDATE_REMAINING < POTR_FLOW_TURN_WIDTH,
+              "porter: turn refill thresholds must satisfy trigger <= candidate < POTR_FLOW_TURN_WIDTH");
 
 /**
  * 抑制中の状態を確認し直すまでの待機の上限 [ms]。
@@ -226,6 +242,12 @@ static_assert(POTR_PERCENT_MAX == 100U, "porter: POTR_PERCENT_MAX must be 100");
  * 止めていない間は「経過時間」をそのまま減算することで、1 [ms] 刻みの判定でも端数による誤差なく減算する。
  */
 #define POTR_FLOW_ACCUM_DECAY_DIVISOR 9U
+
+/* ピア識別子で参照する、送出可能な状態の記録の件数。衝突時はロック下の判定へ戻る。 */
+#define POTR_FLOW_PEER_READY_CACHE_SIZE 64U
+
+static_assert((POTR_FLOW_PEER_READY_CACHE_SIZE & (POTR_FLOW_PEER_READY_CACHE_SIZE - 1U)) == 0U,
+              "porter: peer ready cache size must be a power of two");
 
 /** N:1 モードで 1 回の周期判定で切断対象として収集するピア数の上限。 */
 #define POTR_FLOW_SLOW_PEER_BATCH_MAX 64U
@@ -479,8 +501,8 @@ extern "C"
      *  N:1 モードでは、すべてのピアが 1 つのソケットを共有するため、全体の幅を送信中のピア (直近の
      *  flow_control_request_interval_ms の間に DATA または問い合わせを受けたピア) の数で割ります (送信中のピアがない場合は 1)。
      *  ピアごとの幅が POTR_FLOW_TURN_WIDTH 以上の場合は全員にその幅で許可し、すでに知らせた送出上限は戻しません。
-     *  POTR_FLOW_TURN_WIDTH 未満の場合は順番の許可へ切り替え、同時に許可を持つピアの数を
-     *  「全体の幅 ÷ POTR_FLOW_TURN_WIDTH (切り捨て)」まで、1 回の許可を POTR_FLOW_TURN_WIDTH パケットとします。\n
+     *  POTR_FLOW_TURN_WIDTH 未満の場合は順番の許可へ切り替え、全ピアの未使用の許可の合計が全体の幅を
+     *  超えない範囲で、1 回の許可を POTR_FLOW_TURN_WIDTH パケットまでとします。\n
      *  容量が 0 の受信側は、下の最初の送出と更新だけを行い、占有量の条件は常に満たすものとして扱います。\n
      *  multicast と broadcast の受信者は、送信者から受けた監視対象の一覧に自身が含まれている間だけ、
      *  最初の送出と更新を行います。監視対象でない間は、送出上限を知らせていないものとして扱い、

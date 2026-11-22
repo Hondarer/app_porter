@@ -97,13 +97,13 @@ struct potr_internal_flow_control
     uint64_t receive_buffer_width; /**< 受信バッファーの幅 [パケット] (N:1 モードのピア数による分割と下限の適用の前)。 */
     uint64_t monitor_received_ms; /**< multicast と broadcast の受信者が、監視対象の一覧を最後に受け取った時刻 [ms]。 */
     uint64_t grant_seq_counter; /**< 許可を与えた順序を記録する単調増加カウンター。 */
-    int turn_grant_retry;     /**< 順番の許可の送出失敗で、空き枠の再割り当てが必要か。 */
-    int turn_slots_available; /**< 前回の割り当て後に順番の許可の枠が空いているか。 */
     uint64_t grant_try_epoch;  /**< 順番の許可の走査ごとに増やす世代番号。 */
+    int turn_grant_retry;     /**< 順番の許可の送出失敗で、空き枠の再割り当てが必要か。 */
     int receive_buffer_used;   /**< OS の受信バッファーに基づく送出上限を使うか (1: 使う)。 */
     int one_to_many_receiver;  /**< multicast と broadcast の受信者か (1: 監視対象である間だけ送出上限を知らせる)。 */
     int monitored;             /**< multicast と broadcast の受信者で、監視対象に指定されているか (1: 監視対象)。 */
     uint32_t active_sender_count; /**< N:1 モードで、直近の request_interval_ms の間に DATA または問い合わせを受けたピアの数。 */
+    uint32_t _pad;             /**< パディング (構造体サイズを 8 [byte] の倍数に揃える)。 */
     cplat_ipv4_endpoint reply[POTR_MAX_PATH]; /**< UDP の返送先 (N:1 モード以外)。受信スレッドが更新する。 */
 };
 
@@ -866,6 +866,36 @@ static uint32_t account_remaining_grant(const flow_account *account)
 }
 
 /*
+ * 順番の許可で、ピアの未使用の許可が有効期限を過ぎて送信側で縮められたとみなせるかを返す。
+ * 最後に DATA を受けた時刻が未記録 (0) のピアは送信側が縮めないため対象外とする。
+ * 時刻を取得できなかった場合 (has_now == 0) は安全側として期限切れとみなさない。
+ * fc->mutex を保持して呼ぶ。
+ */
+static int account_grant_expired(const potr_context *ctx, const flow_account *account, uint64_t now_ms, int has_now)
+{
+    uint64_t lifetime_ms = (uint64_t)ctx->flow_control_config.request_lifetime_ms;
+
+    if (has_now == 0 || account->last_data_ms == 0U || lifetime_ms == 0U)
+    {
+        return 0;
+    }
+
+    return now_ms >= account->last_data_ms + lifetime_ms;
+}
+
+/* 順番の許可で合計と補充の計算に使う未使用の許可数を返す。期限切れの許可は 0 とする。fc->mutex を保持して呼ぶ。 */
+static uint32_t account_effective_remaining_grant(const potr_context *ctx, const flow_account *account,
+                                                  uint64_t now_ms, int has_now)
+{
+    if (account_grant_expired(ctx, account, now_ms, has_now) != 0)
+    {
+        return 0U;
+    }
+
+    return account_remaining_grant(account);
+}
+
+/*
  * 占有量による許可数を返す。容量が 0 の受信側では UINT32_MAX を返す。
  * 占有量が要求のしきい値を超えている場合は 0、それ以外は
  * (要求のしきい値 − 占有量) ÷ 1 パケットの大きさ (切り捨て) + 1 とする。
@@ -964,10 +994,12 @@ static uint32_t send_allowance(const potr_context *ctx, const struct potr_intern
  */
 static void record_notified(struct potr_internal_flow_control *fc, flow_account *account, uint32_t send_limit)
 {
+    int advanced = account->notified == 0 || (int32_t)(send_limit - account->notified_limit) > 0;
+
     account->notified = 1;
     account->notified_base = account->next_seq;
     account->notified_limit = send_limit;
-    if ((int32_t)(send_limit - account->next_seq) > 0)
+    if (advanced != 0 && (int32_t)(send_limit - account->next_seq) > 0)
     {
         fc->grant_seq_counter++;
         account->last_grant_seq = fc->grant_seq_counter;
@@ -1022,59 +1054,62 @@ static uint32_t turn_grant_allowance(const struct potr_internal_flow_control *fc
 }
 
 /*
- * 順番の許可モードで、同時に許可を持つピアの数が上限 (全体の幅 ÷ POTR_FLOW_TURN_WIDTH) 未満の間、
- * 待っている送信中のピアのうち最後に許可を受けてからの時間が最も長いピア
- * (一度も受けていないピアは最も長いものとして扱い、同じ場合は管理表の順) へ、次の許可をフロー制御パケットで送出する。
- * target_peer_id に一致するピアへ許可を送出できた場合は 1、それ以外は 0 を返す。
+ * 順番の許可では、活動の有無によらず、全ピアの未使用の許可の合計で全体の幅を守る。
+ * ただし、最後の DATA 受信から有効期限以上経過したピアの許可は送信側が縮めているため数えない。
+ * 待機中または半分以上使ったピアへ、最後の許可から最も長く待った順に補充する。
+ * 1 回の許可は POTR_FLOW_TURN_WIDTH までで、残りの枠が少なければその分だけ出す。
+ * 通常配分からの切り替え直後に旧許可が幅を超えている間は、新しい許可を出さない。
+ * target_peer_id に許可を送出できた場合は 1、それ以外は 0 を返す。
  * fc->mutex と peers_mutex を保持して呼ぶ。
  */
-static int dispatch_turn_grants(potr_context *ctx, struct potr_internal_flow_control *fc, potr_peer_id target_peer_id)
+static int dispatch_turn_grants(potr_context *ctx, struct potr_internal_flow_control *fc, potr_peer_id target_peer_id,
+                                uint64_t now_ms, int has_now)
 {
-    uint64_t slot_limit;
-    uint64_t used_slots = 0U;
+    uint64_t width;
+    uint64_t used = 0U;
     flow_account *account;
     int granted_target = 0;
 
     fc->turn_grant_retry = 0;
-    fc->turn_slots_available = 0;
+
     if (!is_turn_mode(ctx, fc))
     {
         return 0;
     }
 
-    slot_limit = total_buffer_width(fc) / (uint64_t)POTR_FLOW_TURN_WIDTH;
+    width = total_buffer_width(fc);
 
     for (account = fc->accounts; account != NULL; account = account->next)
     {
-        if (account->sending_active != 0 && account_has_grant(account))
-        {
-            used_slots++;
-        }
+        used += (uint64_t)account_effective_remaining_grant(ctx, account, now_ms, has_now);
     }
 
-    if (used_slots >= slot_limit)
+    if (used >= width)
     {
         return 0;
     }
 
     fc->grant_try_epoch++;
 
-    while (used_slots < slot_limit)
+    while (used < width)
     {
         flow_account *best = NULL;
         uint32_t grant;
+        uint32_t remaining;
         uint32_t send_limit;
+        int expired;
 
         for (account = fc->accounts; account != NULL; account = account->next)
         {
+            remaining = account_effective_remaining_grant(ctx, account, now_ms, has_now);
+
             if (account->sending_active == 0 || account->has_next_seq == 0 || account->refused != 0 ||
-                account->requesting != 0 || account_has_grant(account) ||
-                account->last_try_epoch == fc->grant_try_epoch || turn_grant_allowance(fc, account) == 0U)
+                account->requesting != 0 || remaining > (uint32_t)POTR_FLOW_TURN_REFILL_CANDIDATE_REMAINING ||
+                account->last_try_epoch == fc->grant_try_epoch || turn_grant_allowance(fc, account) <= remaining)
             {
                 continue;
             }
 
-            /* 未受領 (last_grant_seq == 0) は最小値となり最優先。同値では先頭に近い (管理表の順) ピアを残す。 */
             if (best == NULL || account->last_grant_seq < best->last_grant_seq)
             {
                 best = account;
@@ -1087,13 +1122,28 @@ static int dispatch_turn_grants(potr_context *ctx, struct potr_internal_flow_con
         }
 
         best->last_try_epoch = fc->grant_try_epoch;
-        grant = turn_grant_allowance(fc, best);
-        send_limit = best->next_seq + grant;
+        expired = account_grant_expired(ctx, best, now_ms, has_now);
+        remaining = (expired != 0) ? 0U : account_remaining_grant(best);
+        grant = turn_grant_allowance(fc, best) - remaining;
+
+        if ((uint64_t)grant > width - used)
+        {
+            grant = (uint32_t)(width - used);
+        }
+
+        send_limit = best->next_seq + remaining + grant;
 
         if (send_state(ctx, fc, best, current_state(best), send_limit) != 0)
         {
+            /* 期限切れの旧許可を上書きした場合は、新しい許可として順序番号を更新する。 */
+            if (expired != 0)
+            {
+                best->notified = 0;
+            }
+
             record_notified(fc, best, send_limit);
-            used_slots++;
+            used += (uint64_t)grant;
+
             if (target_peer_id != POTR_PEER_NA && best->peer_id == target_peer_id)
             {
                 granted_target = 1;
@@ -1105,8 +1155,7 @@ static int dispatch_turn_grants(potr_context *ctx, struct potr_internal_flow_con
         }
     }
 
-    fc->turn_slots_available = used_slots < slot_limit;
-    if (fc->turn_slots_available == 0)
+    if (used >= width)
     {
         fc->turn_grant_retry = 0;
     }
@@ -1384,8 +1433,9 @@ void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer
     struct potr_internal_flow_control *fc;
     flow_account *account;
     int idle_gap = 0;
-    int had_grant;
+    uint32_t prev_remaining;
     int became_active = 0;
+    int has_now = 0;
     uint64_t now_ms = 0U;
 
     if (ctx == NULL || ctx->flow_control == NULL || session_ts == NULL)
@@ -1406,7 +1456,7 @@ void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer
     }
 
     adopt_session(ctx, fc, account, session_id, session_ts);
-    had_grant = account_has_grant(account);
+    prev_remaining = account_remaining_grant(account);
 
     /*
      * 圧縮した DATA パケットの展開後の大きさの最大値を、既存の fc->mutex の下でセッションごとに記録する。
@@ -1438,7 +1488,7 @@ void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer
     if (account->has_next_seq == 0 || (account->notified != 0 && (int32_t)(next_seq - account->notified_base) < 0))
     {
         account->notified = 0;
-        had_grant = 0;
+        prev_remaining = 0U;
     }
 
     /*
@@ -1451,6 +1501,8 @@ void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer
         if (cplat_clock_get_monotonic_ms(&now_ms) == CPLAT_OK)
         {
             uint64_t half_lifetime_ms = (uint64_t)(ctx->flow_control_config.request_lifetime_ms / 2U);
+
+            has_now = 1;
 
             if (account->last_data_ms != 0U && half_lifetime_ms > 0U &&
                 now_ms >= account->last_data_ms + half_lifetime_ms)
@@ -1476,7 +1528,12 @@ void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer
 
         if (became_active != 0 || fc->turn_grant_retry != 0)
         {
-            granted_self = dispatch_turn_grants(ctx, fc, account->peer_id);
+            if (has_now == 0 && cplat_clock_get_monotonic_ms(&now_ms) == CPLAT_OK)
+            {
+                has_now = 1;
+            }
+
+            granted_self = dispatch_turn_grants(ctx, fc, account->peer_id, now_ms, has_now);
         }
 
         if (account->notified == 0)
@@ -1485,10 +1542,15 @@ void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer
         }
         else if (data_packet != 0 && account->requesting == 0)
         {
-            if (had_grant != 0 && !account_has_grant(account))
+            uint32_t remaining = account_remaining_grant(account);
+            int exhausted = prev_remaining > 0U && remaining == 0U;
+            int crossed_refill = prev_remaining > (uint32_t)POTR_FLOW_TURN_REFILL_TRIGGER_REMAINING &&
+                                 remaining <= (uint32_t)POTR_FLOW_TURN_REFILL_TRIGGER_REMAINING;
+
+            if (exhausted != 0 || crossed_refill != 0)
             {
-                /* 許可を使い終えた。占有量が解除しきい値以上なら抑制の要求を送り、空いた枠を次のピアへ割り当てる。 */
-                if (!below_resume(fc, account))
+                /* 許可を使い終えた時点で占有量が高ければ抑制を要求する。 */
+                if (exhausted != 0 && !below_resume(fc, account))
                 {
                     start_request(ctx, fc, account, now_ms);
                     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
@@ -1497,7 +1559,7 @@ void potr_internal_flow_control_on_received(potr_context *ctx, potr_peer_id peer
                                ctx->service.service_id, (unsigned)account->peer_id, account->occupancy);
                 }
 
-                (void)dispatch_turn_grants(ctx, fc, POTR_PEER_NA);
+                (void)dispatch_turn_grants(ctx, fc, POTR_PEER_NA, now_ms, has_now);
             }
             else if (idle_gap != 0 && granted_self == 0)
             {
@@ -1578,7 +1640,9 @@ void potr_internal_flow_control_release(potr_context *ctx, potr_peer_id peer_id,
                 account->requesting = 0;
                 if (is_turn_mode(ctx, fc))
                 {
-                    int granted_self = dispatch_turn_grants(ctx, fc, account->peer_id);
+                    uint64_t now_ms = 0U;
+                    int has_now = cplat_clock_get_monotonic_ms(&now_ms) == CPLAT_OK;
+                    int granted_self = dispatch_turn_grants(ctx, fc, account->peer_id, now_ms, has_now);
 
                     if (granted_self == 0)
                     {
@@ -1686,7 +1750,7 @@ void potr_internal_flow_control_tick(potr_context *ctx, uint64_t now_ms)
             if (account->occupancy == 0U && account->refused == 0 &&
                 potr_internal_peer_find_by_id(ctx, account->peer_id) == NULL)
             {
-                if (account->sending_active != 0 && account_has_grant(account))
+                if (account_has_grant(account))
                 {
                     slot_freed = 1;
                 }
@@ -1699,17 +1763,18 @@ void potr_internal_flow_control_tick(potr_context *ctx, uint64_t now_ms)
 
             /*
              * 直近の request_interval_ms の間に DATA も問い合わせもないピアを送信中のピアから外す。
-             * 許可を持つピアが送信中でなくなった場合は、順番の許可の枠が空く。
+             * 送信中でなくなっても、すでに知らせた未使用の許可は有効期限までは全体の幅に数え続ける。
              */
             if (fc->receive_buffer_used != 0 && account->sending_active != 0 && interval_ms > 0U &&
                 now_ms >= account->last_active_ms + interval_ms)
             {
-                if (account_has_grant(account))
-                {
-                    slot_freed = 1;
-                }
-
                 clear_sending_active(fc, account);
+            }
+
+            if (fc->receive_buffer_used != 0 && account_has_grant(account) &&
+                account_grant_expired(ctx, account, now_ms, 1) != 0)
+            {
+                slot_freed = 1;
             }
 
             tick_account(ctx, fc, account, now_ms);
@@ -1722,7 +1787,7 @@ void potr_internal_flow_control_tick(potr_context *ctx, uint64_t now_ms)
             {
                 if (slot_freed != 0 || fc->turn_grant_retry != 0)
                 {
-                    (void)dispatch_turn_grants(ctx, fc, POTR_PEER_NA);
+                    (void)dispatch_turn_grants(ctx, fc, POTR_PEER_NA, now_ms, 1);
                 }
             }
             else
@@ -1793,7 +1858,7 @@ void potr_internal_flow_control_on_peer_freed(potr_context *ctx, potr_peer_id pe
 
     if (account != NULL)
     {
-        if (account->sending_active != 0 && account_has_grant(account))
+        if (account_has_grant(account))
         {
             was_grant = 1;
         }
@@ -1807,7 +1872,10 @@ void potr_internal_flow_control_on_peer_freed(potr_context *ctx, potr_peer_id pe
 
         if (was_grant != 0 && is_turn_mode(ctx, fc))
         {
-            (void)dispatch_turn_grants(ctx, fc, POTR_PEER_NA);
+            uint64_t now_ms = 0U;
+            int has_now = cplat_clock_get_monotonic_ms(&now_ms) == CPLAT_OK;
+
+            (void)dispatch_turn_grants(ctx, fc, POTR_PEER_NA, now_ms, has_now);
         }
     }
 
@@ -1828,6 +1896,12 @@ int potr_internal_flow_control_refused(potr_context *ctx, potr_peer_id peer_id, 
     }
 
     fc = ctx->flow_control;
+    /* 容量 0 では受け入れ拒否へ遷移しないため、記録の探索とロックを省く。容量は開始後は不変である。 */
+    if (fc->capacity == 0U)
+    {
+        return 0;
+    }
+
     cplat_local_lock_lock(fc->mutex);
 
     if (ctx->is_multi_peer)
@@ -2013,13 +2087,11 @@ static void on_query(potr_context *ctx, struct potr_internal_peer_context *peer,
 
                 if (cplat_clock_get_monotonic_ms(&now_ms) == CPLAT_OK)
                 {
-                    int became_active = mark_sending_active(fc, account, now_ms);
+                    (void)mark_sending_active(fc, account, now_ms);
 
-                    if (is_turn_mode(ctx, fc) &&
-                        (became_active != 0 || fc->turn_grant_retry != 0 ||
-                         (fc->turn_slots_available != 0 && !account_has_grant(account))))
+                    if (is_turn_mode(ctx, fc))
                     {
-                        granted_self = dispatch_turn_grants(ctx, fc, account->peer_id);
+                        granted_self = dispatch_turn_grants(ctx, fc, account->peer_id, now_ms, 1);
                     }
                 }
             }
@@ -2302,7 +2374,10 @@ void potr_internal_flow_control_on_peer_packet(potr_context *ctx, struct potr_in
                 peer->flow_limit_received_ms = now_ms;
                 peer->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)send_limit;
                 potr_internal_flow_control_peer_sync(ctx, peer);
-                potr_internal_send_queue_wake_flow(&ctx->send_queue);
+                if (peer->flow_limit_stalled_ms != 0U || peer->flow_deferred_entries != 0)
+                {
+                    potr_internal_send_queue_wake_flow(&ctx->send_queue);
+                }
             }
         }
         else if (is_limit_notification == 0 &&
@@ -2322,11 +2397,16 @@ void potr_internal_flow_control_on_peer_packet(potr_context *ctx, struct potr_in
         return;
     }
 
-    cplat_atomic_store_u64(&ctx->flow_last_packet_ms, now_ms, CPLAT_MEMORY_ORDER_RELEASE);
+    /*
+     * 時刻を書いてから状態を読む。この順序と期限切れ側の再確認を逐次一貫にして、
+     * 期限切れ側が新時刻を見なければ、受信側が「相手なし」を見て復帰することを保証する。
+     * 通知を受けるロックは、進んだ相乗り上限の反映と「相手なし」からの復帰にだけ使う。
+     */
+    cplat_atomic_store_u64(&ctx->flow_last_packet_ms, now_ms, CPLAT_MEMORY_ORDER_SEQ_CST);
     if (is_piggyback_limit != 0)
     {
         uint32_t send_limit = pkt->ack_num;
-        uint64_t current = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+        uint64_t current = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_SEQ_CST);
 
         if ((current & POTR_FLOW_SEND_LIMIT_STATE_MASK) != POTR_FLOW_SEND_LIMIT_UNLIMITED &&
             ((current & POTR_FLOW_SEND_LIMIT_STATE_MASK) != POTR_FLOW_SEND_LIMIT_HELD ||
@@ -2335,7 +2415,7 @@ void potr_internal_flow_control_on_peer_packet(potr_context *ctx, struct potr_in
             int updated = 0;
 
             cplat_local_lock_lock(ctx->flow_limit_mutex);
-            current = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+            current = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_SEQ_CST);
             for (;;)
             {
                 uint64_t state = current & POTR_FLOW_SEND_LIMIT_STATE_MASK;
@@ -2349,7 +2429,7 @@ void potr_internal_flow_control_on_peer_packet(potr_context *ctx, struct potr_in
                 cplat_atomic_store_u64(&ctx->flow_limit_received_ms, now_ms, CPLAT_MEMORY_ORDER_RELEASE);
                 if (cplat_atomic_compare_exchange_u64(&ctx->flow_send_limit, &current,
                                                       POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)send_limit,
-                                                      CPLAT_MEMORY_ORDER_ACQ_REL) != 0)
+                                                      CPLAT_MEMORY_ORDER_SEQ_CST) != 0)
                 {
                     updated = 1;
                     break;
@@ -2370,7 +2450,7 @@ void potr_internal_flow_control_on_peer_packet(potr_context *ctx, struct potr_in
      * 「相手なし」の場合だけ通番を読む。読んだ後に状態が変わった場合は、比較交換が失敗して何もしない。
      */
     if (is_limit_notification == 0 &&
-        (cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE) & POTR_FLOW_SEND_LIMIT_STATE_MASK) ==
+        (cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_SEQ_CST) & POTR_FLOW_SEND_LIMIT_STATE_MASK) ==
             POTR_FLOW_SEND_LIMIT_NO_PEER)
     {
         uint64_t expected = POTR_FLOW_SEND_LIMIT_NO_PEER;
@@ -2382,7 +2462,7 @@ void potr_internal_flow_control_on_peer_packet(potr_context *ctx, struct potr_in
         cplat_local_lock_lock(ctx->flow_limit_mutex);
         updated = cplat_atomic_compare_exchange_u64(&ctx->flow_send_limit, &expected,
                                                      POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq,
-                                                     CPLAT_MEMORY_ORDER_ACQ_REL);
+                                                     CPLAT_MEMORY_ORDER_SEQ_CST);
         if (updated != 0)
         {
             cplat_atomic_store_u64(&ctx->flow_limit_received_ms, now_ms, CPLAT_MEMORY_ORDER_RELEASE);
@@ -2566,6 +2646,22 @@ static uint64_t advance_query_timer(potr_context *ctx, struct potr_internal_peer
 }
 
 /*
+ * 「相手なし」への書き換え後に受信時刻を再確認する。flow_limit_mutex を保持して呼ぶ。
+ * 非通知パケットの時刻更新はこのロックを取らないため、古い時刻で遷移した場合は元の値へ戻す。
+ * 受信側が先に「相手なし」を見た場合も、復帰側は同じロックの下で比較交換して状態を再確認する。
+ */
+static int finish_limit_expiry(potr_context *ctx, uint64_t send_limit, uint64_t received_ms, uint64_t last_packet_ms)
+{
+    if (cplat_atomic_load_u64(&ctx->flow_last_packet_ms, CPLAT_MEMORY_ORDER_SEQ_CST) != last_packet_ms ||
+        cplat_atomic_load_u64(&ctx->flow_limit_received_ms, CPLAT_MEMORY_ORDER_ACQUIRE) != received_ms)
+    {
+        cplat_atomic_store_u64(&ctx->flow_send_limit, send_limit, CPLAT_MEMORY_ORDER_RELEASE);
+        return 0;
+    }
+    return 1;
+}
+
+/*
  * 通知の受理と期限切れ遷移を flow_limit_mutex で直列化する。
  * ロックを待つ間の通知は時刻の読み直しで検出し、変化があれば制限を外さない。
  * このロックの内側では、ほかのロックを取得しない (ロック順序の末端)。
@@ -2585,7 +2681,11 @@ static int expire_limit_if_unchanged(potr_context *ctx, uint64_t send_limit, uin
     }
 
     expired = cplat_atomic_compare_exchange_u64(&ctx->flow_send_limit, &expected, POTR_FLOW_SEND_LIMIT_NO_PEER,
-                                                CPLAT_MEMORY_ORDER_ACQ_REL);
+                                                CPLAT_MEMORY_ORDER_SEQ_CST);
+    if (expired != 0)
+    {
+        expired = finish_limit_expiry(ctx, send_limit, received_ms, last_packet_ms);
+    }
     cplat_local_lock_unlock(ctx->flow_limit_mutex);
     return expired;
 }
@@ -2623,7 +2723,7 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
 
         if (ctx->service.type == POTR_TYPE_UNICAST)
         {
-            uint64_t handle_limit = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+            uint64_t handle_limit = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_SEQ_CST);
             uint64_t handle_state = handle_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK;
             int pending = cplat_atomic_load_i32(&ctx->flow_request_pending, CPLAT_MEMORY_ORDER_ACQUIRE);
 
@@ -2747,7 +2847,7 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
         uint64_t expire_ms = cplat_atomic_load_u64(&ctx->flow_request_expire_ms, CPLAT_MEMORY_ORDER_ACQUIRE);
 
         /* 送出上限を先に読む。受信スレッドは時刻を先に書くため、読んだ送出上限に対応する時刻以降の値を読める。 */
-        uint64_t send_limit = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+        uint64_t send_limit = cplat_atomic_load_u64(&ctx->flow_send_limit, CPLAT_MEMORY_ORDER_SEQ_CST);
         uint64_t received_ms = cplat_atomic_load_u64(&ctx->flow_limit_received_ms, CPLAT_MEMORY_ORDER_ACQUIRE);
         uint64_t activity_ms = received_ms;
         uint64_t last_pkt_ms = 0U;
@@ -2953,6 +3053,21 @@ int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_i
     if (!ctx->is_multi_peer)
     {
         return 0;
+    }
+
+    /*
+     * ピア識別子と期限が一致する記録だけを使う。衝突、切断、抑制、保留、上限到達、期限切れでは
+     * 記録が無効になるため、従来のロック下の判定へ戻る。ピアのポインターはロック外へ持ち出さない。
+     */
+    {
+        uint64_t epoch = cplat_atomic_load_u64(&ctx->flow_peer_ready_epoch, CPLAT_MEMORY_ORDER_ACQUIRE);
+        uint64_t ready = cplat_atomic_load_u64(
+            &ctx->flow_peer_ready[peer_id & (POTR_FLOW_PEER_READY_CACHE_SIZE - 1U)], CPLAT_MEMORY_ORDER_ACQUIRE);
+        if (epoch == (now_ms >> 32U) && (potr_peer_id)(ready >> 32U) == peer_id && ready != 0U &&
+            (uint32_t)ready > (uint32_t)now_ms)
+        {
+            return 0;
+        }
     }
 
     cplat_local_lock_lock(ctx->peers_mutex);

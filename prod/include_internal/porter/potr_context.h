@@ -344,6 +344,8 @@ struct potr_context
     struct potr_internal_deferred_entry *flow_deferred_head; /**< N:1 モードで保留中のエントリの先頭。送信スレッドだけが使用。 */
     struct potr_internal_deferred_entry *flow_deferred_tail; /**< N:1 モードで保留中のエントリの末尾。送信スレッドだけが使用。 */
     cplat_atomic_u64 flow_queue_full_ms; /**< 送信側: N:1 モードで、保留エントリがある状態で送信キューが満杯になった最初の時刻 [ms]。0 = なし。アトミックに読み書きします。 */
+    cplat_atomic_u64 flow_peer_ready_epoch; /**< 送出可能の記録に共通の時刻の上位 32 ビット。時刻の循環時に古い記録を使わないために保持します。 */
+    cplat_atomic_u64 flow_peer_ready[POTR_FLOW_PEER_READY_CACHE_SIZE]; /**< 上位 32 ビットがピア識別子、下位が送出可能の記録の期限 [ms]。0 は未記録。peers_mutex の下で更新し、アトミックに読み取ります。 */
     cplat_atomic_i32 flow_request_pending; /**< 送信側: 片方向 UDP で、受信者の管理表に抑制の要求、送出上限、積算、または除外が残っている可能性があるか。アトミックに読み書きします。 */
     cplat_atomic_i32 flow_tracked_peers; /**< 送信側: N:1 モードで、抑制の要求または送出上限を保持しているピアの数。peers_mutex の下で増減し、アトミックに読み取ります。 */
     cplat_atomic_i32 flow_blocking_peers; /**< 送信側: N:1 モードで、ほかのピアへの送信を妨げている記録があるピアの数。peers_mutex の下で増減し、アトミックに読み取ります。 */
@@ -641,6 +643,40 @@ static inline void potr_internal_flow_control_peer_sync(potr_context *ctx, potr_
     int holding = (peer->flow_request_expire_ms != 0U || state == POTR_FLOW_SEND_LIMIT_UNNOTIFIED ||
                    state == POTR_FLOW_SEND_LIMIT_HELD);
 
+    uint64_t ready = 0U;
+
+    /*
+     * パケット送出または通知受理後の値を一組で公開する。送出の途絶による許可の縮小を省略しないよう、
+     * 記録は最後の DATA 送出から有効期限までだけ使う。保留が残っている間は順序を守るため使わない。
+     */
+    if (state == POTR_FLOW_SEND_LIMIT_HELD && peer->flow_request_expire_ms == 0U &&
+        peer->flow_deferred_entries == 0 && peer->flow_limit_stalled_ms == 0U &&
+        peer->flow_last_data_send_ms != 0U &&
+        (int32_t)((uint32_t)peer->flow_send_limit - peer->send_window.next_seq) > 0)
+    {
+        uint64_t deadline = peer->flow_last_data_send_ms + (uint64_t)ctx->flow_control_config.request_lifetime_ms;
+        uint64_t epoch = peer->flow_last_data_send_ms >> 32U;
+        uint64_t cached_epoch = cplat_atomic_load_u64(&ctx->flow_peer_ready_epoch, CPLAT_MEMORY_ORDER_ACQUIRE);
+
+        /* 時刻の下位 32 ビットが循環したら、前の周期の全記録を無効にしてから新周期を公開する。 */
+        if (epoch > cached_epoch)
+        {
+            size_t i;
+            for (i = 0U; i < POTR_FLOW_PEER_READY_CACHE_SIZE; i++)
+            {
+                cplat_atomic_store_u64(&ctx->flow_peer_ready[i], 0U, CPLAT_MEMORY_ORDER_RELEASE);
+            }
+            cplat_atomic_store_u64(&ctx->flow_peer_ready_epoch, epoch, CPLAT_MEMORY_ORDER_RELEASE);
+            cached_epoch = epoch;
+        }
+        if (epoch == cached_epoch && (deadline >> 32U) == epoch)
+        {
+            ready = ((uint64_t)peer->peer_id << 32U) | (uint64_t)(uint32_t)deadline;
+        }
+    }
+    cplat_atomic_store_u64(&ctx->flow_peer_ready[peer->peer_id & (POTR_FLOW_PEER_READY_CACHE_SIZE - 1U)],
+                           ready, CPLAT_MEMORY_ORDER_RELEASE);
+
     if (holding != 0 && peer->flow_tracked == 0)
     {
         peer->flow_tracked = 1;
@@ -665,6 +701,8 @@ static inline void potr_internal_flow_control_peer_sync(potr_context *ctx, potr_
  */
 static inline void potr_internal_flow_control_peer_untrack(potr_context *ctx, potr_internal_peer_context *peer)
 {
+    cplat_atomic_store_u64(&ctx->flow_peer_ready[peer->peer_id & (POTR_FLOW_PEER_READY_CACHE_SIZE - 1U)],
+                           0U, CPLAT_MEMORY_ORDER_RELEASE);
     if (peer->flow_tracked != 0)
     {
         peer->flow_tracked = 0;

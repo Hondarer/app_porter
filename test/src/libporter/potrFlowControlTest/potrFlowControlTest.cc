@@ -29,6 +29,7 @@
 extern "C"
 {
 #include "thread_recv_session.h"
+#include "potr_flow_control.inject.h"
 }
 using namespace testing;
 
@@ -2511,5 +2512,166 @@ TEST_F(potrFlowControlTest, unchanged_piggyback_limit_does_not_lock)
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 300U,
               cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE));
     // [確認_正常系] - 保持している送出上限を戻さないこと。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 非通知パケットの時刻更新が「相手なし」への比較交換の後でも、元の上限を復元することの確認。
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, expiry_restores_limit_when_packet_arrives_after_transition)
+{
+    // Arrange
+    const potr_type types[] = {POTR_TYPE_UNICAST, POTR_TYPE_UNICAST_BIDIR};
+    int expired[2] = {};
+    uint64_t restored[2] = {};
+    // [状態] - 1 対 1 の 2 経路で、上限 300 の期限切れ比較交換の直後を再現する。
+    // Pre-Assert
+    // Act
+    for (size_t i = 0U; i < 2U; i++)
+    {
+        ctx.service.type = types[i];
+        cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_NO_PEER, CPLAT_MEMORY_ORDER_SEQ_CST);
+        cplat_atomic_store_u64(&ctx.flow_limit_received_ms, 1000U, CPLAT_MEMORY_ORDER_RELEASE);
+        cplat_atomic_store_u64(&ctx.flow_last_packet_ms, 2000U, CPLAT_MEMORY_ORDER_SEQ_CST);
+        expired[i] = potr_test_finish_limit_expiry(&ctx, POTR_FLOW_SEND_LIMIT_HELD | 300U, 1000U, 1000U);
+        restored[i] = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    }
+    // [手順] - 書き換え後に受信時刻だけを更新し、ロック内の再確認を実行する。
+    // Assert
+    for (size_t i = 0U; i < 2U; i++)
+    {
+        EXPECT_EQ(0, expired[i]); // [確認_正常系 回数=2] - 非通知パケットの到着で期限切れを取り消すこと。
+        EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 300U, restored[i]);
+        // [確認_正常系 回数=2] - 通番を含め、書き換え前の状態をそのまま復元すること。
+    }
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 期限切れ後の再確認は、通知時刻の更新も検出し、無更新なら相手なしを維持することの確認。
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, expiry_rechecks_notification_time_and_preserves_unnotified_base)
+{
+    // Arrange
+    const uint64_t original = POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 296U;
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_NO_PEER, CPLAT_MEMORY_ORDER_SEQ_CST);
+    cplat_atomic_store_u64(&ctx.flow_limit_received_ms, 2000U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&ctx.flow_last_packet_ms, 1000U, CPLAT_MEMORY_ORDER_SEQ_CST);
+    // [状態] - 基準通番 296 の未通知から相手なしへ移り、通知時刻が更新された状態を用意する。
+    // Pre-Assert
+    // Act
+    int cancelled = potr_test_finish_limit_expiry(&ctx, original, 1000U, 1000U);
+    uint64_t restored = cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE);
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_NO_PEER, CPLAT_MEMORY_ORDER_SEQ_CST);
+    int expired = potr_test_finish_limit_expiry(&ctx, original, 2000U, 1000U);
+    // [手順] - 通知時刻が変わった場合と変わらない場合を再確認する。
+    // Assert
+    EXPECT_EQ(0, cancelled); // [確認_正常系] - 通知時刻の変化でも期限切れを取り消すこと。
+    EXPECT_EQ(original, restored); // [確認_正常系] - 未通知の基準通番を失わないこと。
+    EXPECT_EQ(1, expired); // [確認_正常系] - 時刻が変わらない場合は期限切れが確定すること。
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_NO_PEER,
+              cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 受信がなければ相手なしを保持すること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 受信側が相手なしを見た後、期限切れ側が復元した上限を、復帰処理が未通知で上書きしないことの確認。
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, packet_recovery_rechecks_state_after_expiry_rollback)
+{
+    // Arrange
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.send_window.next_seq = 300U;
+    ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&ctx.send_window_mutex));
+    // [状態確認] - 通番の読み取りと復元の順序を制御するロックを生成できること。
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_NO_PEER, CPLAT_MEMORY_ORDER_SEQ_CST);
+    potr_packet ping = {};
+    ping.flags = POTR_FLAG_PING;
+    ON_CALL(mock_cplat, cplat_local_lock_lock(ctx.send_window_mutex))
+        .WillByDefault([&](cplat_local_lock *lock) {
+            delegate_real_cplat_local_lock_lock(lock);
+            cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_HELD | 300U, CPLAT_MEMORY_ORDER_RELEASE);
+        }); // [状態] - 受信側が相手なしを見た後、通番を読む時点で期限切れ側が上限 300 を復元する。
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_packet_build_flow_control(_, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 復元済みなら問い合わせを重ねないこと。
+    // Act
+    potr_internal_flow_control_on_peer_packet(&ctx, nullptr, &ping);
+    // [手順] - PING の時刻更新と、相手なしからの復帰処理を実行する。
+    // Assert
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 300U,
+              cplat_atomic_load_u64(&ctx.flow_send_limit, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - ロック取得後の比較交換が復元を検出して上書きしないこと。
+    EXPECT_EQ(now_ms, cplat_atomic_load_u64(&ctx.flow_last_packet_ms, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 状態を確認する前に受信時刻を記録すること。
+    cplat_local_lock_dispose(ctx.send_window_mutex);
+    ctx.send_window_mutex = nullptr;
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 送出上限まで余裕があるピアは、パケット送出後の記録からロックを取らず確認できることの確認。
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, ready_peer_cache_avoids_lock_until_deadline)
+{
+    // Arrange
+    enable_multi_peer();
+    peer10->peer_id = 10U;
+    peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | 300U;
+    peer10->send_window.next_seq = 100U;
+    peer10->flow_last_data_send_ms = 1000U;
+    cplat_local_lock_lock(ctx.peers_mutex);
+    potr_internal_flow_control_peer_sync(&ctx, peer10);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    int deferred = -1;
+    // [状態] - 上限 300、次通番 100、最後の DATA 送出 1000 [ms] の記録を公開する。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex)).Times(0);
+    // [Pre-Assert確認_正常系] - 有効な記録があればピア表のロックを取らないこと。
+    // Act
+    int blocked = potr_internal_flow_control_peer_state(&ctx, 10U, 1999U, &deferred);
+    // [手順] - 有効期限の直前に送出可否を調べる。
+    // Assert
+    EXPECT_EQ(0, blocked); // [確認_正常系] - 上限まで余裕があるピアを止めないこと。
+    EXPECT_EQ(0, deferred); // [確認_正常系] - 保留がないこと。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// 上限到達、保留、切断、キャッシュの衝突、期限切れでは省略せずロック下で確認することの確認。
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, ready_peer_cache_invalidates_on_limit_defer_disconnect_and_expiry)
+{
+    // Arrange
+    enable_multi_peer();
+    peer10->peer_id = 10U;
+    peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | 300U;
+    peer10->send_window.next_seq = 299U;
+    peer10->flow_last_data_send_ms = 1000U;
+    cplat_atomic_store_i32(&peer10->health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    int deferred = -1;
+    // [状態] - 残り 1 パケット、有効期限 2000 [ms] のピアを用意する。
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex)).Times(4);
+    // [Pre-Assert確認_正常系] - 衝突、上限到達、保留、期限切れの 4 回でロックを取ること。
+    // Act
+    potr_internal_flow_control_peer_sync(&ctx, peer10);
+    int collided = potr_internal_flow_control_peer_state(&ctx, 10U + POTR_FLOW_PEER_READY_CACHE_SIZE, 1001U, &deferred);
+    peer10->send_window.next_seq = 300U;
+    potr_internal_flow_control_peer_sync(&ctx, peer10);
+    int at_limit = potr_internal_flow_control_peer_state(&ctx, 10U, 1001U, &deferred);
+    peer10->send_window.next_seq = 299U;
+    peer10->flow_limit_stalled_ms = 0U;
+    peer10->flow_deferred_entries = 1;
+    potr_internal_flow_control_peer_sync(&ctx, peer10);
+    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 1001U, &deferred);
+    int held = deferred;
+    peer10->flow_deferred_entries = 0;
+    potr_internal_flow_control_peer_sync(&ctx, peer10);
+    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred);
+    potr_internal_flow_control_peer_untrack(&ctx, peer10);
+    // [手順] - 別のピア識別子、上限到達、保留、期限到達、切断の順に記録を確認する。
+    // Assert
+    EXPECT_EQ(0, collided); // [確認_正常系] - 同じ添字の別のピアの記録を利用しないこと。
+    EXPECT_EQ(1, at_limit); // [確認_正常系] - 最後の許可を使うと停止すること。
+    EXPECT_EQ(1, held); // [確認_正常系] - 保留が残っていることを省略せず返すこと。
+    EXPECT_EQ(0U, cplat_atomic_load_u64(&ctx.flow_peer_ready[10U], CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - 切断で送出可能の記録を消すこと。
 }
 // [サブ手順参照 名前=potrFlowControlTest.TearDown]
