@@ -404,6 +404,7 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
     int has_sent_time = 0;
     uint64_t sent_ms = 0U;
     int window_pending = 1;
+    int piggyback_pending = 0;
 
     if (is_tcp_type(ctx->service.type))
     {
@@ -450,6 +451,7 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
         {
             outer_pkt.flags |= cplat_hton16(POTR_FLAG_SEND_LIMIT);
             outer_pkt.ack_num = cplat_hton32(send_limit);
+            piggyback_pending = 1;
         }
     }
 
@@ -466,6 +468,10 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
         result = potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &outer_pkt, ctx->crypto_buf, &wire_len);
         if (result != POTR_OK)
         {
+            if (piggyback_pending != 0)
+            {
+                potr_internal_flow_control_piggyback_complete(ctx, POTR_PEER_NA, cplat_ntoh32(outer_pkt.ack_num), 0);
+            }
             cplat_local_lock_unlock(ctx->send_window_mutex);
             return result;
         }
@@ -482,6 +488,11 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
         }
         if (send_ret == CPLAT_OK)
         {
+            if (piggyback_pending != 0)
+            {
+                potr_internal_flow_control_piggyback_complete(ctx, POTR_PEER_NA, cplat_ntoh32(outer_pkt.ack_num), 1);
+                piggyback_pending = 0;
+            }
             sent_any = 1;
             if (should_track_valid_data_send_time(ctx))
             {
@@ -502,6 +513,10 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
         }
     }
 
+    if (piggyback_pending != 0)
+    {
+        potr_internal_flow_control_piggyback_complete(ctx, POTR_PEER_NA, cplat_ntoh32(outer_pkt.ack_num), 0);
+    }
     cplat_local_lock_unlock(ctx->send_window_mutex);
     if (!window_pending && (ctx->service.type == POTR_TYPE_UNICAST || ctx->service.type == POTR_TYPE_UNICAST_BIDIR))
     {
@@ -533,6 +548,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
     uint32_t seq;
     size_t wire_len;
     int window_pending = 1;
+    int piggyback_pending = 0;
     potr_internal_path_group_result selection;
     uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
 
@@ -567,6 +583,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
         {
             outer_pkt.flags |= cplat_hton16(POTR_FLAG_SEND_LIMIT);
             outer_pkt.ack_num = cplat_hton32(send_limit);
+            piggyback_pending = 1;
         }
     }
 
@@ -585,17 +602,23 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
             wire_len = ctx->crypto_buf_size;
             if (potr_internal_packet_seal_for_context(ctx, &peer->tx_session, &outer_pkt, ctx->crypto_buf, &wire_len) != POTR_OK)
             {
+                if (piggyback_pending != 0)
+                {
+                    potr_internal_flow_control_piggyback_complete(ctx, peer->peer_id, cplat_ntoh32(outer_pkt.ack_num), 0);
+                }
                 if (window_pending)
                 {
                     cplat_local_lock_unlock(peer->send_window_mutex);
                 }
                 return;
             }
-            /*
-             * 送出したパケットは直後に送信ウィンドウへ保持し、届かなかった分は NACK による再送で回復するため、
-             * 戻り値は明示的に破棄する。
-             */
-            (void)cplat_socket_sendto(ctx->sock[k], ctx->crypto_buf, wire_len, &peer->dest_addr[k], &sent, NULL);
+            int send_ret = cplat_socket_sendto(ctx->sock[k], ctx->crypto_buf, wire_len, &peer->dest_addr[k],
+                                               &sent, NULL);
+            if (send_ret == CPLAT_OK && piggyback_pending != 0)
+            {
+                potr_internal_flow_control_piggyback_complete(ctx, peer->peer_id, cplat_ntoh32(outer_pkt.ack_num), 1);
+                piggyback_pending = 0;
+            }
             if (window_pending)
             {
                 uint64_t sent_ms = 0U;
@@ -612,6 +635,10 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
                 window_pending = 0;
             }
         }
+    }
+    if (piggyback_pending != 0)
+    {
+        potr_internal_flow_control_piggyback_complete(ctx, peer->peer_id, cplat_ntoh32(outer_pkt.ack_num), 0);
     }
     if (window_pending)
     {

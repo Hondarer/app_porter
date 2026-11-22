@@ -544,6 +544,7 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
                 if (is_new_receiver || recv_state == POTR_FLOW_SEND_LIMIT_UNNOTIFIED ||
                     recv_state == POTR_FLOW_SEND_LIMIT_NO_PEER)
                 {
+                    receiver->flow_first_limit_ms = now_ms;
                     receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)packet->ack_num;
                     receiver->flow_limit_received_ms = now_ms;
                     receiver->flow_limit_stalled_ms = 0U;
@@ -591,6 +592,13 @@ int potr_internal_receiver_accept(potr_context *ctx, const potr_packet *packet, 
                  */
                 if (!monitoring || was_monitored)
                 {
+                    uint64_t old_state = receiver->flow_send_limit & POTR_FLOW_SEND_LIMIT_STATE_MASK;
+
+                    if (is_new_receiver || old_state == POTR_FLOW_SEND_LIMIT_UNNOTIFIED ||
+                        old_state == POTR_FLOW_SEND_LIMIT_NO_PEER)
+                    {
+                        receiver->flow_first_limit_ms = now_ms;
+                    }
                     receiver->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | (uint64_t)flow_send_limit;
                     receiver->flow_limit_received_ms = now_ms;
                 }
@@ -1050,8 +1058,14 @@ int potr_internal_receiver_flow_suppressed(potr_context *ctx, uint64_t now_ms, u
         uint64_t state;
 
         /* 片方向 unicast で最後の DATA 送出から有効期限以上途切れた場合、保持中の送出上限を初期の幅へ縮める。 */
-        if (ctx->flow_last_data_send_ms != 0U &&
-            now_ms >= ctx->flow_last_data_send_ms + (uint64_t)ctx->flow_control_config.request_lifetime_ms)
+        uint64_t idle_since_ms = ctx->flow_last_data_send_ms;
+
+        if (idle_since_ms == 0U)
+        {
+            idle_since_ms = receiver->flow_first_limit_ms;
+        }
+        if (idle_since_ms != 0U &&
+            now_ms >= idle_since_ms + (uint64_t)ctx->flow_control_config.request_lifetime_ms)
         {
             receiver->flow_send_limit = flow_send_limit_clamp_initial(receiver->flow_send_limit, next_seq);
         }

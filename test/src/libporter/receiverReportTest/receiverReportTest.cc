@@ -3152,3 +3152,46 @@ TEST(receiverReportTest, monitor_unnotified_tracks_selection_notification_and_re
     // Cleanup
     FreeReceivers(&ctx);
 }
+
+// DATA 未送出の unicast も最初の受信報告から期限を数え、更新通知で延長しないことの確認
+TEST(receiverReportTest, unicast_never_sent_clamps_from_first_report)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint64_t now_ms = 1000U;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.flow_control_config.request_lifetime_ms = 500U;
+    ctx.send_window.next_seq = 10U;
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | 10U, CPLAT_MEMORY_ORDER_RELAXED);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([&](uint64_t *out) {
+        *out = now_ms;
+        return CPLAT_OK;
+    });
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    size_t tracked = 0U;
+    uint64_t until_ms = 0U;
+    // [状態] - 未通知で DATA を一度も送っていない unicast の通知時刻を制御する。
+    // Pre-Assert
+    // Act
+    int first = AcceptReport(&ctx, 1U, 1U, 50U);
+    now_ms = 1400U;
+    int updated = AcceptReport(&ctx, 1U, 1U, 100U);
+    ASSERT_NE(nullptr, ctx.receivers); // [状態確認] - ctx.receivers が nullptr 以外であること。(受信者の記録が作られたことの確認)
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1499U, 10U, &tracked, &until_ms);
+    uint64_t before = ctx.receivers->flow_send_limit;
+    (void)potr_internal_receiver_flow_suppressed(&ctx, 1500U, 10U, &tracked, &until_ms);
+    // [手順] - 初回と 400 [ms] 後の更新報告を受理し、499 [ms] と 500 [ms] で判定する。
+    // Assert
+    EXPECT_EQ(POTR_OK, first); // [確認_正常系] - first が POTR_OK であること。(初回の報告を受理することの確認)
+    EXPECT_EQ(POTR_OK, updated); // [確認_正常系] - updated が POTR_OK であること。(上限を進める報告を受理することの確認)
+    EXPECT_EQ(1000U, ctx.receivers->flow_first_limit_ms); // [確認_正常系] - ctx.receivers->flow_first_limit_ms が 1000U であること。(起点を更新報告で延ばさないことの確認)
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 100U, before); // [確認_正常系] - before が POTR_FLOW_SEND_LIMIT_HELD | 100U であること。(期限直前では大きい許可を保持することの確認)
+    EXPECT_EQ(POTR_FLOW_SEND_LIMIT_HELD | 14U, ctx.receivers->flow_send_limit);
+    // [確認_正常系] - ctx.receivers->flow_send_limit が POTR_FLOW_SEND_LIMIT_HELD | 14U であること。(最初の報告から期限に達した時点で残り 4 に縮めることの確認)
+    // Cleanup
+    FreeReceivers(&ctx);
+}

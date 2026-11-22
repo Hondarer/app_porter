@@ -62,6 +62,7 @@ static void slot_forget_flow_control(thread_recv_slot *slot)
             next_seq = slot->peer->send_window.next_seq;
         }
 
+        slot->peer->flow_first_limit_ms = 0U;
         slot->peer->flow_request_expire_ms = 0U;
         slot->peer->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq;
         slot->peer->flow_limit_stalled_ms = 0U;
@@ -88,9 +89,12 @@ static void slot_forget_flow_control(thread_recv_slot *slot)
         next_seq = slot->ctx->send_window.next_seq;
     }
 
+    cplat_local_lock_lock(slot->ctx->flow_limit_mutex);
+    cplat_atomic_store_u64(&slot->ctx->flow_first_limit_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
     cplat_atomic_store_u64(&slot->ctx->flow_request_expire_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
     cplat_atomic_store_u64(&slot->ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq,
                            CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_local_lock_unlock(slot->ctx->flow_limit_mutex);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

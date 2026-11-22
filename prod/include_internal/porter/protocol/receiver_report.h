@@ -25,6 +25,7 @@ typedef struct potr_internal_receiver
     uint64_t retired_ms; /**< 離脱時刻 [ms]。NACK だけのエントリは登録時刻。再利用順の基準。 */
     uint64_t flow_request_expire_ms; /**< 受理した抑制の要求の期限 [ms]。0 = 要求なし。 */
     uint64_t flow_send_limit; /**< 受理した送出上限の状態と通番の組 (POTR_FLOW_SEND_LIMIT_*)。multicast と broadcast では 0 = 上限なし。 */
+    uint64_t flow_first_limit_ms; /**< 未通知または相手なしから最初に送出上限を受理した時刻 [ms]。後続通知では更新しない。 */
     uint64_t flow_limit_received_ms; /**< 最後にフロー制御パケットを受理した時刻 [ms]。 */
     uint64_t flow_last_packet_ms; /**< 最後に何らかのパケット (REPORT、NACK、フロー制御) を受理した時刻 [ms]。 */
     uint64_t flow_limit_stalled_ms; /**< 送出が送出上限に達して止まった時刻 [ms]。0 = 止まっていない。 */

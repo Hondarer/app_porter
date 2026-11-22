@@ -665,14 +665,15 @@ extern "C"
                                                           const potr_packet *pkt);
 
     /**
-     *  @brief          逆方向の DATA パケットへ相乗りする送出上限を取得し、「前回知らせた範囲」を更新します。
+     *  @brief          逆方向の DATA パケットへ相乗りする送出上限を取得します。
      *
      *  unicast_bidir と unicast_bidir_n1 で、送出上限を使う側 (容量が 0 でない、または OS の受信バッファーに基づく
      *  送出上限を使う) が DATA を送出するときに呼びます。\n
      *  送出上限をまだ計算していない場合 (相手からまだ通番を受け取っていない場合)、容量超過で受信を再開しない状態の場合、
      *  送出上限を使わない場合、および対象外の通信種別では 0 を返し、*send_limit に 0 を格納します。\n
-     *  送出上限を返した場合は、「前回知らせた範囲」(notified、notified_base、notified_limit) をその時点の
-     *  次に受信する通番と送出上限で更新します。DATA で知らせた分は、更新のフロー制御パケットを送出しません。
+     *  取得した上限は送出結果が確定するまで予約します。送出後は成功・失敗にかかわらず
+     *  potr_internal_flow_control_piggyback_complete() を呼び、成功した場合に「前回知らせた範囲」を更新します。
+     *  DATA で知らせた分は、更新のフロー制御パケットを送出しません。
      *  抑制の要求と解除の送出には影響しません。
      *
      *  @param[in,out]  ctx         コンテキスト。
@@ -688,6 +689,21 @@ extern "C"
      */
     extern int potr_internal_flow_control_piggyback_limit(potr_context *ctx, potr_peer_id peer_id,
                                                           uint32_t *send_limit);
+
+    /**
+     *  @brief          DATA に相乗りした送出上限の予約を解き、送出に成功した場合は通知を記録します。
+     *
+     *  取得した送出上限に対し、送出の成否にかかわらず 1 回呼びます。同値の再通知は有効期限を延長しません。
+     *  @param[in,out]  ctx         有効なコンテキスト。NULL は許容しません。
+     *  @param[in]      peer_id     ピア識別子。N:1 以外では POTR_PEER_NA。
+     *  @param[in]      send_limit  相乗りするために取得した送出上限。
+     *  @param[in]      sent        1 経路以上で送出に成功した場合は 1、それ以外は 0。
+     *  @par            スレッド セーフ
+     *  送信スレッドから呼びます。N:1 では peers_mutex を保持します。内部で fc->mutex を取得します。
+     */
+    extern void potr_internal_flow_control_piggyback_complete(potr_context *ctx, potr_peer_id peer_id,
+                                                         uint32_t send_limit, int sent);
+
 
     /**
      *  @brief          受信報告に載せる、その時点の自身の送出上限と許可数の上限を返します。

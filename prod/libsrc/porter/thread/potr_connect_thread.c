@@ -171,9 +171,12 @@ static void reset_connection_state(potr_context *ctx)
         next_seq = ctx->send_window.next_seq;
     }
     /* 初回 DATA の採用では通知を取り消さないため、接続の公開前に未通知と要求なしへ戻す。 */
+    cplat_local_lock_lock(ctx->flow_limit_mutex);
+    cplat_atomic_store_u64(&ctx->flow_first_limit_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
     cplat_atomic_store_u64(&ctx->flow_request_expire_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
     cplat_atomic_store_u64(&ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq,
                            CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_local_lock_unlock(ctx->flow_limit_mutex);
 }
 
 /*
@@ -221,10 +224,6 @@ static void reset_all_paths_disconnected(potr_context *ctx)
     ctx->send_window.base_index = 0U;
     ctx->send_has_data = 0;
 
-    /* 自分の通番が 0 から始まり直すため、未通知 (初期の幅) と要求なしへ戻す。 */
-    cplat_atomic_store_u64(&ctx->flow_request_expire_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
-    cplat_atomic_store_u64(&ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED, CPLAT_MEMORY_ORDER_RELEASE);
-
     if (ctx->send_window.valid != NULL)
     {
         memset(ctx->send_window.valid, 0, (size_t)ctx->send_window.window_size * sizeof(uint8_t));
@@ -234,6 +233,13 @@ static void reset_all_paths_disconnected(potr_context *ctx)
     {
         cplat_local_lock_unlock(ctx->send_window_mutex);
     }
+
+    /* 送信ウィンドウのロックを解放してから、通知と状態のリセットを直列化する。 */
+    cplat_local_lock_lock(ctx->flow_limit_mutex);
+    cplat_atomic_store_u64(&ctx->flow_first_limit_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&ctx->flow_request_expire_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_local_lock_unlock(ctx->flow_limit_mutex);
 
     memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
     cplat_local_lock_lock(ctx->callback_mutex);

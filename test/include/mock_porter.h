@@ -146,6 +146,7 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_send_query")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_on_peer_packet")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_piggyback_limit")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_piggyback_complete")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_suppressed")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_peer_state")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_flow_control_peer_mark_blocking")
@@ -335,6 +336,7 @@ class Mock_porter
     MOCK_METHOD(void, potr_internal_flow_control_send_query, (potr_context *ctx, struct potr_internal_peer_context *peer));
     MOCK_METHOD(void, potr_internal_flow_control_on_peer_packet, (potr_context *ctx, struct potr_internal_peer_context *peer, const potr_packet *pkt));
     MOCK_METHOD(int, potr_internal_flow_control_piggyback_limit, (potr_context *ctx, potr_peer_id peer_id, uint32_t *send_limit));
+    MOCK_METHOD(void, potr_internal_flow_control_piggyback_complete, (potr_context *ctx, potr_peer_id peer_id, uint32_t send_limit, int sent));
     MOCK_METHOD(int, potr_internal_flow_control_suppressed, (potr_context *ctx, uint64_t now_ms, int *wait_ms, uint32_t *allowance));
     MOCK_METHOD(int, potr_internal_flow_control_peer_state, (potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms, int *deferred));
     MOCK_METHOD(void, potr_internal_flow_control_peer_mark_blocking, (potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms));

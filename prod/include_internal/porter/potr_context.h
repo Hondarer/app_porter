@@ -258,6 +258,7 @@ typedef struct potr_internal_peer_context
     cplat_timespec last_recv_ts; /**< 最終受信時刻 (CLOCK_MONOTONIC)。tv_sec == 0 は未受信。 */
     uint64_t flow_request_expire_ms; /**< このピアから受けた抑制の要求の期限 [ms]。0 = 要求なし。peers_mutex で保護。 */
     uint64_t flow_send_limit; /**< このピアの送出上限の状態と通番の組 (POTR_FLOW_SEND_LIMIT_*)。peers_mutex で保護。 */
+    uint64_t flow_first_limit_ms; /**< 未通知または相手なしから最初に送出上限を受理した時刻 [ms]。後続通知では更新しない。peers_mutex で保護。 */
     uint64_t flow_limit_received_ms; /**< このピアから最後にフロー制御パケットを受けた時刻 [ms]。peers_mutex で保護。 */
     uint64_t flow_last_packet_ms; /**< このピアから最後に何らかのパケットを受けた時刻 [ms]。peers_mutex で保護。 */
     uint64_t flow_limit_stalled_ms; /**< このピア宛の送出が送出上限に達して止まった時刻 [ms]。0 = 止まっていない。peers_mutex で保護。 */
@@ -335,6 +336,7 @@ struct potr_context
     cplat_atomic_u64 flow_request_expire_ms; /**< 送信側: 相手から受けた抑制の要求の期限 [ms]。0 = 要求なし。双方向 UDP (1:1) と TCP で使用。アトミックに読み書きします。 */
     cplat_local_lock *flow_limit_mutex; /**< 通知受理と期限切れ遷移を直列化する末端のロック。内側でほかのロックを取得しない。 */
     cplat_atomic_u64 flow_send_limit; /**< 送信側: 相手の送出上限の状態と通番の組 (POTR_FLOW_SEND_LIMIT_*)。flow_limit_received_ms の後に書き込みます。アトミックに読み書きします。 */
+    cplat_atomic_u64 flow_first_limit_ms; /**< 送信側: 未通知または相手なしから最初に送出上限を受理した時刻 [ms]。後続通知では更新しない。flow_limit_mutex の下で更新し、アトミックに読み取ります。 */
     cplat_atomic_u64 flow_limit_received_ms; /**< 送信側: 最後にフロー制御パケットを受けた時刻 [ms]。アトミックに読み書きします。 */
     cplat_atomic_u64 flow_last_packet_ms; /**< 送信側: 相手から最後に何らかのパケットを受けた時刻 [ms]。アトミックに読み書きします。 */
     uint64_t flow_limit_stalled_ms; /**< 送信側: 送出上限に達して止まった時刻 [ms]。0 = 止まっていない。送信スレッドだけが使用。 */

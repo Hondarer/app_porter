@@ -220,6 +220,10 @@ class potrFlowControlN1WidthTest : public Test
     {
         cplat_local_lock_lock(ctx.peers_mutex);
         int ret = potr_internal_flow_control_piggyback_limit(&ctx, peer_id, limit_out);
+        if (ret != 0)
+        {
+            potr_internal_flow_control_piggyback_complete(&ctx, peer_id, *limit_out, 1);
+        }
         cplat_local_lock_unlock(ctx.peers_mutex);
         return ret;
     }
@@ -836,7 +840,24 @@ TEST_F(potrFlowControlN1WidthTest, turn_mode_expired_idle_grant_excluded_and_dis
     now_ms = 2000U;
     potr_internal_flow_control_tick(&ctx, now_ms);
     // [手順] - 有効期限ちょうどの時刻 2000 (経過 1000 [ms] >= 1000 [ms]) で tick を呼ぶ。
+    auto newly_granted = records;
+    clear_records();
+    now_ms = 2001U;
+    send_query(2U);
+    send_query(3U);
+    auto followup = records;
+    clear_records();
+    potr_internal_flow_control_tick(&ctx, now_ms);
+    auto following_tick = records;
+    records = newly_granted;
+    // [手順] - DATA を受けずに別ピアの問い合わせと周期処理を続ける。
     // Assert
+    ASSERT_EQ(2U, followup.size()); // [確認_正常系] - 再配分直後も問い合わせへ応答すること。
+    EXPECT_EQ(24U, followup[0].send_limit); // [確認_正常系] - ピア 2 の新規許可を期限切れにしないこと。
+    EXPECT_EQ(32U, followup[1].send_limit); // [確認_正常系] - ピア 3 の新規許可を増やさないこと。
+    EXPECT_EQ(6U, (followup[0].send_limit - 20U) + (followup[1].send_limit - 30U));
+    // [確認_正常系] - 合計に数える新規許可が全体の幅 6 に収まること。
+    EXPECT_TRUE(following_tick.empty()); // [確認_正常系] - 続く周期処理でも重複配分しないこと。
     EXPECT_TRUE(after_inactive_tick.empty());
     // [確認_正常系] - 送信中でなくなっても有効期限未満の間は許可が出ないこと。
     ASSERT_EQ(2U, before_expiry_queries.size());
@@ -857,40 +878,162 @@ TEST_F(potrFlowControlN1WidthTest, turn_mode_expired_idle_grant_excluded_and_dis
 }
 // [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
 
-// 順番の許可で、一度も DATA を受けていないピアの未使用の許可は有効期限が過ぎても数え続けることの確認
+// DATA 未受理のピアが PING と問い合わせだけを続けても、許可の期限後に待機ピアが再開することの確認
 // [サブ手順参照 名前=potrFlowControlN1WidthTest.SetUp]
-TEST_F(potrFlowControlN1WidthTest, turn_mode_no_data_peer_grant_never_expires)
+TEST_F(potrFlowControlN1WidthTest, turn_mode_no_data_peer_grant_expires_from_notification)
 {
     // Arrange
-    buffer_size = kPacketEstimateBytes * 4U; // 全体の幅 4
+    buffer_size = kPacketEstimateBytes * 4U;
+    add_peer(1U);
+    add_peer(2U);
+    add_peer(3U);
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx)); // [状態確認] - potr_internal_flow_control_start(&ctx) が POTR_OK であること。(開始に成功することの確認)
+    now_ms = 1000U;
+    received(1U, 10U, 0);
+    now_ms = 1100U;
+    received(2U, 20U, 1);
+    received(3U, 30U, 1);
+    received(2U, 24U, 1);
+    clear_records();
+    // [状態] - DATA 未受理のピア 1 の許可 4 を数え、使い切ったピア 2 と未許可のピア 3 が待つ。
+    // Pre-Assert
+    // Act
+    now_ms = 1900U;
+    received(1U, 10U, 0);
+    send_query(1U);
+    send_query(2U);
+    send_query(3U);
+    clear_records();
+    now_ms = 1999U;
+    potr_internal_flow_control_tick(&ctx, now_ms);
+    auto before = records;
+    clear_records();
+    now_ms = 2000U;
+    potr_internal_flow_control_tick(&ctx, now_ms);
+    auto granted = records;
+    clear_records();
+    send_query(2U);
+    send_query(3U);
+    auto after = records;
+    clear_records();
+    potr_internal_flow_control_tick(&ctx, now_ms);
+    auto after_tick = records;
+    now_ms = 3000U;
+    send_query(1U);
+    send_query(2U);
+    send_query(3U);
+    uint32_t resumed_limit = 0U;
+    for (const auto &record : records)
+    {
+        if (record.peer_id == 2U)
+        {
+            resumed_limit = record.send_limit;
+        }
+    }
+    // [手順] - 期限の直前、境界と追加問い合わせを処理し、さらに次の期限でも全ピアの問い合わせを受ける。
+    // Assert
+    EXPECT_TRUE(before.empty()); // [確認_正常系] - before.empty() が true であること。(最初の通知から 999 [ms] では再配分しないことの確認)
+    ASSERT_EQ(1U, granted.size()); // [確認_正常系] - granted.size() が 1U であること。(1000 [ms] で待機ピアへ許可を配ることの確認)
+    EXPECT_EQ(3U, granted[0].peer_id); // [確認_正常系] - granted[0].peer_id が 3U であること。(一度も許可を受けていないピアを優先することの確認)
+    EXPECT_EQ(34U, granted[0].send_limit); // [確認_正常系] - granted[0].send_limit が 34U であること。(全体の幅 4 を配ることの確認)
+    ASSERT_EQ(2U, after.size()); // [確認_正常系] - after.size() が 2U であること。(後続の問い合わせに応答することの確認)
+    EXPECT_EQ(24U, after[0].send_limit); // [確認_正常系] - after[0].send_limit が 24U であること。(別のピアへ新しい許可を重ねて配らないことの確認)
+    EXPECT_EQ(34U, after[1].send_limit); // [確認_正常系] - after[1].send_limit が 34U であること。(新しい許可を期限切れにせず維持することの確認)
+    EXPECT_TRUE(after_tick.empty()); // [確認_正常系] - after_tick.empty() が true であること。(周期処理でも追加の許可を配らないことの確認)
+    EXPECT_EQ(28U, resumed_limit); // [確認_正常系] - resumed_limit が 28U であること。(同値の旧許可を持つピアを飛ばし、次の期限ではピア 2 が再開することの確認)
+}
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
+
+// DATA を受けずに進めた相乗り上限も送出成功から期限まで数え、再通知や失敗では延長しないことの確認
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.SetUp]
+TEST_F(potrFlowControlN1WidthTest, turn_mode_counts_advanced_piggyback_until_notification_lifetime)
+{
+    // Arrange
+    buffer_size = kPacketEstimateBytes * 4U;
+    add_peer(1U);
+    add_peer(2U);
+    add_peer(3U);
+    ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx)); // [状態確認] - potr_internal_flow_control_start(&ctx) が POTR_OK であること。(開始に成功することの確認)
+    now_ms = 1000U;
+    received(1U, 10U, 1);
+    now_ms = 1500U;
+    received(1U, 11U, 0);
+    uint32_t limit = 0U;
+    int held = piggyback(1U, &limit);
+    now_ms = 1600U;
+    received(2U, 20U, 1);
+    received(3U, 30U, 1);
+    clear_records();
+    // [状態] - 最後の DATA は 1000 [ms]、相乗り上限 15 の送出成功は 1500 [ms]。全体の幅 4 をピア 1 が持つ。
+    // Pre-Assert
+    // Act
+    now_ms = 2400U;
+    send_query(1U);
+    send_query(2U);
+    send_query(3U);
+    clear_records();
+    sendto_result = CPLAT_ERR_UNKNOWN;
+    send_query(1U);
+    sendto_result = CPLAT_OK;
+    clear_records();
+    now_ms = 2499U;
+    potr_internal_flow_control_tick(&ctx, now_ms);
+    auto before = records;
+    clear_records();
+    now_ms = 2500U;
+    potr_internal_flow_control_tick(&ctx, now_ms);
+    // [手順] - 同値の通知と送出失敗の後、相乗り成功から 999 [ms] と 1000 [ms] の周期処理を実行する。
+    // Assert
+    EXPECT_EQ(1, held); // [確認_正常系] - held が 1 であること。(相乗り上限を取得できることの確認)
+    EXPECT_EQ(15U, limit); // [確認_正常系] - limit が 15U であること。(DATA の時刻を変えずに上限を 14 から 15 へ進めることの確認)
+    EXPECT_TRUE(before.empty()); // [確認_正常系] - before.empty() が true であること。(DATA の期限が過ぎても新しい通知の期限前は数えることの確認)
+    ASSERT_EQ(1U, records.size()); // [確認_正常系] - records.size() が 1U であること。(同値通知と送出失敗で延長せず期限で再配分することの確認)
+    EXPECT_EQ(2U, records[0].peer_id); // [確認_正常系] - records[0].peer_id が 2U であること。(未許可のピア 2 を再開することの確認)
+    EXPECT_EQ(24U, records[0].send_limit); // [確認_正常系] - records[0].send_limit が 24U であること。(全体の幅 4 を超えず配ることの確認)
+}
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
+
+// 相乗りの送出準備中に通常配分から順番の許可へ変わっても枠を重ねて配らず、失敗で予約を解くことの確認
+// [サブ手順参照 名前=potrFlowControlN1WidthTest.SetUp]
+TEST_F(potrFlowControlN1WidthTest, pending_piggyback_reserves_width_and_failure_releases_it)
+{
+    // Arrange
+    buffer_size = kPacketEstimateBytes * 6U;
     add_peer(1U);
     add_peer(2U);
     add_peer(3U);
     ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx)); // [状態確認] - 開始に成功すること。
     now_ms = 1000U;
-    received(1U, 10U, 0); // PING のみ (DATA 未受信, last_data_ms = 0): 通常 (幅 4) で limit 14 (未使用 4)
-    now_ms = 1100U;
-    received(2U, 20U, 1); // 送信中 1 (通常、幅 4): limit 24 (未使用 4)
-    received(3U, 30U, 1); // 送信中 2 (順番切替、幅 2 < 4): used = 8 >= 4 -> limit 30 (待ち)
-    received(2U, 24U, 1); // ピア 2 が使い切る: used = 4 (ピア 1 のみ) >= 4 -> 許可は出ない
+    received(1U, 10U, 1);
+    received(1U, 13U, 0);
+    uint32_t limit = 0U;
     clear_records();
-    // [状態] - 全体の幅 4、有効期限 1000 [ms]。DATA 未受信のピア 1 が未使用 4 を持ち、ピア 2・3 が待っている。
+    // [状態] - ピア 1 に上限 16 を知らせ、次通番 13 まで進み、相乗りで上限 19 を知らせられる通常配分とする。
     // Pre-Assert
     // Act
-    now_ms = 2500U;
-    send_query(2U); // [手順] - 有効期限を大きく超えた時刻 2500 にピア 2 から問い合わせを受ける。
-    send_query(3U); // [手順] - 有効期限を大きく超えた時刻 2500 にピア 3 から問い合わせを受ける。
-    std::vector<SentRecord> query_records = records;
+    cplat_local_lock_lock(ctx.peers_mutex);
+    int held = potr_internal_flow_control_piggyback_limit(&ctx, 1U, &limit);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    now_ms = 1600U;
+    received(2U, 20U, 1);
+    received(3U, 30U, 1);
+    auto during_send = records;
     clear_records();
-    potr_internal_flow_control_tick(&ctx, now_ms);
-    // [手順] - 有効期限を大きく超えた時刻 2500 で周期処理を呼ぶ。
+    cplat_local_lock_lock(ctx.peers_mutex);
+    potr_internal_flow_control_piggyback_complete(&ctx, 1U, limit, 0);
+    cplat_local_lock_unlock(ctx.peers_mutex);
+    send_query(2U);
+    // [手順] - 相乗りを予約し、別ピアの DATA で順番の許可へ切り替え、送出失敗による予約解除の後に問い合わせを受ける。
     // Assert
-    ASSERT_EQ(2U, query_records.size());
-    EXPECT_EQ(24U, query_records[0].send_limit);
-    // [確認_正常系] - DATA 未受信のピア 1 の許可が数えられ、ピア 2 の問い合わせで許可が進まないこと。
-    EXPECT_EQ(30U, query_records[1].send_limit);
-    // [確認_正常系] - DATA 未受信のピア 1 の許可が数えられ、ピア 3 の問い合わせで許可が進まないこと。
-    EXPECT_TRUE(records.empty());
-    // [確認_正常系] - 周期処理でも DATA 未受信のピア 1 の許可が外れず、新規許可が出ないこと。
+    EXPECT_EQ(1, held); // [確認_正常系] - held が 1 であること。
+    EXPECT_EQ(19U, limit); // [確認_正常系] - limit が 19 であること。
+    ASSERT_EQ(2U, during_send.size()); // [確認_正常系] - during_send.size() の戻り値が 2 であること。
+    EXPECT_EQ(20U, during_send[0].send_limit); // [確認_正常系] - during_send[0].send_limit が 20 であること。
+    EXPECT_EQ(30U, during_send[1].send_limit); // [確認_正常系] - during_send[1].send_limit が 30 であること。
+    ASSERT_EQ(1U, records.size()); // [確認_正常系] - records.size() の戻り値が 1 であること。
+    EXPECT_EQ(2U, records[0].peer_id); // [確認_正常系] - records[0].peer_id が 2 であること。
+    EXPECT_EQ(23U, records[0].send_limit); // [確認_正常系] - records[0].send_limit が 23 であること。
+    EXPECT_EQ(6U, (16U - 13U) + (records[0].send_limit - 20U));
+    // [確認_正常系] - 旧許可の残り 3 と新しい許可の合計が 6 であること。
 }
 // [サブ手順参照 名前=potrFlowControlN1WidthTest.TearDown]
