@@ -18,6 +18,7 @@ TEST(threadRecvHealthTest, service_disabled)
     thread_recv_slot slot = {};
     slot.ctx = &ctx;
     ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_RECEIVER;
     ctx.n_path = 1;
     ctx.health_timeout_ms = 0;
     ctx.path_last_recv_ts[0].tv_sec = 10;
@@ -77,6 +78,7 @@ TEST(threadRecvHealthTest, service_before)
     thread_recv_slot slot = {};
     slot.ctx = &ctx;
     ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_RECEIVER;
     ctx.n_path = 1;
     ctx.health_timeout_ms = 100;
     ctx.path_last_recv_ts[0].tv_sec = 10;
@@ -136,6 +138,7 @@ TEST(threadRecvHealthTest, service_at_deadline)
     thread_recv_slot slot = {};
     slot.ctx = &ctx;
     ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_RECEIVER;
     ctx.n_path = 1;
     ctx.health_timeout_ms = 100;
     ctx.path_last_recv_ts[0].tv_sec = 10;
@@ -195,6 +198,7 @@ TEST(threadRecvHealthTest, service_after_deadline)
     thread_recv_slot slot = {};
     slot.ctx = &ctx;
     ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_RECEIVER;
     ctx.n_path = 1;
     ctx.health_timeout_ms = 100;
     ctx.path_last_recv_ts[0].tv_sec = 10;
@@ -254,6 +258,7 @@ TEST(threadRecvHealthTest, service_inactive_service)
     thread_recv_slot slot = {};
     slot.ctx = &ctx;
     ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_RECEIVER;
     ctx.n_path = 1;
     ctx.health_timeout_ms = 100;
     ctx.path_last_recv_ts[0].tv_sec = 10;
@@ -1147,4 +1152,326 @@ TEST(threadRecvHealthTest, health_timeout_does_not_record_slow_peer_reject)
     thread_recv_health_check_peers(&ctx); // [手順] - N:1 のヘルス チェック タイムアウト確認を呼ぶ。
     // Assert
     EXPECT_EQ(0U, ctx.flow_slow_rejected_count); // [確認_正常系] - 拒否記録の件数が 0 のままであること。
+}
+
+// UNICAST_BIDIR の SENDER は src_addr が空かつ src_port が 0 でも経路タイムアウト後に固定宛先を保持することの確認
+TEST(threadRecvHealthTest, service_sender_keeps_fixed_dest_addr_on_timeout)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    thread_recv_slot slot = {};
+    slot.ctx = &ctx;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.service.src_addr[0][0] = '\0';
+    ctx.service.src_port = 0;
+    ctx.service.dst_port = 31000;
+    ctx.n_path = 1;
+    ctx.health_timeout_ms = 100;
+    ctx.path_last_recv_ts[0].tv_sec = 10;
+    ctx.last_recv_ts.tv_sec = 10;
+    ctx.peer_port[0] = 31000;
+    ctx.dest_addr[0].address = 0x0100007fU;
+    ctx.dest_addr[0].port = 31000;
+    ctx.peer_session_known = 1;
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic(_))
+        .WillByDefault(
+            [](cplat_timespec *out)
+            {
+                out->tv_sec = 11;
+                out->tv_nsec = 0;
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
+    ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
+    // [状態] - src_addr が空で src_port が 0 の UNICAST_BIDIR SENDER で、固定宛先を設定した状態を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, thread_recv_sync_path_state(&slot))
+        .Times(1); // [Pre-Assert確認_正常系] - 経路タイムアウト後にパス状態を同期すること。
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_service_all_paths(&ctx))
+        .Times(1); // [Pre-Assert確認_正常系] - サービス全体の切断処理を実行すること。
+    EXPECT_CALL(mock_porter, potr_internal_window_init(&ctx.recv_window, 0, _, _))
+        .Times(1); // [Pre-Assert確認_正常系] - 切断後に受信ウィンドウを初期化すること。
+
+    // Act
+    thread_recv_health_check_service(&slot); // [手順] - 1:1 の受信期限を確認する。
+
+    // Assert
+    EXPECT_EQ(0, ctx.peer_port[0]);                  // [確認_正常系] - 受信時の送信元ポート記録をクリアすること。
+    EXPECT_EQ(0x0100007fU, ctx.dest_addr[0].address); // [確認_正常系] - SENDER の固定宛先アドレスを保持すること。
+    EXPECT_EQ(31000, ctx.dest_addr[0].port);          // [確認_正常系] - SENDER の固定宛先ポートを保持すること。
+    EXPECT_EQ(0, ctx.peer_session_known);            // [確認_正常系] - セッション既知フラグを初期化すること。
+    EXPECT_EQ(0, ctx.last_recv_ts.tv_sec);           // [確認_正常系] - 最終受信時刻をクリアすること。
+}
+
+// 固定の src_addr と src_port を持つ UNICAST_BIDIR RECEIVER は経路タイムアウト後に宛先を保持することの確認
+TEST(threadRecvHealthTest, service_receiver_fixed_addr_and_port_preserved_on_timeout)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    thread_recv_slot slot = {};
+    slot.ctx = &ctx;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_RECEIVER;
+    std::memcpy(ctx.service.src_addr[0], "127.0.0.1", sizeof("127.0.0.1"));
+    ctx.service.src_port = 40000;
+    ctx.n_path = 1;
+    ctx.health_timeout_ms = 100;
+    ctx.path_last_recv_ts[0].tv_sec = 10;
+    ctx.last_recv_ts.tv_sec = 10;
+    ctx.peer_port[0] = 40000;
+    ctx.dest_addr[0].address = 0x0100007fU;
+    ctx.dest_addr[0].port = 40000;
+    ctx.peer_session_known = 1;
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic(_))
+        .WillByDefault(
+            [](cplat_timespec *out)
+            {
+                out->tv_sec = 11;
+                out->tv_nsec = 0;
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
+    ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
+    // [状態] - src_addr と src_port の両方が設定で固定の UNICAST_BIDIR RECEIVER を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, thread_recv_sync_path_state(&slot))
+        .Times(1); // [Pre-Assert確認_正常系] - 経路タイムアウト後にパス状態を同期すること。
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_service_all_paths(&ctx))
+        .Times(1); // [Pre-Assert確認_正常系] - サービス全体の切断処理を実行すること。
+
+    // Act
+    thread_recv_health_check_service(&slot); // [手順] - 1:1 の受信期限を確認する。
+
+    // Assert
+    EXPECT_EQ(0x0100007fU, ctx.dest_addr[0].address); // [確認_正常系] - 固定の送信元アドレスを保持すること。
+    EXPECT_EQ(40000, ctx.dest_addr[0].port);          // [確認_正常系] - 固定の送信元ポートを保持すること。
+}
+
+// 固定の src_addr と動的 src_port(0) を持つ UNICAST_BIDIR RECEIVER はポートだけを消すことの確認
+TEST(threadRecvHealthTest, service_receiver_fixed_addr_learned_port_clears_only_port)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    thread_recv_slot slot = {};
+    slot.ctx = &ctx;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_RECEIVER;
+    std::memcpy(ctx.service.src_addr[0], "127.0.0.1", sizeof("127.0.0.1"));
+    ctx.service.src_port = 0;
+    ctx.n_path = 1;
+    ctx.health_timeout_ms = 100;
+    ctx.path_last_recv_ts[0].tv_sec = 10;
+    ctx.last_recv_ts.tv_sec = 10;
+    ctx.peer_port[0] = 40001;
+    ctx.dest_addr[0].address = 0x0100007fU;
+    ctx.dest_addr[0].port = 40001;
+    ctx.peer_session_known = 1;
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic(_))
+        .WillByDefault(
+            [](cplat_timespec *out)
+            {
+                out->tv_sec = 11;
+                out->tv_nsec = 0;
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
+    ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
+    // [状態] - src_addr が固定で src_port が 0 の UNICAST_BIDIR RECEIVER を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, thread_recv_sync_path_state(&slot))
+        .Times(1); // [Pre-Assert確認_正常系] - 経路タイムアウト後にパス状態を同期すること。
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_service_all_paths(&ctx))
+        .Times(1); // [Pre-Assert確認_正常系] - サービス全体の切断処理を実行すること。
+
+    // Act
+    thread_recv_health_check_service(&slot); // [手順] - 1:1 の受信期限を確認する。
+
+    // Assert
+    EXPECT_EQ(0x0100007fU, ctx.dest_addr[0].address); // [確認_正常系] - 固定の送信元アドレスを保持すること。
+    EXPECT_EQ(0, ctx.dest_addr[0].port);              // [確認_正常系] - 動的学習した宛先ポートを解除すること。
+}
+
+// 経路同期で health_alive が 0 へ遷移した直後もサービス全体の切断処理が 1 回だけ実行されることの確認
+TEST(threadRecvHealthTest, service_full_disconnect_runs_once_when_sync_drops_health_alive)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    thread_recv_slot slot = {};
+    slot.ctx = &ctx;
+    ctx.service.service_id = 5;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 1;
+    ctx.health_timeout_ms = 100;
+    ctx.path_last_recv_ts[0].tv_sec = 10;
+    ctx.last_recv_ts.tv_sec = 10;
+    ctx.peer_port[0] = 31000;
+    ctx.dest_addr[0].address = 0x0100007fU;
+    ctx.dest_addr[0].port = 31000;
+    ctx.pending_fin = 1;
+    ctx.fin_target_seq = 9;
+    ctx.peer_session_known = 1;
+    ctx.reorder_pending = 1;
+    ctx.remote_path_ping_state[0] = POTR_PING_STATE_NORMAL;
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic(_))
+        .WillByDefault(
+            [](cplat_timespec *out)
+            {
+                out->tv_sec = 11;
+                out->tv_nsec = 0;
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(int64_t{100}), Return(CPLAT_OK)));
+    ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
+    ON_CALL(mock_porter, thread_recv_set_all_path_ping_states(_, _, _)).WillByDefault(Return(1));
+    // [状態] - 経路状態の同期で health_alive が 1 から 0 へ落ちる 1 経路のサービスを用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat,
+                cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_WARNING, nullptr, HasSubstr("DISCONNECTED (timeout")))
+        .Times(1);
+    // [Pre-Assert確認_正常系] - タイムアウト切断の WARNING が 1 回だけ記録されること。
+    {
+        InSequence sequence;
+        EXPECT_CALL(mock_porter, thread_recv_sync_path_state(&slot))
+            .Times(1)
+            .WillOnce(
+                [&](thread_recv_slot *)
+                {
+                    cplat_atomic_store_i32(&ctx.health_alive, 0, CPLAT_MEMORY_ORDER_RELEASE);
+                });
+        // [Pre-Assert確認_正常系] - 経路同期が 1 回だけ呼ばれること。
+        // [Pre-Assert手順] - 経路同期の副作用として health_alive を 0 へ更新する。
+        EXPECT_CALL(mock_porter,
+                    thread_recv_set_all_path_ping_states(ctx.path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED))
+            .Times(1);
+        // [Pre-Assert確認_正常系] - 全経路の PING 受信状態を不定へ 1 回戻すこと。
+        EXPECT_CALL(mock_porter, thread_recv_disconnect_service_all_paths(&ctx))
+            .Times(1);
+        // [Pre-Assert確認_正常系] - サービス全体の切断処理が 1 回だけ呼ばれること。
+        EXPECT_CALL(mock_porter, potr_internal_window_init(&ctx.recv_window, 0, _, _))
+            .Times(1);
+        // [Pre-Assert確認_正常系] - 受信ウィンドウの初期化が 1 回だけ呼ばれること。
+        EXPECT_CALL(mock_porter, thread_recv_wake_udp_interrupt_ping(&ctx, 1))
+            .Times(1);
+        // [Pre-Assert確認_正常系] - 割り込み PING の起床が 1 回だけ呼ばれること。
+    }
+
+    // Act
+    thread_recv_health_check_service(&slot); // [手順] - 1 回目の受信期限確認で全経路タイムアウトを処理する。
+    thread_recv_health_check_service(&slot); // [手順] - 切断後に 2 回目の受信期限確認を呼び、重複実行されないことを確かめる。
+
+    // Assert
+    EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_ACQUIRE));
+    // [確認_正常系] - health_alive が 0 であること。
+    EXPECT_EQ(0, ctx.pending_fin);               // [確認_正常系] - pending_fin が 0 へ初期化されること。
+    EXPECT_EQ(0U, ctx.fin_target_seq);           // [確認_正常系] - fin_target_seq が 0 へ初期化されること。
+    EXPECT_EQ(0, ctx.peer_session_known);        // [確認_正常系] - peer_session_known が 0 へ初期化されること。
+    EXPECT_EQ(0, ctx.reorder_pending);           // [確認_正常系] - reorder_pending が 0 へ初期化されること。
+    EXPECT_EQ(0, ctx.last_recv_ts.tv_sec);       // [確認_正常系] - last_recv_ts がクリアされること。
+    EXPECT_EQ(0U, ctx.remote_path_ping_state[0]); // [確認_正常系] - remote_path_ping_state が消去されること。
+}
+
+// 複数経路の構成で片方だけがタイムアウトした場合にサービス全体の切断へ進まず正常経路を保持することの確認
+TEST(threadRecvHealthTest, service_partial_path_timeout_preserves_healthy_path_and_session)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    thread_recv_slot slot = {};
+    slot.ctx = &ctx;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 2;
+    ctx.health_timeout_ms = 100;
+    ctx.path_last_recv_ts[0].tv_sec = 10;
+    ctx.path_last_recv_ts[1].tv_sec = 11;
+    ctx.last_recv_ts.tv_sec = 11;
+    ctx.peer_port[0] = 31000;
+    ctx.peer_port[1] = 31001;
+    ctx.dest_addr[0].address = 0x0100007fU;
+    ctx.dest_addr[0].port = 31000;
+    ctx.dest_addr[1].address = 0x0200007fU;
+    ctx.dest_addr[1].port = 31001;
+    ctx.pending_fin = 1;
+    ctx.peer_session_known = 1;
+    ctx.remote_path_ping_state[0] = POTR_PING_STATE_NORMAL;
+    ctx.remote_path_ping_state[1] = POTR_PING_STATE_NORMAL;
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic(_))
+        .WillByDefault(
+            [](cplat_timespec *out)
+            {
+                out->tv_sec = 11;
+                out->tv_nsec = 10000000;
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_timespec_diff_ms(_, _, _))
+        .WillByDefault(
+            [](const cplat_timespec *, const cplat_timespec *past, int64_t *out)
+            {
+                if (past->tv_sec == 10)
+                {
+                    *out = 100;
+                }
+                else
+                {
+                    *out = 10;
+                }
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_porter, thread_recv_set_path_ping_state(_, _)).WillByDefault(Return(1));
+    // [状態] - 2 経路のうち経路 0 だけがタイムアウト期限に達し、経路 1 とサービス全体の最終受信時刻は新しい状態を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, thread_recv_set_path_ping_state(&ctx.path_ping_state[0], POTR_PING_STATE_ABNORMAL))
+        .Times(1); // [Pre-Assert確認_正常系] - 経路 0 だけを ABNORMAL にすること。
+    EXPECT_CALL(mock_porter, thread_recv_set_path_ping_state(&ctx.path_ping_state[1], _))
+        .Times(0); // [Pre-Assert確認_正常系] - 正常な経路 1 の状態を変更しないこと。
+    EXPECT_CALL(mock_porter, thread_recv_sync_path_state(&slot))
+        .Times(1); // [Pre-Assert確認_正常系] - 経路 0 の変化を同期すること。
+    EXPECT_CALL(mock_porter, thread_recv_set_all_path_ping_states(_, _, _))
+        .Times(0); // [Pre-Assert確認_正常系] - 全経路の PING 受信状態を不定へ戻さないこと。
+    EXPECT_CALL(mock_porter, thread_recv_disconnect_service_all_paths(&ctx))
+        .Times(0); // [Pre-Assert確認_正常系] - サービス全体の切断処理へ進まないこと。
+    EXPECT_CALL(mock_porter, potr_internal_window_init(_, _, _, _))
+        .Times(0); // [Pre-Assert確認_正常系] - 受信ウィンドウを初期化しないこと。
+    EXPECT_CALL(mock_porter, thread_recv_wake_udp_interrupt_ping(&ctx, 1))
+        .Times(1); // [Pre-Assert確認_正常系] - 経路 0 の状態変化に伴う割り込み PING 起床を行うこと。
+
+    // Act
+    thread_recv_health_check_service(&slot); // [手順] - 1:1 の受信期限を確認する。
+
+    // Assert
+    EXPECT_EQ(0, ctx.peer_port[0]);          // [確認_正常系] - タイムアウトした経路 0 の送信元ポートをクリアすること。
+    EXPECT_EQ(0, ctx.path_last_recv_ts[0].tv_sec); // [確認_正常系] - タイムアウトした経路 0 の最終受信時刻をクリアすること。
+    EXPECT_EQ(31001, ctx.peer_port[1]);      // [確認_正常系] - 正常な経路 1 の送信元ポートを保持すること。
+    EXPECT_EQ(11, ctx.path_last_recv_ts[1].tv_sec); // [確認_正常系] - 正常な経路 1 の最終受信時刻を保持すること。
+    EXPECT_EQ(11, ctx.last_recv_ts.tv_sec);  // [確認_正常系] - サービス全体の最終受信時刻を保持すること。
+    EXPECT_EQ(1, ctx.peer_session_known);    // [確認_正常系] - セッション既知状態を保持すること。
+    EXPECT_EQ(1, ctx.pending_fin);           // [確認_正常系] - FIN 保留状態を保持すること。
+    EXPECT_EQ(POTR_PING_STATE_NORMAL, ctx.remote_path_ping_state[1]);
+    // [確認_正常系] - 正常な経路 1 の相手受信状態を保持すること。
 }

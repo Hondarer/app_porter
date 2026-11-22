@@ -93,8 +93,18 @@ static cplat_socket open_socket_unicast(const potr_context *ctx, const uint32_t 
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行するため、戻り値は明示的に破棄する。 */
-    (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    /*
+     * 自動割り当て (port == 0) で SO_REUSEADDR を有効にすると、同一ホストの複数ソケットへ
+     * 同じローカル ポートが割り当てられ、返信や PING が片方にしか届かなくなる。
+     * 固定ポート (port != 0) の場合のみ、再起動時の互換性向上のための best-effort 設定として有効化する。
+     * 失敗しても bind を試行するため、戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man7/socket.7.html
+     * see: https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
+     */
+    if (port != 0)
+    {
+        (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    }
 
     addr.address = bind_addr;
     addr.port = cplat_hton16(port);
@@ -143,8 +153,18 @@ static cplat_socket open_socket_multicast(const potr_context *ctx, const uint32_
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行するため、戻り値は明示的に破棄する。 */
-    (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    /*
+     * 受信者は常に固定ポート (dst_port != 0) で bind するため、同一ポートへの複数参加を許可する。
+     * 送信者が自動割り当て (src_port == 0) で bind する場合は、同一ホストの複数ソケット間で
+     * ローカル ポートが重複するのを防ぐため有効化しない。
+     * 失敗しても bind を試行するため、戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man7/socket.7.html
+     * see: https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
+     */
+    if (bind_port != 0)
+    {
+        (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    }
 
     addr.address = CPLAT_IPV4_ADDR_ANY;
     addr.port = cplat_hton16(bind_port);
@@ -218,8 +238,18 @@ static cplat_socket open_socket_broadcast(const potr_context *ctx, uint16_t src_
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行するため、戻り値は明示的に破棄する。 */
-    (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    /*
+     * 受信者は常に固定ポート (dst_port != 0) で bind するため、同一ポートへの複数参加を許可する。
+     * 送信者が自動割り当て (src_port == 0) で bind する場合は、同一ホストの複数ソケット間で
+     * ローカル ポートが重複するのを防ぐため有効化しない。
+     * 失敗しても bind を試行するため、戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man7/socket.7.html
+     * see: https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
+     */
+    if (bind_port != 0)
+    {
+        (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    }
 
     if (cplat_socket_set_broadcast(sock, 1, &detail) != CPLAT_OK)
     {

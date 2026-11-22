@@ -985,6 +985,8 @@ static constexpr size_t kP6DefaultBytes = 1000U;
 static constexpr uint32_t kP6DefaultCount = 10000U;
 static constexpr uint32_t kP6DefaultWarmup = 1000U;
 static constexpr uint32_t kP6DefaultRunTimeoutS = 60U;
+/** P2 の 1 回あたりの打ち切り時間 [s]。P6 の既定値に合わせる。 */
+static constexpr uint32_t kP2DefaultRunTimeoutS = kP6DefaultRunTimeoutS;
 
 /* ===== N:1 のクライアント数と P7 の既定定数 ===== */
 
@@ -1132,7 +1134,7 @@ static void print_usage(const char *prog)
         "  --slow-receivers <M>        P6 slow receiver count sleeping in callback (default: %u)\n"
         "  --mcast-group <ip>          P6 multicast group address (default: %s)\n"
         "  --mcast-if <ip>             P6 multicast interface address (default: %s)\n"
-        "  --run-timeout-s <S>         P6/P7 per-run timeout in seconds (defaults: %u/%u)\n"
+        "  --run-timeout-s <S>         P2/P6/P7 per-run timeout in seconds (defaults: %u/%u/%u)\n"
         "  --config <key>=<value>      Override potr_global_config field (repeatable, applies to P1..P7)\n"
         "  --out <path>                Write CSV to file instead of stdout\n"
         "  --no-header                 Omit CSV header row\n"
@@ -1145,8 +1147,8 @@ static void print_usage(const char *prog)
         static_cast<unsigned>(kP6DefaultWarmup), kP7DefaultWarmup, static_cast<unsigned>(kDefaultInflight),
         static_cast<unsigned>(kDefaultBasePort), kMaxClients, kDefaultClients, kP7DefaultStalledClients,
         kP7DefaultStalledCapacity, static_cast<unsigned>(kDefaultCbSleepMs), kP7DefaultCbSleepMs, kP6MaxReceivers,
-        kP6DefaultReceivers, kP6DefaultSlowReceivers, kP6DefaultMcastGroup, kP6DefaultMcastIf, kP6DefaultRunTimeoutS,
-        kP7DefaultRunTimeoutS);
+        kP6DefaultReceivers, kP6DefaultSlowReceivers, kP6DefaultMcastGroup, kP6DefaultMcastIf, kP2DefaultRunTimeoutS,
+        kP6DefaultRunTimeoutS, kP7DefaultRunTimeoutS);
 }
 
 /* ===== P1 / P5 の実装 ===== */
@@ -1682,9 +1684,15 @@ struct P2Context
     std::mutex srv_conn_mtx;
     std::condition_variable srv_conn_cv;
 
+    std::mutex bar_mtx;
+    std::condition_variable bar_cv;
+
     std::mutex q_mtx;
     std::condition_variable q_cv;
     std::deque<P2ReplyItem> q;
+
+    std::mutex abort_mtx;
+    std::string abort_reason;
 
     std::vector<P2ClientState *> clients;
 
@@ -1692,19 +1700,66 @@ struct P2Context
     uint32_t count = 0U;
     uint32_t srv_connected_peers = 0U;
     uint32_t cli_connected_count = 0U;
+    uint32_t bar_arrived = 0U;
     bool cb_reply_mode = false;
     std::atomic<bool> closing{false};
     std::atomic<bool> stop_worker{false};
-    unsigned char pad[5] = {}; // 明示的アラインメントのためのパディング。
+    std::atomic<bool> aborted{false};
 };
 
 static P2Context *s_p2_context = nullptr;
+
+static void p2_abort(P2Context *ctx, const std::string &reason)
+{
+    if (ctx == nullptr)
+    {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lk(ctx->abort_mtx);
+        if (ctx->aborted.load(std::memory_order_relaxed))
+        {
+            return;
+        }
+        ctx->abort_reason = reason;
+        ctx->aborted.store(true, std::memory_order_release);
+    }
+    /* 各待機条件変数の取りこぼしを防ぐため、対応する mutex を短く獲得してから通知する。 */
+    {
+        std::lock_guard<std::mutex> lk(ctx->srv_conn_mtx);
+    }
+    ctx->srv_conn_cv.notify_all();
+    {
+        std::lock_guard<std::mutex> lk(ctx->bar_mtx);
+    }
+    ctx->bar_cv.notify_all();
+    {
+        std::lock_guard<std::mutex> lk(ctx->q_mtx);
+    }
+    ctx->q_cv.notify_all();
+    for (P2ClientState *cs : ctx->clients)
+    {
+        if (cs != nullptr)
+        {
+            {
+                std::lock_guard<std::mutex> lk(cs->mtx);
+            }
+            cs->cv.notify_all();
+        }
+    }
+}
 
 static int p2_send_reply_retry(potr_context *srv, potr_peer_id peer_id, const void *data, size_t len)
 {
     int retry = 0;
     for (;;)
     {
+        if (s_p2_context != nullptr &&
+            (s_p2_context->closing.load(std::memory_order_acquire) ||
+             s_p2_context->aborted.load(std::memory_order_acquire)))
+        {
+            return POTR_ERR_CANCELED;
+        }
         const int rc = potr_service_send(srv, peer_id, data, len, 0);
         if (rc == POTR_OK)
         {
@@ -1747,20 +1802,30 @@ static void p2_server_cb(int64_t /*service_id*/, potr_peer_id peer_id, potr_even
             ++ctx->srv_connected_peers;
             ctx->srv_conn_cv.notify_all();
         }
+        else if (event == POTR_EVENT_DISCONNECTED || event == POTR_EVENT_ERROR)
+        {
+            if (!ctx->closing.load(std::memory_order_acquire))
+            {
+                p2_abort(ctx, std::string("stage=server_cb event=") + potr_event_name(event) +
+                                  " peer_id=" + std::to_string(static_cast<unsigned>(peer_id)));
+            }
+        }
         return;
     }
-    if (data == nullptr || len == 0U || ctx->closing.load(std::memory_order_acquire))
+    if (data == nullptr || len == 0U || ctx->closing.load(std::memory_order_acquire) ||
+        ctx->aborted.load(std::memory_order_acquire))
     {
         return;
     }
     if (ctx->cb_reply_mode)
     {
         const int rc = p2_send_reply_retry(ctx->server, peer_id, data, len);
-        if (rc != POTR_OK && !ctx->closing.load(std::memory_order_acquire))
+        if (rc != POTR_OK && !ctx->closing.load(std::memory_order_acquire) &&
+            !ctx->aborted.load(std::memory_order_acquire))
         {
             ctx->server_send_errors.fetch_add(1ULL, std::memory_order_relaxed);
-            std::fprintf(stderr, "[P2] stage=cb_reply peer_id=%u err=%d (%s)\n",
-                         static_cast<unsigned>(peer_id), rc, potr_err_name(rc));
+            p2_abort(ctx, "stage=cb_reply peer_id=" + std::to_string(static_cast<unsigned>(peer_id)) +
+                              " err=" + std::to_string(rc) + " (" + potr_err_name(rc) + ")");
         }
     }
     else
@@ -1793,9 +1858,17 @@ static void p2_client_cb(int64_t /*service_id*/, potr_peer_id /*peer_id*/, potr_
             ++ctx->cli_connected_count;
             ctx->srv_conn_cv.notify_all();
         }
+        else if (event == POTR_EVENT_DISCONNECTED || event == POTR_EVENT_ERROR)
+        {
+            if (!ctx->closing.load(std::memory_order_acquire))
+            {
+                p2_abort(ctx, std::string("stage=client_cb event=") + potr_event_name(event));
+            }
+        }
         return;
     }
-    if (data == nullptr || len < kPayloadHeaderBytes)
+    if (data == nullptr || len < kPayloadHeaderBytes || ctx->closing.load(std::memory_order_acquire) ||
+        ctx->aborted.load(std::memory_order_acquire))
     {
         return;
     }
@@ -1837,6 +1910,12 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
     const uint32_t count = (opt.count > 0U) ? opt.count : kP2DefaultCount;
     const uint32_t warmup = (opt.warmup != UINT32_MAX) ? opt.warmup : kDefaultWarmup;
     const uint32_t inflight = (opt.inflight > 0U) ? opt.inflight : kDefaultInflight;
+    const uint32_t run_timeout_s = opt.run_timeout_s;
+    if (run_timeout_s == 0U)
+    {
+        std::fprintf(stderr, "--run-timeout-s must be >= 1\n");
+        return false;
+    }
     const bool cb_mode = (opt.reply_mode == "cb");
 
     {
@@ -1894,7 +1973,14 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                     P2ReplyItem item;
                     {
                         std::unique_lock<std::mutex> lk(ctx.q_mtx);
-                        ctx.q_cv.wait(lk, [&]() { return !ctx.q.empty() || ctx.stop_worker.load(std::memory_order_acquire); });
+                        ctx.q_cv.wait(lk, [&]() {
+                            return !ctx.q.empty() || ctx.stop_worker.load(std::memory_order_acquire) ||
+                                   ctx.aborted.load(std::memory_order_acquire);
+                        });
+                        if (ctx.aborted.load(std::memory_order_acquire))
+                        {
+                            break;
+                        }
                         if (ctx.q.empty())
                         {
                             if (ctx.stop_worker.load(std::memory_order_acquire))
@@ -1907,11 +1993,13 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                         ctx.q.pop_front();
                     }
                     const int sret = p2_send_reply_retry(ctx.server, item.peer_id, item.data.data(), item.data.size());
-                    if (sret != POTR_OK && !ctx.closing.load(std::memory_order_acquire))
+                    if (sret != POTR_OK && !ctx.closing.load(std::memory_order_acquire) &&
+                        !ctx.aborted.load(std::memory_order_acquire))
                     {
                         ctx.server_send_errors.fetch_add(1ULL, std::memory_order_relaxed);
-                        std::fprintf(stderr, "[P2] stage=ext_reply peer_id=%u err=%d (%s)\n",
-                                     static_cast<unsigned>(item.peer_id), sret, potr_err_name(sret));
+                        p2_abort(&ctx, "stage=ext_reply peer_id=" + std::to_string(static_cast<unsigned>(item.peer_id)) +
+                                           " err=" + std::to_string(sret) + " (" + potr_err_name(sret) + ")");
+                        break;
                     }
                 }
             });
@@ -1948,14 +2036,26 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         {
             std::unique_lock<std::mutex> lk(ctx.srv_conn_mtx);
             all_conn = ctx.srv_conn_cv.wait_for(lk, kConnectRecvTimeout, [&]() {
-                return ctx.srv_connected_peers >= opt.clients &&
-                       ctx.cli_connected_count >= opt.clients;
+                return ctx.aborted.load(std::memory_order_acquire) ||
+                       (ctx.srv_connected_peers >= opt.clients && ctx.cli_connected_count >= opt.clients);
             });
         }
-        if (!all_conn)
+        if (!all_conn || ctx.aborted.load(std::memory_order_acquire))
         {
-            std::fprintf(stderr, "[P2] run=%u stage=connect timeout (srv_peers=%u cli_conn=%u)\n", r + 1U,
-                         ctx.srv_connected_peers, ctx.cli_connected_count);
+            if (ctx.aborted.load(std::memory_order_acquire))
+            {
+                std::string reason;
+                {
+                    std::lock_guard<std::mutex> lk(ctx.abort_mtx);
+                    reason = ctx.abort_reason;
+                }
+                std::fprintf(stderr, "[P2] run=%u failed: %s\n", r + 1U, reason.c_str());
+            }
+            else
+            {
+                std::fprintf(stderr, "[P2] run=%u stage=connect timeout (srv_peers=%u cli_conn=%u)\n", r + 1U,
+                             ctx.srv_connected_peers, ctx.cli_connected_count);
+            }
             ctx.closing.store(true, std::memory_order_release);
             for (uint32_t c = 0U; c < opt.clients; ++c)
             {
@@ -1972,10 +2072,8 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             return false;
         }
 
-        std::mutex bar_mtx;
-        std::condition_variable bar_cv;
-        uint32_t bar_arrived = 0U;
         uint64_t meas_start_ns = 0ULL;
+        const auto run_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(run_timeout_s);
 
         std::vector<std::thread> cthreads;
         cthreads.reserve(opt.clients);
@@ -1988,16 +2086,26 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                 write_u32_le(payload.data() + kPayloadSenderIdOffset, c);
                 P2ClientState *cs = ctx.clients[c];
 
-                auto send_req = [&](uint32_t seq) {
+                auto send_req = [&](uint32_t seq) -> bool {
                     write_u32_le(payload.data() + kPayloadSeqOffset, seq);
                     int retry = 0;
                     for (;;)
                     {
+                        if (ctx.aborted.load(std::memory_order_acquire))
+                        {
+                            return false;
+                        }
+                        if (std::chrono::steady_clock::now() >= run_deadline)
+                        {
+                            p2_abort(&ctx, "client=" + std::to_string(c) + " stage=send seq=" + std::to_string(seq) +
+                                               " timeout (run_timeout_s=" + std::to_string(run_timeout_s) + ")");
+                            return false;
+                        }
                         write_u64_le(payload.data(), mono_now_ns());
                         const int sret = potr_service_send(client_handles[c], POTR_PEER_NA, payload.data(), bytes, 0);
                         if (sret == POTR_OK)
                         {
-                            return;
+                            return true;
                         }
                         if (sret == POTR_ERR_FULL && retry < kFullMaxRetries)
                         {
@@ -2013,40 +2121,153 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                             }
                             continue;
                         }
-                        std::fprintf(stderr, "[P2] run=%u client=%u stage=send seq=%u err=%d (%s)\n", r + 1U, c, seq,
-                                     sret, potr_err_name(sret));
-                        return;
+                        p2_abort(&ctx, "client=" + std::to_string(c) + " stage=send seq=" + std::to_string(seq) +
+                                           " err=" + std::to_string(sret) + " (" + potr_err_name(sret) + ")");
+                        return false;
                     }
+                };
+
+                auto wait_inflight = [&](uint32_t seq, const char *stage) -> bool {
+                    bool ready = false;
+                    bool timed_out = false;
+                    {
+                        std::unique_lock<std::mutex> lk(cs->mtx);
+                        for (;;)
+                        {
+                            if (ctx.aborted.load(std::memory_order_acquire))
+                            {
+                                break;
+                            }
+                            if ((seq - cs->replies) < inflight)
+                            {
+                                ready = true;
+                                break;
+                            }
+                            const auto now = std::chrono::steady_clock::now();
+                            if (now >= run_deadline)
+                            {
+                                timed_out = true;
+                                break;
+                            }
+                            const auto remaining = run_deadline - now;
+                            const auto wait_dur =
+                                (remaining < std::chrono::steady_clock::duration(kP2InflightWaitTimeout))
+                                    ? remaining
+                                    : std::chrono::steady_clock::duration(kP2InflightWaitTimeout);
+                            const bool ok = cs->cv.wait_for(lk, wait_dur, [&]() {
+                                return (seq - cs->replies) < inflight ||
+                                       ctx.aborted.load(std::memory_order_acquire);
+                            });
+                            if (!ok && std::chrono::steady_clock::now() >= run_deadline)
+                            {
+                                timed_out = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (timed_out)
+                    {
+                        p2_abort(&ctx, "client=" + std::to_string(c) + " stage=" + stage +
+                                           " timeout (run_timeout_s=" + std::to_string(run_timeout_s) + ")");
+                        return false;
+                    }
+                    return ready;
                 };
 
                 /* ウォーム アップ */
                 for (uint32_t seq = 0U; seq < warmup; ++seq)
                 {
+                    if (!wait_inflight(seq, "warmup_inflight"))
                     {
-                        std::unique_lock<std::mutex> lk(cs->mtx);
-                        cs->cv.wait_for(lk, kP2InflightWaitTimeout,
-                                        [&]() { return (seq - cs->replies) < inflight; });
+                        return;
                     }
-                    send_req(seq);
+                    if (!send_req(seq))
+                    {
+                        return;
+                    }
                 }
                 {
-                    std::unique_lock<std::mutex> lk(cs->mtx);
-                    cs->cv.wait_for(lk, kP2WarmupDrainTimeout, [&]() { return cs->replies >= warmup; });
+                    bool timed_out = false;
+                    {
+                        std::unique_lock<std::mutex> lk(cs->mtx);
+                        const auto now = std::chrono::steady_clock::now();
+                        if (now >= run_deadline)
+                        {
+                            timed_out = true;
+                        }
+                        else if (!ctx.aborted.load(std::memory_order_acquire))
+                        {
+                            const auto remaining = run_deadline - now;
+                            const auto wait_dur =
+                                (remaining < std::chrono::steady_clock::duration(kP2WarmupDrainTimeout))
+                                    ? remaining
+                                    : std::chrono::steady_clock::duration(kP2WarmupDrainTimeout);
+                            const bool ok = cs->cv.wait_for(lk, wait_dur, [&]() {
+                                return cs->replies >= warmup || ctx.aborted.load(std::memory_order_acquire);
+                            });
+                            if (!ok && std::chrono::steady_clock::now() >= run_deadline)
+                            {
+                                timed_out = true;
+                            }
+                        }
+                    }
+                    if (timed_out)
+                    {
+                        p2_abort(&ctx, "client=" + std::to_string(c) + " stage=warmup_drain timeout (run_timeout_s=" +
+                                           std::to_string(run_timeout_s) + ")");
+                        return;
+                    }
+                    if (ctx.aborted.load(std::memory_order_acquire))
+                    {
+                        return;
+                    }
                 }
 
                 /* 全クライアントをそろえる。 */
                 {
-                    std::unique_lock<std::mutex> lk(bar_mtx);
-                    ++bar_arrived;
-                    if (bar_arrived == opt.clients)
+                    bool bar_timed_out = false;
                     {
-                        meas_start_ns = mono_now_ns();
-                        ctx.last_reply_ns.store(meas_start_ns, std::memory_order_release);
-                        bar_cv.notify_all();
+                        std::unique_lock<std::mutex> lk(ctx.bar_mtx);
+                        if (!ctx.aborted.load(std::memory_order_acquire))
+                        {
+                            ++ctx.bar_arrived;
+                            if (ctx.bar_arrived == opt.clients)
+                            {
+                                meas_start_ns = mono_now_ns();
+                                ctx.last_reply_ns.store(meas_start_ns, std::memory_order_release);
+                                ctx.bar_cv.notify_all();
+                            }
+                            else
+                            {
+                                const auto now = std::chrono::steady_clock::now();
+                                if (now >= run_deadline)
+                                {
+                                    bar_timed_out = true;
+                                }
+                                else
+                                {
+                                    const bool ok = ctx.bar_cv.wait_for(lk, run_deadline - now, [&]() {
+                                        return ctx.bar_arrived == opt.clients ||
+                                               ctx.aborted.load(std::memory_order_acquire);
+                                    });
+                                    if (!ok && !ctx.aborted.load(std::memory_order_acquire))
+                                    {
+                                        bar_timed_out = true;
+                                    }
+                                }
+                            }
+                        }
                     }
-                    else
+                    if (bar_timed_out)
                     {
-                        bar_cv.wait(lk, [&]() { return bar_arrived == opt.clients; });
+                        p2_abort(&ctx, "client=" + std::to_string(c) +
+                                           " stage=warmup_barrier timeout (run_timeout_s=" +
+                                           std::to_string(run_timeout_s) + ")");
+                        return;
+                    }
+                    if (ctx.aborted.load(std::memory_order_acquire))
+                    {
+                        return;
                     }
                 }
 
@@ -2054,12 +2275,14 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
                 for (uint32_t k = 0U; k < count; ++k)
                 {
                     const uint32_t seq = warmup + k;
+                    if (!wait_inflight(seq, "meas_inflight"))
                     {
-                        std::unique_lock<std::mutex> lk(cs->mtx);
-                        cs->cv.wait_for(lk, kP2InflightWaitTimeout,
-                                        [&]() { return (seq - cs->replies) < inflight; });
+                        return;
                     }
-                    send_req(seq);
+                    if (!send_req(seq))
+                    {
+                        return;
+                    }
                 }
             }, spawn_index);
         }
@@ -2075,7 +2298,7 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
         }
 
         /* 返信がそろうか、最後の返信または送信完了から 2 [s] 無通知になるまで待つ。 */
-        for (;;)
+        while (!ctx.aborted.load(std::memory_order_acquire))
         {
             size_t total_post = 0U;
             for (uint32_t c = 0U; c < opt.clients; ++c)
@@ -2085,6 +2308,11 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             }
             if (total_post >= static_cast<size_t>(opt.clients) * count)
             {
+                break;
+            }
+            if (std::chrono::steady_clock::now() >= run_deadline)
+            {
+                p2_abort(&ctx, "stage=drain timeout (run_timeout_s=" + std::to_string(run_timeout_s) + ")");
                 break;
             }
             const uint64_t now = mono_now_ns();
@@ -2109,6 +2337,18 @@ static bool run_p2(const Options &opt, std::vector<RunMetrics> *out_runs, std::s
             ext_worker.join();
         }
         potr_service_close(ctx.server);
+
+        if (ctx.aborted.load(std::memory_order_acquire))
+        {
+            std::string reason;
+            {
+                std::lock_guard<std::mutex> lk(ctx.abort_mtx);
+                reason = ctx.abort_reason;
+            }
+            std::fprintf(stderr, "[P2] run=%u failed: %s\n", r + 1U, reason.c_str());
+            cleanup_clients();
+            return false;
+        }
 
         std::vector<double> all_rtts;
         for (uint32_t c = 0U; c < opt.clients; ++c)
@@ -4019,6 +4259,11 @@ int main(int argc, char **argv)
     {
         print_usage(argv[0]);
         return EXIT_FAILURE;
+    }
+
+    if (opt.cond == "p2" && !opt.run_timeout_specified)
+    {
+        opt.run_timeout_s = kP2DefaultRunTimeoutS;
     }
 
     if (opt.cond == "p7")

@@ -1142,3 +1142,77 @@ TEST(threadConnectPrepareTest, connect_poll_set_blocking_failure)
     // Assert
     EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - thread_connect_with_timeout() の戻り値が CPLAT_INVALID_SOCKET であること。
 }
+
+// src_port=0 (OS 自動割り当て) のとき cplat_socket_set_reuse_address() を呼ばないことの確認
+TEST(threadConnectPrepareTest, connect_ephemeral_src_port_skips_reuse_address)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx_no_bind = {};
+    ctx_no_bind.service.connect_timeout_ms = 0;
+    ctx_no_bind.service.src_port = 0;
+    potr_context ctx_bind_addr_only = {};
+    ctx_bind_addr_only.service.connect_timeout_ms = 0;
+    ctx_bind_addr_only.service.src_port = 0;
+    std::memcpy(ctx_bind_addr_only.service.src_addr[0], "src", sizeof("src"));
+    ctx_bind_addr_only.src_addr_resolved[0] = 42U;
+    ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_TCP, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(7);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - src_port=0 の 2 条件 (src_addr 省略、src_addr 指定) で接続を成功させる。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - cplat_socket_set_reuse_address() が呼び出されないこと。
+
+    // Act
+    cplat_socket ret_no_bind = thread_connect_with_timeout(&ctx_no_bind, 0);
+    // [手順] - src_addr 省略、src_port=0 で接続する。
+    cplat_socket ret_bind_addr_only = thread_connect_with_timeout(&ctx_bind_addr_only, 0);
+    // [手順] - src_addr 指定、src_port=0 で接続する。
+
+    // Assert
+    EXPECT_EQ(static_cast<cplat_socket>(7), ret_no_bind);        // [確認_正常系] - src_addr 省略で接続ソケットを返すこと。
+    EXPECT_EQ(static_cast<cplat_socket>(7), ret_bind_addr_only); // [確認_正常系] - src_addr 指定で接続ソケットを返すこと。
+}
+
+// 固定の src_port (非 0) を指定したとき cplat_socket_set_reuse_address() を呼ぶことの確認
+TEST(threadConnectPrepareTest, connect_fixed_src_port_sets_reuse_address)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.connect_timeout_ms = 0;
+    ctx.service.src_port = 40100;
+    ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_TCP, _, _))
+        .WillByDefault(
+            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(7);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - src_port=40100 で bind と接続を成功させる。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(static_cast<cplat_socket>(7), 1, _))
+        .Times(1)
+        .WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - cplat_socket_set_reuse_address() が 7、1 を指定して 1 回呼び出されること。
+
+    // Act
+    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0);
+    // [手順] - 固定の src_port で接続する。
+
+    // Assert
+    EXPECT_EQ(static_cast<cplat_socket>(7), actual_ret); // [確認_正常系] - 接続ソケットを返すこと。
+}

@@ -1284,3 +1284,207 @@ TEST(apiOpenPathsUdpTest, udp_receive_buffer_size_compares_actual_and_requested_
     EXPECT_EQ(POTR_OK, ret_exact);   // [確認_正常系] - サービス 1003 が POTR_OK であること。
     EXPECT_EQ(POTR_OK, ret_doubled); // [確認_正常系] - サービス 1004 が POTR_OK であること。
 }
+
+// unicast / unicast_bidir の送信者が port=0 (OS 自動割り当て) で bind するとき cplat_socket_set_reuse_address() を呼ばないことの確認
+TEST(apiOpenPathsUdpTest, unicast_ephemeral_port_skips_reuse_address)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    int opens = 0;
+    ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_UDP, _, _))
+        .WillByDefault(
+            [&](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(++opens);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    potr_context ctx_unicast = {};
+    ctx_unicast.service.src_port = 0;
+    ctx_unicast.service.dst_port = 5000;
+    std::memcpy(ctx_unicast.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx_unicast.service.dst_addr[0], "dst", sizeof("dst"));
+    potr_context ctx_bidir = {};
+    ctx_bidir.service.src_port = 0;
+    ctx_bidir.service.dst_port = 5001;
+    std::memcpy(ctx_bidir.service.dst_addr[0], "dst", sizeof("dst"));
+    // [状態] - unicast と unicast_bidir の送信者に src_port=0 を設定し、ソケット作成と bind を成功させる。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - cplat_socket_set_reuse_address() が呼び出されないこと。
+
+    // Act
+    int ret_unicast = api_open_paths_unicast(&ctx_unicast, POTR_ROLE_SENDER);
+    // [手順] - src_port=0 で unicast 送信者の経路を開く。
+    int ret_bidir = api_open_paths_unicast_bidir(&ctx_bidir, POTR_ROLE_SENDER);
+    // [手順] - src_port=0 で unicast_bidir 送信者の経路を開く。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_unicast); // [確認_正常系] - unicast 送信者の戻り値が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_bidir);   // [確認_正常系] - unicast_bidir 送信者の戻り値が POTR_OK であること。
+}
+
+// unicast / unicast_bidir / unicast_bidir_n1 が固定ポート (非 0) で bind するとき cplat_socket_set_reuse_address() を呼ぶことの確認
+TEST(apiOpenPathsUdpTest, unicast_fixed_port_sets_reuse_address)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    ON_CALL(mock_porter, potr_internal_peer_table_init(_)).WillByDefault(Return(POTR_OK));
+    int opens = 0;
+    ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_UDP, _, _))
+        .WillByDefault(
+            [&](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(++opens);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - 固定ポートでのソケット作成と bind を成功させる。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(_, 1, _)).Times(5).WillRepeatedly(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - 固定ポートを使う 5 経路それぞれで cplat_socket_set_reuse_address() が 1 を指定して計 5 回呼び出されること。
+
+    // Act
+    potr_context ctx = {};
+    ctx.service.src_port = 40000;
+    ctx.service.dst_port = 5000;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.dst_addr[0], "dst", sizeof("dst"));
+    int ret_unicast_sender = api_open_paths_unicast(&ctx, POTR_ROLE_SENDER);
+    ctx.n_path = 0;
+    int ret_unicast_receiver = api_open_paths_unicast(&ctx, POTR_ROLE_RECEIVER);
+    // [手順] - 固定ポートで unicast の送信者と受信者を開く。
+
+    ctx = {};
+    ctx.service.src_port = 40001;
+    ctx.service.dst_port = 5001;
+    std::memcpy(ctx.service.dst_addr[0], "dst", sizeof("dst"));
+    int ret_bidir_sender = api_open_paths_unicast_bidir(&ctx, POTR_ROLE_SENDER);
+    ctx = {};
+    ctx.service.dst_port = 5001;
+    int ret_bidir_receiver = api_open_paths_unicast_bidir(&ctx, POTR_ROLE_RECEIVER);
+    // [手順] - 固定ポートで unicast_bidir の送信者と受信者を開く。
+
+    ctx = {};
+    ctx.service.dst_port = 5002;
+    int ret_n1 = api_open_paths_unicast_bidir_n1(&ctx);
+    // [手順] - 固定ポートで unicast_bidir_n1 サーバーを開く。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_unicast_sender);   // [確認_正常系] - unicast 送信者が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_unicast_receiver); // [確認_正常系] - unicast 受信者が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_bidir_sender);     // [確認_正常系] - unicast_bidir 送信者が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_bidir_receiver);   // [確認_正常系] - unicast_bidir 受信者が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_n1);               // [確認_正常系] - unicast_bidir_n1 が POTR_OK であること。
+}
+
+// multicast / broadcast は固定ポート (受信者・固定ポート送信者) で再利用を有効にし、送信者 port=0 では有効にしないことの確認
+TEST(apiOpenPathsUdpTest, multicast_and_broadcast_reuse_address_follows_bind_port)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    ON_CALL(mock_porter, api_paths_parse_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    int opens = 0;
+    ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_UDP, _, _))
+        .WillByDefault(
+            [&](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(++opens);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_multicast_interface(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_broadcast(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - multicast と broadcast のソケット操作をすべて成功させる。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(static_cast<cplat_socket>(1), _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - multicast 送信者 (src_port=0) のソケット 1 では cplat_socket_set_reuse_address() が呼び出されないこと。
+    EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(static_cast<cplat_socket>(2), 1, _))
+        .Times(1)
+        .WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - multicast 送信者 (固定 src_port) のソケット 2 では cplat_socket_set_reuse_address() が 1 回呼び出されること。
+    EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(static_cast<cplat_socket>(3), 1, _))
+        .Times(1)
+        .WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - multicast 受信者 (dst_port) のソケット 3 では cplat_socket_set_reuse_address() が 1 回呼び出されること。
+    EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(static_cast<cplat_socket>(4), _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - broadcast 送信者 (src_port=0) のソケット 4 では cplat_socket_set_reuse_address() が呼び出されないこと。
+    EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(static_cast<cplat_socket>(5), 1, _))
+        .Times(1)
+        .WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - broadcast 送信者 (固定 src_port) のソケット 5 では cplat_socket_set_reuse_address() が 1 回呼び出されること。
+    EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(static_cast<cplat_socket>(6), 1, _))
+        .Times(1)
+        .WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - broadcast 受信者 (dst_port) のソケット 6 では cplat_socket_set_reuse_address() が 1 回呼び出されること。
+
+    // Act
+    potr_context ctx = {};
+    ctx.service.src_port = 0;
+    ctx.service.dst_port = 6000;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.multicast_group, "239.0.0.1", sizeof("239.0.0.1"));
+    int ret_mcast_sender_auto = api_open_paths_multicast(&ctx, POTR_ROLE_SENDER);
+    ctx.n_path = 0;
+    ctx.service.src_port = 40010;
+    int ret_mcast_sender_fixed = api_open_paths_multicast(&ctx, POTR_ROLE_SENDER);
+    ctx.n_path = 0;
+    ctx.service.src_port = 0;
+    int ret_mcast_receiver = api_open_paths_multicast(&ctx, POTR_ROLE_RECEIVER);
+    // [手順] - multicast の送信者 (port=0、固定) と受信者を開く。
+
+    ctx = {};
+    ctx.service.src_port = 0;
+    ctx.service.dst_port = 7000;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    int ret_bcast_sender_auto = api_open_paths_broadcast(&ctx, POTR_ROLE_SENDER);
+    ctx.n_path = 0;
+    ctx.service.src_port = 40020;
+    int ret_bcast_sender_fixed = api_open_paths_broadcast(&ctx, POTR_ROLE_SENDER);
+    ctx.n_path = 0;
+    ctx.service.src_port = 0;
+    int ret_bcast_receiver = api_open_paths_broadcast(&ctx, POTR_ROLE_RECEIVER);
+    // [手順] - broadcast の送信者 (port=0、固定) と受信者を開く。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_mcast_sender_auto);  // [確認_正常系] - multicast 送信者 (port=0) が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_mcast_sender_fixed); // [確認_正常系] - multicast 送信者 (固定) が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_mcast_receiver);     // [確認_正常系] - multicast 受信者が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_bcast_sender_auto);  // [確認_正常系] - broadcast 送信者 (port=0) が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_bcast_sender_fixed); // [確認_正常系] - broadcast 送信者 (固定) が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, ret_bcast_receiver);     // [確認_正常系] - broadcast 受信者が POTR_OK であること。
+}

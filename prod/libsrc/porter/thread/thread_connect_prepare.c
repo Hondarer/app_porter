@@ -155,8 +155,17 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
         return CPLAT_INVALID_SOCKET;
     }
 
-    /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行するため、戻り値は明示的に破棄する。 */
-    (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    /*
+     * 自動割り当て (src_port == 0) ではローカル ポートの重複を避けるため SO_REUSEADDR を有効化しない。
+     * 固定送信元ポート (src_port != 0) の場合のみ、再接続時の互換性向上のための best-effort 設定として有効化する。
+     * 失敗しても bind を試行するため、戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man7/socket.7.html
+     * see: https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
+     */
+    if (ctx->service.src_port != 0)
+    {
+        (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    }
 
     /*
      * 接続の開始前に Nagle を抑止する。TCP_NODELAY はソケットのオプションであり、

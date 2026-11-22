@@ -280,6 +280,7 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
     potr_context *ctx = slot->ctx;
     cplat_timespec now_ts;
     int i;
+    int alive_before;
     int should_wake_health = 0;
     int path_state_changed = 0;
 
@@ -294,6 +295,8 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
         potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
         return;
     }
+
+    alive_before = cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE);
 
     /* パスごとのタイムアウトを判定し、peer_port をクリアする。 */
     for (i = 0; i < ctx->n_path; i++)
@@ -318,8 +321,11 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
             ctx->peer_port[i] = 0;
             ctx->path_last_recv_ts[i].tv_sec = 0;
 
-            /* unicast_bidir で動的学習したアドレス・ポートをリセットする (再接続を許可) */
-            if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
+            /*
+             * UNICAST_BIDIR の RECEIVER で動的学習したアドレス・ポートだけをリセットする (再接続を許可)。
+             * SENDER の宛先は設定 (dst_addr:dst_port) で固定のため保持する。
+             */
+            if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR && ctx->role == POTR_ROLE_RECEIVER)
             {
                 if (ctx->service.src_addr[0][0] == '\0')
                 {
@@ -341,8 +347,9 @@ void thread_recv_health_check_service(thread_recv_slot *slot)
         thread_recv_sync_path_state(slot);
     }
 
-    /* 全体の health_alive を判定する。 */
-    if (cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0 || ctx->last_recv_ts.tv_sec == 0)
+    /* 全体の health_alive を判定する。経路同期で 0 へ遷移した直後もサービス全体の切断処理を行う。 */
+    if ((alive_before == 0 && cplat_atomic_load_i32(&ctx->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) == 0) ||
+        ctx->last_recv_ts.tv_sec == 0)
     {
         return;
     }

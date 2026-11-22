@@ -239,3 +239,38 @@ TEST_F(potrPathEventTest, peer_disconnect_emits_all_paths_before_disconnected)
     EXPECT_EQ((potr_peer_id)7,
               s_events[2].peer_id); // [確認_正常系] - s_events[2].peer_id が 7 であること。
 }
+
+// 全経路を切断へ同期した直後に再度全 0 で同期しても、DISCONNECTED を二重に発行しないことの確認
+// [サブ手順参照 名前=potrPathEventTest.SetUp]
+TEST_F(potrPathEventTest, service_disconnect_repeated_zero_sync_does_not_emit_duplicate)
+{
+    // Arrange
+    potr_internal_prepared_path_events first_prepared;
+    potr_internal_prepared_path_events second_prepared;
+    int next_states[POTR_MAX_PATH] = {0, 0, 0, 0}; // [状態] - 全経路を切断する次状態を用意する。
+
+    cplat_atomic_store_i32(&ctx.health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    ctx.path_logical_alive[0] = 1; // [状態] - 経路 0 のみ接続済みのサービスを用意する。
+
+    // Pre-Assert
+
+    // Act
+    // [サブ手順参照 名前=potrPathEventTest.capture_callback 回数=2]
+    potr_internal_sync_service_path_state_locked(&ctx, next_states, &first_prepared);
+    potr_internal_emit_service_path_events_locked(&ctx, &first_prepared);
+    potr_internal_sync_service_path_state_locked(&ctx, next_states, &second_prepared);
+    potr_internal_emit_service_path_events_locked(&ctx, &second_prepared);
+    // [手順] - 経路同期での全経路切断に続けて、全経路切断の同期をもう一度実行する。
+
+    // Assert
+    EXPECT_EQ(1, first_prepared.changed_count); // [確認_正常系] - 1 回目の同期で経路変化が 1 件記録されること。
+    EXPECT_EQ(POTR_EVENT_DISCONNECTED, first_prepared.session_event);
+    // [確認_正常系] - 1 回目の同期でセッション切断イベントが記録されること。
+    EXPECT_EQ(0, second_prepared.changed_count); // [確認_正常系] - 2 回目の同期で経路変化が 0 件であること。
+    EXPECT_EQ(0, second_prepared.session_event); // [確認_正常系] - 2 回目の同期でセッション イベントが 0 であること。
+    EXPECT_EQ(2, s_event_count); // [確認_正常系] - 発行された通知の総数が PATH_DISCONNECTED と DISCONNECTED の 2 件だけであること。
+    EXPECT_EQ(POTR_EVENT_PATH_DISCONNECTED, s_events[0].event);
+    // [確認_正常系] - 1 件目の通知が POTR_EVENT_PATH_DISCONNECTED であること。
+    EXPECT_EQ(POTR_EVENT_DISCONNECTED, s_events[1].event);
+    // [確認_正常系] - 2 件目の通知が POTR_EVENT_DISCONNECTED であること。
+}
