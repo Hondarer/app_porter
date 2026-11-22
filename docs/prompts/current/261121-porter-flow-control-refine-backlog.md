@@ -93,7 +93,7 @@ Table: 残課題一覧
 
 ### 概要と問題点
 
-- **現状の事象**: Windows (MSVC) のビルドは、1 つのディレクトリのソースを、1 つのコマンド行にまとめてコンパイラーへ渡します (`framework/makefw/makefiles/_msvc_compile.mk` の `_msvc_compile_cpp_normal`)。`app/porter/test/libsrc/mock_porter` の直下の `.cc` が 148 個から 158 個に増えた時点で、コマンド行が 8,388 文字になり、Windows のコマンド プロセッサーの上限 (8,191 文字) を超えて、ビルドが失敗しました。エラーの表示は、シェルの構文エラー (`unexpected EOF while looking for matching ')'`) で、原因が分かりにくい形です。Linux では起きません。
+- **現状の事象**: Windows (MSVC) のビルドは、1 つのディレクトリのソースを、1 つのコマンド行にまとめてコンパイラへ渡します (`framework/makefw/makefiles/_msvc_compile.mk` の `_msvc_compile_cpp_normal`)。`app/porter/test/libsrc/mock_porter` の直下の `.cc` が 148 個から 158 個に増えた時点で、コマンド行が 8,388 文字になり、Windows のコマンド プロセッサの上限 (8,191 文字) を超えて、ビルドが失敗しました。エラーの表示は、シェルの構文エラー (`unexpected EOF while looking for matching ')'`) で、原因が分かりにくい形です。Linux では起きません。
 - **本来あるべき姿**: ソースの数によらず、Windows でビルドできること。上限を超える場合に、原因が分かるエラーになること。
 
 ### 経緯と見送り理由
@@ -109,6 +109,6 @@ Table: 残課題一覧
 
 ### 推奨される対応策
 
-- **恒久対応案**: `_msvc_compile.mk` が、ソースの一覧を、応答ファイル (`@file`) などで、コンパイラーへ渡すようにします。または、コマンド行の長さを、実行の前に検査し、上限を超える場合に、原因と対処 (サブディレクトリへの分割) を示すエラーにします。
+- **恒久対応案**: `_msvc_compile.mk` が、ソースの一覧を、応答ファイル (`@file`) などで、コンパイラへ渡すようにします。または、コマンド行の長さを、実行の前に検査し、上限を超える場合に、原因と対処 (サブディレクトリへの分割) を示すエラーにします。
 - **暫定対応案**: ソースが多いディレクトリを、サブディレクトリ走査方式 (`framework/makefw/docs/subfolder-compilation.md`) で分けます。
 - **参考情報**: `app/porter/test/libsrc/mock_porter` の、分割の前の直下の `.cc` は 158 個、コマンド行は 8,388 文字。10 ファイルを分けた状態で、7,862 文字。
