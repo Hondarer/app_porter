@@ -69,3 +69,18 @@ void test_do_close_handle(potr_context *handle, int64_t service_id)
     session.is_open = 1;
     do_close(&session);
 }
+
+int test_format_path_states(char *dest, size_t dest_size, const int *states)
+{
+    return format_path_states(dest, dest_size, states);
+}
+
+size_t test_path_states_capacity(void)
+{
+    return (size_t)POTR_MAX_PATH * PATH_STATE_ENTRY_MAX_BYTES + 1U;
+}
+
+void test_on_path_state_event(int64_t service_id, potr_event event, size_t path_idx, const int *states)
+{
+    on_recv(service_id, 0, event, states, path_idx);
+}

@@ -13,9 +13,11 @@
 #include <porter/porter_result.h>
 #include <porter_test_helper.h>
 #include <wrapmain.h>
+#include <climits>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 #include "porter-test.inject.h"
 
 // バイナリの部分書き込みに失敗した一時ファイルを残さないことの確認
@@ -503,4 +505,225 @@ TEST(porterTestOutputTest, help_returns_exit_success_when_print_succeeds)
     EXPECT_EQ(EXIT_SUCCESS, exit_code); // [確認_正常系] - EXIT_SUCCESS を返すこと。
     EXPECT_EQ(std::string::npos, errors.find("使い方を標準出力へ書き込めませんでした"));
     // [確認_正常系] - 標準エラー出力へ診断を出さないこと。
+}
+
+// 全経路の状態を、指定した順のカンマ区切りへまとめることの確認
+TEST(porterTestOutputTest, format_path_states_joins_all_paths_in_order)
+{
+    // Arrange
+    const int states[POTR_MAX_PATH] = {1, 2, 0, 1, 2, 0, 1, 2};
+    char dest[64];
+    // [状態] - 8 経路の状態 1, 2, 0, 1, 2, 0, 1, 2 と、結果を受けるバッファーを用意する。
+
+    // Pre-Assert
+
+    // Act
+    int actual = test_format_path_states(dest, sizeof(dest), states);
+    // [手順] - 8 経路の状態を format_path_states() で連結する。
+
+    // Assert
+    EXPECT_EQ(CPLAT_OK, actual); // [確認_正常系] - test_format_path_states() の戻り値が CPLAT_OK であること。
+    EXPECT_STREQ("1,2,0,1,2,0,1,2", dest); // [確認_正常系] - dest が "1,2,0,1,2,0,1,2" であること。
+}
+
+// 状態の配列が NULL のとき、全経路を 0 として連結することの確認
+TEST(porterTestOutputTest, format_path_states_uses_zero_when_states_are_null)
+{
+    // Arrange
+    char dest[64];
+    memset(dest, 'Q', sizeof(dest));
+    // [状態] - 状態の配列を渡さず、初期値が Q のバッファーを用意する。
+
+    // Pre-Assert
+
+    // Act
+    int actual = test_format_path_states(dest, sizeof(dest), nullptr);
+    // [手順] - states に nullptr を指定して format_path_states() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(CPLAT_OK, actual); // [確認_正常系] - test_format_path_states() の戻り値が CPLAT_OK であること。
+    EXPECT_STREQ("0,0,0,0,0,0,0,0", dest); // [確認_正常系] - dest が "0,0,0,0,0,0,0,0" であること。
+}
+
+// 各経路が int の最小値でも、porter-test の出力先の容量に収まることの確認
+TEST(porterTestOutputTest, format_path_states_fits_longest_state_values)
+{
+    // Arrange
+    int states[POTR_MAX_PATH];
+    std::string expected;
+    const size_t capacity = test_path_states_capacity();
+    std::vector<char> dest(capacity + 1U, 'Q');
+    for (size_t index = 0U; index < POTR_MAX_PATH; index++)
+    {
+        states[index] = INT_MIN;
+        if (index != 0U)
+        {
+            expected.push_back(',');
+        }
+        expected += std::to_string(INT_MIN);
+    }
+    // [状態] - 8 経路すべてを INT_MIN にし、on_recv と同じ容量の出力先を用意する。
+
+    // Pre-Assert
+
+    // Act
+    int actual = test_format_path_states(dest.data(), capacity, states);
+    // [手順] - 最長の状態値を、on_recv と同じ容量で format_path_states() に渡す。
+
+    // Assert
+    EXPECT_EQ(CPLAT_OK, actual); // [確認_正常系] - test_format_path_states() の戻り値が CPLAT_OK であること。
+    EXPECT_STREQ(expected.c_str(), dest.data()); // [確認_正常系] - dest.data() が expected.c_str() であること。(8 経路の INT_MIN が出力先に収まったことの確認)
+    EXPECT_EQ('Q', dest[capacity]); // [確認_正常系] - dest[capacity] が 'Q' であること。(容量の直後を書き換えていないことの確認)
+}
+
+// 3 回目の書式化が失敗したとき、空文字列と、その結果コードを返すことの確認
+TEST(porterTestOutputTest, format_path_states_clears_output_when_third_format_fails)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    const int states[POTR_MAX_PATH] = {1, 2, 0, 1, 2, 0, 1, 2};
+    char dest[64];
+    memset(dest, 'Z', sizeof(dest) - 1U);
+    dest[sizeof(dest) - 1U] = '\0';
+    // [状態] - 8 経路の状態と、Z で埋めた出力先を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_snprintf(_, _, _))
+        .WillOnce(DoDefault())
+        .WillOnce(DoDefault())
+        .WillOnce(Return(CPLAT_ERR_UNKNOWN));
+    // [Pre-Assert確認_異常系] - cplat_snprintf() が 3 回呼び出されること。
+    // [Pre-Assert手順] - cplat_snprintf() から 1 回目と 2 回目は製品 (prod) の処理へ委譲し、3 回目は CPLAT_ERR_UNKNOWN を返す。
+
+    // Act
+    int actual = test_format_path_states(dest, sizeof(dest), states);
+    // [手順] - 3 回目の書式化が失敗する状態で format_path_states() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(CPLAT_ERR_UNKNOWN, actual);
+    // [確認_異常系] - test_format_path_states() の戻り値が CPLAT_ERR_UNKNOWN であること。
+    EXPECT_STREQ("", dest); // [確認_異常系] - dest が空文字列であること。(不完全な一覧を残さないことの確認)
+}
+
+// 書式化の失敗を受けた経路イベントが、不完全な一覧ではなく states=? を表示することの確認
+TEST(porterTestOutputTest, path_event_shows_question_mark_when_format_fails)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    const int states[POTR_MAX_PATH] = {1, 2, 0, 1, 2, 0, 1, 2};
+    // [状態] - 8 経路の状態 1, 2, 0, 1, 2, 0, 1, 2 を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_snprintf(_, _, _))
+        .WillOnce(DoDefault())
+        .WillOnce(DoDefault())
+        .WillOnce(Return(CPLAT_ERR_UNKNOWN));
+    // [Pre-Assert確認_異常系] - cplat_snprintf() が 3 回呼び出されること。
+    // [Pre-Assert手順] - cplat_snprintf() から 1 回目と 2 回目は製品 (prod) の処理へ委譲し、3 回目は CPLAT_ERR_UNKNOWN を返す。
+    EXPECT_CALL(mock_cplat, cplat_pinned_prompt_printf(_, _, HasSubstr("states={"))).Times(0);
+    // [Pre-Assert確認_異常系] - states={ を含む文字列を指定した cplat_pinned_prompt_printf() の呼び出しがないこと。
+    EXPECT_CALL(mock_cplat,
+                cplat_pinned_prompt_printf(_, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                           HasSubstr("[サービス 11] path[4] CONNECTED states=?")))
+        .WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_異常系] - 標準出力のチャネルと、"[サービス 11] path[4] CONNECTED states=?" を含む文字列を指定して cplat_pinned_prompt_printf() が 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_pinned_prompt_printf() から CPLAT_OK を返す。
+
+    // Act
+    test_on_path_state_event(11, POTR_EVENT_PATH_CONNECTED, 4U, states);
+    // [手順] - 経路 4 の CONNECTED を on_recv() へ渡す。
+
+    // Assert
+    // [確認_異常系] - Pre-Assert の通り、不完全な一覧を出さず states=? を表示すること。
+}
+
+// 出力先が NULL のとき、書式化せず引数の誤りを返すことの確認
+TEST(porterTestOutputTest, format_path_states_rejects_null_destination)
+{
+    // Arrange
+    const int states[POTR_MAX_PATH] = {1, 2, 0, 1, 2, 0, 1, 2};
+    // [状態] - 8 経路の状態を用意し、出力先は渡さない。
+
+    // Pre-Assert
+
+    // Act
+    int actual = test_format_path_states(nullptr, 16U, states);
+    // [手順] - dest に nullptr、容量に 16 を指定して format_path_states() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(CPLAT_ERR_INVALID_ARGUMENT, actual);
+    // [確認_異常系] - test_format_path_states() の戻り値が CPLAT_ERR_INVALID_ARGUMENT であること。
+}
+
+// 容量が 0 のとき、出力先を書き換えず引数の誤りを返すことの確認
+TEST(porterTestOutputTest, format_path_states_rejects_zero_capacity)
+{
+    // Arrange
+    const int states[POTR_MAX_PATH] = {1, 2, 0, 1, 2, 0, 1, 2};
+    char dest[4] = {'A', 'B', 'C', 'D'};
+    // [状態] - 先頭が A の出力先と、8 経路の状態を用意する。
+
+    // Pre-Assert
+
+    // Act
+    int actual = test_format_path_states(dest, 0U, states);
+    // [手順] - 容量に 0 を指定して format_path_states() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(CPLAT_ERR_INVALID_ARGUMENT, actual);
+    // [確認_異常系] - test_format_path_states() の戻り値が CPLAT_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ('A', dest[0]); // [確認_異常系] - dest[0] が A であること。(容量 0 では出力先を書き換えないことの確認)
+}
+
+// 出力先の容量が全経路の連結に足りないとき、空文字列と容量不足を返すことの確認
+TEST(porterTestOutputTest, format_path_states_clears_output_when_capacity_is_insufficient)
+{
+    // Arrange
+    const int states[POTR_MAX_PATH] = {1, 2, 0, 1, 2, 0, 1, 2};
+    char dest[8];
+    memset(dest, 'Q', sizeof(dest));
+    // [状態] - 8 経路の状態と、Q で埋めた 8 byte の出力先を用意する。1 経路目の "1" だけが収まる容量 2 を使う。
+
+    // Pre-Assert
+
+    // Act
+    int actual = test_format_path_states(dest, 2U, states);
+    // [手順] - 容量 2 で format_path_states() を呼び出す。
+
+    // Assert
+    EXPECT_EQ(CPLAT_ERR_BUFFER_TOO_SMALL, actual);
+    // [確認_異常系] - test_format_path_states() の戻り値が CPLAT_ERR_BUFFER_TOO_SMALL であること。
+    EXPECT_STREQ("", dest); // [確認_異常系] - dest が空文字列であること。(途中までの連結を残さないことの確認)
+}
+
+// 経路の接続と切断の表示が、全経路の状態を順番どおりに含むことの確認
+TEST(porterTestOutputTest, path_event_shows_all_states_in_order)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    const int states[POTR_MAX_PATH] = {1, 2, 0, 1, 2, 0, 1, 2};
+    // [状態] - 8 経路の状態 1, 2, 0, 1, 2, 0, 1, 2 を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat,
+                cplat_pinned_prompt_printf(_, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                           HasSubstr("[サービス 9] path[2] CONNECTED states={1,2,0,1,2,0,1,2}")))
+        .WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - 標準出力のチャネルと、"[サービス 9] path[2] CONNECTED states={1,2,0,1,2,0,1,2}" を含む文字列を指定して cplat_pinned_prompt_printf() が 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_pinned_prompt_printf() から CPLAT_OK を返す。
+    EXPECT_CALL(mock_cplat,
+                cplat_pinned_prompt_printf(_, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                           HasSubstr("[サービス 9] path[5] DISCONNECTED states={1,2,0,1,2,0,1,2}")))
+        .WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - 標準出力のチャネルと、"[サービス 9] path[5] DISCONNECTED states={1,2,0,1,2,0,1,2}" を含む文字列を指定して cplat_pinned_prompt_printf() が 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_pinned_prompt_printf() から CPLAT_OK を返す。
+
+    // Act
+    test_on_path_state_event(9, POTR_EVENT_PATH_CONNECTED, 2U, states);
+    // [手順] - 経路 2 の CONNECTED を on_recv() へ渡す。
+    test_on_path_state_event(9, POTR_EVENT_PATH_DISCONNECTED, 5U, states);
+    // [手順] - 経路 5 の DISCONNECTED を on_recv() へ渡す。
+
+    // Assert
+    // [確認_正常系] - Pre-Assert の通り、接続と切断の両方で全経路の状態を順番どおりに表示すること。
 }

@@ -17,6 +17,9 @@ extern "C"
     int test_get_tracer_started(void);
     void test_reset_tracer_started(void);
     void test_do_close_handle(potr_context *handle, int64_t service_id);
+    int test_format_path_states(char *dest, size_t dest_size, const int *states);
+    size_t test_path_states_capacity(void);
+    void test_on_path_state_event(int64_t service_id, potr_event event, size_t path_idx, const int *states);
 #ifdef __cplusplus
 }
 #endif

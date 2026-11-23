@@ -404,6 +404,77 @@ static void on_burst_message(const void *data)
 }
 
 /**
+ *  @brief          全経路の状態をカンマ区切りで書き込みます。
+ *
+ *  成功時の結果コードは `CPLAT_OK` です。`cplat_snprintf()` の戻り値は文字数ではないため、
+ *  `CPLAT_OK` の後に `strlen()` で書き込んだ長さを得て、書き込み位置を進めます。
+ *  書式化に失敗した場合は、出力先を空文字列へ戻し、その結果コードを返します。
+ *  失敗した時点の不完全な一覧は残しません。
+ *  この関数は porter-test の内部だけで使い、公開 API にはしません。
+ *
+ *  @param[out]     dest       書き込み先。NULL の場合は失敗の結果コードを返します。
+ *                             有効な場合は最初に空文字列を設定します。
+ *  @param[in]      dest_size  dest の容量 [byte]。0 の場合は失敗の結果コードを返します。
+ *  @param[in]      states     `POTR_MAX_PATH` 個の状態。NULL の場合は全経路を 0 とします。
+ *  @return         成功時は `CPLAT_OK` です。dest が NULL、または dest_size が 0 の場合は
+ *                  `CPLAT_ERR_INVALID_ARGUMENT` です。書式化に失敗した場合は、その結果コードです。
+ *
+ *  @par            スレッド セーフ
+ *  共有する状態を持ちません。dest をほかのスレッドが同時に使わない限り、スレッド セーフです。
+ */
+static int format_path_states(char *dest, size_t dest_size, const int *states)
+{
+    size_t offset = 0U;
+    size_t i;
+
+    if (dest == NULL || dest_size == 0U)
+    {
+        return CPLAT_ERR_INVALID_ARGUMENT;
+    }
+
+    dest[0] = '\0';
+
+    for (i = 0U; i < POTR_MAX_PATH; i++)
+    {
+        const char *separator = ",";
+        int state = 0;
+        int result;
+        size_t written_len;
+
+        if (i == 0U)
+        {
+            separator = "";
+        }
+
+        if (states != NULL)
+        {
+            state = states[i];
+        }
+
+        /*
+         * 関数の入口で dest_size が 0 でないことを確かめ、成功した書式化は終端を残す。
+         * そのため offset は dest_size 未満であり、残りの容量の減算は回り込まない。
+         */
+        result = cplat_snprintf(dest + offset, dest_size - offset, "%s%d", separator, state);
+        if (result != CPLAT_OK)
+        {
+            dest[0] = '\0';
+            return result;
+        }
+
+        /*
+         * cplat_snprintf() の成功は結果コードであり、書き込んだ文字数ではない。
+         * 収まった文字列の長さを strlen() で得て、次の書き込み位置へ進める。
+         * 成功時は終端を残すため、加えた後も offset は dest_size 未満に収まる。
+         */
+        written_len = strlen(dest + offset);
+        offset += written_len;
+    }
+
+    return CPLAT_OK;
+}
+
+/**
  *  @brief          受信コールバック関数。
  *  @param[in]      service_id  サービスの ID。
  *  @param[in]      peer_id     ピア識別子 (N:1 モード時は非ゼロ、1:1 モード時は 0)。
@@ -455,9 +526,8 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
     case POTR_EVENT_PATH_DISCONNECTED:
     {
         const char *event_str;
-        char states[POTR_MAX_PATH * PATH_STATE_ENTRY_MAX_BYTES + 1U] = {0};
-        size_t offset = 0U;
-        size_t i;
+        char states[POTR_MAX_PATH * PATH_STATE_ENTRY_MAX_BYTES + 1U];
+        int format_result;
 
         path_states = (const int *)data;
         path_idx = (int)len;
@@ -471,31 +541,19 @@ static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, 
             event_str = "DISCONNECTED";
         }
 
-        for (i = 0; i < POTR_MAX_PATH; i++)
+        format_result = format_path_states(states, sizeof(states), path_states);
+        if (format_result != CPLAT_OK)
         {
-            const char *separator = ",";
-            int state = 0;
-            int written;
-
-            if (i == 0U)
-            {
-                separator = "";
-            }
-            if (path_states != NULL)
-            {
-                state = path_states[i];
-            }
-            written = cplat_snprintf(states + offset, sizeof(states) - offset, "%s%d", separator, state);
-            if (written < 0 || (size_t)written >= sizeof(states) - offset)
-            {
-                break;
-            }
-            offset += (size_t)written;
+            (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                             "[サービス %" PRId64 "] path[%d] %s states=?\n", service_id, path_idx,
+                                             event_str);
         }
-
-        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                         "[サービス %" PRId64 "] path[%d] %s states={%s}\n", service_id, path_idx,
-                                         event_str, states);
+        else
+        {
+            (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                             "[サービス %" PRId64 "] path[%d] %s states={%s}\n", service_id, path_idx,
+                                             event_str, states);
+        }
         break;
     }
 

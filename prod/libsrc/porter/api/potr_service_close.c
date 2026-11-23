@@ -399,15 +399,6 @@ static int close_impl(potr_context *handle)
         potr_internal_health_thread_stop(ctx);
     }
 
-    for (size_t path_idx = 0U; path_idx < POTR_MAX_PATH; path_idx++)
-    {
-        cplat_atomic_store_u64(&ctx->last_ping_send_ms[path_idx], 0U, CPLAT_MEMORY_ORDER_RELAXED);
-    }
-    for (size_t path_idx = 0U; path_idx < POTR_MAX_PATH; path_idx++)
-    {
-        cplat_atomic_store_u64(&ctx->last_valid_data_send_ms[path_idx], 0U, CPLAT_MEMORY_ORDER_RELAXED);
-    }
-
     /* 送信スレッドを停止してキューを破棄する (送信者のみ)。 */
     if (ctx->send_thread != NULL)
     {
