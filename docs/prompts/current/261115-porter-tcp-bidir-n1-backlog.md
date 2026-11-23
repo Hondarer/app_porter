@@ -1,10 +1,11 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-15 08:54:00 JST
-最終更新エージェント: agy / セッション ID: 589c6480-ca6c-4130-b6f6-8d17f4d0ecf6
+最終更新日時: 2026-11-23 08:55:00 JST
+最終更新エージェント: claude code / セッション ID: session_01KJc53QSNM6huJLdCU7M29H
 稼働 OS: Linux (WSL)
 上流文書: `../../../../general/docs/prompts/past/261113-source-comment-bl029-backlog.md` の BL-004、`../../../../general/docs/prompts/past/261109-source-comment-remaining-backlog.md` の BL-025。いずれも削除されている場合があります。
+下流文書: 継続案件 261123-porter-remaining-backlog (2026-11-23 開始、claude code / セッション ID: session_01KJc53QSNM6huJLdCU7M29H): `261123-porter-remaining-backlog-overview.md` (全体管理文書)、`261123-porter-remaining-backlog-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-lightadr.md` (簡易 ADR)、`261123-porter-remaining-backlog-design.md` (最終仕様)、`261123-porter-remaining-backlog-backlog.md` (残課題一覧)。
 再開手順: このファイルを開いたエージェントは、作業の前に agree-before-implement スキルを読み込んでください。「整理状態」が「随時追記中」であれば、案件の作業中です。気付いた事項を追記し、第 3 ゲートの前に文書を再構築して整理します。上流文書が存在する場合は、各課題の背景と見送りの判断を上流文書で確認します。存在しない場合は、この文書を単体の残課題一覧として扱います。このファイルの残課題を参照して新たな成果物の作成または更新を始めるときは、元案件の再開とは別の作業として扱います。その開始には agree-before-implement を原則として使い、新しい検討用 Markdown から開始してください。継続作業によってこのファイルの残課題を対策する場合は、このファイルや各項目の記載を削除することなく、各項目の状態および経緯と対処を更新することを原則とします。また、フェーズ分けした対策で対処ができていない項目がある場合は、当該継続作業の backlog にも必ず転記し、最新作業の backlog を見れば残件が把握できるようにしてください。最終更新エージェントのセッション情報や稼働 OS・最終更新日時が参照可能であれば再開時のコンテキストや環境差分の把握に利用し、別エージェントや別環境・別 OS からの引き継ぎ、担当変更によりセッションが見つからない場合も異常とせず、文書の記載から継続してください。
 -->
 
@@ -25,7 +26,7 @@
 
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
-| BL-001 | TCP 双方向 N:1 通信の実施要否判断と設計・実装 | 過去 backlog からの転記 (BL-004 / BL-025) | 低 | 未着手 |
+| BL-001 | TCP 双方向 N:1 通信の実施要否判断と設計・実装 | 過去 backlog からの転記 (BL-004 / BL-025) | 低 | 次フェーズへ転記 (継続案件 261123-porter-remaining-backlog では扱わない。`261123-porter-remaining-backlog-backlog.md` の BL-001 へ転記) |
 
 Table: TCP 双方向 N:1 通信の残課題
 
@@ -40,7 +41,7 @@ Table: TCP 双方向 N:1 通信の残課題
 
 - **摘出契機**: `source-comment-cleanup-20261108` において `app/porter/prod/include/porter/porter_type.h` のコメント アウトされた列挙子 `POTR_TYPE_TCP_BIDIR_N1 = 11` を削除した際、将来予定の採否判断を失わないよう BL-025 として残課題へ移管しました。その後、`source-comment-remaining-20261109` で実施要否の判断と対処をともに先送りする合意となり、`261113-source-comment-bl029-backlog.md` の BL-004 へ転記されました。
 - **今回の見送り理由**: 機能を追加しないという恒久的な決定ではなく、利用目的と要求が定まるまで判断と実装を保留しているためです。
-- **継続作業での経緯と対処**: 2026-11-15、`app/general/docs/prompts/past/261113-source-comment-bl029-backlog.md` の BL-004 から `app/porter` 固有の残課題として本ファイルへ移管しました。移管元の記載は削除せず、本ファイルへの移管完了として状態を更新しています。
+- **継続作業での経緯と対処**: 2026-11-15、`app/general/docs/prompts/past/261113-source-comment-bl029-backlog.md` の BL-004 から `app/porter` 固有の残課題として本ファイルへ移管しました。移管元の記載は削除せず、本ファイルへの移管完了として状態を更新しています。 2026-11-23、継続案件 `261123-porter-remaining-backlog` (全体管理文書 `261123-porter-remaining-backlog-overview.md`) で、扱いの検討を開始しました。同日、ユーザーの判断 (同案件の簡易 ADR の LADR-002、LADR-005) で、同案件では扱わないことになり、`261123-porter-remaining-backlog-backlog.md` の BL-001 へ転記しました。
 
 ### 影響範囲とリスク
 
