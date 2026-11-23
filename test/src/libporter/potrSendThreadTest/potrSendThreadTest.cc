@@ -1541,6 +1541,63 @@ TEST(potrSendThreadTest, oneway_unicast_does_not_piggyback_send_limit)
     EXPECT_EQ(0U, captured.ack_num);            // [確認_正常系] - ack_num が 0 であること。
 }
 
+/**
+ * @brief 片方向 unicast の DATA 送出で、ヘルス スレッドを起こさずに最終 DATA 送信時刻を更新することの確認
+ */
+TEST(potrSendThreadTest, oneway_unicast_updates_data_send_time_without_health_wake)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    std::vector<uint8_t> wire_buf(POTR_PACKET_HEADER_SIZE + 1400U);
+    std::vector<uint8_t> crypto_buf(POTR_PACKET_HEADER_SIZE + 1400U + POTR_CRYPTO_TAG_SIZE);
+    uint8_t payload[4] = {1U, 2U, 3U, 4U};
+    potr_internal_payload_elem elem = {};
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 1;
+    ctx.sock[0] = (cplat_socket)5;
+    ctx.health_interval_ms = 100U;
+    ctx.global.max_payload = 1400U;
+    ctx.send_wire_buf = wire_buf.data();
+    ctx.crypto_buf = crypto_buf.data();
+    ctx.crypto_buf_size = crypto_buf.size();
+    cplat_atomic_store_u64(&ctx.last_valid_data_send_ms[0], 1000U, CPLAT_MEMORY_ORDER_RELAXED);
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELAXED);
+    // [状態] - PING 間隔 100 ms の片方向 unicast 送信者で、最終 DATA 送信時刻を 1000 ms とする。
+    elem.peer_id = POTR_PEER_NA;
+    elem.payload_len = (uint16_t)sizeof(payload);
+    elem.payload = payload;
+    ON_CALL(mock_porter, potr_internal_send_queue_peek(_, _))
+        .WillByDefault(Return(POTR_ERR_EMPTY)); // [状態] - 追加のエントリはないものとする。
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_))
+        .WillByDefault(DoAll(SetArgPointee<0>(1234U), Return(CPLAT_OK)));
+    // [状態] - 単調増加時計は 1234 ms を返す。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
+        .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
+        .WillRepeatedly(Return(POTR_ERR_CANCELED));
+    // [Pre-Assert手順] - 1 回目は DATA エントリを返し、以降は停止を返す。
+    EXPECT_CALL(mock_cplat, cplat_socket_sendto(ctx.sock[0], _, _, _, _, _)).WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_正常系] - DATA を 1 回送出すること。
+    // [Pre-Assert手順] - DATA の送出成功を返す。
+    EXPECT_CALL(mock_porter, potr_internal_health_thread_wake(_)).Times(0);
+    // [Pre-Assert確認_正常系] - ヘルス スレッドの起床を要求しないこと。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(1);
+    // [Pre-Assert確認_正常系] - 取り出した DATA エントリを成功として 1 回完了させること。
+
+    // Act
+    int actual_ret = potr_internal_send_thread_start(&ctx); // [手順] - 送信スレッドを開始する。
+    potr_internal_send_thread_stop(&ctx); // [手順] - 送信スレッドを停止して終了を待つ。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(1234U, cplat_atomic_load_u64(&ctx.last_valid_data_send_ms[0], CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_正常系] - 最終 DATA 送信時刻を送出時の 1234 ms に更新すること。
+}
+
 // DATA の送出失敗では相乗りの通知時刻を更新しないことの確認
 TEST(potrSendThreadTest, failed_data_send_does_not_record_piggyback)
 {

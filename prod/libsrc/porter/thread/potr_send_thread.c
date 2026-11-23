@@ -400,7 +400,6 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
     int result = POTR_OK;
     potr_internal_path_group_result selection;
     int i;
-    int sent_any = 0;
     int has_sent_time = 0;
     uint64_t sent_ms = 0U;
     int window_pending = 1;
@@ -493,12 +492,15 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
                 potr_internal_flow_control_piggyback_complete(ctx, POTR_PEER_NA, cplat_ntoh32(outer_pkt.ack_num), 1);
                 piggyback_pending = 0;
             }
-            sent_any = 1;
             if (should_track_valid_data_send_time(ctx))
             {
                 if (cplat_clock_get_monotonic_ms(&sent_ms) == CPLAT_OK)
                 {
                     has_sent_time = 1;
+                    /*
+                     * PING の期限は後ろへ動くだけなので、ヘルス スレッドは起こさない。
+                     * ヘルス スレッドは待機中の期限が来た時点で、新しい期限を計算し直す。
+                     */
                     cplat_atomic_store_u64(&ctx->last_valid_data_send_ms[i], sent_ms,
                                            CPLAT_MEMORY_ORDER_RELAXED);
                 }
@@ -528,10 +530,6 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
         {
             ctx->flow_last_data_send_ms = sent_ms;
         }
-    }
-    if (sent_any && should_track_valid_data_send_time(ctx))
-    {
-        potr_internal_health_thread_wake(ctx);
     }
 
     return result;
