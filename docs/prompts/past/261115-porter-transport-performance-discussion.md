@@ -547,12 +547,12 @@ Table: 質問一覧
 以下は第 1 ゲート通過時点の記録です。後続の実装・測定結果と進捗は、上の作業 WBS および検証記録を参照してください。
 
 検討用 Markdown の合意版 (第 1 ゲート): 版 2 (2026-11-16、[Q-001](#q-001-bl-001-の-tcp_nodelay-設定方針はどうしますか) 〜 [Q-005](#q-005-進行中の-porter-reject-recovery-案件と測定ベースライン新規課題はどう扱いますか) すべて解決済み・Q-005 凍結条件満了確認済み)  
-詳細対処計画 (第 2 ゲート承認済み): `app/porter/docs/prompts/current/261115-porter-transport-performance-design.md`
+詳細対処計画 (第 2 ゲート承認済み): `app/porter/docs/prompts/past/261115-porter-transport-performance-design.md`
 
 版 2 当時に変更・作成したファイルは次の 3 ファイルです。この記録は版 2 時点の作業範囲を示します。
 
-- 更新 (版 2 時点の本検討): `app/porter/docs/prompts/current/261115-porter-transport-performance-discussion.md` (第 1 ゲート通過、第 2 ゲート承認待ち。承認は 2026-11-16 に受領)
-- 新規作成 (詳細対処計画): `app/porter/docs/prompts/current/261115-porter-transport-performance-design.md` (最終対処計画。ただし BL-002 の実装設計確定と数値目標合意は計測後の別判断)
+- 更新 (版 2 時点の本検討): `app/porter/docs/prompts/past/261115-porter-transport-performance-discussion.md` (第 1 ゲート通過、第 2 ゲート承認待ち。承認は 2026-11-16 に受領)
+- 新規作成 (詳細対処計画): `app/porter/docs/prompts/past/261115-porter-transport-performance-design.md` (最終対処計画。ただし BL-002 の実装設計確定と数値目標合意は計測後の別判断)
 - 状態更新 (元残課題): `app/porter/docs/prompts/past/261115-porter-reject-recovery-backlog.md` (BL-001、BL-002 の状態を「検討中 (計画承認待ち・実装未着手)」に維持し、凍結条件満了と `design.md` 参照を追記。対応済みにはしない)
 
 受入条件:

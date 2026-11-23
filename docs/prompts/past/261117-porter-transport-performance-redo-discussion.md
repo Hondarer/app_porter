@@ -4,7 +4,7 @@
 最終更新日時: 2026-11-18 01:45:00 JST
 最終更新エージェント: claude code (Opus 5.5) / セッション ID: session_01KJc53TxVv1vjB6xMfjiUgc
 稼働 OS: Windows
-上流文書: `../past/261115-porter-reject-recovery-backlog.md` (BL-001、BL-002 の対策元)。打ち切った旧案件の記録として `../past/261115-porter-transport-performance-discussion.md`、`../past/261115-porter-transport-performance-design.md`、`../past/261115-porter-transport-performance-validation.md` があります。削除されている場合があります。
+上流文書: `261115-porter-reject-recovery-backlog.md` (BL-001、BL-002 の対策元)。打ち切った旧案件の記録として `261115-porter-transport-performance-discussion.md`、`261115-porter-transport-performance-design.md`、`261115-porter-transport-performance-validation.md` があります。削除されている場合があります。
 下流文書: `261117-porter-transport-performance-redo-design.md` (最終仕様)、`261117-porter-transport-performance-redo-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
 再開手順: このファイルを開いたエージェントは、作業の前に agree-before-implement スキルを読み込んでください。ユーザーが編集した最新版を読み直し、作業 WBS の `← **CURRENT**` の項目から再開します。最終更新エージェントのセッション情報や稼働 OS・最終更新日時が参照可能であれば再開時のコンテキストや環境差分の把握に利用し、別エージェントや別環境・別 OS からの引き継ぎ、担当変更によりセッションが見つからない場合も異常とせず、文書の記載から継続してください。`← **CURRENT**` の項目は処理が中止された項目である場合があり、どこまで進んでいたかは文書だけでは分かりません。対象成果物の内容を確認して実施済みの範囲を特定してから、作業を再開してください。`← **CURRENT**` がなく、作業 WBS がすべて完了 (✅) であれば、この案件の合意フローは完了しています。旧案件の文書は経緯の記録であり、旧案件の合意 (旧 Q-001〜Q-007) をこの案件の合意として扱わないでください。引き継ぐ範囲はこの文書の Q で決めます。
 -->
@@ -21,7 +21,7 @@
 
 状態: [Q-007](#q-007-5000b-の処理件数の低下への対処) の回答を受けて最終仕様を版 2 に改版し、承認済み。実装と検証は完了し、2026-11-18 に成果物の承認を受けて完了
 
-この案件は、[../past/261115-porter-reject-recovery-backlog.md](../past/261115-porter-reject-recovery-backlog.md) の BL-001 (TCP の約 40[ms] の停止) と BL-002 (小さいメッセージと圧縮送信の処理件数の低下) を対策する継続作業です。  
+この案件は、[261115-porter-reject-recovery-backlog.md](261115-porter-reject-recovery-backlog.md) の BL-001 (TCP の約 40[ms] の停止) と BL-002 (小さいメッセージと圧縮送信の処理件数の低下) を対策する継続作業です。  
 旧案件 `porter-transport-performance-20261115` は、論点が整理できない状態になったため、2026-11-17 にユーザーの指示で打ち切りました。この案件は、旧案件の測定結果と実装を材料として使い、判断を最初からやり直します。
 
 ## 作業 WBS と進捗管理
@@ -29,10 +29,10 @@
 凡例: ⏸️ 未着手、🔄 実施中、🚫 ブロック中、⚠️ 要注意、✅ 完了。現在取り組んでいる項目の末尾に `← **CURRENT**` を付けます。
 
 - ✅ 1. 検討用 Markdown のための情報収集と質問の実施
-    - ✅ 1.1. 旧案件の文書 3 件、保持用ブランチの実装、TCP の送信経路の調査。対策元 `../past/261115-porter-reject-recovery-backlog.md` の BL-001 と BL-002 を「検討中」へ更新し、この案件の開始を記録
+    - ✅ 1.1. 旧案件の文書 3 件、保持用ブランチの実装、TCP の送信経路の調査。対策元 `261115-porter-reject-recovery-backlog.md` の BL-001 と BL-002 を「検討中」へ更新し、この案件の開始を記録
     - ✅ 1.2. 論点の抽出と確認項目 ([Q-001](#q-001-この案件の範囲) 〜 [Q-006](#q-006-測定プログラムの置き場所)) の作成
     - ✅ 1.3. ユーザー回答の受付と記録 ([Q-001](#q-001-この案件の範囲) 〜 [Q-006](#q-006-測定プログラムの置き場所)、2026-11-17 回答)
-    - ✅ 1.4. 回答に基づく前提・制約の検証と WBS の見直し (対策元 `../past/261115-porter-reject-recovery-backlog.md` へ合意方針を反映)
+    - ✅ 1.4. 回答に基づく前提・制約の検証と WBS の見直し (対策元 `261115-porter-reject-recovery-backlog.md` へ合意方針を反映)
 - ✅ 2. 前提合意と残懸念の解消 (第 1 ゲート)
     - ✅ 2.1. 全論点に対する未解決事項および質問の解消確認
     - ✅ 2.2. 方針・前提条件の合意確定 (合意版: 版 2)
@@ -60,7 +60,7 @@
         - ✅ 4.10.1. 1 回目 (run `44050752536`)。Linux の 3 ジョブが `tcp_allocation_failure_test` の 1 ケースで失敗。テストの期待値を直した (porter `e102d94`)
         - ✅ 4.10.2. 2 回目 (run `44077056578`)。全ジョブ成功。`*-warns` のアーティファクトはなく、警告は 0 件
     - ✅ 4.11. cplat、porter、親リポジトリの `main` への取り込みと、Windows と WSL の同期 (2026-11-18 のユーザーの指示で実施。親 `365a41e3`、cplat `19302982`、porter `ee5cfec` へ fast-forward。WSL は `c-modernization-kit-f6` が同期し、3 つの HEAD と参照が一致することを確認)
-    - ✅ 4.12. 対策元 `../past/261115-porter-reject-recovery-backlog.md` の更新と、`261117-porter-transport-performance-redo-backlog.md` の整理 (対策元の BL-001 を「解消」、BL-002 を「未対処」にした。この案件の残課題一覧から解消した BL-005 を除き、「整理済み」にした)
+    - ✅ 4.12. 対策元 `261115-porter-reject-recovery-backlog.md` の更新と、`261117-porter-transport-performance-redo-backlog.md` の整理 (対策元の BL-001 を「解消」、BL-002 を「未対処」にした。この案件の残課題一覧から解消した BL-005 を除き、「整理済み」にした)
 - ✅ 5. 成果物の承認の受付 (第 3 ゲート)
     - ✅ 5.1. 成果物・検証結果・残課題の提示
     - ✅ 5.2. 成果物の承認の受付 (2026-11-18、チャットでユーザーが承認)
@@ -73,8 +73,8 @@
 
 | 種別 | 対象 | 版 |
 | --- | --- | --- |
-| 対策元の残課題 | `../past/261115-porter-reject-recovery-backlog.md` の BL-001、BL-002 | porter `main` |
-| 旧案件の記録 | `../past/261115-porter-transport-performance-discussion.md` (版 6)、`-design.md`、`-validation.md` | porter `12756a3` |
+| 対策元の残課題 | `261115-porter-reject-recovery-backlog.md` の BL-001、BL-002 | porter `main` |
+| 旧案件の記録 | `261115-porter-transport-performance-discussion.md` (版 6)、`-design.md`、`-validation.md` | porter `12756a3` |
 | BL-001 の実装 | cplat のブランチ `fix/bl001-tcp-nodelay` (`19302982`)、porter のブランチ `fix/bl001-tcp-nodelay` (`e625621`) | `main` には未取り込み |
 | TCP の送信経路 | `prod/libsrc/porter/thread/potr_send_thread.c` の `tcp_write_path()`、`prod/include/porter/porter_const.h` | porter `e4104b5` |
 | 測定プログラムと結果 | Windows の `C:\Users\tetsuo\AppData\Local\Temp\porter-transport-perf-ab-20261116` (`bench/`、`results/`、`profile/`) | リポジトリ外の一時領域 |

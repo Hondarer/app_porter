@@ -21,11 +21,11 @@
 
 | 作業 | 対策元の項目 | 内容 |
 | --- | --- | --- |
-| 作業 1 | `261115-porter-multicast-src-contract-backlog.md` の BL-004 | 解消済みであることの記録 |
-| 作業 2 | `261117-porter-transport-performance-redo-backlog.md` の BL-004 | 解消済みであることの記録 |
-| 作業 3 | `261121-porter-flow-control-refine-backlog.md` の BL-006 | `docs/protocol.md` の、実装と合わない記述の修正 |
-| 作業 4 | `261121-porter-flow-control-refine-backlog.md` の BL-001 | `unicast` の処理件数の改善 (計測、方式の合意、実装の 3 段階) |
-| 作業 5 | `261121-porter-flow-control-refine-backlog.md` の BL-004 | SIGSEGV の再現の試験 |
+| 作業 1 | `../past/261115-porter-multicast-src-contract-backlog.md` の BL-004 | 解消済みであることの記録 |
+| 作業 2 | `../past/261117-porter-transport-performance-redo-backlog.md` の BL-004 | 解消済みであることの記録 |
+| 作業 3 | `../past/261121-porter-flow-control-refine-backlog.md` の BL-006 | `docs/protocol.md` の、実装と合わない記述の修正 |
+| 作業 4 | `../past/261121-porter-flow-control-refine-backlog.md` の BL-001 | `unicast` の処理件数の改善 (計測、方式の合意、実装の 3 段階) |
+| 作業 5 | `../past/261121-porter-flow-control-refine-backlog.md` の BL-004 | SIGSEGV の再現の試験 |
 
 Table: この案件の作業と対策元の項目
 

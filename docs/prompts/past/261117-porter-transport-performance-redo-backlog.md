@@ -4,8 +4,8 @@
 最終更新日時: 2026-11-23 09:25:00 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QSNM6huJLdCU7M29H
 稼働 OS: Linux (WSL)
-上流文書: `261117-porter-transport-performance-redo-design.md` (最終仕様)、`261117-porter-transport-performance-redo-discussion.md` (検討用 Markdown)。対策元の残課題一覧は `../past/261115-porter-reject-recovery-backlog.md` です。いずれも削除されている場合があります。
-下流文書: この残課題一覧を対策する継続作業が開始された場合は、その検討用 Markdown・最終仕様・残課題一覧のパスを追記します。未作成の場合や、削除されている場合があります。 継続案件 261123-porter-remaining-backlog (2026-11-23 開始、claude code / セッション ID: session_01KJc53QSNM6huJLdCU7M29H): `261123-porter-remaining-backlog-overview.md` (全体管理文書)、`261123-porter-remaining-backlog-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-lightadr.md` (簡易 ADR)、`261123-porter-remaining-backlog-design.md` (最終仕様)、`261123-porter-remaining-backlog-backlog.md` (残課題一覧)。
+上流文書: `261117-porter-transport-performance-redo-design.md` (最終仕様)、`261117-porter-transport-performance-redo-discussion.md` (検討用 Markdown)。対策元の残課題一覧は `261115-porter-reject-recovery-backlog.md` です。いずれも削除されている場合があります。
+下流文書: この残課題一覧を対策する継続作業が開始された場合は、その検討用 Markdown・最終仕様・残課題一覧のパスを追記します。未作成の場合や、削除されている場合があります。 継続案件 261123-porter-remaining-backlog (2026-11-23 開始、claude code / セッション ID: session_01KJc53QSNM6huJLdCU7M29H): `../current/261123-porter-remaining-backlog-overview.md` (全体管理文書)、`../current/261123-porter-remaining-backlog-discussion.md` (検討用 Markdown)、`../current/261123-porter-remaining-backlog-lightadr.md` (簡易 ADR)、`../current/261123-porter-remaining-backlog-design.md` (最終仕様)、`../current/261123-porter-remaining-backlog-backlog.md` (残課題一覧)。
 再開手順: このファイルを開いたエージェントは、作業の前に agree-before-implement スキルを読み込んでください。「整理状態」が「随時追記中」であれば、案件の作業中です。気付いた事項を追記し、第 3 ゲートの前に文書を再構築して整理します。上流文書が存在する場合は、各課題の背景と見送りの判断を上流文書で確認します。存在しない場合は、この文書を単体の残課題一覧として扱います。このファイルの残課題を参照して新たな成果物の作成または更新を始めるときは、元案件の再開とは別の作業として扱います。その開始には agree-before-implement を原則として使い、新しい検討用 Markdown から開始してください。継続作業によってこのファイルの残課題を対策する場合は、このファイルや各項目の記載を削除することなく、継続作業の開始時 (検討用 Markdown の作成時) から検討・設計・実装・整理の各段階において、このファイルのメタ情報、各項目の状態、および経緯と対処を随時更新することを原則とします。また、フェーズ分けした対策で対処ができていない項目がある場合は、当該継続作業の backlog にも必ず転記し、最新作業の backlog を見れば残件が把握できるようにしてください。最終更新エージェントのセッション情報や稼働 OS・最終更新日時が参照可能であれば再開時のコンテキストや環境差分の把握に利用し、別エージェントや別環境・別 OS からの引き継ぎ、担当変更によりセッションが見つからない場合も異常とせず、文書の記載から継続してください。
 -->
 
@@ -27,9 +27,9 @@
 
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
-| BL-001 | 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える | 過去 backlog からの転記 | 中 | 次フェーズへ転記 (継続案件 261123-porter-remaining-backlog では扱わない。`261123-porter-remaining-backlog-backlog.md` の BL-003 へ転記) |
-| BL-002 | Linux の 5000[B]・ブロッキング・1 スレッドの TCP 送信で処理件数が対策前より約 17% 低い | 作業中摘出 | 低 | 次フェーズへ転記 (継続案件 261123-porter-remaining-backlog では扱わない。`261123-porter-remaining-backlog-backlog.md` の BL-004 へ転記) |
-| BL-003 | Windows の圧縮送信の処理件数が測定ごとに大きく変わる | 作業中摘出 | 低 | 次フェーズへ転記 (継続案件 261123-porter-remaining-backlog では扱わない。`261123-porter-remaining-backlog-backlog.md` の BL-005 へ転記) |
+| BL-001 | 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える | 過去 backlog からの転記 | 中 | 次フェーズへ転記 (継続案件 261123-porter-remaining-backlog では扱わない。`../current/261123-porter-remaining-backlog-backlog.md` の BL-003 へ転記) |
+| BL-002 | Linux の 5000[B]・ブロッキング・1 スレッドの TCP 送信で処理件数が対策前より約 17% 低い | 作業中摘出 | 低 | 次フェーズへ転記 (継続案件 261123-porter-remaining-backlog では扱わない。`../current/261123-porter-remaining-backlog-backlog.md` の BL-004 へ転記) |
+| BL-003 | Windows の圧縮送信の処理件数が測定ごとに大きく変わる | 作業中摘出 | 低 | 次フェーズへ転記 (継続案件 261123-porter-remaining-backlog では扱わない。`../current/261123-porter-remaining-backlog-backlog.md` の BL-005 へ転記) |
 | BL-004 | 性能の測定プログラムが Git で管理されていない | 検討時見送り | 低 | 解消 (案件 261119-porter-flow-control で `porter-bench` として収録。2026-11-23 に、継続案件 261123-porter-remaining-backlog で現状を確かめ、記録を更新) |
 
 ## BL-001 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える
@@ -45,9 +45,9 @@
 
 ### 経緯と見送り理由
 
-- **摘出契機**: `../past/261115-porter-reject-recovery-backlog.md` の BL-002 からの引き継ぎです。
+- **摘出契機**: `261115-porter-reject-recovery-backlog.md` の BL-002 からの引き継ぎです。
 - **今回の見送り理由**: この案件の対象を TCP の約 40[ms] の停止に絞ったためです (検討用 Markdown の Q-001 A)。原因は未特定で、製品の改修は未着手です。
-- **継続作業での経緯と対処**: 2026-11-23、継続案件 `261123-porter-remaining-backlog` (全体管理文書 `261123-porter-remaining-backlog-overview.md`) で、扱いの検討を開始しました。同日、ユーザーの判断 (同案件の簡易 ADR の LADR-002) で、同案件では扱わないことになり、`261123-porter-remaining-backlog-backlog.md` の BL-003 へ転記しました。
+- **継続作業での経緯と対処**: 2026-11-23、継続案件 `261123-porter-remaining-backlog` (全体管理文書 `../current/261123-porter-remaining-backlog-overview.md`) で、扱いの検討を開始しました。同日、ユーザーの判断 (同案件の簡易 ADR の LADR-002) で、同案件では扱わないことになり、`../current/261123-porter-remaining-backlog-backlog.md` の BL-003 へ転記しました。
 
 ### 影響範囲とリスク
 
@@ -57,7 +57,7 @@
 ### 推奨される対応策
 
 - **恒久対応案**: 圧縮・4 スレッドの条件でプロファイルを取り、通知スレッドの起床、通知キューへの受け渡し、圧縮と展開の各段階の時間とロックの競合を測ります。主因を特定してから、改善案と安全性への影響を比べます。TCP の条件は、この案件の変更 (`TCP_NODELAY` とまとめ送り) で数値が変わったため、基準を測り直してください。
-- **参考情報**: `../past/261115-porter-reject-recovery-backlog.md` の BL-002 (旧案件での調査の経緯を含む)。
+- **参考情報**: `261115-porter-reject-recovery-backlog.md` の BL-002 (旧案件での調査の経緯を含む)。
 
 ## BL-002 Linux の 5000[B]・ブロッキング・1 スレッドの TCP 送信で処理件数が対策前より約 17% 低い
 
@@ -70,7 +70,7 @@
 
 - **摘出契機**: この案件の性能の測定 (2026-11-17) で確認しました。
 - **今回の見送り理由**: ブロッキング送信・1 スレッドでは、送信キューに同時に 1 メッセージしか入らないため、待ち時間を足さずにまとめる方法がありません。ユーザーが既知の特性として残すと決めました (検討用 Markdown の Q-007 A)。
-- **継続作業での経緯と対処**: 2026-11-23、継続案件 `261123-porter-remaining-backlog` (全体管理文書 `261123-porter-remaining-backlog-overview.md`) で、扱いの検討を開始しました。同日、ユーザーの判断 (同案件の簡易 ADR の LADR-002) で、同案件では扱わないことになり、`261123-porter-remaining-backlog-backlog.md` の BL-004 へ転記しました。
+- **継続作業での経緯と対処**: 2026-11-23、継続案件 `261123-porter-remaining-backlog` (全体管理文書 `../current/261123-porter-remaining-backlog-overview.md`) で、扱いの検討を開始しました。同日、ユーザーの判断 (同案件の簡易 ADR の LADR-002) で、同案件では扱わないことになり、`../current/261123-porter-remaining-backlog-backlog.md` の BL-004 へ転記しました。
 
 ### 影響範囲とリスク
 
@@ -93,7 +93,7 @@
 
 - **摘出契機**: この案件の Windows の測定 (2026-11-17) で確認しました。
 - **今回の見送り理由**: 圧縮送信の処理件数は BL-001 の対象で、この案件の範囲外です。原因は調べていません。
-- **継続作業での経緯と対処**: 2026-11-23、継続案件 `261123-porter-remaining-backlog` (全体管理文書 `261123-porter-remaining-backlog-overview.md`) で、扱いの検討を開始しました。同日、ユーザーの判断 (同案件の簡易 ADR の LADR-002) で、同案件では扱わないことになり、`261123-porter-remaining-backlog-backlog.md` の BL-005 へ転記しました。
+- **継続作業での経緯と対処**: 2026-11-23、継続案件 `261123-porter-remaining-backlog` (全体管理文書 `../current/261123-porter-remaining-backlog-overview.md`) で、扱いの検討を開始しました。同日、ユーザーの判断 (同案件の簡易 ADR の LADR-002) で、同案件では扱わないことになり、`../current/261123-porter-remaining-backlog-backlog.md` の BL-005 へ転記しました。
 
 ### 影響範囲とリスク
 
@@ -116,7 +116,7 @@
 
 - **摘出契機**: 検討時に見送りました (検討用 Markdown の Q-006 A)。
 - **今回の見送り理由**: 置き場所、ビルドへの組み込み方、CI での扱いの設計が必要で、この案件の範囲を超えるためです。
-- **継続作業での経緯と対処**: 2026-11-23、継続案件 `261123-porter-remaining-backlog` (全体管理文書 `261123-porter-remaining-backlog-overview.md`) で、扱いの検討を開始しました。同日、同案件で扱うことが決まりました (簡易 ADR の LADR-002)。内容は、状態の更新 (最終仕様の作業 2)。2026-11-23、最終仕様の承認を受け、解消として記録しました。根拠: 測定プログラムは `prod/src/cmd/porter-bench/`、実行と集計のスクリプトは `bin/porter_bench_*.py`、スクリプトのテストは `bin_test/test_porter_bench.py`、手順は `docs/performance-measurement.md` として、収録済みです。
+- **継続作業での経緯と対処**: 2026-11-23、継続案件 `261123-porter-remaining-backlog` (全体管理文書 `../current/261123-porter-remaining-backlog-overview.md`) で、扱いの検討を開始しました。同日、同案件で扱うことが決まりました (簡易 ADR の LADR-002)。内容は、状態の更新 (最終仕様の作業 2)。2026-11-23、最終仕様の承認を受け、解消として記録しました。根拠: 測定プログラムは `prod/src/cmd/porter-bench/`、実行と集計のスクリプトは `bin/porter_bench_*.py`、スクリプトのテストは `bin_test/test_porter_bench.py`、手順は `docs/performance-measurement.md` として、収録済みです。
 
 ### 影響範囲とリスク
 

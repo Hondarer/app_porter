@@ -209,7 +209,7 @@ Table: Git の書き込み操作と実行の条件
 
 - cplat のブランチ `fix/bl001-tcp-nodelay` の製品コード、テスト、文書 (現在の内容のまま)。
 - porter のブランチ `fix/bl001-tcp-nodelay` の製品コードとテスト。まとめ送りの変更 (`potr_send_thread.c` と単体テスト) を追加します。機能仕様と設計文書は、追記が必要と判断した場合に限ります。
-- 対策元の残課題一覧 `../past/261115-porter-reject-recovery-backlog.md` の BL-001 の状態と経緯。
+- 対策元の残課題一覧 `261115-porter-reject-recovery-backlog.md` の BL-001 の状態と経緯。
 - この案件の残課題一覧 `261117-porter-transport-performance-redo-backlog.md`。
 
 ## 受入条件

@@ -19,10 +19,10 @@
 
 | 短い名前 | 残課題一覧 | 未対処の項目 |
 | --- | --- | --- |
-| TCP N:1 | `261115-porter-tcp-bidir-n1-backlog.md` | BL-001 |
-| マルチキャスト | `261115-porter-multicast-src-contract-backlog.md` | BL-004、BL-005 |
-| 性能 | `261117-porter-transport-performance-redo-backlog.md` | BL-001 から BL-004 |
-| フロー制御 | `261121-porter-flow-control-refine-backlog.md` | BL-001 から BL-006 |
+| TCP N:1 | `../past/261115-porter-tcp-bidir-n1-backlog.md` | BL-001 |
+| マルチキャスト | `../past/261115-porter-multicast-src-contract-backlog.md` | BL-004、BL-005 |
+| 性能 | `../past/261117-porter-transport-performance-redo-backlog.md` | BL-001 から BL-004 |
+| フロー制御 | `../past/261121-porter-flow-control-refine-backlog.md` | BL-001 から BL-006 |
 
 Table: 対策元の残課題一覧と短い名前
 

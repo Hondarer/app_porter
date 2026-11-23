@@ -36,7 +36,7 @@
     | 対象 | 件数 |
     | --- | --- |
     | `app/cplat/docs/prompts/current/cplat-account-session-discussion.md` | 8 |
-    | `app/porter/docs/prompts/current/261115-porter-multicast-src-contract-discussion.md` と `-design.md` | 8 |
+    | `app/porter/docs/prompts/past/261115-porter-multicast-src-contract-discussion.md` と `-design.md` | 8 |
     | `app/porter/docs/prompts/past/261114-porter-windows-verification-clock-unify-backlog.md` と `-discussion.md` | 5 |
     | `app/porter/docs/prompts/past/261115-porter-reject-recovery-discussion.md` と `-design.md` | 7 |
     | `app/porter/docs/prompts/past/261115-porter-transport-performance-design.md` と `-validation.md` | 3 |

@@ -4,7 +4,7 @@
 最終更新日時: 2026-11-23 12:00:00 JST
 最終更新エージェント: claude code / セッション ID: session_01KJc53QSNM6huJLdCU7M29H
 稼働 OS: Linux (WSL)
-上流文書: 対策元の残課題一覧は、`261115-porter-tcp-bidir-n1-backlog.md`、`261115-porter-multicast-src-contract-backlog.md`、`261117-porter-transport-performance-redo-backlog.md`、`261121-porter-flow-control-refine-backlog.md` です。削除されている場合があります。
+上流文書: 対策元の残課題一覧は、`../past/261115-porter-tcp-bidir-n1-backlog.md`、`../past/261115-porter-multicast-src-contract-backlog.md`、`../past/261117-porter-transport-performance-redo-backlog.md`、`../past/261121-porter-flow-control-refine-backlog.md` です。削除されている場合があります。
 下流文書: `261123-porter-remaining-backlog-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-lightadr.md` (簡易 ADR)、`261123-porter-remaining-backlog-design.md` (最終仕様)、`261123-porter-remaining-backlog-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
 再開手順: このファイルを開いたエージェントは、作業の前に agree-before-implement スキルを読み込んでください。この文書と、ユーザーが編集した最新の検討用 Markdown を読み直し、作業 WBS の `← **CURRENT**` の項目から再開します。最終更新エージェントのセッション情報や稼働 OS・最終更新日時が参照可能であれば再開時のコンテキストや環境差分の把握に利用し、別エージェントや別環境・別 OS からの引き継ぎ、担当変更によりセッションが見つからない場合も異常とせず、文書の記載から継続してください。`← **CURRENT**` の項目は処理が中止された項目である場合があり、どこまで進んでいたかは文書だけでは分かりません。対象成果物の内容を確認して実施済みの範囲を特定してから、作業を再開してください。`← **CURRENT**` がなく、作業 WBS がすべて完了 (✅) であれば、この案件の合意フローは完了しています。
 -->
@@ -71,7 +71,7 @@
 参照資料と版:
 
 - 対策元の残課題一覧 4 件 (`app/porter` のコミット `94b6d87` の時点)
-- `261121-porter-flow-control-refine-overview.md`、`-design.md` (版 5)、`../past/261119-porter-flow-control-overview.md`
+- `../past/261121-porter-flow-control-refine-overview.md`、`-design.md` (版 5)、`../past/261119-porter-flow-control-overview.md`
 - `app/porter/docs/protocol.md`、`app/porter/prod/libsrc/porter/` (同じコミット)
 - `framework/makefw/makefiles/_msvc_compile.mk` (makefw のコミット `5064706` の時点)
 - codex (gpt-6.2-sol、effort low、読み取り専用) の調査結果 (2026-11-23。セッションの一時領域にあり、要点は検討用 Markdown の Q-001 の表に記載)

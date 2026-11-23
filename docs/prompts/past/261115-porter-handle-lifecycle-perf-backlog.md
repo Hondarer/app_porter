@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- |
 | BL-001 | TCP の送信ソケットに TCP_NODELAY がなく約 40[ms] の停止が生じる | 作業中摘出 | 中 | 解消 (`261115-porter-reject-recovery-backlog.md` の BL-001 へ転記。継続案件 `porter-transport-performance-redo-20261117` で解消) |
 | BL-002 | UDP の受信ウィンドウが回復不能な欠落の後に進まなくなる | 作業中摘出 | 高 | 対応済み (`porter-reject-recovery`) |
-| BL-003 | 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える | 作業中摘出 | 中 | 未対処 (`261115-porter-reject-recovery-backlog.md` の BL-002 を経て、`../current/261117-porter-transport-performance-redo-backlog.md` の BL-001 へ転記) |
+| BL-003 | 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える | 作業中摘出 | 中 | 未対処 (`261115-porter-reject-recovery-backlog.md` の BL-002 を経て、`261117-porter-transport-performance-redo-backlog.md` の BL-001 へ転記) |
 
 ## BL-001 TCP の送信ソケットに TCP_NODELAY がなく約 40[ms] の停止が生じる
 
