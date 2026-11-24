@@ -29,50 +29,68 @@ porter は JSONC 形式のテキスト ファイルでサービスを定義し�
 }
 ```
 
-`global` は共通設定、`services` はサービス ID を十進文字列のキーとするオブジェクトです。ID は符号付き 64 ビット整数の範囲で指定します。ポート番号や時間などは JSON の整数、通信種別やアドレス、暗号鍵は JSON の文字列で記載します。`//` と `/* ... */` のコメント、およびオブジェクトや配列の末尾カンマを使用できます。存在しない項目には既定値を適用します。構文が不正なファイルは `POTR_ERR_INVALID_ARGUMENT` を返します。
+`global` は共通設定、`services` はサービス ID を十進文字列のキーとするオブジェクトです。ID は符号付き 64 ビット整数の範囲で指定します。存在しない項目には既定値を適用します。構文または内容が不正なファイルは `POTR_ERR_INVALID_CONFIG`、開けないまたは読み取りに失敗したファイルは `POTR_ERR_IO` を返します。
 
-### 非負整数の文字列
+### 読み取り・NUL 検査・位置と秘匿情報の消去
 
-`uint8`、`uint16`、`uint32` の項目は、非負の整数を受け付けます。  
-文字列で指定した値は基数 10 で解釈し、先頭空白と正号を許容します。  
-負号付きの文字列は `"-0"` も含めて受け付けず、値域外や不正な文字列と同様に、その項目の既定値または直前の値を維持します。  
-JSON 数値の `-0` は数値の 0 として扱います。  
-これらの変換失敗だけで設定ファイル全体をエラーにすることはなく、読み込んだ構成への制約検査は別に行います。
+- **バイナリ モード読み取り**: 設定ファイルは `"rb"` で開き、Windows のテキスト モードで `0x1A` がファイル終端とみなされないようにします。`setvbuf(_IONBF)` で入力バッファリングを無効化し、`fread()` 後に `ferror()` を確認して読み取り途中の入出力失敗を `POTR_ERR_IO` として検出します。
+- **NUL と文字列内 `\u0000` の拒否**: ファイル内の生の NUL バイト、およびコメントと `\\u0000` を除いた JSON 文字列中の `\u0000` エスケープは、解析前に最初の位置 (1 始まりの行と byte 単位の列) とともに構文エラー (`POTR_CONFIG_ISSUE_SYNTAX`) として拒否します。
+- **構文誤りの位置**: `cjson_app_cJSON_ParseJSONCWithLengthOpts()` が報告する位置は、解析器が解析を止めた byte オフセットを行 (1 始まり) と列 (1 始まり、byte 単位) へ変換したものです。入れ子の構文の誤りでは「解析を止めた位置」であり、不正な字句の先頭とは限りません (例えば `{,}` では `,` ではなく終端の `}` を指す場合があります)。閉じていないブロック コメントはそのコメントの開始位置を指します。
+- **キー パスの形式**: 誤りや認証ファイルの参照で報告する `key_path` は RFC 6901 の JSON Pointer 形式です (`~` を `~0`、`/` を `~1` にエスケープ)。ルートの誤りは空文字列 `""` です。
+- **所有領域の消去**: porter と cJSON が所有する入力バッファー (拡張前の旧領域を含む)、作業チャンク、導出した鍵を含む一時構造体、および cJSON ツリーは、成功・失敗の全経路で解放前に容量全体をゼロ消去します。利用側所有の入力や OS・暗号ライブラリ内部の領域は各所有者が管理します。誤りの内容と ERROR トレースには `encrypt_key` などの設定値を含めません。
 
-解釈できない値は、項目名と値を WARNING のトレースへ出力します。`services` の項目では、サービス ID も出力します。  
-`global` の対象は、次の 22 項目です。`window_size`、`max_payload`、`udp_health_interval_ms`、`udp_health_timeout_ms`、`tcp_health_interval_ms`、`tcp_health_timeout_ms`、`tcp_close_timeout_ms`、`reorder_timeout_ms`、`max_message_size`、`send_queue_depth`、`flow_control_capacity`、`flow_control_suppress_percent`、`flow_control_resume_percent`、`flow_control_request_interval_ms`、`flow_control_request_lifetime_ms`、`flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_grace_ms`、`flow_control_feedback_percent`、`flow_control_monitored_receiver_count`、`flow_control_receive_buffer_percent`、`udp_receive_buffer_size`。  
-`services` の対象は、次の 19 項目です。`dst_port`、`src_port`、`ttl`、`pack_wait_ms`、`health_interval_ms`、`health_timeout_ms`、`reconnect_interval_ms`、`flow_control_capacity`、`flow_control_suppress_percent`、`flow_control_resume_percent`、`flow_control_request_interval_ms`、`flow_control_request_lifetime_ms`、`flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_grace_ms`、`flow_control_feedback_percent`、`flow_control_monitored_receiver_count`、`flow_control_receive_buffer_percent`、`udp_receive_buffer_size`。  
-`max_peers` と `connect_timeout_ms` の解釈できない値、および JSON の型が文字列と数値のどちらでもない値は、WARNING を出力しません。  
-WARNING は、利用側が設定の読み込みより前にトレーサーを開始した場合だけ出力されます。
+### 入力型の規則
+
+- **整数の項目** (`uint8` / `uint16` / `uint32`): JSON の整数 (`int64` で正確に表せる値) または十進数の文字列を受け付けます。文字列は先頭の空白と正号 (`+`) を許し、負号 (`-`) は `-1` を受け付ける項目の `"-1"` だけを許します (`"-0"` を含むその他の負数文字列は拒否)。JSON 数値の `-0` は `0` として扱います。小数、指数表記で整数でない値、真偽値、`null`、配列、オブジェクトは型の誤りです。整数として解釈できない文字列は値の誤り、型・項目の範囲外や `4294967295` (専用の値 `-1` の内部表現) は値域の誤りです。
+- **文字列の項目**: JSON の文字列だけを受け付けます (数値や真偽値などは型の誤り)。アドレスとホスト名の項目 (`src_addr1` 〜 `src_addr8`、`dst_addr1` 〜 `dst_addr8`、`multicast_group`、`broadcast_addr`) は 1 から 63 byte です (64 byte 以上は値域の誤り)。
+- **文字列の配列の項目** (`pinned_certs`、`peer_names`): 1 要素以上の JSON 配列で、すべての要素が空でない文字列である必要があります。
+
+### サービス ID・重複キー・検証 API と検査範囲
+
+- **サービス ID の表記**: `services` のキーは正規の十進表記の符号付き 64 ビット整数 (`"0"` または任意の `-` に続く `[1-9][0-9]*`、`INT64_MIN` .. `INT64_MAX`) でなければなりません。`"010"`、`"+1"`、`" 1"`、`"-0"` などは `POTR_CONFIG_ISSUE_INVALID_SERVICE_ID` です。
+- **重複キー**: `root`、`global`、`services`、各サービス オブジェクト内で同じ名前 (byte 単位・大文字小文字区別) のキーが 2 つ以上ある場合、2 つ目以降を重複キー誤り (`POTR_CONFIG_ISSUE_DUPLICATE_KEY`) とし、重複キーの値は検査しません。重複したサービス ID がある場合はどのサービスも開けず、重複 ID のサービス本文は検査しません。
+- **公開の検証・列挙 API**:
+    - `potr_config_validate_file()` は設定ファイル全体 (ルート、`global`、全サービス) を検証し、見つけた誤りを `potr_config_issue` としてコールバックへ渡します (トレース出力なし)。ルート構造に誤りがなければ、本文検査前に `on_service` で各サービス ID をファイル順で通知します。また、証明書方式の有効なファイル パスを `on_auth_file` で通知します。構文・読み取り・メモリ不足を除き、独立した項目とサービスのすべての誤りを報告します。
+    - `potr_config_list_service_ids()` と `potr_config_service_ids_free()` は、ルートの構造とサービス ID の正規性を検証した上で、定義された ID をファイル順で返します。
+
+| 誤りの場所と内容 | `potr_config_validate_file()` | `potr_config_list_service_ids()` | `potr_service_open_from_config()` / `potr_service_get_type()` |
+|---|---|---|---|
+| 文書全体の構文・生 NUL・文字列内 `\u0000` | 拒否 | 拒否 | 拒否 |
+| ルートの構造 (知らないキー・不正 ID・重複 ID) | 拒否 | 拒否 | 無関係な ID の誤りも拒否 |
+| `global` 本体の誤り | 拒否 | 検査しない | 拒否 |
+| 指定サービス本体の誤り | 拒否 (全サービス) | 検査しない | 拒否 |
+| ほかのサービス本体の誤り | 拒否 (全サービス) | 検査しない | 検査しない |
+
+Table: 設定操作ごとの検査範囲
 
 ## global オブジェクト
 
-すべてのサービスに適用されるグローバル設定です。
+すべてのサービスに適用されるグローバル設定です。範囲外の値、解釈できない値、重複キー、知らないキーはすべて `POTR_ERR_INVALID_CONFIG` になります。
 
-| キー | 型 | 既定値 | 説明 |
-|---|---|---|---|
-| `window_size` | uint16 | 64 | スライディング ウィンドウ サイズ (2〜256) |
-| `max_payload` | uint16 | 1,400 | DATA パケットのペイロード上限バイト数 (64〜65,435) |
-| `max_message_size` | uint32 | 65,535 | 1 回の potr_service_send で送信できる最大メッセージ長 (バイト)。フラグメント化により max_payload を超えるメッセージを送受信できます。 |
-| `send_queue_depth` | uint32 | 1,024 | 非同期送信キューの最大エントリ数 (2 以上)。メッセージがフラグメント化される場合、1 メッセージが複数エントリを占有します。2 未満の場合、サービスを開く処理は、通信種別と役割にかかわらず設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
-| `udp_health_interval_ms` | uint32 | 3,000 | UDP 通信種別の PING 送信判定間隔 (ms)。片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時に PING を送信し、双方向 UDP は設定周期ごとに PING を送信します。0 でヘルス チェック送信を無効化。双方向 UDP は定周期 PING の送受信で `CONNECTED` を成立させるため、実効 `health_interval_ms` が 0 のままでは接続確立しません。上限は 2,147,483,646 です。ヘルス チェックを使う種別 (送信側、`unicast_bidir` と `unicast_bidir_n1` の受信側) で実効値が上限を超える場合、サービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
-| `udp_health_timeout_ms`  | uint32 | 10,000 | UDP 通信種別の受信タイムアウト (ms)。片方向 type 1-6 では有効な `PING` / `DATA`、双方向 UDP では `PING` の最終受信から本値を超えたら DISCONNECTED。0 でタイムアウト検知を無効化 |
-| `tcp_health_interval_ms` | uint32 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。接続直後の bootstrap PING とは別に、設定周期ごとに PING を送信します。0 の場合は定周期 PING を無効化するが、初回接続確立用の bootstrap PING は送信します。上限は 2,147,483,646 です。実効値が上限を超える場合、`tcp`、`tcp_bidir` のサービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
-| `tcp_health_timeout_ms`  | uint32 | 31,000 | TCP 通信種別の PING 応答待機タイムアウト (ms)。`tcp_health_interval_ms > 0` のときだけ有効で、SENDER 側が PING 応答を本値以内に受信できなければ DISCONNECTED。0 でタイムアウト検知を無効化。RECEIVER の接続直後の最初のパケットの待機には、本値 (グローバルの値) の 3 倍を使います。上限は 715,827,882 です。超える場合、`tcp`、`tcp_bidir` の RECEIVER でサービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
-| `tcp_close_timeout_ms` | uint32 | 5,000 | TCP 通信種別の `potr_service_close()` が protocol-level `FIN_ACK` を待つ最大時間 (ms)。送信キュー drain 完了後に `FIN` を送信し、本値以内に `FIN_ACK` が返信されなければ強制 close して `POTR_ERR_TIMEOUT` を返す。0 の場合は待機せず teardown へ進む。上限は 2,147,483,646 です。超える場合、`tcp` の SENDER と `tcp_bidir` の両端でサービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
-| `reorder_timeout_ms` | uint32 | 0 | 受信ウィンドウで欠番を検出してから NACK 送出 (通常モード) または DISCONNECTED 発行 (RAW モード) を遅延する時間 (ミリ秒)。マルチパスや近距離 WAN での追い越し吸収用。0 で即時 (既定値)。推奨値: LAN/マルチパス = 10〜30 ms、遠距離 WAN = 30〜100 ms |
-| `flow_control_capacity` | uint32 | 0 | 受信側の通知キューの容量 (バイト)。フロー制御の割合の基準値です。0 でフロー制御は無効 (既定値)。0 以外では、要求のしきい値から容量までの余裕 (容量 − 容量 × `flow_control_suppress_percent` ÷ 100) が `max_message_size` 以上になる値を指定します。 |
-| `flow_control_suppress_percent` | uint32 | 80 | 受信側が抑制を要求するしきい値 (%)。1〜100 |
-| `flow_control_resume_percent` | uint32 | 50 | 受信側が解除するしきい値 (%)。1 以上、`flow_control_suppress_percent` 未満 |
-| `flow_control_request_interval_ms` | uint32 | 200 | 受信側が抑制の要求を再送する周期 (ms)。1 以上、2,147,483,646 以下 |
-| `flow_control_request_lifetime_ms` | uint32 | 1,000 | 送信側が抑制の要求を有効とみなす時間 (ms)。送出上限で止まっている間に、相手からのパケットが途絶えたとみなして送出上限を破棄するまでの時間にも使います。失われた通知は、問い合わせで回復します。`flow_control_request_interval_ms` より大きく、2,147,483,646 以下の値 |
-| `flow_control_excluded_receiver_count` | uint32 | 1 | `multicast` / `broadcast` の送信側が除外する受信者の数、および `unicast_bidir_n1` のサーバーが切断するピアの数の上限 (台)。`0` で既定値を使用。`-1` で台数による上限を無効にします |
-| `flow_control_excluded_receiver_percent` | uint32 | 10 | `multicast` / `broadcast` の送信側が除外する受信者の数、および `unicast_bidir_n1` のサーバーが切断するピアの数の上限 (%)。1〜100。`0` で既定値を使用。`-1` で割合による上限を無効にします |
-| `flow_control_grace_ms` | uint32 | 200 | `multicast` / `broadcast` の送信側、および `unicast_bidir_n1` のサーバーで、遅い相手が全体の送出を止めてよい猶予時間 (ms)。1 以上、2,147,483,646 以下 |
-| `flow_control_feedback_percent` | uint32 | 5 | `multicast` / `broadcast` の送信側が監視対象から受けるフロー制御パケットの数の予算 (DATA 100 パケットあたりの数)。1〜100。監視する数は、各候補の「2 ÷ 許可数の上限」の合計がこの予算に収まる範囲で自動で最大にします |
-| `flow_control_monitored_receiver_count` | uint32 | 4 | `multicast` / `broadcast` の送信側が監視対象として選ぶ受信者の台数の下限。0〜64。予算から決まる数がこの値より小さい場合に引き上げます。0 は下限を指定しないことです |
-| `flow_control_receive_buffer_percent` | uint32 | 100 | 受信側が、OS の受信バッファーの大きさのうち、受信バッファーの幅の計算に使う割合 (%)。1〜100。`-1` で OS の受信バッファーに基づく送出上限を使わない |
-| `udp_receive_buffer_size` | uint32 | 4,194,304 | UDP のソケットを開くときに OS へ要求する受信バッファーの大きさ (バイト)。`0` で既定値を使用。`-1` で要求しない。TCP のソケットには適用しない |
+| キー | 型 | 値域 | 既定値 | 説明 |
+|---|---|---|---|---|
+| `window_size` | uint16 | 2〜256 | 64 | スライディング ウィンドウ サイズ (パケット数) |
+| `max_payload` | uint16 | 64〜65,435 | 1,400 | DATA パケットのペイロード上限バイト数 |
+| `max_message_size` | uint32 | `max_payload` 以上 (4,294,967,294 以下) | 65,535 | 1 回の potr_service_send で送信できる最大メッセージ長 (バイト) |
+| `send_queue_depth` | uint32 | 2〜4,294,967,294 | 1,024 | 非同期送信キューの最大エントリ数 |
+| `udp_health_interval_ms` | uint32 | 0〜2,147,483,646 | 3,000 | UDP 通信種別の PING 送信判定間隔 (ms)。0 で無効化。上限は種別と役割によらず検査します |
+| `udp_health_timeout_ms` | uint32 | 0〜4,294,967,294 | 10,000 | UDP 通信種別の受信タイムアウト (ms)。0 で無効化 |
+| `tcp_health_interval_ms` | uint32 | 0〜2,147,483,646 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。上限は種別と役割によらず検査します |
+| `tcp_health_timeout_ms` | uint32 | 0〜715,827,882 | 31,000 | TCP 通信種別の PING 応答待機タイムアウト (ms)。RECEIVER の初回先読みは 3 倍を使用。上限は種別と役割によらず検査します |
+| `tcp_close_timeout_ms` | uint32 | 0〜2,147,483,646 | 5,000 | TCP 通信種別の `FIN_ACK` 最大待機時間 (ms)。上限は種別と役割によらず検査します |
+| `reorder_timeout_ms` | uint32 | 0〜4,294,967,294 | 0 | 欠番検出後の NACK / DISCONNECTED 遅延時間 (ms) |
+| `flow_control_capacity` | uint32 | 0〜4,294,967,294 (0 は無効) | 0 | 受信側の通知キュー容量 (バイト)。`global` では `-1` 指定不可。0 以外では余裕が `max_message_size` 以上必要 |
+| `flow_control_suppress_percent` | uint32 | 0〜100 (0 は既定値) | 80 | 受信側が抑制を要求するしきい値 (%) |
+| `flow_control_resume_percent` | uint32 | 0〜99 (0 は既定値) | 50 | 受信側が解除するしきい値 (%)。実効値は `suppress_percent` 未満が必要 |
+| `flow_control_request_interval_ms` | uint32 | 0〜2,147,483,646 (0 は既定値) | 200 | 抑制の要求の再送周期 (ms) |
+| `flow_control_request_lifetime_ms` | uint32 | 0〜2,147,483,646 (0 は既定値) | 1,000 | 抑制の要求の有効期限 (ms)。実効値は `request_interval_ms` より大きい値が必要 |
+| `flow_control_excluded_receiver_count` | uint32 | `-1`、0〜4,294,967,294 (0 は既定値) | 1 | 除外・切断する受信者 / ピア数の上限 (台)。`-1` で台数上限を無効化 |
+| `flow_control_excluded_receiver_percent` | uint32 | `-1`、0〜100 (0 は既定値) | 10 | 除外・切断する受信者 / ピア数の上限 (%)。`-1` で割合上限を無効化 |
+| `flow_control_grace_ms` | uint32 | 0〜2,147,483,646 (0 は既定値) | 200 | 遅い相手が全体を止めてよい猶予時間 (ms) |
+| `flow_control_feedback_percent` | uint32 | 0〜100 (0 は既定値) | 5 | 監視対象から受けるフロー制御パケット数の予算 (DATA 100 パケットあたり) |
+| `flow_control_monitored_receiver_count` | uint32 | 0〜64 (0 は下限なし) | 4 | 監視対象として選ぶ受信者数の下限。`global` では `-1` 指定不可 |
+| `flow_control_receive_buffer_percent` | uint32 | `-1`、0〜100 (0 は既定値) | 100 | OS 受信バッファーに基づく送出上限の割合 (%)。`-1` で無効化 |
+| `udp_receive_buffer_size` | uint32 | `-1`、0〜4,294,967,294 (0 は既定値) | 4,194,304 | UDP ソケットへ要求する受信バッファーの大きさ (バイト)。`-1` で要求しない |
 
 Table: global オブジェクトの設定項目一覧
 
@@ -166,17 +184,26 @@ Table: フロー制御の設定を使う側
   "services": {
     "1001": {
       "type": "multicast",
+      "src_addr1": "192.168.1.20",
+      "dst_port": 6001,
+      "multicast_group": "239.0.0.1",
       // このサービスは除外を行わず、すべての受信者に合わせる
       "flow_control_excluded_receiver_count": -1,
       "flow_control_excluded_receiver_percent": -1
     },
     "1002": {
       "type": "unicast",
+      "src_addr1": "192.168.1.20",
+      "dst_addr1": "192.168.1.10",
+      "dst_port": 5002,
       // このサービスはフロー制御を使わない
       "flow_control_capacity": -1
     },
     "1003": {
       "type": "unicast",
+      "src_addr1": "192.168.1.20",
+      "dst_addr1": "192.168.1.10",
+      "dst_port": 5003,
       // このサービスの受信側は、OS の受信バッファーに基づく送出上限を使わない
       "flow_control_receive_buffer_percent": -1
     }
@@ -197,7 +224,7 @@ Table: フロー制御の設定を使う側
 
 Table: 容量の余裕で受け止める量
 
-余裕が `max_message_size` 未満の構成は、サービスを開く処理が設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。フラグメントの途中にあった最大長のメッセージ 1 件が、送出上限で止まった後に完成するだけで、容量を超えるためです。  
+余裕が `max_message_size` 未満の構成は、検証およびサービスを開く処理が設定エラー (`POTR_ERR_INVALID_CONFIG`) を返します。フラグメントの途中にあった最大長のメッセージ 1 件が、送出上限で止まった後に完成するだけで、容量を超えるためです。  
 既定の要求のしきい値 (80%) では、容量が `max_message_size` の 5 倍以上であることに相当します。要求のしきい値を 100% にした構成は、余裕が 0 になるため、容量が 0 でない限り設定エラーになります。
 
 送出上限は、容量の超過を完全には防ぎません。圧縮した DATA、最初の送出上限が届く前の初期の幅 (4 パケット) の送出、一対多で除外された受信者、一対多で監視対象に選ばれていない受信者は、抑制の要求が働き、それでも容量を超えた場合は切断になります。  
@@ -413,36 +440,58 @@ Table: ヘルス チェック設定値とその効果
 | `src_port` | uint16 | 省略可 | 送信者の送信元 bind ポート (0 = OS が自動選定)。証明書方式 (`auth = "cert"`) の片方向通信 (`unicast` / `multicast` / `broadcast` と各 RAW モード) の送信者では 0 以外の指定が必須 |
 | `path_group1` 〜 `path_group8` | uint8 | 省略可 | 各経路の優先グループ番号 (1〜4、既定値 `1`)。番号が小さいほど優先度が高い。範囲外の値は設定エラー |
 | `group_failback_ms` | uint32 | 省略可 | 上位グループの回復を判定するまでの時間 (ms、既定値 `0`)。`0` の場合は実効 `health_timeout_ms` と同じ値を使用 |
-| `health_interval_ms` | uint32 | 省略可 | グローバルの `udp_health_interval_ms` または `tcp_health_interval_ms` をサービス単位でオーバーライドします。上限は 2,147,483,646 です。ヘルス チェックを使う種別で実効値が上限を超える場合、サービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
-| `health_timeout_ms`  | uint32 | 省略可 | グローバルの `udp_health_timeout_ms` または `tcp_health_timeout_ms` をサービス単位でオーバーライドします。 |
-| `pack_wait_ms` | uint32 | 省略可 | パッキング待機時間 (ミリ秒)。0 で即時送信 |
+| `health_interval_ms` | uint32 | 省略可 | グローバルの `udp_health_interval_ms` または `tcp_health_interval_ms` をサービス単位でオーバーライドします。値域は 0〜2,147,483,646 (0 はグローバル値を使用)。上限を超える場合、設定エラー (`POTR_ERR_INVALID_CONFIG`) を返します。 |
+| `health_timeout_ms`  | uint32 | 省略可 | グローバルの `udp_health_timeout_ms` または `tcp_health_timeout_ms` をサービス単位でオーバーライドします (0〜4,294,967,294、0 はグローバル値を使用)。 |
+| `pack_wait_ms` | uint32 | 省略可 | パッキング待機時間 (ミリ秒、0〜4,294,967,294)。0 で即時送信 |
 | `auth` | 文字列 | 省略可 | 認証・暗号方式。`"psk"` (既定値、事前共有鍵方式) または `"cert"` (証明書方式) |
-| `encrypt_key` | 文字列 | 省略可 | `auth = "psk"` 時の AES-256-GCM 事前共有鍵。以下の 2 形式を受け付けます:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列で指定<br>**② パスフレーズ**: 上記以外の任意の文字列を指定すると SHA-256 で 32 バイト鍵に変換します。省略時は暗号化なし |
-| `flow_control_capacity` | uint32 | 省略可 | グローバルの `flow_control_capacity` をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でこのサービスのフロー制御を無効にします。 |
-| `flow_control_suppress_percent`、`flow_control_resume_percent` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用 |
-| `flow_control_request_interval_ms`、`flow_control_request_lifetime_ms` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用 |
-| `flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でその上限を無効にします。 |
-| `flow_control_grace_ms`、`flow_control_feedback_percent` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用 |
-| `flow_control_monitored_receiver_count` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` で監視する数の下限を指定しないようにします。 |
-| `flow_control_receive_buffer_percent` | uint32 | 省略可 | グローバルの同名の設定をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でこのサービスの受信側は OS の受信バッファーに基づく送出上限を使いません。 |
-| `udp_receive_buffer_size` | uint32 | 省略可 | グローバルの `udp_receive_buffer_size` をサービス単位で上書きします。`0` と省略はグローバル値を使用。`-1` でこのサービスの UDP ソケットでは OS へ受信バッファーの大きさを要求しません。TCP のソケットには適用しません。 |
+| `encrypt_key` | 文字列 | 省略可 | `auth = "psk"` 時の AES-256-GCM 事前共有鍵。以下の 2 形式を受け付けます:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列 (`0-9`、`a-f`、`A-F`) で指定<br>**② パスフレーズ**: 64 文字のうち 1 文字でも 16 進数でない文字がある場合、および 64 文字以外の 1 文字以上の文字列はパスフレーズとして SHA-256 で 32 バイト鍵に変換します。省略時は暗号化なし、`auth = "cert"` では設定エラー |
 
 Table: 全通信種別共通のサービス設定項目
 
-### unicast 専用フィールド
+### 通信種別と項目の対応
 
-| キー | 型 | 必須 | 説明 |
-|---|---|---|---|
-| `dst_addr1` | 文字列 | 必須 | 送信者: 送信先アドレス。受信者: bind アドレス |
+全種別で指定できる項目は、`type`、`dst_port`、`src_port`、`pack_wait_ms`、`health_interval_ms`、`health_timeout_ms`、`auth`、`encrypt_key`、証明書の 6 項目です。それ以外の項目を `-` の通信種別へ記載すると設定エラー (`POTR_CONFIG_ISSUE_NOT_APPLICABLE` / `POTR_ERR_INVALID_CONFIG`) になります。
 
-Table: unicast 専用の設定項目
+| キー | unicast | unicast_raw | multicast | multicast_raw | broadcast | broadcast_raw | unicast_bidir | unicast_bidir_n1 | tcp | tcp_bidir |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `src_addrN` | 可 | 可 | 可 | 可 | 可 | 可 | 可 | - | 可 | 可 |
+| `dst_addrN` | 可 | 可 | 可 | 可 | - | - | 可 | 可 | 可 | 可 |
+| `multicast_group`、`ttl` | - | - | 可 | 可 | - | - | - | - | - | - |
+| `broadcast_addr` | - | - | - | - | 可 | 可 | - | - | - | - |
+| `max_peers` | - | - | 可 | 可 | 可 | 可 | - | 可 | - | - |
+| `reconnect_interval_ms`、`connect_timeout_ms` | - | - | - | - | - | - | - | - | 可 | 可 |
+| `path_groupN`、`group_failback_ms` | 可 | - | 可 | - | 可 | - | 可 | 可 | 可 | 可 |
+| `flow_control_capacity`、`flow_control_suppress_percent`、`flow_control_resume_percent`、`flow_control_request_interval_ms`、`flow_control_request_lifetime_ms` | 可 | - | 可 | - | 可 | - | 可 | 可 | 可 | 可 |
+| `flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_grace_ms` | - | - | 可 | - | 可 | - | - | 可 | - | - |
+| `flow_control_feedback_percent`、`flow_control_monitored_receiver_count` | - | - | 可 | - | 可 | - | - | - | - | - |
+| `flow_control_receive_buffer_percent` | 可 | - | 可 | - | 可 | - | 可 | 可 | - | - |
+| `udp_receive_buffer_size` | 可 | 可 | 可 | 可 | 可 | 可 | 可 | 可 | - | - |
+
+Table: 通信種別ごとに使えるサービスの項目
+
+注記: RAW の 1 対 N 種別 (`multicast_raw`、`broadcast_raw`) の `max_peers` (値域: `1` 〜 `2,147,483,647`、省略時 `1,024`) は、`auth = "cert"` 選択時の受信者証明書管理の上限数として使用します (`receiver_report` 自体は RAW では使用しません)。
+
+### 経路の指定と連続性
+
+経路番号 `N` は `1` から `8` の先頭ゼロなし十進数のみ有効です (`src_addr9` などの範囲外は `OUT_OF_RANGE`、`src_addr` や `src_addr01` は `UNKNOWN_KEY`)。経路を決めるキーは 1 から連続している必要があり、番号の飛びや、経路を決めるキーのない番号のアドレス・`path_groupN` は設定エラーです (`potr_service_open()` に構造体を直接渡す場合も全 8 経路を走査して同じ連続性を検査します)。
+
+| 種別 | 経路を決めるキー | 経路ごとの必須 | 経路ごとの任意 | そのほかの必須 |
+|---|---|---|---|---|
+| `unicast`、`unicast_raw` | `src_addrN` | `src_addrN` と `dst_addrN` の両方 | `path_groupN` (`unicast` のみ) | `src_addr1` |
+| `multicast`、`multicast_raw` | `src_addrN` | `src_addrN` | `dst_addrN`、`path_groupN` (`multicast` のみ) | `src_addr1`、`multicast_group` |
+| `broadcast`、`broadcast_raw` | `src_addrN` | `src_addrN` | `path_groupN` (`broadcast` のみ) | `src_addr1` |
+| `unicast_bidir` | `dst_addrN` | `dst_addrN` | `src_addrN`、`path_groupN` | 役割依存 (静的 RECEIVER は全経路で両アドレス必須、SENDER は `dst_addr1` 必須、動的 RECEIVER は経路 1 のみ許可) |
+| `unicast_bidir_n1` | `dst_addrN` | `dst_addrN` | `path_groupN` | なし (`dst_addr1` 省略時は暗黙の経路 1 のみ使用) |
+| `tcp`、`tcp_bidir` | `dst_addrN` | `dst_addrN` | `src_addrN`、`path_groupN` | `dst_addr1` |
+
+Table: 通信種別ごとの経路の指定
 
 ### multicast 専用フィールド
 
 | キー | 型 | 必須 | 既定値 | 説明 |
 |---|---|---|---|---|
-| `multicast_group` | 文字列 | 必須 | — | マルチキャスト グループ IP アドレス (例: `239.0.0.1`。実運用では `239.0.0.0/8` などの管理スコープを推奨) |
-| `ttl` | uint8 | 省略可 | 1 | マルチキャスト TTL |
+| `multicast_group` | 文字列 | 必須 | — | マルチキャスト グループ IPv4 アドレス (`224.0.0.0` 〜 `239.255.255.255`) |
+| `ttl` | uint8 | 省略可 | 1 | マルチキャスト送信 TTL (`1` 〜 `255`、送信側ソケットに適用。設定ファイルの `0` は値域誤り、直接構造体の `0` は既定値 1 として扱います) |
 
 Table: multicast 専用の設定項目
 
@@ -464,7 +513,7 @@ RAW モードは通常モード (`unicast` / `multicast` / `broadcast`) と同�
 Table: 通常モードと RAW モードの機能比較
 
 RAW モードでもスライディング ウィンドウによる **順序整列** と **セッション管理** は有効です。  
-RAW モードに `path_group1` 〜 `path_group8` を設定した場合は、グループ設定を無視して全経路へ送信し、警告をログに記録します。
+RAW モードでは優先グループ (`path_group1` 〜 `path_group8`) とフロー制御の項目は種別に合わない項目として設定エラー (`POTR_ERR_INVALID_CONFIG`) になります (構造体を直接渡す場合の `path_group[i]` が `0` または `1` のときは既定値として許容し、`2` 以上は設定エラーになります)。
 
 ### unicast_bidir 専用フィールド
 
@@ -509,20 +558,25 @@ Table: unicast_bidir_n1 専用の設定項目
 | `dst_port` | uint16 | 必須 | — | SENDER: 接続先ポート。RECEIVER: listen ポート |
 | `src_addr1` | 文字列 | 省略可 | — | SENDER: ローカル bind アドレス (省略で自動選択)。RECEIVER: 接続元 IP フィルター (省略でフィルターなし) |
 | `src_port` | uint16 | 省略可 | 0 | SENDER: ローカル bind ポート (`0` または省略でエフェメラル)。RECEIVER: 接続元ポート フィルター (`0` または省略でフィルターなし) |
-| `reconnect_interval_ms` | uint32 | 省略可 | 5,000 | SENDER の自動再接続間隔 (ms)。`0` で自動再接続なし。RECEIVER では無視。上限は 2,147,483,646 で、検査は SENDER だけで行います。超える場合、サービスを開く処理は設定エラー (`POTR_ERR_INVALID_ARGUMENT`) を返します。 |
-| `connect_timeout_ms` | uint32 | 省略可 | 10,000 | SENDER の TCP 接続タイムアウト (ms)。`0` で OS 既定値。RECEIVER では無視 |
+| `reconnect_interval_ms` | uint32 | 省略可 | 5,000 | SENDER の自動再接続間隔 (ms)。`0` で自動再接続なし。RECEIVER では使用しない。上限は 2,147,483,646 で、役割によらず検査します。超える場合、設定エラー (`POTR_ERR_INVALID_CONFIG`) を返します。 |
+| `connect_timeout_ms` | uint32 | 省略可 | 10,000 | SENDER の TCP 接続タイムアウト (ms)。`0` で OS 既定値 (porter の期限を設けません)。RECEIVER では使用しない |
 
 Table: tcp および tcp_bidir 専用の設定項目
 
-**tcp / tcp_bidir では使用しないフィールド (記述しても無視)**
+**tcp / tcp_bidir では誤りになるフィールド** (参照: 「通信種別と項目の対応」表)
 
-| フィールド | UDP での用途 |
+`tcp` と `tcp_bidir` で次のフィールドを設定ファイルへ記述すると、`POTR_CONFIG_ISSUE_NOT_APPLICABLE` (`POTR_ERR_INVALID_CONFIG`) になります。
+
+| フィールド | 他の種別での用途 |
 |---|---|
-| `multicast_group` | マルチキャスト グループ |
-| `ttl` | マルチキャスト TTL |
+| `multicast_group`、`ttl` | マルチキャスト グループ / TTL |
 | `broadcast_addr` | ブロードキャスト宛先 |
+| `max_peers` | 1 対 N / N:1 の最大ピア数 |
+| `flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_grace_ms` | 1 対 N / N:1 の除外設定 |
+| `flow_control_feedback_percent`、`flow_control_monitored_receiver_count` | 1 対 N の監視設定 |
+| `flow_control_receive_buffer_percent`、`udp_receive_buffer_size` | UDP 受信バッファー関連 |
 
-Table: TCP 通信で無視される UDP 専用設定項目
+Table: TCP 通信で誤りになる他種別専用項目
 
 ### TCP マルチパス設定
 
@@ -575,7 +629,7 @@ Table: TCP RECEIVER における接続元検証動作
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
-| `broadcast_addr` | 文字列 | 必須 | 送信者: 送信先ブロードキャスト アドレス (例: `192.168.1.255`) |
+| `broadcast_addr` | 文字列 | 省略可 (`255.255.255.255`) | 送信者: 送信先ブロードキャスト アドレス (有効な IPv4 表記。例: `192.168.1.255`) |
 
 Table: broadcast 専用の設定項目
 
@@ -924,31 +978,72 @@ PING、ハンドシェイク、鍵配布、FIN、FIN_ACK は、待機グルー�
 
 ## 設定エラーの条件
 
-次のいずれかに該当する場合、`potr_service_open_from_config()` および `potr_service_open()` は設定エラーとして `POTR_ERR_INVALID_ARGUMENT` (証明書や鍵ファイルなどの読み込みに失敗した場合は `POTR_ERR_IO`) を返します。
+次のいずれかに該当する場合、`potr_service_open_from_config()`、`potr_service_get_type()`、`potr_config_validate_file()`、および `potr_service_open()` は設定エラーとして `POTR_ERR_INVALID_CONFIG` (ファイルを開けない場合や読み取りの `ferror()` が真の場合、名前解決・ソケット失敗時は `POTR_ERR_IO`) を返します。なお、`potr_service_open()` などの API の呼び出し方の誤り (NULL 引数、未定義の役割、役割とコールバックの組み合わせ、未定義フラグ等) は `POTR_ERR_INVALID_ARGUMENT` を返します。
 
-| 区分 | エラーとなる条件 |
+| 区分 | 誤りの種別 / 内容 |
 |---|---|
-| グローバル設定 | `max_payload` が `64` 未満、または `POTR_MAX_PAYLOAD` (`65,435`) を超える |
-| 待機の時間 | 実効の `health_interval_ms` (ヘルス チェックを使う種別)、`reconnect_interval_ms` (`tcp`、`tcp_bidir` の SENDER)、`tcp_close_timeout_ms` (`tcp` の SENDER、`tcp_bidir`) が `2,147,483,646` を超える、または `tcp_health_timeout_ms` (`tcp`、`tcp_bidir` の RECEIVER) が `715,827,882` を超える |
-| フロー制御のしきい値 | `flow_control_suppress_percent` が 1〜100 の範囲にない、または `flow_control_resume_percent` が 1 以上 `flow_control_suppress_percent` 未満の範囲にない |
-| フロー制御の周期と期限 | `flow_control_request_interval_ms` が 0 である、`flow_control_request_lifetime_ms` が `flow_control_request_interval_ms` 以下である、または `flow_control_request_interval_ms` か `flow_control_request_lifetime_ms` が待機時間の上限 `2,147,483,646` を超える |
-| フロー制御の除外する割合 | `flow_control_excluded_receiver_percent` が、無効 (`-1`、`POTR_FLOW_CONTROL_DISABLED`) でなく、100 を超える |
-| フロー制御の猶予時間 | `flow_control_grace_ms` が待機時間の上限 `2,147,483,646` を超える |
-| フロー制御の予算 | `flow_control_feedback_percent` が 1〜100 の範囲にない |
-| フロー制御の監視する受信者 | `flow_control_monitored_receiver_count` が 64 を超える |
-| フロー制御の受信バッファーの幅の割合 | `flow_control_receive_buffer_percent` が、無効 (`-1`、`POTR_FLOW_CONTROL_DISABLED`) でなく、1〜100 の範囲にない |
-| フロー制御の容量の余裕 | `flow_control_capacity` が 0 でなく、要求のしきい値から容量までの余裕 (`flow_control_capacity` − `flow_control_capacity` × `flow_control_suppress_percent` ÷ 100) が `max_message_size` 未満である |
-| フロー制御の一対多の受信側 | `multicast` / `broadcast` の受信側で `flow_control_capacity` が 0 でなく、実効 `health_interval_ms` が 0 である |
-| フロー制御の無効の指定 | `POTR_FLOW_CONTROL_DISABLED` を、指定できない項目に指定している (または `global` で指定できない項目について `potr_global_config` に指定している) |
-| 経路数 | 9 番目以降の経路キー (`src_addr9`、`dst_addr9`、`path_group9` など) が指定されている |
-| 優先グループ | `path_group1` 〜 `path_group8` に `1` 〜 `4` の範囲外の値 (`0` や `5` 以上) が指定されている (設定ファイル読み込み時) |
-| 証明書方式 (`auth = "cert"`) | `cert_file` または `key_file` が未指定、秘密鍵と証明書が一致しない、またはファイル読み込みに失敗した (`POTR_ERR_IO`) |
-| 証明書方式の検証先 | `ca_file` と `pinned_certs` のどちらも指定されていない |
-| 証明書方式の相手名 | `ca_file` が指定されているのに `peer_names` が省略または空である |
-| 証明書方式の片方向送信者 | `unicast`、`multicast`、`broadcast` (各 RAW モードを含む) の送信者 (`POTR_ROLE_SENDER`) で `src_port` が `0` または省略されている |
-| 認証方式の指定値 | `auth` に `"psk"` と `"cert"` 以外の文字列が指定されている |
+| 構文と NUL (`SYNTAX`) | JSONC の構文誤り、生の NUL バイト、文字列内の `\u0000` (1 件報告して打ち切り) |
+| 知らないキー (`UNKNOWN_KEY`) | `root` / `global` / `services` 各要素の未定義キー、経路キーの非数字・先頭ゼロ付き名 (`src_addr`、`src_addr01`) |
+| 重複キー (`DUPLICATE_KEY`) | 同一オブジェクト内の同名キー重複 (2 つ目以降を報告。重複サービス ID は本文を検査しません) |
+| サービス ID (`INVALID_SERVICE_ID`) | 正規の符号付き 64 ビット十進表記以外 (`"010"`、`"+1"`、`" 1"`、`"-0"`、範囲外) |
+| 型の不一致 (`TYPE_MISMATCH`) | 数値項目への真偽値・小数・非整数指数表記等、文字列項目への数値等、配列項目への非配列等 |
+| 値の誤り (`INVALID_VALUE`) | 未知の `type` / `auth`、解釈できない数値文字列、空文字列、不正な IPv4 表記、経路の番号飛び・対象外キー |
+| 値域の誤り (`OUT_OF_RANGE`) | 型・項目・待機の時間の上下限外、`4294967295`、`src_addr` 等の 63 byte 超過、`src_addr9` 等の経路番号範囲外 |
+| 対象外項目 (`NOT_APPLICABLE`) | 通信種別または認証方式 (`auth`) と合わない項目 (`ca_file` なしの `crl_file` / `peer_names`、RAW の `path_groupN >= 2`) |
+| 必須項目不足 (`MISSING`) | `type`、`dst_port`、経路ごとの必須アドレス、`multicast_group`、証明書方式の必須ファイル/`peer_names` の欠如 |
+| 制約・役割依存 (`CONSTRAINT`) | `max_message_size < max_payload`、フロー制御の実効しきい値・周期・容量余裕、`multicast`/`broadcast` 受信側の `health_interval_ms == 0`、静的/動的 `unicast_bidir`、証明書方式片方向送信者の `src_port == 0` |
+| 鍵導出失敗 (`KEY_DERIVATION`) | `encrypt_key` のパスフレーズからの鍵導出失敗 (鍵領域は消去し、値自体はトレースへ出しません) |
+| 認証ファイルの読み込み | ファイルを開けない・読み取れない場合は `POTR_ERR_IO`、形式不正や秘密鍵不一致は `POTR_ERR_INVALID_CONFIG` |
 
 Table: 主な設定エラーの条件一覧
+
+## 設定の確認 (porter-config-check)
+
+`porter-config-check` は、サービスを開かずに設定ファイルを検証する確認用コマンド (`prod/cbin/porter-config-check`) です。  
+設定ファイルは 1 回だけ読み取り・解析し、検証結果、サービス ID ごとの件数、全体の要約を同じ解析結果から出力します。
+
+```text
+porter-config-check [-h] [--check-files] [--role ROLE] config_path
+```
+
+| 引数・オプション | 意味 |
+|---|---|
+| `config_path` | 検証する設定ファイルのパス (必須の位置引数) |
+| `--check-files` | 証明書方式の認証のファイル (`cert_file`、`key_file`、`ca_file`、`crl_file`、`pinned_certs` の各要素) が存在し、通常ファイルとして読み取れることも確認します |
+| `--role ROLE` | 役割依存の条件を検査する対象を `sender`、`receiver`、`all` から指定します。既定は `all` です |
+| `-h`、`--help` | 使い方を標準出力へ出して終了コード 0 で終了します |
+
+Table: `porter-config-check` の引数とオプション
+
+`--check-files` の相対パスはコマンドの作業ディレクトリから解決します。サービスを開く処理も設定ファイルに書かれたパスのまま開くため、確認はサービスのプロセスと同じ作業ディレクトリで実行してください。
+
+### 出力の書式
+
+検証結果 (誤りの行、サービスごとの行、要約の行) は標準出力へ、実行の失敗の診断 (`エラー: ...`) は標準エラー出力へ出します ([共通コーディング規範](../../general/docs/coding-guideline.md) の「プロセスの終了コード」に従います)。
+
+```text
+<config_path>:<line>:<column>: error: syntax: <message>
+<config_path>: error: <kind>: <key_path>: <message> [expected: <expected>]
+<config_path>: service <ID>: OK
+<config_path>: service <ID>: <N> error(s)
+<config_path>: OK (<S> service(s))
+<config_path>: <N> error(s)
+```
+
+`<kind>` には、`unknown-key`、`duplicate-key`、`service-id`、`type`、`value`、`range`、`not-applicable`、`missing`、`constraint`、`key-derivation`、`file` (`--check-files` の誤り) のいずれかが入ります。  
+`<key_path>` が空 (ルートの誤り) の場合は `/` を出力し、期待する範囲がない場合は `[expected: ...]` を省きます。`<config_path>`、`<key_path>`、および認証ファイルのパスに含まれる制御文字 (0x00 〜 0x1F、0x7F) と `\` は、`\xHH` (`\` は `\\`) で出力します。ルートの構造に誤りがある場合はサービスごとの行を出しません。
+
+### 終了コード
+
+終了コードは、実行失敗を最優先に判定したうえで、設定の誤りの有無で決定します。
+
+| 終了コード | 意味 |
+|---|---|
+| `0` | 誤りがありません (`-h` / `--help` の表示成功を含みます) |
+| `1` | 実行の失敗 (引数の誤り、ファイルを開けない、読み取りの失敗、メモリ不足、出力の書き込み・フラッシュの失敗) |
+| `2` | 設定の誤りが 1 件以上あります (構文の誤り、`--check-files` の誤りを含みます) |
+
+Table: `porter-config-check` の終了コード
 
 ## サンプル設定ファイル
 

@@ -191,7 +191,7 @@ TEST(apiOpenPathsTest, multicast_destination_parse_failure)
     // Act
     int actual_ret = api_setup_dest_addr(&ctx, POTR_ROLE_SENDER); // [手順] - 宛先を設定する。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - 宛先不正の分類を保持すること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret); // [確認_異常系] - 設定値としての宛先不正へ分類すること。
 }
 
 TEST(apiOpenPathsTest, unicast_destination_uses_resolved_address)

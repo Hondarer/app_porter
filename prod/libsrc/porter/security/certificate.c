@@ -147,7 +147,7 @@ int potr_internal_certificate_initialize(potr_context *ctx, const potr_service_d
     if (service->auth != POTR_AUTH_CERT ||
         (ctx->role == POTR_ROLE_SENDER && is_oneway_udp_type(ctx->service.type) && service->src_port == 0U))
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
     config.cert_file = service->cert_file;
     config.key_file = service->key_file;

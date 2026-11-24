@@ -1343,6 +1343,82 @@ static void ensure_tracer_started(void)
 }
 
 /**
+ *  @brief          結果コードをシンボル文字列へ変換します。
+ *  @param[in]      err  porter の結果コード。
+ *  @return         定数名を表す静的文字列。
+ */
+static const char *potr_err_name(int err)
+{
+    switch (err)
+    {
+    case POTR_OK:
+        return "POTR_OK";
+    case POTR_ERR_UNKNOWN:
+        return "POTR_ERR_UNKNOWN";
+    case POTR_ERR_INVALID_ARGUMENT:
+        return "POTR_ERR_INVALID_ARGUMENT";
+    case POTR_ERR_UNSUPPORTED:
+        return "POTR_ERR_UNSUPPORTED";
+    case POTR_ERR_NOT_FOUND:
+        return "POTR_ERR_NOT_FOUND";
+    case POTR_ERR_INVALID_HANDLE:
+        return "POTR_ERR_INVALID_HANDLE";
+    case POTR_ERR_INVALID_CONFIG:
+        return "POTR_ERR_INVALID_CONFIG";
+    case POTR_ERR_OUT_OF_MEMORY:
+        return "POTR_ERR_OUT_OF_MEMORY";
+    case POTR_ERR_FULL:
+        return "POTR_ERR_FULL";
+    case POTR_ERR_EMPTY:
+        return "POTR_ERR_EMPTY";
+    case POTR_ERR_OUT_OF_WINDOW:
+        return "POTR_ERR_OUT_OF_WINDOW";
+    case POTR_ERR_DISCONNECTED:
+        return "POTR_ERR_DISCONNECTED";
+    case POTR_ERR_TIMEOUT:
+        return "POTR_ERR_TIMEOUT";
+    case POTR_ERR_EOF:
+        return "POTR_ERR_EOF";
+    case POTR_ERR_IO:
+        return "POTR_ERR_IO";
+    case POTR_ERR_PROTOCOL:
+        return "POTR_ERR_PROTOCOL";
+    case POTR_ERR_CANCELED:
+        return "POTR_ERR_CANCELED";
+    default:
+        return "POTR_ERR_UNKNOWN";
+    }
+}
+
+/**
+ *  @brief          サービスを開く処理の失敗理由を標準エラー出力へ表示します。
+ *  @param[in]      service_id  対象のサービス ID。
+ *  @param[in]      err         porter の結果コード。
+ */
+static void print_open_failure(int64_t service_id, int err)
+{
+    if (err == POTR_ERR_INVALID_CONFIG)
+    {
+        (void)cplat_pinned_prompt_printf(
+            s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+            "エラー: サービス %" PRId64 " を開けませんでした: 設定に誤りがあります。porter-config-check で確かめてください。\n",
+            service_id);
+    }
+    else if (err == POTR_ERR_NOT_FOUND)
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                         "エラー: サービス %" PRId64 " を開けませんでした: サービスがありません。\n",
+                                         service_id);
+    }
+    else
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                         "エラー: サービス %" PRId64 " を開けませんでした (%s)。\n", service_id,
+                                         potr_err_name(err));
+    }
+}
+
+/**
  *  @brief          サービスを開きます。
  *  @param[in,out]  session     セッション状態。
  *  @param[in]      role        ロール。
@@ -1357,6 +1433,8 @@ static int do_open(porter_test_session *session, potr_role role, const char *con
     int can_send = 0;
     potr_recv_fn callback = NULL;
     potr_context *handle;
+    int type_ret;
+    int open_ret;
 
     /*
      * サービスを開く経過は利用者が画面で確認する表示であり、診断も出力先がほかにないため、
@@ -1376,12 +1454,16 @@ static int do_open(porter_test_session *session, potr_role role, const char *con
      * サービス種別を取得して双方向サービスかどうか判定する。
      * sender・receiver ともに unicast_bidir / tcp_bidir の双方を双方向として扱う。
      */
-    if (potr_service_get_type(config_path, service_id, &svc_type) == POTR_OK)
+    type_ret = potr_service_get_type(config_path, service_id, &svc_type);
+    if (type_ret != POTR_OK)
     {
-        if (svc_type == POTR_TYPE_UNICAST_BIDIR || svc_type == POTR_TYPE_TCP_BIDIR)
-        {
-            is_bidir = 1;
-        }
+        print_open_failure(service_id, type_ret);
+        return -1;
+    }
+
+    if (svc_type == POTR_TYPE_UNICAST_BIDIR || svc_type == POTR_TYPE_TCP_BIDIR)
+    {
+        is_bidir = 1;
     }
 
     /* receiver は受信のためコールバックが必須である。sender は双方向時のみコールバックを設定する。 */
@@ -1400,10 +1482,10 @@ static int do_open(porter_test_session *session, potr_role role, const char *con
         }
     }
 
-    if (potr_service_open_from_config(config_path, service_id, role, callback, &handle) != POTR_OK)
+    open_ret = potr_service_open_from_config(config_path, service_id, role, callback, &handle);
+    if (open_ret != POTR_OK)
     {
-        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                         "エラー: サービス %" PRId64 " を開けませんでした。\n", service_id);
+        print_open_failure(service_id, open_ret);
         return -1;
     }
 

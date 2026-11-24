@@ -39,7 +39,7 @@ static int result_from_ipv4_result(int cplat_result)
 
     if (cplat_result == CPLAT_ERR_INVALID_ARGUMENT)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     return POTR_ERR_IO;

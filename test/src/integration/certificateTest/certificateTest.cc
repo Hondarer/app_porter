@@ -272,7 +272,7 @@ TEST(certificate_open_test, validates_credentials_and_oneway_source_port)
     // Assert
     for (int result : results)
     {
-        EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, result); // [確認_異常系 回数=10] - 不正な設定を引数エラーで拒否すること。
+        EXPECT_EQ(POTR_ERR_INVALID_CONFIG, result); // [確認_異常系 回数=10] - 不正な設定を設定エラーで拒否すること。
     }
     EXPECT_EQ(POTR_ERR_IO, missing_result); // [確認_異常系] - 証明書の読み込み失敗を open で返すこと。
     EXPECT_EQ(POTR_OK, unicast_receiver_result); // [確認_正常系] - src_port が 0 の片方向 unicast 受信者を開けること。

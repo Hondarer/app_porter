@@ -110,188 +110,31 @@ struct potr_internal_flow_control
     cplat_ipv4_endpoint reply[POTR_MAX_PATH]; /**< UDP の返送先 (N:1 モード以外)。受信スレッドが更新する。 */
 };
 
-/*
- * 実効値を決める。サービス側の 0 はグローバル値、allow_disabled が非 0 の項目の専用の値は 0 (無効) とする。
- * サービス側とグローバル値の両方が 0 の場合は default_value とする (0 が「無効」を表す項目では 0 を渡す)。
- */
-static int resolve_value(uint32_t service_value, uint32_t global_value, int allow_disabled, uint32_t default_value,
-                         uint32_t *value)
-{
-    if (global_value == POTR_FLOW_CONTROL_DISABLED)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    if (service_value == POTR_FLOW_CONTROL_DISABLED)
-    {
-        if (allow_disabled == 0)
-        {
-            return POTR_ERR_INVALID_ARGUMENT;
-        }
-
-        *value = 0U;
-        return POTR_OK;
-    }
-
-    if (service_value != 0U)
-    {
-        *value = service_value;
-    }
-    else if (global_value != 0U)
-    {
-        *value = global_value;
-    }
-    else
-    {
-        /* 0 を取れない項目は、グローバル値も 0 (構造体を 0 で初期化した利用側) の場合に既定値を使う。 */
-        *value = default_value;
-    }
-
-    return POTR_OK;
-}
-
-/*
- * OS の受信バッファーに基づく送出上限を使う受信側かどうかを返す。
- * unicast、multicast、broadcast の受信者と、unicast_bidir、unicast_bidir_n1 の両方の役割である。
- * multicast と broadcast の受信者は、受信報告を送る構成 (実効 health_interval_ms が 0 でない) に限る。
- * TCP は下位の通信が受信バッファーを守るため、RAW は再送を行わないため、対象外とする。
- */
-static int uses_receive_buffer(potr_type type, potr_role role, uint32_t health_interval_ms)
-{
-    if (type == POTR_TYPE_UNICAST_BIDIR || type == POTR_TYPE_UNICAST_BIDIR_N1)
-    {
-        return 1;
-    }
-
-    if (role != POTR_ROLE_RECEIVER)
-    {
-        return 0;
-    }
-
-    if (type == POTR_TYPE_UNICAST)
-    {
-        return 1;
-    }
-
-    return (type == POTR_TYPE_MULTICAST || type == POTR_TYPE_BROADCAST) && health_interval_ms != 0U;
-}
-
-/*
- * 既定で有効で、0 が「既定値を使用」(サービス側では「グローバル値を使用」) を表し、
- * グローバル設定とサービス定義の両方で POTR_FLOW_CONTROL_DISABLED (無効) を受け付ける項目の実効値を決める。
- * 無効の場合は 0 を返す。
- */
-static uint32_t resolve_default_or_disabled(uint32_t service_value, uint32_t global_value, uint32_t default_value)
-{
-    if (service_value == POTR_FLOW_CONTROL_DISABLED)
-    {
-        return 0U;
-    }
-
-    if (service_value != 0U)
-    {
-        return service_value;
-    }
-
-    if (global_value == POTR_FLOW_CONTROL_DISABLED)
-    {
-        return 0U;
-    }
-
-    if (global_value != 0U)
-    {
-        return global_value;
-    }
-
-    /* 構造体を 0 で初期化した利用側は、既定値を使う。 */
-    return default_value;
-}
-
-/*
- * 受信バッファーの幅の計算に使う割合の実効値を決め、検査する。
- * この項目は既定で有効で、0 が「既定値を使用」(サービス側では「グローバル値を使用」) を表すため、
- * グローバル設定とサービス定義の両方で POTR_FLOW_CONTROL_DISABLED (無効) を受け付ける。
- * 無効の場合と、OS の受信バッファーに基づく送出上限を使わない通信種別と役割では、0 を格納する。
- */
-static int resolve_receive_buffer_percent(const potr_service_def *service, const potr_global_config *global,
-                                          potr_role role, uint32_t health_interval_ms, uint32_t *value)
-{
-    uint32_t percent =
-        resolve_default_or_disabled(service->flow_control_receive_buffer_percent,
-                                    global->flow_control_receive_buffer_percent,
-                                    (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT);
-
-    if (percent > POTR_PERCENT_MAX)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "flow_control: service_id=%" PRId64 " invalid receive_buffer_percent=%u (1 <= percent <= 100)",
-                   service->service_id, (unsigned)percent);
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    if (!uses_receive_buffer(service->type, role, health_interval_ms))
-    {
-        percent = 0U;
-    }
-
-    *value = percent;
-
-    return POTR_OK;
-}
-
 /* Doxygen コメントは、ヘッダーに記載 */
 int potr_internal_flow_control_resolve(const potr_service_def *service, const potr_global_config *global,
                                        potr_role role, uint32_t health_interval_ms,
                                        potr_internal_flow_control_config *config)
 {
-    if (service == NULL || global == NULL || config == NULL)
+    uint32_t disabled_err = 0U;
+    int ret = potr_internal_flow_control_resolve_values(service, global, role, health_interval_ms, config,
+                                                        &disabled_err);
+    if (ret != POTR_OK)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return ret;
     }
 
-    memset(config, 0, sizeof(*config));
-
-    /* RAW 系の通信種別はフロー制御の対象外であり、設定を無視する。 */
     if (is_raw_type(service->type))
     {
         return POTR_OK;
     }
 
-    if (resolve_value(service->flow_control_capacity, global->flow_control_capacity, 1, 0U, &config->capacity) !=
-            POTR_OK ||
-        resolve_value(service->flow_control_suppress_percent, global->flow_control_suppress_percent, 0,
-                      (uint32_t)POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT,
-                      &config->suppress_percent) != POTR_OK ||
-        resolve_value(service->flow_control_resume_percent, global->flow_control_resume_percent, 0,
-                      (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT,
-                      &config->resume_percent) != POTR_OK ||
-        resolve_value(service->flow_control_request_interval_ms, global->flow_control_request_interval_ms, 0,
-                      (uint32_t)POTR_DEFAULT_FLOW_CONTROL_REQUEST_INTERVAL_MS,
-                      &config->request_interval_ms) != POTR_OK ||
-        resolve_value(service->flow_control_request_lifetime_ms, global->flow_control_request_lifetime_ms, 0,
-                      (uint32_t)POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS,
-                      &config->request_lifetime_ms) != POTR_OK ||
-        resolve_value(service->flow_control_grace_ms, global->flow_control_grace_ms, 0,
-                      (uint32_t)POTR_DEFAULT_FLOW_CONTROL_GRACE_MS, &config->grace_ms) != POTR_OK ||
-        resolve_value(service->flow_control_feedback_percent, global->flow_control_feedback_percent, 0,
-                      (uint32_t)POTR_DEFAULT_FLOW_CONTROL_FEEDBACK_PERCENT, &config->feedback_percent) != POTR_OK ||
-        resolve_value(service->flow_control_monitored_receiver_count, global->flow_control_monitored_receiver_count, 1,
-                      0U, &config->monitored_receiver_count) != POTR_OK)
+    if (disabled_err != 0U)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "flow_control: service_id=%" PRId64 " POTR_FLOW_CONTROL_DISABLED is not allowed for this field",
                    service->service_id);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
-
-    config->excluded_receiver_count =
-        resolve_default_or_disabled(service->flow_control_excluded_receiver_count,
-                                    global->flow_control_excluded_receiver_count,
-                                    (uint32_t)POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_COUNT);
-    config->excluded_receiver_percent =
-        resolve_default_or_disabled(service->flow_control_excluded_receiver_percent,
-                                    global->flow_control_excluded_receiver_percent,
-                                    (uint32_t)POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_PERCENT);
 
     if (config->suppress_percent < 1U || config->suppress_percent > POTR_PERCENT_MAX || config->resume_percent < 1U ||
         config->resume_percent >= config->suppress_percent)
@@ -300,7 +143,7 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
                    "flow_control: service_id=%" PRId64 " invalid thresholds suppress_percent=%u resume_percent=%u"
                    " (1 <= resume < suppress <= 100)",
                    service->service_id, (unsigned)config->suppress_percent, (unsigned)config->resume_percent);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     if (config->request_interval_ms == 0U || config->request_lifetime_ms <= config->request_interval_ms)
@@ -310,7 +153,7 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
                    " (0 < interval < lifetime)",
                    service->service_id, (unsigned)config->request_interval_ms,
                    (unsigned)config->request_lifetime_ms);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     /* 再送周期、有効期限、猶予時間は待機の時間に使うため、待機の関数へ int で渡せる上限を超える値は受け付けない。 */
@@ -321,7 +164,7 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
                    " (max: %u)",
                    service->service_id, (unsigned)config->request_interval_ms,
                    (unsigned)config->request_lifetime_ms, (unsigned)POTR_WAIT_MS_MAX);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     if (config->grace_ms == 0U || config->grace_ms > POTR_WAIT_MS_MAX)
@@ -329,7 +172,7 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "flow_control: service_id=%" PRId64 " invalid grace_ms=%u (1 <= grace_ms <= %u)",
                    service->service_id, (unsigned)config->grace_ms, (unsigned)POTR_WAIT_MS_MAX);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     if (config->excluded_receiver_percent > POTR_PERCENT_MAX)
@@ -337,7 +180,7 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "flow_control: service_id=%" PRId64 " invalid excluded_receiver_percent=%u (max: 100)",
                    service->service_id, (unsigned)config->excluded_receiver_percent);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     if (config->feedback_percent < 1U || config->feedback_percent > POTR_PERCENT_MAX)
@@ -345,7 +188,7 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "flow_control: service_id=%" PRId64 " invalid feedback_percent=%u (1 <= percent <= 100)",
                    service->service_id, (unsigned)config->feedback_percent);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     if (config->monitored_receiver_count > POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX)
@@ -354,13 +197,15 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
                    "flow_control: service_id=%" PRId64 " invalid monitored_receiver_count=%u (max: %u)",
                    service->service_id, (unsigned)config->monitored_receiver_count,
                    (unsigned)POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
-    if (resolve_receive_buffer_percent(service, global, role, health_interval_ms, &config->receive_buffer_percent) !=
-        POTR_OK)
+    if (config->receive_buffer_percent > POTR_PERCENT_MAX)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                   "flow_control: service_id=%" PRId64 " invalid receive_buffer_percent=%u (1 <= percent <= 100)",
+                   service->service_id, (unsigned)config->receive_buffer_percent);
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     if (config->capacity == 0U)
@@ -382,7 +227,7 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
                        " (capacity=%u suppress_percent=%u) is smaller than max_message_size=%u",
                        service->service_id, margin, (unsigned)config->capacity,
                        (unsigned)config->suppress_percent, (unsigned)global->max_message_size);
-            return POTR_ERR_INVALID_ARGUMENT;
+            return POTR_ERR_INVALID_CONFIG;
         }
     }
 
@@ -393,7 +238,7 @@ int potr_internal_flow_control_resolve(const potr_service_def *service, const po
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                    "flow_control: service_id=%" PRId64 " multicast/broadcast receiver requires health_interval_ms > 0",
                    service->service_id);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     return POTR_OK;

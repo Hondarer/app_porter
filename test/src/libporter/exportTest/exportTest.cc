@@ -24,7 +24,13 @@
     EXPORT_ENTRY(potr_peer_disconnect, int(POTR_API *)(potr_context * handle, potr_peer_id peer_id)) \
     EXPORT_ENTRY(potr_service_close, int(POTR_API *)(potr_context * handle)) \
     EXPORT_ENTRY(potr_tracer_get, cplat_tracer *(POTR_API *)(void)) \
-    EXPORT_ENTRY(potr_service_get_type, int(POTR_API *)(const char *config_path, int64_t service_id, potr_type *type))
+    EXPORT_ENTRY(potr_service_get_type, int(POTR_API *)(const char *config_path, int64_t service_id, potr_type *type)) \
+    EXPORT_ENTRY(potr_config_validate_file, \
+                 int(POTR_API *)(const char *config_path, const potr_config_validate_options *options, \
+                                 size_t *issue_count)) \
+    EXPORT_ENTRY(potr_config_list_service_ids, \
+                 int(POTR_API *)(const char *config_path, int64_t **ids, size_t *count)) \
+    EXPORT_ENTRY(potr_config_service_ids_free, void(POTR_API *)(int64_t *ids))
 
 // libporter が公開エクスポートすべき変数の一覧。
 // 現時点ではエントリなし (公開ヘッダーに dllexport 付きの変数エクスポートが存在しないため)。

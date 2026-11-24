@@ -186,12 +186,12 @@ TEST_F(potrFlowControlResolveTest, service_disabled_is_invalid_for_non_disableab
     // Assert
     for (size_t i = 0; i < 6; i++)
     {
-        EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_rets[i]);
-        // [確認_異常系] - 6 項目のいずれでも戻り値が POTR_ERR_INVALID_ARGUMENT であること。(確認 6 回)
+        EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_rets[i]);
+        // [確認_異常系] - 6 項目のいずれでも戻り値が POTR_ERR_INVALID_CONFIG であること。(確認 6 回)
     }
 }
 
-// グローバルの 7 項目のいずれかが DISABLED の場合に、引数エラーになることの確認
+// グローバルの 7 項目のいずれかが DISABLED の場合に、設定エラーになることの確認
 // [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
 TEST_F(potrFlowControlResolveTest, global_disabled_is_invalid)
 {
@@ -218,8 +218,8 @@ TEST_F(potrFlowControlResolveTest, global_disabled_is_invalid)
     // Assert
     for (size_t i = 0; i < 7; i++)
     {
-        EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_rets[i]);
-        // [確認_異常系] - 7 項目のいずれでも戻り値が POTR_ERR_INVALID_ARGUMENT であること。(確認 7 回)
+        EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_rets[i]);
+        // [確認_異常系] - 7 項目のいずれでも戻り値が POTR_ERR_INVALID_CONFIG であること。(確認 7 回)
     }
 }
 
@@ -243,15 +243,15 @@ TEST_F(potrFlowControlResolveTest, threshold_validation)
     svc.flow_control_resume_percent = 99U;
     int actual_ret_max = resolve(); // [手順] - 要求 100、解除 99 にして resolve を呼び出す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_suppress_over); // [確認_異常系] - 要求のしきい値 101 で POTR_ERR_INVALID_ARGUMENT であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_equal);         // [確認_異常系] - 解除が要求と同じ場合に POTR_ERR_INVALID_ARGUMENT であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_inverted);      // [確認_異常系] - 解除が要求より大きい場合に POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_suppress_over); // [確認_異常系] - 要求のしきい値 101 で POTR_ERR_INVALID_CONFIG であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_equal);         // [確認_異常系] - 解除が要求と同じ場合に POTR_ERR_INVALID_CONFIG であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_inverted);      // [確認_異常系] - 解除が要求より大きい場合に POTR_ERR_INVALID_CONFIG であること。
     EXPECT_EQ(POTR_OK, actual_ret_max);                             // [確認_正常系] - 要求 100、解除 99 で POTR_OK であること。
     EXPECT_EQ(100U, cfg.suppress_percent);                          // [確認_正常系] - 要求のしきい値が 100 であること。
     EXPECT_EQ(99U, cfg.resume_percent);                             // [確認_正常系] - 解除のしきい値が 99 であること。
 }
 
-// 有効期限が再送周期以下の場合に、引数エラーになることの確認
+// 有効期限が再送周期以下の場合に、設定エラーになることの確認
 // [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
 TEST_F(potrFlowControlResolveTest, lifetime_must_exceed_interval)
 {
@@ -266,8 +266,8 @@ TEST_F(potrFlowControlResolveTest, lifetime_must_exceed_interval)
     svc.flow_control_request_lifetime_ms = 201U;
     int actual_ret_larger = resolve(); // [手順] - 有効期限を再送周期より 1 大きい 201 にして resolve を呼び出す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_equal);   // [確認_異常系] - 同じ値で POTR_ERR_INVALID_ARGUMENT であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_smaller); // [確認_異常系] - 小さい値で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_equal);   // [確認_異常系] - 同じ値で POTR_ERR_INVALID_CONFIG であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_smaller); // [確認_異常系] - 小さい値で POTR_ERR_INVALID_CONFIG であること。
     EXPECT_EQ(POTR_OK, actual_ret_larger);                    // [確認_正常系] - 1 大きい値で POTR_OK であること。
 }
 
@@ -313,8 +313,8 @@ TEST_F(potrFlowControlResolveTest, excluded_receiver_percent_upper_bound)
     svc.flow_control_excluded_receiver_percent = 100U;
     int actual_ret_max = resolve(); // [手順] - サービスの除外割合 100 で resolve を呼び出す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_over);        // [確認_異常系] - サービスの除外割合 101 で POTR_ERR_INVALID_ARGUMENT であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_global_over); // [確認_異常系] - グローバルの除外割合 101 で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_over);        // [確認_異常系] - サービスの除外割合 101 で POTR_ERR_INVALID_CONFIG であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_global_over); // [確認_異常系] - グローバルの除外割合 101 で POTR_ERR_INVALID_CONFIG であること。
     EXPECT_EQ(POTR_OK, actual_ret_max);                           // [確認_正常系] - 除外割合 100 で POTR_OK であること。
     EXPECT_EQ(100U, cfg.excluded_receiver_percent);               // [確認_正常系] - 除外割合が 100 であること。
 }
@@ -353,8 +353,8 @@ TEST_F(potrFlowControlResolveTest, feedback_percent_validation)
     EXPECT_EQ(1U, feedback_min);                                                          // [確認_正常系] - 予算が 1 であること。
     EXPECT_EQ(POTR_OK, actual_ret_max);                                                   // [確認_正常系] - 予算 100 で POTR_OK であること。
     EXPECT_EQ(100U, feedback_max);                                                        // [確認_正常系] - 予算が 100 であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_over);                                // [確認_異常系] - サービスの予算 101 で POTR_ERR_INVALID_ARGUMENT であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_global_over);                         // [確認_異常系] - グローバルの予算 101 で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_over);                                  // [確認_異常系] - サービスの予算 101 で POTR_ERR_INVALID_CONFIG であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_global_over);                           // [確認_異常系] - グローバルの予算 101 で POTR_ERR_INVALID_CONFIG であること。
 }
 
 // 猶予時間 (grace_ms) の上限と既定値解決の検査の確認
@@ -384,11 +384,11 @@ TEST_F(potrFlowControlResolveTest, grace_ms_upper_bound)
     EXPECT_EQ(1U, grace_min);                                     // [確認_正常系] - 猶予時間が 1 であること。
     EXPECT_EQ(POTR_OK, actual_ret_max);                           // [確認_正常系] - 猶予時間が上限ちょうどで POTR_OK であること。
     EXPECT_EQ(POTR_WAIT_MS_MAX, grace_max);                       // [確認_正常系] - 猶予時間が POTR_WAIT_MS_MAX であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_over);        // [確認_異常系] - サービスの猶予時間の超過で POTR_ERR_INVALID_ARGUMENT であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_global_over); // [確認_異常系] - グローバルの猶予時間の超過で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_over);        // [確認_異常系] - サービスの猶予時間の超過で POTR_ERR_INVALID_CONFIG であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_global_over); // [確認_異常系] - グローバルの猶予時間の超過で POTR_ERR_INVALID_CONFIG であること。
 }
 
-// 要求のしきい値から容量までの余裕が max_message_size 未満の場合に、引数エラーになることの確認
+// 要求のしきい値から容量までの余裕が max_message_size 未満の場合に、設定エラーになることの確認
 // [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
 TEST_F(potrFlowControlResolveTest, margin_must_hold_max_message)
 {
@@ -413,14 +413,14 @@ TEST_F(potrFlowControlResolveTest, margin_must_hold_max_message)
     int actual_ret_large = resolve();
     // [手順] - 容量を 0xFFFFFFFE (容量 × 要求のしきい値が 32 ビットを超える) にして resolve を呼び出す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_smaller); // [確認_異常系] - 余裕が 1 小さい容量で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_smaller);   // [確認_異常系] - 余裕が 1 小さい容量で POTR_ERR_INVALID_CONFIG であること。
     EXPECT_EQ(POTR_OK, actual_ret_equal);                     // [確認_正常系] - 余裕が同じ容量で POTR_OK であること。
     EXPECT_EQ(20480U, capacity_equal);                        // [確認_正常系] - 容量が 20480 であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_no_margin); // [確認_異常系] - 余裕が 0 の構成で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_no_margin); // [確認_異常系] - 余裕が 0 の構成で POTR_ERR_INVALID_CONFIG であること。
     EXPECT_EQ(POTR_OK, actual_ret_large); // [確認_正常系] - 桁あふれせずに余裕を求め、POTR_OK であること。
 }
 
-// 再送周期と有効期限が、待機時間の設定値の上限 (POTR_WAIT_MS_MAX) を超える場合に、引数エラーになることの確認
+// 再送周期と有効期限が、待機時間の設定値の上限 (POTR_WAIT_MS_MAX) を超える場合に、設定エラーになることの確認
 // [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
 TEST_F(potrFlowControlResolveTest, interval_and_lifetime_upper_bound)
 {
@@ -440,11 +440,11 @@ TEST_F(potrFlowControlResolveTest, interval_and_lifetime_upper_bound)
     // [手順] - 再送周期を上限 + 1、有効期限を上限 + 2 にして resolve を呼び出す。
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret_max);                             // [確認_正常系] - 上限ちょうどで POTR_OK であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_lifetime_over); // [確認_異常系] - 有効期限の超過で POTR_ERR_INVALID_ARGUMENT であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_interval_over); // [確認_異常系] - 再送周期の超過で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_lifetime_over);   // [確認_異常系] - 有効期限の超過で POTR_ERR_INVALID_CONFIG であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_interval_over);   // [確認_異常系] - 再送周期の超過で POTR_ERR_INVALID_CONFIG であること。
 }
 
-// マルチキャストとブロードキャストの受信者で、health_interval_ms が 0 の場合に引数エラーになることの確認
+// マルチキャストとブロードキャストの受信者で、health_interval_ms が 0 の場合に設定エラーになることの確認
 // [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
 TEST_F(potrFlowControlResolveTest, one_to_many_receiver_requires_health_interval)
 {
@@ -468,8 +468,8 @@ TEST_F(potrFlowControlResolveTest, one_to_many_receiver_requires_health_interval
     // Assert
     for (size_t i = 0; i < 2; i++)
     {
-        EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, receiver_zero[i]);
-        // [確認_異常系] - 受信者で health_interval_ms が 0 の場合に POTR_ERR_INVALID_ARGUMENT であること。(確認 2 回)
+        EXPECT_EQ(POTR_ERR_INVALID_CONFIG, receiver_zero[i]);
+        // [確認_異常系] - 受信者で health_interval_ms が 0 の場合に POTR_ERR_INVALID_CONFIG であること。(確認 2 回)
         EXPECT_EQ(POTR_OK, sender_zero[i]);
         // [確認_正常系] - 送信者で health_interval_ms が 0 の場合に POTR_OK であること。(確認 2 回)
         EXPECT_EQ(POTR_OK, receiver_nonzero[i]);
@@ -568,7 +568,7 @@ TEST_F(potrFlowControlResolveTest, monitored_receiver_values_overlay)
     EXPECT_EQ(0U, cfg.monitored_receiver_count);     // [確認_正常系] - DISABLED の台数が 0 (下限なし) であること。
 }
 
-// グローバルの監視する受信者の台数の下限が DISABLED の場合に、引数エラーになることの確認
+// グローバルの監視する受信者の台数の下限が DISABLED の場合に、設定エラーになることの確認
 // [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
 TEST_F(potrFlowControlResolveTest, global_disabled_is_invalid_for_monitored_receiver)
 {
@@ -578,10 +578,10 @@ TEST_F(potrFlowControlResolveTest, global_disabled_is_invalid_for_monitored_rece
     glb.flow_control_monitored_receiver_count = POTR_FLOW_CONTROL_DISABLED;
     int actual_ret_count = resolve(); // [手順] - グローバルの台数を DISABLED にして resolve を呼び出す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_count);   // [確認_異常系] - 台数の DISABLED で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_count);   // [確認_異常系] - 台数の DISABLED で POTR_ERR_INVALID_CONFIG であること。
 }
 
-// 監視する受信者の台数の下限が 64 を超える場合に、引数エラーになることの確認
+// 監視する受信者の台数の下限が 64 を超える場合に、設定エラーになることの確認
 // [サブ手順参照 名前=potrFlowControlResolveTest.SetUp]
 TEST_F(potrFlowControlResolveTest, monitored_receiver_upper_bound)
 {
@@ -593,7 +593,7 @@ TEST_F(potrFlowControlResolveTest, monitored_receiver_upper_bound)
     svc.flow_control_monitored_receiver_count = POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX;
     int actual_ret_count_max = resolve(); // [手順] - 台数 64 で resolve を呼び出す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_count_over);   // [確認_異常系] - 台数 65 で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_count_over);   // [確認_異常系] - 台数 65 で POTR_ERR_INVALID_CONFIG であること。
     EXPECT_EQ(POTR_OK, actual_ret_count_max);                      // [確認_正常系] - 台数 64 で POTR_OK であること。
     EXPECT_EQ(POTR_FLOW_CONTROL_MONITORED_RECEIVER_MAX, cfg.monitored_receiver_count); // [確認_正常系] - 台数が 64 であること。
 }
@@ -661,9 +661,9 @@ TEST_F(potrFlowControlResolveTest, receive_buffer_percent_upper_bound)
     svc.flow_control_receive_buffer_percent = 1U;
     int actual_ret_min = resolve(POTR_ROLE_RECEIVER); // [手順] - unicast の受信者で、割合 1 で resolve を呼び出す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_over);        // [確認_異常系] - サービスの割合 101 で POTR_ERR_INVALID_ARGUMENT であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_global_over); // [確認_異常系] - グローバルの割合 101 で POTR_ERR_INVALID_ARGUMENT であること。
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret_tcp_over);    // [確認_異常系] - 対象外の通信種別でも割合 101 で POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_over);        // [確認_異常系] - サービスの割合 101 で POTR_ERR_INVALID_CONFIG であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_global_over); // [確認_異常系] - グローバルの割合 101 で POTR_ERR_INVALID_CONFIG であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret_tcp_over);    // [確認_異常系] - 対象外の通信種別でも割合 101 で POTR_ERR_INVALID_CONFIG であること。
     EXPECT_EQ(POTR_OK, actual_ret_max);                           // [確認_正常系] - 割合 100 で POTR_OK であること。
     EXPECT_EQ(POTR_OK, actual_ret_min);                           // [確認_正常系] - 割合 1 で POTR_OK であること。
     EXPECT_EQ(1U, cfg.receive_buffer_percent);                    // [確認_正常系] - 割合が 1 であること。

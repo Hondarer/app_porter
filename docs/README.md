@@ -133,6 +133,9 @@ int main(void) {
 ### テスト
 
 ```sh
+# 構成ファイルの事前確認
+prod/cbin/porter-config-check prod/sample-config/porter-services.jsonc
+
 # 受信側 (別ターミナルで先に起動)
 prod/cbin/porter-test receiver prod/sample-config/porter-services.jsonc 1001
 

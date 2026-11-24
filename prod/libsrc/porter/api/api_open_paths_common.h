@@ -20,7 +20,7 @@
  *  @brief          ホスト名または IPv4 アドレスを解決します。
  *  @param[in]      host            入力文字列。NULL は許可しません。
  *  @param[out]     address_out     ネットワーク バイト順のアドレス。NULL は許可しません。
- *  @return         成功時 POTR_OK、不正な入力は POTR_ERR_INVALID_ARGUMENT、解決失敗は POTR_ERR_IO。
+ *  @return         成功時 POTR_OK、不正な表記は POTR_ERR_INVALID_CONFIG、解決失敗は POTR_ERR_IO。
  *  @par            スレッド セーフ
  *                  出力先を共有しない呼び出しは並行実行できます。
  */
@@ -30,7 +30,7 @@ int api_paths_resolve_ipv4(const char *host, uint32_t *address_out);
  *  @brief          IPv4 アドレス文字列を解析します。
  *  @param[in]      text            入力文字列。NULL は許可しません。
  *  @param[out]     address_out     ネットワーク バイト順のアドレス。NULL は許可しません。
- *  @return         成功時 POTR_OK、不正な入力は POTR_ERR_INVALID_ARGUMENT、解決失敗は POTR_ERR_IO。
+ *  @return         成功時 POTR_OK、不正な表記は POTR_ERR_INVALID_CONFIG、失敗は POTR_ERR_IO。
  *  @par            スレッド セーフ
  *                  出力先を共有しない呼び出しは並行実行できます。
  */

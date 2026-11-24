@@ -34,7 +34,7 @@ TEST(apiOpenPathsCommonTest, resolve_invalid)
     // Act
     int actual_ret = api_paths_resolve_ipv4("host", &address); // [手順] - アドレスを変換する。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - 結果の分類を保持すること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret); // [確認_異常系] - アドレス表記の誤りを設定エラーへ分類すること。
 }
 
 TEST(apiOpenPathsCommonTest, resolve_failure)
@@ -76,7 +76,7 @@ TEST(apiOpenPathsCommonTest, parse_invalid)
     // Act
     int actual_ret = api_paths_parse_ipv4("host", &address); // [手順] - アドレスを変換する。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - 結果の分類を保持すること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret); // [確認_異常系] - アドレス表記の誤りを設定エラーへ分類すること。
 }
 
 TEST(apiOpenPathsCommonTest, parse_failure)

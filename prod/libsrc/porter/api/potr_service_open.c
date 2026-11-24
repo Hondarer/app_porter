@@ -40,6 +40,9 @@
 #include <porter/thread/potr_send_thread.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_result.h>
+#include <porter/protocol/config_check.h>
+#include <porter/protocol/config_report.h>
+#include "api_open_internal.h"
 #include "api_open_paths.h"
 #include "api_context_cleanup.h"
 
@@ -157,42 +160,13 @@ static int open_validate_callback(const potr_context *ctx, potr_role role, potr_
 }
 
 /*
- * 設定値を検証し、実効ヘルス チェック間隔・タイムアウトを解決する。
- * 実効値を決めた後に、待機の時間に使う設定値の上限を、値を使う種別と役割だけで検査する。
- * 呼び出し前に ctx->role を設定しておく。
- * 検証に通ったときは POTR_OK を返し、不正なときは POTR_ERR_INVALID_ARGUMENT を返す。
+ * path_group の未指定値 (0) を 1 へ正規化し、実効ヘルス チェック間隔・タイムアウトを解決する。
  */
-static int open_validate_config(potr_context *ctx)
+static void normalize_and_resolve_health(potr_context *ctx)
 {
     size_t path_idx;
 
-    for (path_idx = 0; path_idx < POTR_MAX_PATH; path_idx++)
-    {
-        if (ctx->service.path_group[path_idx] > POTR_MAX_PATH_GROUP)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                       "potr_service_open: service_id=%" PRId64 " invalid path_group%u=%u",
-                       ctx->service.service_id, (unsigned)(path_idx + 1U),
-                       (unsigned)ctx->service.path_group[path_idx]);
-            return POTR_ERR_INVALID_ARGUMENT;
-        }
-    }
-
-    if (is_raw_type(ctx->service.type))
-    {
-        for (path_idx = 0; path_idx < POTR_MAX_PATH; path_idx++)
-        {
-            if (ctx->service.path_group[path_idx] > 1U)
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
-                           "potr_service_open: path_group is ignored in RAW mode (service_id=%" PRId64 ")",
-                           ctx->service.service_id);
-                break;
-            }
-        }
-    }
-
-    for (path_idx = 0; path_idx < POTR_MAX_PATH; path_idx++)
+    for (path_idx = 0U; path_idx < POTR_MAX_PATH; path_idx++)
     {
         if (ctx->service.path_group[path_idx] == 0U)
         {
@@ -200,110 +174,7 @@ static int open_validate_config(potr_context *ctx)
         }
     }
 
-    /* max_payload の許容範囲の正本は app/porter/docs/config.md の「global オブジェクト」節である。 */
-    if (ctx->global.max_payload < POTR_MIN_MAX_PAYLOAD || ctx->global.max_payload > POTR_MAX_PAYLOAD)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_open: service_id=%" PRId64 " invalid max_payload=%u (range: %u..%u)",
-                   ctx->service.service_id, (unsigned)ctx->global.max_payload, (unsigned)POTR_MIN_MAX_PAYLOAD,
-                   (unsigned)POTR_MAX_PAYLOAD);
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    /* window_size の許容範囲の正本は app/porter/docs/config.md の「global オブジェクト」節である。 */
-    if (ctx->global.window_size < POTR_MIN_WINDOW_SIZE || ctx->global.window_size > POTR_MAX_WINDOW_SIZE)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_open: service_id=%" PRId64 " invalid window_size=%u (range: %u..%u)",
-                   ctx->service.service_id, (unsigned)ctx->global.window_size, (unsigned)POTR_MIN_WINDOW_SIZE,
-                   (unsigned)POTR_MAX_WINDOW_SIZE);
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    if (ctx->global.max_message_size < (uint32_t)ctx->global.max_payload)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_open: service_id=%" PRId64 " max_message_size=%u must be >= max_payload=%u",
-                   ctx->service.service_id, (unsigned)ctx->global.max_message_size, (unsigned)ctx->global.max_payload);
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    /* send_queue_depth の下限の正本は app/porter/docs/config.md の「global オブジェクト」節である。 */
-    if (ctx->global.send_queue_depth < POTR_MIN_SEND_QUEUE_DEPTH)
-    {
-        POTR_TRACE(
-            CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " invalid send_queue_depth=%u (min: %u)",
-            ctx->service.service_id, (unsigned)ctx->global.send_queue_depth, (unsigned)POTR_MIN_SEND_QUEUE_DEPTH);
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    /*
-     * 通信種別ごとのグローバル既定値を選び、サービス単位設定で実効値を上書きする。
-     * サービス側の値が 0 のときは上書きせず、グローバル既定値を維持する。
-     * 正本は app/porter/docs/health-check.md の「設定パラメーター」節である。
-     */
-    if (is_tcp_type(ctx->service.type))
-    {
-        ctx->health_interval_ms = ctx->global.tcp_health_interval_ms;
-        ctx->health_timeout_ms = ctx->global.tcp_health_timeout_ms;
-    }
-    else
-    {
-        ctx->health_interval_ms = ctx->global.udp_health_interval_ms;
-        ctx->health_timeout_ms = ctx->global.udp_health_timeout_ms;
-    }
-
-    if (ctx->service.health_interval_ms != 0U)
-    {
-        ctx->health_interval_ms = ctx->service.health_interval_ms;
-    }
-
-    if (ctx->service.health_timeout_ms != 0U)
-    {
-        ctx->health_timeout_ms = ctx->service.health_timeout_ms;
-    }
-
-    /* 待機の時間に使う設定値の上限の正本は app/porter/docs/config.md である。 */
-    if ((is_tcp_type(ctx->service.type) || ctx->role == POTR_ROLE_SENDER ||
-         ctx->service.type == POTR_TYPE_UNICAST_BIDIR || ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1) &&
-        ctx->health_interval_ms > POTR_WAIT_MS_MAX)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_open: service_id=%" PRId64 " invalid health_interval_ms=%u (max: %u)",
-                   ctx->service.service_id, (unsigned)ctx->health_interval_ms, (unsigned)POTR_WAIT_MS_MAX);
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    if (is_tcp_type(ctx->service.type) && ctx->role == POTR_ROLE_SENDER &&
-        ctx->service.reconnect_interval_ms > POTR_WAIT_MS_MAX)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_open: service_id=%" PRId64 " invalid reconnect_interval_ms=%u (max: %u)",
-                   ctx->service.service_id, (unsigned)ctx->service.reconnect_interval_ms, (unsigned)POTR_WAIT_MS_MAX);
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    if (is_tcp_type(ctx->service.type) && ctx->role == POTR_ROLE_RECEIVER &&
-        ctx->global.tcp_health_timeout_ms > POTR_TCP_HEALTH_TIMEOUT_MS_MAX)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_open: service_id=%" PRId64 " invalid tcp_health_timeout_ms=%u (max: %u)",
-                   ctx->service.service_id, (unsigned)ctx->global.tcp_health_timeout_ms,
-                   (unsigned)POTR_TCP_HEALTH_TIMEOUT_MS_MAX);
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    if (is_tcp_type(ctx->service.type) &&
-        (ctx->role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR) &&
-        ctx->global.tcp_close_timeout_ms > POTR_WAIT_MS_MAX)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                   "potr_service_open: service_id=%" PRId64 " invalid tcp_close_timeout_ms=%u (max: %u)",
-                   ctx->service.service_id, (unsigned)ctx->global.tcp_close_timeout_ms, (unsigned)POTR_WAIT_MS_MAX);
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    return POTR_OK;
+    potr_internal_config_resolve_health(&ctx->service, &ctx->global, &ctx->health_interval_ms, &ctx->health_timeout_ms);
 }
 
 /*
@@ -558,10 +429,8 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
     return POTR_OK;
 }
 
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_service_open(const potr_global_config *global, const potr_service_def *service, potr_role role,
-                      potr_recv_fn callback, potr_context **handle)
+static int open_service_impl(const potr_global_config *global, const potr_service_def *service, potr_role role,
+                             potr_recv_fn callback, potr_context **handle, int check_config)
 {
     potr_context *ctx;
     int result;
@@ -629,13 +498,23 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
 
     /* 型が確定した後に、SENDER と callback の整合性と設定値を検証する。 */
     result = open_validate_callback(ctx, role, callback);
-    if (result == POTR_OK)
+    if (result == POTR_OK && check_config != 0)
     {
-        result = open_validate_config(ctx);
+        if (ctx->service.type < POTR_TYPE_UNICAST_RAW || ctx->service.type > POTR_TYPE_TCP_BIDIR)
+        {
+            result = POTR_ERR_UNSUPPORTED;
+        }
+        else
+        {
+            potr_internal_config_reporter reporter;
+            potr_internal_config_reporter_init(&reporter, "(direct)", NULL, NULL, 1);
+            result = potr_internal_config_check_all(&ctx->global, &ctx->service, role, &reporter);
+        }
     }
 
     if (result == POTR_OK)
     {
+        normalize_and_resolve_health(ctx);
         result = potr_internal_flow_control_resolve(&ctx->service, &ctx->global, role, ctx->health_interval_ms,
                                                     &ctx->flow_control_config);
     }
@@ -768,4 +647,20 @@ int potr_service_open(const potr_global_config *global, const potr_service_def *
     *handle = public_handle;
 
     return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int api_service_open_validated(const potr_global_config *global, const potr_service_def *service, potr_role role,
+                               potr_recv_fn callback, potr_context **handle)
+{
+    return open_service_impl(global, service, role, callback, handle, 0);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_service_open(const potr_global_config *global, const potr_service_def *service, potr_role role,
+                      potr_recv_fn callback, potr_context **handle)
+{
+    return open_service_impl(global, service, role, callback, handle, 1);
 }

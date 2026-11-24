@@ -62,8 +62,8 @@ extern "C"
  *  @param[in]      config 設定。NULL は不可です。CA または直接登録が必要です。CA には名前も必要です。
  *  @param[in]      transport DTLS 1.2 または TLS 1.3 の選択です。
  *  @param[out]     credentials_out 所有権を返す先。NULL は不可です。失敗時は NULL を返します。
- *  @return         POTR_OK、POTR_ERR_INVALID_ARGUMENT、POTR_ERR_IO、POTR_ERR_OUT_OF_MEMORY、
- *                  または OpenSSL の初期化失敗を表す POTR_ERR_UNKNOWN です。
+ *  @return         POTR_OK、POTR_ERR_INVALID_ARGUMENT、POTR_ERR_INVALID_CONFIG、POTR_ERR_IO、
+ *                  POTR_ERR_OUT_OF_MEMORY、または OpenSSL の初期化失敗を表す POTR_ERR_UNKNOWN です。
  *  @par            スレッド セーフ
  *  生成後の credentials は複数の session から同時に参照できます。
  */

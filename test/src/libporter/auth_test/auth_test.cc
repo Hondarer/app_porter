@@ -703,7 +703,7 @@ TEST(auth_test, credentials_validate_configuration)
         // Act
         int actual_ret = potr_internal_auth_credentials_create(&config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials); // [手順] - 不正な設定で認証情報を作る。
         // Assert
-        EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系 回数=10] - 不正な設定の credentials_create() の戻り値が POTR_ERR_INVALID_ARGUMENT であること。
+        EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret); // [確認_異常系 回数=10] - 不正な設定の credentials_create() の戻り値が POTR_ERR_INVALID_CONFIG であること。
         EXPECT_EQ(nullptr, credentials); // [確認_異常系 回数=10] - 不正な設定の出力が nullptr であること。
         potr_internal_auth_credentials_dispose(credentials);
     }
@@ -726,7 +726,7 @@ TEST(auth_test, credentials_reject_missing_files_and_mismatched_key)
 
     // Assert
     EXPECT_EQ(POTR_ERR_IO, missing_ret); // [確認_異常系] - 不在ファイルの credentials_create() の戻り値が POTR_ERR_IO であること。
-    EXPECT_NE(POTR_OK, mismatch_ret); // [確認_異常系] - 鍵が対応しない credentials_create() の戻り値が POTR_OK 以外であること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, mismatch_ret); // [確認_異常系] - 鍵が対応しない credentials_create() の戻り値が POTR_ERR_INVALID_CONFIG であること。
     EXPECT_EQ(nullptr, credentials); // [確認_異常系] - 失敗時の出力が nullptr であること。
 }
 

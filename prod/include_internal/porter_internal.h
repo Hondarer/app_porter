@@ -38,7 +38,11 @@
 #include <porter/infra/potr_trace.h>
 
 #include <porter/protocol/config.h>
-#include <porter/protocol/config_parse_common.h>
+#include <porter/protocol/config_check.h>
+#include <porter/protocol/config_decode.h>
+#include <porter/protocol/config_document.h>
+#include <porter/protocol/config_report.h>
+#include <porter/protocol/config_schema.h>
 #include <porter/protocol/packet.h>
 #include <porter/protocol/seqnum.h>
 #include <porter/protocol/window.h>

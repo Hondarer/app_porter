@@ -292,7 +292,7 @@ int api_open_paths_unicast(potr_context *ctx, const potr_role role)
 
     if (ctx->service.dst_port == 0)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
@@ -339,7 +339,7 @@ int api_open_paths_unicast(potr_context *ctx, const potr_role role)
 
     if (ctx->n_path == 0)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     return POTR_OK;
@@ -355,7 +355,7 @@ int api_open_paths_multicast(potr_context *ctx, const potr_role role)
 
     if (ctx->service.dst_port == 0 || ctx->service.multicast_group[0] == '\0')
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     /*
@@ -403,7 +403,7 @@ int api_open_paths_multicast(potr_context *ctx, const potr_role role)
 
     if (ctx->n_path == 0)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     return POTR_OK;
@@ -419,7 +419,7 @@ int api_open_paths_broadcast(potr_context *ctx, const potr_role role)
 
     if (ctx->service.dst_port == 0)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     /* broadcast_addr 省略時は限定ブロードキャスト (255.255.255.255) を使用する。 */
@@ -455,7 +455,7 @@ int api_open_paths_broadcast(potr_context *ctx, const potr_role role)
 
     if (ctx->n_path == 0)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     return POTR_OK;
@@ -477,7 +477,7 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
                    "potr_service_open: service_id=%" PRId64 " UNICAST_BIDIR requires"
                    " dst_port (non-zero)",
                    ctx->service.service_id);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     if (role == POTR_ROLE_RECEIVER && ctx->service.src_addr[0][0] == '\0')
@@ -616,7 +616,7 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
                    "potr_service_open: service_id=%" PRId64 " UNICAST_BIDIR_N1 requires"
                    " dst_port (non-zero)",
                    ctx->service.service_id);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     if (ctx->service.dst_addr[0][0] == '\0')

@@ -14,52 +14,84 @@ class ConfigLineStream
     {
         for (const char *line : lines)
         {
-            lines_.emplace_back(line);
+            if (line != nullptr)
+            {
+                data_.append(line);
+            }
         }
     }
 
-    explicit ConfigLineStream(const std::vector<std::string> &lines) : lines_(lines) {}
+    explicit ConfigLineStream(const std::vector<std::string> &lines)
+    {
+        for (const std::string &line : lines)
+        {
+            data_.append(line);
+        }
+    }
+
+    explicit ConfigLineStream(std::string raw_bytes) : data_(std::move(raw_bytes)) {}
 
     static FILE *handle()
     {
         return reinterpret_cast<FILE *>(static_cast<uintptr_t>(0x1));
     }
 
-    char *read(char *buf, int size, FILE *stream)
+    void setChunkLimit(size_t max_bytes)
     {
-        size_t len;
+        chunk_limit_ = max_bytes;
+    }
 
-        if (buf == nullptr || size <= 0 || stream != handle())
+    size_t readBytes(void *buf, size_t size, size_t nmemb, FILE *stream)
+    {
+        size_t max_elements;
+        size_t remaining;
+        size_t avail_elements;
+        size_t copy_elements;
+        size_t copy_bytes;
+
+        if (buf == nullptr || size == 0U || nmemb == 0U || stream != handle())
         {
-            return nullptr;
+            return 0U;
         }
 
-        if (next_ >= lines_.size())
+        if (offset_ >= data_.size())
         {
-            return nullptr;
+            return 0U;
         }
 
-        len = lines_[next_].size() - offset_;
-        if (len >= (size_t)size)
+        remaining = data_.size() - offset_;
+        max_elements = nmemb;
+        if (chunk_limit_ > 0U && chunk_limit_ / size < max_elements)
         {
-            len = (size_t)size - 1U;
+            max_elements = chunk_limit_ / size;
+            if (max_elements == 0U)
+            {
+                max_elements = 1U;
+            }
         }
 
-        memcpy(buf, lines_[next_].data() + offset_, len);
-        buf[len] = '\0';
-        offset_ += len;
-        if (offset_ == lines_[next_].size())
+        avail_elements = remaining / size;
+        copy_elements = (avail_elements < max_elements) ? avail_elements : max_elements;
+        copy_bytes = copy_elements * size;
+        if (copy_bytes == 0U && size == 1U && remaining > 0U)
         {
-            next_++;
-            offset_ = 0U;
+            copy_elements = 1U;
+            copy_bytes = 1U;
         }
-        return buf;
+
+        if (copy_bytes > 0U)
+        {
+            memcpy(buf, data_.data() + offset_, copy_bytes);
+            offset_ += copy_bytes;
+        }
+
+        return copy_elements;
     }
 
   private:
-    std::vector<std::string> lines_;
-    size_t next_ = 0U;
+    std::string data_;
     size_t offset_ = 0U;
+    size_t chunk_limit_ = 0U;
 };
 
 #endif /* PORTER_CONFIG_TEST_HELPER_H */

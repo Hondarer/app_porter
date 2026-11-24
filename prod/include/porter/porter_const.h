@@ -173,7 +173,7 @@
 #define POTR_MAX_WINDOW_SIZE \
     256U /**< ウィンドウ サイズの最大値 (パケット数)。window_size 設定値のバリデーション上限として使用します。 */
 #define POTR_MAX_SERVICES \
-    64U /**< potr_internal_config_list_service_ids() の初期バッファー容量。サービス数がこれを超えた場合は realloc で自動拡張します。 */
+    64U /**< potr_config_list_service_ids() の初期バッファー容量。サービス数がこれを超えた場合は拡張します。 */
 #define POTR_MAX_MESSAGE_SIZE \
     65535U /**< 1 回の potr_service_send で送信できる最大メッセージ長 [byte] のデフォルト値。設定ファイルの max_message_size で変更可能。フラグメント化により max_payload を超えるメッセージも送受信できます。 */
 #define POTR_SEND_QUEUE_DEPTH \

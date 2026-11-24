@@ -61,11 +61,12 @@
 #define POTR_ERR_UNKNOWN (-1) /**< 分類済みコードに該当しない、その他のエラーです。 */
 
 /* 引数・状態: -2 〜 -9 */
-#define POTR_ERR_INVALID_ARGUMENT (-2) /**< API 引数または設定値が不正です (NULL、サイズ 0 など)。 */
+#define POTR_ERR_INVALID_ARGUMENT (-2) /**< API の引数が不正です (NULL、サイズ 0、未定義の値、役割とコールバックの組み合わせなど)。設定の値の誤りには使いません。 */
 #define POTR_ERR_UNSUPPORTED      (-3) /**< 現在の通信種別または状態では操作がサポートされていません。 */
 #define POTR_ERR_NOT_FOUND        (-4) /**< 対象のサービス、ピア、またはエントリが存在しません。 */
 
 #define POTR_ERR_INVALID_HANDLE (-5) /**< 未登録または終了済みのハンドルです。 */
+#define POTR_ERR_INVALID_CONFIG (-6) /**< 設定 (設定ファイルの内容、または potr_service_open() へ渡した設定の構造体の値) に誤りがあります。 */
 
 /* リソース・コンテナー: -10 〜 -19 */
 #define POTR_ERR_OUT_OF_MEMORY (-10) /**< メモリを確保できません。 */

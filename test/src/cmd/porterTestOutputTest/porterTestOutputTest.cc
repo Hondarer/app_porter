@@ -149,6 +149,72 @@ TEST(porterTestOutputTest, one_way_receiver_keeps_can_send_disabled)
     EXPECT_EQ(0, actual_can_send); // [確認_正常系] - 片方向 RECEIVER は送信無効を維持すること。
 }
 
+// 種別取得が POTR_ERR_INVALID_CONFIG を返す設定で開く処理を呼ばず、設定誤りの理由を標準エラー出力へ出すことの確認
+TEST(porterTestOutputTest, do_open_rejects_invalid_config_from_get_type)
+{
+    // Arrange
+    char path[PLATFORM_PATH_MAX] = {};
+    FILE *fp = cplat_fopen_temp("pto_cfg", "wb", path, sizeof(path), nullptr);
+    ASSERT_NE(nullptr, fp); // [状態確認] - 一時設定ファイルを作成できること。
+    const char *bad_json = "{\"services\":{\"10\":{\"dst_port\":5001}}}\n";
+    ASSERT_EQ(strlen(bad_json), fwrite(bad_json, 1U, strlen(bad_json), fp));
+    (void)fclose(fp); // テスト入力の一時ファイルを閉じて直後の読み取りへ備えるため、戻り値は明示的に破棄する。
+    NiceMock<Mock_cplat> mock_cplat;
+    int actual_is_bidir = -1;
+    int actual_can_send = -1;
+    // [状態] - type が欠落したサービス 10 の設定ファイルを用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_pinned_prompt_printf(_, _, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat,
+                cplat_pinned_prompt_printf(
+                    _, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                    HasSubstr("設定に誤りがあります。porter-config-check で確かめてください。")))
+        .Times(1)
+        .WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_異常系] - 設定誤りを案内する診断が CPLAT_PINNED_PROMPT_CHANNEL_STDERR へ 1 回出力されること。
+    // [Pre-Assert手順] - CPLAT_OK を返す。
+
+    // Act
+    int actual_rc = test_do_open(POTR_ROLE_RECEIVER, path, 10, &actual_is_bidir, &actual_can_send);
+    // [手順] - type 欠落サービス 10 で do_open() を実行する。
+
+    // Assert
+    EXPECT_EQ(-1, actual_rc); // [確認_異常系] - do_open() が失敗 (-1) すること。
+
+    // Cleanup
+    remove(path);
+}
+
+// 存在しないサービス ID で do_open() が POTR_ERR_NOT_FOUND の文面を標準エラー出力へ出すことの確認
+TEST(porterTestOutputTest, do_open_reports_not_found_for_missing_service)
+{
+    // Arrange
+    PorterConfigBuilder cfg;
+    std::string config_path = cfg.addUnicastService(1, 19362).build();
+    ASSERT_FALSE(config_path.empty()); // [状態確認] - UNICAST サービス 1 の設定ファイルを生成できること。
+    NiceMock<Mock_cplat> mock_cplat;
+    int actual_is_bidir = -1;
+    int actual_can_send = -1;
+    // [状態] - サービス 999 が存在しない設定ファイルを用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_pinned_prompt_printf(_, _, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_cplat,
+                cplat_pinned_prompt_printf(_, CPLAT_PINNED_PROMPT_CHANNEL_STDERR, HasSubstr("サービスがありません。")))
+        .Times(1)
+        .WillOnce(Return(CPLAT_OK));
+    // [Pre-Assert確認_異常系] - サービス未定義を案内する診断が CPLAT_PINNED_PROMPT_CHANNEL_STDERR へ 1 回出力されること。
+    // [Pre-Assert手順] - CPLAT_OK を返す。
+
+    // Act
+    int actual_rc = test_do_open(POTR_ROLE_RECEIVER, config_path.c_str(), 999, &actual_is_bidir, &actual_can_send);
+    // [手順] - 存在しないサービス ID 999 で do_open() を実行する。
+
+    // Assert
+    EXPECT_EQ(-1, actual_rc); // [確認_異常系] - do_open() が失敗 (-1) すること。
+}
+
 // 終了要求 callback が stdin を閉じずに cplat_pinned_prompt_stop_input() を呼ぶことの確認
 TEST(porterTestOutputTest, shutdown_callback_stops_pinned_prompt_without_closing_stdin)
 {

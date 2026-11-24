@@ -106,7 +106,7 @@ int api_setup_dest_addr(potr_context *ctx, potr_role role)
 
         if (api_paths_parse_ipv4(ctx->service.multicast_group, &mcast_ip) != POTR_OK)
         {
-            return POTR_ERR_INVALID_ARGUMENT;
+            return POTR_ERR_INVALID_CONFIG;
         }
 
         for (i = 0; i < ctx->n_path; i++)
@@ -125,7 +125,7 @@ int api_setup_dest_addr(potr_context *ctx, potr_role role)
 
         if (api_paths_parse_ipv4(ctx->service.broadcast_addr, &bcast_ip) != POTR_OK)
         {
-            return POTR_ERR_INVALID_ARGUMENT;
+            return POTR_ERR_INVALID_CONFIG;
         }
 
         for (i = 0; i < ctx->n_path; i++)

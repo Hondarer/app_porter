@@ -52,10 +52,11 @@ extern "C"
      *                              callback が NULL の場合は失敗を返します。
      *  @param[out]     handle      成功時にセッション ハンドルを格納するポインター。
      *  @retval         POTR_OK                    サービスを開きました。
-     *  @retval         POTR_ERR_INVALID_ARGUMENT  引数、役割、コールバック、または設定値が不正です。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  引数 (NULL、未定義の役割、または役割とコールバックの組み合わせ) が不正です。
+     *  @retval         POTR_ERR_INVALID_CONFIG    設定構造体の値、または証明書と鍵の形式・組み合わせが不正です。誤りは ERROR のトレースへ出力します。
      *  @retval         POTR_ERR_UNSUPPORTED       通信種別が未対応です。
      *  @retval         POTR_ERR_OUT_OF_MEMORY     内部バッファーを確保できません。
-     *  @retval         POTR_ERR_IO                アドレス解決またはソケット操作に失敗しました。
+     *  @retval         POTR_ERR_IO                アドレス解決、ソケット操作、または認証ファイルの読み取りに失敗しました。
      *  @retval         POTR_ERR_UNKNOWN           スレッド生成などの分類不能な内部処理に失敗しました。
      *
      *  設定構造体からサービス定義を取得し、UDP ソケットを初期化します。\n
@@ -160,11 +161,12 @@ extern "C"
      *                              callback が NULL の場合は失敗を返します。
      *  @param[out]     handle      成功時にセッション ハンドルを格納するポインター。
      *  @retval         POTR_OK                    サービスを開きました。
-     *  @retval         POTR_ERR_INVALID_ARGUMENT  引数、役割、コールバック、または設定値が不正です。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  引数 (NULL、未定義の役割、または役割とコールバックの組み合わせ) が不正です。
+     *  @retval         POTR_ERR_INVALID_CONFIG    設定ファイルの内容、または証明書と鍵の形式・組み合わせが不正です。誤りは ERROR のトレースへ出力します。
      *  @retval         POTR_ERR_UNSUPPORTED       通信種別が未対応です。
      *  @retval         POTR_ERR_NOT_FOUND         指定したサービス ID がありません。
-     *  @retval         POTR_ERR_OUT_OF_MEMORY     内部バッファーを確保できません。
-     *  @retval         POTR_ERR_IO                設定ファイル、アドレス解決、またはソケット操作に失敗しました。
+     *  @retval         POTR_ERR_OUT_OF_MEMORY     メモリまたは内部バッファーを確保できません。
+     *  @retval         POTR_ERR_IO                設定ファイル、認証ファイル、アドレス解決、またはソケット操作に失敗しました。
      *  @retval         POTR_ERR_UNKNOWN           スレッド生成などの分類不能な内部処理に失敗しました。
      *
      *  設定ファイルを解析してサービス定義を取得し、potr_service_open() を呼び出します。\n
@@ -426,16 +428,19 @@ extern "C"
      *  @brief          設定ファイルから指定サービスの通信種別を取得します。
      *  @param[in]      config_path 設定ファイルのパス。
      *  @param[in]      service_id  照会するサービスの ID。
-     *  @param[out]     type        成功時に通信種別 (potr_type) を格納するポインター。
+     *  @param[out]     type        成功時に通信種別 (potr_type) を格納するポインター。失敗時は変更しません。
      *  @retval         POTR_OK                    通信種別を取得しました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  config_path または type が NULL です。
+     *  @retval         POTR_ERR_INVALID_CONFIG    設定ファイルの内容が不正です。誤りは ERROR のトレースへ出力します。
      *  @retval         POTR_ERR_NOT_FOUND         指定したサービス ID がありません。
-     *  @retval         POTR_ERR_IO                設定ファイルを開けません。
+     *  @retval         POTR_ERR_OUT_OF_MEMORY     メモリを確保できません。
+     *  @retval         POTR_ERR_IO                設定ファイルを開けない、または読み取りに失敗しました。
      *
      *  設定ファイルを解析して指定サービスの通信種別を返します。\n
      *  potr_service_open() の前に呼び出すことで、ロール・コールバックの要否を
      *  アプリケーション側で判断できます。\n
-     *  本関数はソケットの作成や通信スレッドの起動を行いません。
+     *  本関数はソケットの作成や通信スレッドの起動を行いません。\n
+     *  誤りがある場合は ERROR のトレースへ出力し、*type を変更しません。
      *
      *  @par            使用例
         @code{.c}
@@ -450,9 +455,119 @@ extern "C"
         @endcode
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。
+     *  本関数は条件付きスレッド セーフです。\n
+     *  JSONC の解析は共通ロックを通るため、設定の読み込み・検証・列挙の解析どうしは競合しません。\n
+     *  同じプロセスで cJSON を直接呼ぶ解析 (struct_meta_json_file_load() を含みます) と
+     *  cJSON_GetErrorPtr() の参照を同時に行わず、ロード後に cJSON_InitHooks() を解除・再差し替えしないでください。\n
+     *  入力と出力先を共有する場合の同期は、利用側が行います。
      */
     POTR_EXPORT extern int POTR_API potr_service_get_type(const char *config_path, int64_t service_id, potr_type *type);
+
+    /**
+     *  @brief          設定ファイル全体を検証し、誤りを報告します。
+     *  @param[in]      config_path 設定ファイルのパス (UTF-8)。
+     *  @param[in]      options     検証の動作。NULL の場合は、役割に依存する条件をすべての役割で検査し、
+     *                              コールバックを呼びません。
+     *  @param[out]     issue_count 見つけた誤りの件数を格納するポインター。NULL 可。
+     *                              戻り値によらず、関数が復帰する時点までに報告した件数を格納します
+     *                              (引数の誤りでは 0)。
+     *  @retval         POTR_OK                    誤りはありません。
+     *  @retval         POTR_ERR_INVALID_CONFIG    設定に誤りがあります (*issue_count は 1 以上)。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  config_path が NULL、options の roles に未定義のビット、
+     *                                             または reserved が 0 でありません (*issue_count は 0)。
+     *  @retval         POTR_ERR_IO                設定ファイルを開けない、または読み取りに失敗しました。
+     *  @retval         POTR_ERR_OUT_OF_MEMORY     メモリを確保できません。それまでに報告した誤りは有効です。
+     *
+     *  global とすべてのサービスを検証し、誤りを見つけるたびに options->on_issue を呼びます。\n
+     *  構文の誤りは 1 件だけ報告して検証を打ち切ります。読み取りの失敗とメモリ不足は、誤りを報告せずに打ち切ります。\n
+     *  それ以外の誤りでは検証を続け、すべての誤りを報告します。前提の値が誤っている項目の間の制約は検査しません。\n
+     *  検査は設定ファイルの内容だけで決まるものです。名前解決、ソケットの操作、証明書と鍵のファイルの読み込みは行いません。\n
+     *  options->on_service は、ルートの構造の検査が完了し誤りがない場合に、同じ解析結果の各 ID を書かれた順で 1 回通知します。\n
+     *  各サービス本文の検査より前に通知し、そのサービスに誤りがあっても通知します。\n
+     *  構文またはルートの構造の誤りでは通知せず、global の本文の誤りは通知を妨げません。\n
+     *  メモリ不足で打ち切るまでの通知は有効ですが、サービス一覧の完成と検証の完了は保証しません。\n
+     *  options->on_auth_file を指定した場合は、証明書方式のサービスの cert_file、key_file、ca_file、crl_file、
+     *  pinned_certs の各要素のうち、誤りのないパスを 1 件ずつ渡します。\n
+     *  本関数が POTR_OK を返し、roles に POTR_CONFIG_ROLE_ALL を指定した設定は、
+     *  potr_service_open_from_config() でも設定の誤りになりません
+     *  (名前解決、ソケット、および認証ファイルの存在・読み取り・内容の検査を除きます)。\n
+     *  誤りの内容には、設定の値 (鍵とパスフレーズを含みます) を含めません。\n
+     *  本関数はトレースへ誤りを出力しません。
+     *
+     *  @par            使用例
+        @code{.c}
+        static void on_issue(const potr_config_issue *issue, void *user_data)
+        {
+            (void)user_data;
+            fprintf(stderr, "%s: %s\n", issue->key_path, issue->message);
+        }
+
+        potr_config_validate_options options = {0};
+        size_t count = 0;
+        options.roles = POTR_CONFIG_ROLE_ALL;
+        options.on_issue = on_issue;
+        int ret = potr_config_validate_file("porter-services.jsonc", &options, &count);
+        if (ret == POTR_ERR_INVALID_CONFIG) {
+            // 設定の誤りが count 件ある
+        } else if (ret != POTR_OK) {
+            // 読み取りの失敗、メモリ不足、引数の誤り
+        }
+        @endcode
+     *
+     *  @par            スレッド セーフ
+     *  本関数は条件付きスレッド セーフです。\n
+     *  JSONC の解析は共通ロックを通るため、本関数および potr_config_list_service_ids() の解析どうしは競合しません。\n
+     *  同じプロセスで cJSON を直接呼ぶ解析 (struct_meta_json_file_load() を含みます) と
+     *  cJSON_GetErrorPtr() の参照を同時に行わず、ロード後に cJSON_InitHooks() を解除・再差し替えしないでください。\n
+     *  入力、出力先、コールバックの user_data を共有する場合の同期は、利用側が行います。\n
+     *  コールバックは、本関数を呼んだスレッドで、本関数の復帰の前に呼ばれます。\n
+     *  コールバックから porter の関数を呼べます。1 回の本関数の呼び出しの中では、コールバックは同時には呼ばれません。別のスレッドが本関数を同時に呼んだ場合は、それぞれの呼び出しのコールバックが並行して呼ばれます。
+     */
+    POTR_EXPORT extern int POTR_API potr_config_validate_file(const char *config_path,
+                                                              const potr_config_validate_options *options,
+                                                              size_t *issue_count);
+
+    /* potr-req: id=POTR-CONFIG-FUNC-007; uuid=a1ee646d-15a7-466f-904e-d1c2d752f69f */
+    /**
+     *  @brief          設定ファイルに定義されたサービスの ID を列挙します。
+     *  @param[in]      config_path 設定ファイルのパス (UTF-8)。
+     *  @param[out]     ids         成功時に、ID の配列の先頭を格納するポインター。
+     *                              配列は potr_config_service_ids_free() で解放します。
+     *                              サービスが 0 件の場合は NULL を格納します。失敗時は NULL を格納します。
+     *  @param[out]     count       成功時に ID の件数を格納するポインター。失敗時は 0 を格納します。
+     *  @retval         POTR_OK                    列挙しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT  config_path、ids、count のいずれかが NULL です。
+     *  @retval         POTR_ERR_INVALID_CONFIG    構文の誤り、またはルートの構造の誤り
+     *                                             (知らないルートのキー、正規でないサービスの ID、
+     *                                             ルート直下または services 直下の重複したキー、global または services 自体の型の誤り) があります。
+     *  @retval         POTR_ERR_IO                設定ファイルを開けない、または読み取りに失敗しました。
+     *  @retval         POTR_ERR_OUT_OF_MEMORY     メモリを確保できません。
+     *
+     *  設定ファイルを読み、ルートの構造を検証して、services のキーを設定ファイルに書かれた順に返します。\n
+     *  global の本文、サービス本文の型と項目は検証しません。本文を含めて検証する場合は potr_config_validate_file() を使います。\n
+     *  誤りは ERROR のトレースへ出力します。
+     *
+     *  @par            スレッド セーフ
+     *  本関数は条件付きスレッド セーフです。\n
+     *  JSONC の解析は共通ロックを通るため、本関数および potr_config_validate_file() の解析どうしは競合しません。\n
+     *  同じプロセスで cJSON を直接呼ぶ解析 (struct_meta_json_file_load() を含みます) と
+     *  cJSON_GetErrorPtr() の参照を同時に行わず、ロード後に cJSON_InitHooks() を解除・再差し替えしないでください。\n
+     *  入力と出力先を共有する場合の同期は、利用側が行います。
+     */
+    POTR_EXPORT extern int POTR_API potr_config_list_service_ids(const char *config_path, int64_t **ids,
+                                                                 size_t *count);
+
+    /**
+     *  @brief          potr_config_list_service_ids() が返した配列を解放します。
+     *  @param[in]      ids 解放する配列。NULL の場合は何もしません。
+     *
+     *  配列は libporter の中で確保するため、利用側の free() ではなく本関数で解放してください
+     *  (Windows では、モジュールごとに C ランタイムのヒープが異なる構成があるためです)。
+     *
+     *  @par            スレッド セーフ
+     *  本関数はスレッド セーフです (同じ配列を同時に解放しない場合)。
+     */
+    POTR_EXPORT extern void POTR_API potr_config_service_ids_free(int64_t *ids);
 
 #ifdef __cplusplus
 }

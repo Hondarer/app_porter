@@ -519,10 +519,16 @@ static const char *potr_err_name(int err)
         return "POTR_ERR_NOT_FOUND";
     case POTR_ERR_INVALID_HANDLE:
         return "POTR_ERR_INVALID_HANDLE";
+    case POTR_ERR_INVALID_CONFIG:
+        return "POTR_ERR_INVALID_CONFIG";
     case POTR_ERR_OUT_OF_MEMORY:
         return "POTR_ERR_OUT_OF_MEMORY";
     case POTR_ERR_FULL:
         return "POTR_ERR_FULL";
+    case POTR_ERR_EMPTY:
+        return "POTR_ERR_EMPTY";
+    case POTR_ERR_OUT_OF_WINDOW:
+        return "POTR_ERR_OUT_OF_WINDOW";
     case POTR_ERR_DISCONNECTED:
         return "POTR_ERR_DISCONNECTED";
     case POTR_ERR_TIMEOUT:

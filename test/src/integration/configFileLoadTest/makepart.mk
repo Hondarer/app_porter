@@ -1,12 +1,7 @@
-# 実ファイルを使う設定読込の組み合わせテスト
+# 実ファイルを使う設定 API の組み合わせテスト
 # カバレッジは各ソースの単体テストで集計する
-ADD_SRCS := \
-	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_load_global.c \
-	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_load_service.c \
-	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_list_service_ids.c
-
 INCDIR += \
 	$(MYAPP_DIR)/test/include
 
-# mock_cplat はリンクしない
-LIBS += mock_porter cplat mock_libc cjson_app
+# 実物の libporter と libcplat をリンクする (mock は使わない)
+LIBS += porter cplat

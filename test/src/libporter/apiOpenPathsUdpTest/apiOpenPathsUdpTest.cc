@@ -31,7 +31,7 @@ TEST(apiOpenPathsUdpTest, unicast_requires_destination_port)
     // Act
     int actual_ret = api_open_paths_unicast(&ctx, POTR_ROLE_SENDER); // [手順] - ソケット準備を試す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - 必須ポートの欠落を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret); // [確認_異常系] - 必須ポートの欠落を設定エラーとして拒否すること。
 }
 
 TEST(apiOpenPathsUdpTest, multicast_requires_destination_port)
@@ -56,7 +56,7 @@ TEST(apiOpenPathsUdpTest, multicast_requires_destination_port)
     // Act
     int actual_ret = api_open_paths_multicast(&ctx, POTR_ROLE_RECEIVER); // [手順] - ソケット準備を試す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - 必須ポートの欠落を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret); // [確認_異常系] - 必須ポートの欠落を設定エラーとして拒否すること。
 }
 
 TEST(apiOpenPathsUdpTest, broadcast_requires_destination_port)
@@ -81,7 +81,7 @@ TEST(apiOpenPathsUdpTest, broadcast_requires_destination_port)
     // Act
     int actual_ret = api_open_paths_broadcast(&ctx, POTR_ROLE_SENDER); // [手順] - ソケット準備を試す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - 必須ポートの欠落を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret); // [確認_異常系] - 必須ポートの欠落を設定エラーとして拒否すること。
 }
 
 TEST(apiOpenPathsUdpTest, bidir_requires_destination_port)
@@ -106,7 +106,7 @@ TEST(apiOpenPathsUdpTest, bidir_requires_destination_port)
     // Act
     int actual_ret = api_open_paths_unicast_bidir(&ctx, POTR_ROLE_SENDER); // [手順] - ソケット準備を試す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - 必須ポートの欠落を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret); // [確認_異常系] - 必須ポートの欠落を設定エラーとして拒否すること。
 }
 
 TEST(apiOpenPathsUdpTest, n1_requires_destination_port)
@@ -131,7 +131,7 @@ TEST(apiOpenPathsUdpTest, n1_requires_destination_port)
     // Act
     int actual_ret = api_open_paths_unicast_bidir_n1(&ctx); // [手順] - ソケット準備を試す。
     // Assert
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, actual_ret); // [確認_異常系] - 必須ポートの欠落を拒否すること。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret); // [確認_異常系] - 必須ポートの欠落を設定エラーとして拒否すること。
 }
 
 TEST(apiOpenPathsUdpTest, unicast_success)

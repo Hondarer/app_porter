@@ -12,6 +12,8 @@ static_assert(POTR_ERR_UNSUPPORTED == -3,
               "POTR_ERR_UNSUPPORTED の値を変更する場合は全利用箇所への影響を調査してください。");
 static_assert(POTR_ERR_NOT_FOUND == -4,
               "POTR_ERR_NOT_FOUND の値を変更する場合は全利用箇所への影響を調査してください。");
+static_assert(POTR_ERR_INVALID_CONFIG == -6,
+              "POTR_ERR_INVALID_CONFIG の値を変更する場合は全利用箇所への影響を調査してください。");
 static_assert(POTR_ERR_OUT_OF_MEMORY == -10,
               "POTR_ERR_OUT_OF_MEMORY の値を変更する場合は全利用箇所への影響を調査してください。");
 static_assert(POTR_ERR_FULL == -11, "POTR_ERR_FULL の値を変更する場合は全利用箇所への影響を調査してください。");
@@ -28,13 +30,14 @@ static_assert(POTR_ERR_CANCELED == -40, "POTR_ERR_CANCELED の値を変更する
 
 static std::vector<int> all_error_codes()
 {
-    return std::vector<int>{POTR_ERR_UNKNOWN,       POTR_ERR_INVALID_ARGUMENT,
-                            POTR_ERR_UNSUPPORTED,   POTR_ERR_NOT_FOUND,
-                            POTR_ERR_OUT_OF_MEMORY, POTR_ERR_FULL,
-                            POTR_ERR_EMPTY,         POTR_ERR_OUT_OF_WINDOW,
-                            POTR_ERR_DISCONNECTED,  POTR_ERR_TIMEOUT,
-                            POTR_ERR_EOF,           POTR_ERR_IO,
-                            POTR_ERR_PROTOCOL,      POTR_ERR_CANCELED};
+    return std::vector<int>{POTR_ERR_UNKNOWN,        POTR_ERR_INVALID_ARGUMENT,
+                            POTR_ERR_UNSUPPORTED,    POTR_ERR_NOT_FOUND,
+                            POTR_ERR_INVALID_CONFIG, POTR_ERR_OUT_OF_MEMORY,
+                            POTR_ERR_FULL,           POTR_ERR_EMPTY,
+                            POTR_ERR_OUT_OF_WINDOW,  POTR_ERR_DISCONNECTED,
+                            POTR_ERR_TIMEOUT,        POTR_ERR_EOF,
+                            POTR_ERR_IO,             POTR_ERR_PROTOCOL,
+                            POTR_ERR_CANCELED};
 }
 
 class resultTest : public Test

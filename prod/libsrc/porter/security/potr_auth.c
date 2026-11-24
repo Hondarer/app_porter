@@ -84,7 +84,11 @@ static int valid_string(const char *text)
 
 static int validate_config(const potr_internal_auth_config *config)
 {
-    if (config == NULL || !valid_string(config->cert_file) || !valid_string(config->key_file)
+    if (config == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    if (!valid_string(config->cert_file) || !valid_string(config->key_file)
         || (config->ca_file == NULL && config->pinned_cert_count == 0U)
         || (config->ca_file != NULL && (!valid_string(config->ca_file) || config->peer_name_count == 0U))
         || (config->crl_file != NULL && !valid_string(config->crl_file))
@@ -93,20 +97,20 @@ static int validate_config(const potr_internal_auth_config *config)
         || config->pinned_cert_count > SIZE_MAX / sizeof(X509 *)
         || config->peer_name_count > SIZE_MAX / sizeof(char *))
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
     for (size_t i = 0; i < config->pinned_cert_count; ++i)
     {
         if (!valid_string(config->pinned_certs[i]))
         {
-            return POTR_ERR_INVALID_ARGUMENT;
+            return POTR_ERR_INVALID_CONFIG;
         }
     }
     for (size_t i = 0; i < config->peer_name_count; ++i)
     {
         if (!valid_string(config->peer_names[i]))
         {
-            return POTR_ERR_INVALID_ARGUMENT;
+            return POTR_ERR_INVALID_CONFIG;
         }
     }
     return POTR_OK;
@@ -160,6 +164,30 @@ static int copy_trust_config(potr_internal_auth_credentials *credentials, const 
         }
     }
     return POTR_OK;
+}
+
+static int classify_openssl_file_error(const char *path)
+{
+    unsigned long error = ERR_peek_last_error();
+    FILE *fp;
+
+    ERR_clear_error();
+    if (error == 0UL)
+    {
+        return POTR_ERR_IO;
+    }
+    if (ERR_GET_REASON(error) == ERR_R_MALLOC_FAILURE)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    fp = cplat_fopen(path, "rb", NULL);
+    if (fp == NULL)
+    {
+        return POTR_ERR_IO;
+    }
+    /* ファイル存在と読取可否の確認だけであり書き込みを行わないため、fclose() の戻り値は明示的に破棄する。 */
+    (void)fclose(fp);
+    return POTR_ERR_INVALID_CONFIG;
 }
 
 static int load_revocations(SSL_CTX *context, const char *path)
@@ -372,20 +400,26 @@ static int configure_context(potr_internal_auth_credentials *credentials, const 
      * see: https://docs.openssl.org/3.5/man3/SSL_CTX_use_certificate/
      * see: https://docs.openssl.org/3.5/man3/EVP_PKEY_new/
      * see: https://github.com/openssl/openssl/blob/openssl-3.5.9/crypto/ec/ec_key.c */
-    if (SSL_CTX_use_certificate_chain_file(context, config->cert_file) != 1
-        || SSL_CTX_use_PrivateKey_file(context, config->key_file, SSL_FILETYPE_PEM) != 1)
+    ERR_clear_error();
+    if (SSL_CTX_use_certificate_chain_file(context, config->cert_file) != 1)
     {
-        return POTR_ERR_IO;
+        return classify_openssl_file_error(config->cert_file);
+    }
+    ERR_clear_error();
+    if (SSL_CTX_use_PrivateKey_file(context, config->key_file, SSL_FILETYPE_PEM) != 1)
+    {
+        return classify_openssl_file_error(config->key_file);
     }
     if (SSL_CTX_check_private_key(context) != 1)
     {
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
     if (config->ca_file != NULL)
     {
+        ERR_clear_error();
         if (SSL_CTX_load_verify_locations(context, config->ca_file, NULL) != 1)
         {
-            return POTR_ERR_IO;
+            return classify_openssl_file_error(config->ca_file);
         }
         credentials->has_ca = 1;
     }

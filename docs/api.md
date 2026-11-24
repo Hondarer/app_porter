@@ -66,6 +66,25 @@ OS の受信バッファーに基づく送出上限は、容量 (`flow_control_c
 
 ヘッダー定義と引数条件の正本は `app/porter/prod/include/porter.h` および Doxygen 出力を参照してください。
 
+### 設定検証・サービス開始・種別取得 API の戻り値
+
+`potr_service_open()`、`potr_service_open_from_config()`、`potr_service_get_type()`、`potr_config_validate_file()`、`potr_config_list_service_ids()` では、API の呼び出し方の誤りと設定内容の誤りを結果コードで区別します。
+
+| 結果コード | 意味 | 返す主な API |
+|---|---|---|
+| `POTR_OK` | 成功 | 全 API |
+| `POTR_ERR_INVALID_ARGUMENT` | NULL ポインター、未定義の役割、役割とコールバックの組み合わせ、未定義のフラグや予約値の誤り | 5 関数すべて |
+| `POTR_ERR_INVALID_CONFIG` | 設定ファイルの内容、設定構造体の値、または証明書と鍵の形式・組み合わせの誤り | 5 関数すべて (`potr_config_list_service_ids()` は構文とルート構造のみ) |
+| `POTR_ERR_UNSUPPORTED` | 未対応の通信種別 | `potr_service_open()`、`potr_service_open_from_config()` |
+| `POTR_ERR_NOT_FOUND` | 指定したサービス ID が設定ファイルに存在しない | `potr_service_open_from_config()`、`potr_service_get_type()` |
+| `POTR_ERR_IO` | 設定ファイルや認証ファイルを開けない、読み取れない、またはアドレス解決・ソケット操作の失敗 | 5 関数すべて |
+| `POTR_ERR_OUT_OF_MEMORY` | メモリまたは内部バッファーの確保失敗 | 5 関数すべて |
+| `POTR_ERR_UNKNOWN` | スレッド生成など分類不能な内部処理の失敗 | `potr_service_open()`、`potr_service_open_from_config()`、`potr_config_validate_file()` |
+
+Table: 設定検証・開始系 API の主な戻り値一覧
+
+`potr_config_validate_file()` は、トレースへ出力せず `potr_config_validate_options::on_issue` コールバックへ誤りを渡します。`potr_config_service_ids_free()` は `potr_config_list_service_ids()` が返した配列を解放します (`libporter` 内で確保するため、必ず専用関数で解放してください)。
+
 ## スレッド セーフ
 
 各 API のスレッド セーフ性を以下に示します。
@@ -73,12 +92,15 @@ OS の受信バッファーに基づく送出上限は、容量 (`flow_control_c
 | API | スレッド セーフ | 備考 |
 |---|---|---|
 | `potr_service_open()` | はい | 複数スレッドから並行してハンドルを取得可 (低レベル API) |
-| `potr_service_open_from_config()` | はい | 複数スレッドから並行してハンドルを取得可 (高レベル API) |
+| `potr_service_open_from_config()` | はい (条件付き) | JSONC 解析は共通ロックを通る。cJSON 直接解析・`cJSON_GetErrorPtr()` 参照と並行実行しないこと |
 | `potr_service_send()` | はい (条件付き) | 同一ハンドルへの並行送信、close との並行呼び出し可 |
 | `potr_service_close()` | はい (条件付き) | 受付済み操作と通知の完了を待つ。同一コールバック内からは拒否 |
 | `potr_peer_disconnect()` | はい (条件付き) | close との並行呼び出しと、コールバック内からの呼び出し可 |
 | `potr_tracer_get()` | はい | 生成失敗後は次の呼び出しで再試行し、成功後は同じ共有ハンドルを返す。NULL の場合は設定と開始を行わず、後で再取得する |
-| `potr_service_get_type()` | はい | グローバル状態なし |
+| `potr_service_get_type()` | はい (条件付き) | JSONC 解析は共通ロックを通る。cJSON 直接解析・`cJSON_GetErrorPtr()` 参照と並行実行しないこと |
+| `potr_config_validate_file()` | はい (条件付き) | JSONC 解析は共通ロックを通る。各呼び出し内でコールバックを直列実行し、トレースへ出力しない。cJSON 直接解析・`cJSON_GetErrorPtr()` 参照と並行実行しないこと |
+| `potr_config_list_service_ids()` | はい (条件付き) | JSONC 解析は共通ロックを通る。cJSON 直接解析・`cJSON_GetErrorPtr()` 参照と並行実行しないこと |
+| `potr_config_service_ids_free()` | はい | 同じ配列を同時に解放しない場合。`potr_config_list_service_ids()` で確保した配列を解放する |
 
 Table: porter API のスレッド セーフ性一覧
 

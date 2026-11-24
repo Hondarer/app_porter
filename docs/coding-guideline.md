@@ -126,10 +126,11 @@ porter の公開 API および内部関数が戻り値として使用する共�
 |---|---|---:|---|
 | 成功・その他 | `POTR_OK` | 0 | 成功 |
 | 成功・その他 | `POTR_ERR_UNKNOWN` | -1 | 分類済みコードに該当しない内部障害 |
-| 契約・探索 | `POTR_ERR_INVALID_ARGUMENT` | -2 | 引数または設定値が不正 |
+| 契約・探索 | `POTR_ERR_INVALID_ARGUMENT` | -2 | 引数が不正 |
 | 契約・探索 | `POTR_ERR_UNSUPPORTED` | -3 | 現在の通信種別または状態では操作が未対応 |
 | 契約・探索 | `POTR_ERR_NOT_FOUND` | -4 | 対象エントリが存在しない |
 | 契約・探索 | `POTR_ERR_INVALID_HANDLE` | -5 | 未登録または終了済みのハンドル |
+| 契約・探索 | `POTR_ERR_INVALID_CONFIG` | -6 | 設定ファイルの内容または設定構造体の値に誤りがある |
 | 資源・状態 | `POTR_ERR_OUT_OF_MEMORY` | -10 | メモリ確保不可 |
 | 資源・状態 | `POTR_ERR_FULL` | -11 | キューまたはウィンドウが満杯。`potr_service_send()` は、待ち合わせを指定しない送信で送信キューに空きがない場合に返す |
 | 資源・状態 | `POTR_ERR_EMPTY` | -12 | キューが空、または順序整列済みパケットが未着 |
@@ -170,7 +171,7 @@ porter の関数から返す場合は、`CPLAT_ERR_*` を porter の結果コー
 タイムアウトは `POTR_ERR_TIMEOUT`、ファイルおよびネットワークの失敗は `POTR_ERR_IO` のように、原因が判別できる場合は対応する分類へ変換します。  
 受信復号では、認証タグ不一致 (`CPLAT_ERR_AUTHENTICATION_FAILED`) を `POTR_ERR_PROTOCOL`、メモリ不足を `POTR_ERR_OUT_OF_MEMORY`、その他の内部処理の失敗を `POTR_ERR_UNKNOWN` へ変換します。  
 暗号文の長さなど、復号前に確認できる受信形式の不正も `POTR_ERR_PROTOCOL` とします。  
-ローカルの引数・容量・範囲の不整合は `POTR_ERR_INVALID_ARGUMENT` へ変換し、受信パケットの認証不一致と区別します。  
+ローカルの引数・容量・範囲の不整合は `POTR_ERR_INVALID_ARGUMENT` へ変換し、受信パケットの認証不一致と区別します。設定ファイルの内容や設定構造体の値の誤りは `POTR_ERR_INVALID_CONFIG` へ変換し、API 引数の誤りと区別します。  
 他の分類へ変換できない内部失敗は `POTR_ERR_UNKNOWN` とし、ソース コメントで判断の根拠を示します。  
 ソケット API (`cplat/net`) の失敗は `cplat_error *detail_out` で受け取り、対応する `POTR_ERR_*` へ変換します。  
 OS 固有コードは直接比較せず、`cplat_error_is()` と `CPLAT_CAUSE_*` を使用します。

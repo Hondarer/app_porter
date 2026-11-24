@@ -30,7 +30,7 @@ int api_open_paths_by_type(potr_context *ctx, potr_role role);
  *  @brief          準備済み経路から送信先アドレスを設定します。
  *  @param[in,out]  ctx             経路を準備済みのコンテキスト。NULL は許可しません。
  *  @param[in]      role            検証済みの送受信役割。
- *  @return         成功時は POTR_OK、不正なアドレスには POTR_ERR_INVALID_ARGUMENT を返します。
+ *  @return         成功時は POTR_OK、不正なアドレス設定には POTR_ERR_INVALID_CONFIG を返します。
  *  @note           スレッド起動前に呼びます。ctx の所有権は移動しません。
  */
 int api_setup_dest_addr(potr_context *ctx, potr_role role);

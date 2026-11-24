@@ -1,6 +1,13 @@
 # テスト対象のソース ファイル
 TEST_SRCS := \
-	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_list_service_ids.c
+	$(MYAPP_DIR)/prod/libsrc/porter/api/potr_config_list_service_ids.c
+
+ADD_SRCS += \
+	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_document.c \
+	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_decode.c \
+	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_schema.c \
+	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_check.c \
+	$(MYAPP_DIR)/prod/libsrc/porter/protocol/config_report.c
 
 INCDIR += $(MYAPP_DIR)/test/include
 

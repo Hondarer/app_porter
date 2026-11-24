@@ -109,7 +109,7 @@ static int open_socket_tcp_sender(potr_context *ctx, const int path_idx)
     if (ctx->service.dst_addr[path_idx][0] == '\0')
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "open_socket_tcp_sender: dst_addr[%d] is empty", path_idx);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     result = api_paths_resolve_ipv4(ctx->service.dst_addr[path_idx], &ctx->dst_addr_resolved[path_idx]);
@@ -141,7 +141,7 @@ int api_open_paths_tcp(potr_context *ctx, const potr_role role)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " TCP requires dst_port",
                    ctx->service.service_id);
-        return POTR_ERR_INVALID_ARGUMENT;
+        return POTR_ERR_INVALID_CONFIG;
     }
 
     if (role == POTR_ROLE_RECEIVER)
@@ -177,7 +177,7 @@ int api_open_paths_tcp(potr_context *ctx, const potr_role role)
                        "potr_service_open: service_id=%" PRId64 " TCP RECEIVER requires"
                        " at least one dst_addr",
                        ctx->service.service_id);
-            return POTR_ERR_INVALID_ARGUMENT;
+            return POTR_ERR_INVALID_CONFIG;
         }
     }
     else
@@ -209,7 +209,7 @@ int api_open_paths_tcp(potr_context *ctx, const potr_role role)
                        "potr_service_open: service_id=%" PRId64 " TCP SENDER requires"
                        " at least one dst_addr",
                        ctx->service.service_id);
-            return POTR_ERR_INVALID_ARGUMENT;
+            return POTR_ERR_INVALID_CONFIG;
         }
     }
 

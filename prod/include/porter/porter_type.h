@@ -419,6 +419,87 @@ typedef enum
  */
 typedef void (*potr_recv_fn)(int64_t service_id, potr_peer_id peer_id, potr_event event, const void *data, size_t len);
 
+/** 検証で、送信側の役割に依存する条件を検査します。 */
+#define POTR_CONFIG_ROLE_SENDER   0x1U
+/** 検証で、受信側の役割に依存する条件を検査します。 */
+#define POTR_CONFIG_ROLE_RECEIVER 0x2U
+/** 検証で、すべての役割に依存する条件を検査します。 */
+#define POTR_CONFIG_ROLE_ALL      (POTR_CONFIG_ROLE_SENDER | POTR_CONFIG_ROLE_RECEIVER)
+
+/**
+ *  @brief          設定の誤りの種別です。
+ */
+typedef enum potr_config_issue_kind
+{
+    POTR_CONFIG_ISSUE_SYNTAX = 1,             /**< JSONC の構文の誤り、生の NUL、または文字列内の U+0000。検証を打ち切ります。 */
+    POTR_CONFIG_ISSUE_UNKNOWN_KEY = 2,        /**< 定義されていないキーです。 */
+    POTR_CONFIG_ISSUE_DUPLICATE_KEY = 3,      /**< 同じオブジェクトの中で、同じ名前のキーが重複しています。 */
+    POTR_CONFIG_ISSUE_INVALID_SERVICE_ID = 4, /**< サービスの ID のキーが、正規の十進表記でありません。 */
+    POTR_CONFIG_ISSUE_TYPE_MISMATCH = 5,      /**< JSON の型が、項目の型と違います。 */
+    POTR_CONFIG_ISSUE_INVALID_VALUE = 6,      /**< 値を解釈できません (列挙にない値、空の文字列、表記の誤りなど)。 */
+    POTR_CONFIG_ISSUE_OUT_OF_RANGE = 7,       /**< 値が値域の外です (長すぎる文字列を含みます)。 */
+    POTR_CONFIG_ISSUE_NOT_APPLICABLE = 8,     /**< 通信種別または認証方式に合わない項目です。 */
+    POTR_CONFIG_ISSUE_MISSING = 9,            /**< 必須の項目がありません。 */
+    POTR_CONFIG_ISSUE_CONSTRAINT = 10,        /**< 項目の間の制約、または役割に依存する条件が成り立ちません。 */
+    POTR_CONFIG_ISSUE_KEY_DERIVATION = 11     /**< encrypt_key のパスフレーズから鍵を導出できません。 */
+} potr_config_issue_kind;
+
+/**
+ *  @brief          設定の誤り 1 件の内容です。
+ *
+ *  ポインターのメンバーが指す文字列は、コールバックの呼び出しの間だけ有効です。
+ *  呼び出しの後も使う場合は、利用側で複写してください。
+ *  文字列には設定の値を含めません。
+ */
+typedef struct potr_config_issue
+{
+    potr_config_issue_kind kind; /**< 誤りの種別。 */
+    int has_service_id;          /**< 正規表記かつ int64 の範囲内のサービス ID に属する誤りなら 1。それ以外は 0。 */
+    int64_t service_id;          /**< has_service_id が 1 の場合のサービスの ID。0 の場合は 0。 */
+    const char *key_path;        /**< 誤りのある項目の、RFC 6901 の JSON Pointer の形のパス (例: "/services/1001/dst_port")。
+                                      ルートの誤りは空文字列。NULL になりません。 */
+    const char *message;         /**< 理由の文 (英語、1 行)。NULL になりません。 */
+    const char *expected;        /**< 期待する範囲または形式 (例: "1..65535")。ない場合は NULL。 */
+    uint32_t line;               /**< 構文の誤りの行 (1 から)。構文の誤り以外は 0。 */
+    uint32_t column;             /**< 構文の誤りの桁 (1 から、byte 単位)。構文の誤り以外は 0。 */
+} potr_config_issue;
+
+/**
+ *  @brief          認証のファイルのパス 1 件の内容です。
+ *
+ *  ポインターのメンバーが指す文字列は、コールバックの呼び出しの間だけ有効です。
+ */
+typedef struct potr_config_file_ref
+{
+    int64_t service_id;   /**< サービスの ID。 */
+    const char *key_path; /**< 項目のパス (例: "/services/1001/cert_file"、"/services/1001/pinned_certs/0")。 */
+    const char *path;     /**< 設定ファイルに書かれたままのファイルのパス (UTF-8)。 */
+} potr_config_file_ref;
+
+/** 設定の誤り 1 件を受け取るコールバックです。 */
+typedef void (*potr_config_issue_fn)(const potr_config_issue *issue, void *user_data);
+
+/** 同じ解析結果のサービス ID を受け取るコールバックです。 */
+typedef void (*potr_config_service_fn)(int64_t service_id, void *user_data);
+
+/** 認証のファイルのパス 1 件を受け取るコールバックです。 */
+typedef void (*potr_config_file_fn)(const potr_config_file_ref *file, void *user_data);
+
+/**
+ *  @brief          potr_config_validate_file() の動作を指定します。
+ *
+ *  0 で初期化した場合は、役割に依存する条件を検査せず、コールバックを呼びません。
+ */
+typedef struct potr_config_validate_options
+{
+    uint32_t roles;                    /**< POTR_CONFIG_ROLE_* の論理和。0 は役割に依存する条件を検査しません。 */
+    uint32_t reserved;                 /**< 予約。0 を指定します。 */
+    potr_config_issue_fn on_issue;     /**< 誤りを受け取るコールバック。NULL 可。 */
+    potr_config_file_fn on_auth_file;  /**< 認証のファイルのパスを受け取るコールバック。NULL 可。 */
+    potr_config_service_fn on_service; /**< 同じ解析結果のサービス ID を受け取るコールバック。NULL 可。 */
+    void *user_data;                   /**< 3 つのコールバックへ渡す値。 */
+} potr_config_validate_options;
+
 /** @} */
 
 #endif /* PORTER_TYPE_H */

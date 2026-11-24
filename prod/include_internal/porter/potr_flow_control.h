@@ -21,6 +21,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 #include <cplat/clock/clock.h>
 #include <porter/porter_const.h>
 #include <porter/porter_type.h>
@@ -393,6 +394,285 @@ typedef struct potr_internal_flow_control_config
     uint32_t _pad; /**< パディング (構造体サイズを 8 [byte] の倍数に揃える)。 */
 } potr_internal_flow_control_config;
 
+/**
+ *  @brief          フロー制御の各項目の実効値だけを解決します (範囲・制約の検査は行いません)。
+ *
+ *  @param[in]      service                 サービス定義。NULL は不可。
+ *  @param[in]      global                  グローバル設定。NULL は不可。
+ *  @param[in]      role                    役割。
+ *  @param[in]      health_interval_ms      解決済みの実効ヘルス チェック間隔 [ms]。
+ *  @param[out]     config                  解決した実効値の格納先。NULL は不可。
+ *  @param[out]     disabled_error_mask_out POTR_FLOW_CONTROL_DISABLED が許可されない項目に
+ *                                          指定されていた場合に対応するビットを立てます。NULL 可。
+ *                                          (bit 0: capacity, bit 1: suppress, bit 2: resume,
+ *                                           bit 3: request_interval, bit 4: request_lifetime,
+ *                                           bit 5: grace, bit 6: feedback, bit 7: monitored,
+ *                                           bit 8: global capacity/monitored に DISABLED)。
+ *  @return         POTR_OK または NULL 引数時は POTR_ERR_INVALID_ARGUMENT。
+ */
+static inline int potr_internal_flow_control_resolve_values(const potr_service_def *service,
+                                                            const potr_global_config *global, potr_role role,
+                                                            uint32_t health_interval_ms,
+                                                            potr_internal_flow_control_config *config,
+                                                            uint32_t *disabled_error_mask_out)
+{
+    uint32_t err_mask = 0U;
+    uint32_t recv_buf_pct;
+    const uint32_t svc_vals[8] = {0}; /* 下で個別解決するため未使用の配列は置かない */
+    (void)svc_vals;                   /* プレースホルダーを避けるため直接解決する */
+
+    if (disabled_error_mask_out != NULL)
+    {
+        *disabled_error_mask_out = 0U;
+    }
+
+    if (service == NULL || global == NULL || config == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    memset(config, 0, sizeof(*config));
+
+    if (service->type == POTR_TYPE_UNICAST_RAW || service->type == POTR_TYPE_MULTICAST_RAW ||
+        service->type == POTR_TYPE_BROADCAST_RAW)
+    {
+        return POTR_OK;
+    }
+
+    /* capacity (service は -1 可、global は -1 不可) */
+    if (global->flow_control_capacity == POTR_FLOW_CONTROL_DISABLED)
+    {
+        err_mask |= (1U << 8U);
+    }
+    if (service->flow_control_capacity == POTR_FLOW_CONTROL_DISABLED)
+    {
+        config->capacity = 0U;
+    }
+    else if (service->flow_control_capacity != 0U)
+    {
+        config->capacity = service->flow_control_capacity;
+    }
+    else if (global->flow_control_capacity != POTR_FLOW_CONTROL_DISABLED)
+    {
+        config->capacity = global->flow_control_capacity;
+    }
+
+    /* suppress_percent (-1 不可) */
+    if (global->flow_control_suppress_percent == POTR_FLOW_CONTROL_DISABLED ||
+        service->flow_control_suppress_percent == POTR_FLOW_CONTROL_DISABLED)
+    {
+        err_mask |= (1U << 1U);
+    }
+    else if (service->flow_control_suppress_percent != 0U)
+    {
+        config->suppress_percent = service->flow_control_suppress_percent;
+    }
+    else if (global->flow_control_suppress_percent != 0U)
+    {
+        config->suppress_percent = global->flow_control_suppress_percent;
+    }
+    else
+    {
+        config->suppress_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_SUPPRESS_PERCENT;
+    }
+
+    /* resume_percent (-1 不可) */
+    if (global->flow_control_resume_percent == POTR_FLOW_CONTROL_DISABLED ||
+        service->flow_control_resume_percent == POTR_FLOW_CONTROL_DISABLED)
+    {
+        err_mask |= (1U << 2U);
+    }
+    else if (service->flow_control_resume_percent != 0U)
+    {
+        config->resume_percent = service->flow_control_resume_percent;
+    }
+    else if (global->flow_control_resume_percent != 0U)
+    {
+        config->resume_percent = global->flow_control_resume_percent;
+    }
+    else
+    {
+        config->resume_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RESUME_PERCENT;
+    }
+
+    /* request_interval_ms (-1 不可) */
+    if (global->flow_control_request_interval_ms == POTR_FLOW_CONTROL_DISABLED ||
+        service->flow_control_request_interval_ms == POTR_FLOW_CONTROL_DISABLED)
+    {
+        err_mask |= (1U << 3U);
+    }
+    else if (service->flow_control_request_interval_ms != 0U)
+    {
+        config->request_interval_ms = service->flow_control_request_interval_ms;
+    }
+    else if (global->flow_control_request_interval_ms != 0U)
+    {
+        config->request_interval_ms = global->flow_control_request_interval_ms;
+    }
+    else
+    {
+        config->request_interval_ms = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_REQUEST_INTERVAL_MS;
+    }
+
+    /* request_lifetime_ms (-1 不可) */
+    if (global->flow_control_request_lifetime_ms == POTR_FLOW_CONTROL_DISABLED ||
+        service->flow_control_request_lifetime_ms == POTR_FLOW_CONTROL_DISABLED)
+    {
+        err_mask |= (1U << 4U);
+    }
+    else if (service->flow_control_request_lifetime_ms != 0U)
+    {
+        config->request_lifetime_ms = service->flow_control_request_lifetime_ms;
+    }
+    else if (global->flow_control_request_lifetime_ms != 0U)
+    {
+        config->request_lifetime_ms = global->flow_control_request_lifetime_ms;
+    }
+    else
+    {
+        config->request_lifetime_ms = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_REQUEST_LIFETIME_MS;
+    }
+
+    /* grace_ms (-1 不可) */
+    if (global->flow_control_grace_ms == POTR_FLOW_CONTROL_DISABLED ||
+        service->flow_control_grace_ms == POTR_FLOW_CONTROL_DISABLED)
+    {
+        err_mask |= (1U << 5U);
+    }
+    else if (service->flow_control_grace_ms != 0U)
+    {
+        config->grace_ms = service->flow_control_grace_ms;
+    }
+    else if (global->flow_control_grace_ms != 0U)
+    {
+        config->grace_ms = global->flow_control_grace_ms;
+    }
+    else
+    {
+        config->grace_ms = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_GRACE_MS;
+    }
+
+    /* feedback_percent (-1 不可) */
+    if (global->flow_control_feedback_percent == POTR_FLOW_CONTROL_DISABLED ||
+        service->flow_control_feedback_percent == POTR_FLOW_CONTROL_DISABLED)
+    {
+        err_mask |= (1U << 6U);
+    }
+    else if (service->flow_control_feedback_percent != 0U)
+    {
+        config->feedback_percent = service->flow_control_feedback_percent;
+    }
+    else if (global->flow_control_feedback_percent != 0U)
+    {
+        config->feedback_percent = global->flow_control_feedback_percent;
+    }
+    else
+    {
+        config->feedback_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_FEEDBACK_PERCENT;
+    }
+
+    /* monitored_receiver_count (service は -1 可、global は -1 不可) */
+    if (global->flow_control_monitored_receiver_count == POTR_FLOW_CONTROL_DISABLED)
+    {
+        err_mask |= (1U << 8U);
+    }
+    if (service->flow_control_monitored_receiver_count == POTR_FLOW_CONTROL_DISABLED)
+    {
+        config->monitored_receiver_count = 0U;
+    }
+    else if (service->flow_control_monitored_receiver_count != 0U)
+    {
+        config->monitored_receiver_count = service->flow_control_monitored_receiver_count;
+    }
+    else if (global->flow_control_monitored_receiver_count != POTR_FLOW_CONTROL_DISABLED)
+    {
+        config->monitored_receiver_count = global->flow_control_monitored_receiver_count;
+    }
+
+    /* excluded_receiver_count / excluded_receiver_percent (両方とも -1 可、0 = 既定値) */
+    if (service->flow_control_excluded_receiver_count == POTR_FLOW_CONTROL_DISABLED)
+    {
+        config->excluded_receiver_count = 0U;
+    }
+    else if (service->flow_control_excluded_receiver_count != 0U)
+    {
+        config->excluded_receiver_count = service->flow_control_excluded_receiver_count;
+    }
+    else if (global->flow_control_excluded_receiver_count == POTR_FLOW_CONTROL_DISABLED)
+    {
+        config->excluded_receiver_count = 0U;
+    }
+    else if (global->flow_control_excluded_receiver_count != 0U)
+    {
+        config->excluded_receiver_count = global->flow_control_excluded_receiver_count;
+    }
+    else
+    {
+        config->excluded_receiver_count = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_COUNT;
+    }
+
+    if (service->flow_control_excluded_receiver_percent == POTR_FLOW_CONTROL_DISABLED)
+    {
+        config->excluded_receiver_percent = 0U;
+    }
+    else if (service->flow_control_excluded_receiver_percent != 0U)
+    {
+        config->excluded_receiver_percent = service->flow_control_excluded_receiver_percent;
+    }
+    else if (global->flow_control_excluded_receiver_percent == POTR_FLOW_CONTROL_DISABLED)
+    {
+        config->excluded_receiver_percent = 0U;
+    }
+    else if (global->flow_control_excluded_receiver_percent != 0U)
+    {
+        config->excluded_receiver_percent = global->flow_control_excluded_receiver_percent;
+    }
+    else
+    {
+        config->excluded_receiver_percent = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_EXCLUDED_RECEIVER_PERCENT;
+    }
+
+    /* receive_buffer_percent (両方とも -1 可、0 = 既定値、対象外種別/役割は 0) */
+    if (service->flow_control_receive_buffer_percent == POTR_FLOW_CONTROL_DISABLED)
+    {
+        recv_buf_pct = 0U;
+    }
+    else if (service->flow_control_receive_buffer_percent != 0U)
+    {
+        recv_buf_pct = service->flow_control_receive_buffer_percent;
+    }
+    else if (global->flow_control_receive_buffer_percent == POTR_FLOW_CONTROL_DISABLED)
+    {
+        recv_buf_pct = 0U;
+    }
+    else if (global->flow_control_receive_buffer_percent != 0U)
+    {
+        recv_buf_pct = global->flow_control_receive_buffer_percent;
+    }
+    else
+    {
+        recv_buf_pct = (uint32_t)POTR_DEFAULT_FLOW_CONTROL_RECEIVE_BUFFER_PERCENT;
+    }
+
+    if (recv_buf_pct <= POTR_PERCENT_MAX &&
+        !(service->type == POTR_TYPE_UNICAST_BIDIR || service->type == POTR_TYPE_UNICAST_BIDIR_N1 ||
+          (role == POTR_ROLE_RECEIVER &&
+           (service->type == POTR_TYPE_UNICAST ||
+            ((service->type == POTR_TYPE_MULTICAST || service->type == POTR_TYPE_BROADCAST) &&
+             health_interval_ms != 0U)))))
+    {
+        recv_buf_pct = 0U;
+    }
+    config->receive_buffer_percent = recv_buf_pct;
+
+    if (disabled_error_mask_out != NULL)
+    {
+        *disabled_error_mask_out = err_mask;
+    }
+
+    return POTR_OK;
+}
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -419,8 +699,8 @@ extern "C"
      *  @param[in]      role                役割。
      *  @param[in]      health_interval_ms  通信種別とサービス上書きを解決した実効 PING 送信間隔 [ms]。
      *  @param[out]     config              実効設定の格納先。失敗時の内容は不定です。
-     *  @return         成功時は POTR_OK、引数が NULL の場合と設定値が許容範囲にない場合は
-     *                  POTR_ERR_INVALID_ARGUMENT を返します。
+     *  @return         成功時は POTR_OK、引数が NULL の場合は POTR_ERR_INVALID_ARGUMENT、
+     *                  設定値が許容範囲にない場合は POTR_ERR_INVALID_CONFIG を返します。
      */
     extern int potr_internal_flow_control_resolve(const potr_service_def *service, const potr_global_config *global,
                                                   potr_role role, uint32_t health_interval_ms,
