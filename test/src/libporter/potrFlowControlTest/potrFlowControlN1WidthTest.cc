@@ -93,14 +93,10 @@ class potrFlowControlN1WidthTest : public Test
                 return CPLAT_OK;
             }); // [状態] - OS の受信バッファーの大きさを buffer_size で返す。
 
-        ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
-            .WillByDefault([this](cplat_socket, const void *, size_t len, const cplat_ipv4_endpoint *,
-                                  size_t *sent, cplat_error *) {
+        ON_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
+            .WillByDefault([this](potr_context *, int, const void *, size_t, const cplat_ipv4_endpoint *,
+                                  cplat_error *) {
                 sendto_count++;
-                if (sent != nullptr)
-                {
-                    *sent = len;
-                }
                 return sendto_result;
             }); // [状態] - ソケット送出の戻り値を制御し、送出回数を数える。
 

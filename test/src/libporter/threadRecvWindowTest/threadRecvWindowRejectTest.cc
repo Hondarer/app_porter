@@ -553,16 +553,15 @@ TEST_F(threadRecvWindowRejectTest, data_beyond_window_drops_and_sends_nack_for_n
     // Pre-Assert
     EXPECT_CALL(mock_porter, thread_recv_slot_deliver_payload_elem(_, _)).Times(0);
     // [Pre-Assert確認_正常系] - thread_recv_slot_deliver_payload_elem() が呼ばれないこと。
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
         .Times(1)
-        .WillOnce([&](cplat_socket, const void *wire, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+        .WillOnce([&](potr_context *, int, const void *wire, size_t len, const cplat_ipv4_endpoint *,
                       cplat_error *) {
             const auto *bytes = static_cast<const uint8_t *>(wire);
             sent_wire.assign(bytes, bytes + len);
-            *sent = len;
-            return CPLAT_OK;
+            return POTR_OK;
         });
-    // [Pre-Assert確認_正常系] - cplat_socket_sendto() が 1 回呼ばれること。
+    // [Pre-Assert確認_正常系] - potr_internal_udp_sendto() が 1 回呼ばれること。
     // [Pre-Assert手順] - 送信されたワイヤー パケットを保存する。
 
     // Act
@@ -592,8 +591,8 @@ TEST_F(threadRecvWindowRejectTest, data_already_delivered_drops_without_sending_
     // Pre-Assert
     EXPECT_CALL(mock_porter, thread_recv_slot_deliver_payload_elem(_, _)).Times(0);
     // [Pre-Assert確認_正常系] - thread_recv_slot_deliver_payload_elem() が呼ばれないこと。
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _)).Times(0);
-    // [Pre-Assert確認_正常系] - cplat_socket_sendto() が呼ばれないこと。
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - potr_internal_udp_sendto() が呼ばれないこと。
 
     // Act
     thread_recv_window_accept_outer(&slot, &old_data.packet, 0); // [手順] - 配信済みの古い DATA を処理する。

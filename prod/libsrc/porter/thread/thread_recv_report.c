@@ -9,6 +9,7 @@
 #include <cplat/net/byteorder.h>
 #include <cplat/net/socket.h>
 #include <porter/porter_result.h>
+#include <porter/infra/potr_socket_io.h>
 #include <porter/protocol/packet.h>
 #include "thread_recv_report.h"
 
@@ -71,7 +72,6 @@ static int send_report(potr_context *ctx)
     {
         uint8_t wire[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
         size_t wire_len = sizeof(wire);
-        size_t sent;
         cplat_ipv4_endpoint destination = {0};
 
         destination.address = ctx->src_addr_resolved[i];
@@ -98,7 +98,7 @@ static int send_report(potr_context *ctx)
             return ret;
         }
         /* REPORT は次の周期に送り直すため、戻り値は明示的に破棄する。 */
-        (void)cplat_socket_sendto(ctx->sock[i], wire, wire_len, &destination, &sent, NULL);
+        (void)potr_internal_udp_sendto(ctx, i, wire, wire_len, &destination, NULL);
     }
 
     return POTR_OK;

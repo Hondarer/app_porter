@@ -57,6 +57,7 @@
 #include <porter/protocol/packet.h>
 #include <porter/protocol/packet_seal.h>
 #include <porter/protocol/window.h>
+#include <porter/infra/potr_socket_io.h>
 #include <porter/infra/potr_trace.h>
 #include <cplat/crt/stdlib.h>
 #include <cplat/runtime/memory_lock.h>
@@ -120,10 +121,21 @@ static int tcp_write_path(potr_context *ctx, int path_idx, const potr_packet *pa
     if (ctx->tcp_conn_fd[path_idx] != CPLAT_INVALID_SOCKET)
     {
         cplat_error detail;
-        int announce_result = potr_internal_tcp_announce_ping_state_locked(ctx, path_idx);
-        int sealed = (announce_result == POTR_OK);
+        uint64_t generation = 0U;
+        int announce_result;
+        int sealed;
         size_t total_len = 0U;
         size_t i;
+
+        if (ctx->tcp_lifecycle_mutex[path_idx] != NULL)
+        {
+            cplat_local_lock_lock(ctx->tcp_lifecycle_mutex[path_idx]);
+            generation = ctx->tcp_conn_generation[path_idx];
+            cplat_local_lock_unlock(ctx->tcp_lifecycle_mutex[path_idx]);
+        }
+
+        announce_result = potr_internal_tcp_announce_ping_state_locked(ctx, path_idx);
+        sealed = (announce_result == POTR_OK);
 
         if (!sealed)
         {
@@ -151,9 +163,9 @@ static int tcp_write_path(potr_context *ctx, int path_idx, const potr_packet *pa
 
         if (!sealed)
         {
-            cplat_socket_shutdown(ctx->tcp_conn_fd[path_idx]);
+            potr_internal_tcp_conn_request_close(ctx, path_idx, generation);
         }
-        else if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, total_len, &detail) == CPLAT_OK)
+        else if (potr_internal_tcp_send_all_locked(ctx, path_idx, wire_buf, total_len, NULL, &detail) == POTR_OK)
         {
             result = POTR_OK;
         }
@@ -162,7 +174,6 @@ static int tcp_write_path(potr_context *ctx, int path_idx, const potr_packet *pa
             POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
                                       "send_thread[service_id=%" PRId64 "]: path[%d] send failed, disconnecting",
                                       ctx->service.service_id, path_idx);
-            cplat_socket_shutdown(ctx->tcp_conn_fd[path_idx]);
         }
     }
 
@@ -204,10 +215,17 @@ static int tcp_write_all_paths(potr_context *ctx, const potr_packet *packets, si
             continue;
         }
 
-        /* 送信バッファーの空きを確認する (非ブロッキング)。確認できない場合は書き込みの結果で判定する。 */
-        if (cplat_socket_timed_wait_writable(ctx->tcp_conn_fd[i], CPLAT_NO_WAIT, NULL) == CPLAT_ERR_TIMEOUT)
+        /* 送信バッファーの空きを送信用ロックの下で無待機確認する。 */
         {
-            writable = 0;
+            int check_rc = potr_internal_tcp_check_writable(ctx, i);
+            if (check_rc == POTR_ERR_CANCELED || check_rc == POTR_ERR_DISCONNECTED)
+            {
+                continue;
+            }
+            if (check_rc == POTR_ERR_TIMEOUT)
+            {
+                writable = 0;
+            }
         }
 
         if (writable)
@@ -456,7 +474,6 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        size_t sent = 0;
         int send_ret;
 
         if ((selection.data_paths & (uint8_t)(1U << i)) == 0U)
@@ -474,7 +491,7 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
             cplat_local_lock_unlock(ctx->send_window_mutex);
             return result;
         }
-        send_ret = cplat_socket_sendto(ctx->sock[i], ctx->crypto_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
+        send_ret = potr_internal_udp_sendto(ctx, i, ctx->crypto_buf, wire_len, &ctx->dest_addr[i], NULL);
         if (window_pending)
         {
             /*
@@ -485,7 +502,7 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
             ctx->send_has_data = 1;
             window_pending = 0;
         }
-        if (send_ret == CPLAT_OK)
+        if (send_ret == POTR_OK)
         {
             if (piggyback_pending != 0)
             {
@@ -591,8 +608,6 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
 
         for (k = 0; k < (int)POTR_MAX_PATH; k++)
         {
-            size_t sent = 0;
-
             if ((selection.data_paths & (uint8_t)(1U << k)) == 0U || endpoint_is_unset(&peer->dest_addr[k]))
             {
                 continue;
@@ -610,9 +625,8 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
                 }
                 return;
             }
-            int send_ret = cplat_socket_sendto(ctx->sock[k], ctx->crypto_buf, wire_len, &peer->dest_addr[k],
-                                               &sent, NULL);
-            if (send_ret == CPLAT_OK && piggyback_pending != 0)
+            int send_ret = potr_internal_udp_sendto(ctx, k, ctx->crypto_buf, wire_len, &peer->dest_addr[k], NULL);
+            if (send_ret == POTR_OK && piggyback_pending != 0)
             {
                 potr_internal_flow_control_piggyback_complete(ctx, peer->peer_id, cplat_ntoh32(outer_pkt.ack_num), 1);
                 piggyback_pending = 0;

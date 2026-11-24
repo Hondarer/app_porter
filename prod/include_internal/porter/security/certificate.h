@@ -92,13 +92,18 @@ int potr_internal_certificate_key(potr_context *ctx, const potr_internal_tx_sess
 /**
  *  @brief          TCP の最初の経路で TLS を完了させます。後続経路は確立済みの鍵を共用します。
  *  @param[in,out]  ctx サービス。NULL は不可です。
- *  @param[in]      socket 接続済みソケット。
+ *  @param[in]      socket 登録済みの接続ソケット。
+ *  @param[in]      watch `socket` の登録オブジェクト。TCP 認証では NULL は不可です。
+ *  @param[in]      cancel 接続管理用の解除オブジェクト。NULL 可。
  *  @param[in]      first 先読みした HANDSHAKE。クライアントは NULL。
- *  @return         成功は POTR_OK、認証・形式不正は POTR_ERR_PROTOCOL、通信失敗は POTR_ERR_IO。NULL のサービスは POTR_ERR_INVALID_ARGUMENT。
+ *  @return         成功は POTR_OK、認証・形式不正は POTR_ERR_PROTOCOL、解除は POTR_ERR_CANCELED、
+ *                  期限切れは POTR_ERR_TIMEOUT、EOF は POTR_ERR_EOF、通信失敗は POTR_ERR_IO。
+ *                  NULL のサービスは POTR_ERR_INVALID_ARGUMENT。
  *  @note           接続を公開する前に tcp_recv_mutex の下で呼びます。
  *                  サーバーは session_establish_mutex も保持します。内部で認証操作を直列化します。
  */
-int potr_internal_certificate_connect(potr_context *ctx, cplat_socket socket, const potr_packet *first);
+int potr_internal_certificate_connect(potr_context *ctx, cplat_socket socket, cplat_socket_watch *watch,
+                                      cplat_socket_wait_cancel *cancel, const potr_packet *first);
 #ifdef __cplusplus
 }
 #endif

@@ -33,6 +33,7 @@
 #include <porter/protocol/window.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_result.h>
+#include <porter/infra/potr_socket_io.h>
 #include <porter/thread/potr_connect_thread.h>
 #include <porter/thread/potr_connected_threads.h>
 #include <porter/thread/potr_recv_thread.h>
@@ -72,28 +73,69 @@ static void set_tcp_path_ping_state(potr_context *ctx, int path_idx, uint8_t nex
     potr_internal_tcp_health_thread_wake_all(ctx);
 }
 
-/* TCP 接続ソケット [path_idx] をシャットダウン・クローズして INVALID にする。 */
-static void close_tcp_conn(potr_context *ctx, int path_idx)
+/*
+ * 新しい TCP 接続世代の解除オブジェクトを生成し、寿命管理用ロックの下で世代・ソケット・watch・cancel を一組で公開する。
+ * サービス終了開始後 (tcp_publish_stopped != 0) は公開を拒否して POTR_ERR_CANCELED を返す。
+ * 失敗時は生成した cancel を破棄し、sock / watch の解放は呼び出し元が行う。
+ */
+static int publish_tcp_conn(potr_context *ctx, int path_idx, cplat_socket sock, cplat_socket_watch *watch,
+                            uint64_t *generation_out)
 {
-    cplat_socket closing_fd = ctx->tcp_conn_fd[path_idx];
+    cplat_socket_wait_cancel *conn_cancel = NULL;
+    cplat_error detail;
+    int cancel_rc;
+    uint64_t generation;
 
-    if (closing_fd == CPLAT_INVALID_SOCKET)
+    *generation_out = 0U;
+
+    cplat_error_clear(&detail);
+    cancel_rc = cplat_socket_wait_cancel_create(&conn_cancel, &detail);
+    if (cancel_rc != CPLAT_OK)
     {
-        return;
+        return potr_internal_result_from_socket_result(cancel_rc, &detail);
     }
 
-    /* 送信完了待ちを先に解除し、その後で close と fd 無効化を送信処理と直列化する。 */
-    cplat_socket_shutdown(closing_fd);
-    cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx]);
+    cplat_local_lock_lock(ctx->tcp_lifecycle_mutex[path_idx]);
 
-    if (ctx->tcp_conn_fd[path_idx] == closing_fd)
+    if (cplat_atomic_load_i32(&ctx->tcp_publish_stopped, CPLAT_MEMORY_ORDER_ACQUIRE) != 0 ||
+        cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
-        cplat_socket_close(closing_fd);
-        ctx->tcp_conn_fd[path_idx] = CPLAT_INVALID_SOCKET;
-        ctx->tcp_ping_announced[path_idx] = 0;
+        cplat_local_lock_unlock(ctx->tcp_lifecycle_mutex[path_idx]);
+        cplat_socket_wait_cancel_dispose(conn_cancel);
+        return POTR_ERR_CANCELED;
     }
 
-    cplat_local_lock_unlock(ctx->tcp_send_mutex[path_idx]);
+    ctx->tcp_next_generation[path_idx]++;
+    if (ctx->tcp_next_generation[path_idx] == 0U)
+    {
+        ctx->tcp_next_generation[path_idx] = 1U;
+    }
+    generation = ctx->tcp_next_generation[path_idx];
+
+    ctx->tcp_conn_fd[path_idx] = sock;
+    ctx->tcp_conn_watch[path_idx] = watch;
+    ctx->tcp_conn_cancel[path_idx] = conn_cancel;
+    ctx->tcp_conn_generation[path_idx] = generation;
+    ctx->tcp_conn_closing[path_idx] = 0;
+    ctx->tcp_ping_announced[path_idx] = 0;
+
+    cplat_local_lock_unlock(ctx->tcp_lifecycle_mutex[path_idx]);
+
+    *generation_out = generation;
+    return POTR_OK;
+}
+
+/* 公開前のソケットと watch を、このスレッド自身が detach・close する。 */
+static void close_unpublished_tcp_conn(cplat_socket sock, cplat_socket_watch *watch)
+{
+    if (watch != NULL)
+    {
+        cplat_socket_watch_detach(watch);
+    }
+    if (sock != CPLAT_INVALID_SOCKET)
+    {
+        cplat_socket_close(sock);
+    }
 }
 
 /* 通知キューの容量超過で切断した相手との接続を、まだ確立しない状態かどうかを返す。TCP は相手が 1 つである。 */
@@ -266,7 +308,7 @@ static void reset_all_paths_disconnected(potr_context *ctx)
  * 各 path で recv スレッドと health スレッドを起動 (全ロール共通)。
  * 失敗時は起動済みスレッドをすべて停止して、失敗した処理の結果コードを返す。
  */
-static int start_connected_threads(potr_context *ctx, int path_idx)
+static int start_connected_threads(potr_context *ctx, int path_idx, uint64_t generation)
 {
     /*
      * キューの shutdown は待機解除だけであり、再初期化は不要である。
@@ -276,23 +318,26 @@ static int start_connected_threads(potr_context *ctx, int path_idx)
                                                      potr_internal_send_thread_stop,
                                                      potr_internal_tcp_recv_thread_start,
                                                      potr_internal_tcp_health_thread_start,
-                                                     close_tcp_conn,
+                                                     potr_internal_tcp_conn_request_close,
                                                      join_recv_thread,
+                                                     potr_internal_tcp_health_thread_stop,
+                                                     potr_internal_tcp_conn_release,
                                                      set_tcp_path_ping_state};
 
-    return potr_internal_start_connected_threads(ctx, path_idx, &ops);
+    return potr_internal_start_connected_threads(ctx, path_idx, generation, &ops);
 }
 
 /*
- * 接続断後に依存スレッドを停止する (path ごと)。
+ * 接続断後に依存スレッドを停止し、対象世代を解放する (path ごと)。
  * 呼び出し前提: join_recv_thread(path_idx) 完了済み (recv スレッドは終了している)。
  * 注意: 送信スレッドは共有のため、potr_internal_connect_thread_stop で全 path join 後に停止する。
  */
-static void stop_connected_threads(potr_context *ctx, int path_idx)
+static void stop_connected_threads(potr_context *ctx, int path_idx, uint64_t generation)
 {
-    /* shutdown で DATA/PING 送信待ちを解除してから health スレッドを停止する。 */
-    close_tcp_conn(ctx, path_idx);
+    /* 対象世代の解除通知を発行し、health スレッドを終了待ちしてから世代を解放する。 */
+    potr_internal_tcp_conn_request_close(ctx, path_idx, generation);
     potr_internal_tcp_health_thread_stop(ctx, path_idx);
+    potr_internal_tcp_conn_release(ctx, path_idx, generation);
 }
 
 /* SENDER 用接続ループ (path ごと) */
@@ -302,6 +347,8 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
            cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
         cplat_socket sock;
+        cplat_socket_watch *watch = NULL;
+        uint64_t generation = 0U;
         int active_count;
 
         /*
@@ -318,7 +365,7 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: connecting to %s:%u ...",
                    ctx->service.service_id, path_idx, ctx->service.dst_addr[path_idx], (unsigned)ctx->service.dst_port);
 
-        sock = thread_connect_with_timeout(ctx, path_idx);
+        sock = thread_connect_with_timeout(ctx, path_idx, ctx->tcp_connect_cancel[path_idx], &watch);
 
         if (sock == CPLAT_INVALID_SOCKET)
         {
@@ -352,10 +399,14 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         uint64_t connected_time;
 
         cplat_local_lock_lock(ctx->tcp_recv_mutex);
-        if (potr_internal_certificate_connect(ctx, sock, NULL) != POTR_OK)
+        if (potr_internal_certificate_connect(ctx, sock, watch, ctx->tcp_connect_cancel[path_idx], NULL) != POTR_OK)
         {
             cplat_local_lock_unlock(ctx->tcp_recv_mutex);
-            cplat_socket_close(sock);
+            close_unpublished_tcp_conn(sock, watch);
+            if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+            {
+                break;
+            }
             if (ctx->service.reconnect_interval_ms == 0U)
             {
                 break;
@@ -370,8 +421,15 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
             cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
             potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
             cplat_local_lock_unlock(ctx->tcp_recv_mutex);
-            cplat_socket_close(sock);
+            close_unpublished_tcp_conn(sock, watch);
             return;
+        }
+
+        if (publish_tcp_conn(ctx, path_idx, sock, watch, &generation) != POTR_OK)
+        {
+            cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+            close_unpublished_tcp_conn(sock, watch);
+            break;
         }
 
         /* 0→1 の初期化を完了してから接続を公開する。 */
@@ -382,14 +440,13 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
             reset_connection_state(ctx);
         }
 
-        ctx->tcp_conn_fd[path_idx] = sock;
         cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], connected_time, CPLAT_MEMORY_ORDER_RELAXED);
         cplat_local_lock_unlock(ctx->tcp_state_mutex);
         cplat_local_lock_unlock(ctx->tcp_recv_mutex);
 
-        if (start_connected_threads(ctx, path_idx) != POTR_OK)
+        if (start_connected_threads(ctx, path_idx, generation) != POTR_OK)
         {
-            /* スレッド起動失敗: カウンターを戻す。 */
+            /* start_connected_threads() の巻き戻しで既に世代を解放済み。カウンターだけを戻す。 */
             cplat_local_lock_lock(ctx->tcp_state_mutex);
             active_count = cplat_atomic_fetch_sub_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL) - 1;
             cplat_local_lock_unlock(ctx->tcp_state_mutex);
@@ -419,7 +476,7 @@ static void sender_connect_loop(potr_context *ctx, int path_idx)
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP disconnected",
                    ctx->service.service_id, path_idx);
 
-        stop_connected_threads(ctx, path_idx);
+        stop_connected_threads(ctx, path_idx, generation);
 
         cplat_local_lock_lock(ctx->tcp_state_mutex);
         set_tcp_path_ping_state(ctx, path_idx, POTR_PING_STATE_UNDEFINED);
@@ -490,14 +547,50 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
     while (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
            cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
-        cplat_socket conn;
+        cplat_socket conn = CPLAT_INVALID_SOCKET;
+        cplat_socket_watch *watch = NULL;
+        uint64_t generation = 0U;
         cplat_ipv4_endpoint peer_addr = {0};
         int active_count;
         char peer_addr_str[CPLAT_IPV4_ADDR_STRLEN];
         cplat_error detail;
         int session_result;
+        unsigned char ready = 0U;
+        int wait_rc;
+        int accept_rc;
 
-        if (cplat_socket_accept(ctx->tcp_listen_sock[path_idx], &peer_addr, &conn, &detail) != CPLAT_OK)
+        if (ctx->tcp_listen_watch[path_idx] == NULL || ctx->tcp_listen_sock[path_idx] == CPLAT_INVALID_SOCKET)
+        {
+            break;
+        }
+
+        cplat_error_clear(&detail);
+        wait_rc = cplat_socket_watch_wait_readable_multi(&ctx->tcp_listen_watch[path_idx], 1U,
+                                                         ctx->tcp_connect_cancel[path_idx], CPLAT_WAIT_FOREVER, &ready,
+                                                         &detail);
+        if (wait_rc == CPLAT_ERR_CANCELED)
+        {
+            break;
+        }
+        if (wait_rc != CPLAT_OK)
+        {
+            if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+            {
+                break;
+            }
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
+                                      "connect_thread[service_id=%" PRId64 " path=%d]: listen wait failed (rc=%d)",
+                                      ctx->service.service_id, path_idx, wait_rc);
+            break;
+        }
+
+        cplat_error_clear(&detail);
+        accept_rc = cplat_socket_accept(ctx->tcp_listen_sock[path_idx], &peer_addr, &conn, &detail);
+        if (accept_rc == CPLAT_ERR_WOULD_BLOCK)
+        {
+            continue;
+        }
+        if (accept_rc != CPLAT_OK)
         {
             if (cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
             {
@@ -508,6 +601,22 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_VERBOSE, &detail,
                                       "connect_thread[service_id=%" PRId64 " path=%d]: accept() error, retrying",
                                       ctx->service.service_id, path_idx);
+            continue;
+        }
+
+        /*
+         * cplat_socket_accept() が返すソケットは両 OS で未登録・ブロッキングのため、
+         * 通信 (先読み、認証、公開) より前に watch へ登録する。
+         * see: https://man7.org/linux/man-pages/man2/accept.2.html
+         * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-wsaeventselect
+         */
+        cplat_error_clear(&detail);
+        if (cplat_socket_watch_attach(conn, &watch, &detail) != CPLAT_OK)
+        {
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
+                                      "connect_thread[service_id=%" PRId64 " path=%d]: accepted watch_attach failed",
+                                      ctx->service.service_id, path_idx);
+            cplat_socket_close(conn);
             continue;
         }
 
@@ -528,7 +637,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                            "connect_thread[service_id=%" PRId64 " path=%d]: rejected connection"
                            " from %s:%u (src filter)",
                            ctx->service.service_id, path_idx, peer_addr_str, (unsigned)cplat_ntoh16(peer_addr.port));
-                cplat_socket_close(conn);
+                close_unpublished_tcp_conn(conn, watch);
                 continue;
             }
         }
@@ -543,7 +652,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                        "connect_thread[service_id=%" PRId64 " path=%d]: rejected connection"
                        " from %s:%u (notification capacity exceeded)",
                        ctx->service.service_id, path_idx, peer_addr_str, (unsigned)cplat_ntoh16(peer_addr.port));
-            cplat_socket_close(conn);
+            close_unpublished_tcp_conn(conn, watch);
             continue;
         }
 
@@ -574,17 +683,22 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
              * first_pkt_timeout_ms は先読み待機時間 [ms]。tcp_health_timeout_ms の上限 715827882 は
              * open_validate_config() で検査済みのため、3 倍しても 2147483646 を超えない。
              */
-            r = thread_connect_read_first_packet(conn, ctx->tcp_first_pkt_buf[path_idx],
+            r = thread_connect_read_first_packet(conn, watch, ctx->tcp_connect_cancel[path_idx],
+                                                 ctx->tcp_first_pkt_buf[path_idx],
                                                  POTR_PACKET_HEADER_SIZE + ctx->global.max_payload, &pkt_len,
                                                  (int)first_pkt_timeout_ms);
             if (r != POTR_OK)
             {
-                /* タイムアウトまたは EOF/エラー */
+                /* タイムアウトまたは解除/EOF/エラー */
                 POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
                            "connect_thread[service_id=%" PRId64 " path=%d]: "
                            "first packet read failed (r=%d), closing",
                            ctx->service.service_id, path_idx, r);
-                cplat_socket_close(conn);
+                close_unpublished_tcp_conn(conn, watch);
+                if (r == POTR_ERR_CANCELED)
+                {
+                    break;
+                }
                 continue;
             }
 
@@ -594,7 +708,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                            "connect_thread[service_id=%" PRId64 " path=%d]: "
                            "first packet parse failed, closing",
                            ctx->service.service_id, path_idx);
-                cplat_socket_close(conn);
+                close_unpublished_tcp_conn(conn, watch);
                 continue;
             }
 
@@ -605,14 +719,22 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
 
             if (ctx->service.auth == POTR_AUTH_CERT && pkt.flags == POTR_FLAG_HANDSHAKE)
             {
-                if (potr_internal_certificate_connect(ctx, conn, &pkt) != POTR_OK ||
-                    thread_connect_read_first_packet(conn, ctx->tcp_first_pkt_buf[path_idx],
-                        POTR_PACKET_HEADER_SIZE + ctx->global.max_payload, &pkt_len, (int)first_pkt_timeout_ms) != POTR_OK ||
+                int cert_rc =
+                    potr_internal_certificate_connect(ctx, conn, watch, ctx->tcp_connect_cancel[path_idx], &pkt);
+                if (cert_rc != POTR_OK ||
+                    thread_connect_read_first_packet(conn, watch, ctx->tcp_connect_cancel[path_idx],
+                                                     ctx->tcp_first_pkt_buf[path_idx],
+                                                     POTR_PACKET_HEADER_SIZE + ctx->global.max_payload, &pkt_len,
+                                                     (int)first_pkt_timeout_ms) != POTR_OK ||
                     potr_internal_packet_parse(&pkt, ctx->tcp_first_pkt_buf[path_idx], pkt_len) != POTR_OK)
                 {
                     cplat_local_lock_unlock(ctx->tcp_recv_mutex);
                     cplat_local_lock_unlock(ctx->session_establish_mutex);
-                    cplat_socket_close(conn);
+                    close_unpublished_tcp_conn(conn, watch);
+                    if (cert_rc == POTR_ERR_CANCELED)
+                    {
+                        break;
+                    }
                     continue;
                 }
             }
@@ -623,7 +745,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                 potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
                 cplat_local_lock_unlock(ctx->tcp_recv_mutex);
                 cplat_local_lock_unlock(ctx->session_establish_mutex);
-                cplat_socket_close(conn);
+                close_unpublished_tcp_conn(conn, watch);
                 return;
             }
 
@@ -633,7 +755,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             {
                 cplat_local_lock_unlock(ctx->tcp_recv_mutex);
                 cplat_local_lock_unlock(ctx->session_establish_mutex);
-                cplat_socket_close(conn);
+                close_unpublished_tcp_conn(conn, watch);
                 continue;
             }
 
@@ -648,7 +770,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                            ctx->service.service_id, path_idx, ctx->tcp_accepted_session_id, pkt.session_id);
                 cplat_local_lock_unlock(ctx->tcp_recv_mutex);
                 cplat_local_lock_unlock(ctx->session_establish_mutex);
-                cplat_socket_close(conn);
+                close_unpublished_tcp_conn(conn, watch);
                 continue;
             }
 
@@ -660,29 +782,37 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             {
                 cplat_local_lock_unlock(ctx->tcp_recv_mutex);
                 cplat_local_lock_unlock(ctx->session_establish_mutex);
-                cplat_socket_close(conn);
+                close_unpublished_tcp_conn(conn, watch);
                 continue;
             }
 
             if (session_result == TCP_SESSION_NEW)
             {
                 /*
-                 * 新セッション: 他 path の既存接続に切断シグナルを送信する。
-                 * cleanup は各 path の accept スレッドが自然に行う。
+                 * 新セッション: 他 path の既存世代へ閉じる要求だけを発行する。
+                 * 他経路のソケットは直接閉じず、各経路の接続管理スレッドが該当世代を回収する。
                  */
                 int k;
 
                 for (k = 0; k < ctx->n_path; k++)
                 {
+                    uint64_t other_gen = 0U;
+
                     if (k == path_idx)
                     {
                         continue;
                     }
 
-                    if (ctx->tcp_conn_fd[k] != CPLAT_INVALID_SOCKET)
+                    if (ctx->tcp_lifecycle_mutex[k] != NULL)
                     {
-                        cplat_atomic_store_i32(&ctx->running[k], 0, CPLAT_MEMORY_ORDER_RELEASE);
-                        close_tcp_conn(ctx, k); /* recv ブロックを解除 */
+                        cplat_local_lock_lock(ctx->tcp_lifecycle_mutex[k]);
+                        other_gen = ctx->tcp_conn_generation[k];
+                        cplat_local_lock_unlock(ctx->tcp_lifecycle_mutex[k]);
+                    }
+
+                    if (other_gen != 0U)
+                    {
+                        potr_internal_tcp_conn_request_close(ctx, k, other_gen);
                     }
                 }
 
@@ -694,6 +824,14 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
 
             /* TCP_SESSION_SAME の場合は reset 不要 (セッション継続)。 */
 
+            if (publish_tcp_conn(ctx, path_idx, conn, watch, &generation) != POTR_OK)
+            {
+                cplat_local_lock_unlock(ctx->tcp_recv_mutex);
+                cplat_local_lock_unlock(ctx->session_establish_mutex);
+                close_unpublished_tcp_conn(conn, watch);
+                break;
+            }
+
             cplat_local_lock_lock(ctx->tcp_state_mutex);
             active_count = cplat_atomic_fetch_add_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL) + 1;
             if (active_count == 1)
@@ -702,7 +840,6 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
                 cplat_atomic_store_i32(&ctx->tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELEASE);
             }
 
-            ctx->tcp_conn_fd[path_idx] = conn;
             cplat_atomic_store_u64(&ctx->tcp_last_ping_recv_ms[path_idx], connected_time, CPLAT_MEMORY_ORDER_RELAXED);
             ctx->tcp_first_pkt_len[path_idx] = pkt_len; /* 先読みバッファー有効化 */
 
@@ -712,8 +849,9 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
 
         /* ── セッション判定ここまで ── */
 
-        if (start_connected_threads(ctx, path_idx) != POTR_OK)
+        if (start_connected_threads(ctx, path_idx, generation) != POTR_OK)
         {
+            /* start_connected_threads() の巻き戻しで既に世代を解放済み。重複解放しない。 */
             cplat_local_lock_lock(ctx->tcp_state_mutex);
             active_count = cplat_atomic_fetch_sub_i32(&ctx->tcp_active_paths, 1, CPLAT_MEMORY_ORDER_ACQ_REL) - 1;
             cplat_local_lock_unlock(ctx->tcp_state_mutex);
@@ -724,7 +862,6 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
             }
 
             ctx->tcp_first_pkt_len[path_idx] = 0; /* 先読みバッファーを無効化 */
-            close_tcp_conn(ctx, path_idx);
             cplat_local_lock_unlock(ctx->session_establish_mutex);
             continue;
         }
@@ -737,7 +874,7 @@ static void receiver_accept_loop(potr_context *ctx, int path_idx)
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "connect_thread[service_id=%" PRId64 " path=%d]: TCP connection closed",
                    ctx->service.service_id, path_idx);
 
-        stop_connected_threads(ctx, path_idx);
+        stop_connected_threads(ctx, path_idx, generation);
 
         cplat_local_lock_lock(ctx->tcp_state_mutex);
         set_tcp_path_ping_state(ctx, path_idx, POTR_PING_STATE_UNDEFINED);
@@ -912,23 +1049,24 @@ void potr_internal_connect_thread_stop(potr_context *ctx)
         cplat_condvar_broadcast(ctx->tcp_state_cv);
         cplat_local_lock_unlock(ctx->tcp_state_mutex);
 
-        if (ctx->role == POTR_ROLE_RECEIVER)
+        /*
+         * 管理用 cancel と全公開世代の cancel を通知して待機を解除する。
+         * リスナー ソケットと接続ソケットは、接続管理スレッドの終了待ちより前に閉じない。
+         * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-closesocket
+         */
+        for (i = 0; i < ctx->n_path; i++)
         {
-            for (i = 0; i < ctx->n_path; i++)
+            if (ctx->tcp_connect_cancel[i] != NULL)
             {
-                if (ctx->tcp_listen_sock[i] != CPLAT_INVALID_SOCKET)
-                {
-                    cplat_socket_shutdown(ctx->tcp_listen_sock[i]);
-                    cplat_socket_close(ctx->tcp_listen_sock[i]);
-                    ctx->tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
-                }
+                /*
+                 * 有効な cancel オブジェクトへの通知は必ず CPLAT_OK を返し、OS 通知失敗時も
+                 * 待機側が最大 50 [ms] の内部間隔で解除を検出するため、戻り値は明示的に破棄する。
+                 */
+                (void)cplat_socket_wait_cancel_signal(ctx->tcp_connect_cancel[i], NULL);
             }
         }
 
-        for (i = 0; i < ctx->n_path; i++)
-        {
-            close_tcp_conn(ctx, i);
-        }
+        potr_internal_tcp_conn_request_close_all(ctx);
 
         for (i = 0; i < ctx->n_path; i++)
         {

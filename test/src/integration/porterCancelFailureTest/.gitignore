@@ -1,0 +1,11 @@
+/error.c
+/packet_seal.c
+/potr_connect_thread.c
+/potr_result.c
+/potr_socket_io.c
+/result.c
+/socket_linux.c
+/socket_watch_linux.c
+/socket_watch_windows.c
+/socket_windows.c
+/thread_connect_prepare.c

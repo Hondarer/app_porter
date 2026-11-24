@@ -134,8 +134,8 @@ typedef struct potr_service_def
     /* 送信元ポート */
     uint16_t src_port; /**< 送信者の送信元 bind ポート番号。0 = OS 自動選定。証明書方式の片方向送信者では 0 以外が必須。(そのほかは全通信種別で省略可) */
 
-    /* POTR_TYPE_MULTICAST */
-    uint8_t ttl;     /**< マルチキャスト TTL。(multicast のみ) */
+    /* POTR_TYPE_MULTICAST / POTR_TYPE_MULTICAST_RAW */
+    uint8_t ttl;     /**< マルチキャスト送信役の TTL (1〜255)。multicast / multicast_raw で使用します。設定ファイルで省略した場合および構造体で 0 を指定した場合は実効値 1 として扱います。受信役では設定共有のため有効な値を受け付けますが、ソケットには設定しません。ほかの種別の設定ファイルに指定した場合は POTR_ERR_INVALID_CONFIG です。 */
     uint8_t _pad[3]; /**< パディング (pack_wait_ms を 4 [byte] 境界に揃える)。 */
     uint32_t
         pack_wait_ms; /**< パッキング待ち時間 [ms]。最初の送信要求からこの時間だけ待ち合わせ、複数メッセージを 1 パケットにまとめる。0 = 即時送信 (パッキング待ちなし)。パケット容量が満杯になった場合はタイマーを無視して即時送信します。 */
@@ -238,7 +238,7 @@ typedef struct potr_global_config
     uint32_t
         tcp_health_timeout_ms; /**< TCP 通信種別の既定 PING 応答待機タイムアウト [ms]。0 = 無効。設定ファイル キー: tcp_health_timeout_ms。 */
     uint32_t
-        tcp_close_timeout_ms; /**< TCP 通信種別の close 完了待機タイムアウト [ms]。設定ファイル キー: tcp_close_timeout_ms。0 = 待機なし。 */
+        tcp_close_timeout_ms; /**< TCP 通信種別の close 完了待機タイムアウト [ms]。受付済み API の通信待機の回収、送信キューの排出、FIN の送信、FIN_ACK の待機で 1 つの絶対期限を共有します。0 = 待機を即座に打ち切ります (各段階の待機が期限超過となり、参照とスレッドの回収後に POTR_ERR_TIMEOUT を返します)。設定ファイル キー: tcp_close_timeout_ms。 */
     uint32_t
         flow_control_capacity; /**< 通知キューの容量 [byte]。受信側が使用します。0 = フロー制御は無効 (デフォルト)。設定ファイル キー: flow_control_capacity。 */
     uint32_t

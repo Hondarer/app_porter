@@ -95,10 +95,10 @@ sequenceDiagram
     RRT->>RAPP: callback(POTR_EVENT_DISCONNECTED)
     RRT->>RRT: peer_session_known = 0<br>recv_window リセット
 
-    CLOSE->>RT: 停止シグナル
+    CLOSE->>RT: recv_cancel 通知で待機解除
 
-    CLOSE->>CLOSE: 各スレッドの終了を待機
-    CLOSE->>CLOSE: ソケット・ウィンドウ・<br>キュー等のリソース解放
+    CLOSE->>CLOSE: 各スレッドおよび通知スレッドの終了を待機
+    CLOSE->>CLOSE: マルチキャスト離脱・watch detach・<br>ソケット閉鎖・cancel/同期資源/キュー解放
 
     CLOSE-->>-SAPP: POTR_OK
 
@@ -152,12 +152,12 @@ sequenceDiagram
 
     RAPP->>+CLOSE: potr_service_close(handle)
 
-    CLOSE->>RT: 停止シグナル
-    CLOSE->>CLOSE: 受信スレッドの終了を待機
+    CLOSE->>RT: recv_cancel 通知で待機解除
+    CLOSE->>CLOSE: 受信スレッドおよび通知スレッドの終了を待機
 
     Note over RAPP: 受信者側の potr_service_close() は<br>送信者への通知なし<br>DISCONNECTED も発火しない
 
-    CLOSE->>CLOSE: ソケット・ウィンドウ等の<br>リソース解放
+    CLOSE->>CLOSE: watch detach・ソケット閉鎖・<br>cancel/同期資源/ウィンドウ解放
 
     CLOSE-->>-RAPP: POTR_OK
 ```

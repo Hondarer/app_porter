@@ -60,12 +60,13 @@ TEST(threadRecvReportTest, disabled_and_raw_do_not_send)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
     ctx.role = POTR_ROLE_RECEIVER;
     ctx.health_interval_ms = 100;
     int actual_ret[5] = {};
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - 対象外の構成で受信報告を送出しないこと。
     // Act
     ctx.service.type = POTR_TYPE_UNICAST_RAW;
@@ -115,16 +116,15 @@ TEST(threadRecvReportTest, encrypted_report_at_each_deadline_on_all_paths)
     cplat_atomic_store_u8(&ctx.path_ping_state[1], POTR_PING_STATE_ABNORMAL, CPLAT_MEMORY_ORDER_RELAXED);
     potr_internal_tx_session_init(&ctx.tx_session);
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _)).Times(4)
-        .WillRepeatedly([&](cplat_socket fd, const void *wire, size_t len,
-                            const cplat_ipv4_endpoint *destination, size_t *sent, cplat_error *) {
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _)).Times(4)
+        .WillRepeatedly([&](potr_context *c, int path_idx, const void *wire, size_t len,
+                            const cplat_ipv4_endpoint *destination, cplat_error *) {
             const auto *bytes = static_cast<const uint8_t *>(wire);
             emitted.emplace_back(bytes, bytes + len);
-            paths.push_back(fd);
+            paths.push_back(c->sock[path_idx]);
             EXPECT_EQ(cplat_hton16(4000), destination->port);
             // [Pre-Assert確認_正常系 回数=4] - NACK と同じ送信元ポートを宛先とすること。
-            *sent = len;
-            return CPLAT_OK;
+            return POTR_OK;
         });
     // [Pre-Assert確認_正常系] - 2 周期にそれぞれ 2 経路から計 4 回送ること。
     // [Pre-Assert手順] - 封緘したワイヤーと送出経路を保存する。
@@ -203,13 +203,12 @@ TEST(threadRecvReportTest, multicast_report_carries_send_limit)
             *max_allowance = limit_held != 0 ? 42U : 0U;
             return limit_held;
         }); // [状態] - limit_held が 1 の間は送出上限 0x12345678 と許可数の上限 42 を返し、0 の間は送出上限がないことを返す。
-    ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
-        .WillByDefault([&](cplat_socket, const void *wire, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+    ON_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
+        .WillByDefault([&](potr_context *, int, const void *wire, size_t len, const cplat_ipv4_endpoint *,
                            cplat_error *) {
             const auto *bytes = static_cast<const uint8_t *>(wire);
             emitted.emplace_back(bytes, bytes + len);
-            *sent = len;
-            return CPLAT_OK;
+            return POTR_OK;
         }); // [状態] - 送出したワイヤーを保存する。
     // Pre-Assert
     // Act
@@ -254,13 +253,12 @@ TEST(threadRecvReportTest, unicast_report_carries_send_limit)
             *max_allowance = limit_held != 0 ? 208U : 0U;
             return limit_held;
         }); // [状態] - limit_held が 1 の間は送出上限 0x12345678 と許可数の上限 208 を返し、0 の間は送出上限がないことを返す。
-    ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
-        .WillByDefault([&](cplat_socket, const void *wire, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+    ON_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
+        .WillByDefault([&](potr_context *, int, const void *wire, size_t len, const cplat_ipv4_endpoint *,
                            cplat_error *) {
             const auto *bytes = static_cast<const uint8_t *>(wire);
             emitted.emplace_back(bytes, bytes + len);
-            *sent = len;
-            return CPLAT_OK;
+            return POTR_OK;
         }); // [状態] - 送出したワイヤーを保存する。
     // Pre-Assert
     // Act
@@ -300,12 +298,11 @@ TEST(threadRecvReportTest, ad_hoc_report_lag_threshold_and_reset_on_empty)
     ctx.src_addr_resolved[0] = cplat_hton32(0x7f000001U);
     potr_internal_tx_session_init(&ctx.tx_session);
     // [状態] - multicast 受信者で受信バッファーの幅を 10 (しきい値 5) とする。
-    ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
-        .WillByDefault([&](cplat_socket, const void *, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+    ON_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
+        .WillByDefault([&](potr_context *, int, const void *, size_t, const cplat_ipv4_endpoint *,
                            cplat_error *) {
             sendto_count++;
-            *sent = len;
-            return CPLAT_OK;
+            return POTR_OK;
         }); // [状態] - 送出回数を数える。
     // Pre-Assert
     // Act
@@ -387,7 +384,7 @@ TEST(threadRecvReportTest, ad_hoc_report_skipped_without_width_or_when_monitored
     ctx.src_addr_resolved[0] = cplat_hton32(0x7f000001U);
     potr_internal_tx_session_init(&ctx.tx_session);
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - 幅がない構成、監視対象、unicast、報告無効では一切送出しないこと。
     // Act
     ctx.flow_receive_buffer_width = 0U;
@@ -446,12 +443,11 @@ TEST(threadRecvReportTest, ad_hoc_report_interval_limit_and_adoption_exempt)
     ctx.src_addr_resolved[0] = cplat_hton32(0x7f000001U);
     potr_internal_tx_session_init(&ctx.tx_session);
     // [状態] - broadcast 受信者で幅 4 (しきい値 2)、制限間隔 200 [ms] とする。
-    ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
-        .WillByDefault([&](cplat_socket, const void *, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+    ON_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
+        .WillByDefault([&](potr_context *, int, const void *, size_t, const cplat_ipv4_endpoint *,
                            cplat_error *) {
             sendto_count++;
-            *sent = len;
-            return CPLAT_OK;
+            return POTR_OK;
         }); // [状態] - 送出回数を数える。
     // Pre-Assert
     // Act
@@ -523,13 +519,12 @@ TEST(threadRecvReportTest, ad_hoc_report_matches_periodic_format_and_preserves_n
             *max_allowance = 84U;
             return 1;
         }); // [状態] - 送出上限 0x11223344 と許可数の上限 84 を返す。
-    ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
-        .WillByDefault([&](cplat_socket, const void *wire, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+    ON_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
+        .WillByDefault([&](potr_context *, int, const void *wire, size_t len, const cplat_ipv4_endpoint *,
                            cplat_error *) {
             const auto *bytes = static_cast<const uint8_t *>(wire);
             emitted.emplace_back(bytes, bytes + len);
-            *sent = len;
-            return CPLAT_OK;
+            return POTR_OK;
         }); // [状態] - 送出したワイヤーを保存する。
     // Pre-Assert
     // Act

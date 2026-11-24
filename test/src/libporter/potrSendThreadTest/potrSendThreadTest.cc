@@ -154,10 +154,10 @@ class potrSendThreadTcpTest : public Test
             .WillByDefault(Return(POTR_ERR_EMPTY)); // [状態] - 追加のエントリはないものとする。
         ON_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
             .WillByDefault(Return(POTR_ERR_CANCELED));
-        ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(conn_fd, CPLAT_NO_WAIT, _))
-            .WillByDefault(Return(CPLAT_OK)); // [状態] - 送信バッファーに空きがあるものとする。
-        ON_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _))
-            .WillByDefault(Return(CPLAT_OK)); // [状態] - 書き込みは成功するものとする。
+        ON_CALL(mock_porter, potr_internal_tcp_check_writable(&ctx, 0))
+            .WillByDefault(Return(POTR_OK)); // [状態] - 送信バッファーに空きがあるものとする。
+        ON_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, _, _))
+            .WillByDefault(Return(POTR_OK)); // [状態] - 書き込みは成功するものとする。
     }
     // [サブ手順終了]
 
@@ -203,7 +203,7 @@ TEST_F(potrSendThreadTcpTest, announces_path_state_before_data)
         EXPECT_CALL(mock_porter, potr_internal_tcp_announce_ping_state_locked(&ctx, 0)).WillOnce(Return(POTR_OK));
         // [Pre-Assert確認_正常系] - DATA の前に path 0 の経路状態の通知を 1 回呼び出すこと。
         // [Pre-Assert手順] - 通知の成功を返す。
-        EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_OK));
+        EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, _, _)).WillOnce(Return(POTR_OK));
         // [Pre-Assert確認_正常系] - 通知の後に DATA を 1 回書き込むこと。
         // [Pre-Assert手順] - 書き込みの成功を返す。
     }
@@ -227,11 +227,11 @@ TEST_F(potrSendThreadTcpTest, announces_path_state_before_data)
 TEST_F(potrSendThreadTcpTest, full_single_path_writes_instead_of_dropping)
 {
     // Arrange
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(conn_fd, CPLAT_NO_WAIT, _))
-        .WillByDefault(Return(CPLAT_ERR_TIMEOUT)); // [状態] - 送信バッファーに空きがないものとする。
+    ON_CALL(mock_porter, potr_internal_tcp_check_writable(&ctx, 0))
+        .WillByDefault(Return(POTR_ERR_TIMEOUT)); // [状態] - 送信バッファーに空きがないものとする。
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_OK));
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, _, _)).WillOnce(Return(POTR_OK));
     // [Pre-Assert確認_正常系] - 空きを待って DATA を 1 回書き込むこと。
     // [Pre-Assert手順] - 書き込みの成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(1);
@@ -254,11 +254,9 @@ TEST_F(potrSendThreadTcpTest, write_failure_completes_entries_as_failed)
     // Arrange
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_ERR_UNKNOWN));
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, _, _)).WillOnce(Return(POTR_ERR_IO));
     // [Pre-Assert確認_異常系] - DATA の書き込みを 1 回試みること。
     // [Pre-Assert手順] - 書き込みの失敗を返す。
-    EXPECT_CALL(mock_cplat, cplat_socket_shutdown(conn_fd)).Times(1);
-    // [Pre-Assert確認_異常系] - 書き込めなかった path のソケットを停止すること。
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete_failed(&ctx.send_queue, POTR_ERR_DISCONNECTED)).Times(1);
     // [Pre-Assert確認_異常系] - 取り出した 1 件を POTR_ERR_DISCONNECTED の送信失敗として完了させること。
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(_)).Times(0);
@@ -284,10 +282,10 @@ TEST_F(potrSendThreadTcpTest, announce_failure_stops_path_without_data)
     EXPECT_CALL(mock_porter, potr_internal_tcp_announce_ping_state_locked(&ctx, 0)).WillOnce(Return(POTR_ERR_IO));
     // [Pre-Assert確認_異常系] - path 0 の経路状態の通知を 1 回呼び出すこと。
     // [Pre-Assert手順] - 通知の失敗を返す。
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(_, _, _, _, _, _)).Times(0);
     // [Pre-Assert確認_異常系] - DATA を書き込まないこと。
-    EXPECT_CALL(mock_cplat, cplat_socket_shutdown(conn_fd)).Times(1);
-    // [Pre-Assert確認_異常系] - 通知できなかった path のソケットを停止すること。
+    EXPECT_CALL(mock_porter, potr_internal_tcp_conn_request_close(&ctx, 0, 0U)).Times(1);
+    // [Pre-Assert確認_異常系] - 通知できなかった path へ閉じる要求を発行すること。
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete_failed(&ctx.send_queue, POTR_ERR_DISCONNECTED)).Times(1);
     // [Pre-Assert確認_異常系] - 取り出した 1 件を POTR_ERR_DISCONNECTED の送信失敗として完了させること。
 
@@ -410,7 +408,7 @@ TEST_F(potrSendThreadTcpTest, data_write_after_peer_fin_sets_sent_after_peer_fin
     cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_OK));
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, _, _)).WillOnce(Return(POTR_OK));
     // [Pre-Assert確認_正常系] - DATA の書き込みを 1 回行うこと。
 
     // Act
@@ -433,7 +431,7 @@ TEST_F(potrSendThreadTcpTest, data_write_before_peer_fin_keeps_sent_after_peer_f
     cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_OK));
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, _, _)).WillOnce(Return(POTR_OK));
     // [Pre-Assert確認_正常系] - DATA の書き込みを 1 回行うこと。
 
     // Act
@@ -456,7 +454,7 @@ TEST_F(potrSendThreadTcpTest, data_write_failure_keeps_sent_after_peer_fin_zero)
     cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_ERR_UNKNOWN));
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, _, _)).WillOnce(Return(POTR_ERR_IO));
     // [Pre-Assert確認_異常系] - DATA の書き込みに失敗すること。
 
     // Act
@@ -529,8 +527,8 @@ class potrSendThreadTcpBatchTest : public Test
             }); // [状態] - DATA 保持時に送信通番を進める。
         ON_CALL(mock_cplat, cplat_clock_get_realtime(_))
             .WillByDefault(Return(CPLAT_ERR_UNKNOWN)); // [状態] - 封緘結果を固定するため、実時刻の取得を失敗させる。
-        ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(conn_fd, CPLAT_NO_WAIT, _))
-            .WillByDefault(Return(CPLAT_OK)); // [状態] - path 0 の送信バッファーに空きがあるものとする。
+        ON_CALL(mock_porter, potr_internal_tcp_check_writable(&ctx, 0))
+            .WillByDefault(Return(POTR_OK)); // [状態] - path 0 の送信バッファーに空きがあるものとする。
         ON_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
             .WillByDefault([this](potr_internal_send_queue *, potr_internal_payload_elem *out, cplat_atomic_i32 *) {
                 return takeFront(out, POTR_ERR_CANCELED);
@@ -543,13 +541,13 @@ class potrSendThreadTcpBatchTest : public Test
             .WillByDefault([this](potr_internal_send_queue *, potr_internal_payload_elem *out) {
                 return peekFront(out, POTR_ERR_EMPTY);
             }); // [状態] - 模擬キューの先頭を参照する。
-        ON_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _))
-            .WillByDefault([this](cplat_socket fd, const void *buf, size_t len, cplat_error *) {
+        ON_CALL(mock_porter, potr_internal_tcp_send_all_locked(_, _, _, _, _, _))
+            .WillByDefault([this](potr_context *c, int path_idx, const void *buf, size_t len, size_t *, cplat_error *) {
                 const uint8_t *bytes = static_cast<const uint8_t *>(buf);
-                write_fds.push_back(fd);
+                write_fds.push_back(c->tcp_conn_fd[path_idx]);
                 write_bufs.push_back(buf);
                 writes.emplace_back(bytes, bytes + len);
-                return CPLAT_OK;
+                return POTR_OK;
             }); // [状態] - 書き込みを記録して成功を返す。
     }
     // [サブ手順終了]
@@ -821,11 +819,9 @@ TEST_F(potrSendThreadTcpBatchTest, batch_write_failure_completes_all_entries_as_
     addMessage(5000U, 0x70U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_ERR_UNKNOWN));
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, _, _)).WillOnce(Return(POTR_ERR_IO));
     // [Pre-Assert確認_異常系] - まとめた DATA の書き込みを 1 回試みること。
     // [Pre-Assert手順] - 書き込みの失敗を返す。
-    EXPECT_CALL(mock_cplat, cplat_socket_shutdown(conn_fd)).Times(1);
-    // [Pre-Assert確認_異常系] - 書き込めなかった path のソケットを停止すること。
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete_failed(&ctx.send_queue, POTR_ERR_DISCONNECTED)).Times(4);
     // [Pre-Assert確認_異常系] - 取り出した 4 件を POTR_ERR_DISCONNECTED の送信失敗として完了させること。
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(_)).Times(0);
@@ -854,10 +850,10 @@ TEST_F(potrSendThreadTcpBatchTest, batch_seal_failure_writes_nothing)
     // [状態] - 3 個目の封緘で送出通番が尽きるようにする。
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(_, _, _, _, _, _)).Times(0);
     // [Pre-Assert確認_異常系] - 封緘できたパケットも含めて書き込まないこと。
-    EXPECT_CALL(mock_cplat, cplat_socket_shutdown(conn_fd)).Times(1);
-    // [Pre-Assert確認_異常系] - 封緘できなかった path のソケットを停止すること。
+    EXPECT_CALL(mock_porter, potr_internal_tcp_conn_request_close(&ctx, 0, 0U)).Times(1);
+    // [Pre-Assert確認_異常系] - 封緘できなかった path へ閉じる要求を発行すること。
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete_failed(&ctx.send_queue, POTR_ERR_DISCONNECTED)).Times(4);
     // [Pre-Assert確認_異常系] - 取り出した 4 件を POTR_ERR_DISCONNECTED の送信失敗として完了させること。
     EXPECT_CALL(mock_porter, potr_internal_window_send_push(_, _)).Times(0);
@@ -884,8 +880,8 @@ TEST_F(potrSendThreadTcpBatchTest, two_paths_receive_same_packets)
     ctx.tcp_conn_fd[1] = second_fd;  // [状態] - path 1 を接続済みとする。
     cplat_atomic_store_i32(&ctx.tcp_active_paths, 2, CPLAT_MEMORY_ORDER_RELAXED);
     delegate_real_cplat_local_lock_create(&ctx.tcp_send_mutex[1]);
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(second_fd, CPLAT_NO_WAIT, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - path 1 の送信バッファーに空きがあるものとする。
+    ON_CALL(mock_porter, potr_internal_tcp_check_writable(&ctx, 1))
+        .WillByDefault(Return(POTR_OK)); // [状態] - path 1 の送信バッファーに空きがあるものとする。
     // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage]
     addMessage(5000U, 0x80U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
 
@@ -943,8 +939,8 @@ TEST_F(potrSendThreadTcpBatchTest, two_paths_full_path_is_skipped_as_before)
     ctx.tcp_conn_fd[1] = second_fd; // [状態] - path 1 を接続済みとする。
     cplat_atomic_store_i32(&ctx.tcp_active_paths, 2, CPLAT_MEMORY_ORDER_RELAXED);
     delegate_real_cplat_local_lock_create(&ctx.tcp_send_mutex[1]);
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(second_fd, CPLAT_NO_WAIT, _))
-        .WillByDefault(Return(CPLAT_ERR_TIMEOUT)); // [状態] - path 1 の送信バッファーに空きがないものとする。
+    ON_CALL(mock_porter, potr_internal_tcp_check_writable(&ctx, 1))
+        .WillByDefault(Return(POTR_ERR_TIMEOUT)); // [状態] - path 1 の送信バッファーに空きがないものとする。
     // [サブ手順参照 名前=potrSendThreadTcpBatchTest.addMessage]
     addMessage(5000U, 0x90U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
 
@@ -1314,7 +1310,7 @@ TEST_F(potrSendThreadTcpTest, idle_sender_skips_flow_control_check)
     // Pre-Assert
     EXPECT_CALL(mock_porter, potr_internal_flow_control_suppressed(_, _, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - 抑制の判定を呼び出さないこと。
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(conn_fd, _, _, _)).WillOnce(Return(CPLAT_OK));
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, _, _)).WillOnce(Return(POTR_OK));
     // [Pre-Assert確認_正常系] - DATA を 1 回書き込むこと。
     // [Pre-Assert手順] - 書き込みの成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(1);
@@ -1371,15 +1367,11 @@ TEST(potrSendThreadTest, unicast_bidir_piggybacks_send_limit_on_data)
     // [Pre-Assert確認_正常系] - 送出上限の相乗り関数を 1 回呼び出し、123 を受け取ること。
     EXPECT_CALL(mock_porter, potr_internal_flow_control_piggyback_complete(&ctx, POTR_PEER_NA, 123U, 1)).Times(1);
     // [Pre-Assert確認_正常系] - DATA 送出の成功後に相乗り上限を記録すること。
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(ctx.sock[0], _, _, _, _, _))
-        .WillOnce([&](cplat_socket, const void *buf, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(&ctx, 0, _, _, _, _))
+        .WillOnce([&](potr_context *, int, const void *buf, size_t len, const cplat_ipv4_endpoint *,
                       cplat_error *) {
             EXPECT_EQ(POTR_OK, potr_internal_packet_parse(&captured, buf, len));
-            if (sent != nullptr)
-            {
-                *sent = len;
-            }
-            return CPLAT_OK;
+            return POTR_OK;
         });
     // [Pre-Assert確認_正常系] - 送出された DATA パケットを解析できること。
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue))
@@ -1447,15 +1439,11 @@ TEST(potrSendThreadTest, unicast_bidir_n1_piggybacks_send_limit_on_data)
     // [Pre-Assert確認_正常系] - ピア 5 の送出上限 456 を取得すること。
     EXPECT_CALL(mock_porter, potr_internal_flow_control_piggyback_complete(&ctx, 5U, 456U, 1)).Times(1);
     // [Pre-Assert確認_正常系] - DATA 送出の成功後に相乗り上限を記録すること。
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(ctx.sock[0], _, _, _, _, _))
-        .WillOnce([&](cplat_socket, const void *buf, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(&ctx, 0, _, _, _, _))
+        .WillOnce([&](potr_context *, int, const void *buf, size_t len, const cplat_ipv4_endpoint *,
                       cplat_error *) {
             EXPECT_EQ(POTR_OK, potr_internal_packet_parse(&captured, buf, len));
-            if (sent != nullptr)
-            {
-                *sent = len;
-            }
-            return CPLAT_OK;
+            return POTR_OK;
         });
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue))
         .WillOnce([&](potr_internal_send_queue *) {
@@ -1514,15 +1502,11 @@ TEST(potrSendThreadTest, oneway_unicast_does_not_piggyback_send_limit)
         .WillRepeatedly(Return(POTR_ERR_CANCELED));
     EXPECT_CALL(mock_porter, potr_internal_flow_control_piggyback_limit(_, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - 片方向 unicast では相乗り関数を呼び出さないこと。
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(ctx.sock[0], _, _, _, _, _))
-        .WillOnce([&](cplat_socket, const void *buf, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(&ctx, 0, _, _, _, _))
+        .WillOnce([&](potr_context *, int, const void *buf, size_t len, const cplat_ipv4_endpoint *,
                       cplat_error *) {
             EXPECT_EQ(POTR_OK, potr_internal_packet_parse(&captured, buf, len));
-            if (sent != nullptr)
-            {
-                *sent = len;
-            }
-            return CPLAT_OK;
+            return POTR_OK;
         });
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue))
         .WillOnce([&](potr_internal_send_queue *) {
@@ -1580,7 +1564,7 @@ TEST(potrSendThreadTest, oneway_unicast_updates_data_send_time_without_health_wa
         .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
         .WillRepeatedly(Return(POTR_ERR_CANCELED));
     // [Pre-Assert手順] - 1 回目は DATA エントリを返し、以降は停止を返す。
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(ctx.sock[0], _, _, _, _, _)).WillOnce(Return(CPLAT_OK));
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(&ctx, 0, _, _, _, _)).WillOnce(Return(POTR_OK));
     // [Pre-Assert確認_正常系] - DATA を 1 回送出すること。
     // [Pre-Assert手順] - DATA の送出成功を返す。
     EXPECT_CALL(mock_porter, potr_internal_health_thread_wake(_)).Times(0);
@@ -1638,15 +1622,11 @@ TEST(potrSendThreadTest, failed_data_send_does_not_record_piggyback)
     // [Pre-Assert確認_正常系] - 送出上限の相乗り関数を 1 回呼び出し、123 を受け取ること。
     EXPECT_CALL(mock_porter, potr_internal_flow_control_piggyback_complete(&ctx, POTR_PEER_NA, 123U, 0)).Times(1);
     // [Pre-Assert確認_正常系] - DATA 送出に失敗した場合は通知を記録せず予約を解除すること。
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(ctx.sock[0], _, _, _, _, _))
-        .WillOnce([&](cplat_socket, const void *buf, size_t len, const cplat_ipv4_endpoint *, size_t *sent,
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(&ctx, 0, _, _, _, _))
+        .WillOnce([&](potr_context *, int, const void *buf, size_t len, const cplat_ipv4_endpoint *,
                       cplat_error *) {
             EXPECT_EQ(POTR_OK, potr_internal_packet_parse(&captured, buf, len));
-            if (sent != nullptr)
-            {
-                *sent = len;
-            }
-            return CPLAT_ERR_UNKNOWN;
+            return POTR_ERR_IO;
         });
     // [Pre-Assert確認_正常系] - 送出された DATA パケットを解析できること。
     EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue))
@@ -1665,4 +1645,96 @@ TEST(potrSendThreadTest, failed_data_send_does_not_record_piggyback)
     EXPECT_EQ((uint16_t)(POTR_FLAG_DATA | POTR_FLAG_SEND_LIMIT), captured.flags);
     // [確認_正常系] - DATA フラグと POTR_FLAG_SEND_LIMIT の両方が立つこと。
     EXPECT_EQ(123U, captured.ack_num); // [確認_正常系] - ack_num に送出上限 123 が載ること。
+}
+
+// 1:1 と N:1 で全経路の DATA 送信が失敗しても、last_valid_data_send_ms は変えず、flow_last_data_send_ms は更新し、時計取得失敗時は前回値を保つことの確認
+TEST(potrSendThreadTest, all_path_send_failure_updates_flow_last_send_only_and_preserves_on_clock_failure)
+{
+    // 1:1 ケース (時計成功 -> flow_last_data_send_ms 更新、last_valid_data_send_ms 不変)
+    {
+        NiceMock<Mock_cplat> mock_cplat;
+        NiceMock<Mock_porter> mock_porter;
+        potr_context ctx = {};
+        std::vector<uint8_t> wire_buf(POTR_PACKET_HEADER_SIZE + 1400U);
+        std::vector<uint8_t> crypto_buf(POTR_PACKET_HEADER_SIZE + 1400U + POTR_CRYPTO_TAG_SIZE);
+        uint8_t payload[4] = {1U, 2U, 3U, 4U};
+        potr_internal_payload_elem elem = {};
+        ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+        ctx.role = POTR_ROLE_SENDER;
+        ctx.n_path = 1;
+        ctx.sock[0] = (cplat_socket)5;
+        ctx.global.max_payload = 1400U;
+        ctx.send_wire_buf = wire_buf.data();
+        ctx.crypto_buf = crypto_buf.data();
+        ctx.crypto_buf_size = crypto_buf.size();
+        cplat_atomic_store_u64(&ctx.last_valid_data_send_ms[0], 100U, CPLAT_MEMORY_ORDER_RELAXED);
+        ctx.flow_last_data_send_ms = 200U;
+        cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELAXED);
+        elem.peer_id = POTR_PEER_NA;
+        elem.payload_len = (uint16_t)sizeof(payload);
+        elem.payload = payload;
+        ON_CALL(mock_porter, potr_internal_send_queue_peek(_, _)).WillByDefault(Return(POTR_ERR_EMPTY));
+        ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault(DoAll(SetArgPointee<0>(999U), Return(CPLAT_OK)));
+        EXPECT_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
+            .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
+            .WillRepeatedly(Return(POTR_ERR_CANCELED));
+        EXPECT_CALL(mock_porter, potr_internal_udp_sendto(&ctx, 0, _, _, _, _)).WillOnce(Return(POTR_ERR_IO));
+        EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(1);
+
+        ASSERT_EQ(POTR_OK, potr_internal_send_thread_start(&ctx));
+        potr_internal_send_thread_stop(&ctx);
+
+        EXPECT_EQ(100U, cplat_atomic_load_u64(&ctx.last_valid_data_send_ms[0], CPLAT_MEMORY_ORDER_RELAXED));
+        EXPECT_EQ(999U, ctx.flow_last_data_send_ms);
+    }
+
+    // N:1 ケース (時計成功で peer.flow_last_data_send_ms 更新、時計失敗で前回値保持)
+    {
+        NiceMock<Mock_cplat> mock_cplat;
+        NiceMock<Mock_porter> mock_porter;
+        potr_context ctx = {};
+        potr_internal_peer_context peer = {};
+        std::vector<uint8_t> wire_buf(POTR_PACKET_HEADER_SIZE + 1400U);
+        std::vector<uint8_t> crypto_buf(POTR_PACKET_HEADER_SIZE + 1400U + POTR_CRYPTO_TAG_SIZE);
+        uint8_t payload[4] = {1U, 2U, 3U, 4U};
+        potr_internal_payload_elem elem = {};
+        ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+        ctx.is_multi_peer = 1;
+        ctx.n_path = 1;
+        ctx.sock[0] = (cplat_socket)6;
+        ctx.global.max_payload = 1400U;
+        ctx.send_wire_buf = wire_buf.data();
+        ctx.crypto_buf = crypto_buf.data();
+        ctx.crypto_buf_size = crypto_buf.size();
+        delegate_real_cplat_local_lock_create(&ctx.peers_mutex);
+        delegate_real_cplat_local_lock_create(&peer.send_window_mutex);
+        peer.active = 1;
+        peer.peer_id = 5U;
+        peer.dest_addr[0].address = 0x0100007FU;
+        peer.dest_addr[0].port = cplat_hton16(9000);
+        peer.flow_last_data_send_ms = 300U;
+        elem.peer_id = 5U;
+        elem.payload_len = (uint16_t)sizeof(payload);
+        elem.payload = payload;
+        ON_CALL(mock_porter, potr_internal_send_queue_peek(_, _)).WillByDefault(Return(POTR_ERR_EMPTY));
+        ON_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 5U)).WillByDefault(Return(&peer));
+        EXPECT_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_))
+            .WillOnce(DoAll(SetArgPointee<0>(888U), Return(CPLAT_OK)))
+            .WillRepeatedly(Return(CPLAT_ERR_UNKNOWN));
+        EXPECT_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
+            .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
+            .WillOnce(DoAll(SetArgPointee<1>(elem), Return(POTR_OK)))
+            .WillRepeatedly(Return(POTR_ERR_CANCELED));
+        EXPECT_CALL(mock_porter, potr_internal_udp_sendto(&ctx, 0, _, _, _, _))
+            .Times(2)
+            .WillRepeatedly(Return(POTR_ERR_IO));
+        EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(2);
+
+        ASSERT_EQ(POTR_OK, potr_internal_send_thread_start(&ctx));
+        potr_internal_send_thread_stop(&ctx);
+
+        EXPECT_EQ(888U, peer.flow_last_data_send_ms);
+        delegate_real_cplat_local_lock_dispose(peer.send_window_mutex);
+        delegate_real_cplat_local_lock_dispose(ctx.peers_mutex);
+    }
 }

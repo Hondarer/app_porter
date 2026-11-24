@@ -165,7 +165,8 @@ TCP でどの path にも書き込めなかった場合は `POTR_ERR_DISCONNECTE
 進行中に別スレッドが同じハンドルを close すると `POTR_ERR_CANCELED` を返します。  
 回収後の send、disconnect、close は `POTR_ERR_INVALID_HANDLE` を返し、その値を新しい接続へ再利用しません。  
 TCP の FIN 待機失敗で資源回収を完了した場合は、ハンドルは終了済みです。  
-TCP 通信種別では、close 開始時に相手端の正常な FIN を受理済みの場合は FIN を送らず、相手 FIN 受理後に DATA を送信していなければ `POTR_OK`、送信していれば `POTR_ERR_DISCONNECTED` を返します。FIN_ACK 待機中に全パスが切断された場合もタイムアウトを待たずに復帰し、相手 FIN 受理済みなら受理後の DATA 送信の有無で、未受理なら現セッションの送信済みデータの有無で `POTR_OK` または `POTR_ERR_DISCONNECTED` を返します。
+TCP 通信種別では、close 開始時に `tcp_close_timeout_ms` から 1 つの絶対期限を決定し、受付済み API の通信待機の回収、送信キューの排出、FIN の送信、および FIN_ACK の待機で同じ期限を共有します (段階の移行や再試行で期限を延長しません)。期限を超過した場合は、送信キューの中断と未送信データの破棄、通信待機の解除を行い、参照とスレッドをすべて回収してから `POTR_ERR_TIMEOUT` を返します。`tcp_close_timeout_ms` が 0 の場合も、同じ期限で各待機を打ち切り、使用中の資源を回収前に解放しません。  
+TCP 通信種別で close 開始時に相手端の正常な FIN を受理済みの場合は FIN を送らず、相手 FIN 受理後に DATA を送信していなければ `POTR_OK`、送信していれば `POTR_ERR_DISCONNECTED` を返します。FIN_ACK 待機中に全パスが切断された場合もタイムアウトを待たずに復帰し、相手 FIN 受理済みなら受理後の DATA 送信の有無で、未受理なら現セッションの送信済みデータの有無で `POTR_OK` または `POTR_ERR_DISCONNECTED` を返します。
 
 通知領域と通信資源は close で回収します。  
 古いハンドルを識別する軽量な制御情報はライブラリの存続中保持するため、その保持量は累計 open 数に比例します。  

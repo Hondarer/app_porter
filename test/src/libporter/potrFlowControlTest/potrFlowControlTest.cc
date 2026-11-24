@@ -52,8 +52,8 @@ class potrFlowControlTest : public Test
     std::vector<uint8_t> states;        // フロー制御パケットの組み立てで渡された状態の履歴
     std::vector<uint32_t> limits;       // フロー制御パケットの組み立てで渡された送出上限の履歴
     std::vector<potr_peer_id> find_ids; // potr_internal_peer_find_by_id() に渡されたピア識別子の履歴
-    int sendto_count = 0;               // cplat_socket_sendto() の呼び出し回数
-    int sendto_result = CPLAT_OK;       // cplat_socket_sendto() が返す値
+    int sendto_count = 0;               // potr_internal_udp_sendto() の呼び出し回数
+    int sendto_result = POTR_OK;        // potr_internal_udp_sendto() が返す値
     cplat_ipv4_endpoint last_dest = {}; // 直近の送出先
     uint32_t last_session_id = 0U;      // 直近に組み立てたパケットのセッション識別子
     uint32_t allowance = 0U;            // suppressed が返した、送出上限までに送出できる数
@@ -96,15 +96,11 @@ class potrFlowControlTest : public Test
             *out = now_ms;
             return CPLAT_OK;
         }); // [状態] - 現在時刻を now_ms で制御する。
-        ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
-            .WillByDefault([this](cplat_socket, const void *, size_t len, const cplat_ipv4_endpoint *dest,
-                                  size_t *sent, cplat_error *) {
+        ON_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
+            .WillByDefault([this](potr_context *, int, const void *, size_t, const cplat_ipv4_endpoint *dest,
+                                  cplat_error *) {
                 sendto_count++;
                 last_dest = *dest;
-                if (sent != nullptr)
-                {
-                    *sent = len;
-                }
                 return sendto_result;
             }); // [状態] - 送出回数と宛先を記録して sendto_result (既定は成功) を返す。
         ON_CALL(mock_porter, potr_internal_packet_build_flow_control(_, _, _, _, _))
@@ -264,8 +260,8 @@ TEST_F(potrFlowControlTest, disabled_is_noop)
     ctx.flow_control = nullptr;
     // [状態] - flow_control が NULL (無効) のままにする。
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
-        .Times(0); // [Pre-Assert確認_異常系] - cplat_socket_sendto() が呼び出されないこと。
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
+        .Times(0); // [Pre-Assert確認_異常系] - potr_internal_udp_sendto() が呼び出されないこと。
     // Act
     int actual_ret_admit = admit(POTR_PEER_NA, 5000U); // [手順] - 容量を超える長さで admit を呼び出す。
     int actual_refused = refused(POTR_PEER_NA, 1U, &session_ts); // [手順] - refused を呼び出す。
@@ -1136,7 +1132,7 @@ TEST_F(potrFlowControlTest, tick_retries_first_notification_until_sent)
     ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
     // [状態] - 既定の構成で start する。
     // [状態確認] - start の戻り値が POTR_OK であること。
-    sendto_result = CPLAT_ERR_UNKNOWN; // [状態] - cplat_socket_sendto() を失敗させる。
+    sendto_result = POTR_ERR_IO; // [状態] - potr_internal_udp_sendto() を失敗させる。
     // Pre-Assert
     // Act
     received(POTR_PEER_NA, 0U, 0);                // [手順] - 次に受信する通番 0 で呼び出す (送出は失敗する)。
@@ -2326,11 +2322,11 @@ TEST_F(potrFlowControlTest, tcp_receiver_on_received_sends_resume_and_suppress_w
     ctx.tcp_conn_fd[0] = (cplat_socket)7;
     ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&ctx.tcp_send_mutex[0]));
     // [状態確認] - TCP 送信用ロックを生成できること。
-    ON_CALL(mock_cplat, cplat_socket_send_all(ctx.tcp_conn_fd[0], _, _, _))
-        .WillByDefault([&](cplat_socket, const void *, size_t, cplat_error *) {
+    ON_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, _, _))
+        .WillByDefault([&](potr_context *, int, const void *, size_t, size_t *, cplat_error *) {
             send_all_count++;
-            return CPLAT_OK;
-        }); // [状態] - TCP 経路の cplat_socket_send_all() 呼び出し回数を記録して成功を返す。
+            return POTR_OK;
+        }); // [状態] - TCP 経路の potr_internal_tcp_send_all_locked() 呼び出し回数を記録して成功を返す。
     ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
     // [状態] - 容量 1000、要求 80%、解除 60%、max_payload 100 の TCP 受信側を開始する (許可数 9)。
     // [状態確認] - start の戻り値が POTR_OK であること。
@@ -2384,11 +2380,11 @@ TEST_F(potrFlowControlTest, tcp_receiver_without_limit_sends_unlimited_once)
     ctx.tcp_conn_fd[0] = (cplat_socket)7;
     ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&ctx.tcp_send_mutex[0]));
     // [状態確認] - TCP 送信用ロックを生成できること。
-    ON_CALL(mock_cplat, cplat_socket_send_all(ctx.tcp_conn_fd[0], _, _, _))
-        .WillByDefault([&](cplat_socket, const void *, size_t, cplat_error *) {
+    ON_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, _, _))
+        .WillByDefault([&](potr_context *, int, const void *, size_t, size_t *, cplat_error *) {
             send_all_count++;
-            return CPLAT_OK;
-        }); // [状態] - TCP 経路の cplat_socket_send_all() 呼び出し回数を記録して成功を返す。
+            return POTR_OK;
+        }); // [状態] - TCP 経路の potr_internal_tcp_send_all_locked() 呼び出し回数を記録して成功を返す。
     ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
     // [状態] - 容量 0・受信バッファー上限なしの TCP 受信側を開始する。
     // [状態確認] - 上限なし通知用の資源が生成され POTR_OK を返すこと。

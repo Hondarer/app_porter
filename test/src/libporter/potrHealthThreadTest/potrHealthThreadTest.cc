@@ -286,14 +286,13 @@ TEST(potrHealthThreadTest, tcp_ping_send_failure_traces_warning)
         .WillByDefault(Return(POTR_ERR_IO)); // [状態] - potr_internal_result_from_error() から POTR_ERR_IO を返すように既定動作を設定する。
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(static_cast<cplat_socket>(7), _, _, _))
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(&ctx, 0, _, _, nullptr, _))
         .WillOnce(
-            [&](cplat_socket, const void *, size_t, cplat_error *)
+            [&](potr_context *, int, const void *, size_t, size_t *, cplat_error *)
             {
                 cplat_atomic_store_i32(&ctx.health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-                return CPLAT_ERR_UNKNOWN;
-            }); // [Pre-Assert確認_異常系] - cplat_socket_send_all() が 7 を指定して 1 回呼び出されること。
-                // [Pre-Assert手順] - ctx.health_running[0] を 0 にし、cplat_socket_send_all() から CPLAT_ERR_UNKNOWN を返す。
+                return POTR_ERR_IO;
+            }); // [Pre-Assert確認_異常系] - potr_internal_tcp_send_all_locked() が 1 回呼び出されること。
     EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
         .Times(AnyNumber()); // [Pre-Assert確認_正常系] - cplat_tracer_writef_at() が任意の回数呼び出されること。
     EXPECT_CALL(mock_cplat,
@@ -349,8 +348,8 @@ TEST(potrHealthThreadTest, tcp_ping_canceled_does_not_trace_warning)
             }); // [状態] - cplat_condvar_timed_wait() から CPLAT_ERR_TIMEOUT を返し、2 回目の待機で ctx.health_running[0] を 0 にするように既定動作を設定する。
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _))
-        .Times(0); // [Pre-Assert確認_正常系] - cplat_socket_send_all() が呼び出されないこと。
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(_, _, _, _, _, _))
+        .Times(0); // [Pre-Assert確認_正常系] - potr_internal_tcp_send_all_locked() が呼び出されないこと。
     EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _))
         .Times(AnyNumber()); // [Pre-Assert確認_正常系] - cplat_tracer_writef_at() が任意の回数呼び出されること。
     EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_WARNING, _, _))
@@ -461,8 +460,8 @@ TEST(potrHealthThreadTest, oneway_udp_wait_failure_traces_error)
     EXPECT_CALL(mock_cplat,
                 cplat_tracer_writef_at(_, CPLAT_TRACE_LEVEL_ERROR, nullptr, HasSubstr("wait failed (result=")))
         .Times(1); // [Pre-Assert確認_異常系] - cplat_tracer_writef_at() が CPLAT_TRACE_LEVEL_ERROR、nullptr、"wait failed (result=" を含む文字列を指定して 1 回呼び出されること。
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
-        .Times(0); // [Pre-Assert確認_正常系] - cplat_socket_sendto() が呼び出されないこと。(期限の前に PING を送らないことの確認)
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
+        .Times(0); // [Pre-Assert確認_正常系] - potr_internal_udp_sendto() が呼び出されないこと。(期限の前に PING を送らないことの確認)
 
     // Act
     int actual_ret = potr_internal_health_thread_start(&ctx); // [手順] - potr_internal_health_thread_start() を呼び出す。
@@ -477,4 +476,251 @@ TEST(potrHealthThreadTest, oneway_udp_wait_failure_traces_error)
         .WillByDefault(Return()); // [状態] - cplat_thread_join() が何もしないように既定動作を設定する。
     ctx.health_thread[0] = reinterpret_cast<cplat_thread *>(&entry); // [状態] - 生成済みのスレッドとして停止できるようにハンドルを設定する。
     potr_internal_health_thread_stop(&ctx);
+    if (ctx.health_wakeup[0] != nullptr)
+    {
+        delegate_real_cplat_condvar_dispose(ctx.health_wakeup[0]);
+    }
+    if (ctx.health_mutex[0] != nullptr)
+    {
+        delegate_real_cplat_local_lock_dispose(ctx.health_mutex[0]);
+    }
+}
+
+// 1:1 双方向 UDP で、経路状態読み取り後から待機開始前に届いた起床要求を保持し、周期を待たず新しい状態を送ることの確認
+// および、要求の消費後に届いた要求を送信完了時に消さず次の送信へ反映することの確認
+TEST(potrHealthThreadTest, bidir_1to1_pending_wake_preserved_across_send_and_before_wait)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.service.service_id = 20;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 1;
+    ctx.health_interval_ms = 60000;
+    ctx.sock[0] = static_cast<cplat_socket>(10);
+    ctx.dest_addr[0].address = 0x0100007FU;
+    ctx.dest_addr[0].port = 5000U;
+    cplat_atomic_store_u8(&ctx.path_ping_state[0], POTR_PING_STATE_UNDEFINED, CPLAT_MEMORY_ORDER_RELEASE);
+    delegate_real_cplat_local_lock_create(&ctx.health_mutex[0]);
+    delegate_real_cplat_condvar_create(&ctx.health_wakeup[0]);
+
+    std::promise<void> in_first_send;
+    std::promise<void> release_first_send;
+    std::promise<void> second_send_done;
+    std::shared_future<void> first_send_gate = release_first_send.get_future().share();
+    std::vector<uint8_t> sent_states;
+    std::atomic<int> send_count(0);
+
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
+    ON_CALL(mock_porter, potr_internal_udp_sendto(&ctx, 0, _, _, _, _))
+        .WillByDefault(
+            [&](potr_context *, int, const void *buf, size_t len, const cplat_ipv4_endpoint *, cplat_error *)
+            {
+                potr_packet pkt = {};
+                if (potr_internal_packet_parse(&pkt, static_cast<const uint8_t *>(buf), len) == POTR_OK &&
+                    pkt.payload != nullptr && pkt.payload_len > 0U)
+                {
+                    sent_states.push_back(pkt.payload[0]);
+                }
+                int n = ++send_count;
+                if (n == 1)
+                {
+                    /* 経路状態の読み取り後・次の待機開始前の障壁で停止する。 */
+                    in_first_send.set_value();
+                    first_send_gate.wait();
+                }
+                else if (n == 2)
+                {
+                    /* 2 回目の送信後に停止を指示する。 */
+                    cplat_atomic_store_i32(&ctx.health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                    second_send_done.set_value();
+                }
+                return POTR_OK;
+            });
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 開始時即時送信と保持された起床要求により 60 秒の周期待機へ入らないこと。
+
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_health_thread_start(&ctx));
+    ASSERT_EQ(std::future_status::ready, in_first_send.get_future().wait_for(std::chrono::seconds(5)));
+    /* 送信中 (消費後・次待機前) に状態を変更し、複数回の起床要求を集約発行する。 */
+    cplat_atomic_store_u8(&ctx.path_ping_state[0], POTR_PING_STATE_NORMAL, CPLAT_MEMORY_ORDER_RELEASE);
+    potr_internal_health_thread_wake(&ctx);
+    potr_internal_health_thread_wake(&ctx);
+    release_first_send.set_value();
+    ASSERT_EQ(std::future_status::ready, second_send_done.get_future().wait_for(std::chrono::seconds(5)));
+
+    potr_internal_health_thread_stop(&ctx);
+    /* 停止後に起床側が呼んでも、health_mutex[0] は破棄されていないため安全に復帰すること。 */
+    potr_internal_health_thread_wake(&ctx);
+
+    // Assert
+    ASSERT_EQ(2U, sent_states.size());
+    EXPECT_EQ(POTR_PING_STATE_UNDEFINED, sent_states[0]); // [確認_正常系] - 1 回目は初期状態で即時送信すること。
+    EXPECT_EQ(POTR_PING_STATE_NORMAL, sent_states[1]);    // [確認_正常系] - 2 回目は周期を待たず新状態を送ること。
+
+    // Cleanup
+    delegate_real_cplat_condvar_dispose(ctx.health_wakeup[0]);
+    delegate_real_cplat_local_lock_dispose(ctx.health_mutex[0]);
+}
+
+// N:1 双方向 UDP でも、経路状態読み取り後から待機開始前の起床要求を保持して即座に新しい状態を送ることの確認
+TEST(potrHealthThreadTest, bidir_n1_pending_wake_preserved_across_send_and_before_wait)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    potr_internal_peer_context peer = {};
+    peer.active = 1;
+    peer.peer_id = 1U;
+    peer.dest_addr[0].address = 0x0100007FU;
+    peer.dest_addr[0].port = 5001U;
+    cplat_atomic_store_u8(&peer.path_ping_state[0], POTR_PING_STATE_UNDEFINED, CPLAT_MEMORY_ORDER_RELEASE);
+
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.service.service_id = 21;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.is_multi_peer = 1;
+    ctx.n_path = 1;
+    ctx.max_peers = 1;
+    ctx.peers = &peer;
+    ctx.health_interval_ms = 60000;
+    ctx.sock[0] = static_cast<cplat_socket>(10);
+    delegate_real_cplat_local_lock_create(&ctx.peers_mutex);
+    delegate_real_cplat_local_lock_create(&ctx.health_mutex[0]);
+    delegate_real_cplat_condvar_create(&ctx.health_wakeup[0]);
+
+    std::promise<void> in_first_send;
+    std::promise<void> release_first_send;
+    std::promise<void> second_send_done;
+    std::shared_future<void> first_send_gate = release_first_send.get_future().share();
+    std::vector<uint8_t> sent_states;
+    std::atomic<int> send_count(0);
+
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
+    ON_CALL(mock_porter, potr_internal_udp_sendto(&ctx, 0, _, _, _, _))
+        .WillByDefault(
+            [&](potr_context *, int, const void *buf, size_t len, const cplat_ipv4_endpoint *, cplat_error *)
+            {
+                potr_packet pkt = {};
+                if (potr_internal_packet_parse(&pkt, static_cast<const uint8_t *>(buf), len) == POTR_OK &&
+                    pkt.payload != nullptr && pkt.payload_len > 0U)
+                {
+                    sent_states.push_back(pkt.payload[0]);
+                }
+                int n = ++send_count;
+                if (n == 1)
+                {
+                    in_first_send.set_value();
+                    first_send_gate.wait();
+                }
+                else if (n == 2)
+                {
+                    cplat_atomic_store_i32(&ctx.health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                    second_send_done.set_value();
+                }
+                return POTR_OK;
+            });
+
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_health_thread_start(&ctx));
+    ASSERT_EQ(std::future_status::ready, in_first_send.get_future().wait_for(std::chrono::seconds(5)));
+    cplat_atomic_store_u8(&peer.path_ping_state[0], POTR_PING_STATE_ABNORMAL, CPLAT_MEMORY_ORDER_RELEASE);
+    potr_internal_health_thread_wake(&ctx);
+    release_first_send.set_value();
+    ASSERT_EQ(std::future_status::ready, second_send_done.get_future().wait_for(std::chrono::seconds(5)));
+
+    potr_internal_health_thread_stop(&ctx);
+
+    // Assert
+    ASSERT_EQ(2U, sent_states.size());
+    EXPECT_EQ(POTR_PING_STATE_UNDEFINED, sent_states[0]); // [確認_正常系] - 1 回目は初期状態で即時送信すること。
+    EXPECT_EQ(POTR_PING_STATE_ABNORMAL, sent_states[1]);  // [確認_正常系] - 2 回目は周期を待たず更新状態を送ること。
+
+    // Cleanup
+    delegate_real_cplat_condvar_dispose(ctx.health_wakeup[0]);
+    delegate_real_cplat_local_lock_dispose(ctx.health_mutex[0]);
+    delegate_real_cplat_local_lock_dispose(ctx.peers_mutex);
+}
+
+// UDP PING 送信失敗時に last_ping_send_ms を更新しないこと、見せかけの起床で期限を延長しないことの確認
+TEST(potrHealthThreadTest, udp_ping_failure_preserves_last_ping_send_ms_and_spurious_wakeup_keeps_deadline)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.service.service_id = 22;
+    ctx.role = POTR_ROLE_SENDER;
+    ctx.n_path = 1;
+    ctx.health_interval_ms = 100;
+    ctx.sock[0] = static_cast<cplat_socket>(10);
+    cplat_atomic_store_u64(&ctx.last_ping_send_ms[0], 2000U, CPLAT_MEMORY_ORDER_RELAXED);
+    delegate_real_cplat_local_lock_create(&ctx.health_mutex[0]);
+    delegate_real_cplat_condvar_create(&ctx.health_wakeup[0]);
+
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    uint64_t now_ms = 2000U;
+    std::vector<int> wait_timeouts;
+
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                entry = fn;
+                entry_arg = arg;
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_))
+        .WillByDefault(
+            [&](uint64_t *out)
+            {
+                *out = now_ms;
+                return CPLAT_OK;
+            });
+    EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(ctx.health_wakeup[0], ctx.health_mutex[0], _))
+        .WillOnce(
+            [&](cplat_condvar *, cplat_local_lock *, int timeout_ms)
+            {
+                /* 見せかけの起床: 40 ms 経過して CPLAT_OK で復帰 (pending == 0)。 */
+                wait_timeouts.push_back(timeout_ms);
+                now_ms += 40U;
+                return CPLAT_OK;
+            })
+        .WillOnce(
+            [&](cplat_condvar *, cplat_local_lock *, int timeout_ms)
+            {
+                /* 残り 60 ms で期限切れ。 */
+                wait_timeouts.push_back(timeout_ms);
+                now_ms += 60U;
+                return CPLAT_ERR_TIMEOUT;
+            });
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(&ctx, 0, _, _, _, _))
+        .WillOnce(
+            [&](potr_context *, int, const void *, size_t, const cplat_ipv4_endpoint *, cplat_error *)
+            {
+                cplat_atomic_store_i32(&ctx.health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return POTR_ERR_IO;
+            });
+
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_health_thread_start(&ctx));
+    ASSERT_NE(nullptr, entry);
+    entry(entry_arg);
+
+    // Assert
+    EXPECT_EQ((std::vector<int>{100, 60}), wait_timeouts); // [確認_正常系] - 見せかけの起床で期限を延長せず残り 60 ms で待つこと。
+    EXPECT_EQ(2000U, cplat_atomic_load_u64(&ctx.last_ping_send_ms[0], CPLAT_MEMORY_ORDER_RELAXED)); // [確認_異常系] - PING 送信失敗時に last_ping_send_ms を更新しないこと。
+
+    // Cleanup
+    delegate_real_cplat_condvar_dispose(ctx.health_wakeup[0]);
+    delegate_real_cplat_local_lock_dispose(ctx.health_mutex[0]);
 }

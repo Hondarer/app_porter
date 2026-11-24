@@ -130,16 +130,12 @@ class potrFlowControlBufferTest : public Test
             *out = now_ms;
             return CPLAT_OK;
         }); // [状態] - 現在時刻を now_ms で制御する。
-        ON_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _))
-            .WillByDefault([this](cplat_socket, const void *, size_t len, const cplat_ipv4_endpoint *dest,
-                                  size_t *sent, cplat_error *) {
+        ON_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
+            .WillByDefault([this](potr_context *, int, const void *, size_t, const cplat_ipv4_endpoint *dest,
+                                  cplat_error *) {
                 sendto_count++;
                 destinations.push_back(*dest);
-                if (sent != nullptr)
-                {
-                    *sent = len;
-                }
-                return CPLAT_OK;
+                return POTR_OK;
             }); // [状態] - 送出回数と宛先を記録して成功を返す。
         ON_CALL(mock_porter, potr_internal_packet_build_flow_control(_, _, _, _, _))
             .WillByDefault([this](potr_packet *packet, const potr_internal_packet_session_hdr *, uint8_t *payload,
@@ -1016,7 +1012,7 @@ TEST_F(potrFlowControlBufferTest, receiver_updates_after_half_lifetime_idle_gap)
     ctx.flow_control_config.receive_buffer_percent = 0U;
     ctx.tcp_conn_fd[0] = 5;
     cplat_local_lock_create(&ctx.tcp_send_mutex[0]);
-    ON_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_porter, potr_internal_tcp_send_all_locked(_, _, _, _, _, _)).WillByDefault(Return(POTR_OK));
     ASSERT_EQ(POTR_OK, potr_internal_flow_control_start(&ctx));
     now_ms = 1000U;
     received(POTR_PEER_NA, 10U, 1);

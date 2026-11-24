@@ -25,7 +25,7 @@
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
+int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, uint64_t generation,
                                           const potr_internal_connected_threads_ops *ops)
 {
     int is_bidir;
@@ -50,6 +50,8 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
         {
             POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "connect_thread[service_id=%" PRId64 "]: send_thread_start failed",
                        ctx->service.service_id);
+            ops->request_close(ctx, path_idx, generation);
+            ops->release_conn(ctx, path_idx, generation);
             return result;
         }
 
@@ -62,7 +64,7 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
      */
     ops->set_path_ping_state(ctx, path_idx, POTR_PING_STATE_UNDEFINED);
 
-    /* 受信スレッドを起動する。失敗時は接続を閉じ、ここで起動した送信スレッドを停止する。 */
+    /* 受信スレッドを起動する。失敗時は閉じる要求を発行し、今回起動した送信スレッドを停止してから世代を解放する。 */
     result = ops->recv_start(ctx, path_idx);
     if (result != POTR_OK)
     {
@@ -70,17 +72,19 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
                    "connect_thread[service_id=%" PRId64 "]: potr_internal_tcp_recv_thread_start failed"
                    " (path=%d)",
                    ctx->service.service_id, path_idx);
-        ops->close_conn(ctx, path_idx);
+        ops->request_close(ctx, path_idx, generation);
 
         if (started_send_thread)
         {
             ops->send_stop(ctx);
         }
 
+        ops->release_conn(ctx, path_idx, generation);
+
         return result;
     }
 
-    /* 初回 PING (bootstrap PING) を送信する。失敗時は接続を閉じ、ここで起動したスレッドを停止する。 */
+    /* 初回 PING (bootstrap PING) を送信する。失敗時は閉じる要求、受信 join、今回起動した送信停止の後に世代を解放する。 */
     result = potr_internal_tcp_send_ping_now(ctx, path_idx);
     if (result != POTR_OK)
     {
@@ -88,8 +92,7 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
                    "connect_thread[service_id=%" PRId64 "]: bootstrap TCP PING failed"
                    " (path=%d)",
                    ctx->service.service_id, path_idx);
-        cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
-        ops->close_conn(ctx, path_idx);
+        ops->request_close(ctx, path_idx, generation);
         ops->join_recv(ctx, path_idx);
 
         if (started_send_thread)
@@ -97,10 +100,12 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
             ops->send_stop(ctx);
         }
 
+        ops->release_conn(ctx, path_idx, generation);
+
         return result;
     }
 
-    /* ヘルス スレッドを起動する。失敗時は接続を閉じ、ここで起動したスレッドを停止する。 */
+    /* ヘルス スレッドを起動する。失敗時は閉じる要求、受信 join、今回起動した送信停止の後に世代を解放する。 */
     result = ops->health_start(ctx, path_idx);
     if (result != POTR_OK)
     {
@@ -108,14 +113,15 @@ int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
                    "connect_thread[service_id=%" PRId64 "]: tcp_health_thread_start failed"
                    " (path=%d)",
                    ctx->service.service_id, path_idx);
-        cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
-        ops->close_conn(ctx, path_idx);
+        ops->request_close(ctx, path_idx, generation);
         ops->join_recv(ctx, path_idx);
 
         if (started_send_thread)
         {
             ops->send_stop(ctx);
         }
+
+        ops->release_conn(ctx, path_idx, generation);
 
         return result;
     }

@@ -88,8 +88,11 @@ TEST(apiOpenPathsTcpTest, listen)
                 *out = static_cast<cplat_socket>(7);
                 return CPLAT_OK;
             });
+    int watch_token = 0;
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_listen(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_watch_attach(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<1>(reinterpret_cast<cplat_socket_watch *>(&watch_token)), Return(CPLAT_OK)));
     // [状態] - TCP ソケットと下位操作の結果を指定する。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7))).Times(0);
@@ -139,7 +142,7 @@ TEST(apiOpenPathsTcpTest, bind_failure)
     ON_CALL(mock_cplat, cplat_socket_listen(_, _, _)).WillByDefault(Return(CPLAT_OK));
     // [状態] - TCP ソケットと下位操作の結果を指定する。
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7))).Times(1);
+    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7))).WillOnce(Return());
     // [Pre-Assert確認_異常系] - 未登録ソケットを 1 回閉じること。
 
     // Act
@@ -186,7 +189,7 @@ TEST(apiOpenPathsTcpTest, listen_failure)
     ON_CALL(mock_cplat, cplat_socket_listen(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
     // [状態] - TCP ソケットと下位操作の結果を指定する。
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7))).Times(1);
+    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7))).WillOnce(Return());
     // [Pre-Assert確認_異常系] - 未登録ソケットを 1 回閉じること。
 
     // Act
@@ -258,8 +261,11 @@ TEST(apiOpenPathsTcpTest, listen_does_not_request_udp_receive_buffer_size)
                 *out = static_cast<cplat_socket>(7);
                 return CPLAT_OK;
             });
+    int watch_token = 0;
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
     ON_CALL(mock_cplat, cplat_socket_listen(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_watch_attach(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<1>(reinterpret_cast<cplat_socket_watch *>(&watch_token)), Return(CPLAT_OK)));
     // [状態] - TCP の listen ソケット作成を成功させる。
 
     // Pre-Assert

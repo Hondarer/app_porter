@@ -22,6 +22,7 @@
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
 #include <cplat/sync/sync.h>
+#include <porter/infra/potr_socket_io.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/porter_const.h>
 #include <porter/porter_result.h>
@@ -85,7 +86,6 @@ static void slot_send_packet(thread_recv_slot *slot, const potr_packet *packet)
     }
     for (i = 0; i < count; i++)
     {
-        size_t sent = 0;
         size_t wire_len = POTR_PACKET_HEADER_SIZE + ctx->global.max_payload;
 
         if ((paths & (uint8_t)(1U << i)) == 0U ||
@@ -98,7 +98,7 @@ static void slot_send_packet(thread_recv_slot *slot, const potr_packet *packet)
             return;
         }
         /* UDP の送出は届く保証がなく、失われた NACK、REJECT、再送 DATA は相手の再要求で回復するため、戻り値は明示的に破棄する。 */
-        (void)cplat_socket_sendto(ctx->sock[i], ctx->recv_buf, wire_len, &slot->dest_addr[i], &sent, NULL);
+        (void)potr_internal_udp_sendto(ctx, i, ctx->recv_buf, wire_len, &slot->dest_addr[i], NULL);
     }
 }
 
@@ -134,7 +134,6 @@ static void slot_send_nack(thread_recv_slot *slot, uint32_t nack_seq)
     {
         cplat_ipv4_endpoint dest = {0};
         uint16_t port;
-        size_t sent = 0;
 
         if (ctx->service.src_port != 0)
         {
@@ -162,7 +161,7 @@ static void slot_send_nack(thread_recv_slot *slot, uint32_t nack_seq)
             return;
         }
         /* NACK が届かない場合は、欠番が残る間の再判定で送り直すため、戻り値は明示的に破棄する。 */
-        (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &dest, &sent, NULL);
+        (void)potr_internal_udp_sendto(ctx, i, wire_buf, wire_len, &dest, NULL);
     }
 }
 

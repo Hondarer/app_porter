@@ -12,6 +12,7 @@ extern "C"
 #include <porter/potr_peer_table.h>
 #include <porter/infra/potr_result.h>
 #include <porter/infra/potr_send_queue.h>
+#include <porter/infra/potr_socket_io.h>
 #include <porter/infra/potr_tcp_control.h>
 #include <porter/protocol/packet.h>
 #include <porter/protocol/window.h>
@@ -96,6 +97,18 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_shutdown")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_try_pop")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_wait_drained")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_wait_drained_until")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_close_deadline_publish")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_close_remaining_ms")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_conn_request_close")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_conn_request_close_all")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_conn_release")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_udp_sendto")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_send_all_locked")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_send_all")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_check_writable")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_frame_reader_reset")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_frame_reader_step")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_wait_ticket")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_ticket_result")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_send_queue_lock_push")
@@ -276,6 +289,27 @@ class Mock_porter
     MOCK_METHOD(int, potr_internal_send_queue_try_pop,
                 (potr_internal_send_queue * q, potr_internal_payload_elem *item_out));
     MOCK_METHOD(void, potr_internal_send_queue_wait_drained, (potr_internal_send_queue * q));
+    MOCK_METHOD(int, potr_internal_send_queue_wait_drained_until, (potr_internal_send_queue * q, uint64_t deadline_ms));
+    MOCK_METHOD(void, potr_internal_tcp_close_deadline_publish, (potr_context * ctx));
+    MOCK_METHOD(int, potr_internal_tcp_close_remaining_ms,
+                (const potr_context *ctx, int *has_deadline_out, int *remaining_ms_out));
+    MOCK_METHOD(void, potr_internal_tcp_conn_request_close, (potr_context * ctx, int path_idx, uint64_t generation));
+    MOCK_METHOD(void, potr_internal_tcp_conn_request_close_all, (potr_context * ctx));
+    MOCK_METHOD(void, potr_internal_tcp_conn_release, (potr_context * ctx, int path_idx, uint64_t generation));
+    MOCK_METHOD(int, potr_internal_udp_sendto,
+                (potr_context * ctx, int path_idx, const void *buf, size_t len, const cplat_ipv4_endpoint *endpoint,
+                 cplat_error *detail_out));
+    MOCK_METHOD(int, potr_internal_tcp_send_all_locked,
+                (potr_context * ctx, int path_idx, const void *buf, size_t len, size_t *sent_out,
+                 cplat_error *detail_out));
+    MOCK_METHOD(int, potr_internal_tcp_send_all,
+                (potr_context * ctx, int path_idx, const void *buf, size_t len, size_t *sent_out,
+                 cplat_error *detail_out));
+    MOCK_METHOD(int, potr_internal_tcp_check_writable, (potr_context * ctx, int path_idx));
+    MOCK_METHOD(void, potr_internal_tcp_frame_reader_reset, (potr_internal_tcp_frame_reader * reader));
+    MOCK_METHOD(int, potr_internal_tcp_frame_reader_step,
+                (potr_internal_tcp_frame_reader * reader, cplat_socket fd, uint8_t *buf, size_t max_buf,
+                 int *complete_out, cplat_error *detail_out));
     MOCK_METHOD(void, potr_internal_send_queue_wait_ticket, (potr_internal_send_queue * q, uint64_t ticket));
     MOCK_METHOD(int, potr_internal_send_queue_ticket_result, (potr_internal_send_queue * q, uint64_t first_ticket));
     MOCK_METHOD(void, potr_internal_send_queue_lock_push, (potr_internal_send_queue * q));
@@ -283,7 +317,7 @@ class Mock_porter
     MOCK_METHOD(int, potr_internal_send_thread_start, (potr_context * ctx));
     MOCK_METHOD(void, potr_internal_send_thread_stop, (potr_context * ctx));
     MOCK_METHOD(int, potr_internal_start_connected_threads,
-                (potr_context * ctx, int path_idx, const potr_internal_connected_threads_ops *ops));
+                (potr_context * ctx, int path_idx, uint64_t generation, const potr_internal_connected_threads_ops *ops));
     MOCK_METHOD(void, potr_internal_sync_service_path_state_locked,
                 (potr_context * ctx, const int *next_states, potr_internal_prepared_path_events *prepared));
     MOCK_METHOD(int, potr_internal_tcp_health_thread_start, (potr_context * ctx, int path_idx));
@@ -384,11 +418,13 @@ class Mock_porter
     MOCK_METHOD(int, api_paths_parse_ipv4, (const char *text, uint32_t *address_out));
 
     MOCK_METHOD(int, thread_connect_read_first_packet,
-                (cplat_socket fd, uint8_t *buf, size_t max_buf, size_t *len_out, int timeout_ms));
+                (cplat_socket fd, cplat_socket_watch *watch, cplat_socket_wait_cancel *cancel, uint8_t *buf,
+                 size_t max_buf, size_t *len_out, int timeout_ms));
 
     MOCK_METHOD(tcp_session_cmp, thread_connect_session_compare, (const potr_context *ctx, const potr_packet *pkt));
 
-    MOCK_METHOD(cplat_socket, thread_connect_with_timeout, (potr_context * ctx, int path_idx));
+    MOCK_METHOD(cplat_socket, thread_connect_with_timeout,
+                (potr_context * ctx, int path_idx, cplat_socket_wait_cancel *cancel, cplat_socket_watch **watch_out));
 
     MOCK_METHOD(int, thread_connect_peer_allowed,
                 (const potr_context *ctx, int path_idx, const cplat_ipv4_endpoint *peer_addr));
@@ -418,7 +454,9 @@ class Mock_porter
 
     MOCK_METHOD(int, potr_internal_certificate_key, (potr_context *ctx, const potr_internal_tx_session *session, const potr_packet *packet, int sending, uint8_t *key));
 
-    MOCK_METHOD(int, potr_internal_certificate_connect, (potr_context *ctx, cplat_socket socket, const potr_packet *first));
+    MOCK_METHOD(int, potr_internal_certificate_connect,
+                (potr_context * ctx, cplat_socket socket, cplat_socket_watch *watch, cplat_socket_wait_cancel *cancel,
+                 const potr_packet *first));
 
     // Auth mock methods
     MOCK_METHOD(int, potr_internal_auth_credentials_create,

@@ -13,11 +13,11 @@
 #include <porter/porter_result.h>
 #include <cstring>
 #include <vector>
+
 using namespace testing;
 
 TEST(threadConnectPrepareTest, session_unknown)
 {
-    // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     potr_context ctx = {};
     ctx.tcp_accepted_session_known = 0;
@@ -27,962 +27,267 @@ TEST(threadConnectPrepareTest, session_unknown)
     potr_packet pkt = {};
     pkt.session_tv_sec = 1;
     pkt.session_tv_nsec = 0;
-    pkt.session_id = 0; // [状態] - 採用済み triplet と受信 triplet を指定する。
-    // Act
-    int actual_ret = thread_connect_session_compare(&ctx, &pkt); // [手順] - 他スレッドのない状態で比較する。
-    // Assert
-    EXPECT_EQ(TCP_SESSION_NEW, actual_ret);     // [確認_正常系] - triplet の新旧を分類すること。
-    EXPECT_EQ(5u, ctx.tcp_accepted_session_id); // [確認_正常系] - 比較では採用済み状態を変更しないこと。
+    pkt.session_id = 0;
+    EXPECT_EQ(TCP_SESSION_NEW, thread_connect_session_compare(&ctx, &pkt));
+    EXPECT_EQ(5u, ctx.tcp_accepted_session_id);
 }
 
-TEST(threadConnectPrepareTest, session_new_second)
+TEST(threadConnectPrepareTest, session_new_and_old_and_same)
 {
-    // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     potr_context ctx = {};
     ctx.tcp_accepted_session_known = 1;
     ctx.tcp_accepted_session_ts.tv_sec = 10;
     ctx.tcp_accepted_session_ts.tv_nsec = 1;
     ctx.tcp_accepted_session_id = 5;
+
     potr_packet pkt = {};
     pkt.session_tv_sec = 11;
-    pkt.session_tv_nsec = 0;
-    pkt.session_id = 1; // [状態] - 採用済み triplet と受信 triplet を指定する。
-    // Act
-    int actual_ret = thread_connect_session_compare(&ctx, &pkt); // [手順] - 他スレッドのない状態で比較する。
-    // Assert
-    EXPECT_EQ(TCP_SESSION_NEW, actual_ret);     // [確認_正常系] - triplet の新旧を分類すること。
-    EXPECT_EQ(5u, ctx.tcp_accepted_session_id); // [確認_正常系] - 比較では採用済み状態を変更しないこと。
-}
+    EXPECT_EQ(TCP_SESSION_NEW, thread_connect_session_compare(&ctx, &pkt));
 
-TEST(threadConnectPrepareTest, session_old_second)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_context ctx = {};
-    ctx.tcp_accepted_session_known = 1;
-    ctx.tcp_accepted_session_ts.tv_sec = 10;
-    ctx.tcp_accepted_session_ts.tv_nsec = 1;
-    ctx.tcp_accepted_session_id = 5;
-    potr_packet pkt = {};
     pkt.session_tv_sec = 9;
-    pkt.session_tv_nsec = 0;
-    pkt.session_id = 99; // [状態] - 採用済み triplet と受信 triplet を指定する。
-    // Act
-    int actual_ret = thread_connect_session_compare(&ctx, &pkt); // [手順] - 他スレッドのない状態で比較する。
-    // Assert
-    EXPECT_EQ(TCP_SESSION_OLD, actual_ret);     // [確認_正常系] - triplet の新旧を分類すること。
-    EXPECT_EQ(5u, ctx.tcp_accepted_session_id); // [確認_正常系] - 比較では採用済み状態を変更しないこと。
-}
+    EXPECT_EQ(TCP_SESSION_OLD, thread_connect_session_compare(&ctx, &pkt));
 
-TEST(threadConnectPrepareTest, session_new_nanosecond)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_context ctx = {};
-    ctx.tcp_accepted_session_known = 1;
-    ctx.tcp_accepted_session_ts.tv_sec = 10;
-    ctx.tcp_accepted_session_ts.tv_nsec = 1;
-    ctx.tcp_accepted_session_id = 5;
-    potr_packet pkt = {};
     pkt.session_tv_sec = 10;
     pkt.session_tv_nsec = 2;
-    pkt.session_id = 1; // [状態] - 採用済み triplet と受信 triplet を指定する。
-    // Act
-    int actual_ret = thread_connect_session_compare(&ctx, &pkt); // [手順] - 他スレッドのない状態で比較する。
-    // Assert
-    EXPECT_EQ(TCP_SESSION_NEW, actual_ret);     // [確認_正常系] - triplet の新旧を分類すること。
-    EXPECT_EQ(5u, ctx.tcp_accepted_session_id); // [確認_正常系] - 比較では採用済み状態を変更しないこと。
-}
+    EXPECT_EQ(TCP_SESSION_NEW, thread_connect_session_compare(&ctx, &pkt));
 
-TEST(threadConnectPrepareTest, session_old_nanosecond)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_context ctx = {};
-    ctx.tcp_accepted_session_known = 1;
-    ctx.tcp_accepted_session_ts.tv_sec = 10;
-    ctx.tcp_accepted_session_ts.tv_nsec = 1;
-    ctx.tcp_accepted_session_id = 5;
-    potr_packet pkt = {};
-    pkt.session_tv_sec = 10;
     pkt.session_tv_nsec = 0;
-    pkt.session_id = 99; // [状態] - 採用済み triplet と受信 triplet を指定する。
-    // Act
-    int actual_ret = thread_connect_session_compare(&ctx, &pkt); // [手順] - 他スレッドのない状態で比較する。
-    // Assert
-    EXPECT_EQ(TCP_SESSION_OLD, actual_ret);     // [確認_正常系] - triplet の新旧を分類すること。
-    EXPECT_EQ(5u, ctx.tcp_accepted_session_id); // [確認_正常系] - 比較では採用済み状態を変更しないこと。
-}
+    EXPECT_EQ(TCP_SESSION_OLD, thread_connect_session_compare(&ctx, &pkt));
 
-TEST(threadConnectPrepareTest, session_new_id)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_context ctx = {};
-    ctx.tcp_accepted_session_known = 1;
-    ctx.tcp_accepted_session_ts.tv_sec = 10;
-    ctx.tcp_accepted_session_ts.tv_nsec = 1;
-    ctx.tcp_accepted_session_id = 5;
-    potr_packet pkt = {};
-    pkt.session_tv_sec = 10;
     pkt.session_tv_nsec = 1;
-    pkt.session_id = 6; // [状態] - 採用済み triplet と受信 triplet を指定する。
-    // Act
-    int actual_ret = thread_connect_session_compare(&ctx, &pkt); // [手順] - 他スレッドのない状態で比較する。
-    // Assert
-    EXPECT_EQ(TCP_SESSION_NEW, actual_ret);     // [確認_正常系] - triplet の新旧を分類すること。
-    EXPECT_EQ(5u, ctx.tcp_accepted_session_id); // [確認_正常系] - 比較では採用済み状態を変更しないこと。
+    pkt.session_id = 6;
+    EXPECT_EQ(TCP_SESSION_NEW, thread_connect_session_compare(&ctx, &pkt));
+
+    pkt.session_id = 4;
+    EXPECT_EQ(TCP_SESSION_OLD, thread_connect_session_compare(&ctx, &pkt));
+
+    pkt.session_id = 5;
+    EXPECT_EQ(TCP_SESSION_SAME, thread_connect_session_compare(&ctx, &pkt));
 }
 
-TEST(threadConnectPrepareTest, session_old_id)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_context ctx = {};
-    ctx.tcp_accepted_session_known = 1;
-    ctx.tcp_accepted_session_ts.tv_sec = 10;
-    ctx.tcp_accepted_session_ts.tv_nsec = 1;
-    ctx.tcp_accepted_session_id = 5;
-    potr_packet pkt = {};
-    pkt.session_tv_sec = 10;
-    pkt.session_tv_nsec = 1;
-    pkt.session_id = 4; // [状態] - 採用済み triplet と受信 triplet を指定する。
-    // Act
-    int actual_ret = thread_connect_session_compare(&ctx, &pkt); // [手順] - 他スレッドのない状態で比較する。
-    // Assert
-    EXPECT_EQ(TCP_SESSION_OLD, actual_ret);     // [確認_正常系] - triplet の新旧を分類すること。
-    EXPECT_EQ(5u, ctx.tcp_accepted_session_id); // [確認_正常系] - 比較では採用済み状態を変更しないこと。
-}
-
-TEST(threadConnectPrepareTest, session_same)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_context ctx = {};
-    ctx.tcp_accepted_session_known = 1;
-    ctx.tcp_accepted_session_ts.tv_sec = 10;
-    ctx.tcp_accepted_session_ts.tv_nsec = 1;
-    ctx.tcp_accepted_session_id = 5;
-    potr_packet pkt = {};
-    pkt.session_tv_sec = 10;
-    pkt.session_tv_nsec = 1;
-    pkt.session_id = 5; // [状態] - 採用済み triplet と受信 triplet を指定する。
-    // Act
-    int actual_ret = thread_connect_session_compare(&ctx, &pkt); // [手順] - 他スレッドのない状態で比較する。
-    // Assert
-    EXPECT_EQ(TCP_SESSION_SAME, actual_ret);    // [確認_正常系] - triplet の新旧を分類すること。
-    EXPECT_EQ(5u, ctx.tcp_accepted_session_id); // [確認_正常系] - 比較では採用済み状態を変更しないこと。
-}
-
-TEST(threadConnectPrepareTest, first_packet_empty)
+// 先読みで単一の絶対期限がヘッダーとペイロードを通じて延長されないことの確認
+TEST(threadConnectPrepareTest, first_packet_single_deadline_across_header_and_payload)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    cplat_socket_watch *watch = reinterpret_cast<cplat_socket_watch *>(&watch_tok);
+    cplat_socket_wait_cancel *cancel = reinterpret_cast<cplat_socket_wait_cancel *>(&cancel_tok);
     uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
-    size_t len = 999;
-    int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
+    size_t len = 999U;
+    uint64_t now_ms = 1000U;
+    std::vector<int> wait_timeouts;
+
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_))
         .WillByDefault(
-            [](cplat_socket, int, cplat_error *)
+            [&](uint64_t *out)
             {
+                *out = now_ms;
                 return CPLAT_OK;
             });
-    ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_porter, potr_internal_result_from_socket_result(_, _)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _))
-        .WillByDefault(
-            [&](cplat_socket, void *out, size_t count, cplat_error *)
-            {
-                ++reads;
-                if (reads == -1)
+
+    // Pre-Assert
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, 1U, cancel, _, _, _))
+            .WillOnce(
+                [&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int timeout_ms,
+                    unsigned char *ready, cplat_error *)
                 {
-                    return CPLAT_ERR_UNKNOWN;
-                }
-                std::memset(out, 0, count);
-                if (reads == 1)
+                    wait_timeouts.push_back(timeout_ms);
+                    now_ms += 40U;
+                    ready[0] = 1U;
+                    return CPLAT_OK;
+                });
+        EXPECT_CALL(mock_cplat, cplat_socket_recv(static_cast<cplat_socket>(7), _, _, _, _))
+            .WillOnce(
+                [](cplat_socket, void *out, size_t, size_t *recv_len, cplat_error *)
                 {
-                    uint16_t wire = delegate_real_cplat_hton16(0);
+                    std::memset(out, 0, POTR_PACKET_HEADER_SIZE);
+                    uint16_t wire = delegate_real_cplat_hton16(4U);
                     std::memcpy(static_cast<uint8_t *>(out) + 34, &wire, sizeof(wire));
-                }
-                return CPLAT_OK;
-            }); // [状態] - 待機、ヘッダー長と読み取り失敗を指定する。
+                    *recv_len = POTR_PACKET_HEADER_SIZE;
+                    return CPLAT_OK;
+                });
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, 1U, cancel, _, _, _))
+            .WillOnce(
+                [&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int timeout_ms,
+                    unsigned char *ready, cplat_error *)
+                {
+                    wait_timeouts.push_back(timeout_ms);
+                    now_ms += 30U;
+                    ready[0] = 1U;
+                    return CPLAT_OK;
+                });
+        EXPECT_CALL(mock_cplat, cplat_socket_recv(static_cast<cplat_socket>(7), _, _, _, _))
+            .WillOnce(
+                [](cplat_socket, void *out, size_t, size_t *recv_len, cplat_error *)
+                {
+                    std::memset(out, 0x5A, 4U);
+                    *recv_len = 4U;
+                    return CPLAT_OK;
+                });
+    }
+
     // Act
-    int actual_ret = thread_connect_read_first_packet(static_cast<cplat_socket>(7), buf, sizeof(buf), &len,
-                                                      100); // [手順] - 最初のパケットを読む。
+    int actual_ret = thread_connect_read_first_packet(static_cast<cplat_socket>(7), watch, cancel, buf, sizeof(buf),
+                                                      &len, 100);
+
     // Assert
-    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 受信結果を分類すること。
-    EXPECT_EQ(static_cast<size_t>(POTR_PACKET_HEADER_SIZE + 0),
-              len);      // [確認_正常系] - 成功時だけ受信長を設定すること。
-    EXPECT_EQ(1, reads); // [確認_正常系] - 必要な読み取りだけを実行すること。
+    EXPECT_EQ(POTR_OK, actual_ret);                        // [確認_正常系] - 先読みに成功すること。
+    EXPECT_EQ(static_cast<size_t>(POTR_PACKET_HEADER_SIZE + 4), len); // [確認_正常系] - 受信長が一致すること。
+    EXPECT_EQ((std::vector<int>{100, 60}), wait_timeouts); // [確認_正常系] - ヘッダー受信後も期限を延長せず 60 ms で待つこと。
 }
 
-TEST(threadConnectPrepareTest, first_packet_payload)
+// 先読みの期限超過、解除、EOF、ペイロード長超過の確認
+TEST(threadConnectPrepareTest, first_packet_timeout_cancel_eof_oversize)
 {
-    // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    cplat_socket_watch *watch = reinterpret_cast<cplat_socket_watch *>(&watch_tok);
+    cplat_socket_wait_cancel *cancel = reinterpret_cast<cplat_socket_wait_cancel *>(&cancel_tok);
     uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
-    size_t len = 999;
-    int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
-        .WillByDefault(
-            [](cplat_socket, int, cplat_error *)
+    size_t len = 999U;
+
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
+
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, 1U, cancel, 100, _, _))
+        .WillOnce(Return(CPLAT_ERR_TIMEOUT))
+        .WillOnce(Return(CPLAT_ERR_CANCELED))
+        .WillOnce(
+            [](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+               cplat_error *)
             {
+                ready[0] = 1U;
+                return CPLAT_OK;
+            })
+        .WillOnce(
+            [](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+               cplat_error *)
+            {
+                ready[0] = 1U;
                 return CPLAT_OK;
             });
-    ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_porter, potr_internal_result_from_socket_result(_, _)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _))
-        .WillByDefault(
-            [&](cplat_socket, void *out, size_t count, cplat_error *)
-            {
-                ++reads;
-                if (reads == -1)
-                {
-                    return CPLAT_ERR_UNKNOWN;
-                }
-                std::memset(out, 0, count);
-                if (reads == 1)
-                {
-                    uint16_t wire = delegate_real_cplat_hton16(4);
-                    std::memcpy(static_cast<uint8_t *>(out) + 34, &wire, sizeof(wire));
-                }
-                return CPLAT_OK;
-            }); // [状態] - 待機、ヘッダー長と読み取り失敗を指定する。
-    // Act
-    int actual_ret = thread_connect_read_first_packet(static_cast<cplat_socket>(7), buf, sizeof(buf), &len,
-                                                      100); // [手順] - 最初のパケットを読む。
-    // Assert
-    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 受信結果を分類すること。
-    EXPECT_EQ(static_cast<size_t>(POTR_PACKET_HEADER_SIZE + 4),
-              len);      // [確認_正常系] - 成功時だけ受信長を設定すること。
-    EXPECT_EQ(2, reads); // [確認_正常系] - 必要な読み取りだけを実行すること。
-}
 
-TEST(threadConnectPrepareTest, first_packet_timeout)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
-    size_t len = 999;
-    int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
-        .WillByDefault(
-            [](cplat_socket, int, cplat_error *)
+    EXPECT_CALL(mock_cplat, cplat_socket_recv(_, _, _, _, _))
+        .WillOnce(Return(CPLAT_ERR_EOF))
+        .WillOnce(
+            [](cplat_socket, void *out, size_t, size_t *recv_len, cplat_error *)
             {
-                return CPLAT_ERR_TIMEOUT;
-            });
-    ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_porter, potr_internal_result_from_socket_result(_, _)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _))
-        .WillByDefault(
-            [&](cplat_socket, void *out, size_t count, cplat_error *)
-            {
-                ++reads;
-                if (reads == -1)
-                {
-                    return CPLAT_ERR_UNKNOWN;
-                }
-                std::memset(out, 0, count);
-                if (reads == 1)
-                {
-                    uint16_t wire = delegate_real_cplat_hton16(0);
-                    std::memcpy(static_cast<uint8_t *>(out) + 34, &wire, sizeof(wire));
-                }
-                return CPLAT_OK;
-            }); // [状態] - 待機、ヘッダー長と読み取り失敗を指定する。
-    // Act
-    int actual_ret = thread_connect_read_first_packet(static_cast<cplat_socket>(7), buf, sizeof(buf), &len,
-                                                      100); // [手順] - 最初のパケットを読む。
-    // Assert
-    EXPECT_EQ(POTR_ERR_TIMEOUT, actual_ret); // [確認_異常系] - 受信結果を分類すること。
-    EXPECT_EQ(999u, len);                    // [確認_異常系] - 成功時だけ受信長を設定すること。
-    EXPECT_EQ(0, reads);                     // [確認_正常系] - 必要な読み取りだけを実行すること。
-}
-
-TEST(threadConnectPrepareTest, first_packet_wait_error)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
-    size_t len = 999;
-    int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
-        .WillByDefault(
-            [](cplat_socket, int, cplat_error *)
-            {
-                return CPLAT_ERR_UNKNOWN;
-            });
-    ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_porter, potr_internal_result_from_socket_result(_, _)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _))
-        .WillByDefault(
-            [&](cplat_socket, void *out, size_t count, cplat_error *)
-            {
-                ++reads;
-                if (reads == -1)
-                {
-                    return CPLAT_ERR_UNKNOWN;
-                }
-                std::memset(out, 0, count);
-                if (reads == 1)
-                {
-                    uint16_t wire = delegate_real_cplat_hton16(0);
-                    std::memcpy(static_cast<uint8_t *>(out) + 34, &wire, sizeof(wire));
-                }
-                return CPLAT_OK;
-            }); // [状態] - 待機、ヘッダー長と読み取り失敗を指定する。
-    // Act
-    int actual_ret = thread_connect_read_first_packet(static_cast<cplat_socket>(7), buf, sizeof(buf), &len,
-                                                      100); // [手順] - 最初のパケットを読む。
-    // Assert
-    EXPECT_EQ(POTR_ERR_IO, actual_ret); // [確認_異常系] - 受信結果を分類すること。
-    EXPECT_EQ(999u, len);               // [確認_異常系] - 成功時だけ受信長を設定すること。
-    EXPECT_EQ(0, reads);                // [確認_正常系] - 必要な読み取りだけを実行すること。
-}
-
-TEST(threadConnectPrepareTest, first_packet_header_eof)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
-    size_t len = 999;
-    int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
-        .WillByDefault(
-            [](cplat_socket, int, cplat_error *)
-            {
+                std::memset(out, 0, POTR_PACKET_HEADER_SIZE);
+                uint16_t wire = delegate_real_cplat_hton16(5U);
+                std::memcpy(static_cast<uint8_t *>(out) + 34, &wire, sizeof(wire));
+                *recv_len = POTR_PACKET_HEADER_SIZE;
                 return CPLAT_OK;
             });
-    ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_porter, potr_internal_result_from_socket_result(_, _)).WillByDefault(Return(POTR_ERR_EOF));
-    ON_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _))
-        .WillByDefault(
-            [&](cplat_socket, void *out, size_t count, cplat_error *)
-            {
-                ++reads;
-                if (reads == 1)
-                {
-                    return CPLAT_ERR_UNKNOWN;
-                }
-                std::memset(out, 0, count);
-                if (reads == 1)
-                {
-                    uint16_t wire = delegate_real_cplat_hton16(0);
-                    std::memcpy(static_cast<uint8_t *>(out) + 34, &wire, sizeof(wire));
-                }
-                return CPLAT_OK;
-            }); // [状態] - 待機、ヘッダー長と読み取り失敗を指定する。
-    // Act
-    int actual_ret = thread_connect_read_first_packet(static_cast<cplat_socket>(7), buf, sizeof(buf), &len,
-                                                      100); // [手順] - 最初のパケットを読む。
-    // Assert
-    EXPECT_EQ(POTR_ERR_EOF, actual_ret); // [確認_異常系] - 受信結果を分類すること。
-    EXPECT_EQ(999u, len);                // [確認_異常系] - 成功時だけ受信長を設定すること。
-    EXPECT_EQ(1, reads);                 // [確認_正常系] - 必要な読み取りだけを実行すること。
+
+    EXPECT_EQ(POTR_ERR_TIMEOUT,
+              thread_connect_read_first_packet(static_cast<cplat_socket>(7), watch, cancel, buf, sizeof(buf), &len, 100));
+    EXPECT_EQ(POTR_ERR_CANCELED,
+              thread_connect_read_first_packet(static_cast<cplat_socket>(7), watch, cancel, buf, sizeof(buf), &len, 100));
+    EXPECT_EQ(POTR_ERR_EOF,
+              thread_connect_read_first_packet(static_cast<cplat_socket>(7), watch, cancel, buf, sizeof(buf), &len, 100));
+    EXPECT_EQ(POTR_ERR_PROTOCOL,
+              thread_connect_read_first_packet(static_cast<cplat_socket>(7), watch, cancel, buf, sizeof(buf), &len, 100));
+    EXPECT_EQ(999U, len);
 }
 
-TEST(threadConnectPrepareTest, first_packet_payload_error)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
-    size_t len = 999;
-    int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
-        .WillByDefault(
-            [](cplat_socket, int, cplat_error *)
-            {
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_porter, potr_internal_result_from_socket_result(_, _)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _))
-        .WillByDefault(
-            [&](cplat_socket, void *out, size_t count, cplat_error *)
-            {
-                ++reads;
-                if (reads == 2)
-                {
-                    return CPLAT_ERR_UNKNOWN;
-                }
-                std::memset(out, 0, count);
-                if (reads == 1)
-                {
-                    uint16_t wire = delegate_real_cplat_hton16(4);
-                    std::memcpy(static_cast<uint8_t *>(out) + 34, &wire, sizeof(wire));
-                }
-                return CPLAT_OK;
-            }); // [状態] - 待機、ヘッダー長と読み取り失敗を指定する。
-    // Act
-    int actual_ret = thread_connect_read_first_packet(static_cast<cplat_socket>(7), buf, sizeof(buf), &len,
-                                                      100); // [手順] - 最初のパケットを読む。
-    // Assert
-    EXPECT_EQ(POTR_ERR_IO, actual_ret); // [確認_異常系] - 受信結果を分類すること。
-    EXPECT_EQ(999u, len);               // [確認_異常系] - 成功時だけ受信長を設定すること。
-    EXPECT_EQ(2, reads);                // [確認_正常系] - 必要な読み取りだけを実行すること。
-}
-
-TEST(threadConnectPrepareTest, first_packet_oversize)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    uint8_t buf[POTR_PACKET_HEADER_SIZE + 4] = {};
-    size_t len = 999;
-    int reads = 0;
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable(_, _, _))
-        .WillByDefault(
-            [](cplat_socket, int, cplat_error *)
-            {
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_porter, potr_internal_result_from_error(_)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_porter, potr_internal_result_from_socket_result(_, _)).WillByDefault(Return(POTR_ERR_IO));
-    ON_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _))
-        .WillByDefault(
-            [&](cplat_socket, void *out, size_t count, cplat_error *)
-            {
-                ++reads;
-                if (reads == -1)
-                {
-                    return CPLAT_ERR_UNKNOWN;
-                }
-                std::memset(out, 0, count);
-                if (reads == 1)
-                {
-                    uint16_t wire = delegate_real_cplat_hton16(5);
-                    std::memcpy(static_cast<uint8_t *>(out) + 34, &wire, sizeof(wire));
-                }
-                return CPLAT_OK;
-            }); // [状態] - 待機、ヘッダー長と読み取り失敗を指定する。
-    // Act
-    int actual_ret = thread_connect_read_first_packet(static_cast<cplat_socket>(7), buf, sizeof(buf), &len,
-                                                      100); // [手順] - 最初のパケットを読む。
-    // Assert
-    EXPECT_EQ(POTR_ERR_PROTOCOL, actual_ret); // [確認_異常系] - 受信結果を分類すること。
-    EXPECT_EQ(999u, len);                     // [確認_異常系] - 成功時だけ受信長を設定すること。
-    EXPECT_EQ(1, reads);                      // [確認_正常系] - 必要な読み取りだけを実行すること。
-}
-
-TEST(threadConnectPrepareTest, connect_open_failure)
+// connect_timeout_ms == 0 が CPLAT_WAIT_FOREVER として cplat_socket_watch_connect() へ渡されることの確認
+TEST(threadConnectPrepareTest, connect_zero_timeout_uses_wait_forever)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 0;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    std::vector<int> waits;
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_ERR_UNKNOWN;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(
-            [&](cplat_socket, int timeout, cplat_error *)
-            {
-                waits.push_back(timeout);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
-    // [状態] - 接続の段階と停止フラグを指定する。
+    ctx.service.connect_timeout_ms = 0U;
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    cplat_socket_watch *expected_watch = reinterpret_cast<cplat_socket_watch *>(&watch_tok);
+    cplat_socket_wait_cancel *cancel = reinterpret_cast<cplat_socket_wait_cancel *>(&cancel_tok);
+    cplat_socket_watch *watch_out = nullptr;
+
+    ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_TCP, _, _))
+        .WillByDefault(DoAll(SetArgPointee<1>(static_cast<cplat_socket>(7)), Return(CPLAT_OK)));
+    ON_CALL(mock_cplat, cplat_socket_set_nodelay(_, 1, _)).WillByDefault(Return(CPLAT_OK));
+
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(0); // [Pre-Assert確認_異常系] - 生成済み失敗ソケットだけを閉じること。
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_attach(static_cast<cplat_socket>(7), _, _))
+            .WillOnce(DoAll(SetArgPointee<1>(expected_watch), Return(CPLAT_OK)));
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_connect(expected_watch, _, cancel, CPLAT_WAIT_FOREVER, _))
+            .WillOnce(Return(CPLAT_OK));
+    }
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_detach(_)).Times(0);
+    EXPECT_CALL(mock_cplat, cplat_socket_close(_)).Times(0);
+
     // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
+    cplat_socket fd = thread_connect_with_timeout(&ctx, 0, cancel, &watch_out);
+
     // Assert
-    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - 成功時だけ所有権を返すこと。
+    EXPECT_EQ(static_cast<cplat_socket>(7), fd); // [確認_正常系] - 接続済みソケットを返すこと。
+    EXPECT_EQ(expected_watch, watch_out);        // [確認_正常系] - 登録済み watch を返すこと。
 }
 
-TEST(threadConnectPrepareTest, connect_bind_failure)
+// watch_connect の期限超過・解除・拒否で watch_detach -> socket_close の順に回収することの確認
+TEST(threadConnectPrepareTest, connect_timeout_cancel_refused_detach_then_close)
 {
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 123;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    std::vector<int> waits;
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(
-            [&](cplat_socket, int timeout, cplat_error *)
-            {
-                waits.push_back(timeout);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
-    // [状態] - 接続の段階と停止フラグを指定する。
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(1); // [Pre-Assert確認_異常系] - 生成済み失敗ソケットだけを閉じること。
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
-    // Assert
-    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - 成功時だけ所有権を返すこと。
+    const int results[3] = {CPLAT_ERR_TIMEOUT, CPLAT_ERR_CANCELED, CPLAT_ERR_UNKNOWN};
+
+    for (int i = 0; i < 3; i++)
+    {
+        NiceMock<Mock_cplat> mock_cplat;
+        NiceMock<Mock_porter> mock_porter;
+        potr_context ctx = {};
+        ctx.service.connect_timeout_ms = 250U;
+        int watch_tok = 0;
+        int cancel_tok = 0;
+        cplat_socket_watch *expected_watch = reinterpret_cast<cplat_socket_watch *>(&watch_tok);
+        cplat_socket_wait_cancel *cancel = reinterpret_cast<cplat_socket_wait_cancel *>(&cancel_tok);
+        cplat_socket_watch *watch_out = expected_watch;
+
+        ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_TCP, _, _))
+            .WillByDefault(DoAll(SetArgPointee<1>(static_cast<cplat_socket>(7)), Return(CPLAT_OK)));
+        ON_CALL(mock_cplat, cplat_socket_set_nodelay(_, 1, _)).WillByDefault(Return(CPLAT_OK));
+
+        {
+            InSequence seq;
+            EXPECT_CALL(mock_cplat, cplat_socket_watch_attach(static_cast<cplat_socket>(7), _, _))
+                .WillOnce(DoAll(SetArgPointee<1>(expected_watch), Return(CPLAT_OK)));
+            EXPECT_CALL(mock_cplat, cplat_socket_watch_connect(expected_watch, _, cancel, 250, _))
+                .WillOnce(Return(results[i]));
+            EXPECT_CALL(mock_cplat, cplat_socket_watch_detach(expected_watch)).WillOnce(Return());
+            EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7))).WillOnce(Return());
+        }
+
+        cplat_socket fd = thread_connect_with_timeout(&ctx, 0, cancel, &watch_out);
+        EXPECT_EQ(CPLAT_INVALID_SOCKET, fd);
+        EXPECT_EQ(nullptr, watch_out);
+    }
 }
 
-TEST(threadConnectPrepareTest, connect_blocking_failure)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 0;
-    ctx.service.src_port = 0;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    std::vector<int> waits;
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(
-            [&](cplat_socket, int timeout, cplat_error *)
-            {
-                waits.push_back(timeout);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
-    // [状態] - 接続の段階と停止フラグを指定する。
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(1); // [Pre-Assert確認_異常系] - 生成済み失敗ソケットだけを閉じること。
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
-    // Assert
-    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - 成功時だけ所有権を返すこと。
-}
-
-TEST(threadConnectPrepareTest, connect_blocking_success)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 0;
-    ctx.service.src_port = 0;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    std::vector<int> waits;
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(
-            [&](cplat_socket, int timeout, cplat_error *)
-            {
-                waits.push_back(timeout);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
-    // [状態] - 接続の段階と停止フラグを指定する。
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(0); // [Pre-Assert確認_正常系] - 生成済み失敗ソケットだけを閉じること。
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
-    // Assert
-    EXPECT_EQ(static_cast<cplat_socket>(7), actual_ret); // [確認_正常系] - 成功時だけ所有権を返すこと。
-}
-
-TEST(threadConnectPrepareTest, connect_immediate_success)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 0;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    std::vector<int> waits;
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(
-            [&](cplat_socket, int timeout, cplat_error *)
-            {
-                waits.push_back(timeout);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
-    // [状態] - 接続の段階と停止フラグを指定する。
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(0); // [Pre-Assert確認_正常系] - 生成済み失敗ソケットだけを閉じること。
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
-    // Assert
-    EXPECT_EQ(static_cast<cplat_socket>(7), actual_ret); // [確認_正常系] - 成功時だけ所有権を返すこと。
-}
-
-TEST(threadConnectPrepareTest, connect_connect_failure)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 0;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    std::vector<int> waits;
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(
-            [&](cplat_socket, int timeout, cplat_error *)
-            {
-                waits.push_back(timeout);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
-    // [状態] - 接続の段階と停止フラグを指定する。
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(1); // [Pre-Assert確認_異常系] - 生成済み失敗ソケットだけを閉じること。
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
-    // Assert
-    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - 成功時だけ所有権を返すこと。
-}
-
-TEST(threadConnectPrepareTest, connect_deadline)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 0;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    std::vector<int> waits;
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_IN_PROGRESS));
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(
-            [&](cplat_socket, int timeout, cplat_error *)
-            {
-                waits.push_back(timeout);
-                return CPLAT_ERR_TIMEOUT;
-            });
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
-    // [状態] - 接続の段階と停止フラグを指定する。
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(1); // [Pre-Assert確認_異常系] - 生成済み失敗ソケットだけを閉じること。
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
-    // Assert
-    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret);        // [確認_異常系] - 成功時だけ所有権を返すこと。
-    EXPECT_EQ((std::vector<int>{100, 100, 50}), waits); // [確認_異常系] - 期限まで 100、100、50 ms の順に待つこと。
-}
-
-TEST(threadConnectPrepareTest, connect_stopped)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 0;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-    std::vector<int> waits;
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_IN_PROGRESS));
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(
-            [&](cplat_socket, int timeout, cplat_error *)
-            {
-                waits.push_back(timeout);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
-    // [状態] - 接続の段階と停止フラグを指定する。
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(1); // [Pre-Assert確認_異常系] - 生成済み失敗ソケットだけを閉じること。
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
-    // Assert
-    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - 成功時だけ所有権を返すこと。
-    EXPECT_TRUE(waits.empty());                  // [確認_異常系] - 停止要求時は待機しないこと。
-}
-
-TEST(threadConnectPrepareTest, connect_wait_failure)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 0;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    std::vector<int> waits;
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_IN_PROGRESS));
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(
-            [&](cplat_socket, int timeout, cplat_error *)
-            {
-                waits.push_back(timeout);
-                return CPLAT_ERR_UNKNOWN;
-            });
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
-    // [状態] - 接続の段階と停止フラグを指定する。
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(1); // [Pre-Assert確認_異常系] - 生成済み失敗ソケットだけを閉じること。
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
-    // Assert
-    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - 成功時だけ所有権を返すこと。
-}
-
-TEST(threadConnectPrepareTest, connect_pending_failure)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 0;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    std::vector<int> waits;
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_IN_PROGRESS));
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(
-            [&](cplat_socket, int timeout, cplat_error *)
-            {
-                waits.push_back(timeout);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
-    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
-    // [状態] - 接続の段階と停止フラグを指定する。
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(1); // [Pre-Assert確認_異常系] - 生成済み失敗ソケットだけを閉じること。
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
-    // Assert
-    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - 成功時だけ所有権を返すこと。
-}
-
-TEST(threadConnectPrepareTest, connect_poll_success)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 0;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    std::vector<int> waits;
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_ERR_IN_PROGRESS));
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(
-            [&](cplat_socket, int timeout, cplat_error *)
-            {
-                waits.push_back(timeout);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_set_nonblocking(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nonblocking() から CPLAT_OK を返すように既定動作を設定する。
-    // [状態] - 接続の段階と停止フラグを指定する。
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(0); // [Pre-Assert確認_正常系] - 生成済み失敗ソケットだけを閉じること。
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
-    // Assert
-    EXPECT_EQ(static_cast<cplat_socket>(7), actual_ret); // [確認_正常系] - 成功時だけ所有権を返すこと。
-}
-
-TEST(threadConnectPrepareTest, source_unrestricted)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_context ctx = {};
-    ctx.service.src_addr[0][0] = 0;
-    ctx.src_addr_resolved[0] = 42;
-    ctx.service.src_port = 0;
-    cplat_ipv4_endpoint peer = {};
-    peer.address = 2;
-    peer.port = delegate_real_cplat_hton16(200); // [状態] - 接続元と照合条件を指定する。
-    // Act
-    int actual_ret = thread_connect_peer_allowed(&ctx, 0, &peer); // [手順] - 接続元を照合する。
-    // Assert
-    EXPECT_EQ(1, actual_ret); // [確認_正常系] - 設定された条件で採用可否を返すこと。
-}
-
-TEST(threadConnectPrepareTest, source_match)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_context ctx = {};
-    ctx.service.src_addr[0][0] = 1;
-    ctx.src_addr_resolved[0] = 42;
-    ctx.service.src_port = 123;
-    cplat_ipv4_endpoint peer = {};
-    peer.address = 42;
-    peer.port = delegate_real_cplat_hton16(123); // [状態] - 接続元と照合条件を指定する。
-    // Act
-    int actual_ret = thread_connect_peer_allowed(&ctx, 0, &peer); // [手順] - 接続元を照合する。
-    // Assert
-    EXPECT_EQ(1, actual_ret); // [確認_正常系] - 設定された条件で採用可否を返すこと。
-}
-
-TEST(threadConnectPrepareTest, source_address_mismatch)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_context ctx = {};
-    ctx.service.src_addr[0][0] = 1;
-    ctx.src_addr_resolved[0] = 42;
-    ctx.service.src_port = 123;
-    cplat_ipv4_endpoint peer = {};
-    peer.address = 9;
-    peer.port = delegate_real_cplat_hton16(123); // [状態] - 接続元と照合条件を指定する。
-    // Act
-    int actual_ret = thread_connect_peer_allowed(&ctx, 0, &peer); // [手順] - 接続元を照合する。
-    // Assert
-    EXPECT_EQ(0, actual_ret); // [確認_正常系] - 設定された条件で採用可否を返すこと。
-}
-
-TEST(threadConnectPrepareTest, source_port_mismatch)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    potr_context ctx = {};
-    ctx.service.src_addr[0][0] = 1;
-    ctx.src_addr_resolved[0] = 42;
-    ctx.service.src_port = 123;
-    cplat_ipv4_endpoint peer = {};
-    peer.address = 42;
-    peer.port = delegate_real_cplat_hton16(200); // [状態] - 接続元と照合条件を指定する。
-    // Act
-    int actual_ret = thread_connect_peer_allowed(&ctx, 0, &peer); // [手順] - 接続元を照合する。
-    // Assert
-    EXPECT_EQ(0, actual_ret); // [確認_正常系] - 設定された条件で採用可否を返すこと。
-}
-
-// TCP と TCP_BIDIR の接続、および再接続が同じ準備関数を使うことの確認
+// TCP_NODELAY 失敗後も接続を継続することの確認
 TEST(threadConnectPrepareTest, connect_nodelay_failure_continues)
 {
-    // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 0;
-    ctx.service.src_port = 0;
+    ctx.service.connect_timeout_ms = 0U;
     ctx.service.service_id = 11;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    cplat_socket_watch *expected_watch = reinterpret_cast<cplat_socket_watch *>(&watch_tok);
+    cplat_socket_wait_cancel *cancel = reinterpret_cast<cplat_socket_wait_cancel *>(&cancel_tok);
+    cplat_socket_watch *watch_out = nullptr;
+
     ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    // [状態] - ブロッキング接続と、接続前の TCP_NODELAY 失敗を指定する。
-    // Pre-Assert
+        .WillByDefault(DoAll(SetArgPointee<1>(static_cast<cplat_socket>(7)), Return(CPLAT_OK)));
+
     cplat_error nodelay_failure = {};
     nodelay_failure.result = CPLAT_ERR_UNKNOWN;
 #if defined(PLATFORM_LINUX)
@@ -996,223 +301,70 @@ TEST(threadConnectPrepareTest, connect_nodelay_failure_continues)
         InSequence order;
         EXPECT_CALL(mock_cplat, cplat_socket_set_nodelay(static_cast<cplat_socket>(7), 1, _))
             .WillOnce(DoAll(SetArgPointee<2>(nodelay_failure), Return(CPLAT_ERR_UNKNOWN)));
-        // [Pre-Assert確認_異常系] - 接続の前に TCP_NODELAY の有効化を 1 回要求すること。
-        // [Pre-Assert手順] - detail_out へ、Linux は SOCKET_ERRNO と ENOPROTOOPT、Windows は WINSOCK と WSAENOPROTOOPT、結果は CPLAT_ERR_UNKNOWN を書き、CPLAT_ERR_UNKNOWN を返す。
-        EXPECT_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillOnce(Return(CPLAT_OK));
-        // [Pre-Assert確認_正常系] - TCP_NODELAY の失敗後も接続を続けること。
-        // [Pre-Assert手順] - 接続成功を返す。
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_attach(static_cast<cplat_socket>(7), _, _))
+            .WillOnce(DoAll(SetArgPointee<1>(expected_watch), Return(CPLAT_OK)));
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_connect(expected_watch, _, cancel, CPLAT_WAIT_FOREVER, _))
+            .WillOnce(Return(CPLAT_OK));
     }
     EXPECT_CALL(mock_cplat, cplat_socket_close(_)).Times(0);
-    // [Pre-Assert確認_正常系] - 設定失敗ではソケットを閉じないこと。
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - 接続を試す。
-    // Assert
-    EXPECT_EQ(static_cast<cplat_socket>(7), actual_ret); // [確認_正常系] - 成功したソケットの所有権を返すこと。
+
+    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0, cancel, &watch_out);
+    EXPECT_EQ(static_cast<cplat_socket>(7), actual_ret);
+    EXPECT_EQ(expected_watch, watch_out);
 }
 
-// 非ブロッキングへの切り替えに失敗した場合に、接続せずにソケットを閉じて失敗を返すことの確認
-TEST(threadConnectPrepareTest, connect_set_nonblocking_failure)
+// src_port=0 では reuse_address を呼ばず、固定 src_port では呼ぶことの確認
+TEST(threadConnectPrepareTest, connect_reuse_address_follows_src_port)
 {
-    // Arrange
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 0;
-    ctx.service.service_id = 11;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            }); // [状態] - cplat_socket_open() から、7 を出力して CPLAT_OK を返すように既定動作を設定する。
-    ON_CALL(mock_cplat, cplat_socket_set_nodelay(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nodelay() から CPLAT_OK を返すように既定動作を設定する。
-    // [状態] - タイムアウト付き接続と、ソケットの生成の成功を指定する。
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    cplat_socket_watch *expected_watch = reinterpret_cast<cplat_socket_watch *>(&watch_tok);
+    cplat_socket_wait_cancel *cancel = reinterpret_cast<cplat_socket_wait_cancel *>(&cancel_tok);
+    cplat_socket_watch *watch_out = nullptr;
 
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_set_nonblocking(static_cast<cplat_socket>(7), 1, _))
-        .WillOnce(Return(CPLAT_ERR_UNKNOWN)); // [Pre-Assert確認_異常系] - cplat_socket_set_nonblocking() が 7、1 を指定して 1 回呼び出されること。
-                                              // [Pre-Assert手順] - cplat_socket_set_nonblocking() から CPLAT_ERR_UNKNOWN を返す。
-    EXPECT_CALL(mock_cplat, cplat_socket_connect(_, _, _))
-        .Times(0); // [Pre-Assert確認_異常系] - cplat_socket_connect() が呼び出されないこと。
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(1); // [Pre-Assert確認_異常系] - cplat_socket_close() が 7 を指定して 1 回呼び出されること。
-    EXPECT_CALL(mock_porter, potr_internal_trace_socket_failure_at(_, _, CPLAT_TRACE_LEVEL_ERROR, _,
-                                                                   HasSubstr("set_nonblocking failed")))
-        .Times(1); // [Pre-Assert確認_異常系] - potr_internal_trace_socket_failure_at() が CPLAT_TRACE_LEVEL_ERROR、"set_nonblocking failed" を含む文字列を指定して 1 回呼び出されること。
-
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - thread_connect_with_timeout() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - thread_connect_with_timeout() の戻り値が CPLAT_INVALID_SOCKET であること。
-}
-
-// 即時の接続の成功の後にブロッキングへ戻せない場合に、ソケットを閉じて失敗を返すことの確認
-TEST(threadConnectPrepareTest, connect_immediate_set_blocking_failure)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 0;
-    ctx.service.service_id = 11;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            }); // [状態] - cplat_socket_open() から、7 を出力して CPLAT_OK を返すように既定動作を設定する。
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_connect() から CPLAT_OK を返すように既定動作を設定する。
-    ON_CALL(mock_cplat, cplat_socket_set_nodelay(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nodelay() から CPLAT_OK を返すように既定動作を設定する。
-    // [状態] - タイムアウト付き接続と、即時の接続の成功を指定する。
-
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_set_nonblocking(static_cast<cplat_socket>(7), 1, _))
-        .WillOnce(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - cplat_socket_set_nonblocking() が 7、1 を指定して 1 回呼び出されること。
-                                     // [Pre-Assert手順] - cplat_socket_set_nonblocking() から CPLAT_OK を返す。
-    EXPECT_CALL(mock_cplat, cplat_socket_set_nonblocking(static_cast<cplat_socket>(7), 0, _))
-        .WillOnce(Return(CPLAT_ERR_UNKNOWN)); // [Pre-Assert確認_異常系] - cplat_socket_set_nonblocking() が 7、0 を指定して 1 回呼び出されること。
-                                              // [Pre-Assert手順] - cplat_socket_set_nonblocking() から CPLAT_ERR_UNKNOWN を返す。
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(1); // [Pre-Assert確認_異常系] - cplat_socket_close() が 7 を指定して 1 回呼び出されること。
-    EXPECT_CALL(mock_porter, potr_internal_trace_socket_failure_at(_, _, CPLAT_TRACE_LEVEL_ERROR, _,
-                                                                   HasSubstr("set_blocking failed")))
-        .Times(1); // [Pre-Assert確認_異常系] - potr_internal_trace_socket_failure_at() が CPLAT_TRACE_LEVEL_ERROR、"set_blocking failed" を含む文字列を指定して 1 回呼び出されること。
-
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - thread_connect_with_timeout() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - thread_connect_with_timeout() の戻り値が CPLAT_INVALID_SOCKET であること。
-}
-
-// ポーリングでの接続の完了の後にブロッキングへ戻せない場合に、ソケットを閉じて失敗を返すことの確認
-TEST(threadConnectPrepareTest, connect_poll_set_blocking_failure)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 250;
-    ctx.service.src_port = 0;
-    ctx.service.service_id = 11;
-    cplat_atomic_store_i32(&ctx.connect_thread_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-    ON_CALL(mock_cplat, cplat_socket_open(_, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            }); // [状態] - cplat_socket_open() から、7 を出力して CPLAT_OK を返すように既定動作を設定する。
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _))
-        .WillByDefault(Return(CPLAT_ERR_IN_PROGRESS)); // [状態] - cplat_socket_connect() から CPLAT_ERR_IN_PROGRESS を返すように既定動作を設定する。
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_timed_wait_writable() から CPLAT_OK を返すように既定動作を設定する。
-    ON_CALL(mock_cplat, cplat_socket_get_pending_error(_, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_get_pending_error() から CPLAT_OK を返すように既定動作を設定する。
-    ON_CALL(mock_cplat, cplat_socket_set_nodelay(_, _, _))
-        .WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_socket_set_nodelay() から CPLAT_OK を返すように既定動作を設定する。
-    // [状態] - タイムアウト付き接続と、ポーリングでの接続の完了を指定する。
-
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_set_nonblocking(static_cast<cplat_socket>(7), 1, _))
-        .WillOnce(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - cplat_socket_set_nonblocking() が 7、1 を指定して 1 回呼び出されること。
-                                     // [Pre-Assert手順] - cplat_socket_set_nonblocking() から CPLAT_OK を返す。
-    EXPECT_CALL(mock_cplat, cplat_socket_set_nonblocking(static_cast<cplat_socket>(7), 0, _))
-        .WillOnce(Return(CPLAT_ERR_UNKNOWN)); // [Pre-Assert確認_異常系] - cplat_socket_set_nonblocking() が 7、0 を指定して 1 回呼び出されること。
-                                              // [Pre-Assert手順] - cplat_socket_set_nonblocking() から CPLAT_ERR_UNKNOWN を返す。
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7)))
-        .Times(1); // [Pre-Assert確認_異常系] - cplat_socket_close() が 7 を指定して 1 回呼び出されること。
-    EXPECT_CALL(mock_porter, potr_internal_trace_socket_failure_at(_, _, CPLAT_TRACE_LEVEL_ERROR, _,
-                                                                   HasSubstr("set_blocking failed")))
-        .Times(1); // [Pre-Assert確認_異常系] - potr_internal_trace_socket_failure_at() が CPLAT_TRACE_LEVEL_ERROR、"set_blocking failed" を含む文字列を指定して 1 回呼び出されること。
-
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0); // [手順] - thread_connect_with_timeout() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(CPLAT_INVALID_SOCKET, actual_ret); // [確認_異常系] - thread_connect_with_timeout() の戻り値が CPLAT_INVALID_SOCKET であること。
-}
-
-// src_port=0 (OS 自動割り当て) のとき cplat_socket_set_reuse_address() を呼ばないことの確認
-TEST(threadConnectPrepareTest, connect_ephemeral_src_port_skips_reuse_address)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx_no_bind = {};
-    ctx_no_bind.service.connect_timeout_ms = 0;
-    ctx_no_bind.service.src_port = 0;
-    potr_context ctx_bind_addr_only = {};
-    ctx_bind_addr_only.service.connect_timeout_ms = 0;
-    ctx_bind_addr_only.service.src_port = 0;
-    std::memcpy(ctx_bind_addr_only.service.src_addr[0], "src", sizeof("src"));
-    ctx_bind_addr_only.src_addr_resolved[0] = 42U;
     ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_TCP, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
+        .WillByDefault(DoAll(SetArgPointee<1>(static_cast<cplat_socket>(7)), Return(CPLAT_OK)));
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    // [状態] - src_port=0 の 2 条件 (src_addr 省略、src_addr 指定) で接続を成功させる。
+    ON_CALL(mock_cplat, cplat_socket_set_nodelay(_, 1, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_watch_attach(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<1>(expected_watch), Return(CPLAT_OK)));
+    ON_CALL(mock_cplat, cplat_socket_watch_connect(_, _, _, _, _)).WillByDefault(Return(CPLAT_OK));
 
-    // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(_, _, _)).Times(0);
-    // [Pre-Assert確認_正常系] - cplat_socket_set_reuse_address() が呼び出されないこと。
+    potr_context ctx_ephemeral = {};
+    ctx_ephemeral.service.src_port = 0U;
+    potr_context ctx_fixed = {};
+    ctx_fixed.service.src_port = 40100U;
 
-    // Act
-    cplat_socket ret_no_bind = thread_connect_with_timeout(&ctx_no_bind, 0);
-    // [手順] - src_addr 省略、src_port=0 で接続する。
-    cplat_socket ret_bind_addr_only = thread_connect_with_timeout(&ctx_bind_addr_only, 0);
-    // [手順] - src_addr 指定、src_port=0 で接続する。
-
-    // Assert
-    EXPECT_EQ(static_cast<cplat_socket>(7), ret_no_bind);        // [確認_正常系] - src_addr 省略で接続ソケットを返すこと。
-    EXPECT_EQ(static_cast<cplat_socket>(7), ret_bind_addr_only); // [確認_正常系] - src_addr 指定で接続ソケットを返すこと。
-}
-
-// 固定の src_port (非 0) を指定したとき cplat_socket_set_reuse_address() を呼ぶことの確認
-TEST(threadConnectPrepareTest, connect_fixed_src_port_sets_reuse_address)
-{
-    // Arrange
-    NiceMock<Mock_cplat> mock_cplat;
-    NiceMock<Mock_porter> mock_porter;
-    potr_context ctx = {};
-    ctx.service.connect_timeout_ms = 0;
-    ctx.service.src_port = 40100;
-    ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_TCP, _, _))
-        .WillByDefault(
-            [](cplat_socket_kind, cplat_socket *out, cplat_error *)
-            {
-                *out = static_cast<cplat_socket>(7);
-                return CPLAT_OK;
-            });
-    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    ON_CALL(mock_cplat, cplat_socket_connect(_, _, _)).WillByDefault(Return(CPLAT_OK));
-    // [状態] - src_port=40100 で bind と接続を成功させる。
-
-    // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_socket_set_reuse_address(static_cast<cplat_socket>(7), 1, _))
         .Times(1)
         .WillOnce(Return(CPLAT_OK));
-    // [Pre-Assert確認_正常系] - cplat_socket_set_reuse_address() が 7、1 を指定して 1 回呼び出されること。
 
-    // Act
-    cplat_socket actual_ret = thread_connect_with_timeout(&ctx, 0);
-    // [手順] - 固定の src_port で接続する。
+    EXPECT_EQ(static_cast<cplat_socket>(7), thread_connect_with_timeout(&ctx_ephemeral, 0, cancel, &watch_out));
+    EXPECT_EQ(static_cast<cplat_socket>(7), thread_connect_with_timeout(&ctx_fixed, 0, cancel, &watch_out));
+}
 
-    // Assert
-    EXPECT_EQ(static_cast<cplat_socket>(7), actual_ret); // [確認_正常系] - 接続ソケットを返すこと。
+TEST(threadConnectPrepareTest, source_filter_cases)
+{
+    NiceMock<Mock_cplat> mock_cplat;
+    potr_context ctx = {};
+    ctx.src_addr_resolved[0] = 42;
+    cplat_ipv4_endpoint peer = {};
+    peer.address = 2;
+    peer.port = delegate_real_cplat_hton16(200);
+    EXPECT_EQ(1, thread_connect_peer_allowed(&ctx, 0, &peer));
+
+    ctx.service.src_addr[0][0] = 1;
+    ctx.service.src_port = 123;
+    peer.address = 42;
+    peer.port = delegate_real_cplat_hton16(123);
+    EXPECT_EQ(1, thread_connect_peer_allowed(&ctx, 0, &peer));
+
+    peer.address = 9;
+    EXPECT_EQ(0, thread_connect_peer_allowed(&ctx, 0, &peer));
+
+    peer.address = 42;
+    peer.port = delegate_real_cplat_hton16(200);
+    EXPECT_EQ(0, thread_connect_peer_allowed(&ctx, 0, &peer));
 }

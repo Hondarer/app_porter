@@ -18,9 +18,9 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, api_open_paths_tcp(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, api_paths_resolve_ipv4(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, api_paths_parse_ipv4(_, _)).WillByDefault(Return(0));
-    ON_CALL(*this, thread_connect_read_first_packet(_, _, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(*this, thread_connect_read_first_packet(_, _, _, _, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, thread_connect_session_compare(_, _)).WillByDefault(Return(TCP_SESSION_NEW));
-    ON_CALL(*this, thread_connect_with_timeout(_, _)).WillByDefault(Return(CPLAT_INVALID_SOCKET));
+    ON_CALL(*this, thread_connect_with_timeout(_, _, _, _)).WillByDefault(Return(CPLAT_INVALID_SOCKET));
     ON_CALL(*this, thread_connect_peer_allowed(_, _, _)).WillByDefault(Return(1));
     ON_CALL(*this, thread_recv_health_check_peers(_)).WillByDefault(Return());
     ON_CALL(*this, thread_recv_health_check_service(_)).WillByDefault(Return());
@@ -47,7 +47,7 @@ Mock_porter::Mock_porter()
 
     ON_CALL(*this, potr_internal_certificate_key(_, _, _, _, _)).WillByDefault(Return(POTR_ERR_DISCONNECTED));
 
-    ON_CALL(*this, potr_internal_certificate_connect(_, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_certificate_connect(_, _, _, _, _)).WillByDefault(Return(POTR_OK));
 
     // peer table
     ON_CALL(*this, potr_internal_peer_find_by_id(_, _)).WillByDefault(Return(nullptr));
@@ -100,13 +100,36 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_send_queue_shutdown(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_try_pop(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_send_queue_wait_drained(_)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_send_queue_wait_drained_until(_, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_tcp_close_deadline_publish(_)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_tcp_close_remaining_ms(_, _, _))
+        .WillByDefault([](const potr_context *, int *has_deadline_out, int *remaining_ms_out) {
+            if (has_deadline_out != nullptr)
+            {
+                *has_deadline_out = 0;
+            }
+            if (remaining_ms_out != nullptr)
+            {
+                *remaining_ms_out = CPLAT_WAIT_FOREVER;
+            }
+            return POTR_OK;
+        });
+    ON_CALL(*this, potr_internal_tcp_conn_request_close(_, _, _)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_tcp_conn_request_close_all(_)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_tcp_conn_release(_, _, _)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_udp_sendto(_, _, _, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_tcp_send_all_locked(_, _, _, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_tcp_send_all(_, _, _, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_tcp_check_writable(_, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_tcp_frame_reader_reset(_)).WillByDefault(Return());
+    ON_CALL(*this, potr_internal_tcp_frame_reader_step(_, _, _, _, _, _)).WillByDefault(Return(POTR_OK));
     ON_CALL(*this, potr_internal_send_queue_wait_ticket(_, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_ticket_result(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_send_queue_lock_push(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_queue_unlock_push(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_send_thread_start(_)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_send_thread_stop(_)).WillByDefault(Return());
-    ON_CALL(*this, potr_internal_start_connected_threads(_, _, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_start_connected_threads(_, _, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_sync_service_path_state_locked(_, _, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_tcp_health_thread_start(_, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_tcp_health_thread_stop(_, _)).WillByDefault(Return());

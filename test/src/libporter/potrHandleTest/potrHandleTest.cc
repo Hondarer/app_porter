@@ -11,6 +11,9 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
+#include <future>
+
+using namespace testing;
 
 // 受付済み参照を保持し、close の受付停止後の操作と重複 close を決定的に検証する。
 TEST(potrHandleTest, close_waits_for_reference_and_rejects_late_entries)
@@ -123,4 +126,76 @@ TEST(potrHandleTest, fatal_error_rejects_normal_operation_but_allows_close)
     // Cleanup
     potr_internal_handle_end_close(&ctx);
     potr_internal_handle_discard(&ctx);
+}
+
+// TCP で受付済み API が参照を保持したまま close 期限を超過した場合に、キュー中断と全経路の閉じる要求を発行してから参照回収を待つことの確認
+TEST(potrHandleTest, tcp_close_deadline_timeout_aborts_queue_and_requests_close_all)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.service.type = POTR_TYPE_TCP;
+    ctx.global.tcp_close_timeout_ms = 50U;
+    ASSERT_EQ(CPLAT_OK, cplat_local_lock_create(&ctx.send_queue.mutex));
+    ASSERT_EQ(CPLAT_OK, cplat_condvar_create(&ctx.send_queue.not_empty));
+    ASSERT_EQ(CPLAT_OK, cplat_condvar_create(&ctx.send_queue.not_full));
+    ASSERT_EQ(CPLAT_OK, cplat_condvar_create(&ctx.send_queue.progress));
+    ASSERT_EQ(CPLAT_OK, cplat_condvar_create(&ctx.send_queue.drained));
+    ASSERT_EQ(POTR_OK, potr_internal_handle_prepare(&ctx));
+    potr_context *handle = potr_internal_handle_public(&ctx);
+    potr_context *active = nullptr;
+    ASSERT_EQ(POTR_OK, potr_internal_handle_acquire(handle, &active));
+
+    std::promise<void> abort_called;
+    ON_CALL(mock_porter, potr_internal_tcp_close_deadline_publish(&ctx))
+        .WillByDefault([](potr_context *c) {
+            cplat_atomic_store_u64(&c->tcp_close_deadline_ms, 1050U, CPLAT_MEMORY_ORDER_RELEASE);
+            cplat_atomic_store_i32(&c->tcp_close_deadline_active, 1, CPLAT_MEMORY_ORDER_RELEASE);
+        });
+    ON_CALL(mock_porter, potr_internal_tcp_close_remaining_ms(&ctx, _, _))
+        .WillByDefault([](const potr_context *, int *has_out, int *rem_out) {
+            if (has_out != nullptr)
+            {
+                *has_out = 1;
+            }
+            if (rem_out != nullptr)
+            {
+                *rem_out = 0;
+            }
+            return POTR_ERR_TIMEOUT;
+        });
+
+    // Pre-Assert
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_porter, potr_internal_tcp_close_deadline_publish(&ctx)).Times(1);
+        EXPECT_CALL(mock_porter, potr_internal_tcp_conn_request_close_all(&ctx))
+            .WillOnce([&](potr_context *) { abort_called.set_value(); });
+    }
+
+    // Act
+    int close_ret = POTR_ERR_UNKNOWN;
+    std::thread closer([&] {
+        potr_context *closing = nullptr;
+        close_ret = potr_internal_handle_begin_close(handle, &closing);
+    });
+    ASSERT_EQ(std::future_status::ready, abort_called.get_future().wait_for(std::chrono::seconds(5)));
+    potr_internal_handle_release(active);
+    closer.join();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, close_ret);
+    EXPECT_EQ(POTR_ERR_TIMEOUT, ctx.send_queue.failure);
+    EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.tcp_close_timed_out, CPLAT_MEMORY_ORDER_ACQUIRE));
+    EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.tcp_publish_stopped, CPLAT_MEMORY_ORDER_ACQUIRE));
+
+    // Cleanup
+    potr_internal_handle_end_close(&ctx);
+    potr_internal_handle_discard(&ctx);
+    cplat_condvar_dispose(ctx.send_queue.drained);
+    cplat_condvar_dispose(ctx.send_queue.progress);
+    cplat_condvar_dispose(ctx.send_queue.not_full);
+    cplat_condvar_dispose(ctx.send_queue.not_empty);
+    cplat_local_lock_dispose(ctx.send_queue.mutex);
 }

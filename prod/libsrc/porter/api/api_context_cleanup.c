@@ -13,7 +13,10 @@
 
 #include "api_context_cleanup.h"
 #include <cplat/crt/stdlib.h>
+#include <cplat/net/endpoint.h>
+#include <cplat/net/socket.h>
 #include <cplat/runtime/memory_lock.h>
+#include <porter/infra/potr_send_queue.h>
 #include <porter/potr_path_event.h>
 #include <porter/potr_peer_table.h>
 #include <porter/protocol/packet.h>
@@ -59,8 +62,14 @@ void api_context_dispose_tcp_sync(potr_context *ctx)
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
         dispose_lock(&ctx->tcp_send_mutex[i]);
+        dispose_lock(&ctx->tcp_lifecycle_mutex[i]);
         dispose_lock(&ctx->health_mutex[i]);
         dispose_condvar(&ctx->health_wakeup[i]);
+        if (ctx->tcp_connect_cancel[i] != NULL)
+        {
+            cplat_socket_wait_cancel_dispose(ctx->tcp_connect_cancel[i]);
+            ctx->tcp_connect_cancel[i] = NULL;
+        }
     }
 
     dispose_lock(&ctx->recv_window_mutex);
@@ -111,23 +120,75 @@ void api_context_dispose_resources(potr_context *ctx)
         dispose_secret_buffer(ctx->tcp_recv_buf[i], POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
         ctx->tcp_recv_buf[i] = NULL;
 
+        if (ctx->tcp_listen_watch[i] != NULL)
+        {
+            cplat_socket_watch_detach(ctx->tcp_listen_watch[i]);
+            ctx->tcp_listen_watch[i] = NULL;
+        }
         if (ctx->tcp_listen_sock[i] != CPLAT_INVALID_SOCKET)
         {
             cplat_socket_close(ctx->tcp_listen_sock[i]);
             ctx->tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
         }
 
+        if (ctx->tcp_conn_watch[i] != NULL)
+        {
+            cplat_socket_watch_detach(ctx->tcp_conn_watch[i]);
+            ctx->tcp_conn_watch[i] = NULL;
+        }
         if (ctx->tcp_conn_fd[i] != CPLAT_INVALID_SOCKET)
         {
             cplat_socket_close(ctx->tcp_conn_fd[i]);
             ctx->tcp_conn_fd[i] = CPLAT_INVALID_SOCKET;
         }
+        if (ctx->tcp_conn_cancel[i] != NULL)
+        {
+            cplat_socket_wait_cancel_dispose(ctx->tcp_conn_cancel[i]);
+            ctx->tcp_conn_cancel[i] = NULL;
+        }
+        ctx->tcp_conn_generation[i] = 0U;
+        ctx->tcp_conn_closing[i] = 0;
 
+        if (ctx->sock[i] != CPLAT_INVALID_SOCKET && raw_base_type(ctx->service.type) == POTR_TYPE_MULTICAST)
+        {
+            uint32_t group_addr;
+
+            /*
+             * 離脱には参加時と同じ NIC を渡す。
+             * 直後にソケットを閉じ、閉じる時に OS がグループから離脱させるため、戻り値は明示的に破棄する。
+             * see: https://man7.org/linux/man-pages/man7/ip.7.html
+             * see: https://learn.microsoft.com/en-us/windows/win32/winsock/ipproto-ip-socket-options
+             */
+            if (cplat_ipv4_parse(ctx->service.multicast_group, &group_addr) == CPLAT_OK)
+            {
+                (void)cplat_socket_leave_multicast_group(ctx->sock[i], group_addr, ctx->multicast_if_resolved[i], NULL);
+            }
+        }
+        if (ctx->udp_watch[i] != NULL)
+        {
+            cplat_socket_watch_detach(ctx->udp_watch[i]);
+            ctx->udp_watch[i] = NULL;
+        }
         if (ctx->sock[i] != CPLAT_INVALID_SOCKET)
         {
             cplat_socket_close(ctx->sock[i]);
             ctx->sock[i] = CPLAT_INVALID_SOCKET;
         }
+
+        dispose_lock(&ctx->udp_send_mutex[i]);
+    }
+
+    if (ctx->recv_cancel != NULL)
+    {
+        cplat_socket_wait_cancel_dispose(ctx->recv_cancel);
+        ctx->recv_cancel = NULL;
+    }
+
+    /* 全利用者スレッドと通知スレッドの終了後に、TCP・health 同期資源と送信キューを破棄する。 */
+    api_context_dispose_tcp_sync(ctx);
+    if (ctx->send_queue.mutex != NULL || ctx->send_queue.entries != NULL || ctx->send_queue.payload_pool != NULL)
+    {
+        potr_internal_send_queue_dispose(&ctx->send_queue);
     }
 
     cplat_free(ctx->send_wire_buf);

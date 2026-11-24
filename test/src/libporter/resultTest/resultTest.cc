@@ -1,5 +1,18 @@
+#include <cplat/base/platform.h>
+#if defined(PLATFORM_WINDOWS)
+    #define _HAS_STD_BYTE 0
+    #include <winsock2.h>
+#elif defined(PLATFORM_LINUX)
+    #include <errno.h>
+#endif
 #include <testfw.h>
 #include <porter/porter_result.h>
+extern "C"
+{
+#include <porter/infra/potr_result.h>
+}
+#include <cplat/base/error.h>
+#include <errno.h>
 #include <set>
 #include <vector>
 
@@ -91,4 +104,103 @@ TEST_F(resultTest, only_ok_is_zero_and_all_errors_are_negative)
         0U,
         non_negative_count); // [確認_正常系] - non_negative_count が 0U であること。(0 以上の値を持つエラー コードが存在しないことの確認)
     EXPECT_FALSE(error_codes.empty()); // [確認_正常系] - error_codes.empty() の戻り値が false であること。
+}
+
+// 詳細がない場合にも結果コードから porter 結果コードへ変換することの確認
+TEST_F(resultTest, socket_result_without_detail)
+{
+    // Arrange
+    cplat_error empty_detail = {}; // [状態] - 要因のない空の詳細エラーを用意する。
+
+    // Pre-Assert
+
+    // Act
+    int ret_ok = potr_internal_result_from_socket_result(CPLAT_OK, nullptr);
+    int ret_timeout = potr_internal_result_from_socket_result(CPLAT_ERR_TIMEOUT, nullptr);
+    int ret_canceled = potr_internal_result_from_socket_result(CPLAT_ERR_CANCELED, nullptr);
+    int ret_eof = potr_internal_result_from_socket_result(CPLAT_ERR_EOF, nullptr);
+    int ret_would_block = potr_internal_result_from_socket_result(CPLAT_ERR_WOULD_BLOCK, nullptr);
+    int ret_busy = potr_internal_result_from_socket_result(CPLAT_ERR_BUSY, &empty_detail);
+    int ret_oom = potr_internal_result_from_socket_result(CPLAT_ERR_OUT_OF_MEMORY, nullptr);
+    int ret_invalid_arg = potr_internal_result_from_socket_result(CPLAT_ERR_INVALID_ARGUMENT, nullptr);
+    int ret_unknown = potr_internal_result_from_socket_result(CPLAT_ERR_UNKNOWN, &empty_detail);
+    // [手順] - 各 cplat 結果コードを詳細なし (または空の詳細) で変換する。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_ok);                                 // [確認_正常系] - CPLAT_OK が POTR_OK であること。
+    EXPECT_EQ(POTR_ERR_TIMEOUT, ret_timeout);                   // [確認_正常系] - CPLAT_ERR_TIMEOUT が POTR_ERR_TIMEOUT であること。
+    EXPECT_EQ(POTR_ERR_CANCELED, ret_canceled);                 // [確認_正常系] - CPLAT_ERR_CANCELED が POTR_ERR_CANCELED であること。
+    EXPECT_EQ(POTR_ERR_EOF, ret_eof);                           // [確認_正常系] - CPLAT_ERR_EOF が POTR_ERR_EOF であること。
+    EXPECT_EQ(POTR_ERR_IO, ret_would_block);                    // [確認_正常系] - 未処理の CPLAT_ERR_WOULD_BLOCK が防御として POTR_ERR_IO であること。
+    EXPECT_EQ(POTR_ERR_IO, ret_busy);                           // [確認_正常系] - CPLAT_ERR_BUSY が POTR_ERR_IO であること。
+    EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY, ret_oom);                 // [確認_正常系] - CPLAT_ERR_OUT_OF_MEMORY が POTR_ERR_OUT_OF_MEMORY であること。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, ret_invalid_arg);      // [確認_正常系] - CPLAT_ERR_INVALID_ARGUMENT が POTR_ERR_INVALID_ARGUMENT であること。
+    EXPECT_EQ(POTR_ERR_IO, ret_unknown);                        // [確認_正常系] - 詳細のない CPLAT_ERR_UNKNOWN が POTR_ERR_IO であること。
+}
+
+// 詳細がある場合に結果コードと詳細要因の双方に従って変換することの確認
+TEST_F(resultTest, socket_result_with_detail)
+{
+    // Arrange
+    cplat_error detail_timeout = {};
+    detail_timeout.result = CPLAT_ERR_TIMEOUT;
+#if defined(PLATFORM_WINDOWS)
+    detail_timeout.domain = CPLAT_ERROR_DOMAIN_WINSOCK;
+    detail_timeout.code = (unsigned long)WSAETIMEDOUT;
+#else
+    detail_timeout.domain = CPLAT_ERROR_DOMAIN_SOCKET_ERRNO;
+    detail_timeout.code = (unsigned long)ETIMEDOUT;
+#endif
+
+    cplat_error detail_would_block = {};
+    detail_would_block.result = CPLAT_ERR_WOULD_BLOCK;
+#if defined(PLATFORM_WINDOWS)
+    detail_would_block.domain = CPLAT_ERROR_DOMAIN_WINSOCK;
+    detail_would_block.code = (unsigned long)WSAEWOULDBLOCK;
+#else
+    detail_would_block.domain = CPLAT_ERROR_DOMAIN_SOCKET_ERRNO;
+    detail_would_block.code = (unsigned long)EAGAIN;
+#endif
+
+    cplat_error detail_busy = {};
+    detail_busy.result = CPLAT_ERR_BUSY;
+    detail_busy.domain = CPLAT_ERROR_DOMAIN_ERRNO;
+    detail_busy.code = (unsigned long)EBUSY;
+
+    cplat_error detail_oom = {};
+    detail_oom.result = CPLAT_ERR_OUT_OF_MEMORY;
+    detail_oom.domain = CPLAT_ERROR_DOMAIN_ERRNO;
+    detail_oom.code = (unsigned long)ENOMEM;
+
+    cplat_error detail_reset = {};
+    detail_reset.result = CPLAT_ERR_UNKNOWN;
+#if defined(PLATFORM_WINDOWS)
+    detail_reset.domain = CPLAT_ERROR_DOMAIN_WINSOCK;
+    detail_reset.code = (unsigned long)WSAECONNRESET;
+#else
+    detail_reset.domain = CPLAT_ERROR_DOMAIN_SOCKET_ERRNO;
+    detail_reset.code = (unsigned long)ECONNRESET;
+#endif
+    // [状態] - 各要因を設定した cplat_error を用意する。
+
+    // Pre-Assert
+
+    // Act
+    int ret_timeout = potr_internal_result_from_socket_result(CPLAT_ERR_TIMEOUT, &detail_timeout);
+    int ret_canceled = potr_internal_result_from_socket_result(CPLAT_ERR_CANCELED, &detail_reset);
+    int ret_eof = potr_internal_result_from_socket_result(CPLAT_ERR_EOF, &detail_reset);
+    int ret_would_block = potr_internal_result_from_socket_result(CPLAT_ERR_WOULD_BLOCK, &detail_would_block);
+    int ret_busy = potr_internal_result_from_socket_result(CPLAT_ERR_BUSY, &detail_busy);
+    int ret_oom = potr_internal_result_from_socket_result(CPLAT_ERR_OUT_OF_MEMORY, &detail_oom);
+    int ret_reset = potr_internal_result_from_socket_result(CPLAT_ERR_UNKNOWN, &detail_reset);
+    // [手順] - 各 cplat 結果コードを詳細付きで変換する。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_TIMEOUT, ret_timeout);        // [確認_正常系] - TIMEOUT が POTR_ERR_TIMEOUT であること。
+    EXPECT_EQ(POTR_ERR_CANCELED, ret_canceled);      // [確認_正常系] - CANCELED が詳細より優先して POTR_ERR_CANCELED であること。
+    EXPECT_EQ(POTR_ERR_EOF, ret_eof);                // [確認_正常系] - EOF が詳細より優先して POTR_ERR_EOF であること。
+    EXPECT_EQ(POTR_ERR_IO, ret_would_block);         // [確認_正常系] - WOULD_BLOCK が POTR_ERR_IO であること。
+    EXPECT_EQ(POTR_ERR_IO, ret_busy);                // [確認_正常系] - BUSY が POTR_ERR_IO であること。
+    EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY, ret_oom);      // [確認_正常系] - OUT_OF_MEMORY が POTR_ERR_OUT_OF_MEMORY であること。
+    EXPECT_EQ(POTR_ERR_DISCONNECTED, ret_reset);     // [確認_正常系] - CONNECTION_RESET が POTR_ERR_DISCONNECTED であること。
 }

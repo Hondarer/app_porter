@@ -33,7 +33,10 @@ extern "C"
 
     /**
      *  @brief          非 TCP ヘルス チェック スレッドを起動します。
-     *  @note           UDP 同期資源を所有し、途中失敗時は生成済み分を回収します。
+     *  @note           `health_mutex[0]` と `health_wakeup[0]` の所有権はサービス側にあり、
+     *                  事前に生成された同期資源を使用して要求フラグを初期化してから起動します。
+     *                  即時送信が必要な種別 (片方向 UDP 以外) だけ `health_send_pending[0]` を 1 にします。
+     *                  起動に失敗した場合も共有の同期資源は破棄しません。
      *
      *  ctx->health_interval_ms が 0 の場合は起動しない (POTR_OK を返す)。
      *
@@ -46,7 +49,10 @@ extern "C"
 
     /**
      *  @brief          非 TCP ヘルス チェック スレッドを停止します。
-     *  @note           生成済みハンドルの終了待ち後、ハンドルと UDP 同期資源を NULL へ戻します。
+     *  @note           `health_mutex[0]` の下で停止状態を設定して通知し、終了待ち後にハンドルを NULL へ戻します。
+     *                  停止は保留中の送信要求 (`health_send_pending[0]`) より優先されます。
+     *                  同期資源 (`health_mutex[0]`、`health_wakeup[0]`) は破棄せず、全起床側と全 health スレッドの
+     *                  終了後に共通解放が破棄します。
      *                  終了待ちは失敗しないため、戻った時点でスレッドは終了しています。
      *                  未起動または停止済みの場合と、ctx が NULL の場合は何もしません。
      *  @param[in,out]  ctx セッション コンテキスト。
@@ -54,7 +60,9 @@ extern "C"
     extern void potr_internal_health_thread_stop(potr_context *ctx);
 
     /**
-     *  @brief          非 TCP ヘルス チェック スレッドを即時起床させます。
+     *  @brief          非 TCP ヘルス チェック スレッドへ PING 送信要求を記録して即時起床させます。
+     *  @note           `health_mutex[0]` の下で運転中であることを確認し、`health_send_pending[0]` を 1 にして
+     *                  条件変数へ通知します。待機前や送信中に届いた要求も保持され、次の送信へ反映されます。
      *  @param[in,out]  ctx セッション コンテキスト。
      */
     extern void potr_internal_health_thread_wake(potr_context *ctx);

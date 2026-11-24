@@ -35,6 +35,7 @@
 /potr_service_open.c
 /potr_service_open_from_config.c
 /potr_service_send.c
+/potr_socket_io.c
 /potr_tcp_control.c
 /potr_trace.c
 /receiver_report.c

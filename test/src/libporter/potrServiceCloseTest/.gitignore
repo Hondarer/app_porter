@@ -2,5 +2,7 @@
 /packet_seal.c
 /potr_handle.c
 /potr_notify.c
+/potr_result.c
 /potr_send_queue_abort.c
 /potr_service_close.c
+/potr_socket_io.c

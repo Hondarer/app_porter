@@ -9,6 +9,26 @@
 #include <cstring>
 using namespace testing;
 
+namespace
+{
+void setup_default_udp_watch_and_ttl(testing::NiceMock<Mock_cplat> &mock_cplat)
+{
+    static int dummy_watch_token = 0;
+    ON_CALL(mock_cplat, cplat_socket_watch_attach(testing::_, testing::_, testing::_))
+        .WillByDefault(
+            [](cplat_socket, cplat_socket_watch **watch_out, cplat_error *)
+            {
+                if (watch_out != nullptr)
+                {
+                    *watch_out = reinterpret_cast<cplat_socket_watch *>(&dummy_watch_token);
+                }
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_set_multicast_ttl(testing::_, testing::_, testing::_))
+        .WillByDefault(testing::Return(CPLAT_OK));
+}
+} // namespace
+
 TEST(apiOpenPathsUdpTest, unicast_requires_destination_port)
 {
     // Arrange
@@ -138,6 +158,7 @@ TEST(apiOpenPathsUdpTest, unicast_success)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -216,22 +237,38 @@ TEST(apiOpenPathsUdpTest, unicast_second_bind_failure)
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _))
         .WillByDefault([&](cplat_socket, const cplat_ipv4_endpoint *, cplat_error *)
                        { return opens == 2 ? CPLAT_ERR_UNKNOWN : CPLAT_OK; });
+    int watch_token = 0;
+    ON_CALL(mock_cplat, cplat_socket_watch_attach(_, _, _))
+        .WillByDefault(
+            [&](cplat_socket, cplat_socket_watch **watch_out, cplat_error *)
+            {
+                *watch_out = reinterpret_cast<cplat_socket_watch *>(&watch_token);
+                return CPLAT_OK;
+            });
     // [状態] - ソケット生成と bind の結果を制御する。
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(2))).Times(1);
-    // [Pre-Assert確認_異常系] - 未登録ソケットを 1 回閉じること。
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(2))).WillOnce(Return());
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_detach(reinterpret_cast<cplat_socket_watch *>(&watch_token)))
+            .WillOnce(Return());
+        EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(1))).WillOnce(Return());
+    }
+    // [Pre-Assert確認_異常系] - 失敗した 2 本目のソケットを閉じた後、1 本目の watch を解除してソケットを閉じること。
     // Act
     int actual_ret = api_open_paths_unicast(&ctx, POTR_ROLE_SENDER); // [手順] - unicast を準備する。
     // Assert
-    EXPECT_EQ(POTR_ERR_IO, actual_ret);                   // [確認_異常系] - 準備結果を返すこと。
-    EXPECT_EQ(1, ctx.n_path);                             // [確認_正常系] - 成功したパスを保持すること。
-    EXPECT_EQ(static_cast<cplat_socket>(1), ctx.sock[0]); // [確認_正常系] - 登録済みソケットの所有権を保持すること。
+    EXPECT_EQ(POTR_ERR_IO, actual_ret);                    // [確認_異常系] - 準備結果を返すこと。
+    EXPECT_EQ(0, ctx.n_path);                              // [確認_異常系] - 途中失敗時は全経路を回収して 0 に戻すこと。
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.sock[0]);          // [確認_異常系] - 回収済みソケットを無効値へ戻すこと。
+    EXPECT_EQ(nullptr, ctx.udp_watch[0]);                  // [確認_異常系] - 回収済み watch を NULL へ戻すこと。
 }
 
 TEST(apiOpenPathsUdpTest, multicast_success)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -320,6 +357,7 @@ TEST(apiOpenPathsUdpTest, broadcast_success)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -408,6 +446,7 @@ TEST(apiOpenPathsUdpTest, dynamic_bidir_success)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -496,6 +535,7 @@ TEST(apiOpenPathsUdpTest, n1_success)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -609,17 +649,31 @@ TEST(apiOpenPathsUdpTest, n1_table_failure_preserves_socket_for_cleanup)
                 return CPLAT_OK;
             });
     ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    int watch_token = 0;
+    ON_CALL(mock_cplat, cplat_socket_watch_attach(_, _, _))
+        .WillByDefault(
+            [&](cplat_socket, cplat_socket_watch **watch_out, cplat_error *)
+            {
+                *watch_out = reinterpret_cast<cplat_socket_watch *>(&watch_token);
+                return CPLAT_OK;
+            });
     ON_CALL(mock_porter, potr_internal_peer_table_init(_)).WillByDefault(Return(POTR_ERR_OUT_OF_MEMORY));
     // [状態] - ソケット生成後のピア テーブル初期化を失敗させる。
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_close(_))
-        .Times(0); // [Pre-Assert確認_異常系] - 登録済みソケットをその場で閉じないこと。
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_detach(reinterpret_cast<cplat_socket_watch *>(&watch_token)))
+            .WillOnce(Return());
+        EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(5))).WillOnce(Return());
+    }
+    // [Pre-Assert確認_異常系] - テーブル初期化失敗時に watch を解除してソケットを閉じること。
     // Act
     int actual_ret = api_open_paths_unicast_bidir_n1(&ctx); // [手順] - N:1 を準備する。
     // Assert
-    EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY, actual_ret);        // [確認_異常系] - テーブルの失敗を返すこと。
-    EXPECT_EQ(1, ctx.n_path);                             // [確認_異常系] - 上位の解放対象パスを保持すること。
-    EXPECT_EQ(static_cast<cplat_socket>(5), ctx.sock[0]); // [確認_異常系] - 上位が回収するソケットを保持すること。
+    EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY, actual_ret); // [確認_異常系] - テーブルの失敗を返すこと。
+    EXPECT_EQ(0, ctx.n_path);                      // [確認_異常系] - 回収後は経路数が 0 であること。
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.sock[0]);  // [確認_異常系] - 回収済みソケットが無効値であること。
+    EXPECT_EQ(nullptr, ctx.udp_watch[0]);          // [確認_異常系] - 回収済み watch が NULL であること。
 }
 
 TEST(apiOpenPathsUdpTest, resolution_failure_precedes_socket_creation)
@@ -662,6 +716,7 @@ TEST(apiOpenPathsUdpTest, multicast_receiver_joins_with_dst_addr)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -719,6 +774,7 @@ TEST(apiOpenPathsUdpTest, multicast_receiver_joins_with_src_addr_when_dst_omitte
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -765,6 +821,7 @@ TEST(apiOpenPathsUdpTest, multicast_sender_joins_with_src_addr)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -871,6 +928,7 @@ TEST(apiOpenPathsUdpTest, multicast_ignores_dst_only_path)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -1004,6 +1062,7 @@ TEST(apiOpenPathsUdpTest, udp_receive_buffer_size_requested_on_all_udp_paths)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -1115,6 +1174,7 @@ TEST(apiOpenPathsUdpTest, udp_receive_buffer_size_disabled_skips_request)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -1156,6 +1216,7 @@ TEST(apiOpenPathsUdpTest, udp_receive_buffer_size_failure_continues_and_logs_inf
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -1213,6 +1274,7 @@ TEST(apiOpenPathsUdpTest, udp_receive_buffer_size_compares_actual_and_requested_
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -1290,6 +1352,7 @@ TEST(apiOpenPathsUdpTest, unicast_ephemeral_port_skips_reuse_address)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -1338,6 +1401,7 @@ TEST(apiOpenPathsUdpTest, unicast_fixed_port_sets_reuse_address)
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -1401,6 +1465,7 @@ TEST(apiOpenPathsUdpTest, multicast_and_broadcast_reuse_address_follows_bind_por
 {
     // Arrange
     NiceMock<Mock_cplat> mock_cplat;
+    setup_default_udp_watch_and_ttl(mock_cplat);
     NiceMock<Mock_porter> mock_porter;
     ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
         .WillByDefault(
@@ -1487,4 +1552,249 @@ TEST(apiOpenPathsUdpTest, multicast_and_broadcast_reuse_address_follows_bind_por
     EXPECT_EQ(POTR_OK, ret_bcast_sender_auto);  // [確認_正常系] - broadcast 送信者 (port=0) が POTR_OK であること。
     EXPECT_EQ(POTR_OK, ret_bcast_sender_fixed); // [確認_正常系] - broadcast 送信者 (固定) が POTR_OK であること。
     EXPECT_EQ(POTR_OK, ret_bcast_receiver);     // [確認_正常系] - broadcast 受信者が POTR_OK であること。
+}
+
+// multicast と multicast_raw の送信役で、1・255・構造体 0 (実効 1) の TTL が watch_attach より前に全経路へ設定されることの確認
+TEST(apiOpenPathsUdpTest, multicast_sender_sets_effective_ttl_before_watch_attach)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    ON_CALL(mock_porter, api_paths_parse_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 0xE0000101U;
+                return POTR_OK;
+            });
+    int opens = 0;
+    int watch_tokens[12] = {};
+    ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_UDP, _, _))
+        .WillByDefault(
+            [&](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(++opens);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_multicast_interface(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    // [状態] - multicast と multicast_raw の 2 経路送信役で ttl = 0、1、255 を検証する。
+
+    const potr_type types[2] = {POTR_TYPE_MULTICAST, POTR_TYPE_MULTICAST_RAW};
+    const uint8_t configured_ttls[3] = {0U, 1U, 255U};
+    const unsigned int expected_ttls[3] = {1U, 1U, 255U};
+
+    // Pre-Assert
+    {
+        InSequence seq;
+        int sock_id = 0;
+        for (int t = 0; t < 2; t++)
+        {
+            for (int v = 0; v < 3; v++)
+            {
+                for (int p = 0; p < 2; p++)
+                {
+                    sock_id++;
+                    cplat_socket expected_sock = static_cast<cplat_socket>(sock_id);
+                    cplat_socket_watch *watch_ptr = reinterpret_cast<cplat_socket_watch *>(&watch_tokens[sock_id - 1]);
+                    EXPECT_CALL(mock_cplat, cplat_socket_set_multicast_ttl(expected_sock, expected_ttls[v], _))
+                        .WillOnce(Return(CPLAT_OK));
+                    EXPECT_CALL(mock_cplat, cplat_socket_watch_attach(expected_sock, _, _))
+                        .WillOnce(DoAll(SetArgPointee<1>(watch_ptr), Return(CPLAT_OK)));
+                }
+            }
+        }
+    }
+    // [Pre-Assert確認_正常系] - 各経路で実効 TTL が設定された直後に watch_attach が呼ばれること。
+
+    // Act & Assert
+    for (int t = 0; t < 2; t++)
+    {
+        for (int v = 0; v < 3; v++)
+        {
+            potr_context ctx = {};
+            ctx.service.type = types[t];
+            ctx.service.dst_port = 6100;
+            ctx.service.ttl = configured_ttls[v];
+            std::memcpy(ctx.service.src_addr[0], "src1", sizeof("src1"));
+            std::memcpy(ctx.service.src_addr[1], "src2", sizeof("src2"));
+            std::memcpy(ctx.service.multicast_group, "239.1.2.3", sizeof("239.1.2.3"));
+            int actual_ret = api_open_paths_multicast(&ctx, POTR_ROLE_SENDER);
+            EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 送信役の経路準備が成功すること。
+            EXPECT_EQ(2, ctx.n_path);       // [確認_正常系] - 2 経路とも開かれること。
+        }
+    }
+}
+
+// 受信役および multicast 以外の UDP 種別では cplat_socket_set_multicast_ttl() を呼ばないことの確認
+TEST(apiOpenPathsUdpTest, multicast_ttl_not_set_for_receiver_or_other_types)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    ON_CALL(mock_porter, api_paths_parse_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 0xE0000101U;
+                return POTR_OK;
+            });
+    ON_CALL(mock_porter, potr_internal_peer_table_init(_)).WillByDefault(Return(POTR_OK));
+    int opens = 0;
+    int watch_token = 0;
+    ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_UDP, _, _))
+        .WillByDefault(
+            [&](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(++opens);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_broadcast(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_watch_attach(_, _, _))
+        .WillByDefault(
+            [&](cplat_socket, cplat_socket_watch **watch_out, cplat_error *)
+            {
+                *watch_out = reinterpret_cast<cplat_socket_watch *>(&watch_token);
+                return CPLAT_OK;
+            });
+    // [状態] - 受信役および unicast / broadcast / unicast_bidir / unicast_bidir_n1 を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_set_multicast_ttl(_, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - cplat_socket_set_multicast_ttl() が一度も呼ばれないこと。
+
+    // Act
+    potr_context ctx = {};
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.service.dst_port = 6000;
+    ctx.service.ttl = 16U;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.multicast_group, "239.1.2.3", sizeof("239.1.2.3"));
+    int ret_mcast_recv = api_open_paths_multicast(&ctx, POTR_ROLE_RECEIVER);
+
+    ctx = {};
+    ctx.service.type = POTR_TYPE_MULTICAST_RAW;
+    ctx.service.dst_port = 6001;
+    ctx.service.ttl = 16U;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.multicast_group, "239.1.2.3", sizeof("239.1.2.3"));
+    int ret_mcast_raw_recv = api_open_paths_multicast(&ctx, POTR_ROLE_RECEIVER);
+
+    ctx = {};
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.service.dst_port = 6002;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    std::memcpy(ctx.service.dst_addr[0], "dst", sizeof("dst"));
+    int ret_unicast = api_open_paths_unicast(&ctx, POTR_ROLE_SENDER);
+
+    ctx = {};
+    ctx.service.type = POTR_TYPE_BROADCAST;
+    ctx.service.dst_port = 6003;
+    std::memcpy(ctx.service.src_addr[0], "src", sizeof("src"));
+    int ret_broadcast = api_open_paths_broadcast(&ctx, POTR_ROLE_SENDER);
+
+    ctx = {};
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.service.dst_port = 6004;
+    std::memcpy(ctx.service.dst_addr[0], "dst", sizeof("dst"));
+    int ret_bidir = api_open_paths_unicast_bidir(&ctx, POTR_ROLE_SENDER);
+
+    ctx = {};
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    ctx.service.dst_port = 6005;
+    int ret_n1 = api_open_paths_unicast_bidir_n1(&ctx);
+
+    // Assert
+    EXPECT_EQ(POTR_OK, ret_mcast_recv);     // [確認_正常系] - multicast 受信役が成功すること。
+    EXPECT_EQ(POTR_OK, ret_mcast_raw_recv); // [確認_正常系] - multicast_raw 受信役が成功すること。
+    EXPECT_EQ(POTR_OK, ret_unicast);        // [確認_正常系] - unicast 送信役が成功すること。
+    EXPECT_EQ(POTR_OK, ret_broadcast);      // [確認_正常系] - broadcast 送信役が成功すること。
+    EXPECT_EQ(POTR_OK, ret_bidir);          // [確認_正常系] - unicast_bidir 送信役が成功すること。
+    EXPECT_EQ(POTR_OK, ret_n1);             // [確認_正常系] - unicast_bidir_n1 が成功すること。
+}
+
+// 2 本目の経路で TTL 設定に失敗した場合に、1 本目を含めた全 watch とソケットを回収して POTR_ERR_IO を返すことの確認
+TEST(apiOpenPathsUdpTest, multicast_second_path_ttl_failure_rolls_back_all_paths)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    ON_CALL(mock_porter, api_paths_resolve_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 42U;
+                return POTR_OK;
+            });
+    ON_CALL(mock_porter, api_paths_parse_ipv4(_, _))
+        .WillByDefault(
+            [](const char *, uint32_t *out)
+            {
+                *out = 0xE0000101U;
+                return POTR_OK;
+            });
+    int opens = 0;
+    int watch_token1 = 0;
+    cplat_socket_watch *watch1 = reinterpret_cast<cplat_socket_watch *>(&watch_token1);
+    ON_CALL(mock_cplat, cplat_socket_open(CPLAT_SOCKET_UDP, _, _))
+        .WillByDefault(
+            [&](cplat_socket_kind, cplat_socket *out, cplat_error *)
+            {
+                *out = static_cast<cplat_socket>(++opens);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_bind(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_join_multicast_group(_, _, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_set_multicast_interface(_, _, _)).WillByDefault(Return(CPLAT_OK));
+
+    potr_context ctx = {};
+    ctx.service.service_id = 777;
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.service.dst_port = 6200;
+    ctx.service.ttl = 8U;
+    std::memcpy(ctx.service.src_addr[0], "src1", sizeof("src1"));
+    std::memcpy(ctx.service.src_addr[1], "src2", sizeof("src2"));
+    std::memcpy(ctx.service.multicast_group, "239.1.2.3", sizeof("239.1.2.3"));
+    // [状態] - 2 経路の multicast 送信役で 2 本目の TTL 設定を失敗させる。
+
+    // Pre-Assert
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_cplat, cplat_socket_set_multicast_ttl(static_cast<cplat_socket>(1), 8U, _))
+            .WillOnce(Return(CPLAT_OK));
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_attach(static_cast<cplat_socket>(1), _, _))
+            .WillOnce(DoAll(SetArgPointee<1>(watch1), Return(CPLAT_OK)));
+        EXPECT_CALL(mock_cplat, cplat_socket_set_multicast_ttl(static_cast<cplat_socket>(2), 8U, _))
+            .WillOnce(Return(CPLAT_ERR_UNKNOWN));
+        EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(2))).WillOnce(Return());
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_detach(watch1)).WillOnce(Return());
+        EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(1))).WillOnce(Return());
+    }
+    // [Pre-Assert確認_異常系] - 2 本目の失敗後に 2 本目を閉じ、1 本目の watch 解除とソケット閉鎖を行うこと。
+
+    // Act
+    int actual_ret = api_open_paths_multicast(&ctx, POTR_ROLE_SENDER); // [手順] - 2 経路の multicast 送信役を開く。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_IO, actual_ret);           // [確認_異常系] - 戻り値が POTR_ERR_IO であること。
+    EXPECT_EQ(0, ctx.n_path);                     // [確認_異常系] - 開いた経路が残らないこと。
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.sock[0]); // [確認_異常系] - 1 本目のソケットが無効値であること。
+    EXPECT_EQ(nullptr, ctx.udp_watch[0]);         // [確認_異常系] - 1 本目の watch が NULL であること。
 }

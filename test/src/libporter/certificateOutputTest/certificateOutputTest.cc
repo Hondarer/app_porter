@@ -200,7 +200,7 @@ TEST_F(certificateOutputTest, receive_drops_handshake_from_rejected_slow_peer_in
     // [Pre-Assert確認_正常系] - 拒否期間内は認証セッションを開始しないこと。
     EXPECT_CALL(mock_porter, potr_internal_peer_create(_, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - 拒否期間内は新しいピアを作成しないこと。
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - 拒否期間内は応答パケットを送出しないこと。
 
     // Act

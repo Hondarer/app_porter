@@ -12,6 +12,8 @@
  */
 
 #include <cplat/base/platform.h>
+#include <cplat/base/wait.h>
+#include <cplat/clock/clock.h>
 #include <cplat/crt/stdlib.h>
 #include <stdlib.h>
 #include <string.h>
@@ -469,6 +471,58 @@ void potr_internal_send_queue_wait_drained(potr_internal_send_queue *q)
     }
 
     cplat_local_lock_unlock(q->mutex);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_send_queue_wait_drained_until(potr_internal_send_queue *q, uint64_t deadline_ms)
+{
+    int result = POTR_OK;
+
+    if (q == NULL || q->mutex == NULL)
+    {
+        return POTR_OK;
+    }
+
+    cplat_local_lock_lock(q->mutex);
+
+    while (q->failure == POTR_OK && (q->count > 0U || q->inflight > 0U))
+    {
+        uint64_t now_ms;
+        uint64_t remaining;
+        int wait_ms;
+
+        if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
+        {
+            result = POTR_ERR_IO;
+            break;
+        }
+
+        if (now_ms >= deadline_ms)
+        {
+            result = POTR_ERR_TIMEOUT;
+            break;
+        }
+
+        remaining = deadline_ms - now_ms;
+        if (remaining > (uint64_t)((uint32_t)CPLAT_WAIT_FOREVER - 1U))
+        {
+            remaining = (uint64_t)((uint32_t)CPLAT_WAIT_FOREVER - 1U);
+        }
+        wait_ms = (int)remaining;
+
+        /* 通知と期限切れのいずれもループ先頭で条件と絶対期限を再判定するため、戻り値は明示的に破棄する。 */
+        (void)cplat_condvar_timed_wait(q->drained, q->mutex, wait_ms);
+    }
+
+    if (result == POTR_OK && q->failure == POTR_ERR_TIMEOUT && (q->count > 0U || q->inflight > 0U))
+    {
+        result = POTR_ERR_TIMEOUT;
+    }
+
+    cplat_local_lock_unlock(q->mutex);
+
+    return result;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

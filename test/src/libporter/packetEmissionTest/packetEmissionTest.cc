@@ -87,12 +87,11 @@ TEST(packetEmissionTest, udp_paths_ping_and_retransmissions_are_sealed_independe
         });
     // [Pre-Assert確認_正常系] - 各経路への送出に対応して暗号化を 10 回呼ぶこと。
     // [Pre-Assert手順] - nonce を収集し暗号化へ委譲する。
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _)).Times(10)
-        .WillRepeatedly([&](cplat_socket, const void *wire, size_t len, const cplat_ipv4_endpoint *, size_t *sent, cplat_error *) {
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _)).Times(10)
+        .WillRepeatedly([&](potr_context *, int, const void *wire, size_t len, const cplat_ipv4_endpoint *, cplat_error *) {
             const auto *bytes = static_cast<const uint8_t *>(wire);
             emitted.emplace_back(bytes, bytes + len);
-            *sent = len;
-            return CPLAT_OK;
+            return POTR_OK;
         });
     // [Pre-Assert確認_正常系] - DATA 2 回、PING 4 回、再送 4 回の計 10 回送出すること。
     // [Pre-Assert手順] - ワイヤーを保存して送信成功を返す。
@@ -175,8 +174,8 @@ TEST(packetEmissionTest, tcp_locks_cover_sealing_and_writing_on_each_path)
         locked.erase(lock);
         delegate_real_cplat_local_lock_unlock(lock);
     }); // [状態] - ロック解除を記録する。
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_porter, potr_internal_tcp_check_writable(_, _))
+        .WillByDefault(Return(POTR_OK));
     // [状態] - 2 経路とも書き込み可能とする。
     potr_internal_tx_session_init(&ctx.tx_session);
     // Pre-Assert
@@ -189,16 +188,16 @@ TEST(packetEmissionTest, tcp_locks_cover_sealing_and_writing_on_each_path)
         });
     // [Pre-Assert確認_正常系] - PING、DATA、FIN、FIN_ACK をそれぞれ 2 経路で暗号化すること。
     // [Pre-Assert手順] - ロック保持を確認して暗号化へ委譲する。
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _)).Times(8)
-        .WillRepeatedly([&](cplat_socket fd, const void *wire, size_t len, cplat_error *) {
-            size_t path = static_cast<size_t>(fd - 7);
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(_, _, _, _, _, _)).Times(8)
+        .WillRepeatedly([&](potr_context *, int path_idx, const void *wire, size_t len, size_t *, cplat_error *) {
+            size_t path = static_cast<size_t>(path_idx);
             EXPECT_EQ(1U, locked.count(ctx.tcp_send_mutex[path]));
             // [Pre-Assert確認_正常系 回数=8] - 書き込み時に同じ経路のロックを保持すること。
             potr_packet packet = {};
             EXPECT_EQ(POTR_OK, potr_internal_packet_parse(&packet, wire, len));
             // [Pre-Assert確認_正常系 回数=8] - 各書き込みのヘッダーを解析できること。
             counters.push_back(packet.tx_counter);
-            return CPLAT_OK;
+            return POTR_OK;
         });
     // [Pre-Assert確認_正常系] - 各封緘の直後に TCP へ計 8 回書き込むこと。
     // [Pre-Assert手順] - ワイヤーの送出通番を収集する。
@@ -389,23 +388,22 @@ TEST(packetEmissionTest, selected_data_paths_and_all_control_paths)
     ASSERT_EQ(POTR_OK, potr_internal_packet_build_fin(&fin, &identity));
     // [状態確認] - FIN を構築できること。
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _)).Times(7)
-        .WillRepeatedly([&](cplat_socket fd, const void *wire, size_t len,
-                            const cplat_ipv4_endpoint *, size_t *sent, cplat_error *) {
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _)).Times(7)
+        .WillRepeatedly([&](potr_context *c, int path_idx, const void *wire, size_t len,
+                            const cplat_ipv4_endpoint *, cplat_error *) {
             potr_packet packet = {};
             if (potr_internal_packet_parse(&packet, wire, len) == POTR_OK)
             {
                 if (packet.flags == POTR_FLAG_DATA)
                 {
-                    data_paths.push_back(fd);
+                    data_paths.push_back(c->sock[path_idx]);
                 }
                 else
                 {
-                    control_paths.push_back(fd);
+                    control_paths.push_back(c->sock[path_idx]);
                 }
             }
-            *sent = len;
-            return CPLAT_OK;
+            return POTR_OK;
         });
     // [Pre-Assert確認_正常系] - DATA と再送・REJECT 各 1 経路、PING と FIN 各 2 経路の計 7 回送ること。
     // [Pre-Assert手順] - 種別ごとの送出経路を記録する。
@@ -448,12 +446,11 @@ TEST(packetEmissionTest, standby_path_ping_is_not_suppressed_by_selected_path_da
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault(DoAll(SetArgPointee<0>(1000), Return(CPLAT_OK)));
     potr_internal_tx_session_init(&ctx.tx_session);
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_sendto(_, _, _, _, _, _)).Times(1)
-        .WillOnce([&](cplat_socket fd, const void *, size_t len, const cplat_ipv4_endpoint *, size_t *sent, cplat_error *) {
-            emitted.push_back(fd);
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _)).Times(1)
+        .WillOnce([&](potr_context *c, int path_idx, const void *, size_t, const cplat_ipv4_endpoint *, cplat_error *) {
+            emitted.push_back(c->sock[path_idx]);
             cplat_atomic_store_i32(&ctx.health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-            *sent = len;
-            return CPLAT_OK;
+            return POTR_OK;
         });
     // [Pre-Assert確認_正常系] - 待機グループに PING を 1 回送ること。
     // [Pre-Assert手順] - 送出経路を記録し、ヘルス スレッドを停止する。
@@ -505,12 +502,13 @@ TEST(packetEmissionTest, tcp_failover_replays_retained_window_before_new_data)
     }
     ASSERT_EQ(POTR_OK, potr_internal_window_init(&ctx.send_window, 0, 3, 128));
     // [状態確認] - 直近 3 通番のウィンドウを用意できること。
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_writable(_, _, _))
-        .WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_porter, potr_internal_tcp_check_writable(_, _))
+        .WillByDefault(Return(POTR_OK));
     potr_internal_tx_session_init(&ctx.tx_session);
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_send_all(_, _, _, _)).Times(11)
-        .WillRepeatedly([&](cplat_socket fd, const void *wire, size_t len, cplat_error *) {
+    EXPECT_CALL(mock_porter, potr_internal_tcp_send_all_locked(_, _, _, _, _, _)).Times(11)
+        .WillRepeatedly([&](potr_context *c, int path_idx, const void *wire, size_t len, size_t *, cplat_error *) {
+            cplat_socket fd = c->tcp_conn_fd[path_idx];
             potr_packet packet = {};
             if (potr_internal_packet_parse(&packet, wire, len) == POTR_OK && packet.flags == POTR_FLAG_DATA)
             {
@@ -520,7 +518,7 @@ TEST(packetEmissionTest, tcp_failover_replays_retained_window_before_new_data)
                     replayed.push_back(packet.seq_num);
                 }
             }
-            return CPLAT_OK;
+            return POTR_OK;
         });
     // [Pre-Assert確認_正常系] - 旧経路の PING と DATA 5 件、新経路の PING と DATA 4 件の計 11 回書くこと。
     // [Pre-Assert手順] - DATA の通番と経路を保存する。

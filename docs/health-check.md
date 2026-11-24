@@ -72,7 +72,8 @@ Table: PING ペイロードにおけるパス受信状態の値と定義
 - セッション DISCONNECTED 発火時 / TCP 切断時: 全パスを `POTR_PING_STATE_UNDEFINED` にリセットします。
 - 双方向 UDP (type 7, 8) の有効な REJECT / 通知キューの容量超過時: 全パスを `POTR_PING_STATE_UNDEFINED` にリセットします。
 
-双方向 UDP (type 7, 8) では、PING の受信、状態を変える有効な REJECT、通知キューの容量超過で `path_ping_state[]` が変わると health スレッドを起こし、更新後の状態を含む割り込み PING を送ります。状態が変わらない REJECT と FIN の発火では、この起床を要求しません。TCP の PING 受信、PING タイムアウト、切断には既存の TCP 用の経路を使います。
+双方向 UDP (type 7, 8) では、PING の受信、状態を変える有効な REJECT、通知キューの容量超過で `path_ping_state[]` が変わると health スレッドを起こし、更新後の状態を含む割り込み PING を送ります。状態が変わらない REJECT と FIN の発火では、この起床を要求しません。TCP の PING 受信、PING タイムアウト、切断には既存の TCP 用の経路を使います。  
+起床要求は `health_mutex[path_idx]` の下で保留フラグ (`health_send_pending[path_idx]`) として保持します。health スレッドは待機復帰時に `health_running[path_idx] == 0` (停止優先) を先に確認し、継続時は保留フラグを消費してから経路状態を読み取ります。これにより、状態読み取り後から次の待機開始前に届いた要求や、要求消費後に届いた要求を取りこぼさず次の送信へ反映します。`health_mutex` と `health_wakeup` はスレッド停止時に破棄せず、すべての起床元スレッドの停止完了後にコンテキスト資源解放で破棄します。
 
 ## 回線確立 (CONNECTED) 検出
 
@@ -178,7 +179,7 @@ Table: TCP / TCP_BIDIR (type 9-10) の接続状態別の実装
 1. 片方向 type 1-6 は経路ごとに `max(last_ping_send_ms[path], last_valid_data_send_ms[path]) + health_interval_ms`、双方向 type 7 は定周期 `health_interval_ms` を送信期限として評価します。
 2. 送信ウィンドウから `next_seq` を取得します。
 3. `potr_internal_packet_build_ping()` で PING パケットを構築します。
-4. 送出対象の経路それぞれで `cplat_socket_sendto()` を実行します (片方向では期限を迎えた経路、双方向では全経路)。
+4. 送出対象の経路それぞれで UDP 共通送信ヘルパー (`potr_internal_udp_sendto()` / `cplat_socket_watch_sendto()`) を実行します (片方向では期限を迎えた経路、双方向では全経路)。
 5. 暗号化有効時は `POTR_FLAG_ENCRYPTED` を付与して GCM 認証タグを追加します。
 
 片方向 type 1-6 では、送信スレッドが各経路へ外側 DATA パケットを実送出した時点でその経路の最終 DATA 送信時刻を更新します (`potr_service_send()` の API 成功時ではありません)。待機グループの経路には DATA が流れないため、経路ごとに最終送信時刻を判定することで、待機グループの経路にも `health_interval_ms` ごとに PING が送出されます。
@@ -187,7 +188,7 @@ N:1 モード (UNICAST_BIDIR_N1 のサーバー側) の処理は次のとおり�
 
 1. ピア テーブルからアクティブな各ピアを巡回します。
 2. ピアごとに `potr_internal_packet_build_ping()` でパケットを構築します。
-3. ピアごとに全パスへ `cplat_socket_sendto()` を実行します。
+3. ピアごとに全パスへ UDP 共通送信ヘルパー (`potr_internal_udp_sendto()` / `cplat_socket_watch_sendto()`) を実行します。
 
 ### PING 受信時の処理 (受信スレッド)
 
@@ -199,8 +200,8 @@ RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送信せず `POTR_EV
 
 ### タイムアウト検出 (受信スレッド)
 
-受信スレッド (`recv_thread_func()`) は、`cplat_socket_timed_wait_readable_multi()` から戻るたびに、受信期限を `thread_recv_health_check_service()` (1:1) または `thread_recv_health_check_peers()` (N:1) で確認し、N:1 モードでは遅いピアの猶予時間の判定 (`thread_recv_health_check_slow_peers()`) も実行して、停止の指示を読み直します。  
-そのため、待機による無受信の検出の遅れと停止の遅れは、1 回の待機の上限を超えません。  
+受信スレッド (`recv_thread_func()`) は、`cplat_socket_watch_wait_readable_multi()` とサービス共通の解除オブジェクト (`recv_cancel`) を使って非ブロッキング待機します。サービス終了時は `recv_cancel` を通知して待機を即時解除するため、待機の上限に依存して停止が遅れません。  
+また、待機から戻るたびに受信期限を `thread_recv_health_check_service()` (1:1) または `thread_recv_health_check_peers()` (N:1) で確認し、N:1 モードでは遅いピアの猶予時間の判定 (`thread_recv_health_check_slow_peers()`) も実行します。無受信の検出の遅れは、1 回の待機の上限を超えません。  
 1 回の待機の上限は、次の条件を上から順に適用して決めます。
 
 | 条件 (`recv_thread_func()` 内の適用順) | 対象となる構成 | 待機の上限 [ms] |
@@ -249,11 +250,11 @@ N:1 モードの判定は次のとおりです。
 
 UDP 系と同様に受信スレッドが判定します。TCP の両端がそれぞれ独立してタイムアウトを検出します。
 
-1. 受信ループは `health_interval_ms > 0 && health_timeout_ms > 0` の場合 (受信タイムアウトを使う場合) に、`tcp_wait_readable()` で最大 `min(health_timeout_ms, 1000)` [ms] 待機します。フロー制御パケットを送出する受信側 (`flow_control != NULL`) では、待機の上限が `flow_control_request_interval_ms` との小さいほうになります。受信タイムアウトを使わない場合 (`use_recv_timeout` が 0) は、通常は待機の上限を設けず (`poll_ms` が 0) に受信を待ちますが、`flow_control != NULL` の場合は `poll_ms` が `flow_control_request_interval_ms` になり、ポーリングで待つ動作に変わります。TCP の通信種別は OS の受信バッファーに基づく送出上限の対象外 (`resolve_receive_buffer_percent()` が割合を 0 にする) のため、TCP の受信側で `flow_control` が確保されるのは、容量 (`flow_control_capacity`) が 0 でない場合だけです。
+1. 受信ループは、`cplat_socket_watch_wait_readable_multi()` と接続世代ごとの解除オブジェクト (`tcp_conn_cancel[path_idx]`) で非ブロッキング待機し、フレームの途中であっても待機上限ごとに監視処理と解除確認を行います。`health_interval_ms > 0 && health_timeout_ms > 0` の場合は最大 `min(health_timeout_ms, 1000)` [ms]、`flow_control != NULL` の場合は `flow_control_request_interval_ms` との小さいほうを待機上限とし、どちらも無効な場合は無期限 (`CPLAT_WAIT_FOREVER`) で待機します。TCP の通信種別は OS の受信バッファーに基づく送出上限の対象外 (`resolve_receive_buffer_percent()` が割合を 0 にする) のため、TCP の受信側で `flow_control` が確保されるのは、容量 (`flow_control_capacity`) が 0 でない場合だけです。
 2. PING を受信するたびに `tcp_last_ping_recv_ms[path_idx]` を現在時刻で更新します。
 3. `cplat_clock_get_monotonic_ms()` で得た現在時刻 `- tcp_last_ping_recv_ms[path_idx] > ctx->health_timeout_ms` を超過するとタイムアウトと判定します。
-4. タイムアウト時はそのパスのソケットを `cplat_socket_shutdown()` / `cplat_socket_close()` で閉じ、`tcp_conn_fd[path_idx]` を `CPLAT_INVALID_SOCKET` にします。
-5. connect スレッド (`potr_connect_thread.c`) が `tcp_active_paths` をデクリメントして再接続ループへ遷移します。
+4. タイムアウト時は対象世代へ閉じる要求 (`potr_internal_tcp_conn_request_close()`) を発行して受信ループを終了します。受信スレッドが直接ソケットを閉じず、所有者である接続管理スレッドが受信・ヘルス チェックの終了待ちと送信完了の確定後に detach と close を行います。
+5. connect スレッド (`potr_connect_thread.c`) が世代を解放し、`tcp_active_paths` をデクリメントして再接続ループへ遷移します。
 
 DATA パケットの受信は `tcp_last_ping_recv_ms` をリセットしません。`health_interval_ms > 0` の場合は PING は DATA 送信とは独立して定周期送出されるため、PING の到達有無のみで接続状態を判定できます。`health_interval_ms = 0` の場合は bootstrap PING のみで CONNECTED を確立し、その後の timeout 監視は行いません。
 

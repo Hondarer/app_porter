@@ -11,6 +11,8 @@
 #include <porter/potr_context.h>
 #include <porter/potr_handle.h>
 #include <porter/potr_path_event.h>
+#include <porter/infra/potr_send_queue.h>
+#include <porter/infra/potr_socket_io.h>
 
 /** 登録表のエントリの状態。 */
 typedef enum handle_entry_state
@@ -345,16 +347,64 @@ int potr_internal_handle_begin_close(potr_context *handle, potr_context **ctx)
     }
     else
     {
-        /* 新規参照を拒否してから先行 API の返却を待ち、通信資源を回収できる状態にする。 */
-        entry->state = HANDLE_STATE_CLOSING;
+        potr_context *target = entry->ctx;
 
-        while (entry->refs != 0U)
+        /*
+         * 新規受付を停止し、終了開始と TCP の絶対期限を先行して公開する。
+         * コンテキストは close の処理が回収完了まで保持し、受付済み API の参照返却を待つ。
+         */
+        entry->state = HANDLE_STATE_CLOSING;
+        cplat_atomic_store_i32(&target->close_requested, 1, CPLAT_MEMORY_ORDER_RELEASE);
+
+        if (is_tcp_type(target->service.type))
         {
-            cplat_condvar_wait(entry->idle, entry->mutex);
+            int timed_out = 0;
+
+            cplat_atomic_store_i32(&target->tcp_publish_stopped, 1, CPLAT_MEMORY_ORDER_RELEASE);
+            potr_internal_tcp_close_deadline_publish(target);
+
+            while (entry->refs != 0U)
+            {
+                if (!timed_out)
+                {
+                    int has_deadline = 0;
+                    int rem_ms = CPLAT_WAIT_FOREVER;
+                    int dl_rc = potr_internal_tcp_close_remaining_ms(target, &has_deadline, &rem_ms);
+
+                    if (dl_rc != POTR_OK)
+                    {
+                        timed_out = 1;
+                        cplat_atomic_store_i32(&target->tcp_close_timed_out, 1, CPLAT_MEMORY_ORDER_RELEASE);
+                        /* ハンドル管理ロックを離して送信キューを中断し、全世代へ閉じる要求を通知する。 */
+                        cplat_local_lock_unlock(entry->mutex);
+                        potr_internal_send_queue_abort(&target->send_queue, POTR_ERR_TIMEOUT);
+                        potr_internal_tcp_conn_request_close_all(target);
+                        cplat_local_lock_lock(entry->mutex);
+                        continue;
+                    }
+
+                    /*
+                     * 期限切れまたは通知のいずれでもループ先頭で refs と絶対期限を再判定するため、
+                     * 戻り値は明示的に破棄する。
+                     */
+                    (void)cplat_condvar_timed_wait(entry->idle, entry->mutex, rem_ms);
+                }
+                else
+                {
+                    /* 期限切れ後は参照の回収完了まで待機し、使用中の資源を解放しない。 */
+                    cplat_condvar_wait(entry->idle, entry->mutex);
+                }
+            }
+        }
+        else
+        {
+            while (entry->refs != 0U)
+            {
+                cplat_condvar_wait(entry->idle, entry->mutex);
+            }
         }
 
-        *ctx = entry->ctx;
-        cplat_atomic_store_i32(&(*ctx)->close_requested, 1, CPLAT_MEMORY_ORDER_RELEASE);
+        *ctx = target;
     }
 
     cplat_local_lock_unlock(entry->mutex);

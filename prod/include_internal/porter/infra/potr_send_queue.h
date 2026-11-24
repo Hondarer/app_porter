@@ -246,6 +246,16 @@ extern "C"
     extern void potr_internal_send_queue_wait_drained(potr_internal_send_queue *q);
 
     /**
+     *  @brief          指定した単調時刻の絶対期限まで、count と inflight が共に 0 になるのを待機します。
+     *  @param[in,out]  q           送信キュー。
+     *  @param[in]      deadline_ms 絶対期限 [ms] (単調時刻)。
+     *  @retval         POTR_OK          排出が完了しました。
+     *  @retval         POTR_ERR_TIMEOUT 期限内に排出が完了しませんでした。
+     *  @retval         POTR_ERR_IO      単調時刻の取得に失敗しました。
+     */
+    extern int potr_internal_send_queue_wait_drained_until(potr_internal_send_queue *q, uint64_t deadline_ms);
+
+    /**
      *  @brief          指定した番号までのエントリがすべて完了するまで待機します。
      *
      *  completed_seq >= ticket になるまで待機します。送信スレッドの停止を理由に待機を中断しません。

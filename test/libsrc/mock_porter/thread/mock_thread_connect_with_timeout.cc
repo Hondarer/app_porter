@@ -5,12 +5,13 @@
 #include <testfw.h>
 #include <mock_porter.h>
 
-MOCK_WEAK_IMPL(cplat_socket, thread_connect_with_timeout, potr_context *ctx, int path_idx)
+MOCK_WEAK_IMPL(cplat_socket, thread_connect_with_timeout, potr_context *ctx, int path_idx,
+               cplat_socket_wait_cancel *cancel, cplat_socket_watch **watch_out)
 {
     cplat_socket mock_ret = CPLAT_INVALID_SOCKET;
     if (_mock_porter != nullptr)
     {
-        mock_ret = _mock_porter->thread_connect_with_timeout(ctx, path_idx);
+        mock_ret = _mock_porter->thread_connect_with_timeout(ctx, path_idx, cancel, watch_out);
     }
     return mock_ret;
 }

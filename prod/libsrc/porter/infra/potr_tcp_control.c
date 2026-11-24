@@ -20,6 +20,7 @@
 #include <cplat/net/byteorder.h>
 #include <cplat/net/socket.h>
 #include <porter/infra/potr_result.h>
+#include <porter/infra/potr_socket_io.h>
 #include <porter/infra/potr_tcp_control.h>
 #include <porter/potr_context.h>
 #include <porter/protocol/packet.h>
@@ -33,6 +34,7 @@ int potr_internal_tcp_send_control_packet(potr_context *ctx, const potr_packet *
     size_t wire_len;
     int attempted = 0;
     int sent_any = 0;
+    int last_err = POTR_ERR_IO;
     int i;
 
     if (ctx == NULL || pkt == NULL)
@@ -55,9 +57,18 @@ int potr_internal_tcp_send_control_packet(potr_context *ctx, const potr_packet *
         int ret = potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, pkt, wire_buf, &wire_len);
         if (ret == POTR_OK)
         {
-            if (cplat_socket_send_all(ctx->tcp_conn_fd[i], wire_buf, wire_len, NULL) == CPLAT_OK)
+            int send_ret = potr_internal_tcp_send_all_locked(ctx, i, wire_buf, wire_len, NULL, NULL);
+            if (send_ret == POTR_OK)
             {
                 sent_any = 1;
+            }
+            else if (send_ret == POTR_ERR_TIMEOUT)
+            {
+                last_err = POTR_ERR_TIMEOUT;
+            }
+            else if (last_err != POTR_ERR_TIMEOUT)
+            {
+                last_err = send_ret;
             }
         }
         cplat_local_lock_unlock(ctx->tcp_send_mutex[i]);
@@ -67,7 +78,7 @@ int potr_internal_tcp_send_control_packet(potr_context *ctx, const potr_packet *
         }
     }
 
-    /* 1 本以上のパスで送信成功した場合は POTR_OK、有効なパスがなければ切断、全パス失敗なら I/O エラーとする。 */
+    /* 1 本以上のパスで送信成功した場合は POTR_OK、有効なパスがなければ切断、全パス失敗なら失敗理由を返す。 */
     if (sent_any)
     {
         return POTR_OK;
@@ -78,5 +89,5 @@ int potr_internal_tcp_send_control_packet(potr_context *ctx, const potr_packet *
         return POTR_ERR_DISCONNECTED;
     }
 
-    return POTR_ERR_IO;
+    return last_err;
 }

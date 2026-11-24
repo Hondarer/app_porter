@@ -115,9 +115,10 @@ TEST(potrRecvThreadTest, poll_timeout_calls_service_monitor)
             });
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
         .WillByDefault([](thread_recv_slot *slot, potr_context *context) { *slot = thread_recv_slot{}; slot->ctx = context; });
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, _, _, _, _, _))
         .WillByDefault(
-            [&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *)
+            [&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                cplat_error *)
             {
                 ready[0] = 0;
                 cplat_atomic_store_i32(&ctx.running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
@@ -168,8 +169,9 @@ TEST(potrRecvThreadTest, unicast_bidir_dispatch_change_wakes_health_thread)
         });
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
         .WillByDefault([](thread_recv_slot *slot, potr_context *context) { *slot = thread_recv_slot{}; slot->ctx = context; });
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
-        .WillByDefault([&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *) {
+    ON_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, _, _, _, _, _))
+        .WillByDefault([&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                           cplat_error *) {
             poll_calls++;
             if (poll_calls == 1)
             {
@@ -232,9 +234,10 @@ TEST(potrRecvThreadTest, poll_timeout_calls_peer_monitor)
             });
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
         .WillByDefault([](thread_recv_slot *slot, potr_context *context) { *slot = thread_recv_slot{}; slot->ctx = context; });
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, _, _, _, _, _))
         .WillByDefault(
-            [&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *)
+            [&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                cplat_error *)
             {
                 ready[0] = 0;
                 cplat_atomic_store_i32(&ctx.running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
@@ -282,9 +285,10 @@ TEST(potrRecvThreadTest, multicast_sender_loop_calls_monitor_tick)
         *out = 1000U;
         return CPLAT_OK;
     });
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, _, _, _, _, _))
         .WillByDefault(
-            [&](const cplat_socket *, size_t, int wait_ms, unsigned char *ready, cplat_error *)
+            [&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int wait_ms, unsigned char *ready,
+                cplat_error *)
             {
                 waited_ms = wait_ms;
                 ready[0] = 0;
@@ -329,9 +333,10 @@ TEST(potrRecvThreadTest, receiver_loop_does_not_call_monitor_tick)
             });
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
         .WillByDefault([](thread_recv_slot *slot, potr_context *context) { *slot = thread_recv_slot{}; slot->ctx = context; });
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
+    ON_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, _, _, _, _, _))
         .WillByDefault(
-            [&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *)
+            [&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                cplat_error *)
             {
                 ready[0] = 0;
                 cplat_atomic_store_i32(&ctx.running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
@@ -362,12 +367,16 @@ class potrRecvThreadTcpDataTest : public Test
         ctx.service.type = POTR_TYPE_TCP_BIDIR; // [状態] - TCP_BIDIR とする。
         ctx.n_path = 1;                         // [状態] - path 数を 1 とする。
         ctx.tcp_conn_fd[0] = (cplat_socket)7;   // [状態] - path 0 を接続済みとする。
+        ctx.tcp_conn_watch[0] = reinterpret_cast<cplat_socket_watch *>(&watch_token);
+        ctx.tcp_conn_cancel[0] = reinterpret_cast<cplat_socket_wait_cancel *>(&cancel_token);
+        ctx.tcp_conn_generation[0] = 1U;
         ctx.tcp_recv_buf[0] = recv_buf.data();  // [状態] - 受信バッファーを設定する。
         ctx.tcp_first_pkt_buf[0] = first_pkt_buf.data();
         ctx.tcp_first_pkt_len[0] = POTR_PACKET_HEADER_SIZE; // [状態] - ペイロードのない 1 パケットを先読み済みとする。
         ctx.recv_window.base_seq = 100U;                    // [状態] - 受信ウィンドウ先頭の通番を 100 とする。
         delegate_real_cplat_local_lock_create(&ctx.tcp_recv_mutex);
         delegate_real_cplat_local_lock_create(&ctx.recv_window_mutex);
+        delegate_real_cplat_local_lock_create(&ctx.tcp_lifecycle_mutex[0]);
         ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
             .WillByDefault(
                 [this](cplat_thread **out, cplat_thread_fn fn, void *arg)
@@ -382,14 +391,23 @@ class potrRecvThreadTcpDataTest : public Test
         ON_CALL(mock_porter, thread_recv_session_adopt(_, _)).WillByDefault(Return(1));
         ON_CALL(mock_porter, potr_internal_window_recv_push(&ctx.recv_window, _))
             .WillByDefault(Return(POTR_ERR_OUT_OF_WINDOW)); // [状態] - DATA が受信ウィンドウの範囲外となるものとする。
-        ON_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _))
-            .WillByDefault(Return(CPLAT_ERR_UNKNOWN)); // [状態] - 2 パケット目の読み取りは失敗するものとする。
+        ON_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, 1U, _, _, _, _))
+            .WillByDefault(
+                [](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                   cplat_error *)
+                {
+                    ready[0] = 1U;
+                    return CPLAT_OK;
+                });
+        ON_CALL(mock_porter, potr_internal_tcp_frame_reader_step(_, _, _, _, _, _))
+            .WillByDefault(Return(POTR_ERR_EOF)); // [状態] - 2 パケット目の読み取りは EOF で終了するものとする。
     }
     // [サブ手順終了]
 
     // [サブ手順 名前=potrRecvThreadTcpDataTest.TearDown]
     void TearDown() override
     {
+        delegate_real_cplat_local_lock_dispose(ctx.tcp_lifecycle_mutex[0]);
         delegate_real_cplat_local_lock_dispose(ctx.recv_window_mutex);
         delegate_real_cplat_local_lock_dispose(ctx.tcp_recv_mutex);
     }
@@ -415,6 +433,8 @@ class potrRecvThreadTcpDataTest : public Test
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
     potr_context ctx;
+    int watch_token = 0;
+    int cancel_token = 0;
     std::vector<uint8_t> recv_buf;
     std::vector<uint8_t> first_pkt_buf;
     cplat_thread_fn entry = nullptr;
@@ -428,7 +448,7 @@ TEST_F(potrRecvThreadTcpDataTest, data_beyond_window_disconnects_stream)
     // Arrange
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_tcp_frame_reader_step(_, _, _, _, _, _)).Times(0);
     // [Pre-Assert確認_異常系] - 範囲外の DATA の後は、次のパケットを読み取らないこと。
     EXPECT_CALL(mock_porter, potr_internal_window_recv_pop(_, _)).Times(0);
     // [Pre-Assert確認_異常系] - 受信ウィンドウから配信しないこと。
@@ -450,7 +470,7 @@ TEST_F(potrRecvThreadTcpDataTest, duplicate_data_is_skipped_and_reading_continue
     // Arrange
 
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _)).Times(1);
+    EXPECT_CALL(mock_porter, potr_internal_tcp_frame_reader_step(_, _, _, _, _, _)).Times(1);
     // [Pre-Assert確認_正常系] - 重複の DATA の後も、次のパケットの読み取りを 1 回行うこと。
     EXPECT_CALL(mock_porter, potr_internal_window_recv_pop(_, _)).Times(0);
     // [Pre-Assert確認_正常系] - 重複の DATA を配信しないこと。
@@ -482,7 +502,7 @@ TEST_F(potrRecvThreadTcpDataTest, fin_fire_stops_tcp_recv_loop)
     // [Pre-Assert確認_正常系] - FIN パケットを即時発動として判定すること。
     EXPECT_CALL(mock_porter, thread_recv_fin_fire(_, 7U)).Times(1);
     // [Pre-Assert確認_正常系] - FIN 発動処理 (FIN_ACK 送信等) を 1 回呼び出すこと。
-    EXPECT_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_tcp_frame_reader_step(_, _, _, _, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - FIN 発動後は次のパケット読み取りを行わず受信ループを終了すること。
 
     // Act
@@ -521,7 +541,7 @@ TEST_F(potrRecvThreadTcpDataTest, pending_fin_triggered_by_data_stops_tcp_recv_l
     // [Pre-Assert確認_正常系] - 保留 FIN の target 通番に追いついたと判定すること。
     EXPECT_CALL(mock_porter, thread_recv_fin_fire(_, 2U)).Times(1);
     // [Pre-Assert確認_正常系] - 保留 FIN の発動処理を 1 回呼び出すこと。
-    EXPECT_CALL(mock_cplat, cplat_socket_recv_all(_, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_tcp_frame_reader_step(_, _, _, _, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - 保留 FIN 発動後は次のパケット読み取りを行わず受信ループを終了すること。
 
     // Act
@@ -630,8 +650,9 @@ TEST(potrRecvThreadTest, n1_drops_ping_and_data_from_rejected_slow_peer_without_
         *out = 1500U;
         return CPLAT_OK;
     });
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
-        .WillByDefault([&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *) {
+    ON_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, _, _, _, _, _))
+        .WillByDefault([&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                           cplat_error *) {
             poll_calls++;
             if (poll_calls <= 2)
             {
@@ -719,8 +740,9 @@ TEST(potrRecvThreadTest, n1_creates_peer_when_slow_peer_reject_expired)
         *out = 4000U;
         return CPLAT_OK;
     });
-    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
-        .WillByDefault([&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *) {
+    ON_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, _, _, _, _, _))
+        .WillByDefault([&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                           cplat_error *) {
             poll_calls++;
             if (poll_calls == 1)
             {
@@ -771,4 +793,109 @@ TEST(potrRecvThreadTest, n1_creates_peer_when_slow_peer_reject_expired)
     // Assert
     EXPECT_EQ(301U, new_peer.peer_session_id); // [確認_正常系] - 新しいピアにセッション識別子 301 が設定されること。
     EXPECT_EQ(1, new_peer.peer_session_known); // [確認_正常系] - 新しいピアのセッション既知フラグが 1 になること。
+}
+
+// UDP 受信で ready 後の WOULD_BLOCK と 0 byte データグラムを異常終了せず無視し、解除で抜けることの確認
+TEST(potrRecvThreadTest, udp_ready_would_block_zero_byte_and_cancel)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint8_t recv_buf[POTR_PACKET_HEADER_SIZE + 64U] = {};
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_UNICAST;
+    ctx.global.max_payload = 64U;
+    ctx.n_path = 1;
+    ctx.sock[0] = static_cast<cplat_socket>(1);
+    ctx.udp_watch[0] = reinterpret_cast<cplat_socket_watch *>(&watch_tok);
+    ctx.recv_cancel = reinterpret_cast<cplat_socket_wait_cancel *>(&cancel_tok);
+    ctx.recv_buf = recv_buf;
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    int poll_calls = 0;
+
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault([&](cplat_thread **out, cplat_thread_fn fn, void *arg) {
+            *out = nullptr;
+            entry = fn;
+            entry_arg = arg;
+            return CPLAT_OK;
+        });
+    ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
+        .WillByDefault([](thread_recv_slot *slot, potr_context *context) {
+            *slot = thread_recv_slot{};
+            slot->ctx = context;
+        });
+    ON_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, 1U, ctx.recv_cancel, _, _, _))
+        .WillByDefault([&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                           cplat_error *) {
+            poll_calls++;
+            if (poll_calls <= 2)
+            {
+                ready[0] = 1U;
+                return CPLAT_OK;
+            }
+            return CPLAT_ERR_CANCELED;
+        });
+    EXPECT_CALL(mock_cplat, cplat_socket_recvfrom(static_cast<cplat_socket>(1), _, _, _, _, _))
+        .WillOnce(Return(CPLAT_ERR_WOULD_BLOCK))
+        .WillOnce([](cplat_socket, void *, size_t, cplat_ipv4_endpoint *, size_t *recv_len, cplat_error *) {
+            *recv_len = 0U;
+            return CPLAT_OK;
+        });
+    EXPECT_CALL(mock_porter, potr_internal_packet_parse(_, _, _)).Times(0);
+
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_comm_recv_thread_start(&ctx));
+    ASSERT_NE(nullptr, entry);
+    entry(entry_arg);
+
+    // Assert
+    EXPECT_EQ(3, poll_calls); // [確認_正常系] - WOULD_BLOCK と 0 byte を通過し、3 回目の解除で終了すること。
+}
+
+// TCP 受信でフレーム途中の監視期限超過・解除で部分フレームを配信せず終了することの確認
+TEST_F(potrRecvThreadTcpDataTest, tcp_mid_frame_timeout_and_cancel_do_not_deliver_partial_frame)
+{
+    // Arrange
+    ctx.tcp_first_pkt_len[0] = 0U;
+    ctx.health_interval_ms = 100;
+    ctx.health_timeout_ms = 500;
+    int wait_calls = 0;
+
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, 1U, ctx.tcp_conn_cancel[0], _, _, _))
+        .WillOnce([&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                      cplat_error *) {
+            wait_calls++;
+            ready[0] = 1U;
+            return CPLAT_OK;
+        })
+        .WillOnce([&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                      cplat_error *) {
+            wait_calls++;
+            ready[0] = 0U;
+            return CPLAT_ERR_TIMEOUT;
+        })
+        .WillOnce([&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *,
+                      cplat_error *) {
+            wait_calls++;
+            return CPLAT_ERR_CANCELED;
+        });
+    EXPECT_CALL(mock_porter, potr_internal_tcp_frame_reader_step(_, _, _, _, _, _))
+        .WillOnce(DoAll(SetArgPointee<4>(0), Return(POTR_OK)));
+    EXPECT_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_))
+        .Times(AtLeast(1))
+        .WillRepeatedly(DoAll(SetArgPointee<0>(100U), Return(CPLAT_OK)));
+    EXPECT_CALL(mock_porter, potr_internal_packet_parse(_, _, _)).Times(0);
+
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_tcp_recv_thread_start(&ctx, 0));
+    ASSERT_NE(nullptr, entry);
+    entry(entry_arg);
+
+    // Assert
+    EXPECT_EQ(3, wait_calls); // [確認_正常系] - 部分受信、監視タイムアウト、解除の順で処理されたこと。
 }

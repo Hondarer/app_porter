@@ -21,5 +21,9 @@ void potr_internal_send_queue_abort(potr_internal_send_queue *q, int error)
     cplat_condvar_broadcast(q->not_full);
     cplat_condvar_broadcast(q->progress);
     cplat_condvar_broadcast(q->drained);
+    if (q->flow_changed != NULL)
+    {
+        cplat_condvar_broadcast(q->flow_changed);
+    }
     cplat_local_lock_unlock(q->mutex);
 }

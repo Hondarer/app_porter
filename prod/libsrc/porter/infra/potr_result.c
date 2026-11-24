@@ -11,6 +11,7 @@
  *******************************************************************************
  */
 
+#include <stddef.h>
 #include <porter/infra/potr_result.h>
 #include <porter/porter_result.h>
 
@@ -97,10 +98,35 @@ int potr_internal_result_from_socket_result(int cplat_result, const cplat_error 
         return POTR_ERR_EOF;
     }
 
+    if (cplat_result == CPLAT_ERR_TIMEOUT)
+    {
+        return POTR_ERR_TIMEOUT;
+    }
+
+    if (cplat_result == CPLAT_ERR_CANCELED)
+    {
+        return POTR_ERR_CANCELED;
+    }
+
+    if (cplat_result == CPLAT_ERR_OUT_OF_MEMORY)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+
     if (cplat_result == CPLAT_ERR_INVALID_ARGUMENT)
     {
         return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    return potr_internal_result_from_error(detail);
+    if (cplat_result == CPLAT_ERR_WOULD_BLOCK)
+    {
+        return POTR_ERR_IO;
+    }
+
+    if (detail != NULL && cplat_error_get_cause(detail) != CPLAT_CAUSE_NONE)
+    {
+        return potr_internal_result_from_error(detail);
+    }
+
+    return POTR_ERR_IO;
 }

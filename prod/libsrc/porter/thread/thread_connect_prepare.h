@@ -27,17 +27,20 @@ typedef enum tcp_session_cmp
 
 /**
  *  @brief          最初の TCP パケットを読み取ります。
- *  @param[in]      fd              接続済みソケット。所有権は移動しません。
+ *  @param[in]      fd              登録済みの接続ソケット。所有権は移動しません。
+ *  @param[in]      watch           `fd` のソケット登録。NULL は許可しません。
+ *  @param[in]      cancel          待機の解除オブジェクト。NULL 可。
  *  @param[out]     buf             ヘッダー以上の容量を持つバッファー。NULL は許可しません。
  *  @param[in]      max_buf         バッファー容量。ヘッダー以上を指定します。
  *  @param[out]     len_out         成功時の受信長。NULL は許可しません。失敗時は変更しません。
- *  @param[in]      timeout_ms      既存の接続管理が計算した読み取り待機時間。
- *  @return         成功時 POTR_OK、待機期限は POTR_ERR_TIMEOUT、長さ超過は POTR_ERR_PROTOCOL。
- *                  EOF・I/O 失敗は既存のソケット結果変換に従います。
+ *  @param[in]      timeout_ms      パケット全体の読み取り期限 [ms]。ヘッダーと本文を通じて延長しません。
+ *  @return         成功時 POTR_OK、待機期限は POTR_ERR_TIMEOUT、解除は POTR_ERR_CANCELED、
+ *                  長さ超過は POTR_ERR_PROTOCOL。EOF・I/O 失敗はソケット結果変換に従います。
  *  @par            スレッド セーフ
  *                  同じソケットとバッファーへの並行操作を避けて呼びます。
  */
-int thread_connect_read_first_packet(cplat_socket fd, uint8_t *buf, size_t max_buf, size_t *len_out, int timeout_ms);
+int thread_connect_read_first_packet(cplat_socket fd, cplat_socket_watch *watch, cplat_socket_wait_cancel *cancel,
+                                     uint8_t *buf, size_t max_buf, size_t *len_out, int timeout_ms);
 
 /**
  *  @brief          受信セッションの新旧を比較します。
@@ -52,15 +55,20 @@ int thread_connect_read_first_packet(cplat_socket fd, uint8_t *buf, size_t max_b
 tcp_session_cmp thread_connect_session_compare(const potr_context *ctx, const potr_packet *pkt);
 
 /**
- *  @brief          接続期限と停止要求を監視して TCP 接続します。
- *  @param[in,out]  ctx             設定と停止フラグ。NULL は許可しません。接続は登録しません。
+ *  @brief          接続期限と解除オブジェクトを監視して TCP 接続し、登録済みソケットを返します。
+ *  @param[in,out]  ctx             設定とアドレス。NULL は許可しません。接続は公開しません。
  *  @param[in]      path_idx        有効なパス番号。
- *  @return         成功時は呼び出し元が所有する接続ソケット (ブロッキング モード)、失敗時は CPLAT_INVALID_SOCKET。
- *  @note           失敗時は新規ソケットを閉じます。ハンドルを返すため共通結果コードの適用対象外です。
+ *  @param[in]      cancel          接続管理用の解除オブジェクト。NULL 可。
+ *  @param[out]     watch_out       成功時に登録オブジェクトを格納します。失敗時は NULL を格納します。
+ *  @return         成功時は呼び出し元が所有する登録済み接続ソケット、失敗時は CPLAT_INVALID_SOCKET。
+ *  @note           `connect_timeout_ms == 0` は `CPLAT_WAIT_FOREVER` として解除可能のまま接続を待ちます。
+ *                  失敗時は watch を detach してソケットを閉じ、同じソケットで再接続しません。
+ *                  ハンドルを返すため共通結果コードの適用対象外です。
  *  @par            スレッド セーフ
- *                  設定を固定したコンテキストの接続管理から呼びます。停止フラグは atomic で参照します。
+ *                  設定を固定したコンテキストの接続管理から呼びます。
  */
-cplat_socket thread_connect_with_timeout(potr_context *ctx, int path_idx);
+cplat_socket thread_connect_with_timeout(potr_context *ctx, int path_idx, cplat_socket_wait_cancel *cancel,
+                                         cplat_socket_watch **watch_out);
 
 /**
  *  @brief          接続元アドレスとポートを照合します。

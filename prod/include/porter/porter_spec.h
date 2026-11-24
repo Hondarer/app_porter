@@ -351,7 +351,7 @@ extern "C"
      *  @retval         POTR_ERR_INVALID_ARGUMENT  handle が NULL です。
      *  @retval         POTR_ERR_DISCONNECTED      送信済みデータがある状態で相手 FIN 未受理のまま全 TCP パスが切断されているか、
      *                                             相手端の正常な FIN 受理後に DATA を送信しました。
-     *  @retval         POTR_ERR_TIMEOUT           TCP close 待機が tcp_close_timeout_ms を超過しました。
+     *  @retval         POTR_ERR_TIMEOUT           TCP close の絶対期限 (tcp_close_timeout_ms) を超過しました。
      *  @retval         POTR_ERR_IO                TCP FIN の送信に失敗しました。
      *  @retval         POTR_ERR_UNSUPPORTED       同一サービスの受信コールバック内から呼び出しました。handle は有効なままです。
      *  @retval         POTR_ERR_UNKNOWN           暗号化または同期などの分類不能な内部処理に失敗しました。
@@ -365,15 +365,17 @@ extern "C"
      *  本関数呼び出し時、POTR_EVENT_DISCONNECTED コールバックは発火しません。\n
      *  アプリケーション自身が明示的にサービスを閉じる操作は、接続状態変化イベントとして通知しない設計です。\n
      *  UDP 通信種別の送信者 (POTR_ROLE_SENDER) が本関数を呼び出した場合は、POTR_FLAG_FIN パケットが送信されます。\n
-     *  TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) では、送信キューの drain 完了後に
-     *  protocol-level の POTR_FLAG_FIN / POTR_FLAG_FIN_ACK を交換してからソケットを閉じます。\n
+     *  TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) では、終了開始時に global 設定 tcp_close_timeout_ms
+     *  から 1 つの絶対期限を決定し、受付済み API の通信待機の回収、送信キューの排出、protocol-level の
+     *  POTR_FLAG_FIN 送信、および POTR_FLAG_FIN_ACK 待機で同じ期限を共有します (段階移行や再試行で期限を延長しません)。\n
      *  既に相手端の正常な POTR_FLAG_FIN を受理済みの場合は FIN 送信と FIN_ACK 待機を行わず、
      *  相手 FIN 受理後にソケットへ書き込んだ DATA がなければ POTR_OK、あれば POTR_ERR_DISCONNECTED を返します。\n
-     *  TCP close 待機は global 設定 tcp_close_timeout_ms の範囲で行い、
      *  待機中に全 TCP パスが切断された場合はタイムアウトを待たずに復帰して
      *  (相手 FIN 受理済みなら受理後の DATA 送信がなければ POTR_OK・あれば POTR_ERR_DISCONNECTED、
      *  未受理なら現セッションの送信済みデータがなければ POTR_OK・あれば POTR_ERR_DISCONNECTED)、
-     *  タイムアウト時は強制 close して POTR_ERR_TIMEOUT を返します。\n
+     *  いずれかの段階で期限を超過した場合は、送信キューの中断と未送信データの破棄、通信待機の解除を行い、
+     *  参照とスレッドをすべて回収してから POTR_ERR_TIMEOUT を返します。\n
+     *  tcp_close_timeout_ms が 0 の場合も、同じ期限で各待機を打ち切り、使用中の資源を回収前に解放しません。\n
      *  いずれの場合も、相手側では POTR_EVENT_DISCONNECTED が発火します。
      *
      *  @attention      受付停止前の API と登録済み通知の完了を待ってから通信資源を解放します。\n

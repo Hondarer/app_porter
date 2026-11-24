@@ -28,6 +28,7 @@
 #include <cplat/runtime/memory_lock.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_send_queue.h>
+#include <porter/infra/potr_socket_io.h>
 #include <porter/infra/potr_tcp_control.h>
 #include <porter/potr_context.h>
 #include <porter/potr_handle.h>
@@ -79,7 +80,6 @@ static void send_fin(potr_context *ctx)
     for (i = 0; i < ctx->n_path; i++)
     {
         uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
-        size_t sent = 0;
 
         if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
         {
@@ -94,7 +94,7 @@ static void send_fin(potr_context *ctx)
          * FIN は終了の通知であり、届かなくても閉じる処理を続け、相手はヘルス チェックのタイムアウトで切断を検出するため、
          * 戻り値は明示的に破棄する。
          */
-        (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &ctx->dest_addr[i], &sent, NULL);
+        (void)potr_internal_udp_sendto(ctx, i, wire_buf, wire_len, &ctx->dest_addr[i], NULL);
     }
 }
 
@@ -180,39 +180,36 @@ static int resolve_tcp_close_after_peer_fin(const potr_context *ctx)
     return POTR_OK;
 }
 
-static int wait_for_tcp_close_ack(potr_context *ctx, int timeout_ms, int has_data)
+static int wait_for_tcp_close_ack(potr_context *ctx, int has_data)
 {
     int result = POTR_OK;
     int wait_result;
-
-    if (timeout_ms == 0)
-    {
-        reset_tcp_close_wait(ctx);
-        return POTR_OK;
-    }
 
     cplat_local_lock_lock(ctx->tcp_close_mutex);
 
     while (ctx->tcp_close_waiting_ack && !ctx->tcp_close_ack_received)
     {
+        int has_deadline = 0;
+        int rem_ms = CPLAT_WAIT_FOREVER;
+        int dl_rc;
+
         if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
         {
             break;
         }
 
-        wait_result = cplat_condvar_timed_wait(ctx->tcp_close_cv, ctx->tcp_close_mutex, timeout_ms);
-        if (wait_result != CPLAT_OK)
+        dl_rc = potr_internal_tcp_close_remaining_ms(ctx, &has_deadline, &rem_ms);
+        if (dl_rc != POTR_OK)
         {
-            if (wait_result == CPLAT_ERR_TIMEOUT)
-            {
-                result = POTR_ERR_TIMEOUT;
-            }
-            else
-            {
-                /* cplat の同期失敗には、porter の分類へ変換できる詳細コードがない。 */
-                result = POTR_ERR_UNKNOWN;
-            }
+            result = dl_rc;
+            break;
+        }
 
+        wait_result = cplat_condvar_timed_wait(ctx->tcp_close_cv, ctx->tcp_close_mutex, rem_ms);
+        if (wait_result != CPLAT_OK && wait_result != CPLAT_ERR_TIMEOUT)
+        {
+            /* cplat の同期失敗には、porter の分類へ変換できる詳細コードがない。 */
+            result = POTR_ERR_UNKNOWN;
             break;
         }
     }
@@ -265,6 +262,31 @@ static void stop_tcp_health_threads(potr_context *ctx)
     }
 }
 
+/* 公開前の接続準備・accept・再接続待機を解除する (公開済み世代は FIN 手順のため維持する)。 */
+static void signal_tcp_connect_prep_stop(potr_context *ctx)
+{
+    int i;
+
+    for (i = 0; i < ctx->n_path; i++)
+    {
+        if (ctx->tcp_connect_cancel[i] != NULL)
+        {
+            /*
+             * 有効な cancel オブジェクトへの通知は必ず CPLAT_OK を返し、OS 通知失敗時も
+             * 待機側が最大 50 [ms] の内部間隔で解除を検出するため、戻り値は明示的に破棄する。
+             */
+            (void)cplat_socket_wait_cancel_signal(ctx->tcp_connect_cancel[i], NULL);
+        }
+    }
+
+    if (ctx->tcp_state_mutex != NULL && ctx->tcp_state_cv != NULL)
+    {
+        cplat_local_lock_lock(ctx->tcp_state_mutex);
+        cplat_condvar_broadcast(ctx->tcp_state_cv);
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
+    }
+}
+
 static int close_impl(potr_context *handle)
 {
     potr_context *ctx = (potr_context *)handle;
@@ -282,6 +304,11 @@ static int close_impl(potr_context *handle)
     /* TCP: 接続管理スレッドを停止する (send/recv/health スレッドは connect スレッド内で停止)。 */
     if (is_tcp_type(ctx->service.type))
     {
+        /* handle_begin_close を経ずに呼ばれた場合も含め、期限と新規公開停止を保証する。 */
+        cplat_atomic_store_i32(&ctx->tcp_publish_stopped, 1, CPLAT_MEMORY_ORDER_RELEASE);
+        potr_internal_tcp_close_deadline_publish(ctx);
+        signal_tcp_connect_prep_stop(ctx);
+
         if (cplat_atomic_load_i32(&ctx->send_thread_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             uint32_t fin_target_seq;
@@ -289,41 +316,40 @@ static int close_impl(potr_context *handle)
 
             stop_tcp_health_threads(ctx);
 
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
-                       "potr_service_close: service_id=%" PRId64 " flushing send queue and sending TCP FIN",
-                       ctx->service.service_id);
-            potr_internal_send_queue_wait_drained(&ctx->send_queue);
-
-            /* send_has_data は送信スレッドが send_window_mutex の下で更新するため、同じロックの下で読む。 */
-            fin_target_seq = get_fin_target_seq(ctx, &has_data);
-
-            if (cplat_atomic_load_i32(&ctx->tcp_peer_fin_received, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+            if (cplat_atomic_load_i32(&ctx->tcp_close_timed_out, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
             {
-                /*
-                 * 相手端の FIN を受理済みなら、FIN 送信と FIN_ACK 待機を行わず、
-                 * 相手の FIN_ACK より後に DATA を書いたか (tcp_sent_after_peer_fin) で結果を確定する。
-                 */
-                reset_tcp_close_wait(ctx);
-                ret = resolve_tcp_close_after_peer_fin(ctx);
-                if (ret != POTR_OK)
-                {
-                    POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
-                               "potr_service_close: service_id=%" PRId64 " TCP close after peer FIN with sent data",
-                               ctx->service.service_id);
-                }
+                /* 受付済み API 回収の段階で既に期限超過済み。キューは中断済み、全世代へ閉じる要求済み。 */
+                ret = POTR_ERR_TIMEOUT;
             }
-            else if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) > 0)
+            else
             {
-                int close_result;
+                uint64_t deadline_ms =
+                    cplat_atomic_load_u64(&ctx->tcp_close_deadline_ms, CPLAT_MEMORY_ORDER_ACQUIRE);
+                int drain_ret;
 
-                begin_tcp_close_wait(ctx, fin_target_seq);
-                close_result = send_tcp_fin(ctx, fin_target_seq);
-                if (close_result != POTR_OK)
+                POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
+                           "potr_service_close: service_id=%" PRId64 " flushing send queue and sending TCP FIN",
+                           ctx->service.service_id);
+                drain_ret = potr_internal_send_queue_wait_drained_until(&ctx->send_queue, deadline_ms);
+                if (drain_ret != POTR_OK)
                 {
-                    reset_tcp_close_wait(ctx);
+                    /* 期限切れ: 送信キューを中断して未送信データを破棄し、全世代へ閉じる要求を通知する。 */
+                    potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_TIMEOUT);
+                    potr_internal_tcp_conn_request_close_all(ctx);
+                    ret = drain_ret;
+                }
+                else
+                {
+                    /* send_has_data は送信スレッドが send_window_mutex の下で更新するため、同じロックの下で読む。 */
+                    fin_target_seq = get_fin_target_seq(ctx, &has_data);
 
                     if (cplat_atomic_load_i32(&ctx->tcp_peer_fin_received, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
                     {
+                        /*
+                         * 相手端の FIN を受理済みなら、FIN 送信と FIN_ACK 待機を行わず、
+                         * 相手の FIN_ACK より後に DATA を書いたか (tcp_sent_after_peer_fin) で結果を確定する。
+                         */
+                        reset_tcp_close_wait(ctx);
                         ret = resolve_tcp_close_after_peer_fin(ctx);
                         if (ret != POTR_OK)
                         {
@@ -333,43 +359,67 @@ static int close_impl(potr_context *handle)
                                        ctx->service.service_id);
                         }
                     }
-                    else
+                    else if (cplat_atomic_load_i32(&ctx->tcp_active_paths, CPLAT_MEMORY_ORDER_ACQUIRE) > 0)
+                    {
+                        int close_result;
+
+                        begin_tcp_close_wait(ctx, fin_target_seq);
+                        close_result = send_tcp_fin(ctx, fin_target_seq);
+                        if (close_result != POTR_OK)
+                        {
+                            reset_tcp_close_wait(ctx);
+
+                            if (cplat_atomic_load_i32(&ctx->tcp_peer_fin_received, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+                            {
+                                ret = resolve_tcp_close_after_peer_fin(ctx);
+                                if (ret != POTR_OK)
+                                {
+                                    POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                                               "potr_service_close: service_id=%" PRId64
+                                               " TCP close after peer FIN with sent data",
+                                               ctx->service.service_id);
+                                }
+                            }
+                            else
+                            {
+                                POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                                           "potr_service_close: service_id=%" PRId64 " TCP FIN send failed (ret=%d)",
+                                           ctx->service.service_id, close_result);
+                                ret = close_result;
+                            }
+                        }
+                        else
+                        {
+                            close_result = wait_for_tcp_close_ack(ctx, has_data);
+                            if (close_result != POTR_OK)
+                            {
+                                POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
+                                           "potr_service_close: service_id=%" PRId64
+                                           " TCP FIN_ACK wait failed (%ums) ret=%d",
+                                           ctx->service.service_id, (unsigned)ctx->global.tcp_close_timeout_ms,
+                                           close_result);
+                                ret = close_result;
+                            }
+                            else
+                            {
+                                POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                                           "potr_service_close: service_id=%" PRId64 " TCP FIN_ACK completed",
+                                           ctx->service.service_id);
+                            }
+                        }
+                    }
+                    else if (has_data)
                     {
                         POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
-                                   "potr_service_close: service_id=%" PRId64 " TCP FIN send failed",
+                                   "potr_service_close: service_id=%" PRId64 " TCP close without active path",
                                    ctx->service.service_id);
-                        ret = close_result;
-                    }
-                }
-                else
-                {
-                    /* タイムアウト [ms] は設定値。上限 2147483646 (INT_MAX - 1) は open_validate_config() で検査済み。 */
-                    close_result = wait_for_tcp_close_ack(ctx, (int)ctx->global.tcp_close_timeout_ms, has_data);
-                    if (close_result != POTR_OK)
-                    {
-                        POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
-                                   "potr_service_close: service_id=%" PRId64 " TCP FIN_ACK wait failed (%ums) ret=%d",
-                                   ctx->service.service_id, (unsigned)ctx->global.tcp_close_timeout_ms, close_result);
-                        ret = close_result;
+                        ret = POTR_ERR_DISCONNECTED;
                     }
                     else
                     {
-                        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
-                                   "potr_service_close: service_id=%" PRId64 " TCP FIN_ACK completed",
-                                   ctx->service.service_id);
+                        reset_tcp_close_wait(ctx);
                     }
                 }
-            }
-            else if (has_data)
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_WARNING,
-                           "potr_service_close: service_id=%" PRId64 " TCP close without active path",
-                           ctx->service.service_id);
-                ret = POTR_ERR_DISCONNECTED;
-            }
-            else
-            {
-                reset_tcp_close_wait(ctx);
             }
         }
 
@@ -377,20 +427,16 @@ static int close_impl(potr_context *handle)
                    "potr_service_close: service_id=%" PRId64 " stopping connect thread (TCP)", ctx->service.service_id);
         potr_internal_connect_thread_stop(ctx);
 
-        /* 送信キューを破棄する (SENDER / TCP_BIDIR のみ)。 */
-        if (ctx->role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
-        {
-            potr_internal_send_queue_dispose(&ctx->send_queue);
-        }
-
-        api_context_dispose_tcp_sync(ctx);
-
+        /*
+         * 送信キューと TCP 同期資源の破棄は、通知スレッドの停止 (potr_internal_notify_stop) と
+         * フロー制御停止の後に api_context_dispose_resources() で行う。
+         */
         POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service closed (TCP)");
 
         return ret;
     }
 
-    /* 非 TCP: ヘルス チェック スレッドを停止する (送信者のみ)。 */
+    /* 非 TCP: ヘルス チェック スレッドを停止する (送信者のみ。同期資源は共通解放まで維持する)。 */
     if (ctx->health_thread[0] != NULL)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "potr_service_close: service_id=%" PRId64 " stopping health thread",
@@ -399,7 +445,7 @@ static int close_impl(potr_context *handle)
         potr_internal_health_thread_stop(ctx);
     }
 
-    /* 送信スレッドを停止してキューを破棄する (送信者のみ)。 */
+    /* 送信スレッドを停止する (送信者のみ)。 */
     if (ctx->send_thread != NULL)
     {
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
@@ -431,7 +477,6 @@ static int close_impl(potr_context *handle)
         }
 
         potr_internal_send_thread_stop(ctx);
-        potr_internal_send_queue_dispose(&ctx->send_queue);
     }
 
     /* 送信スレッド未起動の受信専用サービスではここで受信スレッドを停止する。 */
@@ -444,44 +489,9 @@ static int close_impl(potr_context *handle)
     }
 
     /*
-     * ソケットをクローズ (recv スレッドの有無によらず実施)。
-     * Windows: potr_internal_comm_recv_thread_stop 内で closesocket 済みの場合は INVALID_SOCKET になっているため
-     *          guard により二重 close を回避する。
-     * Linux: potr_internal_comm_recv_thread_stop は shutdown のみで close しないため、ここで必ず close する。
+     * UDP のマルチキャスト グループ離脱、watch の detach、socket の close、cancel と同期資源の破棄は、
+     * 通知スレッド (フロー制御解除送信を含む) の終了後に api_context_dispose_resources() で行う。
      */
-    {
-        int i;
-
-        for (i = 0; i < ctx->n_path; i++)
-        {
-            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
-            {
-                continue;
-            }
-
-            if (raw_base_type(ctx->service.type) == POTR_TYPE_MULTICAST)
-            {
-                uint32_t group_addr;
-
-                /*
-                 * 離脱には参加時と同じ NIC を渡す。
-                 * 別のインターフェイスでは、参加したメンバーシップと一致せず離脱できない。
-                 * 直後にソケットを閉じ、閉じる時に OS がグループから離脱させるため、戻り値は明示的に破棄する。
-                 * see: https://man7.org/linux/man-pages/man7/ip.7.html
-                 * see: https://learn.microsoft.com/en-us/windows/win32/winsock/ipproto-ip-socket-options
-                 */
-                if (cplat_ipv4_parse(ctx->service.multicast_group, &group_addr) == CPLAT_OK)
-                {
-                    (void)cplat_socket_leave_multicast_group(ctx->sock[i], group_addr, ctx->multicast_if_resolved[i],
-                                                             NULL);
-                }
-            }
-
-            cplat_socket_close(ctx->sock[i]);
-            ctx->sock[i] = CPLAT_INVALID_SOCKET;
-        }
-    }
-
     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service closed");
 
     return POTR_OK;

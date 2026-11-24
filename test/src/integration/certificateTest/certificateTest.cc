@@ -1,3 +1,11 @@
+#include <cplat/base/platform.h>
+#if defined(PLATFORM_WINDOWS)
+    #define _HAS_STD_BYTE 0
+    #include <cplat/base/windows_sdk.h>
+#elif defined(PLATFORM_LINUX)
+    #include <netinet/in.h>
+    #include <sys/socket.h>
+#endif
 #include <testfw.h>
 #include <mock_openssl.h>
 #include <porter.h>
@@ -646,4 +654,50 @@ TEST(certificate_packet_test, monitor_list_sealed_with_group_key_is_verified_and
     cplat_local_lock_dispose(wrong_sender_ctx.certificate_mutex);
     cplat_local_lock_dispose(sender_ctx.callback_mutex);
     cplat_local_lock_dispose(sender_ctx.certificate_mutex);
+}
+
+// 証明書方式 TCP のハンドシェイク途中でサービスを閉じても、待機が解除されて 1 秒以内に完了することの確認
+TEST(certificateTest, tcp_stop_during_certificate_exchange_completes_quickly)
+{
+    testing::NiceMock<Mock_openssl> mock_openssl;
+    potr_global_config global = global_configuration();
+    global.tcp_close_timeout_ms = 500U;
+
+    cplat_error detail{};
+    cplat_socket probe = CPLAT_INVALID_SOCKET;
+    ASSERT_EQ(CPLAT_OK, cplat_socket_open(CPLAT_SOCKET_TCP, &probe, &detail));
+    cplat_ipv4_endpoint ep{};
+    ep.address = cplat_hton32(0x7F000001U);
+    ep.port = 0U;
+    ASSERT_EQ(CPLAT_OK, cplat_socket_bind(probe, &ep, &detail));
+    struct sockaddr_in sin{};
+#if defined(PLATFORM_WINDOWS)
+    int sin_len = (int)sizeof(sin);
+    ASSERT_EQ(0, getsockname((SOCKET)probe, reinterpret_cast<struct sockaddr *>(&sin), &sin_len));
+#else
+    socklen_t sin_len = (socklen_t)sizeof(sin);
+    ASSERT_EQ(0, getsockname((int)probe, reinterpret_cast<struct sockaddr *>(&sin), &sin_len));
+#endif
+    const uint16_t port = cplat_ntoh16(sin.sin_port);
+    cplat_socket_close(probe);
+
+    certificate_configuration receiver_cfg(POTR_TYPE_TCP, 0, "client", "server", port);
+    potr_context *receiver = nullptr;
+    ASSERT_EQ(POTR_OK, potr_service_open(&global, &receiver_cfg.definition, POTR_ROLE_RECEIVER, receive_data, &receiver));
+
+    /* 相手側ソケットを接続したまま証明書ハンドシェイクを送らずに停止させる。 */
+    cplat_socket client = CPLAT_INVALID_SOCKET;
+    ASSERT_EQ(CPLAT_OK, cplat_socket_open(CPLAT_SOCKET_TCP, &client, &detail));
+    cplat_ipv4_endpoint dst{};
+    dst.address = cplat_hton32(0x7F000001U);
+    dst.port = cplat_hton16(port);
+    ASSERT_EQ(CPLAT_OK, cplat_socket_connect(client, &dst, &detail));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_EQ(POTR_OK, potr_service_close(receiver));
+    const auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    EXPECT_LT(elapsed_ms, 1000);
+    cplat_socket_close(client);
 }

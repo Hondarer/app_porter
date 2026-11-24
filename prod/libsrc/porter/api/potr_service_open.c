@@ -292,12 +292,24 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
 
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
+        cplat_error detail;
+        int cancel_rc;
+
         if (cplat_local_lock_create(&ctx->tcp_send_mutex[i]) != CPLAT_OK ||
+            cplat_local_lock_create(&ctx->tcp_lifecycle_mutex[i]) != CPLAT_OK ||
             cplat_local_lock_create(&ctx->health_mutex[i]) != CPLAT_OK ||
             cplat_condvar_create(&ctx->health_wakeup[i]) != CPLAT_OK)
         {
             api_context_dispose_tcp_sync(ctx);
             return POTR_ERR_UNKNOWN;
+        }
+
+        cplat_error_clear(&detail);
+        cancel_rc = cplat_socket_wait_cancel_create(&ctx->tcp_connect_cancel[i], &detail);
+        if (cancel_rc != CPLAT_OK)
+        {
+            api_context_dispose_tcp_sync(ctx);
+            return potr_internal_result_from_socket_result(cancel_rc, &detail);
         }
     }
 
@@ -313,7 +325,6 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
                                                ctx->global.max_payload);
         if (result != POTR_OK)
         {
-            api_context_dispose_tcp_sync(ctx);
             return result;
         }
     }
@@ -331,37 +342,46 @@ static int start_threads_tcp(potr_context *ctx, potr_role role)
 
     if (result != POTR_OK)
     {
-        if (ctx->send_queue.mutex != NULL)
-        {
-            potr_internal_send_queue_dispose(&ctx->send_queue);
-        }
-
-        api_context_dispose_tcp_sync(ctx);
         return result;
     }
 
-    result = potr_internal_connect_thread_start(ctx);
-    if (result != POTR_OK)
-    {
-        /* 起動関数は、失敗時に起動済みのスレッドを停止してから戻る。 */
-        if (role == POTR_ROLE_SENDER || ctx->service.type == POTR_TYPE_TCP_BIDIR)
-        {
-            potr_internal_send_queue_dispose(&ctx->send_queue);
-        }
-
-        api_context_dispose_tcp_sync(ctx);
-    }
-
-    return result;
+    /* 失敗時の同期資源とキューの破棄は呼び出し元の ctx_cleanup() (通知スレッド停止後) が担う。 */
+    return potr_internal_connect_thread_start(ctx);
 }
 
 /*
- * 非 TCP では、役割と通信種別に応じて受信・送信・ヘルス チェック スレッドを起動する。
- * 成功時は POTR_OK を返す。起動または送信キューの初期化に失敗したときは、その結果を返す。
+ * 非 TCP では、役割と通信種別に応じて同期資源を生成し、受信・送信・ヘルス チェック スレッドを起動する。
+ * 成功時は POTR_OK を返す。起動または同期資源生成に失敗したときは起動済みスレッドを停止して結果を返し、
+ * 共有同期資源は呼び出し元の ctx_cleanup() で回収する。
  */
 static int start_threads_udp(potr_context *ctx, potr_role role)
 {
     int result;
+    int i;
+    cplat_error detail;
+    int cancel_rc;
+
+    /* スレッド起動前に UDP 用の解除オブジェクト、送信用ロック、health 同期資源を生成する。 */
+    cplat_error_clear(&detail);
+    cancel_rc = cplat_socket_wait_cancel_create(&ctx->recv_cancel, &detail);
+    if (cancel_rc != CPLAT_OK)
+    {
+        return potr_internal_result_from_socket_result(cancel_rc, &detail);
+    }
+
+    for (i = 0; i < (int)POTR_MAX_PATH; i++)
+    {
+        if (cplat_local_lock_create(&ctx->udp_send_mutex[i]) != CPLAT_OK)
+        {
+            return POTR_ERR_UNKNOWN;
+        }
+    }
+
+    if (cplat_local_lock_create(&ctx->health_mutex[0]) != CPLAT_OK ||
+        cplat_condvar_create(&ctx->health_wakeup[0]) != CPLAT_OK)
+    {
+        return POTR_ERR_UNKNOWN;
+    }
 
     /*
      * 非 TCP の受信者は、受信スレッドだけを起動する。
@@ -394,25 +414,13 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
         result = potr_internal_send_thread_start(ctx);
         if (result != POTR_OK)
         {
-            potr_internal_send_queue_dispose(&ctx->send_queue);
             return result;
-        }
-
-        /*
-         * 片方向 UDP 以外は、ヘルス チェック スレッドの開始前に即時 PING を要求する。
-         * 片方向 UDP は open 直後の即時 PING を送らない。
-         * 正本は app/porter/docs/config.md の「health_interval_ms と health_timeout_ms の関係」節である。
-         */
-        if (type_uses_immediate_health_ping(ctx->service.type))
-        {
-            cplat_atomic_store_i32(&ctx->health_send_immediate[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
         }
 
         result = potr_internal_health_thread_start(ctx);
         if (result != POTR_OK)
         {
             potr_internal_send_thread_stop(ctx);
-            potr_internal_send_queue_dispose(&ctx->send_queue);
             return result;
         }
 
@@ -421,7 +429,6 @@ static int start_threads_udp(potr_context *ctx, potr_role role)
         {
             potr_internal_health_thread_stop(ctx);
             potr_internal_send_thread_stop(ctx);
-            potr_internal_send_queue_dispose(&ctx->send_queue);
             return result;
         }
     }

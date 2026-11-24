@@ -38,24 +38,28 @@ extern "C"
         void (*send_stop)(potr_context *ctx);
         int (*recv_start)(potr_context *ctx, int path_idx);
         int (*health_start)(potr_context *ctx, int path_idx);
-        void (*close_conn)(potr_context *ctx, int path_idx);
+        void (*request_close)(potr_context *ctx, int path_idx, uint64_t generation);
         void (*join_recv)(potr_context *ctx, int path_idx);
+        void (*stop_health)(potr_context *ctx, int path_idx);
+        void (*release_conn)(potr_context *ctx, int path_idx, uint64_t generation);
         void (*set_path_ping_state)(potr_context *ctx, int path_idx, uint8_t next_state);
     } potr_internal_connected_threads_ops;
 
     /**
      *  @brief          接続確立後に send / recv / health スレッドを起動します。
      *
-     *  起動に失敗した場合は起動済みのスレッドを停止してロールバックします。
+     *  起動に失敗した場合は閉じる要求を発行し、起動済みのスレッドを回収してから世代を解放してロールバックします。
+     *  呼び出し元と巻き戻しで世代の解放を重複させません。
      *
-     *  @param[in,out]  ctx      セッション コンテキスト。
-     *  @param[in]      path_idx 接続確立済みパスのインデックス。
-     *  @param[in]      ops      スレッド操作コールバック テーブル。
+     *  @param[in,out]  ctx        セッション コンテキスト。
+     *  @param[in]      path_idx   接続確立済みパスのインデックス。
+     *  @param[in]      generation 公開済みの TCP 接続世代番号。
+     *  @param[in]      ops        スレッド操作コールバック テーブル。
      *  @retval         POTR_OK                    起動に成功しました。
      *  @retval         POTR_ERR_INVALID_ARGUMENT  ctx または ops が NULL です。
      *  @return         依存する起動処理または PING 送信に失敗した場合は、その結果コードを返します。
      */
-    extern int potr_internal_start_connected_threads(potr_context *ctx, int path_idx,
+    extern int potr_internal_start_connected_threads(potr_context *ctx, int path_idx, uint64_t generation,
                                                      const potr_internal_connected_threads_ops *ops);
 
 #ifdef __cplusplus

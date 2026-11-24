@@ -194,3 +194,45 @@ TEST(apiContextCleanupTest, frees_return_source_replay_records_once)
     // Assert
     EXPECT_EQ(nullptr, ctx.receivers); // [確認_正常系] - 所有する記録が残らないこと。
 }
+
+// マルチキャスト離脱 -> watch 解除 -> ソケット閉鎖 -> cancel/同期資源破棄の順序の確認
+TEST(apiContextCleanupTest, multicast_leave_detach_close_and_cancel_dispose_order)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    for (int i = 0; i < (int)POTR_MAX_PATH; i++)
+    {
+        ctx.sock[i] = CPLAT_INVALID_SOCKET;
+        ctx.tcp_conn_fd[i] = CPLAT_INVALID_SOCKET;
+        ctx.tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
+    }
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    ctx.service.type = POTR_TYPE_MULTICAST;
+    ctx.n_path = 1;
+    ctx.sock[0] = static_cast<cplat_socket>(9);
+    ctx.udp_watch[0] = reinterpret_cast<cplat_socket_watch *>(&watch_tok);
+    ctx.recv_cancel = reinterpret_cast<cplat_socket_wait_cancel *>(&cancel_tok);
+    ctx.multicast_if_resolved[0] = 77U;
+    std::memcpy(ctx.service.multicast_group, "239.0.0.2", sizeof("239.0.0.2"));
+
+    // Pre-Assert
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_cplat, cplat_socket_leave_multicast_group(static_cast<cplat_socket>(9), _, 77U, nullptr))
+            .WillOnce(Return(CPLAT_OK));
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_detach(ctx.udp_watch[0])).WillOnce(Return());
+        EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(9))).WillOnce(Return());
+        EXPECT_CALL(mock_cplat, cplat_socket_wait_cancel_dispose(ctx.recv_cancel)).WillOnce(Return());
+    }
+
+    // Act
+    api_context_dispose_resources(&ctx);
+
+    // Assert
+    EXPECT_EQ(nullptr, ctx.udp_watch[0]);
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.sock[0]);
+    EXPECT_EQ(nullptr, ctx.recv_cancel);
+}

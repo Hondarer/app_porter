@@ -16,6 +16,7 @@
 #include <porter/porter_result.h>
 #include <porter/porter_const.h>
 #include <porter/potr_context.h>
+#include <porter/infra/potr_socket_io.h>
 #include <porter/potr_flow_control.h>
 #include <porter/potr_peer_table.h>
 #include <porter/infra/potr_trace.h>
@@ -623,7 +624,7 @@ static int send_state(potr_context *ctx, struct potr_internal_flow_control *fc, 
             /* 書き込めない経路は、受信スレッドが切断を検知する。送出できた経路の有無だけを記録する。 */
             cplat_local_lock_lock(ctx->tcp_send_mutex[i]);
             if (potr_internal_packet_seal_for_context(ctx, session, &packet, wire, &wire_len) == POTR_OK &&
-                cplat_socket_send_all(ctx->tcp_conn_fd[i], wire, wire_len, NULL) == CPLAT_OK)
+                potr_internal_tcp_send_all_locked(ctx, i, wire, wire_len, NULL, NULL) == POTR_OK)
             {
                 sent_any = 1;
             }
@@ -639,9 +640,7 @@ static int send_state(potr_context *ctx, struct potr_internal_flow_control *fc, 
         /* 証明書方式でハンドシェイクが完了していない経路は、封緘に失敗するため送出しない。 */
         if (potr_internal_packet_seal_for_context(ctx, session, &packet, wire, &wire_len) == POTR_OK)
         {
-            size_t sent = 0;
-
-            if (cplat_socket_sendto(ctx->sock[i], wire, wire_len, &dest[i], &sent, NULL) == CPLAT_OK)
+            if (potr_internal_udp_sendto(ctx, i, wire, wire_len, &dest[i], NULL) == POTR_OK)
             {
                 sent_any = 1;
             }
@@ -2192,7 +2191,6 @@ void potr_internal_flow_control_send_query(potr_context *ctx, struct potr_intern
     for (i = 0; i < ctx->n_path; i++)
     {
         size_t wire_len = sizeof(wire);
-        size_t sent = 0U;
 
         if (ctx->sock[i] == CPLAT_INVALID_SOCKET || endpoint_is_unset(&dest[i]))
         {
@@ -2205,7 +2203,7 @@ void potr_internal_flow_control_send_query(potr_context *ctx, struct potr_intern
         }
 
         /* 問い合わせは止まっている間に周期を延ばして送出し直すため、戻り値は明示的に破棄する。 */
-        (void)cplat_socket_sendto(ctx->sock[i], wire, wire_len, &dest[i], &sent, NULL);
+        (void)potr_internal_udp_sendto(ctx, i, wire, wire_len, &dest[i], NULL);
     }
 }
 
@@ -2471,7 +2469,6 @@ static void send_monitor_list(potr_context *ctx, const potr_internal_packet_sess
     {
         uint8_t wire[FLOW_CONTROL_MONITOR_WIRE_SIZE];
         size_t wire_len = sizeof(wire);
-        size_t sent = 0U;
 
         if (ctx->sock[i] == CPLAT_INVALID_SOCKET || endpoint_is_unset(&ctx->dest_addr[i]))
         {
@@ -2485,7 +2482,7 @@ static void send_monitor_list(potr_context *ctx, const potr_internal_packet_sess
         }
 
         /* 一覧は周期ごとに送出し直し、受信者は期限内の最新の一覧で動作するため、戻り値は明示的に破棄する。 */
-        (void)cplat_socket_sendto(ctx->sock[i], wire, wire_len, &ctx->dest_addr[i], &sent, NULL);
+        (void)potr_internal_udp_sendto(ctx, i, wire, wire_len, &ctx->dest_addr[i], NULL);
     }
 }
 

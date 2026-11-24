@@ -13,6 +13,8 @@
 #include <porter/potr_context.h>
 #include <porter/potr_peer_table.h>
 #include <porter/protocol/packet.h>
+#include <porter/infra/potr_result.h>
+#include <porter/infra/potr_socket_io.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/security/certificate.h>
 
@@ -302,7 +304,8 @@ static int advance_session(potr_internal_certificate_state *state,
 }
 
 static int send_record(potr_context *ctx, potr_internal_certificate_state *state, const uint8_t *record,
-    size_t length, uint16_t flags, cplat_socket stream)
+                       size_t length, uint16_t flags, cplat_socket_watch *stream_watch,
+                       cplat_socket_wait_cancel *cancel, uint64_t deadline_ms)
 {
     potr_internal_packet_session_hdr header;
     potr_packet packet;
@@ -346,9 +349,9 @@ static int send_record(potr_context *ctx, potr_internal_certificate_state *state
     for (i = 0; i < ctx->n_path; i++)
     {
         size_t wire_len = capacity;
-        size_t sent;
+        size_t sent = 0U;
 
-        if (stream == CPLAT_INVALID_SOCKET &&
+        if (stream_watch == NULL &&
             (endpoint_is_unset(&state->destination[i]) || ctx->sock[i] == CPLAT_INVALID_SOCKET))
         {
             continue;
@@ -372,11 +375,37 @@ static int send_record(potr_context *ctx, potr_internal_certificate_state *state
             }
             break;
         }
-        if (stream != CPLAT_INVALID_SOCKET)
+        if (stream_watch != NULL)
         {
-            if (cplat_socket_send_all(stream, wire, wire_len, NULL) != CPLAT_OK)
+            uint64_t now_ms;
+            uint64_t remaining;
+            int wait_ms;
+            int send_rc;
+            cplat_error detail;
+
+            if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
             {
                 ret = POTR_ERR_IO;
+                break;
+            }
+            if (now_ms >= deadline_ms)
+            {
+                ret = POTR_ERR_TIMEOUT;
+                break;
+            }
+            remaining = deadline_ms - now_ms;
+            if (remaining > (uint64_t)POTR_WAIT_MS_MAX)
+            {
+                remaining = (uint64_t)POTR_WAIT_MS_MAX;
+            }
+            wait_ms = (int)remaining;
+
+            cplat_error_clear(&detail);
+            send_rc = cplat_socket_watch_send_all(stream_watch, wire, wire_len, cancel, wait_ms, &sent, &detail);
+            if (send_rc != CPLAT_OK)
+            {
+                /* 一部送信済み (sent > 0) の場合も接続は途中で切れているため、呼び出し元が接続を解放する。 */
+                ret = potr_internal_result_from_socket_result(send_rc, &detail);
             }
             break;
         }
@@ -384,14 +413,15 @@ static int send_record(potr_context *ctx, potr_internal_certificate_state *state
          * UDP の送出は届く保証がなく、失われたハンドシェイクは DTLS の再送と周期的な再試行で回復するため、
          * 戻り値は明示的に破棄する。
          */
-        (void)cplat_socket_sendto(ctx->sock[i], wire, wire_len, &state->destination[i], &sent, NULL);
+        (void)potr_internal_udp_sendto(ctx, i, wire, wire_len, &state->destination[i], NULL);
     }
     cplat_secure_zero(wire, capacity);
     cplat_free(wire);
     return ret;
 }
 
-static int flush_output(potr_context *ctx, potr_internal_certificate_state *state, cplat_socket stream, int *produced)
+static int flush_output(potr_context *ctx, potr_internal_certificate_state *state, cplat_socket_watch *stream_watch,
+                        cplat_socket_wait_cancel *cancel, uint64_t deadline_ms, int *produced)
 {
     uint8_t *record;
     size_t length;
@@ -419,7 +449,7 @@ static int flush_output(potr_context *ctx, potr_internal_certificate_state *stat
         {
             break;
         }
-        if (stream == CPLAT_INVALID_SOCKET)
+        if (stream_watch == NULL)
         {
             struct potr_internal_certificate_flight *cached;
             if (first_output)
@@ -450,7 +480,7 @@ static int flush_output(potr_context *ctx, potr_internal_certificate_state *stat
         {
             *produced = 1;
         }
-        ret = send_record(ctx, state, record, length, POTR_FLAG_HANDSHAKE, stream);
+        ret = send_record(ctx, state, record, length, POTR_FLAG_HANDSHAKE, stream_watch, cancel, deadline_ms);
         if (ret != POTR_OK)
         {
             break;
@@ -664,7 +694,7 @@ int potr_internal_certificate_receive(potr_context *ctx, potr_packet *packet, co
     new_path = endpoint_is_unset(&state->destination[path_idx]);
     state->destination[path_idx] = *sender;
     ret = advance_session(state, packet->payload, packet->payload_len);
-    output_ret = flush_output(ctx, state, CPLAT_INVALID_SOCKET, &produced);
+    output_ret = flush_output(ctx, state, NULL, NULL, 0U, &produced);
     trace_output_failure("handshake output", output_ret);
     if (ret == POTR_OK && new_path && !produced)
     {
@@ -675,7 +705,7 @@ int potr_internal_certificate_receive(potr_context *ctx, potr_packet *packet, co
          */
         for (record = state->flight; record != NULL; record = record->next)
         {
-            (void)send_record(ctx, state, record->bytes, record->length, POTR_FLAG_HANDSHAKE, CPLAT_INVALID_SOCKET);
+            (void)send_record(ctx, state, record->bytes, record->length, POTR_FLAG_HANDSHAKE, NULL, NULL, 0U);
         }
     }
     if (ret != POTR_OK || !state->established)
@@ -685,7 +715,7 @@ int potr_internal_certificate_receive(potr_context *ctx, potr_packet *packet, co
     if (ctx->role == POTR_ROLE_SENDER && uses_group_key(ctx))
     {
         output_ret =
-            send_record(ctx, state, ctx->group_key, sizeof(ctx->group_key), POTR_FLAG_KEY, CPLAT_INVALID_SOCKET);
+            send_record(ctx, state, ctx->group_key, sizeof(ctx->group_key), POTR_FLAG_KEY, NULL, NULL, 0U);
         trace_output_failure("group key send", output_ret);
     }
     if (ctx->is_multi_peer && peer != NULL)
@@ -756,7 +786,7 @@ static void retransmit_session(potr_context *ctx, potr_internal_certificate_stat
         cplat_secure_zero(state->send_key, sizeof(state->send_key));
         cplat_secure_zero(state->receive_key, sizeof(state->receive_key));
     }
-    output_ret = flush_output(ctx, state, CPLAT_INVALID_SOCKET, NULL);
+    output_ret = flush_output(ctx, state, NULL, NULL, 0U, NULL);
     trace_output_failure("handshake output", output_ret);
 }
 
@@ -837,7 +867,7 @@ void potr_internal_certificate_tick(potr_context *ctx, uint64_t now_ms)
                  * 戻り値は明示的に破棄する。
                  */
                 (void)advance_session(state, NULL, 0U);
-                output_ret = flush_output(ctx, state, CPLAT_INVALID_SOCKET, NULL);
+                output_ret = flush_output(ctx, state, NULL, NULL, 0U, NULL);
                 trace_output_failure("handshake output", output_ret);
             }
         }
@@ -961,15 +991,21 @@ int potr_internal_certificate_key(potr_context *ctx, const potr_internal_tx_sess
     return ret;
 }
 
-static int read_stream_bytes(potr_context *ctx, cplat_socket socket, uint8_t *bytes, size_t length, uint64_t deadline)
+static int read_stream_bytes(potr_context *ctx, cplat_socket socket, cplat_socket_watch *watch,
+                             cplat_socket_wait_cancel *cancel, uint8_t *bytes, size_t length, uint64_t deadline)
 {
     size_t used = 0U;
 
     while (used < length)
     {
         uint64_t now_ms;
+        uint64_t remaining;
+        int wait_ms;
+        unsigned char ready = 0U;
+        cplat_error detail;
         int wait_result;
-        size_t received;
+        size_t received = 0U;
+        int recv_result;
 
         if (cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
@@ -983,42 +1019,46 @@ static int read_stream_bytes(potr_context *ctx, cplat_socket socket, uint8_t *by
         {
             return POTR_ERR_TIMEOUT;
         }
-        wait_result = cplat_socket_timed_wait_readable(socket, CERT_HANDSHAKE_POLL_MS, NULL);
-        if (wait_result == CPLAT_ERR_TIMEOUT)
+        remaining = deadline - now_ms;
+        if (remaining > (uint64_t)POTR_WAIT_MS_MAX)
+        {
+            remaining = (uint64_t)POTR_WAIT_MS_MAX;
+        }
+        wait_ms = (int)remaining;
+
+        cplat_error_clear(&detail);
+        wait_result = cplat_socket_watch_wait_readable_multi(&watch, 1U, cancel, wait_ms, &ready, &detail);
+        if (wait_result != CPLAT_OK)
+        {
+            return potr_internal_result_from_socket_result(wait_result, &detail);
+        }
+
+        cplat_error_clear(&detail);
+        recv_result = cplat_socket_recv(socket, bytes + used, length - used, &received, &detail);
+        if (recv_result == CPLAT_ERR_WOULD_BLOCK)
         {
             continue;
         }
-        if (wait_result != CPLAT_OK)
+        if (recv_result != CPLAT_OK)
         {
-            return POTR_ERR_IO;
+            return potr_internal_result_from_socket_result(recv_result, &detail);
         }
-        if (cplat_socket_recv(socket, bytes + used, length - used, &received, NULL) != CPLAT_OK || received == 0U)
+        if (received == 0U)
         {
-            return POTR_ERR_IO;
+            return POTR_ERR_EOF;
         }
         used += received;
     }
     return POTR_OK;
 }
 
-static int read_stream_record(potr_context *ctx, cplat_socket socket, uint8_t *wire, potr_packet *packet)
+static int read_stream_record(potr_context *ctx, cplat_socket socket, cplat_socket_watch *watch,
+                              cplat_socket_wait_cancel *cancel, uint8_t *wire, potr_packet *packet, uint64_t deadline)
 {
     uint16_t length;
-    uint64_t now_ms;
-    uint64_t deadline;
-    uint32_t timeout = ctx->health_timeout_ms;
     int ret;
 
-    if (timeout == 0U)
-    {
-        timeout = POTR_DEFAULT_TCP_HEALTH_TIMEOUT_MS;
-    }
-    if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
-    {
-        return POTR_ERR_IO;
-    }
-    deadline = now_ms + timeout;
-    ret = read_stream_bytes(ctx, socket, wire, POTR_PACKET_HEADER_SIZE, deadline);
+    ret = read_stream_bytes(ctx, socket, watch, cancel, wire, POTR_PACKET_HEADER_SIZE, deadline);
     if (ret != POTR_OK)
     {
         return ret;
@@ -1029,7 +1069,7 @@ static int read_stream_record(potr_context *ctx, cplat_socket socket, uint8_t *w
     {
         return POTR_ERR_PROTOCOL;
     }
-    ret = read_stream_bytes(ctx, socket, wire + POTR_PACKET_HEADER_SIZE, length, deadline);
+    ret = read_stream_bytes(ctx, socket, watch, cancel, wire + POTR_PACKET_HEADER_SIZE, length, deadline);
     if (ret != POTR_OK)
     {
         return ret;
@@ -1038,13 +1078,16 @@ static int read_stream_record(potr_context *ctx, cplat_socket socket, uint8_t *w
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
-int potr_internal_certificate_connect(potr_context *ctx, cplat_socket socket, const potr_packet *first)
+int potr_internal_certificate_connect(potr_context *ctx, cplat_socket socket, cplat_socket_watch *watch,
+                                      cplat_socket_wait_cancel *cancel, const potr_packet *first)
 {
     potr_internal_certificate_state *state;
     potr_packet packet;
     const potr_packet *input = first;
     uint8_t *wire;
     uint64_t now_ms;
+    uint64_t deadline_ms;
+    uint32_t timeout;
     int ret = POTR_OK;
 
     if (ctx == NULL)
@@ -1055,6 +1098,10 @@ int potr_internal_certificate_connect(potr_context *ctx, cplat_socket socket, co
     if (ctx->service.auth != POTR_AUTH_CERT)
     {
         return POTR_OK;
+    }
+    if (watch == NULL || socket == CPLAT_INVALID_SOCKET)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
     }
     wire = (uint8_t *)cplat_malloc(POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
     if (wire == NULL)
@@ -1081,6 +1128,13 @@ int potr_internal_certificate_connect(potr_context *ctx, cplat_socket socket, co
         ret = POTR_ERR_IO;
         goto out;
     }
+    timeout = ctx->health_timeout_ms;
+    if (timeout == 0U)
+    {
+        timeout = POTR_DEFAULT_TCP_HEALTH_TIMEOUT_MS;
+    }
+    deadline_ms = now_ms + (uint64_t)timeout;
+
     ret = start_session(ctx, state, is_client(ctx), now_ms);
     if (ret != POTR_OK)
     {
@@ -1091,14 +1145,14 @@ int potr_internal_certificate_connect(potr_context *ctx, cplat_socket socket, co
         ret = advance_session(state, NULL, 0U);
         if (ret == POTR_OK)
         {
-            ret = flush_output(ctx, state, socket, NULL);
+            ret = flush_output(ctx, state, watch, cancel, deadline_ms, NULL);
         }
     }
     while (ret == POTR_OK && !state->established)
     {
         if (input == NULL)
         {
-            ret = read_stream_record(ctx, socket, wire, &packet);
+            ret = read_stream_record(ctx, socket, watch, cancel, wire, &packet, deadline_ms);
             if (ret != POTR_OK)
             {
                 break;
@@ -1117,7 +1171,7 @@ int potr_internal_certificate_connect(potr_context *ctx, cplat_socket socket, co
         ret = advance_session(state, input->payload, input->payload_len);
         if (ret == POTR_OK)
         {
-            ret = flush_output(ctx, state, socket, NULL);
+            ret = flush_output(ctx, state, watch, cancel, deadline_ms, NULL);
         }
         input = NULL;
     }

@@ -25,15 +25,38 @@
 #include "api_open_paths_tcp.h"
 #include "api_open_paths_common.h"
 
+/* 途中失敗時に作成済みの TCP リスナー登録とソケットを回収する。 */
+static void rollback_tcp_listen_paths(potr_context *ctx)
+{
+    int i;
+
+    for (i = 0; i < ctx->n_path && i < (int)POTR_MAX_PATH; i++)
+    {
+        if (ctx->tcp_listen_watch[i] != NULL)
+        {
+            cplat_socket_watch_detach(ctx->tcp_listen_watch[i]);
+            ctx->tcp_listen_watch[i] = NULL;
+        }
+        if (ctx->tcp_listen_sock[i] != CPLAT_INVALID_SOCKET)
+        {
+            cplat_socket_close(ctx->tcp_listen_sock[i]);
+            ctx->tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
+        }
+    }
+
+    ctx->n_path = 0;
+}
+
 /*
- * TCP RECEIVER: path_idx 番目の listen ソケットを作成して bind・listen する。
+ * TCP RECEIVER: path_idx 番目の listen ソケットを作成して bind・listen・watch 登録する。
  * dst_addr[path_idx] が指定されていれば dst_addr_resolved[path_idx] に解決する。
  * src_addr[path_idx] が指定されていれば src_addr_resolved[path_idx] にも解決する (接続元フィルター用)。
- * 成功時は ctx->tcp_listen_sock[path_idx] に格納して POTR_OK を返す。
+ * 成功時は ctx->tcp_listen_sock[path_idx] と ctx->tcp_listen_watch[path_idx] に格納して POTR_OK を返す。
  */
 static int open_socket_tcp_receiver(potr_context *ctx, const int path_idx)
 {
     cplat_socket sock;
+    cplat_socket_watch *watch = NULL;
     cplat_ipv4_endpoint addr = {0};
     uint32_t bind_ip;
     int result;
@@ -67,7 +90,7 @@ static int open_socket_tcp_receiver(potr_context *ctx, const int path_idx)
     if (result != CPLAT_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return potr_internal_result_from_error(&detail);
+        return potr_internal_result_from_socket_result(result, &detail);
     }
 
     /* SO_REUSEADDR は互換性向上のための best-effort 設定であり、失敗しても bind を試行するため、戻り値は明示的に破棄する。 */
@@ -81,7 +104,7 @@ static int open_socket_tcp_receiver(potr_context *ctx, const int path_idx)
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
         cplat_socket_close(sock);
-        return potr_internal_result_from_error(&detail);
+        return potr_internal_result_from_socket_result(result, &detail);
     }
 
     result = cplat_socket_listen(sock, CPLAT_SOCKET_BACKLOG_DEFAULT, &detail);
@@ -89,10 +112,19 @@ static int open_socket_tcp_receiver(potr_context *ctx, const int path_idx)
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "listen failed");
         cplat_socket_close(sock);
-        return potr_internal_result_from_error(&detail);
+        return potr_internal_result_from_socket_result(result, &detail);
+    }
+
+    result = cplat_socket_watch_attach(sock, &watch, &detail);
+    if (result != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "listen socket watch attach failed");
+        cplat_socket_close(sock);
+        return potr_internal_result_from_socket_result(result, &detail);
     }
 
     ctx->tcp_listen_sock[path_idx] = sock;
+    ctx->tcp_listen_watch[path_idx] = watch;
 
     return POTR_OK;
 }
@@ -161,6 +193,7 @@ int api_open_paths_tcp(potr_context *ctx, const potr_role role)
                            "potr_service_open: service_id=%" PRId64 " TCP listen failed"
                            " (path=%d dst_addr=%s dst_port=%u)",
                            ctx->service.service_id, i, ctx->service.dst_addr[i], (unsigned)ctx->service.dst_port);
+                rollback_tcp_listen_paths(ctx);
                 return result;
             }
 

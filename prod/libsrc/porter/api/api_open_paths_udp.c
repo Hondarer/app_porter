@@ -18,12 +18,54 @@
 #include <porter/potr_peer_table.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_result.h>
+#include <porter/protocol/config_check.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
 
 #include "api_open_paths_udp.h"
 #include "api_open_paths_common.h"
+
+/* 途中失敗時に作成済みの UDP 登録とソケットを逆順で回収する。 */
+static void rollback_udp_paths(potr_context *ctx)
+{
+    int i;
+
+    for (i = 0; i < ctx->n_path && i < (int)POTR_MAX_PATH; i++)
+    {
+        if (ctx->udp_watch[i] != NULL)
+        {
+            cplat_socket_watch_detach(ctx->udp_watch[i]);
+            ctx->udp_watch[i] = NULL;
+        }
+        if (ctx->sock[i] != CPLAT_INVALID_SOCKET)
+        {
+            cplat_socket_close(ctx->sock[i]);
+            ctx->sock[i] = CPLAT_INVALID_SOCKET;
+        }
+    }
+
+    ctx->n_path = 0;
+}
+
+/* 作成済み UDP ソケットを watch へ登録する。失敗時はソケットを閉じてエラーを返す。 */
+static int attach_udp_watch(cplat_socket sock, cplat_socket_watch **watch_out)
+{
+    cplat_error detail;
+    int rc;
+
+    *watch_out = NULL;
+    cplat_error_clear(&detail);
+    rc = cplat_socket_watch_attach(sock, watch_out, &detail);
+    if (rc != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket watch attach failed");
+        cplat_socket_close(sock);
+        return potr_internal_result_from_socket_result(rc, &detail);
+    }
+
+    return POTR_OK;
+}
 
 /*
  * UDP ソケットの OS 受信バッファーの拡大を要求し、結果を確認して必要なら INFO にサービスごとに 1 回記録する。
@@ -77,20 +119,24 @@ static void configure_udp_receive_buffer(const cplat_socket sock, const potr_con
 }
 
 /*
- * ソケットを作成して bind する。成功時はソケットを返す。失敗時は CPLAT_INVALID_SOCKET。
+ * ソケットを作成して bind・watch 登録する。成功時は POTR_OK を返す。
  * bind_addr: bind する IPv4 アドレス (ネットワーク バイト オーダー)。port: bind するポート番号 (0 = OS 自動選定)。
  */
-static cplat_socket open_socket_unicast(const potr_context *ctx, const uint32_t bind_addr, const uint16_t port,
-                                        int *rcvbuf_logged)
+static int open_socket_unicast(const potr_context *ctx, const uint32_t bind_addr, const uint16_t port,
+                               int *rcvbuf_logged, cplat_socket *sock_out, cplat_socket_watch **watch_out)
 {
     cplat_socket sock;
     cplat_ipv4_endpoint addr = {0};
     cplat_error detail;
+    int attach_ret;
+
+    *sock_out = CPLAT_INVALID_SOCKET;
+    *watch_out = NULL;
 
     if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return CPLAT_INVALID_SOCKET;
+        return POTR_ERR_IO;
     }
 
     /*
@@ -113,30 +159,41 @@ static cplat_socket open_socket_unicast(const potr_context *ctx, const uint32_t 
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
         cplat_socket_close(sock);
-        return CPLAT_INVALID_SOCKET;
+        return POTR_ERR_IO;
     }
 
     configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
 
-    return sock;
+    attach_ret = attach_udp_watch(sock, watch_out);
+    if (attach_ret != POTR_OK)
+    {
+        return attach_ret;
+    }
+
+    *sock_out = sock;
+    return POTR_OK;
 }
 
 /*
- * マルチキャスト ソケットを作成して bind・グループ参加する。
+ * マルチキャスト ソケットを作成して bind・グループ参加・送信設定 (IF / TTL)・watch 登録する。
  * join_if: グループ参加と、送信者の送信インターフェイスに使うアドレス (INADDR_ANY = OS 自動選択)。
  * is_receiver: 1 = 受信者、0 = 送信者。
  */
-static cplat_socket open_socket_multicast(const potr_context *ctx, const uint32_t join_if, const int is_receiver,
-                                          int *rcvbuf_logged)
+static int open_socket_multicast(const potr_context *ctx, int path_idx, const uint32_t join_if, const int is_receiver,
+                                 int *rcvbuf_logged, cplat_socket *sock_out, cplat_socket_watch **watch_out)
 {
     const potr_service_def *def = &ctx->service;
     cplat_socket sock;
     cplat_ipv4_endpoint addr = {0};
     uint32_t group_addr;
     cplat_error detail;
+    int attach_ret;
 
     /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
     uint16_t bind_port;
+
+    *sock_out = CPLAT_INVALID_SOCKET;
+    *watch_out = NULL;
 
     if (is_receiver)
     {
@@ -150,7 +207,7 @@ static cplat_socket open_socket_multicast(const potr_context *ctx, const uint32_
     if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return CPLAT_INVALID_SOCKET;
+        return POTR_ERR_IO;
     }
 
     /*
@@ -173,55 +230,79 @@ static cplat_socket open_socket_multicast(const potr_context *ctx, const uint32_
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
         cplat_socket_close(sock);
-        return CPLAT_INVALID_SOCKET;
+        return POTR_ERR_IO;
     }
 
     /* マルチキャスト グループへ参加する (送受信ともに参加する)。 */
     if (api_paths_parse_ipv4(def->multicast_group, &group_addr) != POTR_OK)
     {
         cplat_socket_close(sock);
-        return CPLAT_INVALID_SOCKET;
+        return POTR_ERR_IO;
     }
 
     if (cplat_socket_join_multicast_group(sock, group_addr, join_if, &detail) != CPLAT_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "join_multicast_group failed");
         cplat_socket_close(sock);
-        return CPLAT_INVALID_SOCKET;
+        return POTR_ERR_IO;
     }
 
-    /* 送信者: マルチキャスト送信インターフェイスを設定する。設定できない場合は、指定した NIC から送れないため失敗とする。 */
+    /* 送信者: マルチキャスト送信インターフェイスと実効 TTL を設定する。設定できない場合は失敗とする。 */
     if (!is_receiver)
     {
+        unsigned int effective_ttl;
+
         if (cplat_socket_set_multicast_interface(sock, join_if, &detail) != CPLAT_OK)
         {
             POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "set_multicast_interface failed");
             cplat_socket_close(sock);
-            return CPLAT_INVALID_SOCKET;
+            return POTR_ERR_IO;
+        }
+
+        effective_ttl = potr_internal_config_effective_ttl(def->ttl);
+        if (cplat_socket_set_multicast_ttl(sock, effective_ttl, &detail) != CPLAT_OK)
+        {
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
+                                      "set_multicast_ttl failed (service_id=%" PRId64 " path=%d ttl=%u)",
+                                      def->service_id, path_idx, effective_ttl);
+            cplat_socket_close(sock);
+            return POTR_ERR_IO;
         }
     }
 
     configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
 
-    return sock;
+    attach_ret = attach_udp_watch(sock, watch_out);
+    if (attach_ret != POTR_OK)
+    {
+        return attach_ret;
+    }
+
+    *sock_out = sock;
+    return POTR_OK;
 }
 
 /*
- * ブロードキャスト ソケットを作成して bind する。
+ * ブロードキャスト ソケットを作成して bind・watch 登録する。
  * src_port: 送信者の送信元 bind ポート (0 = OS 自動選定)。
  * dst_port: 受信者の listen ポート / 送信者の送信先ポート (省略不可)。
  * src_if: 送信者が使用するローカル インターフェイス (INADDR_ANY = OS 自動選択)。
  * is_receiver: 1 = 受信者 (INADDR_ANY で bind)、0 = 送信者 (src_if で bind)。
  */
-static cplat_socket open_socket_broadcast(const potr_context *ctx, uint16_t src_port, uint16_t dst_port,
-                                          const uint32_t src_if, const int is_receiver, int *rcvbuf_logged)
+static int open_socket_broadcast(const potr_context *ctx, uint16_t src_port, uint16_t dst_port, const uint32_t src_if,
+                                 const int is_receiver, int *rcvbuf_logged, cplat_socket *sock_out,
+                                 cplat_socket_watch **watch_out)
 {
     cplat_socket sock;
     cplat_ipv4_endpoint addr = {0};
     cplat_error detail;
+    int attach_ret;
 
     /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
     uint16_t bind_port;
+
+    *sock_out = CPLAT_INVALID_SOCKET;
+    *watch_out = NULL;
 
     if (is_receiver)
     {
@@ -235,7 +316,7 @@ static cplat_socket open_socket_broadcast(const potr_context *ctx, uint16_t src_
     if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return CPLAT_INVALID_SOCKET;
+        return POTR_ERR_IO;
     }
 
     /*
@@ -255,7 +336,7 @@ static cplat_socket open_socket_broadcast(const potr_context *ctx, uint16_t src_
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "set_broadcast failed");
         cplat_socket_close(sock);
-        return CPLAT_INVALID_SOCKET;
+        return POTR_ERR_IO;
     }
 
     /* 送信者: src_addr で bind してインターフェイスを選択する。受信者: INADDR_ANY で bind する。 */
@@ -274,12 +355,19 @@ static cplat_socket open_socket_broadcast(const potr_context *ctx, uint16_t src_
     {
         POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
         cplat_socket_close(sock);
-        return CPLAT_INVALID_SOCKET;
+        return POTR_ERR_IO;
     }
 
     configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
 
-    return sock;
+    attach_ret = attach_udp_watch(sock, watch_out);
+    if (attach_ret != POTR_OK)
+    {
+        return attach_ret;
+    }
+
+    *sock_out = sock;
+    return POTR_OK;
 }
 
 /* UNICAST: src_addr/dst_addr ペアごとにソケットを作成する。 */
@@ -308,12 +396,14 @@ int api_open_paths_unicast(potr_context *ctx, const potr_role role)
         result = api_paths_resolve_ipv4(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
         if (result != POTR_OK)
         {
+            rollback_udp_paths(ctx);
             return result;
         }
 
         result = api_paths_resolve_ipv4(ctx->service.dst_addr[i], &ctx->dst_addr_resolved[i]);
         if (result != POTR_OK)
         {
+            rollback_udp_paths(ctx);
             return result;
         }
 
@@ -328,10 +418,11 @@ int api_open_paths_unicast(potr_context *ctx, const potr_role role)
             bind_port = ctx->service.src_port;
         }
 
-        ctx->sock[i] = open_socket_unicast(ctx, bind_addr, bind_port, &rcvbuf_logged);
-        if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+        result = open_socket_unicast(ctx, bind_addr, bind_port, &rcvbuf_logged, &ctx->sock[i], &ctx->udp_watch[i]);
+        if (result != POTR_OK)
         {
-            return POTR_ERR_IO;
+            rollback_udp_paths(ctx);
+            return result;
         }
 
         ctx->n_path++;
@@ -375,6 +466,7 @@ int api_open_paths_multicast(potr_context *ctx, const potr_role role)
         result = api_paths_resolve_ipv4(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
         if (result != POTR_OK)
         {
+            rollback_udp_paths(ctx);
             return result;
         }
 
@@ -383,6 +475,7 @@ int api_open_paths_multicast(potr_context *ctx, const potr_role role)
             result = api_paths_resolve_ipv4(ctx->service.dst_addr[i], &join_if);
             if (result != POTR_OK)
             {
+                rollback_udp_paths(ctx);
                 return result;
             }
         }
@@ -392,10 +485,12 @@ int api_open_paths_multicast(potr_context *ctx, const potr_role role)
         }
 
         ctx->multicast_if_resolved[i] = join_if;
-        ctx->sock[i] = open_socket_multicast(ctx, join_if, role == POTR_ROLE_RECEIVER, &rcvbuf_logged);
-        if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+        result = open_socket_multicast(ctx, i, join_if, role == POTR_ROLE_RECEIVER, &rcvbuf_logged, &ctx->sock[i],
+                                       &ctx->udp_watch[i]);
+        if (result != POTR_OK)
         {
-            return POTR_ERR_IO;
+            rollback_udp_paths(ctx);
+            return result;
         }
 
         ctx->n_path++;
@@ -440,14 +535,16 @@ int api_open_paths_broadcast(potr_context *ctx, const potr_role role)
         result = api_paths_resolve_ipv4(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
         if (result != POTR_OK)
         {
+            rollback_udp_paths(ctx);
             return result;
         }
 
-        ctx->sock[i] = open_socket_broadcast(ctx, ctx->service.src_port, ctx->service.dst_port,
-                                             ctx->src_addr_resolved[i], role == POTR_ROLE_RECEIVER, &rcvbuf_logged);
-        if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+        result = open_socket_broadcast(ctx, ctx->service.src_port, ctx->service.dst_port, ctx->src_addr_resolved[i],
+                                       role == POTR_ROLE_RECEIVER, &rcvbuf_logged, &ctx->sock[i], &ctx->udp_watch[i]);
+        if (result != POTR_OK)
         {
-            return POTR_ERR_IO;
+            rollback_udp_paths(ctx);
+            return result;
         }
 
         ctx->n_path++;
@@ -503,10 +600,12 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
             ctx->dst_addr_resolved[0] = bind_addr;
         }
 
-        ctx->sock[0] = open_socket_unicast(ctx, bind_addr, ctx->service.dst_port, &rcvbuf_logged);
-        if (ctx->sock[0] == CPLAT_INVALID_SOCKET)
+        result =
+            open_socket_unicast(ctx, bind_addr, ctx->service.dst_port, &rcvbuf_logged, &ctx->sock[0], &ctx->udp_watch[0]);
+        if (result != POTR_OK)
         {
-            return POTR_ERR_IO;
+            rollback_udp_paths(ctx);
+            return result;
         }
 
         ctx->n_path = 1;
@@ -547,6 +646,7 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
                 result = api_paths_resolve_ipv4(ctx->service.src_addr[i], &ctx->src_addr_resolved[i]);
                 if (result != POTR_OK)
                 {
+                    rollback_udp_paths(ctx);
                     return result;
                 }
             }
@@ -554,6 +654,7 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
             result = api_paths_resolve_ipv4(ctx->service.dst_addr[i], &ctx->dst_addr_resolved[i]);
             if (result != POTR_OK)
             {
+                rollback_udp_paths(ctx);
                 return result;
             }
 
@@ -569,18 +670,20 @@ int api_open_paths_unicast_bidir(potr_context *ctx, const potr_role role)
                     bind_addr = CPLAT_IPV4_ADDR_ANY;
                 }
 
-                ctx->sock[i] = open_socket_unicast(ctx, bind_addr, ctx->service.src_port, &rcvbuf_logged);
+                result = open_socket_unicast(ctx, bind_addr, ctx->service.src_port, &rcvbuf_logged, &ctx->sock[i],
+                                             &ctx->udp_watch[i]);
             }
             else
             {
                 /* RECEIVER: dst_addr:dst_port で bind する。 */
-                ctx->sock[i] =
-                    open_socket_unicast(ctx, ctx->dst_addr_resolved[i], ctx->service.dst_port, &rcvbuf_logged);
+                result = open_socket_unicast(ctx, ctx->dst_addr_resolved[i], ctx->service.dst_port, &rcvbuf_logged,
+                                             &ctx->sock[i], &ctx->udp_watch[i]);
             }
 
-            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+            if (result != POTR_OK)
             {
-                return POTR_ERR_IO;
+                rollback_udp_paths(ctx);
+                return result;
             }
 
             ctx->n_path++;
@@ -624,10 +727,12 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
         /* dst_addr すべて省略: INADDR_ANY で 1 ソケットを作成する。 */
         uint32_t any_addr;
         any_addr = CPLAT_IPV4_ADDR_ANY;
-        ctx->sock[0] = open_socket_unicast(ctx, any_addr, ctx->service.dst_port, &rcvbuf_logged);
-        if (ctx->sock[0] == CPLAT_INVALID_SOCKET)
+        result =
+            open_socket_unicast(ctx, any_addr, ctx->service.dst_port, &rcvbuf_logged, &ctx->sock[0], &ctx->udp_watch[0]);
+        if (result != POTR_OK)
         {
-            return POTR_ERR_IO;
+            rollback_udp_paths(ctx);
+            return result;
         }
 
         ctx->n_path = 1;
@@ -647,14 +752,17 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
             result = api_paths_resolve_ipv4(ctx->service.dst_addr[i], &bind_addr);
             if (result != POTR_OK)
             {
+                rollback_udp_paths(ctx);
                 return result;
             }
 
             ctx->dst_addr_resolved[i] = bind_addr;
-            ctx->sock[i] = open_socket_unicast(ctx, bind_addr, ctx->service.dst_port, &rcvbuf_logged);
-            if (ctx->sock[i] == CPLAT_INVALID_SOCKET)
+            result = open_socket_unicast(ctx, bind_addr, ctx->service.dst_port, &rcvbuf_logged, &ctx->sock[i],
+                                         &ctx->udp_watch[i]);
+            if (result != POTR_OK)
             {
-                return POTR_ERR_IO;
+                rollback_udp_paths(ctx);
+                return result;
             }
 
             ctx->n_path = i + 1;
@@ -671,6 +779,7 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
     result = potr_internal_peer_table_init(ctx);
     if (result != POTR_OK)
     {
+        rollback_udp_paths(ctx);
         return result;
     }
 

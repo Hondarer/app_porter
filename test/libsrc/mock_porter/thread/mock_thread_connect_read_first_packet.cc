@@ -5,13 +5,13 @@
 #include <testfw.h>
 #include <mock_porter.h>
 
-MOCK_WEAK_IMPL(int, thread_connect_read_first_packet, cplat_socket fd, uint8_t *buf, size_t max_buf, size_t *len_out,
-               int timeout_ms)
+MOCK_WEAK_IMPL(int, thread_connect_read_first_packet, cplat_socket fd, cplat_socket_watch *watch,
+               cplat_socket_wait_cancel *cancel, uint8_t *buf, size_t max_buf, size_t *len_out, int timeout_ms)
 {
     int mock_ret = 0;
     if (_mock_porter != nullptr)
     {
-        mock_ret = _mock_porter->thread_connect_read_first_packet(fd, buf, max_buf, len_out, timeout_ms);
+        mock_ret = _mock_porter->thread_connect_read_first_packet(fd, watch, cancel, buf, max_buf, len_out, timeout_ms);
     }
     return mock_ret;
 }

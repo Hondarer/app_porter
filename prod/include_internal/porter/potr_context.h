@@ -310,9 +310,13 @@ typedef struct potr_internal_peer_context
  */
 typedef struct potr_internal_path_thread_arg
 {
-    potr_context *ctx; /**< 所属するセッション コンテキスト。 */
-    int path_idx;      /**< パス インデックス。 */
-    int _pad;          /**< パディング。 */
+    potr_context *ctx;                /**< 所属するセッション コンテキスト。 */
+    uint64_t generation;              /**< 対象の TCP 接続の世代番号 (connect スレッドでは 0)。 */
+    cplat_socket fd;                  /**< 対象の TCP 接続ソケット (不変の参照)。 */
+    cplat_socket_watch *watch;        /**< 対象の TCP 接続の登録 (不変の参照)。 */
+    cplat_socket_wait_cancel *cancel; /**< 対象の TCP 接続の解除オブジェクト (不変の参照)。 */
+    int path_idx;                     /**< パス インデックス。 */
+    int _pad;                         /**< パディング。 */
 } potr_internal_path_thread_arg;
 
 /**
@@ -388,15 +392,18 @@ struct potr_context
     uint32_t health_timeout_ms;       /**< 通信種別とサービス上書きを解決した実効受信タイムアウト。 */
 
     /* マルチパス: ソケット配列 */
-    int n_path;                       /**< 有効パス数。 */
-    cplat_socket sock[POTR_MAX_PATH]; /**< 各パスの UDP ソケット。 */
+    int n_path;                                       /**< 有効パス数。 */
+    cplat_socket sock[POTR_MAX_PATH];                 /**< 各パスの UDP ソケット。 */
+    cplat_socket_watch *udp_watch[POTR_MAX_PATH];     /**< 各パスの UDP ソケット登録。 */
+    cplat_local_lock *udp_send_mutex[POTR_MAX_PATH];  /**< UDP 送信と送信可能待機を直列化するロック (path ごと)。 */
+    cplat_socket_wait_cancel *recv_cancel;            /**< UDP 受信待機および送信待機の解除オブジェクト。 */
 
     cplat_atomic_i32 running
         [POTR_MAX_PATH]; /**< 受信スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
     cplat_atomic_i32 health_running
         [POTR_MAX_PATH]; /**< ヘルス チェック スレッド実行フラグ (1: 実行中, 0: 停止)。path ごと。アトミックに読み書きします。 */
-    cplat_atomic_i32 health_send_immediate
-        [POTR_MAX_PATH]; /**< オープン時割り込み PING フラグ。health_sleep() 冒頭でチェック・クリア。アトミックに読み書きします。 */
+    int health_send_pending
+        [POTR_MAX_PATH]; /**< PING 送信要求の保持フラグ (1: 保留あり, 0: なし)。health_mutex[path_idx] で保護します。 */
     cplat_atomic_i32
         health_alive; /**< 疎通状態 (1: alive, 0: dead/未接続)。UDP 用。受信者が管理。アトミックに読み書きします。 */
     int path_logical_alive[POTR_MAX_PATH]; /**< パスごとの論理接続状態 (1: connected, 0: disconnected)。callback_mutex で保護。 */
@@ -542,8 +549,21 @@ struct potr_context
      * 暗黙パディングを埋める。この並びにより tcp_send_mutex 側の明示パディングは不要になった。
      */
     cplat_atomic_i32 tcp_active_paths; /**< アクティブ TCP path 数 (0 = 全切断)。アトミックに読み書きします。 */
-    cplat_socket tcp_listen_sock[POTR_MAX_PATH]; /**< RECEIVER: listen ソケット (path ごと)。 */
-    cplat_socket tcp_conn_fd[POTR_MAX_PATH];     /**< アクティブ TCP 接続 fd (path ごと)。 */
+    cplat_socket tcp_listen_sock[POTR_MAX_PATH];                /**< RECEIVER: listen ソケット (path ごと)。 */
+    cplat_socket_watch *tcp_listen_watch[POTR_MAX_PATH];        /**< RECEIVER: listen ソケット登録 (path ごと)。 */
+    cplat_socket_wait_cancel *tcp_connect_cancel[POTR_MAX_PATH]; /**< 接続準備・accept の解除オブジェクト (path ごと)。 */
+    cplat_socket tcp_conn_fd[POTR_MAX_PATH];                    /**< アクティブ TCP 接続 fd (path ごと)。 */
+    cplat_socket_watch *tcp_conn_watch[POTR_MAX_PATH];          /**< アクティブ TCP 接続の登録 (path ごと)。 */
+    cplat_socket_wait_cancel *tcp_conn_cancel[POTR_MAX_PATH];   /**< アクティブ TCP 接続世代の解除オブジェクト (path ごと)。 */
+    uint64_t tcp_conn_generation[POTR_MAX_PATH];                /**< 公開中の TCP 接続の世代番号 (0: 未公開)。tcp_lifecycle_mutex で保護。 */
+    uint64_t tcp_next_generation[POTR_MAX_PATH];                /**< 次に発行する TCP 接続の世代番号。接続管理スレッドが更新。 */
+    cplat_local_lock *tcp_lifecycle_mutex[POTR_MAX_PATH];       /**< TCP 接続世代の公開・閉じる要求を保護する短時間ロック (path ごと)。 */
+    int tcp_conn_closing[POTR_MAX_PATH];                        /**< 公開中の TCP 接続世代が閉じる途中か (1: 閉じる途中)。tcp_lifecycle_mutex で保護。 */
+    cplat_atomic_u64 tcp_close_deadline_ms;                     /**< TCP close の絶対期限 [ms] (単調時刻)。 */
+    cplat_atomic_i32 tcp_close_deadline_active;                 /**< TCP close の絶対期限が公開済みか (1: 公開済み, 0: 未公開)。 */
+    cplat_atomic_i32 tcp_close_timed_out;                       /**< handle_begin_close 中に TCP close 期限を超過したか (1: 超過)。 */
+    cplat_atomic_i32 tcp_publish_stopped;                       /**< サービス終了開始後に新しい TCP 接続の公開を禁止するか (1: 禁止)。 */
+    int _pad_tcp_lifecycle;                                     /**< パディング。 */
     cplat_local_lock *tcp_send_mutex
         [POTR_MAX_PATH]; /**< TCP send() 排他制御 (path ごと)。送信スレッド・ヘルス チェック スレッド・recv スレッド競合防止。 */
 

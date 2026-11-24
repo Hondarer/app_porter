@@ -264,9 +264,9 @@ Figure: TCP SENDER のスレッド構成 (path 数 = N の例)
 | スレッド | 数 | 役割 |
 |---|---|---|
 | connect スレッド | N | path ごとに起動。`connect()` で接続を確立し、成功したら recv / health スレッドを起動します。切断後は `reconnect_interval_ms` 待機して再試行します。 |
-| 送信スレッド | 1 | 全 path 共有。送信キューからエレメントを取り出し、全アクティブ path にループ送信します。各 path の送信前に `cplat_socket_timed_wait_writable()` で書き込み可能を確認し、バッファー満杯の path は、他 path へ書き込めた場合に限り今回のパケット列を飛ばします (どの path にも書き込めない場合は、空きを待って書き込みます)。キューにある複数の DATA パケットは、path ごとに連結して 1 回の送信で書き込みます ([プロトコル](protocol.md) のパッキングの動作を参照)。 |
+| 送信スレッド | 1 | 全 path 共有。送信キューからエレメントを取り出し、全アクティブ path にループ送信します。各 path の送信前に `potr_internal_tcp_check_writable()` (`cplat_socket_watch_wait_writable()` の無待機確認) で書き込み可能を確認し、バッファー満杯の path は、他 path へ書き込めた場合に限り今回のパケット列を飛ばします (どの path にも書き込めない場合は、空きを待って書き込みます)。キューにある複数の DATA パケットは、path ごとに連結して 1 回の送信で書き込みます ([プロトコル](protocol.md) のパッキングの動作を参照)。 |
 | recv スレッド | N | path ごとに起動。PING 応答 (`ack_num > 0`) を受信して対応する health スレッドに通知します。TCP 接続断を検知したら `tcp_active_paths` をデクリメントし、0 になった時点で `POTR_EVENT_DISCONNECTED` を発火します。 |
-| health スレッド | N | path ごとに起動。`tcp_health_interval_ms` 周期で PING 要求を送信します。`tcp_health_timeout_ms` 以内に応答を受信しなければその path の接続断と判定して `shutdown()` します。 |
+| health スレッド | N | path ごとに起動。`tcp_health_interval_ms` 周期で PING 要求を送信します。`tcp_health_timeout_ms` 以内に応答を受信しなければその path の接続断と判定して対象世代へ閉じる要求 (`potr_internal_tcp_conn_request_close()`) を発行します。 |
 
 Table: TCP SENDER のスレッド構成と役割
 
@@ -366,7 +366,7 @@ RECEIVER 側は、接続時の session triplet(`session_id + session_tv_sec + se
 **送信スレッドのバッファー満杯対策**
 
 単一の送信スレッドが、`tcp_write_all_paths()` から全 path に逐次 `tcp_write_path()` を呼び出すため、特定 path の TCP 送信バッファーが満杯になると他 path への送信も遅延します。  
-これを避けるため、各 path への書き込みの前に `cplat_socket_timed_wait_writable()` (待機なし) で書き込み可能かを確認し、書き込み不可の path は、他 path へ書き込めた場合に限り今回のパケット列を飛ばします (他 path への冗長送信で補完)。どの path にも書き込めない場合は、空きを待って書き込みます。  
+これを避けるため、各 path への書き込みの前に `potr_internal_tcp_check_writable()` (`cplat_socket_watch_wait_writable()` の無待機確認) で書き込み可能かを確認し、書き込み不可の path は、他 path へ書き込めた場合に限り今回のパケット列を飛ばします (他 path への冗長送信で補完)。どの path にも書き込めない場合は、空きを待って書き込みます。  
 path を飛ばし、かつその path の警告を抑制していないときに WARNING ログを 1 回出力し、その path を書き込み可能と判定した回数の累計が `POTR_TCP_BUF_FULL_SUPPRESS_COUNT` (10) に達するまで、同じ path の警告を抑制します (`buf_full_suppress_cnt[POTR_MAX_PATH]`)。書き込み不可の判定は数えません。
 
 ## コンポーネント構成
@@ -518,6 +518,15 @@ porter の全状態は `potr_context` 構造体 (`potr_context *` の実体) に
 | ウィンドウ | 送信ウィンドウ・受信ウィンドウ (各パケットのコピーを保持) |
 | 送信キュー | ペイロード エレメントのリング バッファー (1024 要素) |
 | セッション状態 | 自セッション ID / 相手セッション ID・開始時刻 |
+
+### 非ブロッキング通信・世代所有・解除オブジェクト
+
+`libporter` が管理するすべてのソケットは、通信開始前に `cplat_socket_watch_attach()` で登録して非ブロッキングのまま運用し、ブロッキングへ戻しません。
+
+- **UDP**: `udp_watch[i]` とサービス共通の解除オブジェクト `recv_cancel` を使用し、送信は `udp_send_mutex[i]` の下で `potr_internal_udp_sendto()` (100 [ms] 絶対期限、延長なし、短い送信は `POTR_ERR_IO`) に統一します。
+- **TCP 接続世代**: 接続管理スレッドが経路 `i` の接続世代 (`tcp_conn_generation[i]`, `tcp_conn_watch[i]`, `tcp_conn_cancel[i]`) を所有します。停止要求は `potr_internal_tcp_conn_request_close()` により `tcp_lifecycle_mutex[i]` の下で閉じる状態を設定して `tcp_conn_cancel[i]` へ通知します (送信用ロック `tcp_send_mutex[i]` は取得しません)。解放 (`potr_internal_tcp_conn_release()`) は受信・ヘルス チェック終了後に `tcp_send_mutex[i]` -> `tcp_lifecycle_mutex[i]` の順で取得し、公開解除後に `watch_detach` -> `socket_close` -> `cancel_dispose` の順で行います。
+- **解除通知と Windows 構成**: 有効な解除オブジェクトへの `cplat_socket_wait_cancel_signal()` は常に `CPLAT_OK` を返し、OS の起床通知が失敗しても待機側の最大 50 [ms] ごとの内部確認で解除を検出します。Windows の `cplat_socket_watch` は登録ごとに 3 つの手動リセット イベントとロックを用い、内部スレッドを生成しません。
+- **送信待機と時刻記録**: `cplat_socket_watch_wait_writable()` が `CPLAT_OK` を返しても切断やエラーの場合があるため送信成功とせず、必ず再送信の結果で判定します。部分入出力時は処理済みバイト数を反映し、TCP の途中送信失敗後は対象世代へ閉じる要求を発行します。`last_ping_send_ms` と `last_valid_data_send_ms` は送信成功時のみ更新し、`flow_last_data_send_ms` (1:1 / N:1) は送出試行時刻として全経路失敗時も更新します (時計取得失敗時は前回値保持)。
 | 接続状態 | `health_alive` (1: 疎通中、0: 未接続または切断) |
 | ヘルス チェック | 最終送信時刻・最終受信時刻 (パス別) |
 | フラグメント バッファー | フラグメント結合用バッファー (最大 65,535 バイト) |
@@ -888,16 +897,16 @@ TCP は各接続でトランスポート層が再送を保証するため `potr_
 potr_service_send()
   -> フラグメント化 -> send_queue.push()
     -> send_thread_func() -> flush_packed()
-        +- UDP: sock[i].sendto()                          (全 path)
-        +- TCP: tcp_write_all_paths() -> tcp_write_path(tcp_conn_fd[i]) (全 path、送信前に cplat_socket_timed_wait_writable() でブロック回避)
+        +- UDP: potr_internal_udp_sendto() -> cplat_socket_watch_sendto() (全 path)
+        +- TCP: tcp_write_all_paths() -> potr_internal_tcp_send_all() (全 path、送信前に potr_internal_tcp_check_writable() でブロック回避)
 ```
 
 ### TCP 受信フロー
 
 ```
 tcp_recv_thread_func(path_idx)
-  -> tcp_wait_readable(tcp_conn_fd[path_idx])
-  -> tcp_read_all(tcp_recv_buf[path_idx])
+  -> cplat_socket_watch_wait_readable_multi(watch, cancel)
+  -> potr_internal_tcp_frame_reader_step(tcp_recv_buf[path_idx])
   -> [tcp_recv_mutex lock]
   -> tcp_handle_packet()
      -> パケット解析、認証、受信専用領域への復号

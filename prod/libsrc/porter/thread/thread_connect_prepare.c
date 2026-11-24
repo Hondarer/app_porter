@@ -28,11 +28,13 @@
 #include <porter/protocol/window.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_result.h>
+#include <porter/infra/potr_socket_io.h>
 #include <porter/thread/potr_connect_thread.h>
 #include <porter/thread/potr_connected_threads.h>
 #include <porter/thread/potr_recv_thread.h>
 #include <porter/thread/potr_send_thread.h>
 #include <porter/thread/potr_health_thread.h>
+#include <cplat/clock/clock.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
@@ -40,69 +42,89 @@
 
 #include "thread_connect_prepare.h"
 
-/**
- * 接続の完了を待つ 1 回の待機の上限 [ms]。待機から戻るたびに停止の指示を確認するため、
- * 待機による停止の遅れは、この値を超えない。
- */
-#define TCP_CONNECT_POLL_SLICE_MS 100U
-
-static_assert(TCP_CONNECT_POLL_SLICE_MS > 0U && TCP_CONNECT_POLL_SLICE_MS <= POTR_WAIT_MS_MAX,
-              "porter: TCP_CONNECT_POLL_SLICE_MS out of range");
-
 /* Doxygen コメントは、ヘッダーに記載 */
-int thread_connect_read_first_packet(const cplat_socket fd, uint8_t *buf, const size_t max_buf, size_t *len_out,
-                                     const int timeout_ms)
+int thread_connect_read_first_packet(const cplat_socket fd, cplat_socket_watch *watch,
+                                     cplat_socket_wait_cancel *cancel, uint8_t *buf, const size_t max_buf,
+                                     size_t *len_out, const int timeout_ms)
 {
-    int wait_result;
-    uint16_t wire_payload_len;
-    cplat_error detail;
+    potr_internal_tcp_frame_reader reader;
+    uint64_t deadline_ms = 0U;
+    int has_deadline = 0;
 
-    /* 読み取り可能になるまでタイムアウト付きで待機する。 */
-    wait_result = cplat_socket_timed_wait_readable(fd, timeout_ms, &detail);
-    if (wait_result == CPLAT_ERR_TIMEOUT)
+    if (fd == CPLAT_INVALID_SOCKET || watch == NULL || buf == NULL || len_out == NULL ||
+        max_buf < POTR_PACKET_HEADER_SIZE)
     {
-        return POTR_ERR_TIMEOUT;
-    }
-    if (wait_result != CPLAT_OK)
-    {
-        return potr_internal_result_from_error(&detail);
+        return POTR_ERR_INVALID_ARGUMENT;
     }
 
-    /* 固定長ヘッダーを読み取る。 */
+    if (timeout_ms != CPLAT_WAIT_FOREVER)
     {
-        int recv_result = cplat_socket_recv_all(fd, buf, POTR_PACKET_HEADER_SIZE, &detail);
-        if (recv_result != CPLAT_OK)
+        uint64_t now_ms;
+
+        if (timeout_ms < 0)
         {
-            return potr_internal_result_from_socket_result(recv_result, &detail);
+            return POTR_ERR_INVALID_ARGUMENT;
+        }
+        if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
+        {
+            return POTR_ERR_IO;
+        }
+        deadline_ms = now_ms + (uint64_t)timeout_ms;
+        has_deadline = 1;
+    }
+
+    potr_internal_tcp_frame_reader_reset(&reader);
+
+    for (;;)
+    {
+        int wait_ms = CPLAT_WAIT_FOREVER;
+        unsigned char ready = 0U;
+        cplat_error detail;
+        int wait_result;
+        int complete = 0;
+        int step_result;
+
+        if (has_deadline)
+        {
+            uint64_t now_ms;
+            uint64_t remaining;
+
+            if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
+            {
+                return POTR_ERR_IO;
+            }
+            if (now_ms >= deadline_ms)
+            {
+                return POTR_ERR_TIMEOUT;
+            }
+            remaining = deadline_ms - now_ms;
+            if (remaining > (uint64_t)POTR_WAIT_MS_MAX)
+            {
+                remaining = (uint64_t)POTR_WAIT_MS_MAX;
+            }
+            wait_ms = (int)remaining;
+        }
+
+        cplat_error_clear(&detail);
+        wait_result = cplat_socket_watch_wait_readable_multi(&watch, 1U, cancel, wait_ms, &ready, &detail);
+        if (wait_result != CPLAT_OK)
+        {
+            return potr_internal_result_from_socket_result(wait_result, &detail);
+        }
+
+        cplat_error_clear(&detail);
+        step_result = potr_internal_tcp_frame_reader_step(&reader, fd, buf, max_buf, &complete, &detail);
+        if (step_result != POTR_OK)
+        {
+            return step_result;
+        }
+
+        if (complete != 0)
+        {
+            *len_out = reader.received;
+            return POTR_OK;
         }
     }
-
-    /* payload_len は固定長ヘッダー内の protocol_version の直前に格納される。 */
-    {
-        uint16_t wpl;
-        memcpy(&wpl, buf + POTR_PACKET_PAYLOAD_LEN_OFFSET, sizeof(wpl));
-        wire_payload_len = cplat_ntoh16(wpl);
-    }
-
-    /* 受信したペイロード長がバッファー容量を超えていないか検証する。 */
-    if (POTR_PACKET_HEADER_SIZE + (size_t)wire_payload_len > max_buf)
-    {
-        return POTR_ERR_PROTOCOL;
-    }
-
-    /* ペイロードを読み取る。 */
-    if (wire_payload_len > 0)
-    {
-        int recv_result = cplat_socket_recv_all(fd, buf + POTR_PACKET_HEADER_SIZE, (size_t)wire_payload_len, &detail);
-        if (recv_result != CPLAT_OK)
-        {
-            return potr_internal_result_from_socket_result(recv_result, &detail);
-        }
-    }
-
-    *len_out = POTR_PACKET_HEADER_SIZE + (size_t)wire_payload_len;
-
-    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -140,12 +162,26 @@ tcp_session_cmp thread_connect_session_compare(const potr_context *ctx, const po
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
-cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
+cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx, cplat_socket_wait_cancel *cancel,
+                                         cplat_socket_watch **watch_out)
 {
     cplat_socket sock;
+    cplat_socket_watch *watch = NULL;
     cplat_ipv4_endpoint addr = {0};
     uint32_t timeout_ms = ctx->service.connect_timeout_ms;
+    int connect_timeout_ms;
+    int connect_result;
     cplat_error detail;
+
+    if (watch_out != NULL)
+    {
+        *watch_out = NULL;
+    }
+
+    if (watch_out == NULL)
+    {
+        return CPLAT_INVALID_SOCKET;
+    }
 
     if (cplat_socket_open(CPLAT_SOCKET_TCP, &sock, &detail) != CPLAT_OK)
     {
@@ -209,125 +245,49 @@ cplat_socket thread_connect_with_timeout(potr_context *ctx, const int path_idx)
         }
     }
 
+    if (cplat_socket_watch_attach(sock, &watch, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
+                                  "connect_thread[service_id=%" PRId64 " path=%d]: watch_attach() failed",
+                                  ctx->service.service_id, path_idx);
+        cplat_socket_close(sock);
+        return CPLAT_INVALID_SOCKET;
+    }
+
     addr.address = ctx->dst_addr_resolved[path_idx];
     addr.port = cplat_hton16(ctx->service.dst_port);
 
     if (timeout_ms == 0U)
     {
-        /* タイムアウト未指定時はブロッキング接続を行う。 */
-        if (cplat_socket_connect(sock, &addr, &detail) != CPLAT_OK)
+        connect_timeout_ms = CPLAT_WAIT_FOREVER;
+    }
+    else
+    {
+        connect_timeout_ms = (int)timeout_ms;
+    }
+
+    cplat_error_clear(&detail);
+    connect_result = cplat_socket_watch_connect(watch, &addr, cancel, connect_timeout_ms, &detail);
+    if (connect_result != CPLAT_OK)
+    {
+        if (connect_result == CPLAT_ERR_TIMEOUT)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 " path=%d]: connect() timed out",
+                       ctx->service.service_id, path_idx);
+        }
+        else if (connect_result != CPLAT_ERR_CANCELED)
         {
             POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_VERBOSE, &detail,
-                                      "connect_thread[service_id=%" PRId64 " path=%d]: connect() failed (blocking)",
+                                      "connect_thread[service_id=%" PRId64 " path=%d]: watch_connect() failed",
                                       ctx->service.service_id, path_idx);
-            cplat_socket_close(sock);
-            return CPLAT_INVALID_SOCKET;
         }
 
-        return sock;
-    }
-
-    /*
-     * タイムアウト付き接続: 非ブロッキング モードで writable ポーリングを使う。
-     * 停止シグナルに素早く応答するため 100 [ms] 単位でポーリングする。
-     * 非ブロッキングへ切り替えられない場合は、タイムアウトと停止の要求に応答できないため、
-     * ソケットを閉じて接続の失敗とする。
-     */
-    if (cplat_socket_set_nonblocking(sock, 1, &detail) != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
-                                  "connect_thread[service_id=%" PRId64 " path=%d]: set_nonblocking failed",
-                                  ctx->service.service_id, path_idx);
+        cplat_socket_watch_detach(watch);
         cplat_socket_close(sock);
         return CPLAT_INVALID_SOCKET;
     }
 
-    {
-        const int connect_result = cplat_socket_connect(sock, &addr, &detail);
-        if (connect_result == CPLAT_OK)
-        {
-            /*
-             * 即座に接続成功した場合は非ブロッキングを解除してソケットを返す。
-             * ブロッキングへ戻せない場合は、ソケットを閉じて接続の失敗とする。
-             */
-            if (cplat_socket_set_nonblocking(sock, 0, &detail) != CPLAT_OK)
-            {
-                POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
-                                          "connect_thread[service_id=%" PRId64 " path=%d]: set_blocking failed",
-                                          ctx->service.service_id, path_idx);
-                cplat_socket_close(sock);
-                return CPLAT_INVALID_SOCKET;
-            }
-
-            return sock;
-        }
-
-        if (connect_result != CPLAT_ERR_IN_PROGRESS)
-        {
-            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_VERBOSE, &detail,
-                                      "connect_thread[service_id=%" PRId64 " path=%d]: connect() failed",
-                                      ctx->service.service_id, path_idx);
-            cplat_socket_close(sock);
-            return CPLAT_INVALID_SOCKET;
-        }
-    }
-
-    /* 接続完了またはタイムアウトまで writable ポーリングを繰り返す。 */
-    {
-        uint32_t elapsed_ms = 0U;
-        int ready = 0;
-
-        while (elapsed_ms < timeout_ms &&
-               cplat_atomic_load_i32(&ctx->connect_thread_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
-        {
-            uint32_t poll_ms = timeout_ms - elapsed_ms;
-            int wait_result;
-            if (poll_ms > TCP_CONNECT_POLL_SLICE_MS)
-            {
-                poll_ms = TCP_CONNECT_POLL_SLICE_MS;
-            }
-            wait_result = cplat_socket_timed_wait_writable(sock, (int)poll_ms, NULL);
-            if (wait_result == CPLAT_OK)
-            {
-                ready = 1;
-                break;
-            }
-            if (wait_result != CPLAT_ERR_TIMEOUT)
-            {
-                break;
-            }
-
-            elapsed_ms += poll_ms;
-        }
-
-        if (!ready)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "connect_thread[service_id=%" PRId64 "]: connect() timed out",
-                       ctx->service.service_id);
-            cplat_socket_close(sock);
-            return CPLAT_INVALID_SOCKET;
-        }
-    }
-
-    if (cplat_socket_get_pending_error(sock, &detail) != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_VERBOSE, &detail,
-                                  "connect_thread[service_id=%" PRId64 " path=%d]: SO_ERROR", ctx->service.service_id,
-                                  path_idx);
-        cplat_socket_close(sock);
-        return CPLAT_INVALID_SOCKET;
-    }
-
-    /* 接続の完了後は非ブロッキングを解除する。ブロッキングへ戻せない場合は、ソケットを閉じて接続の失敗とする。 */
-    if (cplat_socket_set_nonblocking(sock, 0, &detail) != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
-                                  "connect_thread[service_id=%" PRId64 " path=%d]: set_blocking failed",
-                                  ctx->service.service_id, path_idx);
-        cplat_socket_close(sock);
-        return CPLAT_INVALID_SOCKET;
-    }
-
+    *watch_out = watch;
     return sock;
 }
 

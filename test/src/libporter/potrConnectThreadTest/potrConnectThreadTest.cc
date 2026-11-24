@@ -471,11 +471,15 @@ TEST(potrConnectThreadTest, sender_calls_preparation_without_publishing_failed_s
             });
     ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_signal(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_dispose(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_watch_detach(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_close(_)).WillByDefault(Return());
     // [状態] - 管理スレッド本体を実スレッドを生成せずに捕捉する。
     // Pre-Assert
-    EXPECT_CALL(mock_porter, thread_connect_with_timeout(&ctx, 0))
+    EXPECT_CALL(mock_porter, thread_connect_with_timeout(&ctx, 0, _, _))
         .WillOnce(
-            [&](potr_context *, int)
+            [&](potr_context *, int, cplat_socket_wait_cancel *, cplat_socket_watch **)
             {
                 cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
                 return CPLAT_INVALID_SOCKET;
@@ -518,7 +522,7 @@ TEST(potrConnectThreadTest, reconnect_wait_failure_traces_error)
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_))
         .WillByDefault(Return()); // [状態] - cplat_local_lock_unlock() が何もしないように既定動作を設定する。
     // [状態] - 管理スレッド本体を実スレッドを生成せずに捕捉する。
-    ON_CALL(mock_porter, thread_connect_with_timeout(&ctx, 0))
+    ON_CALL(mock_porter, thread_connect_with_timeout(&ctx, 0, _, _))
         .WillByDefault(Return(CPLAT_INVALID_SOCKET)); // [状態] - thread_connect_with_timeout() から CPLAT_INVALID_SOCKET を返すように既定動作を設定する。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, 100))
@@ -570,7 +574,7 @@ TEST(potrConnectThreadTest, reconnect_wait_timeout_does_not_trace_error)
     ON_CALL(mock_cplat, cplat_local_lock_unlock(_))
         .WillByDefault(Return()); // [状態] - cplat_local_lock_unlock() が何もしないように既定動作を設定する。
     // [状態] - 管理スレッド本体を実スレッドを生成せずに捕捉する。
-    ON_CALL(mock_porter, thread_connect_with_timeout(&ctx, 0))
+    ON_CALL(mock_porter, thread_connect_with_timeout(&ctx, 0, _, _))
         .WillByDefault(Return(CPLAT_INVALID_SOCKET)); // [状態] - thread_connect_with_timeout() から CPLAT_INVALID_SOCKET を返すように既定動作を設定する。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_condvar_timed_wait(_, _, 100))
@@ -611,6 +615,13 @@ TEST(potrConnectThreadTest, receiver_sets_nodelay_before_first_packet)
         ctx.tcp_conn_fd[i] = CPLAT_INVALID_SOCKET;
         ctx.tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
     }
+    int listen_watch_tok = 0;
+    int conn_watch_tok = 0;
+    int connect_cancel_tok = 0;
+    ctx.tcp_listen_sock[0] = static_cast<cplat_socket>(5);
+    ctx.tcp_listen_watch[0] = reinterpret_cast<cplat_socket_watch *>(&listen_watch_tok);
+    ctx.tcp_connect_cancel[0] = reinterpret_cast<cplat_socket_wait_cancel *>(&connect_cancel_tok);
+    cplat_socket_watch *conn_watch = reinterpret_cast<cplat_socket_watch *>(&conn_watch_tok);
     cplat_thread_fn entry = nullptr;
     void *entry_arg = nullptr;
     int accepts = 0;
@@ -623,22 +634,30 @@ TEST(potrConnectThreadTest, receiver_sets_nodelay_before_first_packet)
                 entry_arg = arg;
                 return CPLAT_OK;
             });
+    ON_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, 1U, ctx.tcp_connect_cancel[0], _, _, _))
+        .WillByDefault(
+            [&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                cplat_error *)
+            {
+                if (accepts == 0)
+                {
+                    ready[0] = 1U;
+                    return CPLAT_OK;
+                }
+                cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_ERR_CANCELED;
+            });
     ON_CALL(mock_cplat, cplat_socket_accept(_, _, _, _))
         .WillByDefault(
             [&](cplat_socket, cplat_ipv4_endpoint *peer, cplat_socket *out, cplat_error *)
             {
-                if (accepts == 0)
-                {
-                    accepts++;
-                    peer->address = 1;
-                    peer->port = 1;
-                    *out = static_cast<cplat_socket>(7);
-                    return CPLAT_OK;
-                }
-
-                cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-                return CPLAT_ERR_UNKNOWN;
+                accepts++;
+                peer->address = 1;
+                peer->port = 1;
+                *out = static_cast<cplat_socket>(7);
+                return CPLAT_OK;
             });
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_signal(_, _)).WillByDefault(Return(CPLAT_OK));
     // [状態] - 双方向の受け入れで、最初の 1 接続だけを成功させ、TCP_NODELAY は失敗させる。
     // Pre-Assert
     cplat_error nodelay_failure = {};
@@ -652,17 +671,18 @@ TEST(potrConnectThreadTest, receiver_sets_nodelay_before_first_packet)
 #endif
     {
         InSequence order;
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_attach(static_cast<cplat_socket>(7), _, _))
+            .WillOnce(DoAll(SetArgPointee<1>(conn_watch), Return(CPLAT_OK)));
         EXPECT_CALL(mock_cplat, cplat_socket_set_nodelay(static_cast<cplat_socket>(7), 1, _))
             .WillOnce(DoAll(SetArgPointee<2>(nodelay_failure), Return(CPLAT_ERR_UNKNOWN)));
-        // [Pre-Assert確認_異常系] - 先読みの前に TCP_NODELAY の有効化を 1 回要求すること。
-        // [Pre-Assert手順] - detail_out へ、Linux は SOCKET_ERRNO と ENOPROTOOPT、Windows は WINSOCK と WSAENOPROTOOPT、結果は CPLAT_ERR_UNKNOWN を書き、CPLAT_ERR_UNKNOWN を返す。
-        EXPECT_CALL(mock_porter, thread_connect_read_first_packet(_, _, _, _, _))
+        // [Pre-Assert確認_異常系] - attach 後に先読みの前で TCP_NODELAY の有効化を 1 回要求すること。
+        EXPECT_CALL(mock_porter, thread_connect_read_first_packet(static_cast<cplat_socket>(7), conn_watch,
+                                                                  ctx.tcp_connect_cancel[0], _, _, _, _))
             .WillOnce(Return(POTR_ERR_UNKNOWN));
         // [Pre-Assert確認_正常系] - TCP_NODELAY の失敗後も先読みへ進むこと。
-        // [Pre-Assert手順] - 先読みの失敗を返す。
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_detach(conn_watch)).WillOnce(Return());
         EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(7))).WillOnce(Return());
-        // [Pre-Assert確認_異常系] - 先読みの失敗後に、そのソケットを閉じること。
-        // [Pre-Assert手順] - クローズを成功として扱う。
+        // [Pre-Assert確認_異常系] - 先読みの失敗後に watch を detach してからソケットを閉じること。
     }
     // Act
     int actual_ret = potr_internal_connect_thread_start(&ctx); // [手順] - 受け入れ処理を準備する。
@@ -712,22 +732,38 @@ TEST(potrConnectThreadTest, tcp_reconnect_resets_flow_control_to_unnotified)
             });
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_))
         .WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
-    ON_CALL(mock_porter, thread_connect_with_timeout(_, _))
+    int watch_toks[2] = {};
+    int cancel_toks[2] = {};
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_signal(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_dispose(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_watch_detach(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_close(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_create(_, _))
         .WillByDefault(
-            [&](potr_context *, int) -> cplat_socket
+            [&](cplat_socket_wait_cancel **out, cplat_error *)
+            {
+                *out = reinterpret_cast<cplat_socket_wait_cancel *>(&cancel_toks[connect_count > 0 ? connect_count - 1 : 0]);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_porter, thread_connect_with_timeout(_, _, _, _))
+        .WillByDefault(
+            [&](potr_context *, int, cplat_socket_wait_cancel *, cplat_socket_watch **watch_out) -> cplat_socket
             {
                 connect_count++;
                 if (connect_count <= 2)
                 {
+                    *watch_out = reinterpret_cast<cplat_socket_watch *>(&watch_toks[connect_count - 1]);
                     return static_cast<cplat_socket>(7 + connect_count);
                 }
                 cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
                 return CPLAT_INVALID_SOCKET;
             });
-    ON_CALL(mock_porter, potr_internal_certificate_connect(_, _, _)).WillByDefault(Return(POTR_OK));
-    ON_CALL(mock_porter, potr_internal_start_connected_threads(_, _, _))
+    ON_CALL(mock_porter, potr_internal_certificate_connect(_, _, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(mock_porter, potr_internal_start_connected_threads(_, _, _, _))
         .WillByDefault(
-            [&](potr_context *c, int, const potr_internal_connected_threads_ops *)
+            [&](potr_context *c, int, uint64_t, const potr_internal_connected_threads_ops *)
             {
                 if (connect_count == 1)
                 {
@@ -804,22 +840,38 @@ TEST(potrConnectThreadTest, tcp_reconnect_discards_held_send_limit_and_suppressi
             });
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_))
         .WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
-    ON_CALL(mock_porter, thread_connect_with_timeout(_, _))
+    int watch_toks[2] = {};
+    int cancel_toks[2] = {};
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_signal(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_dispose(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_watch_detach(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_close(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_create(_, _))
         .WillByDefault(
-            [&](potr_context *, int) -> cplat_socket
+            [&](cplat_socket_wait_cancel **out, cplat_error *)
+            {
+                *out = reinterpret_cast<cplat_socket_wait_cancel *>(&cancel_toks[connect_count > 0 ? connect_count - 1 : 0]);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_porter, thread_connect_with_timeout(_, _, _, _))
+        .WillByDefault(
+            [&](potr_context *, int, cplat_socket_wait_cancel *, cplat_socket_watch **watch_out) -> cplat_socket
             {
                 connect_count++;
                 if (connect_count <= 2)
                 {
+                    *watch_out = reinterpret_cast<cplat_socket_watch *>(&watch_toks[connect_count - 1]);
                     return static_cast<cplat_socket>(7 + connect_count);
                 }
                 cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
                 return CPLAT_INVALID_SOCKET;
             });
-    ON_CALL(mock_porter, potr_internal_certificate_connect(_, _, _)).WillByDefault(Return(POTR_OK));
-    ON_CALL(mock_porter, potr_internal_start_connected_threads(_, _, _))
+    ON_CALL(mock_porter, potr_internal_certificate_connect(_, _, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(mock_porter, potr_internal_start_connected_threads(_, _, _, _))
         .WillByDefault(
-            [&](potr_context *c, int, const potr_internal_connected_threads_ops *)
+            [&](potr_context *c, int, uint64_t, const potr_internal_connected_threads_ops *)
             {
                 if (connect_count == 1)
                 {
@@ -853,5 +905,117 @@ TEST(potrConnectThreadTest, tcp_reconnect_discards_held_send_limit_and_suppressi
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_UNNOTIFIED, limit_at_reconnect);
     // [確認_正常系] - 再接続時に保持していた送出上限が破棄され、未通知 (初期の幅) へ戻ること。
     EXPECT_EQ(0U, expire_at_reconnect); // [確認_正常系] - 再接続時に保持していた抑制要求が破棄されること。
+    potr_internal_connect_thread_stop(&ctx);
+}
+
+// 接続の回収順序 (request_close -> recv join -> health stop -> release_conn) と、新セッションが他経路のソケットを直接閉じないことの確認
+TEST(potrConnectThreadTest, receiver_new_session_requests_close_on_other_path_and_releases_own_in_order)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_TCP;
+    ctx.service.service_id = 15;
+    ctx.n_path = 2;
+    ctx.global.max_payload = 64;
+    for (int i = 0; i < (int)POTR_MAX_PATH; i++)
+    {
+        ctx.sock[i] = CPLAT_INVALID_SOCKET;
+        ctx.tcp_conn_fd[i] = CPLAT_INVALID_SOCKET;
+        ctx.tcp_listen_sock[i] = CPLAT_INVALID_SOCKET;
+    }
+    int listen_watch_tok = 0;
+    int conn_watch_tok = 0;
+    int connect_cancel_tok = 0;
+    int conn_cancel_tok = 0;
+    int lifecycle_lock1_tok = 0;
+    ctx.tcp_listen_sock[0] = static_cast<cplat_socket>(5);
+    ctx.tcp_listen_watch[0] = reinterpret_cast<cplat_socket_watch *>(&listen_watch_tok);
+    ctx.tcp_connect_cancel[0] = reinterpret_cast<cplat_socket_wait_cancel *>(&connect_cancel_tok);
+    ctx.tcp_lifecycle_mutex[1] = reinterpret_cast<cplat_local_lock *>(&lifecycle_lock1_tok);
+    ctx.tcp_conn_fd[1] = static_cast<cplat_socket>(99);
+    ctx.tcp_conn_generation[1] = 42U;
+    cplat_socket_watch *conn_watch = reinterpret_cast<cplat_socket_watch *>(&conn_watch_tok);
+    cplat_socket_wait_cancel *conn_cancel = reinterpret_cast<cplat_socket_wait_cancel *>(&conn_cancel_tok);
+
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    int accepts = 0;
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_signal(_, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_dispose(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_watch_detach(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_socket_close(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault(
+            [&](cplat_thread **out, cplat_thread_fn fn, void *arg)
+            {
+                *out = nullptr;
+                if (entry == nullptr)
+                {
+                    entry = fn;
+                    entry_arg = arg;
+                }
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_watch_wait_readable_multi(_, 1U, ctx.tcp_connect_cancel[0], _, _, _))
+        .WillByDefault(
+            [&](cplat_socket_watch *const *, size_t, cplat_socket_wait_cancel *, int, unsigned char *ready,
+                cplat_error *)
+            {
+                if (accepts == 0)
+                {
+                    ready[0] = 1U;
+                    return CPLAT_OK;
+                }
+                cplat_atomic_store_i32(&ctx.connect_thread_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+                return CPLAT_ERR_CANCELED;
+            });
+    ON_CALL(mock_cplat, cplat_socket_accept(_, _, _, _))
+        .WillByDefault(
+            [&](cplat_socket, cplat_ipv4_endpoint *peer, cplat_socket *out, cplat_error *)
+            {
+                accepts++;
+                peer->address = 1;
+                peer->port = 1;
+                *out = static_cast<cplat_socket>(7);
+                return CPLAT_OK;
+            });
+    ON_CALL(mock_cplat, cplat_socket_watch_attach(static_cast<cplat_socket>(7), _, _))
+        .WillByDefault(DoAll(SetArgPointee<1>(conn_watch), Return(CPLAT_OK)));
+    ON_CALL(mock_cplat, cplat_socket_set_nodelay(_, _, _)).WillByDefault(Return(CPLAT_OK));
+    ON_CALL(mock_porter, thread_connect_peer_allowed(_, _, _)).WillByDefault(Return(1));
+    ON_CALL(mock_porter, thread_connect_read_first_packet(_, _, _, _, _, _, _))
+        .WillByDefault(DoAll(SetArgPointee<5>(POTR_PACKET_HEADER_SIZE), Return(POTR_OK)));
+    potr_packet first_pkt = {};
+    first_pkt.service_id = 15;
+    first_pkt.session_id = 100U;
+    ON_CALL(mock_porter, potr_internal_packet_parse(_, _, _))
+        .WillByDefault(DoAll(SetArgPointee<0>(first_pkt), Return(POTR_OK)));
+    ON_CALL(mock_porter, potr_internal_certificate_connect(_, _, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(mock_porter, thread_connect_session_compare(_, _)).WillByDefault(Return(TCP_SESSION_NEW));
+    ON_CALL(mock_cplat, cplat_socket_wait_cancel_create(_, _))
+        .WillByDefault(DoAll(SetArgPointee<0>(conn_cancel), Return(CPLAT_OK)));
+    ON_CALL(mock_porter, potr_internal_start_connected_threads(_, 0, 1U, _)).WillByDefault(Return(POTR_OK));
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_close(static_cast<cplat_socket>(99))).Times(0);
+    // [Pre-Assert確認_正常系] - 新セッション受け付け時に他経路 (path 1) のソケットを直接閉じないこと。
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_porter, potr_internal_tcp_conn_request_close(&ctx, 1, 42U)).Times(1);
+        EXPECT_CALL(mock_porter, potr_internal_tcp_conn_request_close(&ctx, 0, 1U)).Times(1);
+        EXPECT_CALL(mock_porter, potr_internal_tcp_health_thread_stop(&ctx, 0)).Times(1);
+        EXPECT_CALL(mock_porter, potr_internal_tcp_conn_release(&ctx, 0, 1U)).Times(1);
+        EXPECT_CALL(mock_porter, potr_internal_tcp_health_thread_stop(&ctx, _)).Times(AnyNumber());
+    }
+
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_connect_thread_start(&ctx));
+    ASSERT_NE(nullptr, entry);
+    entry(entry_arg);
     potr_internal_connect_thread_stop(&ctx);
 }

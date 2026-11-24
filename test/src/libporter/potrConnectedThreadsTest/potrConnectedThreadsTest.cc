@@ -14,6 +14,7 @@
 #include <porter/thread/potr_health_thread.h>
 
 #include <string.h>
+#include <vector>
 
 using namespace testing;
 
@@ -24,36 +25,48 @@ struct ConnectedThreadsCallState
     int recv_start_calls;
     int tcp_send_ping_calls;
     int health_start_calls;
-    int close_conn_calls;
+    int request_close_calls;
     int join_recv_calls;
+    int stop_health_calls;
+    int release_conn_calls;
     int set_ping_state_calls;
     int last_set_ping_path;
     int last_set_ping_state;
     int last_tcp_send_ping_path;
+    int send_start_result;
     int recv_start_result;
     int ping_state_at_recv_start;
     int tcp_send_ping_result;
     int health_start_result;
+    uint64_t last_request_close_gen;
+    uint64_t last_release_conn_gen;
 };
 
 static ConnectedThreadsCallState s_calls;
+static std::vector<const char *> s_order;
 
 static int fake_send_start(potr_context *ctx)
 {
     s_calls.send_start_calls++;
-    cplat_atomic_store_i32(&ctx->send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED);
-    return POTR_OK;
+    s_order.push_back("send_start");
+    if (s_calls.send_start_result == POTR_OK)
+    {
+        cplat_atomic_store_i32(&ctx->send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    }
+    return s_calls.send_start_result;
 }
 
 static void fake_send_stop(potr_context *ctx)
 {
     s_calls.send_stop_calls++;
+    s_order.push_back("send_stop");
     cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELAXED);
 }
 
 static int fake_recv_start(potr_context *ctx, int path_idx)
 {
     s_calls.recv_start_calls++;
+    s_order.push_back("recv_start");
     s_calls.ping_state_at_recv_start =
         (int)cplat_atomic_load_u8(&ctx->path_ping_state[path_idx], CPLAT_MEMORY_ORDER_RELAXED);
     if (s_calls.recv_start_result == POTR_OK)
@@ -67,6 +80,7 @@ int potr_internal_tcp_send_ping_now(potr_context *ctx, int path_idx)
 {
     (void)ctx;
     s_calls.tcp_send_ping_calls++;
+    s_order.push_back("tcp_send_ping");
     s_calls.last_tcp_send_ping_path = path_idx;
     return s_calls.tcp_send_ping_result;
 }
@@ -76,13 +90,16 @@ static int fake_health_start(potr_context *ctx, int path_idx)
     (void)ctx;
     (void)path_idx;
     s_calls.health_start_calls++;
+    s_order.push_back("health_start");
     return s_calls.health_start_result;
 }
 
-static void fake_close_conn(potr_context *ctx, int path_idx)
+static void fake_request_close(potr_context *ctx, int path_idx, uint64_t generation)
 {
-    s_calls.close_conn_calls++;
-    ctx->tcp_conn_fd[path_idx] = CPLAT_INVALID_SOCKET;
+    s_calls.request_close_calls++;
+    s_calls.last_request_close_gen = generation;
+    s_order.push_back("request_close");
+    cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELAXED);
 }
 
 static void fake_join_recv(potr_context *ctx, int path_idx)
@@ -90,6 +107,23 @@ static void fake_join_recv(potr_context *ctx, int path_idx)
     (void)ctx;
     (void)path_idx;
     s_calls.join_recv_calls++;
+    s_order.push_back("join_recv");
+}
+
+static void fake_stop_health(potr_context *ctx, int path_idx)
+{
+    (void)ctx;
+    (void)path_idx;
+    s_calls.stop_health_calls++;
+    s_order.push_back("stop_health");
+}
+
+static void fake_release_conn(potr_context *ctx, int path_idx, uint64_t generation)
+{
+    s_calls.release_conn_calls++;
+    s_calls.last_release_conn_gen = generation;
+    s_order.push_back("release_conn");
+    ctx->tcp_conn_fd[path_idx] = CPLAT_INVALID_SOCKET;
 }
 
 static void fake_set_path_ping_state(potr_context *ctx, int path_idx, uint8_t next_state)
@@ -106,14 +140,12 @@ class potrConnectedThreadsTest : public Test
     NiceMock<Mock_cplat> mock_cplat;
     NiceMock<Mock_porter> mock_porter;
 
-    // [サブ手順 名前=potrConnectedThreadsTest.SetUp]
     void SetUp() override
     {
         ON_CALL(mock_cplat, cplat_tracer_writef_at(_, _, _, _)).WillByDefault(Return(0));
-        // [状態] - cplat_tracer_writef_at() から 0 を返すように既定動作を設定する。
-
         memset(&ctx, 0, sizeof(ctx));
         memset(&s_calls, 0, sizeof(s_calls));
+        s_order.clear();
 
         ctx.service.service_id = 42;
         ctx.service.type = POTR_TYPE_TCP_BIDIR;
@@ -121,265 +153,181 @@ class potrConnectedThreadsTest : public Test
         ctx.tcp_conn_fd[0] = 123;
         ctx.tcp_conn_fd[1] = 456;
 
+        s_calls.send_start_result = POTR_OK;
         s_calls.recv_start_result = POTR_OK;
         s_calls.tcp_send_ping_result = POTR_OK;
         s_calls.health_start_result = POTR_OK;
     }
-    // [サブ手順終了]
 
     potr_internal_connected_threads_ops make_ops()
     {
-        potr_internal_connected_threads_ops ops = {fake_send_start,         fake_send_stop,  fake_recv_start,
-                                                   fake_health_start,       fake_close_conn, fake_join_recv,
-                                                   fake_set_path_ping_state};
+        potr_internal_connected_threads_ops ops = {fake_send_start,   fake_send_stop,   fake_recv_start,
+                                                   fake_health_start, fake_request_close, fake_join_recv,
+                                                   fake_stop_health,  fake_release_conn, fake_set_path_ping_state};
         return ops;
     }
 
     potr_context ctx;
 };
 
-// recv 開始失敗時に、この呼び出しで開始した send スレッドが停止されることの確認
-// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
+// send 開始失敗時に、未起動の recv/health を回収せず対象世代を解放することの確認
+TEST_F(potrConnectedThreadsTest, send_failure_releases_conn_without_stopping_unstarted_threads)
+{
+    potr_internal_connected_threads_ops ops = make_ops();
+    s_calls.send_start_result = POTR_ERR_OUT_OF_MEMORY;
+
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, 11U, &ops);
+
+    EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY, actual_ret);
+    EXPECT_EQ(1, s_calls.send_start_calls);
+    EXPECT_EQ(0, s_calls.send_stop_calls);
+    EXPECT_EQ(0, s_calls.recv_start_calls);
+    EXPECT_EQ(1, s_calls.request_close_calls);
+    EXPECT_EQ(0, s_calls.join_recv_calls);
+    EXPECT_EQ(0, s_calls.stop_health_calls);
+    EXPECT_EQ(1, s_calls.release_conn_calls);
+    EXPECT_EQ(11U, s_calls.last_request_close_gen);
+    EXPECT_EQ(11U, s_calls.last_release_conn_gen);
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]);
+}
+
+// recv 開始失敗時に、この呼び出しで開始した send スレッドを停止し、対象世代を解放することの確認
 TEST_F(potrConnectedThreadsTest, recv_failure_stops_send_started_by_this_call)
 {
-    // Arrange
-    potr_internal_connected_threads_ops ops = make_ops(); // [状態] - fake ops 一式を用意する (send スレッドは未起動)。
+    potr_internal_connected_threads_ops ops = make_ops();
+    s_calls.recv_start_result = POTR_ERR_IO;
 
-    // Pre-Assert
-    s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - fake_recv_start() から POTR_ERR_IO を返す。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, 12U, &ops);
 
-    // Act
-    int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(
-        POTR_ERR_IO,
-        actual_ret); // [確認_異常系] - potr_internal_start_connected_threads() の戻り値が POTR_ERR_IO であること。
-    EXPECT_EQ(1, s_calls.send_start_calls);    // [確認_異常系] - s_calls.send_start_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - s_calls.recv_start_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.send_stop_calls);     // [確認_異常系] - s_calls.send_stop_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.close_conn_calls);    // [確認_異常系] - s_calls.close_conn_calls が 1 であること。
-    EXPECT_EQ(0, s_calls.join_recv_calls);     // [確認_異常系] - s_calls.join_recv_calls が 0 であること。
-    EXPECT_EQ(0, s_calls.tcp_send_ping_calls); // [確認_異常系] - s_calls.tcp_send_ping_calls が 0 であること。
-    EXPECT_EQ(0, s_calls.health_start_calls);  // [確認_異常系] - s_calls.health_start_calls が 0 であること。
-    EXPECT_EQ(CPLAT_INVALID_SOCKET,
-              ctx.tcp_conn_fd[0]); // [確認_異常系] - ctx.tcp_conn_fd[0] が CPLAT_INVALID_SOCKET であること。
+    EXPECT_EQ(POTR_ERR_IO, actual_ret);
+    EXPECT_EQ(1, s_calls.send_start_calls);
+    EXPECT_EQ(1, s_calls.recv_start_calls);
+    EXPECT_EQ(1, s_calls.send_stop_calls);
+    EXPECT_EQ(1, s_calls.request_close_calls);
+    EXPECT_EQ(0, s_calls.join_recv_calls);
+    EXPECT_EQ(0, s_calls.stop_health_calls);
+    EXPECT_EQ(1, s_calls.release_conn_calls);
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]);
 }
 
 // recv 開始失敗時に、既存の send スレッドが停止されないことの確認
-// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, recv_failure_keeps_preexisting_send_thread_running)
 {
-    // Arrange
     potr_internal_connected_threads_ops ops = make_ops();
-    cplat_atomic_store_i32(&ctx.send_thread_running, 1,
-                           CPLAT_MEMORY_ORDER_RELAXED); // [状態] - send スレッドがすでに起動済みの状態とする。
+    cplat_atomic_store_i32(&ctx.send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    s_calls.recv_start_result = POTR_ERR_IO;
 
-    // Pre-Assert
-    s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - fake_recv_start() から POTR_ERR_IO を返す。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, 13U, &ops);
 
-    // Act
-    int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(
-        POTR_ERR_IO,
-        actual_ret); // [確認_異常系] - potr_internal_start_connected_threads() の戻り値が POTR_ERR_IO であること。
-    EXPECT_EQ(0, s_calls.send_start_calls);    // [確認_異常系] - s_calls.send_start_calls が 0 であること。
-    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - s_calls.recv_start_calls が 1 であること。
-    EXPECT_EQ(0, s_calls.send_stop_calls);     // [確認_異常系] - s_calls.send_stop_calls が 0 であること。
-    EXPECT_EQ(1, s_calls.close_conn_calls);    // [確認_異常系] - s_calls.close_conn_calls が 1 であること。
-    EXPECT_EQ(0, s_calls.tcp_send_ping_calls); // [確認_異常系] - s_calls.tcp_send_ping_calls が 0 であること。
+    EXPECT_EQ(POTR_ERR_IO, actual_ret);
+    EXPECT_EQ(0, s_calls.send_start_calls);
+    EXPECT_EQ(1, s_calls.recv_start_calls);
+    EXPECT_EQ(0, s_calls.send_stop_calls);
+    EXPECT_EQ(1, s_calls.request_close_calls);
+    EXPECT_EQ(1, s_calls.release_conn_calls);
 }
 
-// bootstrap ping 失敗時に recv と新規 send スレッドがロールバックされることの確認
-// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
-TEST_F(potrConnectedThreadsTest, bootstrap_ping_failure_rolls_back_recv_and_new_send_thread)
+// bootstrap ping 失敗時に request_close -> join_recv -> send_stop -> release_conn の順で回収することの確認
+TEST_F(potrConnectedThreadsTest, bootstrap_ping_failure_rolls_back_in_order)
 {
-    // Arrange
-    potr_internal_connected_threads_ops ops = make_ops(); // [状態] - fake ops 一式を用意する (send スレッドは未起動)。
+    potr_internal_connected_threads_ops ops = make_ops();
+    s_calls.tcp_send_ping_result = POTR_ERR_DISCONNECTED;
 
-    // Pre-Assert
-    s_calls.tcp_send_ping_result =
-        POTR_ERR_DISCONNECTED; // [Pre-Assert手順] - potr_internal_tcp_send_ping_now() から POTR_ERR_DISCONNECTED を返す。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, 14U, &ops);
 
-    // Act
-    int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(
-        POTR_ERR_DISCONNECTED,
-        actual_ret); // [確認_異常系] - potr_internal_start_connected_threads() の戻り値が POTR_ERR_DISCONNECTED であること。
-    EXPECT_EQ(1, s_calls.send_start_calls);    // [確認_異常系] - s_calls.send_start_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - s_calls.recv_start_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.tcp_send_ping_calls); // [確認_異常系] - s_calls.tcp_send_ping_calls が 1 であること。
-    EXPECT_EQ(0, s_calls.health_start_calls);  // [確認_異常系] - s_calls.health_start_calls が 0 であること。
-    EXPECT_EQ(1, s_calls.close_conn_calls);    // [確認_異常系] - s_calls.close_conn_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.join_recv_calls);     // [確認_異常系] - s_calls.join_recv_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.send_stop_calls);     // [確認_異常系] - s_calls.send_stop_calls が 1 であること。
-    EXPECT_EQ(
-        0,
-        cplat_atomic_load_i32(
-            &ctx.running[0],
-            CPLAT_MEMORY_ORDER_RELAXED)); // [確認_異常系] - ctx.running[0] を読み取った cplat_atomic_load_i32() の戻り値が 0 であること。
-    EXPECT_EQ(CPLAT_INVALID_SOCKET,
-              ctx.tcp_conn_fd[0]); // [確認_異常系] - ctx.tcp_conn_fd[0] が CPLAT_INVALID_SOCKET であること。
+    EXPECT_EQ(POTR_ERR_DISCONNECTED, actual_ret);
+    EXPECT_EQ(1, s_calls.request_close_calls);
+    EXPECT_EQ(1, s_calls.join_recv_calls);
+    EXPECT_EQ(0, s_calls.stop_health_calls);
+    EXPECT_EQ(1, s_calls.send_stop_calls);
+    EXPECT_EQ(1, s_calls.release_conn_calls);
+    EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.running[0], CPLAT_MEMORY_ORDER_RELAXED));
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]);
 }
 
 // health スレッド開始失敗時に recv と新規 send スレッドがロールバックされることの確認
-// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, health_failure_rolls_back_recv_and_new_send_thread)
 {
-    // Arrange
-    potr_internal_connected_threads_ops ops = make_ops(); // [状態] - fake ops 一式を用意する (send スレッドは未起動)。
+    potr_internal_connected_threads_ops ops = make_ops();
+    s_calls.health_start_result = POTR_ERR_OUT_OF_MEMORY;
 
-    // Pre-Assert
-    s_calls.health_start_result =
-        POTR_ERR_OUT_OF_MEMORY; // [Pre-Assert手順] - fake_health_start() から POTR_ERR_OUT_OF_MEMORY を返す。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, 15U, &ops);
 
-    // Act
-    int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(
-        POTR_ERR_OUT_OF_MEMORY,
-        actual_ret); // [確認_異常系] - potr_internal_start_connected_threads() の戻り値が POTR_ERR_OUT_OF_MEMORY であること。
-    EXPECT_EQ(1, s_calls.send_start_calls);    // [確認_異常系] - s_calls.send_start_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - s_calls.recv_start_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.tcp_send_ping_calls); // [確認_異常系] - s_calls.tcp_send_ping_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.health_start_calls);  // [確認_異常系] - s_calls.health_start_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.close_conn_calls);    // [確認_異常系] - s_calls.close_conn_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.join_recv_calls);     // [確認_異常系] - s_calls.join_recv_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.send_stop_calls);     // [確認_異常系] - s_calls.send_stop_calls が 1 であること。
-    EXPECT_EQ(
-        0,
-        cplat_atomic_load_i32(
-            &ctx.running[0],
-            CPLAT_MEMORY_ORDER_RELAXED)); // [確認_異常系] - ctx.running[0] を読み取った cplat_atomic_load_i32() の戻り値が 0 であること。
-    EXPECT_EQ(CPLAT_INVALID_SOCKET,
-              ctx.tcp_conn_fd[0]); // [確認_異常系] - ctx.tcp_conn_fd[0] が CPLAT_INVALID_SOCKET であること。
+    EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY, actual_ret);
+    EXPECT_EQ(1, s_calls.send_start_calls);
+    EXPECT_EQ(1, s_calls.recv_start_calls);
+    EXPECT_EQ(1, s_calls.tcp_send_ping_calls);
+    EXPECT_EQ(1, s_calls.health_start_calls);
+    EXPECT_EQ(1, s_calls.request_close_calls);
+    EXPECT_EQ(1, s_calls.join_recv_calls);
+    EXPECT_EQ(0, s_calls.stop_health_calls);
+    EXPECT_EQ(1, s_calls.send_stop_calls);
+    EXPECT_EQ(1, s_calls.release_conn_calls);
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[0]);
 }
 
 // health スレッド開始失敗時に、既存の send スレッドが停止されないことの確認
-// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, health_failure_keeps_preexisting_send_thread_running)
 {
-    // Arrange
     potr_internal_connected_threads_ops ops = make_ops();
-    cplat_atomic_store_i32(&ctx.send_thread_running, 1,
-                           CPLAT_MEMORY_ORDER_RELAXED); // [状態] - send スレッドがすでに起動済みの状態とする。
+    cplat_atomic_store_i32(&ctx.send_thread_running, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    s_calls.health_start_result = POTR_ERR_OUT_OF_MEMORY;
 
-    // Pre-Assert
-    s_calls.health_start_result =
-        POTR_ERR_OUT_OF_MEMORY; // [Pre-Assert手順] - fake_health_start() から POTR_ERR_OUT_OF_MEMORY を返す。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, 16U, &ops);
 
-    // Act
-    int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(
-        POTR_ERR_OUT_OF_MEMORY,
-        actual_ret); // [確認_異常系] - potr_internal_start_connected_threads() の戻り値が POTR_ERR_OUT_OF_MEMORY であること。
-    EXPECT_EQ(0, s_calls.send_start_calls);    // [確認_異常系] - s_calls.send_start_calls が 0 であること。
-    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - s_calls.recv_start_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.tcp_send_ping_calls); // [確認_異常系] - s_calls.tcp_send_ping_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.health_start_calls);  // [確認_異常系] - s_calls.health_start_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.close_conn_calls);    // [確認_異常系] - s_calls.close_conn_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.join_recv_calls);     // [確認_異常系] - s_calls.join_recv_calls が 1 であること。
-    EXPECT_EQ(0, s_calls.send_stop_calls);     // [確認_異常系] - s_calls.send_stop_calls が 0 であること。
+    EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY, actual_ret);
+    EXPECT_EQ(0, s_calls.send_start_calls);
+    EXPECT_EQ(0, s_calls.send_stop_calls);
+    EXPECT_EQ(1, s_calls.request_close_calls);
+    EXPECT_EQ(1, s_calls.join_recv_calls);
+    EXPECT_EQ(1, s_calls.release_conn_calls);
 }
 
 // 非 primary path では send スレッドが操作されないことの確認
-// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, non_primary_path_does_not_touch_send_thread)
 {
-    // Arrange
-    potr_internal_connected_threads_ops ops = make_ops(); // [状態] - fake ops 一式を用意する。
+    potr_internal_connected_threads_ops ops = make_ops();
+    s_calls.recv_start_result = POTR_ERR_IO;
 
-    // Pre-Assert
-    s_calls.recv_start_result = POTR_ERR_IO; // [Pre-Assert手順] - fake_recv_start() から POTR_ERR_IO を返す。
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 1, 17U, &ops);
 
-    // Act
-    int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 1, &ops); // [手順] - 非 primary path (1) を指定して potr_internal_start_connected_threads() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(
-        POTR_ERR_IO,
-        actual_ret); // [確認_異常系] - potr_internal_start_connected_threads() の戻り値が POTR_ERR_IO であること。
-    EXPECT_EQ(0, s_calls.send_start_calls);    // [確認_異常系] - s_calls.send_start_calls が 0 であること。
-    EXPECT_EQ(1, s_calls.recv_start_calls);    // [確認_異常系] - s_calls.recv_start_calls が 1 であること。
-    EXPECT_EQ(0, s_calls.send_stop_calls);     // [確認_異常系] - s_calls.send_stop_calls が 0 であること。
-    EXPECT_EQ(1, s_calls.close_conn_calls);    // [確認_異常系] - s_calls.close_conn_calls が 1 であること。
-    EXPECT_EQ(0, s_calls.tcp_send_ping_calls); // [確認_異常系] - s_calls.tcp_send_ping_calls が 0 であること。
-    EXPECT_EQ(CPLAT_INVALID_SOCKET,
-              ctx.tcp_conn_fd[1]); // [確認_異常系] - ctx.tcp_conn_fd[1] が CPLAT_INVALID_SOCKET であること。
+    EXPECT_EQ(POTR_ERR_IO, actual_ret);
+    EXPECT_EQ(0, s_calls.send_start_calls);
+    EXPECT_EQ(0, s_calls.send_stop_calls);
+    EXPECT_EQ(1, s_calls.request_close_calls);
+    EXPECT_EQ(1, s_calls.release_conn_calls);
+    EXPECT_EQ(CPLAT_INVALID_SOCKET, ctx.tcp_conn_fd[1]);
 }
 
 // 全段成功時に ping 状態が設定され、ロールバックが発生しないことの確認
-// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, success_sets_ping_state_without_rollback)
 {
-    // Arrange
-    potr_internal_connected_threads_ops ops = make_ops(); // [状態] - fake ops 一式を用意する (すべて成功を返す既定)。
+    potr_internal_connected_threads_ops ops = make_ops();
 
-    // Pre-Assert
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 0, 18U, &ops);
 
-    // Act
-    int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 0, &ops); // [手順] - primary path (0) を指定して potr_internal_start_connected_threads() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(POTR_OK,
-              actual_ret); // [確認_正常系] - potr_internal_start_connected_threads() の戻り値が POTR_OK であること。
-    EXPECT_EQ(1, s_calls.send_start_calls);        // [確認_正常系] - s_calls.send_start_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.recv_start_calls);        // [確認_正常系] - s_calls.recv_start_calls が 1 であること。
-    EXPECT_EQ(1, s_calls.tcp_send_ping_calls);     // [確認_正常系] - s_calls.tcp_send_ping_calls が 1 であること。
-    EXPECT_EQ(0, s_calls.last_tcp_send_ping_path); // [確認_正常系] - s_calls.last_tcp_send_ping_path が 0 であること。
-    EXPECT_EQ(1, s_calls.health_start_calls);      // [確認_正常系] - s_calls.health_start_calls が 1 であること。
-    EXPECT_EQ(0, s_calls.close_conn_calls);        // [確認_正常系] - s_calls.close_conn_calls が 0 であること。
-    EXPECT_EQ(0, s_calls.join_recv_calls);         // [確認_正常系] - s_calls.join_recv_calls が 0 であること。
-    EXPECT_EQ(0, s_calls.send_stop_calls);         // [確認_正常系] - s_calls.send_stop_calls が 0 であること。
-    EXPECT_EQ(1, s_calls.set_ping_state_calls);    // [確認_正常系] - s_calls.set_ping_state_calls が 1 であること。
-    EXPECT_EQ(0, s_calls.last_set_ping_path);      // [確認_正常系] - s_calls.last_set_ping_path が 0 であること。
-    EXPECT_EQ(
-        (int)POTR_PING_STATE_UNDEFINED,
-        s_calls
-            .last_set_ping_state); // [確認_正常系] - s_calls.last_set_ping_state が POTR_PING_STATE_UNDEFINED であること。
-    EXPECT_EQ(
-        POTR_PING_STATE_UNDEFINED,
-        cplat_atomic_load_u8(
-            &ctx.path_ping_state[0],
-            CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - ctx.path_ping_state[0] を読み取った cplat_atomic_load_u8() の戻り値が POTR_PING_STATE_UNDEFINED であること。
+    EXPECT_EQ(POTR_OK, actual_ret);
+    EXPECT_EQ(1, s_calls.send_start_calls);
+    EXPECT_EQ(1, s_calls.recv_start_calls);
+    EXPECT_EQ(1, s_calls.tcp_send_ping_calls);
+    EXPECT_EQ(1, s_calls.health_start_calls);
+    EXPECT_EQ(0, s_calls.request_close_calls);
+    EXPECT_EQ(0, s_calls.join_recv_calls);
+    EXPECT_EQ(0, s_calls.release_conn_calls);
+    EXPECT_EQ(0, s_calls.send_stop_calls);
+    EXPECT_EQ((int)POTR_PING_STATE_UNDEFINED, s_calls.last_set_ping_state);
 }
 
 // recv スレッド起動前に ping 状態が初期化され、起動後の受信結果を上書きしないことの確認
-// [サブ手順参照 名前=potrConnectedThreadsTest.SetUp]
 TEST_F(potrConnectedThreadsTest, ping_state_is_reset_before_recv_start)
 {
-    // Arrange
     potr_internal_connected_threads_ops ops = make_ops();
-    cplat_atomic_store_u8(&ctx.path_ping_state[1], POTR_PING_STATE_NORMAL,
-                          CPLAT_MEMORY_ORDER_RELAXED); // [状態] - path 1 の ping 状態を前回接続の NORMAL のままにする。
+    cplat_atomic_store_u8(&ctx.path_ping_state[1], POTR_PING_STATE_NORMAL, CPLAT_MEMORY_ORDER_RELAXED);
     s_calls.ping_state_at_recv_start = -1;
 
-    // Pre-Assert
+    int actual_ret = potr_internal_start_connected_threads(&ctx, 1, 19U, &ops);
 
-    // Act
-    int actual_ret = potr_internal_start_connected_threads(
-        &ctx, 1, &ops); // [手順] - 非 primary path (1) を指定して potr_internal_start_connected_threads() を呼び出す。
-
-    // Assert
-    EXPECT_EQ(POTR_OK,
-              actual_ret); // [確認_正常系] - potr_internal_start_connected_threads() の戻り値が POTR_OK であること。
-    EXPECT_EQ(1, s_calls.set_ping_state_calls); // [確認_正常系] - s_calls.set_ping_state_calls が 1 であること。
-    EXPECT_EQ(
-        (int)POTR_PING_STATE_UNDEFINED,
-        s_calls
-            .ping_state_at_recv_start); // [確認_正常系] - s_calls.ping_state_at_recv_start が POTR_PING_STATE_UNDEFINED であること。
+    EXPECT_EQ(POTR_OK, actual_ret);
+    EXPECT_EQ(1, s_calls.set_ping_state_calls);
+    EXPECT_EQ((int)POTR_PING_STATE_UNDEFINED, s_calls.ping_state_at_recv_start);
 }

@@ -28,6 +28,7 @@
 #include <porter/protocol/packet_seal.h>
 #include <porter/protocol/window.h>
 #include <porter/infra/potr_result.h>
+#include <porter/infra/potr_socket_io.h>
 #include <porter/infra/potr_trace.h>
 #include <cplat/crypto/random.h>
 #include <cplat/net/byteorder.h>
@@ -139,7 +140,6 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
     for (i = 0; i < (int)POTR_MAX_PATH; i++)
     {
         uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_CRYPTO_TAG_SIZE];
-        size_t sent = 0;
 
         if (endpoint_is_unset(&peer->dest_addr[i]))
         {
@@ -158,7 +158,7 @@ void potr_internal_peer_send_fin(potr_context *ctx, potr_internal_peer_context *
          * FIN は終了の通知であり、届かなくてもピアの解放を続け、相手はヘルス チェックのタイムアウトで
          * 切断を検出するため、戻り値は明示的に破棄する。
          */
-        (void)cplat_socket_sendto(ctx->sock[i], wire_buf, wire_len, &peer->dest_addr[i], &sent, NULL);
+        (void)potr_internal_udp_sendto(ctx, i, wire_buf, wire_len, &peer->dest_addr[i], NULL);
     }
 }
 

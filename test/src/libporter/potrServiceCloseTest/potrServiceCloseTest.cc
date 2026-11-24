@@ -37,8 +37,8 @@ TEST(potrServiceCloseTest, multicast_close_leaves_joined_interface)
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return());
     // [状態] - スタック上のコンテキストを解放しない。
     // Pre-Assert
-    EXPECT_CALL(mock_cplat, cplat_socket_leave_multicast_group(static_cast<cplat_socket>(9), _, 77U, nullptr)).Times(1);
-    // [Pre-Assert確認_正常系] - cplat_socket_leave_multicast_group() が 77U を指定して 1 回呼び出されること。
+    EXPECT_CALL(mock_porter, api_context_dispose_resources(&ctx)).Times(1);
+    // [Pre-Assert確認_正常系] - 共通解放 (マルチキャスト離脱・watch 解除・ソケット閉鎖を含む) が 1 回呼ばれること。
     // Act
     int actual_ret = potr_service_close(owned_handle.get()); // [手順] - マルチキャスト サービスを終了する。
     // Assert
@@ -77,8 +77,8 @@ TEST(potrServiceCloseTest, udp_stop_precedes_shared_cleanup)
     int actual_ret = potr_service_close(owned_handle.get()); // [手順] - UDP サービスを終了する。
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 通常終了が成功すること。
-    EXPECT_EQ((std::vector<int>{1, 2, 4, 5}), order);
-    // [確認_正常系] - スレッド停止、キュー破棄、同期資源破棄、共通解放、本体解放の順序を保持すること。
+    EXPECT_EQ((std::vector<int>{1, 4, 5}), order);
+    // [確認_正常系] - スレッド停止、共通解放 (キューと同期資源の破棄を含む)、本体解放の順序を保持すること。
 }
 
 // TCP 通常終了で停止手順の後に共通解放と本体解放を呼ぶことの確認
@@ -113,8 +113,8 @@ TEST(potrServiceCloseTest, tcp_stop_precedes_shared_cleanup)
     int actual_ret = potr_service_close(owned_handle.get()); // [手順] - TCP サービスを終了する。
     // Assert
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 通常終了が成功すること。
-    EXPECT_EQ((std::vector<int>{1, 2, 3, 4, 5}), order);
-    // [確認_正常系] - スレッド停止、キュー破棄、同期資源破棄、共通解放、本体解放の順序を保持すること。
+    EXPECT_EQ((std::vector<int>{1, 4, 5}), order);
+    // [確認_正常系] - スレッド停止、共通解放 (キューと TCP 同期資源の破棄を含む)、本体解放の順序を保持すること。
 }
 
 // 自サービスのコールバック内から呼ぶと、閉じずに未サポート コードを返すことの確認
@@ -161,6 +161,7 @@ TEST(potrServiceCloseTest, tcp_close_without_active_path_after_data_returns_disc
     cplat_atomic_store_i32(&ctx.tcp_active_paths, 0,
                            CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 全 TCP パスが切断済みとする。
     delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
     // Pre-Assert
     EXPECT_CALL(mock_cplat, cplat_local_lock_lock(_)).Times(AnyNumber());
@@ -193,6 +194,7 @@ TEST(potrServiceCloseTest, tcp_close_after_peer_fin_without_post_fin_send_return
     cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 1, CPLAT_MEMORY_ORDER_RELAXED);
     cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
     delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
 
     // Pre-Assert
@@ -229,6 +231,7 @@ TEST(potrServiceCloseTest, tcp_close_after_peer_fin_with_post_fin_send_returns_d
     cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 1, CPLAT_MEMORY_ORDER_RELAXED);
     cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 1, CPLAT_MEMORY_ORDER_RELAXED);
     delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
 
     // Pre-Assert
@@ -270,6 +273,7 @@ TEST(potrServiceCloseTest, tcp_close_returns_ok_immediately_when_paths_drop_duri
     cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELAXED);
     cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
     delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
 
     // Pre-Assert
@@ -323,6 +327,7 @@ TEST(potrServiceCloseTest, tcp_close_returns_disconnected_immediately_when_paths
     cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELAXED);
     cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
     delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
 
     // Pre-Assert
@@ -376,6 +381,7 @@ TEST(potrServiceCloseTest, tcp_close_returns_ok_immediately_when_peer_fin_and_pa
     cplat_atomic_store_i32(&ctx.tcp_peer_fin_received, 0, CPLAT_MEMORY_ORDER_RELAXED);
     cplat_atomic_store_i32(&ctx.tcp_sent_after_peer_fin, 0, CPLAT_MEMORY_ORDER_RELAXED);
     delegate_real_cplat_local_lock_create(&ctx.send_window_mutex);
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK)));
     ON_CALL(mock_cplat, cplat_free(&ctx)).WillByDefault(Return()); // [状態] - スタック上の ctx は解放しない。
 
     // Pre-Assert

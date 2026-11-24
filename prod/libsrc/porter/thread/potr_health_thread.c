@@ -32,6 +32,7 @@
 #include <porter/thread/potr_health_thread.h>
 #include <porter/infra/potr_trace.h>
 #include <porter/infra/potr_result.h>
+#include <porter/infra/potr_socket_io.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/socket.h>
 
@@ -54,11 +55,11 @@ static uint64_t get_last_health_signal_send_ms(const potr_context *ctx, int path
     return last_data;
 }
 
-/* 指定パスのヘルス スレッドに起床シグナルを送信する。 */
+/* 指定パスのヘルス スレッドへ送信要求を記録し、起床シグナルを送信する。 */
 static void signal_health_thread(potr_context *ctx, int path_idx)
 {
-    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH ||
-        cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH || ctx->health_mutex[path_idx] == NULL ||
+        ctx->health_wakeup[path_idx] == NULL)
     {
         return;
     }
@@ -67,6 +68,7 @@ static void signal_health_thread(potr_context *ctx, int path_idx)
 
     if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
     {
+        ctx->health_send_pending[path_idx] = 1;
         cplat_condvar_signal(ctx->health_wakeup[path_idx]);
     }
 
@@ -74,40 +76,75 @@ static void signal_health_thread(potr_context *ctx, int path_idx)
 }
 
 /*
- * health_interval_ms [ms]、または停止シグナルを受信するまでスリープする (path_idx 版)。
- * 待機の失敗は ERROR のトレースへ出し、呼び出し元へ通知しない (呼び出し元は次の判定へ進む)。
+ * 次の PING 送信まで待機する (path_idx 版)。
+ * 同じロックの下で停止、保留要求 (health_send_pending)、絶対期限を繰り返し確認する。
+ * 停止は保留要求より優先する。要求がある場合は 0 へ消費してからロックを解放し、1 を返す。
+ * 周期期限切れでも同じロックの下で保留要求を確認・消費してから 1 を返す。
+ * 見せかけの起床では絶対期限を延長しない。
+ * 戻り値: 1 = 送信へ進む、0 = 停止または致命的失敗。
  */
-static void health_sleep(potr_context *ctx, int path_idx, uint32_t interval_ms)
+static int health_wait_next_send(potr_context *ctx, int path_idx, uint32_t interval_ms)
 {
-    int wait_result = CPLAT_OK;
-
-    /*
-     * オープン時割り込み PING フラグが立っていれば即リターンする (初回スリープをスキップ)。
-     * チェックと直後のクリアに割り込みが入らないよう交換 (exchange) で一体に行う。
-     */
-    if (cplat_atomic_exchange_i32(&ctx->health_send_immediate[path_idx], 0, CPLAT_MEMORY_ORDER_ACQ_REL) != 0)
-    {
-        return;
-    }
+    int has_deadline = 0;
+    uint64_t deadline_ms = 0U;
 
     cplat_local_lock_lock(ctx->health_mutex[path_idx]);
 
-    if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    for (;;)
     {
-        /*
-         * interval_ms は PING 間隔の設定値 (または、それ以下の残り時間)。
-         * 上限 2147483646 (INT_MAX - 1) は open_validate_config() で検査済み。
-         */
-        wait_result =
-            cplat_condvar_timed_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], (int)interval_ms);
-    }
+        uint64_t now_ms;
+        uint64_t remaining;
+        int wait_ms;
+        int wait_result;
 
-    cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
+        if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0 ||
+            cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) != POTR_OK)
+        {
+            cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
+            return 0;
+        }
 
-    if (wait_result != CPLAT_OK && wait_result != CPLAT_ERR_TIMEOUT)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "health[service_id=%" PRId64 " path=%d]: wait failed (result=%d)",
-                   ctx->service.service_id, path_idx, wait_result);
+        if (ctx->health_send_pending[path_idx] != 0)
+        {
+            ctx->health_send_pending[path_idx] = 0;
+            cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
+            return 1;
+        }
+
+        if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
+        {
+            cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
+            cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+            potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+            return 0;
+        }
+
+        if (!has_deadline)
+        {
+            deadline_ms = now_ms + (uint64_t)interval_ms;
+            has_deadline = 1;
+        }
+
+        if (now_ms >= deadline_ms)
+        {
+            /* 周期の期限切れ。同じロックの下で保留要求が 0 であることを確認済みのため送信へ進む。 */
+            cplat_local_lock_unlock(ctx->health_mutex[path_idx]);
+            return 1;
+        }
+
+        remaining = deadline_ms - now_ms;
+        if (remaining > (uint64_t)POTR_WAIT_MS_MAX)
+        {
+            remaining = (uint64_t)POTR_WAIT_MS_MAX;
+        }
+        wait_ms = (int)remaining;
+
+        wait_result = cplat_condvar_timed_wait(ctx->health_wakeup[path_idx], ctx->health_mutex[path_idx], wait_ms);
+        if (wait_result != CPLAT_OK && wait_result != CPLAT_ERR_TIMEOUT)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "health[service_id=%" PRId64 " path=%d]: wait failed (result=%d)",
+                       ctx->service.service_id, path_idx, wait_result);
+        }
     }
 }
 
@@ -167,7 +204,10 @@ static int wait_oneway_udp_ping_due(potr_context *ctx, uint64_t initial_ping_due
                 last_logged_data_ms[i] = last_data;
             }
         }
-        health_sleep(ctx, 0, (uint32_t)(due_ms - now));
+        if (!health_wait_next_send(ctx, 0, (uint32_t)(due_ms - now)))
+        {
+            return 0;
+        }
     }
     return 0;
 }
@@ -191,6 +231,7 @@ static int tcp_write_ping_locked(potr_context *ctx, int path_idx, int force)
     size_t wire_len;
     cplat_error detail;
     int build_result;
+    int send_result;
 
     if (ctx->tcp_conn_fd[path_idx] == CPLAT_INVALID_SOCKET)
     {
@@ -222,9 +263,10 @@ static int tcp_write_ping_locked(potr_context *ctx, int path_idx, int force)
         return build_result;
     }
 
-    if (cplat_socket_send_all(ctx->tcp_conn_fd[path_idx], wire_buf, wire_len, &detail) != CPLAT_OK)
+    send_result = potr_internal_tcp_send_all_locked(ctx, path_idx, wire_buf, wire_len, NULL, &detail);
+    if (send_result != POTR_OK)
     {
-        return potr_internal_result_from_error(&detail);
+        return send_result;
     }
 
     memcpy(ctx->tcp_announced_ping_state[path_idx], health_states, POTR_MAX_PATH);
@@ -310,9 +352,7 @@ static void health_thread_func(void *arg)
         }
         else
         {
-            health_sleep(ctx, 0, ctx->health_interval_ms);
-
-            if (cplat_atomic_load_i32(&ctx->health_running[0], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+            if (!health_wait_next_send(ctx, 0, ctx->health_interval_ms))
             {
                 break;
             }
@@ -362,7 +402,6 @@ static void health_thread_func(void *arg)
                 for (k = 0; k < (int)POTR_MAX_PATH; k++)
                 {
                     uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
-                    size_t sent = 0;
 
                     if (endpoint_is_unset(&ctx->peers[i].dest_addr[k]))
                     {
@@ -378,7 +417,7 @@ static void health_thread_func(void *arg)
                      * PING は次の周期に送り直し、届かない状態が続く経路は相手のヘルス チェックのタイムアウトで検出するため、
                      * 戻り値は明示的に破棄する。
                      */
-                    (void)cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->peers[i].dest_addr[k], &sent, NULL);
+                    (void)potr_internal_udp_sendto(ctx, k, wire_buf, wire_len, &ctx->peers[i].dest_addr[k], NULL);
                 }
 
                 POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "health[service_id=%" PRId64 "]: PING peer=%u seq=%u",
@@ -433,7 +472,6 @@ static void health_thread_func(void *arg)
             for (k = 0; k < ctx->n_path; k++)
             {
                 uint8_t wire_buf[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
-                size_t sent = 0;
                 int send_ret;
 
                 uint64_t ping_time = 0U;
@@ -459,8 +497,8 @@ static void health_thread_func(void *arg)
                 {
                     break;
                 }
-                send_ret = cplat_socket_sendto(ctx->sock[k], wire_buf, wire_len, &ctx->dest_addr[k], &sent, NULL);
-                if (send_ret == CPLAT_OK)
+                send_ret = potr_internal_udp_sendto(ctx, k, wire_buf, wire_len, &ctx->dest_addr[k], NULL);
+                if (send_ret == POTR_OK)
                 {
                     sent_any = 1;
                     if (is_oneway_udp)
@@ -474,7 +512,10 @@ static void health_thread_func(void *arg)
             if (is_oneway_udp && !sent_any)
             {
                 /* 送出失敗による待機なしの再試行を避けます。 */
-                health_sleep(ctx, 0, ctx->health_interval_ms);
+                if (!health_wait_next_send(ctx, 0, ctx->health_interval_ms))
+                {
+                    break;
+                }
             }
         }
     }
@@ -502,10 +543,8 @@ static void tcp_health_thread_func(void *arg)
     while (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
            cplat_atomic_load_i32(&ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) == POTR_OK)
     {
-        /* 固定間隔でスリープする。 */
-        health_sleep(ctx, path_idx, ctx->health_interval_ms);
-
-        if (cplat_atomic_load_i32(&ctx->health_running[path_idx], CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
+        /* 固定間隔または保留要求まで待機する。 */
+        if (!health_wait_next_send(ctx, path_idx, ctx->health_interval_ms))
         {
             break;
         }
@@ -559,33 +598,69 @@ int potr_internal_health_thread_start(potr_context *ctx)
     POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "health_thread[service_id=%" PRId64 "]: starting (interval=%ums)",
                ctx->service.service_id, (unsigned)ctx->health_interval_ms);
 
-    if (cplat_local_lock_create(&ctx->health_mutex[0]) != CPLAT_OK)
+    /*
+     * 同期資源はサービスが事前に生成して所有する。
+     * 単体テスト等で直接呼ばれた場合のみ未生成分を補い、開始失敗時は自らが生成した分だけ回収する。
+     */
     {
-        /* 同期資源生成 API は詳細原因を提供しない */
-        return POTR_ERR_UNKNOWN;
-    }
+        int created_mutex = 0;
+        int created_wakeup = 0;
 
-    if (cplat_condvar_create(&ctx->health_wakeup[0]) != CPLAT_OK)
-    {
-        cplat_local_lock_dispose(ctx->health_mutex[0]);
-        ctx->health_mutex[0] = NULL;
-        return POTR_ERR_UNKNOWN;
-    }
+        if (ctx->health_mutex[0] == NULL)
+        {
+            if (cplat_local_lock_create(&ctx->health_mutex[0]) != CPLAT_OK)
+            {
+                /* 同期資源生成 API は詳細原因を提供しない */
+                return POTR_ERR_UNKNOWN;
+            }
+            created_mutex = 1;
+        }
 
-    cplat_atomic_store_i32(&ctx->health_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
+        if (ctx->health_wakeup[0] == NULL)
+        {
+            if (cplat_condvar_create(&ctx->health_wakeup[0]) != CPLAT_OK)
+            {
+                if (created_mutex)
+                {
+                    cplat_local_lock_dispose(ctx->health_mutex[0]);
+                    ctx->health_mutex[0] = NULL;
+                }
+                return POTR_ERR_UNKNOWN;
+            }
+            created_wakeup = 1;
+        }
 
-    if (cplat_thread_create(&ctx->health_thread[0], health_thread_func, ctx) != CPLAT_OK)
-    {
-        cplat_atomic_store_i32(&ctx->health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-        cplat_condvar_dispose(ctx->health_wakeup[0]);
-        ctx->health_wakeup[0] = NULL;
-        cplat_local_lock_dispose(ctx->health_mutex[0]);
-        ctx->health_mutex[0] = NULL;
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "health_thread[service_id=%" PRId64 "]: thread create failed",
-                   ctx->service.service_id);
+        cplat_local_lock_lock(ctx->health_mutex[0]);
+        /*
+         * 片方向 UDP 以外は開始時の即時 PING を保留要求として記録する。
+         * 片方向 UDP は開始直後の即時送信を行わない。
+         */
+        ctx->health_send_pending[0] = type_uses_immediate_health_ping(ctx->service.type) ? 1 : 0;
+        cplat_atomic_store_i32(&ctx->health_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
+        cplat_local_lock_unlock(ctx->health_mutex[0]);
 
-        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
-        return POTR_ERR_UNKNOWN;
+        if (cplat_thread_create(&ctx->health_thread[0], health_thread_func, ctx) != CPLAT_OK)
+        {
+            cplat_local_lock_lock(ctx->health_mutex[0]);
+            cplat_atomic_store_i32(&ctx->health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+            ctx->health_send_pending[0] = 0;
+            cplat_local_lock_unlock(ctx->health_mutex[0]);
+            if (created_wakeup)
+            {
+                cplat_condvar_dispose(ctx->health_wakeup[0]);
+                ctx->health_wakeup[0] = NULL;
+            }
+            if (created_mutex)
+            {
+                cplat_local_lock_dispose(ctx->health_mutex[0]);
+                ctx->health_mutex[0] = NULL;
+            }
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "health_thread[service_id=%" PRId64 "]: thread create failed",
+                       ctx->service.service_id);
+
+            /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
+            return POTR_ERR_UNKNOWN;
+        }
     }
 
     return POTR_OK;
@@ -600,20 +675,14 @@ void potr_internal_health_thread_stop(potr_context *ctx)
         return;
     }
 
-    cplat_atomic_store_i32(&ctx->health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-
     cplat_local_lock_lock(ctx->health_mutex[0]);
-    cplat_condvar_signal(ctx->health_wakeup[0]);
+    cplat_atomic_store_i32(&ctx->health_running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_condvar_broadcast(ctx->health_wakeup[0]);
     cplat_local_lock_unlock(ctx->health_mutex[0]);
 
     cplat_thread_join(ctx->health_thread[0]);
 
     ctx->health_thread[0] = NULL;
-
-    cplat_condvar_dispose(ctx->health_wakeup[0]);
-    ctx->health_wakeup[0] = NULL;
-    cplat_local_lock_dispose(ctx->health_mutex[0]);
-    ctx->health_mutex[0] = NULL;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -661,6 +730,16 @@ int potr_internal_tcp_health_thread_start(potr_context *ctx, int path_idx)
 
     ctx->health_args[path_idx].ctx = ctx;
     ctx->health_args[path_idx].path_idx = path_idx;
+    if (ctx->tcp_lifecycle_mutex[path_idx] != NULL)
+    {
+        cplat_local_lock_lock(ctx->tcp_lifecycle_mutex[path_idx]);
+        ctx->health_args[path_idx].generation = ctx->tcp_conn_generation[path_idx];
+        ctx->health_args[path_idx].fd = ctx->tcp_conn_fd[path_idx];
+        ctx->health_args[path_idx].watch = ctx->tcp_conn_watch[path_idx];
+        ctx->health_args[path_idx].cancel = ctx->tcp_conn_cancel[path_idx];
+        cplat_local_lock_unlock(ctx->tcp_lifecycle_mutex[path_idx]);
+    }
+    ctx->health_send_pending[path_idx] = 0;
     cplat_atomic_store_i32(&ctx->health_running[path_idx], 1, CPLAT_MEMORY_ORDER_RELEASE);
 
     if (cplat_thread_create(&ctx->health_thread[path_idx], tcp_health_thread_func, &ctx->health_args[path_idx]) !=
