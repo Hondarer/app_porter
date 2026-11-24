@@ -36,6 +36,7 @@ unsigned s_decompressions = 0;
 std::vector<bytes> s_received;
 constexpr size_t header_size = offsetof(potr_packet, payload);
 uint32_t s_held_seq = 1;
+int s_expected_close_ret = POTR_OK;
 
 bool wait_for(const std::function<bool()> &condition)
 {
@@ -144,12 +145,13 @@ void receive(int64_t, potr_peer_id, potr_event event, const void *data, size_t l
 
 /* 実ソケットの読み取り完了後に停止し、解析前の上書きを再現します。
  * Linux の動的シンボル解決を使用するため、この試験だけ Linux を対象とします。 */
-extern "C" int cplat_socket_recv_all(cplat_socket sock, void *buf, size_t len, cplat_error *detail)
+extern "C" int CPLAT_API cplat_socket_recv(cplat_socket sock, void *buf, size_t len, size_t *received_out,
+                                           cplat_error *detail)
 {
-    using recv_fn = int (*)(cplat_socket, void *, size_t, cplat_error *);
-    static auto real_recv = reinterpret_cast<recv_fn>(dlsym(RTLD_NEXT, "cplat_socket_recv_all"));
-    int ret = real_recv(sock, buf, len, detail);
-    if (ret == CPLAT_OK && len == header_size)
+    using recv_fn = int (CPLAT_API *)(cplat_socket, void *, size_t, size_t *, cplat_error *);
+    static auto real_recv = reinterpret_cast<recv_fn>(dlsym(RTLD_NEXT, "cplat_socket_recv"));
+    int ret = real_recv(sock, buf, len, received_out, detail);
+    if (ret == CPLAT_OK && len == header_size && received_out != nullptr && *received_out == header_size)
     {
         auto *p = static_cast<uint8_t *>(buf);
         if (p[6] == 0x1b && p[7] == 0xd3 && (p[33] & POTR_FLAG_DATA))
@@ -189,6 +191,7 @@ class tcpMultipathTest : public Test
     void SetUp() override
     {
         std::lock_guard<std::mutex> lock(s_mutex);
+        s_expected_close_ret = POTR_OK;
         s_hold_header = s_header_held = s_release = s_hold_callback = s_callback_held = false;
         s_payload_stable = true;
         s_reply_handle = nullptr;
@@ -215,6 +218,8 @@ class tcpMultipathTest : public Test
         if (bidirectional)
         {
             service.type = POTR_TYPE_TCP_BIDIR;
+            /* tcp_close_timeout_ms == 0 かつ相手 FIN 未受理のため、FIN_ACK 待機は POTR_ERR_TIMEOUT となる。 */
+            s_expected_close_ret = POTR_ERR_TIMEOUT;
         }
         service.dst_port = 19723;
         service.encrypt_enabled = crypto;
@@ -281,8 +286,8 @@ class tcpMultipathTest : public Test
         }
         if (handle != nullptr)
         {
-            EXPECT_EQ(POTR_OK, potr_service_close(handle));
-            // [状態確認] - potr_service_close() の戻り値が POTR_OK であること。
+            EXPECT_EQ(s_expected_close_ret, potr_service_close(handle));
+            // [状態確認] - potr_service_close() の戻り値が期待値と一致すること。
         }
         for (auto socket : sockets)
         {
@@ -644,6 +649,7 @@ TEST_F(tcpMultipathTest, reconnect_path_and_finish_in_order)
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(1,
                 fin); // [手順] - 最後の DATA より先に FIN を受信させるため、FIN を指定して send_packet() を呼び出す。
+    s_expected_close_ret = POTR_OK;
     // [サブ手順参照 名前=tcpMultipathTest.send_packet]
     send_packet(0, data_packet(2, second, false));
     // Assert

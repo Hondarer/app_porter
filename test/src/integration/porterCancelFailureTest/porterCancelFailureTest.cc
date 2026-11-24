@@ -144,7 +144,7 @@ TEST(porterCancelFailureTest, indefinite_connect_wait_recovers_within_1s_when_os
 #elif defined(PLATFORM_LINUX)
     NiceMock<Mock_unistd> mock_unistd;
     NiceMock<Mock_poll> mock_poll;
-    NiceMock<Mock_socket> mock_socket;
+    NiceMock<Mock_sys_socket> mock_socket;
 #endif
 
     cplat_error detail = {};

@@ -20,7 +20,7 @@ namespace
 void init_udp_ctx(potr_context *ctx, int *watch_tok, int *cancel_tok)
 {
     std::memset(ctx, 0, sizeof(*ctx));
-    for (int i = 0; i < POTR_MAX_PATH; i++)
+    for (size_t i = 0U; i < POTR_MAX_PATH; i++)
     {
         ctx->sock[i] = CPLAT_INVALID_SOCKET;
     }
@@ -43,7 +43,7 @@ void dispose_udp_ctx(potr_context *ctx)
 void init_tcp_ctx(potr_context *ctx, int *watch_tok, int *cancel_tok, uint64_t generation)
 {
     std::memset(ctx, 0, sizeof(*ctx));
-    for (int i = 0; i < POTR_MAX_PATH; i++)
+    for (size_t i = 0U; i < POTR_MAX_PATH; i++)
     {
         ctx->tcp_conn_fd[i] = CPLAT_INVALID_SOCKET;
     }
