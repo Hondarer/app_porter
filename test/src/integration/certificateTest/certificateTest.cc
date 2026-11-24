@@ -248,7 +248,10 @@ TEST(certificate_open_test, validates_credentials_and_oneway_source_port)
     unicast_raw_receiver.definition.src_port = 0U;
     std::array<int, 10> results{};
     std::string absent = configuration.certificate + ".absent";
+    certificate_configuration mismatched_key_cfg(POTR_TYPE_UNICAST, 0, "server", "client", 38625U);
+    mismatched_key_cfg.definition.key_file = unicast_receiver.key.c_str();
     service_handle missing;
+    service_handle mismatch;
     service_handle receiving_unicast;
     service_handle receiving_unicast_raw;
     configuration.definition.cert_file = absent.c_str();
@@ -263,6 +266,8 @@ TEST(certificate_open_test, validates_credentials_and_oneway_source_port)
     }
     int missing_result = potr_service_open(&global, &configuration.definition, POTR_ROLE_SENDER, nullptr,
         &missing.value); // [手順] - 存在しない証明書ファイルを渡す。
+    int mismatch_result = potr_service_open(&global, &mismatched_key_cfg.definition, POTR_ROLE_SENDER, nullptr,
+        &mismatch.value); // [手順] - 証明書と対応しない秘密鍵を open へ渡す。
     int unicast_receiver_result = potr_service_open(&global, &unicast_receiver.definition, POTR_ROLE_RECEIVER,
         receive_data, &receiving_unicast.value); // [手順] - src_port が 0 の片方向 unicast 受信者を open へ渡す。
     int unicast_raw_receiver_result = potr_service_open(&global, &unicast_raw_receiver.definition,
@@ -275,6 +280,7 @@ TEST(certificate_open_test, validates_credentials_and_oneway_source_port)
         EXPECT_EQ(POTR_ERR_INVALID_CONFIG, result); // [確認_異常系 回数=10] - 不正な設定を設定エラーで拒否すること。
     }
     EXPECT_EQ(POTR_ERR_IO, missing_result); // [確認_異常系] - 証明書の読み込み失敗を open で返すこと。
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, mismatch_result); // [確認_異常系] - 証明書と秘密鍵の不一致を POTR_ERR_INVALID_CONFIG で返すこと。
     EXPECT_EQ(POTR_OK, unicast_receiver_result); // [確認_正常系] - src_port が 0 の片方向 unicast 受信者を開けること。
     EXPECT_EQ(POTR_OK, unicast_raw_receiver_result); // [確認_正常系] - src_port が 0 の片方向 unicast_raw 受信者を開けること。
 }

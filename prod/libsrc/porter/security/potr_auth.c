@@ -116,6 +116,455 @@ static int validate_config(const potr_internal_auth_config *config)
     return POTR_OK;
 }
 
+/** 認証ファイルを読み取るチャンクの大きさ [byte]。 */
+#define POTR_AUTH_FILE_CHUNK_SIZE 4096U
+
+/** PEM ブロック検査で行頭を保持する上限の大きさ [byte]。 */
+#define POTR_AUTH_PEM_LINE_CAP 128U
+
+/** PEM ブロックのラベル名の最大長 [byte]。 */
+#define POTR_AUTH_PEM_LABEL_MAX 64U
+
+static_assert(POTR_AUTH_FILE_CHUNK_SIZE > 0U && POTR_AUTH_FILE_CHUNK_SIZE <= (size_t)INT_MAX,
+              "porter: POTR_AUTH_FILE_CHUNK_SIZE must fit in int for BIO_write");
+
+static const char *const kCertPemLabels[] = {"CERTIFICATE", "X509 CERTIFICATE"};
+static const char *const kKeyPemLabels[] = {"PRIVATE KEY",     "RSA PRIVATE KEY", "EC PRIVATE KEY",
+                                            "DSA PRIVATE KEY", "SM2 PRIVATE KEY", "ANY PRIVATE KEY",
+                                            "ENCRYPTED PRIVATE KEY"};
+static const char *const kCrlPemLabels[] = {"X509 CRL"};
+
+typedef struct potr_pem_scanner
+{
+    const char *const *allowed_labels;
+    size_t allowed_label_count;
+    size_t line_len;
+    size_t current_label_len;
+    size_t block_count;
+    size_t total_bytes;
+    int in_block;
+    int has_body_char;
+    int line_has_non_ws;
+    int line_truncated;
+    int invalid;
+    char current_label[POTR_AUTH_PEM_LABEL_MAX];
+    char line_buf[POTR_AUTH_PEM_LINE_CAP];
+} potr_pem_scanner;
+
+static int is_internal_openssl_error(unsigned long error, int lib, int reason)
+{
+    if (ERR_SYSTEM_ERROR(error) || lib == ERR_LIB_SYS)
+    {
+        return 1;
+    }
+    return reason == ERR_R_SYS_LIB || reason == ERR_R_BIO_LIB || reason == ERR_R_BUF_LIB
+           || reason == ERR_R_CRYPTO_LIB || reason == ERR_R_INTERNAL_ERROR
+           || reason == ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED || reason == ERR_R_PASSED_NULL_PARAMETER
+           || reason == ERR_R_PASSED_INVALID_ARGUMENT || reason == ERR_R_INIT_FAIL || reason == ERR_R_DISABLED
+           || reason == ERR_R_OPERATION_FAIL || reason == ERR_R_INVALID_PROVIDER_FUNCTIONS
+           || reason == ERR_R_UNABLE_TO_GET_READ_LOCK || reason == ERR_R_UNABLE_TO_GET_WRITE_LOCK
+           || reason == ERR_R_FATAL;
+}
+
+static int is_config_openssl_lib(int lib)
+{
+    return lib == ERR_LIB_PEM || lib == ERR_LIB_ASN1 || lib == ERR_LIB_OSSL_DECODER || lib == ERR_LIB_EVP
+           || lib == ERR_LIB_EC || lib == ERR_LIB_RSA || lib == ERR_LIB_DSA || lib == ERR_LIB_X509
+           || lib == ERR_LIB_X509V3 || lib == ERR_LIB_PKCS7 || lib == ERR_LIB_PKCS12 || lib == ERR_LIB_SSL
+           || lib == ERR_LIB_PROV || lib == ERR_LIB_CMP || lib == ERR_LIB_OBJ;
+}
+
+/*
+ * OpenSSL は下位層の失敗 (例: CRYPTO_malloc の ERR_R_MALLOC_FAILURE) の後に上位層が別エラーを積むため、
+ * 末尾の 1 件だけではメモリ不足を見落とす。キュー全体を走査して ERR_R_MALLOC_FAILURE を最優先にする。
+ * see: https://docs.openssl.org/3.5/man3/ERR_get_error/
+ */
+static int classify_openssl_error_queue(void)
+{
+    unsigned long error;
+    int has_malloc_failure = 0;
+    int has_config_error = 0;
+
+    while ((error = ERR_get_error()) != 0UL)
+    {
+        int lib = ERR_GET_LIB(error);
+        int reason = ERR_GET_REASON(error);
+        if (reason == ERR_R_MALLOC_FAILURE)
+        {
+            has_malloc_failure = 1;
+        }
+        else if (is_internal_openssl_error(error, lib, reason) == 0 && is_config_openssl_lib(lib) != 0)
+        {
+            has_config_error = 1;
+        }
+    }
+    if (has_malloc_failure != 0)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    if (has_config_error != 0)
+    {
+        return POTR_ERR_INVALID_CONFIG;
+    }
+    return POTR_ERR_UNKNOWN;
+}
+
+static int classify_openssl_alloc_error_queue(void)
+{
+    unsigned long error;
+    while ((error = ERR_get_error()) != 0UL)
+    {
+        if (ERR_GET_REASON(error) == ERR_R_MALLOC_FAILURE)
+        {
+            return POTR_ERR_OUT_OF_MEMORY;
+        }
+    }
+    return POTR_ERR_OUT_OF_MEMORY;
+}
+
+static int classify_openssl_bio_write_error_queue(void)
+{
+    unsigned long error;
+    int has_malloc_failure = 0;
+    while ((error = ERR_get_error()) != 0UL)
+    {
+        if (ERR_GET_REASON(error) == ERR_R_MALLOC_FAILURE)
+        {
+            has_malloc_failure = 1;
+        }
+    }
+    return has_malloc_failure != 0 ? POTR_ERR_OUT_OF_MEMORY : POTR_ERR_UNKNOWN;
+}
+
+static int classify_pem_loop_eof(size_t loaded, size_t expected_blocks)
+{
+    unsigned long error;
+    int has_malloc_failure = 0;
+    int has_no_start_line = 0;
+    int has_config_error = 0;
+    int has_other_error = 0;
+
+    while ((error = ERR_get_error()) != 0UL)
+    {
+        int lib = ERR_GET_LIB(error);
+        int reason = ERR_GET_REASON(error);
+        if (reason == ERR_R_MALLOC_FAILURE)
+        {
+            has_malloc_failure = 1;
+        }
+        else if (lib == ERR_LIB_PEM && reason == PEM_R_NO_START_LINE)
+        {
+            has_no_start_line = 1;
+        }
+        else if (is_internal_openssl_error(error, lib, reason) != 0)
+        {
+            has_other_error = 1;
+        }
+        else if (is_config_openssl_lib(lib) != 0)
+        {
+            has_config_error = 1;
+        }
+        else
+        {
+            has_other_error = 1;
+        }
+    }
+    if (has_malloc_failure != 0)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    if (has_no_start_line != 0 && has_config_error == 0 && has_other_error == 0
+        && loaded > 0U && loaded == expected_blocks)
+    {
+        return POTR_OK;
+    }
+    if (has_config_error != 0 || (has_no_start_line != 0 && loaded != expected_blocks))
+    {
+        return POTR_ERR_INVALID_CONFIG;
+    }
+    return POTR_ERR_UNKNOWN;
+}
+
+static void pem_scanner_init(potr_pem_scanner *scanner, const char *const *allowed_labels,
+                             size_t allowed_label_count)
+{
+    cplat_secure_zero(scanner, sizeof(*scanner));
+    scanner->allowed_labels = allowed_labels;
+    scanner->allowed_label_count = allowed_label_count;
+}
+
+static int match_allowed_pem_label(const char *label, size_t label_len, const char *const *allowed_labels,
+                                   size_t allowed_label_count)
+{
+    for (size_t i = 0U; i < allowed_label_count; ++i)
+    {
+        size_t expected_len = strlen(allowed_labels[i]);
+        if (label_len == expected_len && memcmp(label, allowed_labels[i], expected_len) == 0)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void pem_scanner_finish_line(potr_pem_scanner *scanner)
+{
+    size_t len = scanner->line_len;
+    while (len > 0U
+           && (scanner->line_buf[len - 1U] == '\r' || scanner->line_buf[len - 1U] == ' '
+               || scanner->line_buf[len - 1U] == '\t'))
+    {
+        --len;
+    }
+    if (len >= 5U && memcmp(scanner->line_buf, "-----", 5U) == 0)
+    {
+        if (scanner->line_truncated != 0)
+        {
+            scanner->invalid = 1;
+        }
+        else if (len >= 16U && memcmp(scanner->line_buf, "-----BEGIN ", 11U) == 0
+                 && memcmp(scanner->line_buf + len - 5U, "-----", 5U) == 0)
+        {
+            size_t label_len = len - 16U;
+            if (scanner->in_block != 0 || label_len == 0U || label_len > POTR_AUTH_PEM_LABEL_MAX
+                || match_allowed_pem_label(scanner->line_buf + 11U, label_len, scanner->allowed_labels,
+                                           scanner->allowed_label_count)
+                       == 0)
+            {
+                scanner->invalid = 1;
+            }
+            else
+            {
+                memcpy(scanner->current_label, scanner->line_buf + 11U, label_len);
+                scanner->current_label_len = label_len;
+                scanner->in_block = 1;
+                scanner->has_body_char = 0;
+            }
+        }
+        else if (len >= 14U && memcmp(scanner->line_buf, "-----END ", 9U) == 0
+                 && memcmp(scanner->line_buf + len - 5U, "-----", 5U) == 0)
+        {
+            size_t label_len = len - 14U;
+            if (scanner->in_block == 0 || scanner->has_body_char == 0
+                || label_len != scanner->current_label_len
+                || memcmp(scanner->line_buf + 9U, scanner->current_label, label_len) != 0)
+            {
+                scanner->invalid = 1;
+            }
+            else
+            {
+                scanner->in_block = 0;
+                scanner->current_label_len = 0U;
+                ++scanner->block_count;
+            }
+        }
+        else
+        {
+            scanner->invalid = 1;
+        }
+    }
+    else if (scanner->in_block != 0 && scanner->line_has_non_ws != 0)
+    {
+        scanner->has_body_char = 1;
+    }
+    scanner->line_len = 0U;
+    scanner->line_has_non_ws = 0;
+    scanner->line_truncated = 0;
+}
+
+static void pem_scanner_feed_chunk(potr_pem_scanner *scanner, const unsigned char *chunk, size_t length)
+{
+    scanner->total_bytes += length;
+    for (size_t i = 0U; i < length; ++i)
+    {
+        unsigned char ch = chunk[i];
+        if (ch == '\0')
+        {
+            scanner->invalid = 1;
+            continue;
+        }
+        if (ch == '\n')
+        {
+            pem_scanner_finish_line(scanner);
+            continue;
+        }
+        if (ch != ' ' && ch != '\t' && ch != '\r')
+        {
+            scanner->line_has_non_ws = 1;
+        }
+        if (scanner->line_len < sizeof(scanner->line_buf))
+        {
+            scanner->line_buf[scanner->line_len++] = (char)ch;
+        }
+        else
+        {
+            scanner->line_truncated = 1;
+        }
+    }
+}
+
+/*
+ * パスを OpenSSL へ渡して開き直さず、cplat_fopen() で開いた単一ハンドルから EOF まで読み切って
+ * メモリ BIO (BIO_s_secmem) へ蓄積してから解析する。これにより、オープン後のパス差し替えを防ぎ、
+ * Windows での UTF-8 非 ASCII パスでも cplat と一貫した結果を得る。
+ * 秘密鍵を含む全チャンクは使用後および全終了経路で容量全体を消去する。
+ * see: https://docs.openssl.org/3.5/man3/BIO_s_mem/
+ */
+static int load_file_to_secmem_bio(const char *path, const char *const *allowed_labels,
+                                   size_t allowed_label_count, size_t min_blocks, size_t max_blocks,
+                                   BIO **bio_out, size_t *block_count_out)
+{
+    FILE *fp = NULL;
+    BIO *bio = NULL;
+    const BIO_METHOD *method;
+    unsigned char chunk[POTR_AUTH_FILE_CHUNK_SIZE];
+    potr_pem_scanner scanner;
+    int ret = POTR_OK;
+
+    *bio_out = NULL;
+    if (block_count_out != NULL)
+    {
+        *block_count_out = 0U;
+    }
+
+    pem_scanner_init(&scanner, allowed_labels, allowed_label_count);
+
+    fp = cplat_fopen(path, "rb", NULL);
+    if (fp == NULL)
+    {
+        cplat_secure_zero(&scanner, sizeof(scanner));
+        return POTR_ERR_IO;
+    }
+    if (setvbuf(fp, NULL, _IONBF, 0U) != 0)
+    {
+        /* 読み取り前のバッファリング設定失敗の後始末であり、すでに POTR_ERR_IO を返すため戻り値は破棄する。 */
+        (void)fclose(fp);
+        cplat_secure_zero(&scanner, sizeof(scanner));
+        return POTR_ERR_IO;
+    }
+
+    ERR_clear_error();
+    method = BIO_s_secmem();
+    if (method == NULL)
+    {
+        /* BIO メソッド取得に失敗した後のクリーンアップであり、すでに POTR_ERR_UNKNOWN を返すため戻り値は破棄する。 */
+        (void)fclose(fp);
+        cplat_secure_zero(&scanner, sizeof(scanner));
+        return POTR_ERR_UNKNOWN;
+    }
+    bio = BIO_new(method);
+    if (bio == NULL)
+    {
+        ret = classify_openssl_alloc_error_queue();
+        /* メモリ BIO 確保失敗の後始末であり、すでに POTR_ERR_OUT_OF_MEMORY を返すため戻り値は破棄する。 */
+        (void)fclose(fp);
+        cplat_secure_zero(&scanner, sizeof(scanner));
+        return ret;
+    }
+
+    for (;;)
+    {
+        size_t read_bytes = fread(chunk, 1U, sizeof(chunk), fp);
+        if (ferror(fp) != 0)
+        {
+            ret = POTR_ERR_IO;
+            break;
+        }
+        if (read_bytes == 0U)
+        {
+            break;
+        }
+        pem_scanner_feed_chunk(&scanner, chunk, read_bytes);
+        ERR_clear_error();
+        int written = BIO_write(bio, chunk, (int)read_bytes);
+        cplat_secure_zero(chunk, sizeof(chunk));
+        if (written != (int)read_bytes)
+        {
+            ret = classify_openssl_bio_write_error_queue();
+            break;
+        }
+    }
+
+    cplat_secure_zero(chunk, sizeof(chunk));
+    /* 読み取り専用で開いたファイルであり、全量の読み取り後または失敗経路での閉鎖のため戻り値は破棄する。 */
+    (void)fclose(fp);
+
+    if (ret == POTR_OK)
+    {
+        if (scanner.line_len > 0U || scanner.line_truncated != 0)
+        {
+            pem_scanner_finish_line(&scanner);
+        }
+        if (scanner.total_bytes == 0U || scanner.invalid != 0 || scanner.in_block != 0
+            || scanner.block_count < min_blocks || scanner.block_count > max_blocks)
+        {
+            ret = POTR_ERR_INVALID_CONFIG;
+        }
+    }
+
+    size_t block_count = scanner.block_count;
+    cplat_secure_zero(&scanner, sizeof(scanner));
+
+    if (ret == POTR_OK)
+    {
+        ERR_clear_error();
+        if (BIO_set_mem_eof_return(bio, 0) <= 0)
+        {
+            ret = classify_openssl_bio_write_error_queue();
+        }
+    }
+
+    if (ret != POTR_OK)
+    {
+        /*
+         * 読み取り失敗または形式不正時に未譲渡のメモリ BIO を解放するため、戻り値は破棄する。
+         * see: https://docs.openssl.org/3.5/man3/BIO_new/
+         */
+        (void)BIO_free(bio);
+        return ret;
+    }
+
+    *bio_out = bio;
+    if (block_count_out != NULL)
+    {
+        *block_count_out = block_count;
+    }
+    return POTR_OK;
+}
+
+static int load_pinned_certificate(const char *path, X509 **certificate_out)
+{
+    BIO *bio = NULL;
+    size_t expected_blocks = 0U;
+    X509 *certificate;
+    int ret;
+
+    *certificate_out = NULL;
+    ret = load_file_to_secmem_bio(path, kCertPemLabels, sizeof(kCertPemLabels) / sizeof(kCertPemLabels[0]), 1U, 1U,
+                                  &bio, &expected_blocks);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+    (void)expected_blocks;
+
+    ERR_clear_error();
+    certificate = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+    /*
+     * 読み取り専用のメモリ BIO を読み終えた後の解放であり、閉じる際に失う書き込みがなく、
+     * 証明書の読み込みの結果は変わらないため、戻り値は明示的に破棄する。
+     * see: https://docs.openssl.org/3.5/man3/BIO_new/
+     */
+    (void)BIO_free(bio);
+    if (certificate == NULL)
+    {
+        return classify_openssl_error_queue();
+    }
+    ERR_clear_error();
+    *certificate_out = certificate;
+    return POTR_OK;
+}
+
 static int copy_trust_config(potr_internal_auth_credentials *credentials, const potr_internal_auth_config *config)
 {
     if (config->pinned_cert_count != 0U)
@@ -127,21 +576,10 @@ static int copy_trust_config(potr_internal_auth_credentials *credentials, const 
         }
         for (size_t i = 0; i < config->pinned_cert_count; ++i)
         {
-            BIO *file = BIO_new_file(config->pinned_certs[i], "rb");
-            if (file == NULL)
+            int ret = load_pinned_certificate(config->pinned_certs[i], &credentials->pinned_certs[i]);
+            if (ret != POTR_OK)
             {
-                return POTR_ERR_IO;
-            }
-            credentials->pinned_certs[i] = PEM_read_bio_X509(file, NULL, NULL, NULL);
-            /*
-             * 読み取り専用のファイル BIO を読み終えた後の解放であり、閉じる際に失う書き込みがなく、
-             * 証明書の読み込みの結果は変わらないため、戻り値は明示的に破棄する。
-             * see: https://docs.openssl.org/3.5/man3/BIO_new/
-             */
-            (void)BIO_free(file);
-            if (credentials->pinned_certs[i] == NULL)
-            {
-                return POTR_ERR_IO;
+                return ret;
             }
             ++credentials->pinned_cert_count;
         }
@@ -166,76 +604,199 @@ static int copy_trust_config(potr_internal_auth_credentials *credentials, const 
     return POTR_OK;
 }
 
-static int classify_openssl_file_error(const char *path)
+static int load_cert_chain(SSL_CTX *context, const char *path)
 {
-    unsigned long error = ERR_peek_last_error();
-    FILE *fp;
+    BIO *bio = NULL;
+    size_t expected_blocks = 0U;
+    size_t loaded = 0U;
+    int ret = load_file_to_secmem_bio(path, kCertPemLabels, sizeof(kCertPemLabels) / sizeof(kCertPemLabels[0]), 1U,
+                                      SIZE_MAX, &bio, &expected_blocks);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+    for (;;)
+    {
+        X509 *certificate;
+        ERR_clear_error();
+        certificate = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+        if (certificate == NULL)
+        {
+            ret = classify_pem_loop_eof(loaded, expected_blocks);
+            /*
+             * 読み取り専用のメモリ BIO を読み終えた後の解放であり、閉じる際に失う書き込みがなく、
+             * 証明書の読み込みの結果は変わらないため、戻り値は明示的に破棄する。
+             * see: https://docs.openssl.org/3.5/man3/BIO_new/
+             */
+            (void)BIO_free(bio);
+            return ret;
+        }
+        ERR_clear_error();
+        if (loaded == 0U)
+        {
+            /* SSL_CTX_use_certificate は参照数を増やすため、成否を問わずローカル参照を解放する。 */
+            ret = SSL_CTX_use_certificate(context, certificate);
+            X509_free(certificate);
+        }
+        else
+        {
+            /*
+             * SSL_CTX_add_extra_chain_cert は成功時だけ certificate の所有権を受け取り、
+             * 失敗時は呼び出し側が解放する。
+             * see: https://docs.openssl.org/3.5/man3/SSL_CTX_add_extra_chain_cert/
+             */
+            ret = (int)SSL_CTX_add_extra_chain_cert(context, certificate);
+            if (ret != 1)
+            {
+                X509_free(certificate);
+            }
+        }
+        if (ret != 1)
+        {
+            /* エラー キューから返却コードを確定するため、未譲渡のメモリ BIO を解放して戻り値は破棄する。 */
+            (void)BIO_free(bio);
+            return classify_openssl_error_queue();
+        }
+        ++loaded;
+    }
+}
+
+/*
+ * 秘密鍵は secmem メモリ BIO へ読み込んだ上で reject_password を明示指定して復号し、
+ * 対話でのパスフレーズ入力を行わない。
+ * see: https://docs.openssl.org/3.5/man3/PEM_read_bio_PrivateKey/
+ */
+static int load_private_key(SSL_CTX *context, const char *path)
+{
+    BIO *bio = NULL;
+    size_t expected_blocks = 0U;
+    EVP_PKEY *key;
+    int ret = load_file_to_secmem_bio(path, kKeyPemLabels, sizeof(kKeyPemLabels) / sizeof(kKeyPemLabels[0]), 1U, 1U,
+                                      &bio, &expected_blocks);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+    (void)expected_blocks;
 
     ERR_clear_error();
-    if (error == 0UL)
+    key = PEM_read_bio_PrivateKey(bio, NULL, reject_password, NULL);
+    /*
+     * 読み取り専用のメモリ BIO を読み終えた後の解放であり、閉じる際に失う書き込みがなく、
+     * 秘密鍵の読み込みの結果は変わらないため、戻り値は明示的に破棄する。
+     * see: https://docs.openssl.org/3.5/man3/BIO_new/
+     */
+    (void)BIO_free(bio);
+    if (key == NULL)
     {
-        return POTR_ERR_IO;
+        return classify_openssl_error_queue();
     }
-    if (ERR_GET_REASON(error) == ERR_R_MALLOC_FAILURE)
+
+    ERR_clear_error();
+    ret = SSL_CTX_use_PrivateKey(context, key);
+    /* SSL_CTX_use_PrivateKey は参照数を増やすため、ローカル参照は常にここで解放する。 */
+    EVP_PKEY_free(key);
+    if (ret != 1)
     {
-        return POTR_ERR_OUT_OF_MEMORY;
+        return classify_openssl_error_queue();
     }
-    fp = cplat_fopen(path, "rb", NULL);
-    if (fp == NULL)
+    return POTR_OK;
+}
+
+static int load_ca_certificates(SSL_CTX *context, const char *path)
+{
+    BIO *bio = NULL;
+    size_t expected_blocks = 0U;
+    size_t loaded = 0U;
+    X509_STORE *store;
+    int ret = load_file_to_secmem_bio(path, kCertPemLabels, sizeof(kCertPemLabels) / sizeof(kCertPemLabels[0]), 1U,
+                                      SIZE_MAX, &bio, &expected_blocks);
+    if (ret != POTR_OK)
     {
-        return POTR_ERR_IO;
+        return ret;
     }
-    /* ファイル存在と読取可否の確認だけであり書き込みを行わないため、fclose() の戻り値は明示的に破棄する。 */
-    (void)fclose(fp);
-    return POTR_ERR_INVALID_CONFIG;
+    store = SSL_CTX_get_cert_store(context);
+    for (;;)
+    {
+        X509 *certificate;
+        ERR_clear_error();
+        certificate = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+        if (certificate == NULL)
+        {
+            ret = classify_pem_loop_eof(loaded, expected_blocks);
+            /*
+             * 読み取り専用のメモリ BIO を読み終えた後の解放であり、閉じる際に失う書き込みがなく、
+             * 信頼証明書の読み込みの結果は変わらないため、戻り値は明示的に破棄する。
+             * see: https://docs.openssl.org/3.5/man3/BIO_new/
+             */
+            (void)BIO_free(bio);
+            return ret;
+        }
+        /* store は参照数を増やすため、読み込んだ証明書のローカル参照はここで解放する。
+         * see: https://docs.openssl.org/3.5/man3/X509_STORE_add_cert/ */
+        ERR_clear_error();
+        ret = X509_STORE_add_cert(store, certificate);
+        X509_free(certificate);
+        if (ret != 1)
+        {
+            /* 失敗分類後に終了するため、読み取り専用のメモリ BIO の解放戻り値は明示的に破棄する。 */
+            (void)BIO_free(bio);
+            return classify_openssl_error_queue();
+        }
+        ++loaded;
+    }
 }
 
 static int load_revocations(SSL_CTX *context, const char *path)
 {
-    BIO *file = BIO_new_file(path, "rb");
+    BIO *bio = NULL;
+    size_t expected_blocks = 0U;
     X509_CRL *revocations;
-    int ret;
-    if (file == NULL)
-    {
-        return POTR_ERR_IO;
-    }
+    X509_STORE *store;
     size_t loaded = 0U;
+    int ret = load_file_to_secmem_bio(path, kCrlPemLabels, sizeof(kCrlPemLabels) / sizeof(kCrlPemLabels[0]), 1U,
+                                      SIZE_MAX, &bio, &expected_blocks);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+    store = SSL_CTX_get_cert_store(context);
     for (;;)
     {
         ERR_clear_error();
-        revocations = PEM_read_bio_X509_CRL(file, NULL, NULL, NULL);
+        revocations = PEM_read_bio_X509_CRL(bio, NULL, NULL, NULL);
         if (revocations == NULL)
         {
-            unsigned long error = ERR_peek_last_error();
+            ret = classify_pem_loop_eof(loaded, expected_blocks);
             /*
-             * 読み取り専用のファイル BIO を読み終えた後の解放であり、閉じる際に失う書き込みがなく、
+             * 読み取り専用のメモリ BIO を読み終えた後の解放であり、閉じる際に失う書き込みがなく、
              * 失効リストの読み込みの結果は変わらないため、戻り値は明示的に破棄する。
              * see: https://docs.openssl.org/3.5/man3/BIO_new/
              */
-            (void)BIO_free(file);
-            if (loaded == 0U || (error != 0UL &&
-                (ERR_GET_LIB(error) != ERR_LIB_PEM || ERR_GET_REASON(error) != PEM_R_NO_START_LINE)))
+            (void)BIO_free(bio);
+            if (ret != POTR_OK)
             {
-                return POTR_ERR_IO;
+                return ret;
             }
-            ERR_clear_error();
             break;
         }
         /* store は参照数を増やすため、読み込んだ CRL の所有権をここで解放する。
          * see: https://docs.openssl.org/3.5/man3/X509_STORE_add_cert/ */
-        ret = X509_STORE_add_crl(SSL_CTX_get_cert_store(context), revocations);
+        ERR_clear_error();
+        ret = X509_STORE_add_crl(store, revocations);
         X509_CRL_free(revocations);
         if (ret != 1)
         {
-            /* すでに POTR_ERR_UNKNOWN を返す経路で読み取り専用のファイル BIO を解放するため、戻り値は明示的に破棄する。 */
-            (void)BIO_free(file);
-            return POTR_ERR_UNKNOWN;
+            /* 失敗分類後に終了するため、読み取り専用のメモリ BIO を解放して戻り値は明示的に破棄する。 */
+            (void)BIO_free(bio);
+            return classify_openssl_error_queue();
         }
         ++loaded;
     }
-    if (X509_STORE_set_flags(SSL_CTX_get_cert_store(context), X509_V_FLAG_CRL_CHECK | X509_V_FLAG_CRL_CHECK_ALL) != 1)
+    ERR_clear_error();
+    if (X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK | X509_V_FLAG_CRL_CHECK_ALL) != 1)
     {
-        return POTR_ERR_UNKNOWN;
+        return classify_openssl_error_queue();
     }
     return POTR_OK;
 }
@@ -400,26 +961,29 @@ static int configure_context(potr_internal_auth_credentials *credentials, const 
      * see: https://docs.openssl.org/3.5/man3/SSL_CTX_use_certificate/
      * see: https://docs.openssl.org/3.5/man3/EVP_PKEY_new/
      * see: https://github.com/openssl/openssl/blob/openssl-3.5.9/crypto/ec/ec_key.c */
-    ERR_clear_error();
-    if (SSL_CTX_use_certificate_chain_file(context, config->cert_file) != 1)
     {
-        return classify_openssl_file_error(config->cert_file);
+        int ret = load_cert_chain(context, config->cert_file);
+        if (ret != POTR_OK)
+        {
+            return ret;
+        }
+        ret = load_private_key(context, config->key_file);
+        if (ret != POTR_OK)
+        {
+            return ret;
+        }
     }
     ERR_clear_error();
-    if (SSL_CTX_use_PrivateKey_file(context, config->key_file, SSL_FILETYPE_PEM) != 1)
-    {
-        return classify_openssl_file_error(config->key_file);
-    }
     if (SSL_CTX_check_private_key(context) != 1)
     {
-        return POTR_ERR_INVALID_CONFIG;
+        return classify_openssl_error_queue();
     }
     if (config->ca_file != NULL)
     {
-        ERR_clear_error();
-        if (SSL_CTX_load_verify_locations(context, config->ca_file, NULL) != 1)
+        int ret = load_ca_certificates(context, config->ca_file);
+        if (ret != POTR_OK)
         {
-            return classify_openssl_file_error(config->ca_file);
+            return ret;
         }
         credentials->has_ca = 1;
     }

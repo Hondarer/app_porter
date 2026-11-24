@@ -701,7 +701,7 @@ Table: パケット種別別の flags 値一覧
 Table: 証明書方式のサービス設定項目
 
 `ca_file` と `pinned_certs` は少なくとも一方の指定が必要です。`ca_file` を指定した場合、`peer_names` は必須であり、省略すると設定エラーになります。  
-証明書、秘密鍵、CRL は `potr_service_open()` / `potr_service_open_from_config()` 時に 1 回だけ読み込みます。証明書や CRL を更新して反映するには、サービスを開き直す必要があります。
+証明書、秘密鍵、CA、CRL、`pinned_certs` の各ファイルは、`potr_service_open()` / `potr_service_open_from_config()` 時に `cplat_fopen()` (`"rb"`) でファイルごとに 1 回だけ開いて読み込みます。読み取り前に stdio のバッファリングを無効化し、`fread()` の各回で `ferror()` を確認しながら内容を OpenSSL の保護メモリ BIO (`BIO_s_secmem()`) へ蓄積し、ファイルを閉じてチャンクを消去した後で同じメモリ BIO から PEM を解析します。ファイル全体の PEM ブロックの開始・終了およびラベル名を検査し、空ファイル、閉じていないブロック、壊れたブロック、暗号化秘密鍵 (パスフレーズの対話入力は行いません) を拒否します。証明書チェーンの先頭は自端証明書、後続は中間証明書として保持し、CA と CRL は全ブロックを信頼ストアへ登録します。開けない場合・読み取り失敗は `POTR_ERR_IO`、形式不正や鍵不一致は `POTR_ERR_INVALID_CONFIG`、確保失敗 (`ERR_R_MALLOC_FAILURE` を含むキューのエラーを含む) は `POTR_ERR_OUT_OF_MEMORY`、未分類の OpenSSL 内部エラーは `POTR_ERR_UNKNOWN` を返します。証明書や CRL を更新して反映するには、サービスを開き直す必要があります。
 
 証明書方式では、全通信種別で両端が互いの証明書を検証するため、受信者も `cert_file` と `key_file` を持ちます。また、返送経路を使ってハンドシェイクを行うため、片方向通信および RAW モードでも返送経路を前提とします。片方向通信 (`unicast`、`multicast`、`broadcast` と各 RAW モード) の送信者では、受信者が送信者のユニキャスト アドレスとポートに対してハンドシェイクを開始するため、`src_port` を 0 以外に固定する必要があります (`src_port = 0` または省略は設定エラー)。
 
@@ -993,7 +993,7 @@ PING、ハンドシェイク、鍵配布、FIN、FIN_ACK は、待機グルー�
 | 必須項目不足 (`MISSING`) | `type`、`dst_port`、経路ごとの必須アドレス、`multicast_group`、証明書方式の必須ファイル/`peer_names` の欠如 |
 | 制約・役割依存 (`CONSTRAINT`) | `max_message_size < max_payload`、フロー制御の実効しきい値・周期・容量余裕、`multicast`/`broadcast` 受信側の `health_interval_ms == 0`、静的/動的 `unicast_bidir`、証明書方式片方向送信者の `src_port == 0` |
 | 鍵導出失敗 (`KEY_DERIVATION`) | `encrypt_key` のパスフレーズからの鍵導出失敗 (鍵領域は消去し、値自体はトレースへ出しません) |
-| 認証ファイルの読み込み | ファイルを開けない・読み取れない場合は `POTR_ERR_IO`、形式不正や秘密鍵不一致は `POTR_ERR_INVALID_CONFIG` |
+| 認証ファイルの読み込み | ファイルを開けない・バッファリング設定失敗・`ferror()` が真の場合は `POTR_ERR_IO`、確保失敗またはエラー キュー内の `ERR_R_MALLOC_FAILURE` は `POTR_ERR_OUT_OF_MEMORY`、PEM 形式不正・空ファイル・暗号化秘密鍵・秘密鍵不一致は `POTR_ERR_INVALID_CONFIG`、未分類の OpenSSL 内部エラーは `POTR_ERR_UNKNOWN` |
 
 Table: 主な設定エラーの条件一覧
 

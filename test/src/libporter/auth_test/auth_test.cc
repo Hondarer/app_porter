@@ -1,6 +1,7 @@
 #include <testfw.h>
 #include <mock_openssl.h>
 #include <mock_cplat.h>
+#include <mock_stdio.h>
 #include <mock_string.h>
 #include <porter/porter_result.h>
 #include <porter/security/potr_auth.h>
@@ -452,12 +453,12 @@ TEST_P(auth_transport_test, requires_peer_certificate)
     auth_configuration server("server", 0, "client");
     auth_pair pair;
     // [状態] - クライアントの読み込みだけを省き、証明書を持たない SSL_CTX を作る。
-    ON_CALL(mock_openssl, SSL_CTX_use_certificate_chain_file(_, _, _, _, _)).WillByDefault(Return(1));
-    ON_CALL(mock_openssl, SSL_CTX_use_PrivateKey_file(_, _, _, _, _, _)).WillByDefault(Return(1));
+    ON_CALL(mock_openssl, SSL_CTX_use_certificate(_, _, _, _, _)).WillByDefault(Return(1));
+    ON_CALL(mock_openssl, SSL_CTX_use_PrivateKey(_, _, _, _, _)).WillByDefault(Return(1));
     ON_CALL(mock_openssl, SSL_CTX_check_private_key(_, _, _, _)).WillByDefault(Return(1));
     ASSERT_EQ(POTR_OK, potr_internal_auth_credentials_create(&client.config, GetParam().transport, &pair.client_credentials)); // [状態確認] - 証明書なしの credentials_create() の戻り値が POTR_OK であること。
-    ON_CALL(mock_openssl, SSL_CTX_use_certificate_chain_file(_, _, _, _, _)).WillByDefault(Invoke(delegate_real_SSL_CTX_use_certificate_chain_file));
-    ON_CALL(mock_openssl, SSL_CTX_use_PrivateKey_file(_, _, _, _, _, _)).WillByDefault(Invoke(delegate_real_SSL_CTX_use_PrivateKey_file));
+    ON_CALL(mock_openssl, SSL_CTX_use_certificate(_, _, _, _, _)).WillByDefault(Invoke(delegate_real_SSL_CTX_use_certificate));
+    ON_CALL(mock_openssl, SSL_CTX_use_PrivateKey(_, _, _, _, _)).WillByDefault(Invoke(delegate_real_SSL_CTX_use_PrivateKey));
     ON_CALL(mock_openssl, SSL_CTX_check_private_key(_, _, _, _)).WillByDefault(Invoke(delegate_real_SSL_CTX_check_private_key));
     ASSERT_EQ(POTR_OK, potr_internal_auth_credentials_create(&server.config, GetParam().transport, &pair.server_credentials)); // [状態確認] - サーバーの credentials_create() の戻り値が POTR_OK であること。
     ASSERT_EQ(POTR_OK, potr_internal_auth_session_create(pair.client_credentials, POTR_INTERNAL_AUTH_ROLE_CLIENT, 512, &pair.client)); // [状態確認] - クライアントの session_create() の戻り値が POTR_OK であること。
@@ -742,17 +743,17 @@ TEST(auth_test, injects_context_and_certificate_loading_failures)
     // Act
     int context_ret = potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials); // [手順] - SSL_CTX の生成失敗を注入する。
     ON_CALL(mock_openssl, SSL_CTX_new(_, _, _, _)).WillByDefault(Invoke(delegate_real_SSL_CTX_new));
-    ON_CALL(mock_openssl, SSL_CTX_use_certificate_chain_file(_, _, _, _, _)).WillByDefault(Return(0)); // [状態] - 自端の証明書の読み込みを失敗させる。
-    int certificate_ret = potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials); // [手順] - 自端の証明書の読み込み失敗を注入する。
-    ON_CALL(mock_openssl, SSL_CTX_use_certificate_chain_file(_, _, _, _, _)).WillByDefault(Invoke(delegate_real_SSL_CTX_use_certificate_chain_file));
+    ON_CALL(mock_openssl, SSL_CTX_use_certificate(_, _, _, _, _)).WillByDefault(Return(0)); // [状態] - エラー キューが空のまま自端の証明書の登録を失敗させる。
+    int certificate_ret = potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials); // [手順] - 自端の証明書の登録失敗を注入する。
+    ON_CALL(mock_openssl, SSL_CTX_use_certificate(_, _, _, _, _)).WillByDefault(Invoke(delegate_real_SSL_CTX_use_certificate));
     auth_configuration pinned("client", 1, "server");
-    ON_CALL(mock_openssl, PEM_read_bio_X509(_, _, _, _, _, _, _)).WillByDefault(Return(nullptr)); // [状態] - 直接登録する証明書の読み込みを失敗させる。
-    int pin_ret = potr_internal_auth_credentials_create(&pinned.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials); // [手順] - 直接登録の読み込み失敗を注入する。
+    ON_CALL(mock_openssl, PEM_read_bio_X509(_, _, _, _, _, _, _)).WillByDefault(Return(nullptr)); // [状態] - エラー キューが空のまま直接登録する証明書の解析を失敗させる。
+    int pin_ret = potr_internal_auth_credentials_create(&pinned.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials); // [手順] - 直接登録の解析失敗を注入する。
 
     // Assert
     EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY, context_ret); // [確認_異常系] - SSL_CTX の生成失敗時の戻り値が POTR_ERR_OUT_OF_MEMORY であること。
-    EXPECT_EQ(POTR_ERR_IO, certificate_ret); // [確認_異常系] - 自端証明書の読み込み失敗時の戻り値が POTR_ERR_IO であること。
-    EXPECT_EQ(POTR_ERR_IO, pin_ret); // [確認_異常系] - 直接登録の読み込み失敗時の戻り値が POTR_ERR_IO であること。
+    EXPECT_EQ(POTR_ERR_UNKNOWN, certificate_ret); // [確認_異常系] - 分類情報のない証明書登録失敗時の戻り値が POTR_ERR_UNKNOWN であること。
+    EXPECT_EQ(POTR_ERR_UNKNOWN, pin_ret); // [確認_異常系] - 分類情報のない直接登録の解析失敗時の戻り値が POTR_ERR_UNKNOWN であること。
     EXPECT_EQ(nullptr, credentials); // [確認_異常系] - 失敗時の出力が nullptr であること。
 }
 
@@ -808,4 +809,628 @@ TEST(auth_test, loads_every_revocation_list_in_pem)
     // Cleanup
     potr_internal_auth_credentials_dispose(credentials);
     std::filesystem::remove(path);
+}
+
+namespace
+{
+
+std::string read_binary_file(const std::string &path)
+{
+    std::ifstream input(std::filesystem::u8path(path), std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+}
+
+void write_binary_file_utf8(const std::string &utf8_path, const std::string &content)
+{
+    std::ofstream output(std::filesystem::u8path(utf8_path), std::ios::binary | std::ios::trunc);
+    output.write(content.data(), static_cast<std::streamsize>(content.size()));
+    output.close();
+}
+
+std::string make_temp_test_path(const std::string &stem, const std::string &ext)
+{
+    auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
+    return (std::filesystem::temp_directory_path() / (stem + "-" + std::to_string(tick) + ext)).string();
+}
+
+} // namespace
+
+// 非 ASCII の UTF-8 パスから全認証ファイルを読み込めることの確認
+TEST(auth_test, credentials_load_non_ascii_utf8_paths)
+{
+    // Arrange
+    NiceMock<Mock_openssl> mock_openssl;
+    auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
+    std::string dir_utf8 = std::filesystem::temp_directory_path().u8string() + "/porter-認証確認-" + std::to_string(tick);
+    std::filesystem::create_directories(std::filesystem::u8path(dir_utf8));
+    std::string cert_utf8 = dir_utf8 + "/自端証明書.pem";
+    std::string key_utf8 = dir_utf8 + "/秘密鍵.pem";
+    std::string ca_utf8 = dir_utf8 + "/認証局.pem";
+    std::string crl_utf8 = dir_utf8 + "/失効一覧.pem";
+    std::string pin_utf8 = dir_utf8 + "/相手証明書.pem";
+    write_binary_file_utf8(cert_utf8, read_binary_file(data_path("client.pem")));
+    write_binary_file_utf8(key_utf8, read_binary_file(data_path("client-key.pem")));
+    write_binary_file_utf8(ca_utf8, read_binary_file(data_path("ca.pem")));
+    write_binary_file_utf8(crl_utf8, read_binary_file(data_path("crl.pem")));
+    write_binary_file_utf8(pin_utf8, read_binary_file(data_path("server.pem")));
+
+    const char *pin_list[1] = {pin_utf8.c_str()};
+    potr_internal_auth_config config = {};
+    config.cert_file = cert_utf8.c_str();
+    config.key_file = key_utf8.c_str();
+    config.ca_file = ca_utf8.c_str();
+    config.crl_file = crl_utf8.c_str();
+    config.pinned_certs = pin_list;
+    config.pinned_cert_count = 1U;
+    config.peer_names = k_peer_names;
+    config.peer_name_count = 2U;
+    potr_internal_auth_credentials *credentials = nullptr;
+    // [状態] - 日本語文字を含む UTF-8 パスへ全認証ファイルを配置する。
+
+    // Pre-Assert
+
+    // Act
+    int actual_ret = potr_internal_auth_credentials_create(&config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM,
+                                                           &credentials); // [手順] - 非 ASCII の UTF-8 パスから認証情報を読み込む。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 非 ASCII の UTF-8 パスからの読み込みが成功すること。
+    EXPECT_NE(nullptr, credentials); // [確認_正常系] - 認証情報のハンドルが生成されること。
+
+    // Cleanup
+    potr_internal_auth_credentials_dispose(credentials);
+    std::error_code ec;
+    std::filesystem::remove_all(std::filesystem::u8path(dir_utf8), ec);
+}
+
+// 認証ファイルの各役割で不在パスがすべて POTR_ERR_IO になることの確認
+TEST(auth_test, credentials_reject_missing_all_file_roles)
+{
+    // Arrange
+    NiceMock<Mock_openssl> mock_openssl;
+    std::string absent_cert = data_path("absent-cert.pem");
+    std::string absent_key = data_path("absent-key.pem");
+    std::string absent_ca = data_path("absent-ca.pem");
+    std::string absent_crl = data_path("absent-crl.pem");
+    std::string absent_pin = data_path("absent-pin.pem");
+    const char *absent_pin_list[1] = {absent_pin.c_str()};
+
+    auth_configuration missing_cert("client", 0, "server");
+    missing_cert.config.cert_file = absent_cert.c_str();
+    auth_configuration missing_key("client", 0, "server");
+    missing_key.config.key_file = absent_key.c_str();
+    auth_configuration missing_ca("client", 0, "server");
+    missing_ca.config.ca_file = absent_ca.c_str();
+    auth_configuration missing_crl("client", 0, "server");
+    missing_crl.config.crl_file = absent_crl.c_str();
+    auth_configuration missing_pin("client", 1, "server");
+    missing_pin.config.pinned_certs = absent_pin_list;
+    // [状態] - 証明書・秘密鍵・CA・CRL・直接登録の各パスだけを不在ファイルに設定する。
+
+    // Pre-Assert
+
+    // Act & Assert
+    const potr_internal_auth_config *configs[] = {&missing_cert.config, &missing_key.config, &missing_ca.config,
+                                                  &missing_crl.config, &missing_pin.config};
+    for (const potr_internal_auth_config *config : configs)
+    {
+        potr_internal_auth_credentials *credentials = nullptr;
+        int ret = potr_internal_auth_credentials_create(config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM,
+                                                        &credentials); // [手順 回数=5] - 不在の認証ファイルを指定して認証情報を作る。
+        EXPECT_EQ(POTR_ERR_IO, ret); // [確認_異常系 回数=5] - 不在ファイルの戻り値が POTR_ERR_IO であること。
+        EXPECT_EQ(nullptr, credentials); // [確認_異常系 回数=5] - 失敗時の出力が nullptr であること。
+    }
+}
+
+// setvbuf() 失敗と fread() 中の ferror() 発生時に解析へ進まず POTR_ERR_IO を返し消去と解放を行うことの確認
+TEST(auth_test, credentials_reject_setvbuf_and_ferror_before_parsing)
+{
+    // Arrange
+    auth_configuration client("client", 0, "server");
+    const std::string cert_bytes = read_binary_file(data_path("client.pem"));
+
+#ifdef _WIN32
+    // setvbuf() 失敗の検証
+    {
+        NiceMock<Mock_cplat> mock_cplat;
+        NiceMock<Mock_stdio> mock_stdio;
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        EXPECT_CALL(mock_stdio, setvbuf(_, _, _, _, _, _, _)).WillOnce(Return(-1));
+        EXPECT_CALL(mock_openssl, BIO_new(_, _, _, _)).Times(0);
+        EXPECT_CALL(mock_openssl, PEM_read_bio_X509(_, _, _, _, _, _, _)).Times(0);
+
+        int setvbuf_ret = potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM,
+                                                                &credentials);
+        EXPECT_EQ(POTR_ERR_IO, setvbuf_ret);
+        EXPECT_EQ(nullptr, credentials);
+    }
+#endif
+
+    // 初回 fread() 直後の ferror() 検証
+    {
+        NiceMock<Mock_cplat> mock_cplat;
+        NiceMock<Mock_stdio> mock_stdio;
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        ON_CALL(mock_stdio, ferror(_, _, _, _)).WillByDefault(Return(1));
+        EXPECT_CALL(mock_openssl, BIO_write(_, _, _, _, _, _)).Times(0);
+        EXPECT_CALL(mock_openssl, PEM_read_bio_X509(_, _, _, _, _, _, _)).Times(0);
+        EXPECT_CALL(mock_openssl, BIO_free(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_BIO_free));
+        EXPECT_CALL(mock_cplat, cplat_secure_zero(_, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_cplat_secure_zero));
+
+        int first_ferror_ret = potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM,
+                                                                     &credentials);
+        EXPECT_EQ(POTR_ERR_IO, first_ferror_ret);
+        EXPECT_EQ(nullptr, credentials);
+    }
+
+    // 有効な PEM 全量読み取り直後の ferror() 検証 (EOF を確定させない)
+    {
+        NiceMock<Mock_cplat> mock_cplat;
+        NiceMock<Mock_stdio> mock_stdio;
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        size_t fread_call = 0U;
+        ON_CALL(mock_stdio, fread(_, _, _, _, _, _, _))
+            .WillByDefault([&](const char *, const int, const char *, void *buffer, size_t size, size_t count, FILE *) -> size_t {
+                ++fread_call;
+                if (fread_call == 1U)
+                {
+                    size_t cap = size * count;
+                    size_t copy_len = (std::min)(cap, cert_bytes.size());
+                    std::memcpy(buffer, cert_bytes.data(), copy_len);
+                    return copy_len;
+                }
+                return 0U;
+            });
+        ON_CALL(mock_stdio, ferror(_, _, _, _))
+            .WillByDefault([&](const char *, const int, const char *, FILE *) -> int {
+                return fread_call >= 2U ? 1 : 0;
+            });
+        EXPECT_CALL(mock_openssl, BIO_write(_, _, _, _, _, _)).Times(1).WillOnce(Invoke(delegate_real_BIO_write));
+        EXPECT_CALL(mock_openssl, PEM_read_bio_X509(_, _, _, _, _, _, _)).Times(0);
+        EXPECT_CALL(mock_openssl, BIO_free(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_BIO_free));
+        EXPECT_CALL(mock_cplat, cplat_secure_zero(_, _)).Times(AtLeast(2)).WillRepeatedly(Invoke(delegate_real_cplat_secure_zero));
+
+        int mid_ferror_ret = potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM,
+                                                                   &credentials);
+        EXPECT_EQ(POTR_ERR_IO, mid_ferror_ret);
+        EXPECT_EQ(nullptr, credentials);
+    }
+}
+
+// オープン後にファイルを差し替えても再オープンせず、同一ハンドルの内容をメモリ BIO で解析することの確認
+TEST(auth_test, credentials_read_opened_handle_without_reopening_path)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    NiceMock<Mock_openssl> mock_openssl;
+    const std::string temp_cert = make_temp_test_path("porter-reopen", ".pem");
+    write_binary_file_utf8(temp_cert, read_binary_file(data_path("client.pem")));
+
+    auth_configuration client("client", 0, "server");
+    client.config.cert_file = temp_cert.c_str();
+    potr_internal_auth_credentials *credentials = nullptr;
+    FILE *cert_fp = nullptr;
+    bool replaced = false;
+    // [状態] - 一時証明書ファイルを配置し、オープン後差し替えと単一オープンを監視する設定を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_openssl, BIO_new_file(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(mock_openssl, SSL_CTX_use_certificate_chain_file(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(mock_openssl, SSL_CTX_use_PrivateKey_file(_, _, _, _, _, _)).Times(0);
+    EXPECT_CALL(mock_openssl, SSL_CTX_load_verify_locations(_, _, _, _, _, _)).Times(0);
+    EXPECT_CALL(mock_openssl, BIO_s_secmem(_, _, _)).Times(AtLeast(3)).WillRepeatedly(Invoke(delegate_real_BIO_s_secmem));
+    EXPECT_CALL(mock_openssl, BIO_ctrl(_, _, _, _, BIO_C_SET_BUF_MEM_EOF_RETURN, 0L, nullptr))
+        .Times(AtLeast(3))
+        .WillRepeatedly(Invoke(delegate_real_BIO_ctrl));
+    EXPECT_CALL(mock_cplat, cplat_fopen(_, StrEq("rb"), nullptr))
+        .Times(3)
+        .WillRepeatedly([&](const char *path, const char *mode, cplat_error *detail) -> FILE * {
+            FILE *fp = delegate_real_cplat_fopen(path, mode, detail);
+            if (path == temp_cert)
+            {
+                cert_fp = fp;
+            }
+            return fp;
+        });
+    ON_CALL(mock_stdio, fclose(_, _, _, _))
+        .WillByDefault([&](const char *file, const int line, const char *func, FILE *fp) -> int {
+            int ret = delegate_real_fclose(file, line, func, fp);
+            if (fp == cert_fp && !replaced)
+            {
+                replaced = true;
+                write_binary_file_utf8(temp_cert, "CORRUPTED_AFTER_CLOSE\n");
+            }
+            return ret;
+        });
+    ON_CALL(mock_stdio, fread(_, _, _, _, _, _, _))
+        .WillByDefault([&](const char *file, const int line, const char *func, void *buf, size_t size, size_t count,
+                           FILE *fp) -> size_t {
+            size_t read_ret = delegate_real_fread(file, line, func, buf, size, count, fp);
+            if (fp == cert_fp && !replaced)
+            {
+                replaced = true;
+                write_binary_file_utf8(temp_cert, "CORRUPTED_BEFORE_EOF\n");
+            }
+            return read_ret;
+        });
+
+    // Act
+    int actual_ret = potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM,
+                                                           &credentials); // [手順] - 読み取り開始直後に実ファイルを破損させながら認証情報を生成する。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 再オープンせず開いたハンドル由来のメモリ BIO で成功すること。
+    EXPECT_NE(nullptr, credentials); // [確認_正常系] - 認証情報が生成されること。
+    EXPECT_TRUE(replaced); // [確認_正常系] - 読み取り途中の実ファイル差し替えが実行されたこと。
+
+    // Cleanup
+    potr_internal_auth_credentials_dispose(credentials);
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::u8path(temp_cert), ec);
+}
+
+// 空・NUL 含み・未閉鎖・壊れた後続ブロック・不正ラベル・過剰ブロックを拒否することの確認
+TEST(auth_test, credentials_reject_invalid_pem_files)
+{
+    // Arrange
+    NiceMock<Mock_openssl> mock_openssl;
+    const std::string valid_cert = read_binary_file(data_path("client.pem"));
+    const std::string valid_key = read_binary_file(data_path("client-key.pem"));
+    const std::string temp_file = make_temp_test_path("porter-bad-pem", ".pem");
+    const std::string nul_content = valid_cert + std::string("\0", 1) + "\n";
+
+    struct bad_pem_case
+    {
+        const char *label;
+        int role; // 0: cert_file, 1: key_file, 2: ca_file, 3: crl_file, 4: pinned_certs
+        std::string content;
+    };
+    const bad_pem_case cases[] = {
+        {"empty_cert", 0, ""},
+        {"empty_crl", 3, ""},
+        {"nul_in_cert", 0, nul_content},
+        {"non_pem_text", 0, "not a certificate\n"},
+        {"unclosed_trailing_block", 0, valid_cert + "\n-----BEGIN CERTIFICATE-----\nAAAA\n"},
+        {"broken_second_block", 0,
+         valid_cert + "\n-----BEGIN CERTIFICATE-----\n!!!not-base64!!!\n-----END CERTIFICATE-----\n"},
+        {"empty_pem_body", 0, "-----BEGIN CERTIFICATE-----\n\n-----END CERTIFICATE-----\n"},
+        {"mismatched_end_label", 0,
+         "-----BEGIN CERTIFICATE-----\nAAAA\n-----END X509 CERTIFICATE-----\n"},
+        {"wrong_label_trailing_key_in_cert", 0, valid_cert + "\n" + valid_key},
+        {"extra_key_block", 1, valid_key + "\n" + valid_key},
+        {"extra_pinned_cert_block", 4, valid_cert + "\n" + valid_cert},
+        {"wrong_label_cert_in_ca", 2, valid_key},
+    };
+    // [状態] - 異常 PEM 入力の各パターンを用意する。
+
+    // Pre-Assert
+
+    // Act & Assert
+    for (const auto &test_case : cases)
+    {
+        SCOPED_TRACE(test_case.label);
+        write_binary_file_utf8(temp_file, test_case.content);
+        auth_configuration cfg("client", test_case.role == 4 ? 1 : 0, "server");
+        const char *pin_list[1] = {temp_file.c_str()};
+        if (test_case.role == 0)
+        {
+            cfg.config.cert_file = temp_file.c_str();
+        }
+        else if (test_case.role == 1)
+        {
+            cfg.config.key_file = temp_file.c_str();
+        }
+        else if (test_case.role == 2)
+        {
+            cfg.config.ca_file = temp_file.c_str();
+        }
+        else if (test_case.role == 3)
+        {
+            cfg.config.crl_file = temp_file.c_str();
+        }
+        else
+        {
+            cfg.config.pinned_certs = pin_list;
+        }
+        potr_internal_auth_credentials *credentials = nullptr;
+        int ret = potr_internal_auth_credentials_create(&cfg.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials);
+        EXPECT_EQ(POTR_ERR_INVALID_CONFIG, ret); // [確認_異常系 回数=12] - 壊れた・空・過剰な PEM ファイルが POTR_ERR_INVALID_CONFIG になること。
+        EXPECT_EQ(nullptr, credentials); // [確認_異常系 回数=12] - 失敗時の出力が nullptr であること。
+    }
+
+    // Cleanup
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::u8path(temp_file), ec);
+}
+
+// 暗号化秘密鍵に対して reject_password を渡し、対話入力を行わず拒否することの確認
+TEST(auth_test, credentials_reject_encrypted_private_key_without_prompt)
+{
+    // Arrange
+    NiceMock<Mock_openssl> mock_openssl;
+    const std::string encrypted_key =
+        "-----BEGIN ENCRYPTED PRIVATE KEY-----\n"
+        "MIH0MF8GCSqGSIb3DQEFDTBSMDEGCSqGSIb3DQEFDDAkBBBtjh0QS1iJbcun+0qY\n"
+        "5N7UAgIIADAMBggqhkiG9w0CCQUAMB0GCWCGSAFlAwQBKgQQuthp36pLCEihXsN/\n"
+        "n03xGASBkEd8eFs/VFvPIShJKG2lBgRula4WoQHyzAL+h85LVxbwChrMMhM1MUNc\n"
+        "6950HCMe+P/+Tgpx36+xX1lp4hxpbyLuga0/uvxGnXPlFmIrNxlAGHmEBquTJePH\n"
+        "BLySf+zziNSIJ8tcKasmQ1jpCFS+Q7benAh+HHttljSSIiRhRLKourCSd2PjIdHP\n"
+        "wA0/Zv6QZw==\n"
+        "-----END ENCRYPTED PRIVATE KEY-----\n";
+    const std::string temp_key = make_temp_test_path("porter-enc-key", ".pem");
+    write_binary_file_utf8(temp_key, encrypted_key);
+    auth_configuration client("client", 0, "server");
+    client.config.key_file = temp_key.c_str();
+    potr_internal_auth_credentials *credentials = nullptr;
+    // [状態] - 暗号化された PKCS#8 秘密鍵ファイルを用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_openssl, PEM_read_bio_PrivateKey(_, _, _, _, _, Ne(nullptr), nullptr))
+        .Times(1)
+        .WillOnce(Invoke(delegate_real_PEM_read_bio_PrivateKey)); // [Pre-Assert確認_正常系] - reject_password コールバックが明示指定されること。
+
+    // Act
+    int actual_ret = potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM,
+                                                           &credentials); // [手順] - 暗号化秘密鍵を読み込む。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_INVALID_CONFIG, actual_ret); // [確認_異常系] - 暗号化秘密鍵が POTR_ERR_INVALID_CONFIG で拒否されること。
+    EXPECT_EQ(nullptr, credentials); // [確認_異常系] - 失敗時の出力が nullptr であること。
+
+    // Cleanup
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::u8path(temp_key), ec);
+}
+
+// 証明書チェーンの先頭と複数の中間証明書、および複数の CA 証明書を登録できることの確認
+TEST(auth_test, credentials_load_cert_chain_and_multiple_ca_certs)
+{
+    // Arrange
+    NiceMock<Mock_openssl> mock_openssl;
+    const std::string client_pem = read_binary_file(data_path("client.pem"));
+    const std::string ca_pem = read_binary_file(data_path("ca.pem"));
+    const std::string server_pem = read_binary_file(data_path("server.pem"));
+    const std::string chain_file = make_temp_test_path("porter-chain", ".pem");
+    const std::string multi_ca_file = make_temp_test_path("porter-multi-ca", ".pem");
+    write_binary_file_utf8(chain_file, client_pem + "\n" + ca_pem + "\n" + server_pem);
+    write_binary_file_utf8(multi_ca_file, ca_pem + "\n" + server_pem);
+
+    auth_configuration client("client", 0, "server");
+    client.config.cert_file = chain_file.c_str();
+    client.config.ca_file = multi_ca_file.c_str();
+    potr_internal_auth_credentials *credentials = nullptr;
+    // [状態] - 自端証明書 + 2 個の後続チェーン証明書と、2 個の CA 証明書を含む PEM ファイルを用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_openssl, SSL_CTX_ctrl(_, _, _, _, _, _, _))
+        .Times(AnyNumber());
+    EXPECT_CALL(mock_openssl, SSL_CTX_use_certificate(_, _, _, _, _))
+        .Times(1)
+        .WillOnce(Invoke(delegate_real_SSL_CTX_use_certificate));
+    EXPECT_CALL(mock_openssl, SSL_CTX_ctrl(_, _, _, _, SSL_CTRL_EXTRA_CHAIN_CERT, 0L, _))
+        .Times(2)
+        .WillRepeatedly(Invoke(delegate_real_SSL_CTX_ctrl));
+    EXPECT_CALL(mock_openssl, X509_STORE_add_cert(_, _, _, _, _))
+        .Times(2)
+        .WillRepeatedly(Invoke(delegate_real_X509_STORE_add_cert));
+
+    // Act
+    int actual_ret = potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM,
+                                                           &credentials); // [手順] - 証明書チェーンと複数 CA 証明書を読み込む。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - チェーン証明書と複数 CA 証明書の登録が成功すること。
+    EXPECT_NE(nullptr, credentials); // [確認_正常系] - 認証情報のハンドルが生成されること。
+
+    // Cleanup
+    potr_internal_auth_credentials_dispose(credentials);
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::u8path(chain_file), ec);
+    std::filesystem::remove(std::filesystem::u8path(multi_ca_file), ec);
+}
+
+// OpenSSL 確保失敗・複数エラーキュー・未分類内部エラーの分類とローカル参照・BIO 解放の確認
+TEST(auth_test, credentials_classify_openssl_oom_and_queue_and_free_resources)
+{
+    // Arrange
+    auth_configuration client("client", 0, "server");
+    const std::string chain_file = make_temp_test_path("porter-chain-oom", ".pem");
+    const std::string crl_file = data_path("crl.pem");
+    write_binary_file_utf8(chain_file, read_binary_file(data_path("client.pem")) + "\n" + read_binary_file(data_path("ca.pem")));
+    // [状態] - 証明書チェーンと CRL のテスト用入力を用意する。
+
+    auto setup_fake_errors = [](Mock_openssl &mock_openssl, std::vector<unsigned long> &fake_errors, bool &use_fake_queue) {
+        ON_CALL(mock_openssl, ERR_clear_error(_, _, _))
+            .WillByDefault([&](const char *file, const int line, const char *func) {
+                fake_errors.clear();
+                use_fake_queue = false;
+                delegate_real_ERR_clear_error(file, line, func);
+            });
+        ON_CALL(mock_openssl, ERR_get_error(_, _, _))
+            .WillByDefault([&](const char *file, const int line, const char *func) -> unsigned long {
+                if (!use_fake_queue)
+                {
+                    return delegate_real_ERR_get_error(file, line, func);
+                }
+                if (fake_errors.empty())
+                {
+                    return 0UL;
+                }
+                unsigned long next = fake_errors.front();
+                fake_errors.erase(fake_errors.begin());
+                return next;
+            });
+    };
+
+    // 1. BIO_new() 確保失敗 -> POTR_ERR_OUT_OF_MEMORY と fclose() 実行
+    {
+        NiceMock<Mock_stdio> mock_stdio;
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        EXPECT_CALL(mock_openssl, BIO_new(_, _, _, _)).WillOnce(Return(nullptr));
+        EXPECT_CALL(mock_stdio, fclose(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_fclose));
+        int ret = potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials);
+        EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY, ret);
+        EXPECT_EQ(nullptr, credentials);
+    }
+
+    // 2. BIO_write() 拡張失敗 (ERR_R_MALLOC_FAILURE -> OOM) と BIO_free()
+    {
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        std::vector<unsigned long> fake_errors;
+        bool use_fake_queue = false;
+        setup_fake_errors(mock_openssl, fake_errors, use_fake_queue);
+        EXPECT_CALL(mock_openssl, BIO_write(_, _, _, _, _, _))
+            .WillOnce([&](const char *, const int, const char *, BIO *, const void *, int) -> int {
+                fake_errors.push_back(ERR_PACK(ERR_LIB_CRYPTO, 0, ERR_R_MALLOC_FAILURE));
+                use_fake_queue = true;
+                return -1;
+            });
+        EXPECT_CALL(mock_openssl, BIO_free(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_BIO_free));
+        EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY,
+                  potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials));
+    }
+
+    // 3. BIO_write() 失敗 (空キュー -> UNKNOWN) と BIO_free()
+    {
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        std::vector<unsigned long> fake_errors;
+        bool use_fake_queue = false;
+        setup_fake_errors(mock_openssl, fake_errors, use_fake_queue);
+        EXPECT_CALL(mock_openssl, BIO_write(_, _, _, _, _, _))
+            .WillOnce([&](const char *, const int, const char *, BIO *, const void *, int) -> int {
+                use_fake_queue = true;
+                return 0;
+            });
+        EXPECT_CALL(mock_openssl, BIO_free(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_BIO_free));
+        EXPECT_EQ(POTR_ERR_UNKNOWN,
+                  potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials));
+    }
+
+    // 4. エラー キューの末尾が別エラーでも先頭の ERR_R_MALLOC_FAILURE を優先すること
+    {
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        std::vector<unsigned long> fake_errors;
+        bool use_fake_queue = false;
+        setup_fake_errors(mock_openssl, fake_errors, use_fake_queue);
+        EXPECT_CALL(mock_openssl, PEM_read_bio_PrivateKey(_, _, _, _, _, _, _))
+            .WillOnce([&](const char *, const int, const char *, BIO *, EVP_PKEY **, pem_password_cb *, void *) -> EVP_PKEY * {
+                fake_errors.push_back(ERR_PACK(ERR_LIB_CRYPTO, 0, ERR_R_MALLOC_FAILURE));
+                fake_errors.push_back(ERR_PACK(ERR_LIB_PEM, 0, PEM_R_NO_START_LINE));
+                use_fake_queue = true;
+                return nullptr;
+            });
+        int ret = potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials);
+        EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY, ret);
+        EXPECT_TRUE(fake_errors.empty());
+    }
+
+    // 5. SSL_CTX_use_certificate() 確保失敗時の X509_free() と BIO_free()
+    {
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        std::vector<unsigned long> fake_errors;
+        bool use_fake_queue = false;
+        setup_fake_errors(mock_openssl, fake_errors, use_fake_queue);
+        EXPECT_CALL(mock_openssl, SSL_CTX_use_certificate(_, _, _, _, _))
+            .WillOnce([&](const char *, const int, const char *, SSL_CTX *, X509 *) -> int {
+                fake_errors.push_back(ERR_PACK(ERR_LIB_CRYPTO, 0, ERR_R_MALLOC_FAILURE));
+                use_fake_queue = true;
+                return 0;
+            });
+        EXPECT_CALL(mock_openssl, X509_free(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_X509_free));
+        EXPECT_CALL(mock_openssl, BIO_free(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_BIO_free));
+        EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY,
+                  potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials));
+    }
+
+    // 6. SSL_CTX_add_extra_chain_cert() 失敗時の X509_free() と BIO_free()
+    {
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        std::vector<unsigned long> fake_errors;
+        bool use_fake_queue = false;
+        setup_fake_errors(mock_openssl, fake_errors, use_fake_queue);
+        auth_configuration chain_cfg("client", 0, "server");
+        chain_cfg.config.cert_file = chain_file.c_str();
+        EXPECT_CALL(mock_openssl, SSL_CTX_ctrl(_, _, _, _, _, _, _)).Times(AnyNumber());
+        EXPECT_CALL(mock_openssl, SSL_CTX_ctrl(_, _, _, _, SSL_CTRL_EXTRA_CHAIN_CERT, 0L, _))
+            .WillOnce([&](const char *, const int, const char *, SSL_CTX *, int, long, void *) -> long {
+                fake_errors.push_back(ERR_PACK(ERR_LIB_CRYPTO, 0, ERR_R_MALLOC_FAILURE));
+                use_fake_queue = true;
+                return 0L;
+            });
+        EXPECT_CALL(mock_openssl, X509_free(_, _, _, _)).Times(AtLeast(2)).WillRepeatedly(Invoke(delegate_real_X509_free));
+        EXPECT_CALL(mock_openssl, BIO_free(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_BIO_free));
+        EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY,
+                  potr_internal_auth_credentials_create(&chain_cfg.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials));
+    }
+
+    // 7. SSL_CTX_use_PrivateKey() 確保失敗時の EVP_PKEY_free()
+    {
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        std::vector<unsigned long> fake_errors;
+        bool use_fake_queue = false;
+        setup_fake_errors(mock_openssl, fake_errors, use_fake_queue);
+        EXPECT_CALL(mock_openssl, SSL_CTX_use_PrivateKey(_, _, _, _, _))
+            .WillOnce([&](const char *, const int, const char *, SSL_CTX *, EVP_PKEY *) -> int {
+                fake_errors.push_back(ERR_PACK(ERR_LIB_CRYPTO, 0, ERR_R_MALLOC_FAILURE));
+                use_fake_queue = true;
+                return 0;
+            });
+        EXPECT_CALL(mock_openssl, EVP_PKEY_free(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_EVP_PKEY_free));
+        EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY,
+                  potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials));
+    }
+
+    // 8. X509_STORE_add_cert() 確保失敗時の X509_free()
+    {
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        std::vector<unsigned long> fake_errors;
+        bool use_fake_queue = false;
+        setup_fake_errors(mock_openssl, fake_errors, use_fake_queue);
+        EXPECT_CALL(mock_openssl, X509_STORE_add_cert(_, _, _, _, _))
+            .WillOnce([&](const char *, const int, const char *, X509_STORE *, X509 *) -> int {
+                fake_errors.push_back(ERR_PACK(ERR_LIB_CRYPTO, 0, ERR_R_MALLOC_FAILURE));
+                use_fake_queue = true;
+                return 0;
+            });
+        EXPECT_CALL(mock_openssl, X509_free(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_X509_free));
+        EXPECT_EQ(POTR_ERR_OUT_OF_MEMORY,
+                  potr_internal_auth_credentials_create(&client.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials));
+    }
+
+    // 9. X509_STORE_add_crl() 内部エラー時の UNKNOWN 分類と X509_CRL_free()・BIO_free()
+    {
+        NiceMock<Mock_openssl> mock_openssl;
+        potr_internal_auth_credentials *credentials = nullptr;
+        std::vector<unsigned long> fake_errors;
+        bool use_fake_queue = false;
+        setup_fake_errors(mock_openssl, fake_errors, use_fake_queue);
+        auth_configuration crl_cfg("client", 0, "server");
+        crl_cfg.config.crl_file = crl_file.c_str();
+        EXPECT_CALL(mock_openssl, X509_STORE_add_crl(_, _, _, _, _))
+            .WillOnce([&](const char *, const int, const char *, X509_STORE *, X509_CRL *) -> int {
+                fake_errors.push_back(ERR_PACK(ERR_LIB_CRYPTO, 0, ERR_R_INTERNAL_ERROR));
+                use_fake_queue = true;
+                return 0;
+            });
+        EXPECT_CALL(mock_openssl, X509_CRL_free(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_X509_CRL_free));
+        EXPECT_CALL(mock_openssl, BIO_free(_, _, _, _)).Times(AtLeast(1)).WillRepeatedly(Invoke(delegate_real_BIO_free));
+        EXPECT_EQ(POTR_ERR_UNKNOWN,
+                  potr_internal_auth_credentials_create(&crl_cfg.config, POTR_INTERNAL_AUTH_TRANSPORT_STREAM, &credentials));
+    }
+
+    // Cleanup
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::u8path(chain_file), ec);
 }
