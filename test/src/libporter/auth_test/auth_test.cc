@@ -929,7 +929,6 @@ TEST(auth_test, credentials_reject_setvbuf_and_ferror_before_parsing)
     auth_configuration client("client", 0, "server");
     const std::string cert_bytes = read_binary_file(data_path("client.pem"));
 
-#ifdef _WIN32
     // setvbuf() 失敗の検証
     {
         NiceMock<Mock_cplat> mock_cplat;
@@ -945,7 +944,6 @@ TEST(auth_test, credentials_reject_setvbuf_and_ferror_before_parsing)
         EXPECT_EQ(POTR_ERR_IO, setvbuf_ret);
         EXPECT_EQ(nullptr, credentials);
     }
-#endif
 
     // 初回 fread() 直後の ferror() 検証
     {
@@ -1086,8 +1084,14 @@ TEST(auth_test, credentials_reject_invalid_pem_files)
     struct bad_pem_case
     {
         const char *label;
-        int role; // 0: cert_file, 1: key_file, 2: ca_file, 3: crl_file, 4: pinned_certs
         std::string content;
+        int role; // 0: cert_file, 1: key_file, 2: ca_file, 3: crl_file, 4: pinned_certs
+        int pad = 0; /**< 明示的アラインメントです。0 を指定します。 */
+
+        bad_pem_case(const char *case_label, int case_role, const std::string &case_content)
+            : label(case_label), content(case_content), role(case_role)
+        {
+        }
     };
     const bad_pem_case cases[] = {
         {"empty_cert", 0, ""},

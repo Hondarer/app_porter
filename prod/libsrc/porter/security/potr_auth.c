@@ -147,6 +147,7 @@ typedef struct potr_pem_scanner
     int line_has_non_ws;
     int line_truncated;
     int invalid;
+    int pad; /**< 明示的アラインメントです。0 を指定します。 */
     char current_label[POTR_AUTH_PEM_LABEL_MAX];
     char line_buf[POTR_AUTH_PEM_LINE_CAP];
 } potr_pem_scanner;
