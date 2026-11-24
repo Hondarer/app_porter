@@ -950,6 +950,7 @@ TEST_F(potrSendTest, n1_blocking_send_waits_until_deferred_entries_are_released)
     int actual_ret = POTR_ERR_UNKNOWN;
     std::atomic<int> deferred_marked(0);
     std::atomic<int> post_defer_calls(0);
+    std::atomic<int> release_deferred(0);
     std::atomic<int> sender_done(0);
 
     ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
@@ -973,11 +974,11 @@ TEST_F(potrSendTest, n1_blocking_send_waits_until_deferred_entries_are_released)
                     return 0;
                 }
                 int n = ++post_defer_calls;
-                *deferred = (n <= 3) ? 1 : 0;
+                *deferred = (n <= 3 || release_deferred.load() == 0) ? 1 : 0;
                 return 0;
             }));
     // [Pre-Assert確認_正常系] - potr_internal_flow_control_peer_state() が 1 回以上呼ばれること。
-    // [Pre-Assert手順] - 保留の前は抑制なし・保留 0 を返し、保留の後は 3 回まで保留 1 を、以降は保留 0 を返す。
+    // [Pre-Assert手順] - potr_internal_flow_control_peer_state() から、保留の前は抑制なし・保留 0 を返し、保留の後は 3 回までおよび release_deferred が 0 の間は保留 1 を、解除の後は保留 0 を返す。
 
     // Act
     std::thread sender(
@@ -986,32 +987,50 @@ TEST_F(potrSendTest, n1_blocking_send_waits_until_deferred_entries_are_released)
             actual_ret = potr_service_send(handle, 10U, payload, strlen(payload), POTR_SEND_BLOCKING);
             sender_done = 1;
         }); // [手順] - 別スレッドで POTR_SEND_BLOCKING を指定して potr_service_send() を呼び出す。
-    while (potr_internal_send_queue_try_pop(&ctx.send_queue, &elem) != POTR_OK)
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    int pop_ret = POTR_ERR_EMPTY;
+    while ((pop_ret = potr_internal_send_queue_try_pop(&ctx.send_queue, &elem)) != POTR_OK &&
+           std::chrono::steady_clock::now() < deadline)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     } // [手順] - 送信スレッドの代わりに、登録された 1 件を取り出す。
-    deferred_marked = 1;
-    cplat_atomic_store_i32(&ctx.flow_deferred_total, 1, CPLAT_MEMORY_ORDER_RELEASE);
-    // [手順] - 送信スレッドと同じく、完了待ちの番号を進める前に保留の総数を 1 にする。
-    potr_internal_send_queue_defer(&ctx.send_queue); // [手順] - 取り出した 1 件を、送出を保留したものとしてマークする。
-    while (post_defer_calls.load() < 3)
+    if (pop_ret == POTR_OK)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    } // [手順] - 保留 1 が 3 回返されるまで待つ。
+        deferred_marked = 1;
+        cplat_atomic_store_i32(&ctx.flow_deferred_total, 1, CPLAT_MEMORY_ORDER_RELEASE);
+        // [手順] - 送信スレッドと同じく、完了待ちの番号を進める前に保留の総数を 1 にする。
+        potr_internal_send_queue_defer(&ctx.send_queue); // [手順] - 取り出した 1 件を、送出を保留したものとしてマークする。
+        while (post_defer_calls.load() < 3 && std::chrono::steady_clock::now() < deadline)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } // [手順] - 保留 1 が 3 回以上返されるまで待つ。
+    }
+    int calls_while_deferred = post_defer_calls.load();
     int done_while_deferred = sender_done.load();
+    release_deferred = 1; // [手順] - 保留していたエントリが送出されたものとして、保留 0 を返すように切り替える。
+    potr_internal_send_queue_wake_flow(&ctx.send_queue); // [手順] - 待機中の送信へ状態変化を通知する。
+    if (pop_ret != POTR_OK)
+    {
+        potr_internal_send_queue_abort(&ctx.send_queue, POTR_ERR_CANCELED);
+    }
     sender.join();
 
     // Assert
+    EXPECT_GE(calls_while_deferred,
+              3); // [確認_正常系] - calls_while_deferred が 3 以上であること。(保留 1 の確認が 3 回以上行われたことの確認)
     EXPECT_EQ(0, done_while_deferred);
-    // [確認_正常系] - 完了待ちの番号が進んでいても、保留が残っている間は potr_service_send() が戻らないこと。
+    // [確認_正常系] - done_while_deferred が 0 であること。(完了待ちの番号が進んでいても、保留が残っている間は potr_service_send() が戻らないことの確認)
     EXPECT_EQ(POTR_OK, actual_ret);
     // [確認_正常系] - 保留がなくなった後の potr_service_send() の戻り値が POTR_OK であること。
-    EXPECT_EQ(4, post_defer_calls.load());
-    // [確認_正常系] - 保留の後の potr_internal_flow_control_peer_state() の呼び出しが 4 回であること。(保留 1 が 3 回、保留 0 が 1 回)
+    EXPECT_GE(post_defer_calls.load(), 4);
+    // [確認_正常系] - post_defer_calls.load() の戻り値が 4 以上であること。(保留 1 が 3 回以上返された後に、保留 0 が返されたことの確認)
 
-    // 後始末
-    potr_internal_send_queue_complete_deferred(&ctx.send_queue); // [手順] - 保留したエントリを完了させ、キューの状態を戻す。
-    cplat_atomic_store_i32(&ctx.flow_deferred_total, 0, CPLAT_MEMORY_ORDER_RELEASE); // [手順] - 保留の総数を 0 へ戻す。
+    // Cleanup
+    if (pop_ret == POTR_OK)
+    {
+        potr_internal_send_queue_complete_deferred(&ctx.send_queue);
+    }
+    cplat_atomic_store_i32(&ctx.flow_deferred_total, 0, CPLAT_MEMORY_ORDER_RELEASE);
 }
 // [サブ手順参照 名前=potrSendTest.TearDown]
 

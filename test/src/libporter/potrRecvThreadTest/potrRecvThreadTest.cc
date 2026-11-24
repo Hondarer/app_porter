@@ -137,6 +137,79 @@ TEST(potrRecvThreadTest, poll_timeout_calls_service_monitor)
     EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - 開始準備に成功すること。
 }
 
+// 1:1 双方向 UDP の受信状態変化を通知した後に割り込み PING の起床を要求することの確認
+TEST(potrRecvThreadTest, unicast_bidir_dispatch_change_wakes_health_thread)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    uint8_t recv_buf[POTR_PACKET_HEADER_SIZE + 64U] = {};
+    ctx.role = POTR_ROLE_RECEIVER;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    ctx.service.service_id = 10;
+    ctx.global.max_payload = 64U;
+    ctx.n_path = 1;
+    ctx.sock[0] = (cplat_socket)1;
+    ctx.recv_buf = recv_buf;
+    cplat_thread_fn entry = nullptr;
+    void *entry_arg = nullptr;
+    int poll_calls = 0;
+    potr_packet ping_pkt = {};
+    ping_pkt.service_id = 10;
+    ping_pkt.flags = POTR_FLAG_PING;
+    // [状態] - 1:1 双方向 UDP で 1 パケットを受信する条件を用意する。
+    ON_CALL(mock_cplat, cplat_thread_create(_, _, _))
+        .WillByDefault([&](cplat_thread **out, cplat_thread_fn fn, void *arg) {
+            *out = nullptr;
+            entry = fn;
+            entry_arg = arg;
+            return CPLAT_OK;
+        });
+    ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
+        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { slot->ctx = context; });
+    ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
+        .WillByDefault([&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *) {
+            poll_calls++;
+            if (poll_calls == 1)
+            {
+                ready[0] = 1U;
+                return CPLAT_OK;
+            }
+            cplat_atomic_store_i32(&ctx.running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+            return CPLAT_ERR_TIMEOUT;
+        });
+    ON_CALL(mock_cplat, cplat_socket_recvfrom(_, _, _, _, _, _))
+        .WillByDefault([](cplat_socket, void *, size_t, cplat_ipv4_endpoint *sender, size_t *recv_len, cplat_error *) {
+            sender->address = 0x0100007FU;
+            sender->port = 0x3930U;
+            *recv_len = POTR_PACKET_HEADER_SIZE;
+            return CPLAT_OK;
+        });
+    ON_CALL(mock_porter, thread_recv_check_src_addr(_, _)).WillByDefault(Return(1));
+    ON_CALL(mock_porter, potr_internal_certificate_receive(_, _, _, _, _)).WillByDefault(Return(POTR_ERR_NOT_FOUND));
+    ON_CALL(mock_porter, thread_recv_authenticate_packet(_, _, _, _, _)).WillByDefault(Return(POTR_OK));
+    // Pre-Assert
+    {
+        InSequence sequence;
+        EXPECT_CALL(mock_porter, potr_internal_packet_parse(_, _, _))
+            .WillOnce(DoAll(SetArgPointee<0>(ping_pkt), Return(POTR_OK)));
+        // [Pre-Assert確認_正常系] - 受信した PING を 1 回解析すること。
+        EXPECT_CALL(mock_porter, thread_recv_dispatch_packet(_, _, 0, _)).WillOnce(Return(1));
+        // [Pre-Assert確認_正常系] - 経路状態の変化を返すこと。
+        EXPECT_CALL(mock_porter, thread_recv_wake_udp_interrupt_ping(&ctx, 1)).Times(1);
+        // [Pre-Assert確認_正常系] - 変化を受けて割り込み PING の起床を 1 回要求すること。
+    }
+    // Act
+    ASSERT_EQ(POTR_OK, potr_internal_comm_recv_thread_start(&ctx));
+    // [状態確認] - 受信スレッドの開始準備に成功すること。
+    ASSERT_NE(nullptr, entry); // [状態確認] - スレッド本体を捕捉できたこと。
+    entry(entry_arg);          // [手順] - PING を受信するスレッド本体を同期実行する。
+
+    // Assert
+    EXPECT_EQ(2, poll_calls); // [確認_正常系] - 受信後に次の poll で停止したこと。
+}
+
 TEST(potrRecvThreadTest, poll_timeout_calls_peer_monitor)
 {
     // Arrange
@@ -680,8 +753,15 @@ TEST(potrRecvThreadTest, n1_creates_peer_when_slow_peer_reject_expired)
     // [Pre-Assert確認_正常系] - PING を 1 回解析すること。
     EXPECT_CALL(mock_porter, potr_internal_peer_create(&ctx, _, 0)).WillOnce(Return(&new_peer));
     // [Pre-Assert確認_正常系] - 拒否されていないため新しいピアを 1 回作成すること。
-    EXPECT_CALL(mock_porter, thread_recv_dispatch_packet(_, _, 0, _)).Times(1);
-    // [Pre-Assert確認_正常系] - 作成したピアへパケットをディスパッチすること。
+    {
+        InSequence sequence;
+        EXPECT_CALL(mock_porter, thread_recv_dispatch_packet(_, _, 0, _)).WillOnce(Return(1));
+        // [Pre-Assert確認_正常系] - 作成したピアへパケットをディスパッチし、経路状態の変化を返すこと。
+        EXPECT_CALL(mock_cplat, cplat_local_lock_unlock(lock)).Times(1);
+        // [Pre-Assert確認_正常系] - peers_mutex を 1 回解放すること。
+        EXPECT_CALL(mock_porter, thread_recv_wake_udp_interrupt_ping(&ctx, 1)).Times(1);
+        // [Pre-Assert確認_正常系] - peers_mutex 解放後に割り込み PING の起床を要求すること。
+    }
     // Act
     ASSERT_EQ(POTR_OK, potr_internal_comm_recv_thread_start(&ctx));
     // [状態確認] - 受信スレッド開始準備が成功すること。

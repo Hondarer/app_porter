@@ -4,12 +4,12 @@
 #endif
 #include <testfw.h>
 #include <mock_cplat.h>
-#include <mock_porter.h>
 #include <mock_stdio.h>
 #include <cplat/crt/stdio.h>
 #include <cplat/net/endpoint.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/socket.h>
+#include <porter/porter_spec.h>
 #include <porter/porter_result.h>
 #include <porter_test_helper.h>
 #include <wrapmain.h>

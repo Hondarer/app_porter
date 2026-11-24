@@ -92,3 +92,21 @@ int tcpserver_test_worker_monitor_ack(const char *pipe_name)
     (void)CloseHandle(worker.pipe);
     return 1;
 }
+
+#if defined(PLATFORM_WINDOWS)
+DWORD tcpserver_test_get_native_executable_path(char **path_out)
+{
+    return get_native_executable_path(path_out);
+}
+
+DWORD tcpserver_test_build_command_line(const char *executable_path, const char *arguments, char **command_line_out)
+{
+    return build_command_line(executable_path, arguments, command_line_out);
+}
+
+BOOL tcpserver_test_start_child_process(const char *executable_path, const char *arguments, BOOL inherit_handles,
+                                        LPPROCESS_INFORMATION process_info, DWORD *error_out)
+{
+    return start_child_process(executable_path, arguments, inherit_handles, process_info, error_out);
+}
+#endif

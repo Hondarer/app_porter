@@ -14,7 +14,7 @@
  *
  *  @par            スレッド セーフ
  *  トレース書き込みは trace-cplat が内部で排他制御を行います。\n
- *  potr_internal_trace_get() の lazy create は cplat_call_once() で 1 回だけ行うため、
+ *  potr_internal_trace_get() はアトミックな状態で生成を直列化し、失敗後の呼び出しで再試行します。
  *  複数スレッドから同時に初回アクセスしても安全です。
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
@@ -27,6 +27,7 @@
 #include <cplat/crt/path.h>
 #include <cplat/crt/stdio.h>
 #include <cplat/sync/sync.h>
+#include <cplat/sync/atomic.h>
 #include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -46,36 +47,42 @@ static_assert(POTR_TRACE_CONTEXT_BUF_SIZE >= 2U && POTR_TRACE_MESSAGE_BUF_SIZE >
 
 /* ── グローバル トレーサー状態 ──────────────────────────────────────────────── */
 
-/** トレース プロバイダー ハンドル。`create_trace` で一度だけ初期化する。 */
-static cplat_tracer *s_trace = NULL;
+/** トレース プロバイダー ハンドル。生成に成功した後に公開する。 */
+static cplat_atomic_ptr s_trace = CPLAT_ATOMIC_INIT(NULL);
 
-/** `s_trace` の初期化を 1 回に限定するフラグ。 */
-static cplat_once_flag s_trace_once = {0};
+/** 状態は 0 が未生成、1 が生成中、2 が生成済みです。失敗後は 0 へ戻します。 */
+static cplat_atomic_i32 s_trace_state = CPLAT_ATOMIC_INIT(0);
 
 /**
  *  @brief          porter のトレーサーを生成します。
+ *  @return         成功時は生成したハンドル、失敗時は NULL を返します。
  *
  *  @par            スレッド セーフ
- *  本関数は cplat_call_once() から 1 回だけ呼びます。
+ *  本関数は生成状態を取得したスレッドからだけ呼び出します。
  */
-static void create_trace(void)
+static cplat_tracer *create_trace(void)
 {
-    s_trace = cplat_tracer_create(CPLAT_TRACER_CONCURRENCY_TRACER_MANAGED);
-    if (s_trace != NULL)
-    {
-        /*
-         * 識別名の設定に失敗してもトレーサーは使え、失敗を出力する先もこのトレーサー自身のため、
-         * 戻り値は明示的に破棄する。
-         */
-        (void)cplat_tracer_set_name(s_trace, "porter", 0);
+    cplat_tracer *trace;
 
-        /*
-         * set_name は OS トレースの識別名のみに作用する。出力先はデフォルト設定に従い、
-         * デフォルトはすべての出力先が CPLAT_TRACE_LEVEL_NONE で、porter 自身は
-         * 出力先を設定しない。出力先の詳細度の設定と start は、potr_tracer_get() 経由で
-         * 利用者が明示的に呼び出す。
-         */
+    trace = cplat_tracer_create(CPLAT_TRACER_CONCURRENCY_TRACER_MANAGED);
+    if (trace == NULL)
+    {
+        return NULL;
     }
+
+    /*
+     * 識別名の設定に失敗してもトレーサーは使え、失敗を出力する先もこのトレーサー自身のため、
+     * 戻り値は明示的に破棄する。
+     */
+    (void)cplat_tracer_set_name(trace, "porter", 0);
+
+    /*
+     * set_name は OS トレースの識別名のみに作用する。出力先はデフォルト設定に従い、
+     * デフォルトはすべての出力先が CPLAT_TRACE_LEVEL_NONE で、porter 自身は
+     * 出力先を設定しない。出力先の詳細度の設定と start は、potr_tracer_get() 経由で
+     * 利用者が明示的に呼び出す。
+     */
+    return trace;
 }
 
 /* ── 内部 API ─────────────────────────────────────────────────────────── */
@@ -84,8 +91,44 @@ static void create_trace(void)
 
 cplat_tracer *potr_internal_trace_get(void)
 {
-    cplat_call_once(&s_trace_once, create_trace);
-    return s_trace;
+    cplat_tracer *trace;
+    int32_t expected_state;
+    int32_t state;
+
+    trace = (cplat_tracer *)cplat_atomic_load_ptr(&s_trace, CPLAT_MEMORY_ORDER_ACQUIRE);
+    if (trace != NULL)
+    {
+        return trace;
+    }
+
+    expected_state = 0;
+    if (cplat_atomic_compare_exchange_i32(&s_trace_state, &expected_state, 1, CPLAT_MEMORY_ORDER_ACQ_REL))
+    {
+        trace = create_trace();
+        if (trace == NULL)
+        {
+            cplat_atomic_store_i32(&s_trace_state, 0, CPLAT_MEMORY_ORDER_RELEASE);
+            return NULL;
+        }
+
+        cplat_atomic_store_ptr(&s_trace, trace, CPLAT_MEMORY_ORDER_RELEASE);
+        cplat_atomic_store_i32(&s_trace_state, 2, CPLAT_MEMORY_ORDER_RELEASE);
+        return trace;
+    }
+
+    state = cplat_atomic_load_i32(&s_trace_state, CPLAT_MEMORY_ORDER_ACQUIRE);
+    while (state == 1)
+    {
+        cplat_thread_yield();
+        state = cplat_atomic_load_i32(&s_trace_state, CPLAT_MEMORY_ORDER_ACQUIRE);
+    }
+
+    if (state == 2)
+    {
+        return (cplat_tracer *)cplat_atomic_load_ptr(&s_trace, CPLAT_MEMORY_ORDER_ACQUIRE);
+    }
+
+    return NULL;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

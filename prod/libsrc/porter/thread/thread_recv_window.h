@@ -24,12 +24,14 @@
  *  @param[in,out]  slot            構成済みの受信状態ビュー。NULL は許可しません。
  *  @param[in]      pkt             投入する DATA または PING の外側パケット。NULL は許可しません。
  *  @param[in]      path_idx        受信した経路番号。片方向 DATA のヘルス チェック状態の更新に使います。
+ *  @return         双方向 UDP の経路受信状態が変化した場合は 1、それ以外は 0 を返します。
  *  @note           再送と順序整列の入口です。NACK 送出、RAW リセット、ウィンドウ取り出しを内部で完結します。
  *                  呼び出し側は同一スロットへの並行更新を避けてください。
  *                  N:1 では peers_mutex 保護下で呼び出してください。pending FIN の目標通番に到達すると
  *                  peer とその受信ウィンドウを解放するため、関数からの復帰後は slot の peer 固有メンバーを参照できません。
+ *                  peer が解放された場合の戻り値は 0 です。
  */
-void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *pkt, int path_idx);
+int thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *pkt, int path_idx);
 
 /**
  *  @brief          REJECT を処理し、自スロットの欠番であれば切断通知と受信状態の破棄を行います。
@@ -37,16 +39,17 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
  *  @param[in]      pkt             受信した REJECT。NULL は許可しません。
  *  @param[in]      path_idx        受信した経路番号。
  *  @param[in]      sender          受信した送信元アドレス。NULL は許可しません。
+ *  @return         双方向 UDP の経路受信状態が変化した場合は 1、それ以外は 0 を返します。
  *  @note           RAW および未確立セッション、旧セッションでは何もしません。
  *                  REJECT の ack_num が next_seq より前または受信ウィンドウ内で受信済みの場合は無視します。
  *                  自スロットの欠番に該当する場合、pending FIN 保持中なら thread_recv_fin_fire() で即時に
  *                  FIN を発火して終了し、そうでなければ全経路を切断して受信ウィンドウと関連状態を破棄します
- *                  (last_recv_ts は保持します)。
+ *                  (last_recv_ts は保持します)。保留中の FIN を発火する場合は戻り値 0 です。
  *                  N:1 では peers_mutex 保護下で呼び出してください。pending FIN の発火で peer を解放するため、
  *                  関数からの復帰後は slot の peer 固有メンバーを参照できません。
  */
-void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt, int path_idx,
-                                  const cplat_ipv4_endpoint *sender);
+int thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt, int path_idx,
+                                 const cplat_ipv4_endpoint *sender);
 
 /**
  *  @brief          受信した NACK に対してデータ再送または REJECT を返します。

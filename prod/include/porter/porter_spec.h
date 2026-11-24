@@ -387,10 +387,12 @@ extern "C"
 
     /**
      *  @brief          porter 内部トレーサー ハンドルを返します。
-     *  @return         cplat_tracer ハンドル。NULL を返すことはありません。
+     *  @return         成功時は共有ハンドル、生成できない場合は NULL を返します。
      *
      *  porter ライブラリが内部で使用する cplat_tracer ハンドルを返します。\n
      *  本関数は potr_service_open() の前に呼び出すことができます。\n
+     *  生成に失敗した後の呼び出しでは、再度の生成を試みます。成功後は同じハンドルを返します。
+     *  利用側はハンドルを破棄しません。NULL の場合は設定と開始を行わず、必要なら後で再取得してください。\n
      *  取得したハンドルに対して cplat_tracer_set_stderr_level() と
      *  cplat_tracer_start() を呼び出すことで、stderr へのトレース出力を有効化できます。
      *
@@ -416,7 +418,7 @@ extern "C"
      *  タイムスタンプは UTC。L はレベル文字 (C/E/W/I/V)。
      *
      *  @par            スレッド セーフ
-     *  本関数はスレッド セーフです。
+     *  同時の初回呼び出しを含め、本関数はスレッド セーフです。
      */
     POTR_EXPORT cplat_tracer *POTR_API potr_tracer_get(void);
 

@@ -68,6 +68,32 @@ sequenceDiagram
 
 Figure: unicast_bidir 1:1 双方向通信シーケンス
 
+## 双方向 UDP の REJECT / 通知キュー超過後の割り込み PING
+
+経路受信状態を未定義へ戻す切断では、状態が変わった場合に受信端が割り込み PING を要求します。対象は 1:1 と N:1 の双方向 UDP です。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Side A
+    participant B as Side B<br>(1:1 または N:1)
+
+    A->>B: DATA (session=S_A, seq=K+1) [K が欠落]
+    B->>A: NACK (ack_num=K)
+    alt A が通番 K を再送できない
+        A->>B: REJECT (ack_num=K)
+        Note over B: 有効な REJECT で受信状態を破棄<br>path_ping_state を UNDEFINED に更新
+    else B の通知キューが容量超過
+        Note over B: 受信状態を破棄<br>path_ping_state を UNDEFINED に更新
+    end
+    Note over B: 状態が変わった場合に割り込み PING を要求
+    B->>A: 割り込み PING (session=S_B, seq_num=M,<br>payload に UNDEFINED を含む)
+    Note over A: remote_path_ping_state の経路状態を更新
+    Note over A,B: 変化しない REJECT と FIN の発火では割り込み PING を要求しない
+```
+
+Figure: 双方向 UDP の経路状態変化後の割り込み PING
+
 ## unicast_bidir N:1 サーバーでの接続と送受信
 
 `POTR_TYPE_UNICAST_BIDIR` を N:1 モードで開いたサーバーが、新規クライアントを受け付けて `peer_id` ごとに通信するシーケンスです。

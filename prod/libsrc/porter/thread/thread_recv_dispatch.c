@@ -48,7 +48,8 @@ void thread_recv_apply_remote_path_ping_state(uint8_t *dst, const uint8_t *src, 
 
 void thread_recv_wake_udp_interrupt_ping(potr_context *ctx, int state_changed)
 {
-    if (state_changed != 0 && ctx->service.type == POTR_TYPE_UNICAST_BIDIR)
+    if (state_changed != 0 && (ctx->service.type == POTR_TYPE_UNICAST_BIDIR ||
+                               ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1))
     {
         potr_internal_health_thread_wake(ctx);
     }
@@ -56,7 +57,7 @@ void thread_recv_wake_udp_interrupt_ping(potr_context *ctx, int state_changed)
 
 /*
  * FIN パケットを受信した際のセッション採用判定、pending 判定、切断発火を行う。
- * PING 受信状態は変化しないため常に 0 を返す。
+ * FIN による経路状態の変化では割り込み PING を要求しないため 0 を返す。
  */
 static int dispatch_fin(thread_recv_slot *slot, const potr_packet *pkt)
 {
@@ -95,7 +96,7 @@ static int dispatch_fin(thread_recv_slot *slot, const potr_packet *pkt)
 
 /*
  * PING パケットを受信した際の経路ヘルス状態更新、相手端経路状態の反映、PING 欠落スキャンを行う。
- * N:1 で PING 受信状態が変化した場合は 1、それ以外は 0 を返す。
+ * 双方向 UDP の PING 受信状態が変化した場合は 1、それ以外は 0 を返す。
  */
 static int dispatch_ping(thread_recv_slot *slot, const potr_packet *pkt, int path_idx)
 {
@@ -104,7 +105,7 @@ static int dispatch_ping(thread_recv_slot *slot, const potr_packet *pkt, int pat
 
     if (cplat_atomic_load_i32(&slot->ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) != POTR_OK)
     {
-        return POTR_ERR_IO;
+        return 0;
     }
 
     if (pkt->payload_len >= POTR_MAX_PATH && pkt->payload != NULL)
@@ -119,15 +120,9 @@ static int dispatch_ping(thread_recv_slot *slot, const potr_packet *pkt, int pat
         return 0;
     }
 
-    if (slot->peer == NULL)
-    {
-        thread_recv_wake_udp_interrupt_ping(ctx, ping_state_changed);
-    }
-
     thread_recv_sync_path_state(slot);
     thread_recv_window_scan_ping_gap(slot, pkt);
-
-    if (slot->peer != NULL)
+    if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR || ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1)
     {
         return ping_state_changed;
     }
@@ -141,6 +136,7 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
                                 const cplat_ipv4_endpoint *sender)
 {
     potr_context *ctx = slot->ctx;
+    int state_changed = 0;
 
     if ((pkt->flags & POTR_FLAG_FIN) != 0)
     {
@@ -160,8 +156,7 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
 
     if ((pkt->flags & POTR_FLAG_REJECT) != 0)
     {
-        thread_recv_window_on_reject(slot, pkt, path_idx, sender);
-        return 0;
+        return thread_recv_window_on_reject(slot, pkt, path_idx, sender);
     }
 
     if ((pkt->flags & POTR_FLAG_FLOW_CONTROL) != 0)
@@ -265,7 +260,15 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
             return ping_ret;
         }
 
-        thread_recv_window_accept_outer(slot, pkt, path_idx);
+        {
+            int peer_was_present = (slot->peer != NULL);
+
+            state_changed = thread_recv_window_accept_outer(slot, pkt, path_idx);
+            if (peer_was_present != 0 && slot->peer == NULL)
+            {
+                return state_changed;
+            }
+        }
 
         if (slot->peer == NULL && *slot->peer_session_known != 0)
         {
@@ -299,5 +302,5 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
         }
     }
 
-    return 0;
+    return state_changed;
 }

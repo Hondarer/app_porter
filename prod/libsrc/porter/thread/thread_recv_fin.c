@@ -102,10 +102,14 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
     /* N:1 モードでは全経路切断後にピアを解放する。 */
     if (slot->peer != NULL)
     {
+        potr_internal_peer_context *peer = slot->peer;
+
         thread_recv_disconnect_peer_all_paths(ctx, slot->peer);
         *slot->pending_fin = 0;
         *slot->fin_target_seq = 0;
-        potr_internal_peer_free(ctx, slot->peer);
+        potr_internal_peer_free(ctx, peer);
+        /* 呼び出し元が解放済み peer を参照しないよう、slot に解放済みを記録する。 */
+        slot->peer = NULL;
         return;
     }
 
@@ -130,7 +134,7 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
     if (is_tcp_type(ctx->service.type))
     {
         cplat_local_lock_lock(ctx->tcp_state_mutex);
-        /* 結果は失敗ではなく経路の状態が変わったかを表し、この経路では割り込みの PING を送らないため、戻り値は明示的に破棄する。 */
+        /* FIN による状態変化では割り込み PING を送らないため、状態変化の戻り値は明示的に破棄する。 */
         (void)thread_recv_set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
         memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
         thread_recv_disconnect_service_all_paths(ctx);
@@ -138,7 +142,7 @@ void thread_recv_fin_fire(thread_recv_slot *slot, uint32_t fin_target_seq)
     }
     else
     {
-        /* 結果は失敗ではなく経路の状態が変わったかを表し、この経路では割り込みの PING を送らないため、戻り値は明示的に破棄する。 */
+        /* FIN による状態変化では割り込み PING を送らないため、状態変化の戻り値は明示的に破棄する。 */
         (void)thread_recv_set_all_path_ping_states(ctx->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
         memset((void *)ctx->remote_path_ping_state, 0, sizeof(ctx->remote_path_ping_state));
         thread_recv_disconnect_service_all_paths(ctx);

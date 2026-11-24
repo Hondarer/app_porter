@@ -84,6 +84,16 @@ Windows には `fork()` がないため、`CreateProcess()` で自分自身を�
 1. `SetHandleInformation()` でハンドルを継承可能にマーク
 2. `CreateProcess()` の `bInheritHandles` 引数を `TRUE` に設定
 
+子プロセスの起動では、親プロセスの実行ファイル パスを一度取得し、`CreateProcess()` のアプリケーション名へ引用符なしで明示します。コマンド ラインの先頭には同じパスを二重引用符で囲んで指定します。実行ファイルのパスは Windows の拡張パス上限を収める UTF-8 領域をヒープに確保し、`PLATFORM_PATH_UTF8_MAX` の 780 [byte] による切り詰めを避けます。取得時に切り詰めが検出された場合は起動せず、`GetLastError` を含む診断を出します。
+
+起動用コマンド ラインは必要な容量を計算して組み立て、UTF-16 へ変換した後に終端 NUL を含む 32,767 code unit の上限を確認します。容量確保、書式化、変換、上限確認、または子プロセス起動に失敗すると、fork は接続を閉じて次の接続を受け付け、prefork はワーカーの起動を失敗させます。診断には `CreateProcess()` の最終エラー コードを表示します。
+
+CreateProcessW のコマンド ライン上限については、see: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+
+GetModuleFileNameW の切り詰め動作については、see: https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulefilenamew
+
+Windows の拡張パス上限については、see: https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
+
 ## モデル 2: プリフォーク (--mode prefork)
 
 ### アーキテクチャー

@@ -32,6 +32,8 @@
     #include "tcpServer.h" /* WIN32_LEAN_AND_MEAN / windows.h / winsock2.h / ws2tcpip.h を内包 */
     #include <cplat/crt/select.h>
     #include <cplat/crt/path.h>
+    #include <cplat/crt/stdio.h>
+    #include <cplat/crt/wchar_conv.h>
     #include <cplat/sync/sync.h>
     #include <cplat/trace/tracer.h>
 
@@ -44,7 +46,9 @@
     #include <cplat/runtime/shutdown.h>
     #include <limits.h>
     #include <stdlib.h>
+    #include <stdint.h>
     #include <string.h>
+    #include <wchar.h>
 
     /** 名前付きパイプ名フォーマット。 */
     #define TCPSERVER_PIPE_NAME_FMT "\\\\.\\pipe\\tcpserver_worker_%d"
@@ -55,11 +59,19 @@
     /** ポート番号の文字列を格納する配列の大きさ [byte]。 */
     #define TCPSERVER_PORT_STR_SIZE 8U
 
-    /** ワーカーの起動のコマンド ラインで、実行ファイルのパスに加える固定の引数の領域 [byte]。 */
-    #define TCPSERVER_WORKER_CMDLINE_EXTRA_SIZE 128U
+    /** Windows の拡張パス上限を UTF-8 で収める実行ファイル パスの容量 [byte]。 */
+    #define TCPSERVER_EXE_PATH_UTF8_CAP ((size_t)32767U * 3U + 1U)
 
-    /** fork モードの子プロセスの起動のコマンド ラインで、実行ファイルのパスに加える固定の引数の領域 [byte]。 */
-    #define TCPSERVER_CHILD_CMDLINE_EXTRA_SIZE 64U
+    /** CreateProcessW のコマンド ライン上限 [UTF-16 code unit]。終端 NUL を含む。 */
+    #define TCPSERVER_CMDLINE_WCHAR_MAX 32767U
+
+    /** ワーカー引数だけを格納する容量 [byte]。実行ファイルのパスは含まない。 */
+    #define TCPSERVER_WORKER_ARGS_UTF8_CAP \
+        ((sizeof(" --worker ") - 1U) + (TCPSERVER_PIPE_NAME_SIZE - 1U) + (sizeof(" --conns-per-worker ") - 1U) + \
+         sizeof("-2147483648"))
+
+    /** fork 引数だけを格納する容量 [byte]。実行ファイルのパスは含まない。 */
+    #define TCPSERVER_CHILD_ARGS_UTF8_CAP sizeof(" --child 18446744073709551615")
 
     /** ワーカーごとの名前付きパイプの最大インスタンス数。 */
     #define TCPSERVER_PIPE_MAX_INSTANCES 1U
@@ -76,15 +88,184 @@
 static_assert(TCPSERVER_PIPE_NAME_SIZE >= sizeof("\\\\.\\pipe\\tcpserver_worker_-2147483648"),
               "tcpServer: TCPSERVER_PIPE_NAME_SIZE too small");
 static_assert(TCPSERVER_PORT_STR_SIZE >= sizeof("65535"), "tcpServer: TCPSERVER_PORT_STR_SIZE too small");
-static_assert((sizeof("\"\" --worker  --conns-per-worker ") - 1U) + (TCPSERVER_PIPE_NAME_SIZE - 1U) +
-                      (sizeof("-2147483648") - 1U) + 1U <=
-                  TCPSERVER_WORKER_CMDLINE_EXTRA_SIZE,
-              "tcpServer: TCPSERVER_WORKER_CMDLINE_EXTRA_SIZE too small");
-static_assert(TCPSERVER_CHILD_CMDLINE_EXTRA_SIZE >= sizeof("\"\" --child 18446744073709551615"),
-              "tcpServer: TCPSERVER_CHILD_CMDLINE_EXTRA_SIZE too small");
+static_assert(TCPSERVER_WORKER_ARGS_UTF8_CAP >=
+                  sizeof(" --worker \\\\.\\pipe\\tcpserver_worker_-2147483648 --conns-per-worker -2147483648"),
+              "tcpServer: TCPSERVER_WORKER_ARGS_UTF8_CAP too small");
 static_assert(TCPSERVER_PIPE_BUF_SIZE >= sizeof(WSAPROTOCOL_INFOW), "tcpServer: TCPSERVER_PIPE_BUF_SIZE too small");
 static_assert(TCPSERVER_WORKER_PIPE_POLL_MS > 0 && TCPSERVER_WORKER_PIPE_POLL_MS < 1000,
               "tcpServer: TCPSERVER_WORKER_PIPE_POLL_MS must be in (0, 1000)");
+
+/**
+ *  @brief          実行ファイルの UTF-8 パスを取得します。
+ *  @param[out]     path_out 成功時にパスの所有権を格納するポインター。
+ *  @return         成功時は ERROR_SUCCESS、失敗時は Windows のエラー コードを返します。
+ *
+ *  Windows の拡張パス上限に対応する容量をヒープに確保します。取得失敗または切り詰めの場合は領域を解放し、
+ *  成功時だけ呼び出し元へ所有権を渡します。UTF-16 の 1 code unit あたり最大 3 [byte] を見込みます。
+ *
+ *  see: https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulefilenamew
+ *  see: https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
+ */
+static DWORD get_native_executable_path(char **path_out)
+{
+    char *path;
+    DWORD copied;
+    DWORD error;
+
+    if (path_out == NULL)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    *path_out = NULL;
+    path = (char *)cplat_malloc(TCPSERVER_EXE_PATH_UTF8_CAP);
+    if (path == NULL)
+    {
+        return ERROR_OUTOFMEMORY;
+    }
+
+    copied = GetModuleFileNameU(NULL, path, (DWORD)TCPSERVER_EXE_PATH_UTF8_CAP);
+    if (copied == 0U)
+    {
+        error = GetLastError();
+        cplat_free(path);
+        return error;
+    }
+    if (copied >= (DWORD)TCPSERVER_EXE_PATH_UTF8_CAP)
+    {
+        cplat_free(path);
+        return ERROR_INSUFFICIENT_BUFFER;
+    }
+
+    *path_out = path;
+    return ERROR_SUCCESS;
+}
+
+/**
+ *  @brief          実行ファイルのパスと引数から起動用コマンド ラインを作成します。
+ *  @param[in]      executable_path 実行ファイルの UTF-8 パス。
+ *  @param[in]      arguments       引数部分。先頭は空白です。
+ *  @param[out]     command_line_out 成功時にコマンド ラインの所有権を格納するポインター。
+ *  @return         成功時は ERROR_SUCCESS、失敗時は Windows のエラー コードを返します。
+ *
+ *  必要な UTF-8 容量をオーバーフローなしで計算し、UTF-16 code unit 数と終端 NUL が上限内であることを確認します。
+ *  成功時は呼び出し元が領域を解放します。失敗時は途中の領域を解放します。
+ *
+ *  see: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+ */
+static DWORD build_command_line(const char *executable_path, const char *arguments, char **command_line_out)
+{
+    size_t executable_length;
+    size_t arguments_length;
+    size_t capacity;
+    char *command_line;
+    wchar_t *wide_command_line = NULL;
+    int result;
+
+    if (command_line_out == NULL)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    *command_line_out = NULL;
+    if (executable_path == NULL || arguments == NULL)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    executable_length = strlen(executable_path);
+    arguments_length = strlen(arguments);
+    if (arguments_length > SIZE_MAX - 3U || executable_length > SIZE_MAX - arguments_length - 3U)
+    {
+        return ERROR_INSUFFICIENT_BUFFER;
+    }
+    capacity = executable_length + arguments_length + 3U;
+
+    command_line = (char *)cplat_malloc(capacity);
+    if (command_line == NULL)
+    {
+        return ERROR_OUTOFMEMORY;
+    }
+
+    result = cplat_snprintf(command_line, capacity, "\"%s\"%s", executable_path, arguments);
+    if (result != CPLAT_OK)
+    {
+        cplat_free(command_line);
+        return (result == CPLAT_ERR_BUFFER_TOO_SMALL) ? ERROR_INSUFFICIENT_BUFFER : ERROR_INVALID_DATA;
+    }
+
+    result = cplat_utf8_to_wstr_alloc(&wide_command_line, command_line);
+    if (result != CPLAT_OK)
+    {
+        cplat_free(wide_command_line);
+        cplat_free(command_line);
+        return (result == CPLAT_ERR_OUT_OF_MEMORY) ? ERROR_OUTOFMEMORY : ERROR_NO_UNICODE_TRANSLATION;
+    }
+
+    /* CreateProcessW の上限は終端 NUL を含む UTF-16 code unit 数です。 */
+    if (wcslen(wide_command_line) >= TCPSERVER_CMDLINE_WCHAR_MAX)
+    {
+        cplat_free(wide_command_line);
+        cplat_free(command_line);
+        return ERROR_INSUFFICIENT_BUFFER;
+    }
+
+    cplat_free(wide_command_line);
+    *command_line_out = command_line;
+    return ERROR_SUCCESS;
+}
+
+/**
+ *  @brief          指定したアプリケーション名とコマンド ラインで子プロセスを起動します。
+ *  @param[in]      executable_path 実行ファイルの UTF-8 パス。
+ *  @param[in]      arguments       引数部分。先頭は空白です。
+ *  @param[in]      inherit_handles ハンドル継承の有無。
+ *  @param[out]     process_info 成功時のプロセス情報。
+ *  @param[out]     error_out 失敗時の Windows エラー コード。
+ *  @return         起動成功時は TRUE、失敗時は FALSE を返します。
+ *
+ *  アプリケーション名には引用符のない実行ファイルのパスを渡し、コマンド ラインの先頭では同じパスを引用符で囲みます。
+ *  CreateProcessU() の失敗直後に最終エラーを保存し、領域の解放後もその値を返します。
+ *
+ *  see: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+ */
+static BOOL start_child_process(const char *executable_path, const char *arguments, const BOOL inherit_handles,
+                                LPPROCESS_INFORMATION process_info, DWORD *error_out)
+{
+    char *command_line = NULL;
+    DWORD error;
+    STARTUPINFOW startup_info = {sizeof(startup_info)};
+
+    if (error_out == NULL)
+    {
+        return FALSE;
+    }
+    *error_out = ERROR_INVALID_PARAMETER;
+    if (process_info == NULL)
+    {
+        return FALSE;
+    }
+
+    error = build_command_line(executable_path, arguments, &command_line);
+    if (error != ERROR_SUCCESS)
+    {
+        *error_out = error;
+        return FALSE;
+    }
+
+    if (!CreateProcessU(executable_path, command_line, NULL, NULL, inherit_handles, 0, NULL, NULL, &startup_info,
+                        process_info))
+    {
+        error = GetLastError();
+        cplat_free(command_line);
+        *error_out = error;
+        return FALSE;
+    }
+
+    cplat_free(command_line);
+    *error_out = ERROR_SUCCESS;
+    return TRUE;
+}
 
 /* NONE は通常の出力先へ送らず、テスト時のプロセス内フックでのみ記録する。 */
 static void prefork_trace(const char *stage, const DWORD worker_pid, const SOCKET connection, const int result)
@@ -658,6 +839,7 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
  *  @param[in]      workers ワーカー情報配列。
  *  @param[in]      events  ワーカー イベント配列。
  *  @param[in]      n       ワーカー数。
+ *  @param[in]      conns_per_worker 1 ワーカーあたりの同時接続数。
  *
  *  各ワーカーに名前付きパイプと監視スレッドを作成し、
  *  自分自身を `--worker <pipe_name>` 引数付きで再起動します。
@@ -667,16 +849,17 @@ static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int
 static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, int conns_per_worker)
 {
     char pipe_name[TCPSERVER_PIPE_NAME_SIZE];
-    char cmdline[PLATFORM_PATH_MAX + TCPSERVER_WORKER_CMDLINE_EXTRA_SIZE];
-    char exepath[PLATFORM_PATH_MAX];
+    char *exepath = NULL;
+    DWORD path_error;
 
     /*
      * 診断の出力先がほかになく、起動状況は利用者が画面で確認する表示であるため、
      * この関数の fprintf と printf の戻り値は明示的に破棄する。
      */
-    if (GetModuleFileNameU(NULL, exepath, PLATFORM_PATH_MAX) == 0)
+    path_error = get_native_executable_path(&exepath);
+    if (path_error != ERROR_SUCCESS)
     {
-        (void)fprintf(stderr, "GetModuleFileName 失敗: %lu\n", GetLastError());
+        (void)fprintf(stderr, "実行ファイルのパスを取得できません (GetLastError=%lu)\n", path_error);
         cplat_exit(1);
     }
 
@@ -684,6 +867,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
     WorkerMonitorArg *args = (WorkerMonitorArg *)cplat_malloc((size_t)n * sizeof(WorkerMonitorArg));
     if (args == NULL)
     {
+        cplat_free(exepath);
         (void)fprintf(stderr, "malloc 失敗\n");
         cplat_exit(1);
     }
@@ -702,6 +886,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         {
             (void)fprintf(stderr, "パイプ作成失敗: %d\n", i);
             cplat_free(args);
+            cplat_free(exepath);
             cplat_exit(1);
         }
 
@@ -714,24 +899,28 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         workers[i].alive = 1;
         if (events[i] == NULL || workers[i].ack_event == NULL)
         {
+            cplat_free(args);
+            cplat_free(exepath);
             cplat_exit(1);
         }
 
-        /*
-         * 1 ワーカーあたりの同時接続数上限を指定してワーカー プロセスを起動する。
-         * 実行ファイルのパス (PLATFORM_PATH_MAX 未満) と固定の引数は cmdline に収まるため、
-         * 戻り値は明示的に破棄する。
-         */
-        (void)sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --worker %s --conns-per-worker %d", exepath, pipe_name,
-                        conns_per_worker);
+        char arguments[TCPSERVER_WORKER_ARGS_UTF8_CAP];
+        int format_result = cplat_snprintf(arguments, sizeof(arguments), " --worker %s --conns-per-worker %d",
+                                           pipe_name, conns_per_worker);
+        PROCESS_INFORMATION pi = {0};
+        DWORD process_error = ERROR_SUCCESS;
 
-        STARTUPINFOW si = {sizeof(si)};
-        PROCESS_INFORMATION pi;
-
-        if (!CreateProcessU(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+        if (format_result != CPLAT_OK ||
+            !start_child_process(exepath, arguments, FALSE, &pi, &process_error))
         {
-            (void)fprintf(stderr, "ワーカー起動失敗: %d\n", i);
+            if (format_result != CPLAT_OK)
+            {
+                process_error = (format_result == CPLAT_ERR_BUFFER_TOO_SMALL) ? ERROR_INSUFFICIENT_BUFFER
+                                                                               : ERROR_INVALID_DATA;
+            }
             cplat_free(args);
+            cplat_free(exepath);
+            (void)fprintf(stderr, "ワーカー起動失敗: %d (GetLastError=%lu)\n", i, process_error);
             cplat_exit(1);
         }
 
@@ -816,6 +1005,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
         {
             (void)fprintf(stderr, "監視スレッド起動失敗: %d\n", i);
             cplat_free(args);
+            cplat_free(exepath);
             cplat_exit(1);
         }
 
@@ -825,6 +1015,7 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
     }
 
     /* args はスレッドが使い続けるため解放しない (プロセス終了時に解放される)。 */
+    cplat_free(exepath);
 }
 
 /*
@@ -915,15 +1106,17 @@ int dispatch_internal_args(int argc, char *argv[])
 void run_fork_server(int port)
 {
     SOCKET listen_socket = create_listen_socket(port);
-    char exepath[PLATFORM_PATH_MAX];
+    char *exepath = NULL;
+    DWORD path_error;
 
     /*
      * 稼働状況は利用者が画面で確認する表示であり、診断も出力先がほかにないため、
      * この関数の printf と fprintf の戻り値は明示的に破棄する。
      */
-    if (GetModuleFileNameU(NULL, exepath, PLATFORM_PATH_MAX) == 0)
+    path_error = get_native_executable_path(&exepath);
+    if (path_error != ERROR_SUCCESS)
     {
-        (void)fprintf(stderr, "GetModuleFileName 失敗: %lu\n", GetLastError());
+        (void)fprintf(stderr, "実行ファイルのパスを取得できません (GetLastError=%lu)\n", path_error);
         cplat_exit(1);
     }
 
@@ -952,21 +1145,32 @@ void run_fork_server(int port)
             continue;
         }
 
-        char cmdline[PLATFORM_PATH_MAX + TCPSERVER_CHILD_CMDLINE_EXTRA_SIZE];
-        /*
-         * 実行ファイルのパス (PLATFORM_PATH_MAX 未満) と固定の引数 (ソケットは最大 20 桁) は
-         * cmdline に収まるため、戻り値は明示的に破棄する。
-         */
-        (void)sprintf_s(cmdline, sizeof(cmdline), "\"%s\" --child %llu", exepath, (unsigned long long)client_socket);
+        char arguments[TCPSERVER_CHILD_ARGS_UTF8_CAP];
+        int format_result = cplat_snprintf(arguments, sizeof(arguments), " --child %llu",
+                                           (unsigned long long)client_socket);
+        PROCESS_INFORMATION pi = {0};
+        DWORD process_error = ERROR_SUCCESS;
+        BOOL process_started = FALSE;
 
-        STARTUPINFOW si = {sizeof(si)};
-        PROCESS_INFORMATION pi;
+        if (format_result == CPLAT_OK)
+        {
+            process_started = start_child_process(exepath, arguments, TRUE, &pi, &process_error);
+        }
+        else
+        {
+            process_error = (format_result == CPLAT_ERR_BUFFER_TOO_SMALL) ? ERROR_INSUFFICIENT_BUFFER
+                                                                           : ERROR_INVALID_DATA;
+        }
 
-        if (CreateProcessU(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
+        if (process_started)
         {
             /* 起動した子プロセスのハンドルは使わず、閉じる処理の失敗で動作が変わらないため、この 2 つの戻り値は明示的に破棄する。 */
             (void)CloseHandle(pi.hProcess);
             (void)CloseHandle(pi.hThread);
+        }
+        else
+        {
+            (void)fprintf(stderr, "[親プロセス] 子プロセスの起動に失敗しました (GetLastError=%lu)\n", process_error);
         }
 
         /* 子プロセスの起動の後に親が持つ接続の複製を閉じる処理であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */

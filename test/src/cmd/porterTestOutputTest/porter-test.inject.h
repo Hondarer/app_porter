@@ -16,6 +16,7 @@ extern "C"
     void test_ensure_tracer_started(void);
     int test_get_tracer_started(void);
     void test_reset_tracer_started(void);
+    void test_reset_tracer_screen(void);
     void test_do_close_handle(potr_context *handle, int64_t service_id);
     int test_format_path_states(char *dest, size_t dest_size, const int *states);
     size_t test_path_states_capacity(void);

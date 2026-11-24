@@ -222,6 +222,7 @@ threadRecvWindowRejectTest *threadRecvWindowRejectTest::current_instance = nullp
 TEST_F(threadRecvWindowRejectTest, reject_at_next_seq_disconnects_and_discards_recv_state)
 {
     // Arrange
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
     const PackedDataFixture buffered = makePackedDataPacket(101U, 42U, 1000, 500, "hold");
     ASSERT_EQ(POTR_OK, potr_internal_window_recv_push(&ctx.recv_window, &buffered.packet));
     // [状態確認] - 欠番 100 より先の通番 101 を受信ウィンドウへ事前保持できること。
@@ -231,11 +232,12 @@ TEST_F(threadRecvWindowRejectTest, reject_at_next_seq_disconnects_and_discards_r
     // Pre-Assert
 
     // Act
-    thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - next_seq と一致する REJECT を処理する。
+    const int state_changed = thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - next_seq と一致する REJECT を処理する。
     potr_internal_notify_stop(&ctx);                         // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert
     EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
+    EXPECT_EQ(1, state_changed); // [確認_正常系] - 経路状態が変わったことを返す。
     EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - ctx.health_alive が 0 であること。
     EXPECT_EQ(0, ctx.path_logical_alive[0]); // [確認_正常系] - ctx.path_logical_alive[0] が 0 であること。
     EXPECT_EQ(0, ctx.peer_session_known); // [確認_正常系] - ctx.peer_session_known が 0 であること。
@@ -257,6 +259,7 @@ TEST_F(threadRecvWindowRejectTest, reject_at_next_seq_disconnects_and_discards_r
 TEST_F(threadRecvWindowRejectTest, reject_beyond_window_disconnects_and_discards_recv_state)
 {
     // Arrange
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
     const PackedDataFixture buffered = makePackedDataPacket(101U, 42U, 1000, 500, "hold");
     ASSERT_EQ(POTR_OK, potr_internal_window_recv_push(&ctx.recv_window, &buffered.packet));
     // [状態確認] - 受信ウィンドウ内の通番 101 を事前保持できること。
@@ -266,11 +269,12 @@ TEST_F(threadRecvWindowRejectTest, reject_beyond_window_disconnects_and_discards
     // Pre-Assert
 
     // Act
-    thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 受信ウィンドウより先の REJECT を処理する。
+    const int state_changed = thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 受信ウィンドウより先の REJECT を処理する。
     potr_internal_notify_stop(&ctx);                         // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert
     EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
+    EXPECT_EQ(1, state_changed); // [確認_正常系] - 経路状態が変わったことを返す。
     EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - ctx.health_alive が 0 であること。
     EXPECT_EQ(0, ctx.path_logical_alive[0]); // [確認_正常系] - ctx.path_logical_alive[0] が 0 であること。
     EXPECT_EQ(0, ctx.peer_session_known); // [確認_正常系] - ctx.peer_session_known が 0 であること。
@@ -301,11 +305,12 @@ TEST_F(threadRecvWindowRejectTest, reject_already_delivered_seq_is_ignored)
     // Pre-Assert
 
     // Act
-    thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 配信済み通番の REJECT を処理する。
+    const int state_changed = thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 配信済み通番の REJECT を処理する。
     potr_internal_notify_stop(&ctx);                         // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert
     EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
+    EXPECT_EQ(0, state_changed); // [確認_正常系] - 無視した REJECT では状態変化を返さない。
     EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - ctx.health_alive が 1 であること。
     EXPECT_EQ(1, ctx.path_logical_alive[0]); // [確認_正常系] - ctx.path_logical_alive[0] が 1 であること。
     EXPECT_EQ(1, ctx.peer_session_known); // [確認_正常系] - ctx.peer_session_known が 1 であること。
@@ -333,11 +338,12 @@ TEST_F(threadRecvWindowRejectTest, reject_already_buffered_in_window_is_ignored)
     // Pre-Assert
 
     // Act
-    thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 保持済み通番の REJECT を処理する。
+    const int state_changed = thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 保持済み通番の REJECT を処理する。
     potr_internal_notify_stop(&ctx);                         // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert
     EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
+    EXPECT_EQ(0, state_changed); // [確認_正常系] - 無視した REJECT では状態変化を返さない。
     EXPECT_EQ(1, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED)); // [確認_正常系] - ctx.health_alive が 1 であること。
     EXPECT_EQ(1, ctx.path_logical_alive[0]); // [確認_正常系] - ctx.path_logical_alive[0] が 1 であること。
     EXPECT_EQ(1, ctx.peer_session_known); // [確認_正常系] - ctx.peer_session_known が 1 であること。
@@ -348,6 +354,30 @@ TEST_F(threadRecvWindowRejectTest, reject_already_buffered_in_window_is_ignored)
     EXPECT_EQ(1, ctx.frag_compressed); // [確認_正常系] - ctx.frag_compressed が 1 であること。
     EXPECT_EQ(1, ctx.reorder_pending); // [確認_正常系] - ctx.reorder_pending が 1 であること。
     EXPECT_TRUE(events.empty());       // [確認_正常系] - events.empty() の戻り値が true であること。(切断未発火の確認)
+}
+// [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]
+
+// 有効な REJECT でも経路状態が既に UNDEFINED なら起床要求を返さないことの確認
+// [サブ手順参照 名前=threadRecvWindowRejectTest.SetUp]
+TEST_F(threadRecvWindowRejectTest, reject_without_path_state_change_returns_zero)
+{
+    // Arrange
+    cplat_atomic_store_u8(&ctx.path_ping_state[0], POTR_PING_STATE_UNDEFINED, CPLAT_MEMORY_ORDER_RELAXED);
+    const potr_packet reject_pkt = makeRejectPacket(100U, 42U, 1000, 500);
+    // [状態] - 経路状態を既に UNDEFINED にし、有効な欠番 REJECT を用意する。
+
+    // Pre-Assert
+
+    // Act
+    const int state_changed = thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender);
+    potr_internal_notify_stop(&ctx);
+
+    // Assert
+    EXPECT_EQ(0, state_changed); // [確認_正常系] - 状態が変わらないため起床要求を返さない。
+    EXPECT_EQ(POTR_PING_STATE_UNDEFINED,
+              cplat_atomic_load_u8(&ctx.path_ping_state[0], CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_正常系] - path_ping_state[0] は UNDEFINED のままである。
+    EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - 通知資源を回収する。
 }
 // [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]
 
@@ -366,13 +396,60 @@ TEST_F(threadRecvWindowRejectTest, reject_gap_with_pending_fin_fires_fin_and_ret
     // [Pre-Assert確認_正常系] - thread_recv_fin_fire() が 1 回呼ばれること。
 
     // Act
-    thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 保留 FIN 中の欠番 REJECT を処理する。
+    const int state_changed = thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 保留 FIN 中の欠番 REJECT を処理する。
     potr_internal_notify_stop(&ctx);                         // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert
     EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
+    EXPECT_EQ(0, state_changed); // [確認_正常系] - FIN の発火では割り込み PING 要求を返さない。
     EXPECT_TRUE(events.empty());
     // [確認_正常系] - events.empty() の戻り値が true であること。(on_reject からの切断通知二重発火なしの確認)
+}
+// [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]
+
+// N:1 双方向 UDP の有効な REJECT で経路状態の変化を返すことの確認
+// [サブ手順参照 名前=threadRecvWindowRejectTest.SetUp]
+TEST_F(threadRecvWindowRejectTest, n1_reject_returns_path_state_change)
+{
+    // Arrange
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    const potr_packet reject_pkt = makeRejectPacket(100U, 42U, 1000, 500);
+    // [状態] - N:1 双方向 UDP で next_seq の欠番を示す REJECT を用意する。
+
+    // Pre-Assert
+
+    // Act
+    const int state_changed = thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender);
+    potr_internal_notify_stop(&ctx);
+
+    // Assert
+    EXPECT_EQ(1, state_changed); // [確認_正常系] - 経路状態の変化を返す。
+    EXPECT_EQ(POTR_PING_STATE_UNDEFINED,
+              cplat_atomic_load_u8(&ctx.path_ping_state[0], CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_正常系] - path_ping_state[0] を UNDEFINED に戻す。
+    EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - 通知資源を回収する。
+}
+// [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]
+
+// RAW の REJECT では割り込み PING の起床要求を返さないことの確認
+// [サブ手順参照 名前=threadRecvWindowRejectTest.SetUp]
+TEST_F(threadRecvWindowRejectTest, raw_reject_does_not_return_path_state_change)
+{
+    // Arrange
+    ctx.service.type = POTR_TYPE_UNICAST_RAW;
+    const potr_packet reject_pkt = makeRejectPacket(100U, 42U, 1000, 500);
+    // [状態] - RAW 通信種別で REJECT を受信した条件を用意する。
+
+    // Pre-Assert
+
+    // Act
+    const int state_changed = thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender);
+
+    // Assert
+    EXPECT_EQ(0, state_changed); // [確認_正常系] - RAW では起床要求を返さない。
+    EXPECT_EQ(POTR_PING_STATE_NORMAL,
+              cplat_atomic_load_u8(&ctx.path_ping_state[0], CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_正常系] - RAW の経路状態を変更しない。
 }
 // [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]
 
@@ -381,6 +458,7 @@ TEST_F(threadRecvWindowRejectTest, reject_gap_with_pending_fin_fires_fin_and_ret
 TEST_F(threadRecvWindowRejectTest, reject_then_new_data_readopts_session_and_delivers)
 {
     // Arrange
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
     const PackedDataFixture buffered = makePackedDataPacket(101U, 42U, 1000, 500, "stale");
     ASSERT_EQ(POTR_OK, potr_internal_window_recv_push(&ctx.recv_window, &buffered.packet));
     // [状態確認] - REJECT 前に受信ウィンドウ内の通番 101 を保持できること。
@@ -402,19 +480,22 @@ TEST_F(threadRecvWindowRejectTest, reject_then_new_data_readopts_session_and_del
     // [Pre-Assert手順] - 配信されたペイロードを保存する。
 
     // Act
-    thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 欠番 REJECT を処理して状態を破棄する。
+    const int reject_state_changed = thread_recv_window_on_reject(&slot, &reject_pkt, 0, &sender); // [手順] - 欠番 REJECT を処理して状態を破棄する。
 
     // Assert
     EXPECT_EQ(0, ctx.peer_session_known); // [確認_正常系] - ctx.peer_session_known が 0 であること。
+    EXPECT_EQ(1, reject_state_changed); // [確認_正常系] - REJECT による経路状態の変化を返す。
     EXPECT_EQ(0, cplat_atomic_load_i32(&ctx.health_alive, CPLAT_MEMORY_ORDER_RELAXED));       // [確認_正常系] - ctx.health_alive が 0 であること。
 
     // Act_2
+    ctx.service.type = POTR_TYPE_UNICAST;
     const int adopted = thread_recv_session_adopt(&slot, &next_data.packet); // [手順] - 後続 DATA でセッションを再採用する。
-    thread_recv_window_accept_outer(&slot, &next_data.packet, 0);            // [手順] - 後続 DATA を受信ウィンドウへ受理する。
+    const int data_state_changed = thread_recv_window_accept_outer(&slot, &next_data.packet, 0); // [手順] - 後続 DATA を受信ウィンドウへ受理する。
     potr_internal_notify_stop(&ctx);                                    // [手順] - 通知スレッドを停止して全イベントを回収する。
 
     // Assert_2
     EXPECT_EQ(1, adopted);        // [確認_正常系] - thread_recv_session_adopt() の戻り値が 1 であること。
+    EXPECT_EQ(0, data_state_changed); // [確認_正常系] - 通常 DATA では双方向 UDP の割り込み PING を要求しない。
     EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - potr_internal_notify_stop() で通知資源を回収すること。
     EXPECT_EQ(1, ctx.peer_session_known); // [確認_正常系] - ctx.peer_session_known が 1 であること。
     EXPECT_EQ(201U, ctx.recv_window.base_seq);
@@ -427,6 +508,35 @@ TEST_F(threadRecvWindowRejectTest, reject_then_new_data_readopts_session_and_del
     const auto connected_it = std::find(disconnected_it, events.end(), POTR_EVENT_CONNECTED);
     EXPECT_NE(events.end(), connected_it);
     // [確認_正常系] - DISCONNECTED 以降から POTR_EVENT_CONNECTED を探した std::find() の戻り値が events.end() 以外であること。
+}
+// [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]
+
+// 双方向 UDP の通知キュー超過で経路状態を未定義へ戻し、変化を返すことの確認
+// [サブ手順参照 名前=threadRecvWindowRejectTest.SetUp]
+TEST_F(threadRecvWindowRejectTest, queue_overflow_returns_path_state_change)
+{
+    // Arrange
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    const PackedDataFixture data = makePackedDataPacket(100U, 42U, 1000, 500, "overflow");
+    // [状態] - 現在の通番で受理する DATA と双方向 UDP の通信種別を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, thread_recv_slot_deliver_payload_elem(&slot, _))
+        .WillOnce([&](thread_recv_slot *recv_slot, const potr_packet *) { recv_slot->flow_overflow = 1; });
+    // [Pre-Assert確認_正常系] - DATA 配信時に通知キュー超過を設定する。
+    // [Pre-Assert手順] - slot のフロー超過フラグを設定する。
+
+    // Act
+    const int state_changed = thread_recv_window_accept_outer(&slot, &data.packet, 0); // [手順] - DATA を受信ウィンドウへ受理する。
+    potr_internal_notify_stop(&ctx); // [手順] - 通知スレッドを停止して全イベントを回収する。
+
+    // Assert
+    EXPECT_EQ(1, state_changed); // [確認_正常系] - 経路状態の変化を返す。
+    EXPECT_EQ(POTR_PING_STATE_UNDEFINED,
+              cplat_atomic_load_u8(&ctx.path_ping_state[0], CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_正常系] - path_ping_state[0] が UNDEFINED に戻る。
+    EXPECT_EQ(0, ctx.peer_session_known); // [確認_正常系] - 超過したセッション状態を破棄する。
+    EXPECT_EQ(nullptr, ctx.notifications); // [確認_正常系] - 通知資源を回収する。
 }
 // [サブ手順参照 名前=threadRecvWindowRejectTest.TearDown]
 

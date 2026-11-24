@@ -229,19 +229,20 @@ static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t 
     }
 
     {
-        int should_wake_health = thread_recv_dispatch_packet(&peer_slot, pkt, path_idx, sender_addr);
+        int state_changed = thread_recv_dispatch_packet(&peer_slot, pkt, path_idx, sender_addr);
 
-        if (peer->active && cplat_atomic_load_i32(&peer->tx_session.exhausted, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+        if (peer_slot.peer != NULL && peer_slot.peer->active &&
+            cplat_atomic_load_i32(&peer_slot.peer->tx_session.exhausted, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
-            thread_recv_disconnect_peer_all_paths(ctx, peer);
-            potr_internal_peer_free(ctx, peer);
+            potr_internal_peer_context *peer_to_free = peer_slot.peer;
+
+            thread_recv_disconnect_peer_all_paths(ctx, peer_to_free);
+            potr_internal_peer_free(ctx, peer_to_free);
+            peer_slot.peer = NULL;
         }
         cplat_local_lock_unlock(ctx->peers_mutex);
 
-        if (should_wake_health != 0)
-        {
-            potr_internal_health_thread_wake(ctx);
-        }
+        thread_recv_wake_udp_interrupt_ping(ctx, state_changed);
     }
 }
 
@@ -541,10 +542,13 @@ static void recv_thread_func(void *arg)
 
             /*
              * ── 受信者ロール: FIN / REJECT / DATA / PING を処理 ──
-             * 戻り値はヘルス チェック スレッドを起こす要否 (N:1 のときだけ 1) であり、1:1 では常に 0 のため、
-             * 戻り値は明示的に破棄する。
+             * 戻り値は双方向 UDP の経路状態が変わり、割り込み PING を検討するかどうかを表します。
              */
-            (void)thread_recv_dispatch_packet(&svc_slot, &pkt, i, &sender_addr);
+            {
+                int state_changed = thread_recv_dispatch_packet(&svc_slot, &pkt, i, &sender_addr);
+
+                thread_recv_wake_udp_interrupt_ping(ctx, state_changed);
+            }
         }
     }
 

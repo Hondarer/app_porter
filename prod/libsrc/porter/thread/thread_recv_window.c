@@ -285,11 +285,12 @@ static void raw_session_disconnect(thread_recv_slot *slot)
  * 新しい通信として採用しない。切断と接続の通知が繰り返されることを避けるためである。
  * last_recv_ts は送信側の生存を示すため維持する。
  */
-static void slot_flow_overflow_disconnect(thread_recv_slot *slot)
+static int slot_flow_overflow_disconnect(thread_recv_slot *slot)
 {
     potr_context *ctx = slot->ctx;
+    int state_changed = thread_recv_set_all_path_ping_states(slot->path_ping_state, POTR_MAX_PATH,
+                                                            POTR_PING_STATE_UNDEFINED);
 
-    thread_recv_set_all_path_ping_states(slot->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
     memset(slot->remote_path_ping_state, 0, POTR_MAX_PATH);
 
     if (slot->peer != NULL)
@@ -310,13 +311,17 @@ static void slot_flow_overflow_disconnect(thread_recv_slot *slot)
     *slot->reorder_pending = 0;
     *slot->peer_session_known = 0;
     slot->flow_overflow = 0;
+
+    return state_changed;
 }
 
-/* N:1 の pending FIN 発火で peer が解放された場合は 0、それ以外は 1 を返す。 */
-static int slot_drain_recv_window(thread_recv_slot *slot)
+/* pending FIN の発火で peer が解放された場合は 0、それ以外は 1 を返す。状態変化は別に出力する。 */
+static int slot_drain_recv_window(thread_recv_slot *slot, int *state_changed)
 {
     potr_context *ctx = slot->ctx;
     potr_packet pop_pkt;
+
+    *state_changed = 0;
 
     /* 先頭から通番が連続する受信済みパケットを順に取り出す。未着の通番に達した時点で停止する。 */
     while (potr_internal_window_recv_pop(slot->recv_window, &pop_pkt) == POTR_OK)
@@ -356,7 +361,7 @@ static int slot_drain_recv_window(thread_recv_slot *slot)
         /* 通知キューの容量を超えた場合は、残りの受信済みパケットを配信せずに切断する。 */
         if (slot->flow_overflow != 0)
         {
-            slot_flow_overflow_disconnect(slot);
+            *state_changed = slot_flow_overflow_disconnect(slot);
             return 1;
         }
 
@@ -463,13 +468,14 @@ static void slot_retransmit_or_reject(thread_recv_slot *slot, uint32_t ack_num)
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *pkt, int path_idx)
+int thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *pkt, int path_idx)
 {
     potr_context *ctx = slot->ctx;
     uint32_t nack_num;
     uint32_t stretch;
     int is_raw = is_raw_type(ctx->service.type);
     int push_ret;
+    int state_changed = 0;
 
     /* 受信ウィンドウへ投入する。 */
     push_ret = potr_internal_window_recv_push(slot->recv_window, pkt);
@@ -493,7 +499,7 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
                 POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
                            "recv[service_id=%" PRId64 "]: RAW window re-push failed seq=%u (bug)",
                            ctx->service.service_id, (unsigned)pkt->seq_num);
-                return;
+                return 0;
             }
         }
         else
@@ -522,7 +528,7 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
                 }
             }
 
-            return;
+            return 0;
         }
     }
 
@@ -561,7 +567,7 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
             {
                 POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv[service_id=%" PRId64 "]: RAW gap re-push failed seq=%u (bug)",
                            ctx->service.service_id, (unsigned)pkt->seq_num);
-                return;
+                return 0;
             }
         }
     }
@@ -589,9 +595,23 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
     }
 
     /* 整列済みのデータを配信する。N:1 で peer が解放された場合は slot を参照せずに戻る。 */
-    if (slot_drain_recv_window(slot) == 0)
     {
-        return;
+        int drain_state_changed = 0;
+
+        if (slot_drain_recv_window(slot, &drain_state_changed) == 0)
+        {
+            return 0;
+        }
+        state_changed |= drain_state_changed;
+    }
+
+    if (state_changed != 0)
+    {
+        if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR || ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1)
+        {
+            return 1;
+        }
+        return 0;
     }
 
     /*
@@ -608,12 +628,14 @@ void thread_recv_window_accept_outer(thread_recv_slot *slot, const potr_packet *
                    ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)nack_num);
         slot_send_nack(slot, nack_num);
     }
+
+    return 0;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
-void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt, int path_idx,
-                                  const cplat_ipv4_endpoint *sender)
+int thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt, int path_idx,
+                                 const cplat_ipv4_endpoint *sender)
 {
     potr_context *ctx = slot->ctx;
     uint32_t next_seq;
@@ -621,7 +643,7 @@ void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt
     /* RAW は NACK を送らないため、REJECT を受ける状況がない。 */
     if (is_raw_type(ctx->service.type))
     {
-        return;
+        return 0;
     }
 
     if (*slot->peer_session_known == 0)
@@ -629,12 +651,12 @@ void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "recv[service_id=%" PRId64 "]: peer=%u REJECT ignored seq=%u (session unknown)",
                    ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)pkt->ack_num);
-        return;
+        return 0;
     }
 
     if (thread_recv_session_adopt(slot, pkt) == 0)
     {
-        return;
+        return 0;
     }
 
     /*
@@ -648,7 +670,7 @@ void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt
         POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE,
                    "recv[service_id=%" PRId64 "]: peer=%u REJECT ignored seq=%u (next_seq=%u)",
                    ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)pkt->ack_num, (unsigned)next_seq);
-        return;
+        return 0;
     }
 
     thread_recv_learn_sender_path(slot, path_idx, sender);
@@ -670,16 +692,17 @@ void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt
     if (*slot->pending_fin != 0)
     {
         thread_recv_fin_fire(slot, *slot->fin_target_seq);
-        return;
+        return 0;
     }
 
     /*
      * 1 通番ずつのスキップでは大きく遅れた受信側が送信側の保持範囲へ追い付けない。
      * 全経路の切断を通知したうえで受信状態を破棄し、次に届く DATA または PING の通番で受信ウィンドウを再初期化する。
      * last_recv_ts は送信側の生存を示すため維持する。
-     * 結果は失敗ではなく経路の状態が変わったかを表し、この経路では割り込みの PING を送らないため、戻り値は明示的に破棄する。
+     * 戻り値は双方向 UDP で割り込み PING を要求するかどうかを表す。
      */
-    (void)thread_recv_set_all_path_ping_states(slot->path_ping_state, POTR_MAX_PATH, POTR_PING_STATE_UNDEFINED);
+    int state_changed = thread_recv_set_all_path_ping_states(slot->path_ping_state, POTR_MAX_PATH,
+                                                             POTR_PING_STATE_UNDEFINED);
     memset(slot->remote_path_ping_state, 0, POTR_MAX_PATH);
 
     if (slot->peer != NULL)
@@ -697,6 +720,14 @@ void thread_recv_window_on_reject(thread_recv_slot *slot, const potr_packet *pkt
     *slot->frag_compressed = 0;
     *slot->reorder_pending = 0;
     *slot->peer_session_known = 0;
+
+    if (state_changed != 0 && (ctx->service.type == POTR_TYPE_UNICAST_BIDIR ||
+                               ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1))
+    {
+        return 1;
+    }
+
+    return 0;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

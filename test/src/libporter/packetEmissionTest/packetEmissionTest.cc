@@ -669,20 +669,66 @@ TEST(packetEmissionTest, ping_adoption_triggers_initial_flow_control_notificatio
     ping_pkt.session_tv_nsec = 200;
     ping_pkt.session_id = 300U;
     ping_pkt.seq_num = 0U;
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic(_)).WillByDefault([](cplat_timespec *out) {
+        out->tv_sec = 10;
+        out->tv_nsec = 20;
+        return CPLAT_OK;
+    });
     ON_CALL(mock_porter, potr_internal_flow_control_refused(_, _, _, _)).WillByDefault(Return(0));
     // [状態] - 未採用の相手 (ts=600.200, id=300) から DATA より先に届く PING パケットを用意する。
     // Pre-Assert
     EXPECT_CALL(mock_porter,
                 potr_internal_flow_control_on_received(&ctx, POTR_PEER_NA, 300U, &ctx.peer_session_ts, 0U, 0, 0U))
-        .Times(1);
-    // [Pre-Assert確認_正常系] - PING で相手セッションを採用した時点で、data_packet=0 で最初の送出上限通知処理が 1 回呼び出されること。
+        .Times(2);
+    // [Pre-Assert確認_正常系] - 2 回の PING で data_packet=0 の送出上限通知処理を行うこと。
     // Act
     int actual_ret = thread_recv_dispatch_packet(&slot, &ping_pkt, 0, &sender);
     // [手順] - DATA より先に PING を受信ディスパッチへ渡す。
     // Assert
-    EXPECT_EQ(0, actual_ret);             // [確認_正常系] - PING の振り分けが正常終了すること。
+    EXPECT_EQ(1, actual_ret);             // [確認_正常系] - PING で経路状態が変わったことを返す。
     EXPECT_EQ(1, ctx.peer_session_known); // [確認_正常系] - 新しい相手のセッションが採用されること。
     EXPECT_EQ(300U, ctx.peer_session_id); // [確認_正常系] - 採用したセッション識別子が 300 であること。
+    EXPECT_EQ(POTR_PING_STATE_NORMAL,
+              cplat_atomic_load_u8(&ctx.path_ping_state[0], CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_正常系] - PING 受信で path_ping_state[0] が NORMAL になること。
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic(_)).WillByDefault(Return(CPLAT_ERR_UNKNOWN));
+    const int fatal_ret = thread_recv_dispatch_packet(&slot, &ping_pkt, 0, &sender);
+    // [手順] - 単調時計の失敗を発生させて、致命的エラー後に同じ PING を振り分ける。
+    EXPECT_EQ(0, fatal_ret); // [確認_異常系] - 致命的な PING 処理失敗を真偽値の 0 として返す。
+    EXPECT_EQ(POTR_ERR_IO, cplat_atomic_load_i32(&ctx.fatal_error, CPLAT_MEMORY_ORDER_RELAXED));
+    // [確認_異常系] - 致命的な失敗を ctx.fatal_error へ設定する。
     // Cleanup
     potr_internal_window_dispose(&ctx.recv_window);
+}
+
+// 双方向 UDP の起床ヘルパーが両通信種別だけを対象にすることの確認
+TEST(packetEmissionTest, udp_interrupt_ping_wake_targets_both_bidirectional_types)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    // Pre-Assert
+    ASSERT_EQ(CPLAT_OK, delegate_real_cplat_local_lock_create(&ctx.health_mutex[0]));
+    ASSERT_EQ(CPLAT_OK, delegate_real_cplat_condvar_create(&ctx.health_wakeup[0]));
+    cplat_atomic_store_i32(&ctx.health_running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
+    ON_CALL(mock_cplat, cplat_local_lock_lock(_)).WillByDefault(Return());
+    ON_CALL(mock_cplat, cplat_local_lock_unlock(_)).WillByDefault(Return());
+    EXPECT_CALL(mock_cplat, cplat_condvar_signal(ctx.health_wakeup[0])).Times(2);
+    // [Pre-Assert確認_正常系] - UDP 双方向 2 種別だけで health thread の条件変数へ通知すること。
+    // Act
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR;
+    thread_recv_wake_udp_interrupt_ping(&ctx, 1);
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1;
+    thread_recv_wake_udp_interrupt_ping(&ctx, 1);
+    ctx.service.type = POTR_TYPE_UNICAST;
+    thread_recv_wake_udp_interrupt_ping(&ctx, 1);
+    ctx.service.type = POTR_TYPE_TCP_BIDIR;
+    thread_recv_wake_udp_interrupt_ping(&ctx, 1);
+    thread_recv_wake_udp_interrupt_ping(&ctx, 0);
+    // [手順] - 対象の 2 種別、対象外の種別、状態変化なしでヘルパーを呼ぶ。
+    // Assert
+    SUCCEED();
+    delegate_real_cplat_condvar_dispose(ctx.health_wakeup[0]);
+    delegate_real_cplat_local_lock_dispose(ctx.health_mutex[0]);
 }

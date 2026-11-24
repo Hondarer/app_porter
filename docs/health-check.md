@@ -70,8 +70,9 @@ Table: PING ペイロードにおけるパス受信状態の値と定義
 - TCP PING 受信時: `POTR_PING_STATE_NORMAL` に設定します。
 - TCP PING タイムアウト時: `POTR_PING_STATE_ABNORMAL` に設定します。
 - セッション DISCONNECTED 発火時 / TCP 切断時: 全パスを `POTR_PING_STATE_UNDEFINED` にリセットします。
+- 双方向 UDP (type 7, 8) の有効な REJECT / 通知キューの容量超過時: 全パスを `POTR_PING_STATE_UNDEFINED` にリセットします。
 
-双方向系 (`UNICAST_BIDIR` / `UNICAST_BIDIR_N1` / `TCP` / `TCP_BIDIR`) では、これらの値が変化した時点で health スレッドを即時起床させ、次周期を待たずに割り込み PING を送出します。PING ペイロードには更新後の `path_ping_state[]` 全体が含まれるため、相手端は往復疎通状態の変化をより早く把握できます。
+双方向 UDP (type 7, 8) では、PING の受信、状態を変える有効な REJECT、通知キューの容量超過で `path_ping_state[]` が変わると health スレッドを起こし、更新後の状態を含む割り込み PING を送ります。状態が変わらない REJECT と FIN の発火では、この起床を要求しません。TCP の PING 受信、PING タイムアウト、切断には既存の TCP 用の経路を使います。
 
 ## 回線確立 (CONNECTED) 検出
 
@@ -129,7 +130,7 @@ Table: 片方向通信 (type 1-6) の接続状態別の実装
 |---|---|
 | CONNECTED 前 | `PING` は両端が送信します。`potr_service_send()` は `health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返します。受信側は `health_alive == 0` の間 `DATA` を配送しません。 |
 | CONNECTED 後 | `health_alive == 1` になり、`potr_service_send()` が成功します。受信側も `DATA` を配送します。 |
-| CONNECTED 解除 | `health_timeout_ms` 超過、`FIN` 受信、`REJECT` 受信で `health_alive == 0` に戻り、以後は再び CONNECTED 前と同じ扱いになります。 |
+| CONNECTED 解除 | `health_timeout_ms` 超過、`FIN` 受信、状態を変える `REJECT`、通知キューの容量超過で `health_alive == 0` に戻り、以後は再び CONNECTED 前と同じ扱いになります。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。 |
 
 Table: UNICAST_BIDIR (type 7) の接続状態別の実装
@@ -140,7 +141,7 @@ Table: UNICAST_BIDIR (type 7) の接続状態別の実装
 |---|---|
 | CONNECTED 前 | サーバー/クライアントとも `PING` を送信します。`peer_id` 指定送信は `peer->health_alive == 0` の間 `POTR_ERR_DISCONNECTED` を返します。`POTR_PEER_ALL` は接続済み peer が 0 件なら `POTR_ERR_DISCONNECTED` を返します。受信側は `peer->health_alive == 0` の間 `thread_recv_slot_deliver_payload_elem()` (`thread/thread_recv_slot.c`) で `DATA` を配送しません。未知 peer の初回 `DATA` では peer を生成せずに破棄し、初回 `PING` でのみ peer slot と session 状態を生成します。 |
 | CONNECTED 後 | 対象 peer の `health_alive == 1` になり、その peer に対する送受信が有効になります。 |
-| CONNECTED 解除 | ピア単位で `health_timeout_ms` 超過または `FIN` 受信時に `peer->health_alive == 0` となり、`potr_internal_peer_free()` でピアを削除します。以後はその peer を未接続として扱い、再接続は再度 `PING` 起点で行います。 |
+| CONNECTED 解除 | ピア単位で `health_timeout_ms` 超過、`FIN` 受信、状態を変える `REJECT`、通知キューの容量超過時に `peer->health_alive == 0` となります。`FIN` とタイムアウトでは `potr_internal_peer_free()` でピアを削除し、REJECT と容量超過では受信セッション状態を破棄します。以後はその peer を未接続として扱い、再接続は再度 `PING` 起点で行います。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。未知 peer の初回 `DATA` でも peer table は前進しません。 |
 
 Table: UNICAST_BIDIR_N1 (type 8) の接続状態別の実装

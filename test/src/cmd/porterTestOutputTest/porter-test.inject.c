@@ -60,6 +60,11 @@ void test_reset_tracer_started(void)
     s_tracer_started = 0;
 }
 
+void test_reset_tracer_screen(void)
+{
+    s_screen = NULL;
+}
+
 void test_do_close_handle(potr_context *handle, int64_t service_id)
 {
     porter_test_session session = {0};

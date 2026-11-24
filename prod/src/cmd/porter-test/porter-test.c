@@ -1277,7 +1277,7 @@ static void apply_burst_command(potr_context *handle, char *cursor)
  *  @brief          トレーサーの hook 設定と開始を一度だけ実施します。
  *
  *  しきい値は s_trace_level を参照するため、設定後の log コマンドによる変更も反映されます。\n
- *  hook の設定または開始に失敗した場合は、診断を出して開始済みとせず、呼び出し元へ通知しません
+ *  potr_tracer_get() が NULL を返した場合や hook の設定または開始に失敗した場合は、診断を出して開始済みとせず、呼び出し元へ通知しません
  *  (呼び出し元に取れる行動がないため)。開始に失敗した場合は、設定した hook を外します。
  *  hook が二重に登録されて表示が重複することを防ぎ、次の呼び出しで再び開始を試みるためです。\n
  *  診断の出力先は、s_screen が NULL の場合は標準エラー出力、それ以外は s_screen の標準エラー出力のチャネルです。
@@ -1295,6 +1295,19 @@ static void ensure_tracer_started(void)
 
     /* 診断の出力先がほかにないため、この関数の fprintf と cplat_pinned_prompt_printf の戻り値は明示的に破棄する。 */
     tracer = potr_tracer_get();
+    if (tracer == NULL)
+    {
+        if (s_screen == NULL)
+        {
+            (void)fprintf(stderr, "エラー: トレースの表示を開始できませんでした。\n");
+        }
+        else
+        {
+            (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                             "エラー: トレースの表示を開始できませんでした。\n");
+        }
+        return;
+    }
     hook_entry = cplat_tracer_set_hook(tracer, trace_console_hook, &s_trace_level);
     if (hook_entry == NULL)
     {

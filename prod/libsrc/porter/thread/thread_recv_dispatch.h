@@ -28,11 +28,12 @@
  *  @param[in,out]  pkt             認証済みパケット。NULL は許可しません。
  *  @param[in]      path_idx        受信した経路番号。
  *  @param[in]      sender          受信した送信元アドレス。NULL は許可しません。
- *  @return         N:1 で PING 受信状態が変化した場合は 1、それ以外は 0 を返します。
- *  @note           変化の有無を返す述語のため共通結果コードの適用対象外です。
+ *  @return         PING、REJECT、または受信通知キューの容量超過によって双方向 UDP の経路受信状態が変化した場合は 1、
+ *                  それ以外は 0 を返します。
+ *  @note           戻り値は状態変化の真偽値であり、共通結果コードと混用しません。
  *                  1:1 の FIN はセッション採用後に処理します。N:1 の FIN は採用せずに処理します。
  *                  NACK 再送は N:1 のみ行います。1:1 の NACK は呼び出し側の送信者処理が担当します。
- *                  戻り値 1 のときは、peers_mutex を解放してからヘルス チェック スレッドを起床してください。
+ *                  戻り値 1 のときは、peers_mutex を解放してから thread_recv_wake_udp_interrupt_ping() を呼んでください。
  *                  所有権は移動しません。N:1 では peers_mutex 保護下で呼び出してください。
  */
 int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int path_idx,
@@ -51,7 +52,8 @@ void thread_recv_apply_remote_path_ping_state(uint8_t *dst, const uint8_t *src, 
  * @brief UDP 双方向で、経路受信状態の変化に応じてヘルス チェック スレッドを起床します。
  * @param[in,out] ctx セッション コンテキスト。NULL は許可しません。
  * @param[in] state_changed 受信状態が変化した場合は 0 以外。
- * @note unicast_bidir 以外では何もしません。所有権は移動しません。
+ * @note state_changed は状態変化の真偽値であり、共通結果コードと混用しません。
+ * @note unicast_bidir / unicast_bidir_n1 以外では何もしません。所有権は移動しません。
  */
 void thread_recv_wake_udp_interrupt_ping(potr_context *ctx, int state_changed);
 

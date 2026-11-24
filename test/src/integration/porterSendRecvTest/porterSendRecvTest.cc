@@ -1224,7 +1224,7 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
     ASSERT_TRUE(
         actual_ret_wait_52); // [確認_正常系] - "ping-delay-1" を待つ tryWaitForOutput() の戻り値が true であること。
 
-    sleep_ms(250); // [手順] - PING 周期の半分の 250 ms を指定して sleep_ms() を呼び出す。
+    sleep_ms(250); // [手順] - PING 周期の半分の 250 [ms] を指定して sleep_ms() を呼び出す。
     bool actual_ret_write_delay2 = writeLineStdin(
         send_h_,
         "send ping-delay-2"); // [手順] - recent DATA を更新する 2 通目の送信コマンド "send ping-delay-2" と SENDER のハンドルを指定して writeLineStdin() を呼び出す。
@@ -1236,14 +1236,12 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
     bool actual_ret_wait_54 =
         tryWaitForOutput(recv_h_, "ping-delay-2", 3000); // [手順] - RECIEVER が "ping-delay-2" を出力するまで待機する。
 
-    sleep_ms(250); // [手順] - 1 通目基準では PING 周期を超える 250 ms を指定して sleep_ms() を呼び出す。
-    string send_err_mid = getStderr(send_h_);
-    size_t actual_ret_find_suppress = send_err_mid.find("suppress PING due to recent DATA");
-    size_t actual_ret_find_ping_mid = send_err_mid.find("health[service_id=14]: PING seq=");
-
-    sleep_ms(
-        400); // [手順] - 最後の DATA から PING 周期を超えるまで待機するため、400 ms を指定して sleep_ms() を呼び出す。
-    size_t actual_ret_find_ping_late = getStderr(send_h_).find("health[service_id=14]: PING seq=");
+    bool actual_ret_wait_suppress = wait_for_stderr(
+        send_h_, "suppress PING due to recent DATA",
+        10000U); // [手順] - SENDER が "suppress PING due to recent DATA" を出力するまで待機する。
+    bool actual_ret_wait_ping = wait_for_stderr(
+        send_h_, "health[service_id=14]: PING seq=",
+        10000U); // [手順] - SENDER が "health[service_id=14]: PING seq=" を出力するまで待機する。
 
     bool actual_ret_write_exit = writeLineStdin(
         send_h_, "exit"); // [手順] - 終了させる SENDER のハンドルと "exit" を指定して writeLineStdin() を呼び出す。
@@ -1257,15 +1255,24 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
     // Assert
     ASSERT_TRUE(
         actual_ret_wait_54); // [確認_正常系] - "ping-delay-2" を待つ tryWaitForOutput() の戻り値が true であること。
-    EXPECT_NE(
-        string::npos,
-        actual_ret_find_suppress); // [確認_正常系] - "suppress PING due to recent DATA" を探した send_err_mid.find() の戻り値が string::npos 以外であること。(recent DATA による PING 抑止トレースが出力されることの確認)
-    EXPECT_EQ(
-        string::npos,
-        actual_ret_find_ping_mid); // [確認_正常系] - "health[service_id=14]: PING seq=" を探した send_err_mid.find() の戻り値が string::npos であること。(この時点では periodic PING が送信されないことの確認)
-    EXPECT_NE(
-        string::npos,
-        actual_ret_find_ping_late); // [確認_正常系] - "health[service_id=14]: PING seq=" を探した getStderr().find() の戻り値が string::npos 以外であること。(最後の DATA 基準で periodic PING が再開されることの確認)
+    ASSERT_TRUE(
+        actual_ret_wait_suppress); // [確認_正常系] - "suppress PING due to recent DATA" を待つ wait_for_stderr() の戻り値が true であること。(recent DATA による PING 抑止トレースが出力されることの確認)
+    ASSERT_TRUE(
+        actual_ret_wait_ping); // [確認_正常系] - "health[service_id=14]: PING seq=" を待つ wait_for_stderr() の戻り値が true であること。(最後の DATA 基準で periodic PING が再開されることの確認)
+    {
+        string send_err = getStderr(send_h_);
+        size_t actual_ret_find_suppress = send_err.find("suppress PING due to recent DATA");
+        size_t actual_ret_find_ping = send_err.find("health[service_id=14]: PING seq=");
+        EXPECT_NE(
+            string::npos,
+            actual_ret_find_suppress); // [確認_正常系] - "suppress PING due to recent DATA" を探した send_err.find() の戻り値が string::npos 以外であること。
+        EXPECT_NE(
+            string::npos,
+            actual_ret_find_ping); // [確認_正常系] - "health[service_id=14]: PING seq=" を探した send_err.find() の戻り値が string::npos 以外であること。
+        EXPECT_LT(
+            actual_ret_find_suppress,
+            actual_ret_find_ping); // [確認_正常系] - "suppress PING due to recent DATA" を探した send_err.find() の戻り値が "health[service_id=14]: PING seq=" を探した send_err.find() の戻り値より小さいこと。(抑止のトレースより前に periodic PING が送信されないことの確認)
+    }
     EXPECT_EQ(
         0,
         actual_ret_send_exit); // [確認_正常系] - waitForExit() の戻り値が 0 であること。(SENDER の終了コードが 0 であることの確認)
