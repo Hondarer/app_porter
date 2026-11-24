@@ -114,7 +114,7 @@ TEST(potrRecvThreadTest, poll_timeout_calls_service_monitor)
                 return CPLAT_OK;
             });
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
-        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { slot->ctx = context; });
+        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { *slot = thread_recv_slot{}; slot->ctx = context; });
     ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
         .WillByDefault(
             [&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *)
@@ -167,7 +167,7 @@ TEST(potrRecvThreadTest, unicast_bidir_dispatch_change_wakes_health_thread)
             return CPLAT_OK;
         });
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
-        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { slot->ctx = context; });
+        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { *slot = thread_recv_slot{}; slot->ctx = context; });
     ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
         .WillByDefault([&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *) {
             poll_calls++;
@@ -231,7 +231,7 @@ TEST(potrRecvThreadTest, poll_timeout_calls_peer_monitor)
                 return CPLAT_OK;
             });
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
-        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { slot->ctx = context; });
+        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { *slot = thread_recv_slot{}; slot->ctx = context; });
     ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
         .WillByDefault(
             [&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *)
@@ -277,7 +277,7 @@ TEST(potrRecvThreadTest, multicast_sender_loop_calls_monitor_tick)
                 return CPLAT_OK;
             });
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
-        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { slot->ctx = context; });
+        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { *slot = thread_recv_slot{}; slot->ctx = context; });
     ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_)).WillByDefault([](uint64_t *out) {
         *out = 1000U;
         return CPLAT_OK;
@@ -328,7 +328,7 @@ TEST(potrRecvThreadTest, receiver_loop_does_not_call_monitor_tick)
                 return CPLAT_OK;
             });
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
-        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { slot->ctx = context; });
+        .WillByDefault([](thread_recv_slot *slot, potr_context *context) { *slot = thread_recv_slot{}; slot->ctx = context; });
     ON_CALL(mock_cplat, cplat_socket_timed_wait_readable_multi(_, _, _, _, _))
         .WillByDefault(
             [&](const cplat_socket *, size_t, int, unsigned char *ready, cplat_error *)
@@ -378,7 +378,7 @@ class potrRecvThreadTcpDataTest : public Test
                     return CPLAT_OK;
                 }); // [状態] - スレッド本体を捕捉し、同じスレッドで実行できるようにする。
         ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
-            .WillByDefault([](thread_recv_slot *slot, potr_context *context) { slot->ctx = context; });
+            .WillByDefault([](thread_recv_slot *slot, potr_context *context) { *slot = thread_recv_slot{}; slot->ctx = context; });
         ON_CALL(mock_porter, thread_recv_session_adopt(_, _)).WillByDefault(Return(1));
         ON_CALL(mock_porter, potr_internal_window_recv_push(&ctx.recv_window, _))
             .WillByDefault(Return(POTR_ERR_OUT_OF_WINDOW)); // [状態] - DATA が受信ウィンドウの範囲外となるものとする。
@@ -553,6 +553,7 @@ TEST_F(potrRecvThreadTcpDataTest, tcp_recv_data_calls_flow_control_on_received)
     ctx.peer_session_ts.tv_nsec = 600;
     ON_CALL(mock_porter, thread_recv_slot_init_ctx(_, _))
         .WillByDefault([](thread_recv_slot *slot, potr_context *context) {
+            *slot = thread_recv_slot{}; // 実関数と同じく、未設定のメンバーを 0 にする。
             slot->ctx = context;
             slot->peer_session_id = &context->peer_session_id;
             slot->peer_session_ts = &context->peer_session_ts;
