@@ -24,8 +24,9 @@ extern "C"
         const char *config_path;      /**< トレース表示に使う設定ファイル パス。 */
         potr_config_issue_fn on_issue; /**< 誤り通知コールバック。NULL 可。 */
         void *user_data;              /**< コールバックへ渡す利用者データ。 */
-        int trace_errors;             /**< 非 0 の場合、報告した誤りを ERROR トレースへ出力する。 */
         size_t issue_count;           /**< これまでに報告した誤りの累計件数。 */
+        int trace_errors;             /**< 非 0 の場合、報告した誤りを ERROR トレースへ出力する。 */
+        unsigned int pad;             /**< 明示的アラインメントです。0 を指定します。 */
     } potr_internal_config_reporter;
 
     /** RFC 6901 の JSON Pointer を保持する一時バッファーです。 */

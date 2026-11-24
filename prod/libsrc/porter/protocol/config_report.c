@@ -177,8 +177,9 @@ void potr_internal_config_reporter_init(potr_internal_config_reporter *reporter,
     reporter->config_path = (config_path != NULL) ? config_path : "(null)";
     reporter->on_issue = on_issue;
     reporter->user_data = user_data;
-    reporter->trace_errors = trace_errors;
     reporter->issue_count = 0U;
+    reporter->trace_errors = trace_errors;
+    reporter->pad = 0U;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */

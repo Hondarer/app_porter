@@ -85,6 +85,7 @@ typedef struct config_check_state
     int validate_ret;              /**< potr_config_validate_file() の戻り値。 */
     int record_oom;                /**< サービス配列の確保に失敗した場合に 1。 */
     int stdout_failed;             /**< 標準出力への書き込み・フラッシュに失敗した場合に 1。 */
+    unsigned int pad;              /**< 明示的アラインメントです。0 を指定します。 */
 } config_check_state;
 
 /**

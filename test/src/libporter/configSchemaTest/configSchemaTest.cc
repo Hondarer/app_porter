@@ -148,7 +148,8 @@ TEST(configSchemaTest, checksTypeConversionApplicabilityAndDefaults)
     EXPECT_EQ(0, potr_internal_config_path_key_is_applicable(POTR_CONFIG_PATH_GROUP, POTR_TYPE_BROADCAST_RAW));
     EXPECT_EQ(1, potr_internal_config_path_key_is_applicable(POTR_CONFIG_PATH_GROUP, POTR_TYPE_TCP_BIDIR));
     EXPECT_EQ(0, potr_internal_config_type_is_applicable((potr_type)0, UINT32_MAX));
-    EXPECT_EQ(0, potr_internal_config_type_is_applicable((potr_type)99, UINT32_MAX));
+    int invalid_type = 99;
+    EXPECT_EQ(0, potr_internal_config_type_is_applicable(static_cast<potr_type>(invalid_type), UINT32_MAX));
     // [確認_正常系] - 経路キー適用可否および範囲外通信種別が設計仕様の表と一致すること。
 
     EXPECT_EQ(64U, global.window_size);

@@ -300,6 +300,8 @@ TEST(configCheckTest, returnsInvalidArgumentForNullOrBadRole)
               potr_internal_config_check_service(&g, nullptr, POTR_CONFIG_ROLE_ALL, 0, 0, nullptr, "", 0, 0, nullptr));
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, potr_internal_config_check_all(nullptr, &s, POTR_ROLE_SENDER, nullptr));
     EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, potr_internal_config_check_all(&g, nullptr, POTR_ROLE_SENDER, nullptr));
-    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, potr_internal_config_check_all(&g, &s, (potr_role)99, nullptr));
+    int invalid_role = 99;
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT,
+              potr_internal_config_check_all(&g, &s, static_cast<potr_role>(invalid_role), nullptr));
     // [確認_異常系] - NULL 引数および未定義の役割で POTR_ERR_INVALID_ARGUMENT となること。
 }

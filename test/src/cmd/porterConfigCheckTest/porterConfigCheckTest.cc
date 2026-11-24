@@ -81,8 +81,9 @@ class TempDirGuard
 std::string replace_backslashes(const std::string &s)
 {
     std::string out;
-    for (unsigned char c : s)
+    for (char raw_c : s)
     {
+        unsigned char c = static_cast<unsigned char>(raw_c);
         if (c == '\\')
         {
             out += "\\\\";

@@ -981,8 +981,8 @@ static int decode_service_object(const cJSON *svc_obj, const potr_global_config 
             else /* POTR_CONFIG_PATH_GROUP */
             {
                 static const potr_internal_config_field_spec pg_spec = {
-                    0U, "path_group", POTR_CONFIG_VAL_U8, 1U, POTR_MAX_PATH_GROUP, 1U, 0, 1, 0U, POTR_CONFIG_AUTH_ANY,
-                    0U, "1..4"};
+                    0U, 0U, "path_group", POTR_CONFIG_VAL_U8, 1U, POTR_MAX_PATH_GROUP, 1U, 0, 1, 0U,
+                    POTR_CONFIG_AUTH_ANY, 0U, "1..4"};
                 uint32_t pg_val = 0U;
                 potr_config_issue_kind err_kind = POTR_CONFIG_ISSUE_INVALID_VALUE;
                 const char *err_msg = NULL;

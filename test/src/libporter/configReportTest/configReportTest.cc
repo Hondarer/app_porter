@@ -33,15 +33,16 @@ namespace
 {
 struct captured_issue
 {
-    potr_config_issue_kind kind;
-    int has_service_id;
     int64_t service_id;
     std::string key_path;
     std::string message;
-    bool has_expected;
     std::string expected;
+    potr_config_issue_kind kind;
+    int has_service_id;
     uint32_t line;
     uint32_t column;
+    bool has_expected;
+    unsigned char pad[7];
 };
 
 void capture_issue_cb(const potr_config_issue *issue, void *user_data)

@@ -21,8 +21,8 @@ extern "C"
     /** 段階 3 で誤りが見つかった項目を記録し、段階 4 の前提崩れ制約を省くためのビット集合です。 */
     typedef struct potr_internal_config_field_errors
     {
-        uint32_t global_mask;            /**< global 既知キー (GFIELD_*) の誤りビット。 */
         uint64_t service_mask;           /**< service 固定キー (SFIELD_*) の誤りビット。 */
+        uint32_t global_mask;            /**< global 既知キー (GFIELD_*) の誤りビット。 */
         uint8_t src_addr_mask;           /**< src_addr1..8 (bit 0..7) の誤りビット。 */
         uint8_t dst_addr_mask;           /**< dst_addr1..8 (bit 0..7) の誤りビット。 */
         uint8_t path_group_mask;         /**< path_group1..8 (bit 0..7) の誤りビット。 */

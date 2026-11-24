@@ -61,12 +61,6 @@ void capture_issue(const potr_config_issue *issue, void *user_data)
     cap->key_paths.emplace_back(issue->key_path != nullptr ? issue->key_path : "");
 }
 
-void capture_auth_file(const potr_config_file_ref *ref, void *user_data)
-{
-    validate_capture *cap = static_cast<validate_capture *>(user_data);
-    cap->auth_paths.emplace_back(ref->path != nullptr ? ref->path : "");
-}
-
 std::string write_temp_file(const std::string &name_hint, const std::string &bytes)
 {
     std::filesystem::path dir = std::filesystem::temp_directory_path();
@@ -365,13 +359,13 @@ TEST(configFileLoadTest, parityWithOpenAndConcurrentValidateAndListIds)
     // [確認_異常系] - validate_file の報告箇所と同じエラーが open_from_config の ERROR トレースへ記録されること。
 
     // 2) potr_config_validate_file() と potr_config_list_service_ids() の複数スレッド同時実行
-    constexpr int kThreads = 4;
+    constexpr size_t kThreads = 4U;
     std::vector<int> val_rets(kThreads, -1);
     std::vector<size_t> val_counts(kThreads, 0U);
     std::vector<int> list_rets(kThreads, -1);
     std::vector<size_t> list_counts(kThreads, 0U);
     std::vector<std::thread> threads;
-    for (int t = 0; t < kThreads; t++)
+    for (size_t t = 0U; t < kThreads; t++)
     {
         threads.emplace_back([&, t]() {
             potr_config_validate_options t_opts = {};
@@ -387,7 +381,7 @@ TEST(configFileLoadTest, parityWithOpenAndConcurrentValidateAndListIds)
     {
         th.join();
     }
-    for (int t = 0; t < kThreads; t++)
+    for (size_t t = 0U; t < kThreads; t++)
     {
         EXPECT_EQ(POTR_ERR_INVALID_CONFIG, val_rets[t]);
         EXPECT_EQ(1U, val_counts[t]);

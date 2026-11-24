@@ -37,10 +37,11 @@ namespace
 {
 struct doc_issue
 {
+    std::string message;
     potr_config_issue_kind kind;
     uint32_t line;
     uint32_t column;
-    std::string message;
+    unsigned int pad;
 };
 
 void on_doc_issue(const potr_config_issue *issue, void *user_data)

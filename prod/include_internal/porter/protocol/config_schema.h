@@ -127,6 +127,7 @@ extern "C"
     typedef struct potr_internal_config_field_spec
     {
         unsigned int id;                      /**< 項目識別子 (GFIELD_* または SFIELD_*)。 */
+        unsigned int pad;                     /**< 明示的アラインメントです。0 を指定します。 */
         const char *name;                     /**< JSON キー名。 */
         potr_internal_config_value_kind kind; /**< 型の種別。 */
         uint32_t min_val;                     /**< 数値項目の下限。 */
