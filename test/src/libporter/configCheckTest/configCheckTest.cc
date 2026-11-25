@@ -170,6 +170,54 @@ TEST(configCheckTest, validatesAllFlowControlRangesConstraintsAndReportsAllError
     // [確認_異常系] - 打ち切らずにすべての独立した値域・制約・役割依存誤りが一括報告されること。
 }
 
+// 待機時間の 5 項目の値域の上限が POTR_WAIT_MS_MAX であることの確認
+TEST(configCheckTest, limitsWaitTimeItemsToWaitMsMax)
+{
+    // Arrange
+    struct wait_item
+    {
+        const char *path;
+        void (*set)(potr_global_config *, potr_service_def *, uint32_t);
+    };
+    const wait_item items[] = {
+        {"/global/udp_health_timeout_ms",
+         [](potr_global_config *g, potr_service_def *, uint32_t v) { g->udp_health_timeout_ms = v; }},
+        {"/global/reorder_timeout_ms",
+         [](potr_global_config *g, potr_service_def *, uint32_t v) { g->reorder_timeout_ms = v; }},
+        {"/pack_wait_ms", [](potr_global_config *, potr_service_def *s, uint32_t v) { s->pack_wait_ms = v; }},
+        {"/health_timeout_ms", [](potr_global_config *, potr_service_def *s, uint32_t v) { s->health_timeout_ms = v; }},
+        {"/connect_timeout_ms",
+         [](potr_global_config *, potr_service_def *s, uint32_t v) { s->connect_timeout_ms = v; }},
+    };
+
+    for (const auto &item : items)
+    {
+        for (int over = 0; over < 2; ++over)
+        {
+            potr_global_config g;
+            potr_service_def s;
+            init_valid_unicast(&g, &s);
+            s.type = POTR_TYPE_TCP;
+            item.set(&g, &s, over == 0 ? POTR_WAIT_MS_MAX : POTR_WAIT_MS_MAX + 1U);
+            std::vector<check_issue> issues;
+            potr_internal_config_reporter reporter = {};
+            potr_internal_config_reporter_init(&reporter, "wait", collect_issue, &issues, 0);
+
+            // Pre-Assert
+
+            // Act
+            potr_internal_config_check_all(&g, &s, POTR_ROLE_SENDER, &reporter);
+            // [手順] - 待機時間の項目へ POTR_WAIT_MS_MAX または POTR_WAIT_MS_MAX + 1 を設定して検証する。
+
+            // Assert
+            EXPECT_EQ(over != 0, has_issue_path(issues, POTR_CONFIG_ISSUE_OUT_OF_RANGE, item.path))
+                << item.path << " over=" << over;
+            // [確認_正常系] - POTR_WAIT_MS_MAX が受理されること。
+            // [確認_異常系] - POTR_WAIT_MS_MAX + 1 が値域の誤りになること。
+        }
+    }
+}
+
 // 段階 3 で誤りが記録された項目を参照する段階 4 の制約 (余裕・しきい値など) が省略されることの確認
 TEST(configCheckTest, skipsDerivedConstraintsWhenPrerequisiteFieldHadStage3Error)
 {

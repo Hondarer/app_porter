@@ -76,11 +76,11 @@ Table: global オブジェクトの設定項目一覧
 | `max_message_size` | uint32 | `max_payload` 以上 (4,294,967,294 以下) | 65,535 | 1 回の potr_service_send で送信できる最大メッセージ長 (バイト) |
 | `send_queue_depth` | uint32 | 2〜4,294,967,294 | 1,024 | 非同期送信キューの最大エントリ数 |
 | `udp_health_interval_ms` | uint32 | 0〜2,147,483,646 | 3,000 | UDP 通信種別の PING 送信判定間隔 (ms)。0 で無効化。上限は種別と役割によらず検査します |
-| `udp_health_timeout_ms` | uint32 | 0〜4,294,967,294 | 10,000 | UDP 通信種別の受信タイムアウト (ms)。0 で無効化 |
+| `udp_health_timeout_ms` | uint32 | 0〜2,147,483,646 | 10,000 | UDP 通信種別の受信タイムアウト (ms)。0 で無効化 |
 | `tcp_health_interval_ms` | uint32 | 0〜2,147,483,646 | 10,000 | TCP 通信種別の定周期 PING 送信間隔 (ms)。上限は種別と役割によらず検査します |
 | `tcp_health_timeout_ms` | uint32 | 0〜715,827,882 | 31,000 | TCP 通信種別の PING 応答待機タイムアウト (ms)。RECEIVER の初回先読みは 3 倍を使用。上限は種別と役割によらず検査します |
 | `tcp_close_timeout_ms` | uint32 | 0〜2,147,483,646 | 5,000 | TCP 通信種別の close 全体の最大待機時間 (ms)。受付済み API の通信待機の回収、送信キューの排出、FIN の送信、FIN_ACK の待機で 1 つの絶対期限を共有します。0 は各待機を即座に打ち切ります。上限は種別と役割によらず検査します |
-| `reorder_timeout_ms` | uint32 | 0〜4,294,967,294 | 0 | 欠番検出後の NACK / DISCONNECTED 遅延時間 (ms) |
+| `reorder_timeout_ms` | uint32 | 0〜2,147,483,646 | 0 | 欠番検出後の NACK / DISCONNECTED 遅延時間 (ms) |
 | `flow_control_capacity` | uint32 | 0〜4,294,967,294 (0 は無効) | 0 | 受信側の通知キュー容量 (バイト)。`global` では `-1` 指定不可。0 以外では余裕が `max_message_size` 以上必要 |
 | `flow_control_suppress_percent` | uint32 | 0〜100 (0 は既定値) | 80 | 受信側が抑制を要求するしきい値 (%) |
 | `flow_control_resume_percent` | uint32 | 0〜99 (0 は既定値) | 50 | 受信側が解除するしきい値 (%)。実効値は `suppress_percent` 未満が必要 |
@@ -443,8 +443,8 @@ Table: 全通信種別共通のサービス設定項目
 | `path_group1` 〜 `path_group8` | uint8 | 省略可 | 各経路の優先グループ番号 (1〜4、既定値 `1`)。番号が小さいほど優先度が高い。範囲外の値は設定エラー |
 | `group_failback_ms` | uint32 | 省略可 | 上位グループの回復を判定するまでの時間 (ms、既定値 `0`)。`0` の場合は実効 `health_timeout_ms` と同じ値を使用 |
 | `health_interval_ms` | uint32 | 省略可 | グローバルの `udp_health_interval_ms` または `tcp_health_interval_ms` をサービス単位でオーバーライドします。値域は 0〜2,147,483,646 (0 はグローバル値を使用)。上限を超える場合、設定エラー (`POTR_ERR_INVALID_CONFIG`) を返します。 |
-| `health_timeout_ms`  | uint32 | 省略可 | グローバルの `udp_health_timeout_ms` または `tcp_health_timeout_ms` をサービス単位でオーバーライドします (0〜4,294,967,294、0 はグローバル値を使用)。 |
-| `pack_wait_ms` | uint32 | 省略可 | パッキング待機時間 (ミリ秒、0〜4,294,967,294)。0 で即時送信 |
+| `health_timeout_ms`  | uint32 | 省略可 | グローバルの `udp_health_timeout_ms` または `tcp_health_timeout_ms` をサービス単位でオーバーライドします (0〜2,147,483,646、0 はグローバル値を使用)。 |
+| `pack_wait_ms` | uint32 | 省略可 | パッキング待機時間 (ミリ秒、0〜2,147,483,646)。0 で即時送信 |
 | `auth` | 文字列 | 省略可 | 認証・暗号方式。`"psk"` (既定値、事前共有鍵方式) または `"cert"` (証明書方式) |
 | `encrypt_key` | 文字列 | 省略可 | `auth = "psk"` 時の AES-256-GCM 事前共有鍵。以下の 2 形式を受け付けます:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列 (`0-9`、`a-f`、`A-F`) で指定<br>**② パスフレーズ**: 64 文字のうち 1 文字でも 16 進数でない文字がある場合、および 64 文字以外の 1 文字以上の文字列はパスフレーズとして SHA-256 で 32 バイト鍵に変換します。省略時は暗号化なし、`auth = "cert"` では設定エラー |
 
@@ -561,7 +561,7 @@ Table: tcp および tcp_bidir 専用の設定項目
 | `src_addr1` | 文字列 | 省略可 | — | SENDER: ローカル bind アドレス (省略で自動選択)。RECEIVER: 接続元 IP フィルター (省略でフィルターなし) |
 | `src_port` | uint16 | 省略可 | 0 | SENDER: ローカル bind ポート (`0` または省略でエフェメラル)。RECEIVER: 接続元ポート フィルター (`0` または省略でフィルターなし) |
 | `reconnect_interval_ms` | uint32 | 省略可 | 5,000 | SENDER の自動再接続間隔 (ms)。`0` で自動再接続なし。RECEIVER では使用しない。上限は 2,147,483,646 で、役割によらず検査します。超える場合、設定エラー (`POTR_ERR_INVALID_CONFIG`) を返します。 |
-| `connect_timeout_ms` | uint32 | 省略可 | 10,000 | SENDER の TCP 接続タイムアウト (ms)。`0` で OS 既定値 (porter の期限を設けません)。RECEIVER では使用しない |
+| `connect_timeout_ms` | uint32 | 省略可 | 10,000 | SENDER の TCP 接続タイムアウト (ms)。`0` で OS 既定値 (porter の期限を設けません)。上限は 2,147,483,646 で、超える場合、設定エラー (`POTR_ERR_INVALID_CONFIG`) を返します。RECEIVER では使用しない |
 
 **tcp / tcp_bidir では誤りになるフィールド** (参照: 「通信種別と項目の対応」表)
 
