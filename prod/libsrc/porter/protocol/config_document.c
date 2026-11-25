@@ -303,7 +303,10 @@ int potr_internal_config_document_load(const char *config_path, potr_internal_co
         goto cleanup;
     }
 
-    /* cJSON_GetErrorPtr() はプロセスで共有する静的変数でありスレッド セーフでないため使用しない。 */
+    /*
+     * 構文の誤りの位置は、JSONC のラッパーが入力の先頭からの位置として error_offset に返す。
+     * cJSON_GetErrorPtr() は、ラッパーが解放した正規化済みの複製を指すため使用しない。
+     */
     root = cjson_app_cJSON_ParseJSONCWithLengthOpts(buf, used, &jsonc_status, &error_offset);
     if (jsonc_status == CJSON_APP_JSONC_OUT_OF_MEMORY)
     {

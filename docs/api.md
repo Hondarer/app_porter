@@ -94,14 +94,14 @@ Table: porter API のスレッド セーフ性一覧
 | API | スレッド セーフ | 備考 |
 |---|---|---|
 | `potr_service_open()` | はい | 複数スレッドから並行してハンドルを取得可 (低レベル API) |
-| `potr_service_open_from_config()` | はい (条件付き) | JSONC 解析は共通ロックを通る。cJSON 直接解析・`cJSON_GetErrorPtr()` 参照と並行実行しないこと |
+| `potr_service_open_from_config()` | はい (条件付き) | JSONC 解析はスレッドごとに独立した状態を使い、ほかの解析 (cJSON の直接解析を含む) と並行実行可。ロード後に `cJSON_InitHooks()` を呼ばないこと |
 | `potr_service_send()` | はい (条件付き) | 同一ハンドルへの並行送信、close との並行呼び出し可 |
 | `potr_service_close()` | はい (条件付き) | 受付済み操作と通知の完了を待つ。同一コールバック内からは拒否 |
 | `potr_peer_disconnect()` | はい (条件付き) | close との並行呼び出しと、コールバック内からの呼び出し可 |
 | `potr_tracer_get()` | はい | 生成失敗後は次の呼び出しで再試行し、成功後は同じ共有ハンドルを返す。NULL の場合は設定と開始を行わず、後で再取得する |
-| `potr_service_get_type()` | はい (条件付き) | JSONC 解析は共通ロックを通る。cJSON 直接解析・`cJSON_GetErrorPtr()` 参照と並行実行しないこと |
-| `potr_config_validate_file()` | はい (条件付き) | JSONC 解析は共通ロックを通る。各呼び出し内でコールバックを直列実行し、トレースへ出力しない。cJSON 直接解析・`cJSON_GetErrorPtr()` 参照と並行実行しないこと |
-| `potr_config_list_service_ids()` | はい (条件付き) | JSONC 解析は共通ロックを通る。cJSON 直接解析・`cJSON_GetErrorPtr()` 参照と並行実行しないこと |
+| `potr_service_get_type()` | はい (条件付き) | JSONC 解析はスレッドごとに独立した状態を使い、ほかの解析 (cJSON の直接解析を含む) と並行実行可。ロード後に `cJSON_InitHooks()` を呼ばないこと |
+| `potr_config_validate_file()` | はい (条件付き) | JSONC 解析はスレッドごとに独立した状態を使い、ほかの解析 (cJSON の直接解析を含む) と並行実行可。各呼び出し内でコールバックを直列実行し、トレースへ出力しない。ロード後に `cJSON_InitHooks()` を呼ばないこと |
+| `potr_config_list_service_ids()` | はい (条件付き) | JSONC 解析はスレッドごとに独立した状態を使い、ほかの解析 (cJSON の直接解析を含む) と並行実行可。ロード後に `cJSON_InitHooks()` を呼ばないこと |
 | `potr_config_service_ids_free()` | はい | 同じ配列を同時に解放しない場合。`potr_config_list_service_ids()` で確保した配列を解放する |
 
 通知はハンドルごとの専用スレッドで、登録順に直列実行します。  
