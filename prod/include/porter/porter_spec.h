@@ -368,7 +368,7 @@ extern "C"
      *  TCP 通信種別 (POTR_TYPE_TCP / POTR_TYPE_TCP_BIDIR) では、終了開始時に global 設定 tcp_close_timeout_ms
      *  から 1 つの絶対期限を決定し、受付済み API の通信待機の回収、送信キューの排出、protocol-level の
      *  POTR_FLAG_FIN 送信、および POTR_FLAG_FIN_ACK 待機で同じ期限を共有します (段階移行や再試行で期限を延長しません)。\n
-     *  既に相手端の正常な POTR_FLAG_FIN を受理済みの場合は FIN 送信と FIN_ACK 待機を行わず、
+     *  すでに相手端の正常な POTR_FLAG_FIN を受理済みの場合は FIN 送信と FIN_ACK 待機を行わず、
      *  相手 FIN 受理後にソケットへ書き込んだ DATA がなければ POTR_OK、あれば POTR_ERR_DISCONNECTED を返します。\n
      *  待機中に全 TCP パスが切断された場合はタイムアウトを待たずに復帰して
      *  (相手 FIN 受理済みなら受理後の DATA 送信がなければ POTR_OK・あれば POTR_ERR_DISCONNECTED、

@@ -45,9 +45,9 @@
  *  既定は POTR_SEND_BLOCKING を使わない送信で、POTR_ERR_FULL を受けた場合は 1 [ms] 待って送り直し、
  *  送り直した回数を数えます。-b を指定すると POTR_SEND_BLOCKING を使います。\n
  *  終わると、送信側は次の 1 行を表示します。\n
- *  `BURST_SENT sent=<n> expected=<n> full=<n> elapsed_ms=<n> bytes=<n> blocking=<0|1> result=<ok|full_timeout|interrupted|error=<code>>`\n
+ *  `BURST_SENT sent=<n> expected=<n> full=<n> elapsed_ms=<n> bytes=<n> blocking=<0|1> result=<ok|full_timeout|interrupted|error=<code>>` \n
  *  受信側は、最後のメッセージ (通し番号 = 総件数 - 1) を受けたとき、次の 1 行を表示します。\n
- *  `BURST_RESULT received=<n> expected=<n> out_of_order=<n>`\n
+ *  `BURST_RESULT received=<n> expected=<n> out_of_order=<n>` \n
  *  途中の経過は、1000 件ごとに `BURST_PROGRESS received=<n> expected=<n> out_of_order=<n>` で表示します。\n
  *  out_of_order は、期待した通し番号と一致しなかったメッセージの数です。
  *

@@ -81,7 +81,7 @@ typedef struct config_service_entry
 /** コールバック間で共有する実行状態です。 */
 typedef struct config_check_state
 {
-    const char *config_path;       /**< コマンドラインで受け取った設定ファイル パス。 */
+    const char *config_path;       /**< コマンド ラインで受け取った設定ファイル パス。 */
     config_service_entry *services; /**< サービス ID の登場順の記録配列。 */
     size_t service_count;          /**< 記録済みサービス数。 */
     size_t service_capacity;       /**< 確保済みサービス配列容量。 */
@@ -550,9 +550,9 @@ static void print_summary(config_check_state *state)
 }
 
 /**
- *  @brief          porter-config-check のエントリー ポイントです。
- *  @param[in]      argc  コマンドライン引数の数。
- *  @param[in]      argv  コマンドライン引数の配列。
+ *  @brief          porter-config-check のエントリ ポイントです。
+ *  @param[in]      argc  コマンド ライン引数の数。
+ *  @param[in]      argv  コマンド ライン引数の配列。
  *  @return         @ref EXIT_CODE_OK 、@ref EXIT_CODE_EXEC_FAILURE 、@ref EXIT_CODE_INVALID_CONFIG のいずれか。
  */
 int main(int argc, char *argv[])
