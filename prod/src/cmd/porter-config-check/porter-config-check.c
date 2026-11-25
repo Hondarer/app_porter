@@ -567,11 +567,16 @@ int main(int argc, char *argv[])
     config_check_state state;
     int exec_failed = 0;
 
-    cplat_argparser_init(
-        argc, argv,
-        "porter の設定ファイルを、サービスを開かずに検証します。\n"
-        "--check-files の相対パスは作業ディレクトリから解決するため、"
-        "サービスのプロセスと同じ作業ディレクトリで実行してください。");
+    if (cplat_argparser_init(argc, argv,
+                             "porter の設定ファイルを、サービスを開かずに検証します。\n"
+                             "--check-files の相対パスは作業ディレクトリから解決するため、"
+                             "サービスのプロセスと同じ作業ディレクトリで実行してください。") != CPLAT_OK)
+    {
+        /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "引数の解析の準備に失敗しました。\n");
+        (void)flush_stderr_ok();
+        return EXIT_CODE_EXEC_FAILURE;
+    }
 
     /* 登録の失敗は直後の cplat_argparser_get_register_error_count() でまとめて検査するため、戻り値は明示的に破棄する。 */
     (void)cplat_argparser_register_flag("-h", "--help", "使い方を表示して終了します。", &need_help);

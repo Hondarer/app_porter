@@ -387,3 +387,30 @@ TEST(porterConfigCheckTest, prioritizesExecutionFailuresOverConfigErrorExitCode)
     EXPECT_EQ(std::string::npos, out.find(": 1 error(s)\n"));
     EXPECT_NE(std::string::npos, err.find("POTR_ERR_OUT_OF_MEMORY"));
 }
+
+// 引数の解析の準備に失敗した場合に、診断を出して実行失敗の終了コード (1) を返すことの確認
+TEST(porterConfigCheckTest, returnsExecutionFailureWhenArgparserInitFails)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_stdio> mock_stdio;
+    std::string out;
+    std::string err;
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_argparser_init(_, _, _))
+        .WillOnce(Return(
+            CPLAT_ERR_OUT_OF_MEMORY)); // [Pre-Assert確認_異常系] - cplat_argparser_init() が 1 回呼び出されること。
+    // [Pre-Assert手順] - cplat_argparser_init() から CPLAT_ERR_OUT_OF_MEMORY を返す。
+
+    // Act
+    int rc = run_cli({"porter-config-check", "a.jsonc"}, &out,
+                     &err); // [手順] - 引数の解析の準備が失敗する状態で porter-config-check を実行する。
+
+    // Assert
+    EXPECT_EQ(1, rc); // [確認_異常系] - 終了コード 1 (実行失敗) を返すこと。
+    EXPECT_NE(
+        std::string::npos,
+        err.find("引数の解析の準備に失敗しました。")); // [確認_異常系] - 標準エラー出力に準備の失敗の診断が出ること。
+    EXPECT_TRUE(out.empty());                          // [確認_異常系] - 標準出力に何も出さないこと。
+}
