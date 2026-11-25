@@ -458,9 +458,12 @@ extern "C"
      *
      *  @par            スレッド セーフ
      *  本関数は条件付きスレッド セーフです。\n
-     *  JSONC の解析は共通ロックを通るため、設定の読み込み・検証・列挙の解析どうしは競合しません。\n
-     *  同じプロセスで cJSON を直接呼ぶ解析 (struct_meta_json_file_load() を含みます) と
-     *  cJSON_GetErrorPtr() の参照を同時に行わず、ロード後に cJSON_InitHooks() を解除・再差し替えしないでください。\n
+     *  JSONC の解析はスレッドごとに独立した状態を使うため、ほかの解析と並行に実行できます。
+     *  ほかの解析には、設定の読み込み・検証・列挙の解析と、同じプロセスで cJSON を直接呼ぶ解析
+     *  (struct_meta_json_file_load() を含みます) が含まれます。\n
+     *  この並行実行は、libcjson_app が同梱の cJSON 本体へ独自のパッチを当て、誤りの位置をスレッド ローカルにしていることに依存します。
+     *  パッチを当てていない cJSON とリンクした場合は成り立ちません。\n
+     *  ロード後に cJSON_InitHooks() を解除・再差し替えしないでください。\n
      *  入力と出力先を共有する場合の同期は、利用側が行います。
      */
     POTR_EXPORT extern int POTR_API potr_service_get_type(const char *config_path, int64_t service_id, potr_type *type);
@@ -518,9 +521,12 @@ extern "C"
      *
      *  @par            スレッド セーフ
      *  本関数は条件付きスレッド セーフです。\n
-     *  JSONC の解析は共通ロックを通るため、本関数および potr_config_list_service_ids() の解析どうしは競合しません。\n
-     *  同じプロセスで cJSON を直接呼ぶ解析 (struct_meta_json_file_load() を含みます) と
-     *  cJSON_GetErrorPtr() の参照を同時に行わず、ロード後に cJSON_InitHooks() を解除・再差し替えしないでください。\n
+     *  JSONC の解析はスレッドごとに独立した状態を使うため、ほかの解析と並行に実行できます。
+     *  ほかの解析には、設定の読み込み・検証・列挙の解析と、同じプロセスで cJSON を直接呼ぶ解析
+     *  (struct_meta_json_file_load() を含みます) が含まれます。\n
+     *  この並行実行は、libcjson_app が同梱の cJSON 本体へ独自のパッチを当て、誤りの位置をスレッド ローカルにしていることに依存します。
+     *  パッチを当てていない cJSON とリンクした場合は成り立ちません。\n
+     *  ロード後に cJSON_InitHooks() を解除・再差し替えしないでください。\n
      *  入力、出力先、コールバックの user_data を共有する場合の同期は、利用側が行います。\n
      *  コールバックは、本関数を呼んだスレッドで、本関数の復帰の前に呼ばれます。\n
      *  コールバックから porter の関数を呼べます。1 回の本関数の呼び出しの中では、コールバックは同時には呼ばれません。別のスレッドが本関数を同時に呼んだ場合は、それぞれの呼び出しのコールバックが並行して呼ばれます。
@@ -551,9 +557,12 @@ extern "C"
      *
      *  @par            スレッド セーフ
      *  本関数は条件付きスレッド セーフです。\n
-     *  JSONC の解析は共通ロックを通るため、本関数および potr_config_validate_file() の解析どうしは競合しません。\n
-     *  同じプロセスで cJSON を直接呼ぶ解析 (struct_meta_json_file_load() を含みます) と
-     *  cJSON_GetErrorPtr() の参照を同時に行わず、ロード後に cJSON_InitHooks() を解除・再差し替えしないでください。\n
+     *  JSONC の解析はスレッドごとに独立した状態を使うため、ほかの解析と並行に実行できます。
+     *  ほかの解析には、設定の読み込み・検証・列挙の解析と、同じプロセスで cJSON を直接呼ぶ解析
+     *  (struct_meta_json_file_load() を含みます) が含まれます。\n
+     *  この並行実行は、libcjson_app が同梱の cJSON 本体へ独自のパッチを当て、誤りの位置をスレッド ローカルにしていることに依存します。
+     *  パッチを当てていない cJSON とリンクした場合は成り立ちません。\n
+     *  ロード後に cJSON_InitHooks() を解除・再差し替えしないでください。\n
      *  入力と出力先を共有する場合の同期は、利用側が行います。
      */
     POTR_EXPORT extern int POTR_API potr_config_list_service_ids(const char *config_path, int64_t **ids,
