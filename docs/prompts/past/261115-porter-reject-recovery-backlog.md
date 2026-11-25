@@ -23,12 +23,12 @@
 
 ## 残課題一覧
 
+Table: 残課題一覧
+
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
 | BL-001 | TCP の送信ソケットに TCP_NODELAY がなく約 40[ms] の停止が生じる | 過去 backlog からの転記 | 中 | 解消 (継続案件 `porter-transport-performance-redo-20261117` で `TCP_NODELAY` とまとめ送りを実装し、2026-11-18 に cplat、porter、親リポジトリの `main` へ取り込んだ。[検討文書](261117-porter-transport-performance-redo-discussion.md)、[最終仕様](261117-porter-transport-performance-redo-design.md)) |
 | BL-002 | 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える | 過去 backlog からの転記 | 中 | 未対処 (原因は未特定で、製品改修は未着手。継続案件 `porter-transport-performance-redo-20261117` の対象外とし、BL-001 の完了後に別の案件で扱う。継続案件の [残課題一覧](261117-porter-transport-performance-redo-backlog.md) の BL-001 へ転記した) |
-
-Table: 残課題一覧
 
 ## BL-001 TCP の送信ソケットに TCP_NODELAY がなく約 40[ms] の停止が生じる
 

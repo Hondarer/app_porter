@@ -85,13 +85,13 @@ porter の設定は、送信側と受信側が同じサービス定義を読む�
 
 これに対し、マルチキャスト受信側だけは `src_addr1` から `src_addr8` を次の 3 つの用途に同時に使っています。
 
+Table: マルチキャスト受信側の src_addr の用途
+
 | 用途 | 期待する値 | 実装箇所 |
 | --- | --- | --- |
 | グループ参加に使う NIC | 受信側の自分の NIC の IP | [api_open_paths_udp.c](../../../prod/libsrc/porter/api/api_open_paths_udp.c#L271-L277)、離脱は [potr_service_close.c](../../../prod/libsrc/porter/api/potr_service_close.c#L504) |
 | 送信元 IP の照合 | 送信側の IP | [thread_recv_validate.c](../../../prod/libsrc/porter/thread/thread_recv_validate.c#L192-L203) |
 | NACK、受信報告、証明書認証の返送先 | 送信側の IP | [thread_recv_window.c](../../../prod/libsrc/porter/thread/thread_recv_window.c#L136)、[thread_recv_report.c](../../../prod/libsrc/porter/thread/thread_recv_report.c#L82)、[certificate.c](../../../prod/libsrc/porter/security/certificate.c#L732) |
-
-Table: マルチキャスト受信側の src_addr の用途
 
 1 つの値に「自分の NIC」と「相手の IP」を求めているため、送信側と受信側が別のホストにある場合は成立しません。成立するのは、同じホスト内で両者が同じ IP を使う場合 (ループバックの試験など) だけです。過去の Windows/WSL 試験で、送信元の照合で破棄されたことと整合します。仮に照合だけをやめても、NACK などは受信側の自分の NIC 宛てに送られるため、再送は成立しません。
 
@@ -545,12 +545,12 @@ A の選択を確認しました。`handleConcurrencyTest.cc` の `open_n1()` �
 }
 ```
 
+Table: Windows/WSL 相互接続 12 組み合わせの結果 (2026-11-18)
+
 | 認証 | unicast | unicast_bidir | unicast_bidir_n1 | tcp | tcp_bidir | multicast |
 | --- | --- | --- | --- | --- | --- | --- |
 | PSK | 成功 | 成功 (双方向) | 成功 | 成功 (2 回目) | 成功 (2 回目) | 成功 |
 | 証明書 | 成功 (2 回目) | 成功 (双方向) | 成功 | 成功 | 成功 | 成功 (2 回目) |
-
-Table: Windows/WSL 相互接続 12 組み合わせの結果 (2026-11-18)
 
 - 「2 回目」は、1 回目の `send` を sender が「未接続のため送信できません」で拒否し、1 秒後の送り直しで届いた組み合わせです。送り直しを入れる前の実行では、接続の確立前に送信した 5 件が同じ理由で失敗しました。これは試験スクリプトが送信を始める時機の問題で、接続の確立後の送信はすべて届いています。
 - 証明書の `unicast` と `multicast` では、receiver が起動の約 1 秒後に `certificate: authentication failed: handshake failed or peer rejected certificate` の警告を 1 回出し、その後に接続が確立しました。警告は sender の open の約 0.95 秒後で、最初の認証の試行が失敗し、再試行で成功したとみられます。原因は確認しておらず、残課題一覧の BL-004 に記録しました。

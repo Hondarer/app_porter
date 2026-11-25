@@ -22,14 +22,14 @@ P4/P5 の 5 回本測定は完了しました。Linux P4 では約 42[ms] の停
 実行開始時に読み取った HEAD は次のとおりです。  
 その後の Git の書き込みは行っていません。
 
+Table: 実行開始時の HEAD
+
 | リポジトリ | HEAD |
 | --- | --- |
 | 親 | `29d288df39039809c042bbd2d91fe62269c0598a` |
 | app/porter | `67574ec2754f16917ccff865d590e97efedeca52` |
 | app/cplat | `934657572d9c86c3b77472409bd04babbb262719` |
 | app/cjson | `f659af8219e36f4ddeecaa3689483e5615106cfc` |
-
-Table: 実行開始時の HEAD
 
 親の作業ツリーには、実行開始前から `app/porter` のサブモジュール差分と、未追跡の `framework/makefw` がありました。  
 2026-11-16 17:39 JST の再確認では、親は `m app/cplat`、`m app/porter`、`? framework/makefw` です。  
@@ -78,6 +78,8 @@ Windows と WSL のビルドは同時に実行していません。
 mock のヘッダー変更後、最初の `socketTest` は古い `libmock_cplat.lib` をリンクして失敗しました。  
 `make -C app/cplat/test/libsrc/mock_cplat` のあとで再実行し、成功しています。
 
+Table: レビュー修正前の Windows の make test
+
 | コマンド | 結果 |
 | --- | --- |
 | `make -C app/cplat/test/libsrc/mock_cplat` | 終了コード 0。ヘッダー依存で mock 全体を再コンパイル |
@@ -86,8 +88,6 @@ mock のヘッダー変更後、最初の `socketTest` は古い `libmock_cplat.
 | `make -C app/cplat/test/src/libcplatTest/exportTest test` | 2 件成功。エクスポート 535 件が期待表と一致 |
 | `make -C app/porter/test/src/libporter/threadConnectPrepareTest test` | 31 件成功、失敗 0、警告 0 |
 | `make -C app/porter/test/src/libporter/potrConnectThreadTest test` | 8 件成功、失敗 0、警告 0 |
-
-Table: レビュー修正前の Windows の make test
 
 この表は、負の `optval` と `optlen`、および失敗詳細の初期化を反映する前の `make test` です。  
 修正後の確認は、次の節の直接実行と 3 ケースのエビデンスです。
@@ -123,6 +123,8 @@ leaf は `app/cplat/test/src/libcplatTest/net/socketTest`、`app/cplat/test/src/
 
 直接実行は、既存のカバレッジと衝突しないよう `GCOV_PREFIX=/tmp/porter-bl001-gcov-20261116` を設定し、`--gtest_filter=*` で全ケースを対象にしました。
 
+Table: レビュー修正後のバイナリ直接実行
+
 | 実行ファイル | 直接実行 |
 | --- | --- |
 | Linux `socketTest` | 49 件成功、終了コード 0 |
@@ -132,8 +134,6 @@ leaf は `app/cplat/test/src/libcplatTest/net/socketTest`、`app/cplat/test/src/
 | Windows `socketTest` | 35 件成功、終了コード 0 |
 | Windows `threadConnectPrepareTest` | 31 件成功、終了コード 0 |
 | Windows `potrConnectThreadTest` | 8 件成功、終了コード 0 |
-
-Table: レビュー修正後のバイナリ直接実行
 
 Windows の `exportTest` は、この 3 leaf に含めていません。  
 前節の 2 件成功は、今回作り直した実行結果ではありません。
@@ -158,6 +158,8 @@ Linux の全件 `make test` は、ケースごとの後処理が 1 分を超え�
 
 各 OS で off/on 合計 36 条件の終了コードはすべて 0 です。各変種 18 個の CSV に 1〜5 の測定行があり、空の `.err` はありません。CSV の `min` / `median` / `max` 集計行は、以下の 5 回中央値の再計算から除外しました。測定ファイルは作業用複製の `results/windows/` と `results/linux/` に残しています。
 
+Table: P4 TCP close 遅延の 5 回中央値
+
 | OS | 変種 | close p50 [ms] | close p95 [ms] | close p99 [ms] |
 | --- | --- | ---: | ---: | ---: |
 | Windows | off | 1.290 | 15.656 | 16.353 |
@@ -165,11 +167,11 @@ Linux の全件 `make test` は、ケースごとの後処理が 1 分を超え�
 | Linux | off | 42.421 | 44.933 | 45.188 |
 | Linux | on | 0.614 | 1.098 | 1.346 |
 
-Table: P4 TCP close 遅延の 5 回中央値
-
 Linux P4 の p50 は 98.6%低下し、約 42[ms] の停止を確認できました。Windows の p50 は約 1.29[ms] で、40[ms] 級ではありません。Windows では p95 が 88.4%、p99 が 86.6%低下しました。
 
 P5 では 17 条件中、throughput が上がった条件は両 OS とも 13 条件でした。条件ごとの相対変化の中央値は Windows +4.9%、Linux +81.9%です。通知遅延 p99 が下がった条件は Windows 11/17、Linux 17/17 でした。代表条件は次のとおりです。
+
+Table: BL-001 適用前後の P5 代表条件
 
 | OS / 条件 | throughput [msg/s] off → on | API p99 [µs] off → on | notify p99 [µs] off → on |
 | --- | ---: | ---: | ---: |
@@ -182,8 +184,6 @@ P5 では 17 条件中、throughput が上がった条件は両 OS とも 13 条
 | Linux P5 5000[B] blocking 1T | 14,828 → 5,668 (-61.8%) | 189.3 → 257.9 (+36.2%) | 1,449.9 → 1,156.6 (-20.2%) |
 | Linux P5 5000[B] blocking 4T | 16,526 → 3,655 (-77.9%) | 1,174.5 → 1,379.5 (+17.5%) | 2,091.2 → 1,286.0 (-38.5%) |
 
-Table: BL-001 適用前後の P5 代表条件
-
 Linux の 5000[B] blocking throughput 低下は 1 スレッド、4 スレッドの両方で 5 回すべてに現れました。4 スレッドは各回およそ 3.3〜3.7 千 msg/s、off は 16〜17 千 msg/s でした。`TCP_NODELAY` による低遅延効果は確認できましたが、全 TCP ソケットで常時有効にする方針の受け入れは保留します。Windows P4 の条件全体の所要時間は off 454.0 秒、on 472.1 秒でした。close p95/p99 の改善とは別の指標として扱います。
 
 Linux の off/on ビルドでは、両方に `POTR_TRACE` 可変引数マクロの `-Wpedantic` 警告がありました。2 変種に共通する既存コード由来です。Windows 公式ビルドに内容のある `.warn` はありません。Linux の公式ビルド警告は一時ビルドの `build/linux/<off|on>/build.warn` にあります。
@@ -192,6 +192,8 @@ Linux の off/on ビルドでは、両方に `POTR_TRACE` 可変引数マクロ�
 
 Windows では P1 normal / compress、P2 ext / cb、P5 64[B] blocking の 5 条件を、通常版と wrap 版で各 5 回実行しました。CSV 検査は全条件 `status=ok` でしたが、これは記録形式と読み取りエラーがないことを示すだけで、CPU の関数別帰属が正しいことは示しません。
 
+Table: Windows wrap 計装による throughput の変化
+
 | Windows 条件 | throughput の変化 (通常版 → wrap) |
 | --- | ---: |
 | P1 64[B] normal 4T | 884,523 → 75,514 msg/s (-91.5%) |
@@ -199,8 +201,6 @@ Windows では P1 normal / compress、P2 ext / cb、P5 64[B] blocking の 5 条�
 | P2 ext 64[B] | 68,932 → 22,365 msg/s (-67.6%) |
 | P2 cb 64[B] | 82,097 → 25,899 msg/s (-68.5%) |
 | P5 64[B] blocking 4T | 69,395 → 29,421 msg/s (-57.6%) |
-
-Table: Windows wrap 計装による throughput の変化
 
 短い `cplat` 呼び出しごとに QPC と `GetThreadTimes` を呼ぶため、通常送信や通知を大きく遅くしました。さらに `GetThreadTimes` の非ゼロ CPU 差分は 15.625[ms] の倍数に量子化されており、数十 [µs] 級の区間へ CPU を帰属できません。実行中の 15.625[ms] の塊が、その時点で開いていた区間へ偏って記録されます。Grok 高推論レビューでも、CPU 列は元の実行の CPU 分布にも計装後の関数順位にも使えないと結論しました。Windows の wrap 結果は探索記録にとどめます。
 
@@ -238,12 +238,12 @@ BL-002 の製品改修は未着手です。既存 wrap 計測は両 OS とも原
 
 実行入口と設定は作業用複製に固定しました。Doxygen の後処理は未完了のまま停止し、その制約を記録した後、凍結スナップショットから測定しました。`manager-ready.txt` と Linux 用 marker は作業用複製内だけに置きました。
 
+Table: ベンチの固定入口
+
 | OS | ビルド | 実行 |
 | --- | --- | --- |
 | Windows | `bench\build-current.ps1` | `run-ab.ps1` の `-Variant off` または `on` |
 | Linux | `bench\build-linux.sh` | `run-ab-linux.sh` の `--variant off` または `on` |
-
-Table: ベンチの固定入口
 
 5 回の本測定は完了しています。公式結果は `results/<os>/<off|on>/` の CSV、`.out`、`.err` と `results/<os>/run-log.txt` にあります。  
 `BENCH_PORTER_OLD` は、今回の off と on のどちらにも定義していません。wrap プロファイルの成果物は `profile/results/<os>/` に分離しました。

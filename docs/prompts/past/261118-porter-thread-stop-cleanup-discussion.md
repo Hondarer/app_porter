@@ -73,6 +73,8 @@
 
 ### 停止関数の現状
 
+Table: 停止関数の現状
+
 | 関数 | 戻り値 | 失敗を返す条件 | join の後の処理 |
 | --- | --- | --- | --- |
 | `potr_internal_health_thread_stop()` | `int` | `ctx == NULL` | ハンドルと同期資源を `NULL` へ戻す |
@@ -83,11 +85,11 @@
 | `potr_internal_send_thread_stop()` | `void` | なし | ハンドルとロックを `NULL` へ戻す |
 | `potr_internal_connect_thread_stop()` | `void` | なし (`ctx == NULL` は無処理) | ハンドルを `NULL` へ戻す |
 
-Table: 停止関数の現状
-
 製品コードの呼び出し元は、どれも有効な `ctx` と、`0` から `n_path - 1` の `path_idx` を渡しています。このため、`int` を返す 5 つの関数が失敗を返す経路には、製品コードからは到達しません。
 
 ### 到達しない分岐
+
+Table: 到達しない分岐 (15 か所)
 
 | 箇所 | 内容 | 到達しない理由 |
 | --- | --- | --- |
@@ -102,8 +104,6 @@ Table: 停止関数の現状
 | `start_threads_udp()` (2 か所) | 送信スレッドの停止後の `api_context_has_threads()` | この経路で起動済みのスレッドは、直前に停止したものだけ |
 | 同 | `potr_internal_health_thread_stop()` の結果で戻る | 有効な `ctx` を渡している |
 | `potr_internal_connect_thread_stop()` | 従属スレッドの停止関数の結果で戻る。`send_thread != NULL` で戻る | 範囲内の `path_idx` を渡している。停止関数がハンドルを `NULL` へ戻す |
-
-Table: 到達しない分岐 (15 か所)
 
 `start_threads_udp()` の受信専用の経路 (`potr_internal_comm_recv_thread_start()` の失敗) では、スレッドは 1 つも起動していません。
 
@@ -476,14 +476,14 @@ A の選択を確認しました。エージェントが Windows で、WSL 側�
 
 [Q-003](#q-003-ハンドルの状態-close_failed-の扱い) の Context で、私は「公開ヘッダーと文書に、終了待ちの失敗の記述はない」という調査結果を前提にしました。この調査は「終了待ち」「join」という語だけで検索したもので、漏れがありました。「再試行」で検索し直すと、次の 4 か所に記述があります。
 
+Table: 終了の再試行の記述
+
 | 文書 | 記述 |
 | --- | --- |
 | 機能仕様 `docs/functional-spec/service.md` の「通知の順序と継続不能時の動作」 | 終了処理自体が失敗した場合は、通常操作を再開せず、終了を再試行できます。 |
 | 公開ヘッダー `prod/include/porter/porter_spec.h` の `potr_service_close()` | 停止失敗時は通常操作を拒否したまま close を再試行できます。 |
 | `docs/api.md` の「close と無効ハンドル」 | スレッド停止が失敗した場合は通常操作を拒否したまま、close による回収を再試行できます。 |
 | `docs/architecture.md` | スレッド停止の失敗時は資源を保持し、完了済みの段階を二重処理せず再試行します。 |
-
-Table: 終了の再試行の記述
 
 機能仕様の記述は本文の 1 文で、要件 ID の付いた要件の行ではありません。公開関数のシグネチャと戻り値の種類は変わりません。
 
@@ -538,6 +538,8 @@ A の選択を確認しました。4 か所の記述を削除し、状態 `CLOSE
 - 文書: 終了の再試行の記述を、機能仕様、公開ヘッダーのコメント、`docs/api.md`、`docs/architecture.md` から削除しました。`docs/architecture.md` には、最終仕様の表にない同じ趣旨の記述 (「終了待ちに失敗した場合は使用中の資源を保持し、停止完了として扱いません」) がもう 1 か所あり、あわせて直しました。`docs/coding-guideline.md` に小節「スレッドの停止関数」を追加しました。
 - テストと mock: 停止関数の mock 4 つを `void` にし、`api_context_has_threads()` の mock を削除しました。単体テスト 2 件 (`incomplete_join_retains_shared_resources`、`detects_finished_but_unjoined_thread`) を削除し、`potrHandleTest` の 1 件を `closed_value_is_not_reused` に直しました。
 
+Table: 局所検証の結果
+
 | 確認 | 結果 |
 | --- | --- |
 | Windows/MSVC の `app/porter` の `make test` | 成功。561 件すべて成功、所要 69 分、内容のある `.warn` なし |
@@ -545,7 +547,5 @@ A の選択を確認しました。4 か所の記述を削除し、状態 `CLOSE
 | `check_functional_spec.py` | 35 件の問題で失敗。すべて以前からの問題で、この案件の文書と変更による問題は 0 件。ユーザーの指示で残課題一覧の BL-001 へ記録 |
 | `text_style_jp.py --dry-run` (変更した Markdown) | 指摘なし |
 | 残存の確認 (`api_context_has_threads`、`CLOSE_FAILED`、終了の再試行の記述) | `docs/prompts` を除き 0 件 |
-
-Table: 局所検証の結果
 
 WSL の件数は、2026-11-17 の `main` の 566 件から 2 件減っています。削除した単体テスト 2 件の分です。

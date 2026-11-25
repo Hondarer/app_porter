@@ -73,6 +73,8 @@
 
 ## 観点別の確認
 
+Table: 観点別の確認
+
 | 観点 | 状態 | 根拠・関連 Q |
 | --- | --- | --- |
 | 目的・利用者 | 未解決 | [Q-001](261123-porter-remaining-backlog-phase2-discussion.md#q-001-この案件で対策する残課題の範囲) |
@@ -82,11 +84,11 @@
 | 実現性・例外 | 未解決 | [Q-002](261123-porter-remaining-backlog-phase2-discussion.md#q-002-windows-での確認の方法)、[Q-006](261123-porter-remaining-backlog-phase2-discussion.md#q-006-一括の送信で一部だけ送れた場合の残りの扱い) |
 | 受入条件・検証 | 未解決 | [Q-002](261123-porter-remaining-backlog-phase2-discussion.md#q-002-windows-での確認の方法)、[Q-005](261123-porter-remaining-backlog-phase2-discussion.md#q-005-bl-010-の性能の受入の基準) |
 
-Table: 観点別の確認
-
 ## 質問一覧
 
 各 Q の本文は検討用 Markdown にあります。
+
+Table: 質問一覧
 
 | Q-ID | 論点 | 状態 | 依存・関連 | 反映先の決定 |
 | --- | --- | --- | --- | --- |
@@ -97,8 +99,6 @@ Table: 観点別の確認
 | [Q-005](261123-porter-remaining-backlog-phase2-discussion.md#q-005-bl-010-の性能の受入の基準) | BL-010 の性能の受入の基準 | 未回答 | Q-003 | 未反映 |
 | [Q-006](261123-porter-remaining-backlog-phase2-discussion.md#q-006-一括の送信で一部だけ送れた場合の残りの扱い) | 一括の送信で、一部だけ送れた場合の残りの扱い | 未回答 | Q-003 | 未反映 |
 | [Q-007](261123-porter-remaining-backlog-phase2-discussion.md#q-007-サニタイザー-bl-009-の扱い) | サニタイザー (BL-009) の扱い | 未回答 | なし | 未反映 |
-
-Table: 質問一覧
 
 ## 対象成果物と合意版
 
@@ -114,12 +114,12 @@ Table: 質問一覧
 
 ## 経緯
 
+Table: 経緯
+
 | 日時 (JST) | 出来事 | 内容・参照先 |
 | --- | --- | --- |
 | 2026-11-23 12:36 | 案件の開始 | ユーザーの指示を受けて開始。対策元の残課題一覧の 10 項目を「検討中」へ更新 |
 | 2026-11-23 12:55 | 版 1 の提示 | 全体管理文書と検討用 Markdown (Q-001 から Q-007) を作成 |
-
-Table: 経緯
 
 ## 反映と検証の記録
 

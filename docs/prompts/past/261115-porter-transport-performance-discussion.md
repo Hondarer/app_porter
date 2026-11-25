@@ -58,6 +58,8 @@
 
 本調査および版 2 の完了確認で直接確認した一次資料と対象コードは次のとおりです。
 
+Table: 対象と参照資料一覧
+
 | 種別 | パス / 対象 | 主な確認内容 |
 | --- | --- | --- |
 | 元残課題 | `app/porter/docs/prompts/past/261115-porter-reject-recovery-backlog.md` | BL-001、BL-002 の起票内容と参考根拠 |
@@ -72,8 +74,6 @@
 | porter 通知・寿命 | `app/porter/prod/libsrc/porter/potr_handle.c`、`app/porter/prod/libsrc/porter/potr_notify.c`、`app/porter/prod/libsrc/porter/infra/potr_send_queue.c` | `s_mutex`/`entry->mutex`、通知ノード再利用、condvar 起床 |
 | porter 受信・終端 | `app/porter/prod/libsrc/porter/thread/potr_recv_thread.c`、`app/porter/prod/libsrc/porter/thread/thread_recv_slot.c`、`app/porter/prod/libsrc/porter/thread/thread_recv_fin.c`、`app/porter/prod/libsrc/porter/api/potr_service_close.c` | TCP FIN/FIN_ACK 経路、受信展開、N:1 の `peers_mutex` 保持 |
 | 公開契約定義 | `app/porter/prod/include/porter/porter_const.h`、`app/porter/prod/include/porter/porter_type.h`、`app/porter/prod/include/porter/porter_spec.h` | 設定構造体、フラグ定義、スレッド セーフ契約、戻り値規約 |
-
-Table: 対象と参照資料一覧
 
 ## ユーザー要求と前提の整理
 
@@ -122,6 +122,8 @@ Q-001〜Q-005 に対するユーザーの回答と `porter-reject-recovery` 完�
 
 ### 未検証の仮説と今後の確認要項
 
+Table: 仮説一覧と今後の確認要項
+
 | ID | 仮説の内容 | 未確認の前提 / 確認が必要な資料・計測 |
 | --- | --- | --- |
 | H-001 | Linux P4 (TCP close 約 43[ms]) と P5 (p99 約 42〜44[ms]) は、Nagle アルゴリズムと OS の遅延 ACK による約 40[ms] 停止である。 | Linux `tcp(7)`・カーネルの最小遅延 ACK 時間 (`TCP_DELACK_MIN` 等)、ループバックでのパケット時刻列 (`tcpdump` / `ss`)、Winsock の `TCP_NODELAY` と遅延 ACK 既定値に関する Microsoft Learn 公式資料。 |
@@ -129,8 +131,6 @@ Q-001〜Q-005 に対するユーザーの回答と `porter-reject-recovery` 完�
 | H-003 | BL-002 の圧縮 4 スレッド劣化 (Windows P5 で -72.3%、Linux P1 で -60.8%) は、毎回 65KiB 超の `cplat_malloc` / `cplat_secure_zero` / `cplat_free` によるヒープ競合とキャッシュ汚染が主因である。 | ETW/WPR (Windows) と `perf` (Linux) による送信・通知スレッド別 CPU 時間内訳、およびヒープ確保サイズ/再利用有無を変えた段階的 A/B 比較。 |
 | H-004 | 小メッセージ通常送信 (-23.6%〜-34.5%) と通知遅延増加 (+14〜+23[µs]) は、`potr_handle` ロック、`potr_send_queue` の無条件 `condvar` 通知、`notify_thread` 経由のコンテキスト スイッチの複合である。 | ロック競合待機時間、futex / CS 競合回数、`notify_p50` の区間分解 (API 出口→送信完了→通知キュー投入→コールバック入口)。 |
 | H-005 | Linux の N:1 外部スレッド返信劣化 (RTT 約 1.5 倍、件数 -31.3%) は、ベンチマーク側の中継キュー経費に加え、`potr_service_send()` のハンドル ロック、`send_queue` 通知、および `n1_handle_packet()` と `send_packed_peer_mode()` 間の `ctx->peers_mutex` 競合が寄与している。 | 外部スレッド返信経路での関数別プロファイルと、コールバック内返信 (`cb`) との区間別差分測定。 |
-
-Table: 仮説一覧と今後の確認要項
 
 > [!NOTE]
 > Linux の遅延 ACK タイマー既定値や Windows Winsock のループバックにおける遅延 ACK の細部については、公式 OS 資料の一次確認を完了するまで断定しません。  
@@ -151,13 +151,13 @@ Table: 仮説一覧と今後の確認要項
 
 ### TCP_NODELAY 採否の比較
 
+Table: TCP_NODELAY 採否の比較
+
 | 案 | 概要 | 利点 | 欠点 / リスク | 既存機能との整合 |
 | --- | --- | --- | --- | --- |
 | 案 A (推奨候補) | porter がデータ通信に使う確立済み TCP ソケットで `TCP_NODELAY` を常時有効化する | 小メッセージ、ブロッキング送信、制御パケット (`PING` / `FIN` / `FIN_ACK`)、P4 close の遅延を均一に解消できる。設定漏れが起きない。 | 小パケットが連続するときにワイヤー上のパケット数が増え得る。 | porter にはすでにアプリケーション層のバッチ機構 (`pack_wait_ms`) があり、まとめ送信の制御はプロトコル層で管理可能。 |
 | 案 B | 設定キー / 構造体フィールドを追加し、既定オンまたは既定オフで切り替え可能にする | 利用者が網環境 (低帯域 WAN 等) に応じて Nagle 併合を選択できる。 | 公開構造体 `potr_global_config` や `potr_service_def` の拡張・設定パーサー更新・API/ABI 契約変更が伴う。 | 現状 `pack_wait_ms` と役割が重複する部分があり、説明・テスト対象が増える。 |
 | 案 C | `TCP_NODELAY` を設定しない現状を維持する | コード変更がなく、パケット結合率は OS 既定のまま保たれる。 | Linux P4 close 約 43[ms] と P5 p99 約 42〜44[ms] の停止が解消されない。BL-002 の TCP 比較でも遅延のマスクが残り続ける。 | 低遅延用途や頻繁な接続断続に不向き。 |
-
-Table: TCP_NODELAY 採否の比較
 
 ### cplat と porter の責務分担
 
@@ -177,14 +177,14 @@ Table: TCP_NODELAY 採否の比較
 `porter` の TCP 接続ソケットは、役割と手順に応じて複数箇所で生成・受け入れされます。  
 どこに設定を置くべきかを整理します。
 
+Table: TCP 接続経路ごとの設定対象箇所
+
 | 場面 | コード位置 | 対象ソケットと留意点 |
 | --- | --- | --- |
 | RECEIVER listen 準備 | `api_open_paths_tcp.c` `open_socket_tcp_receiver()` | listen 用 `ctx->tcp_listen_sock[path_idx]` の生成箇所。`SO_REUSEADDR` はここで設定しています。listen 側での `TCP_NODELAY` が `accept()` 後ソケットへ継承されるかは OS ごとに公式資料で確認が必要であり、確実性を優先するなら `accept()` 後の接続ソケットへ明示設定する方が安全です。 |
 | RECEIVER accept 確立 (`TCP` / `TCP_BIDIR`) | `potr_connect_thread.c` `receiver_accept_loop()` | `cplat_socket_accept()` で得た接続ソケット `conn` (証明書ハンドシェイク前後〜`ctx->tcp_conn_fd[path_idx] = conn`)。マルチパスおよび再接続 (`receiver_accept_loop` のループ再試行) のたびに新しい `conn` が生成されるため、accept の都度設定する必要があります。 |
 | SENDER connect / 再接続 (`TCP` / `TCP_BIDIR`) | `thread_connect_prepare.c` `thread_connect_with_timeout()` (`potr_connect_thread.c` `sender_connect_loop()` から呼出) | `cplat_socket_open(CPLAT_SOCKET_TCP, &sock, &detail)` 後に `connect` を実施します。再接続ループごとに呼び直されるため、ここで設定すれば初回接続・自動再接続・マルチパスの全パスを網羅できます。証明書 TLS ハンドシェイク前に設定すれば、ハンドシェイク中の小さなレコード交換にも有効です。 |
 | `TCP_BIDIR` 双方向通信 | 上記 SENDER 側と RECEIVER 側の双方 | `TCP_BIDIR` では SENDER 側と RECEIVER 側の双方が送信スレッド・ヘルス スレッド・FIN_ACK 送出を持ちます。したがって `connect` 側と `accept` 側の双方に設定しないと片方向で遅延が残ります。 |
-
-Table: TCP 接続経路ごとの設定対象箇所
 
 設定に失敗した場合の方針は次の 2 案を比較します。
 
@@ -198,6 +198,8 @@ Table: TCP 接続経路ごとの設定対象箇所
 `261115-porter-reject-recovery-backlog.md` の BL-002 は、現行版において非ブロッキング小メッセージ (-23.6%〜-34.5%)、圧縮 4 スレッド (-26.5%〜-72.3%、通知遅延 p99 最大約 8 倍)、Linux N:1 外部返信 (RTT 約 1.5 倍、件数 -31.3%) が悪化した現象です。  
 コード確認により特定したプロファイル対象と候補改善軸は次の 6 点です。
 
+Table: BL-002 のコード確認済みプロファイル対象一覧
+
 | No. | 調査対象レイヤー | コードで確認した重い処理 / 競合箇所 | 確認したい計測指標と改善仮説の方向性 |
 | --- | --- | --- | --- |
 | 1 | 確保と零クリア | `potr_service_send.c` が圧縮送信ごとに `ctx->compress_buf_size` (既定 65KiB 超) を `cplat_malloc` し、最後に全量を `cplat_secure_zero` + `cplat_free` しています。`potr_notify.c` も配送後に `cplat_secure_zero(node + 1, node->bytes)` を呼びます。 | 送信スレッド別のアロケーター時間とページ フォルト回数。入力長相応の必要量確保・スレッド ローカル/プール再利用・秘密データ該当範囲の見直しによる削減効果を検証。 |
@@ -206,8 +208,6 @@ Table: TCP 接続経路ごとの設定対象箇所
 | 4 | 送信キューの無条件起床 | `potr_send_queue.c` が `push_locked()` で毎件 `cplat_condvar_signal(q->not_empty)`、`complete_locked()` で毎回 `cplat_condvar_broadcast(q->progress)` と `cplat_condvar_signal(q->not_full)` を呼んでいます。 | カーネル システム コール回数 (`WakeConditionVariable` / `futex`)。待機者フラグやキュー状態 (空→非空、満杯→空き、ブロッキング待機あり) に応じた条件付き起床による効果を切り分け。 |
 | 5 | ハンドル寿命管理ロック | `potr_handle.c` が 1 回の送信ごとにグローバル `s_mutex` と `entry->mutex` の取得・解放を計 3 回 (呼び出しあたり実質 6 ロック操作) 実行します。 | 4 スレッド 85 万 msg/s 級での `s_mutex` 競合率。参照カウントと世代タグを組み合わせた読み取り経路のロック軽量化 (安全性不変が前提) の要否を判定。 |
 | 6 | N:1 外部スレッド返信 | `send_packed_peer_mode()` がバッチごとに `ctx->peers_mutex` を 2 度取得し、暗号封緘と `cplat_socket_sendto()` の間も保持します。受信側 `n1_handle_packet()` も通知エンキューまで `ctx->peers_mutex` を保持します。 | Linux P2 (`ext` vs `cb`) で `peers_mutex` の競合、送信スレッドと受信スレッドの相互ブロッキング時間、`potr_service_send()` 再入コストの内訳を計測。 |
-
-Table: BL-002 のコード確認済みプロファイル対象一覧
 
 ### BL-001 の影響を揃えた BL-002 比較の方法
 
@@ -236,6 +236,8 @@ Linux の P5 (TCP) では BL-001 による約 40[ms] の停止が支配的であ
 
 `261115-porter-handle-lifecycle-perf-validation.md` で確認済みの比較不能・不安定条件は、本計画でも次のように切り分けて扱います。
 
+Table: 比較不能条件と過負荷条件の取り扱い方針
+
 | 条件 | 事象 (検証記録より) | 本計画での扱い |
 | --- | --- | --- |
 | 改修前版 Windows P5 5000B・圧縮なし 4 条件 | 改修前版の既存不具合 (`send buffer full, packet skipped`) により完了しない。 | 改修前版との比較対象から除外し、現行版 (または BL-001 適用後) を基準にした改善前後比較だけで評価します。 |
@@ -243,8 +245,6 @@ Linux の P5 (TCP) では BL-001 による約 40[ms] の停止が支配的であ
 | P1 5000B・通常・4 スレッド (UDP 過負荷) | Linux UDP 受信バッファー (212,992 バイト) を大きく上回り、既定負荷は 900 秒超過で打ち切り、縮小負荷でも処理件数が 2 桁以上ばらつく。 | 定常スループットの合否判定対象外 (過負荷・欠落回復観測専用の参考条件) とします。通常評価はバッファーあふれを起こさない範囲 (64B、圧縮 5000B、ブロッキング等) で比較します。 |
 | P3 低速コールバック (Windows) | 親案件 `porter-reject-recovery` で修正対象の受信ウィンドウ停止が 5 回中 4 回発生していた。 | 親案件での修正取り込み前後は比較不能となるため、テスト・計測前に親案件差分の取り込み状態を明記して実施します。 |
 | 同一物理マシン / WSL2 NAT 制約 | Windows と Linux (WSL2) が CPU とキャッシュを共有する。 | これまでと同様に OS ごとに交互実行し、単一タイムスタンプの絶対値比較ではなく同一 OS 内での A/B 差分で評価します。 |
-
-Table: 比較不能条件と過負荷条件の取り扱い方針
 
 ### 公開契約安全性と受入条件案
 
@@ -280,6 +280,8 @@ Table: 比較不能条件と過負荷条件の取り扱い方針
 
 ## 観点別の確認
 
+Table: 観点別の確認一覧
+
 | 観点 | 状態 | 確認状況 / 内容 | 関連質問 |
 | --- | --- | --- | --- |
 | 目的とスコープ | 確認済み | BL-001 と BL-002 の段階的調査・対処計画 (`design.md`) の作成までを今回範囲とし、BL-002 実装設計と数値目標は計測後の別判断とする。 | [Q-004](#q-004-bl-002-の原因特定と改善着手の進め方はどうしますか)、[Q-005](#q-005-進行中の-porter-reject-recovery-案件と測定ベースライン新規課題はどう扱いますか) |
@@ -292,9 +294,9 @@ Table: 比較不能条件と過負荷条件の取り扱い方針
 | BL-001 性能トレードオフ | 合意済み | Q-006 A により常時適用を維持し、測定した Linux 大容量 blocking 送信の throughput 低下を受容します。 | [Q-006](#q-006-bl-001-の-tcp_nodelay-常時適用と測定済み性能低下をどう扱いますか) |
 | BL-002 プロファイル方式 | 合意済み | Q-007 B により、一時ビルドで低負荷サンプリング方式を設計し、計測影響と関数帰属を小規模に検証します。 | [Q-007](#q-007-bl-002-の低負荷サンプリング方式をどう検証しますか) |
 
-Table: 観点別の確認一覧
-
 ## 質問一覧
+
+Table: 質問一覧
 
 | ID | 質問概要 | 状態 |
 | --- | --- | --- |
@@ -305,8 +307,6 @@ Table: 観点別の確認一覧
 | [Q-005](#q-005-進行中の-porter-reject-recovery-案件と測定ベースライン新規課題はどう扱いますか) | 進行中の `porter-reject-recovery` 案件と測定ベースライン・新規課題はどう扱いますか。 | 解決済み (B: 完了確認により凍結条件満了) |
 | [Q-006](#q-006-bl-001-の-tcp_nodelay-常時適用と測定済み性能低下をどう扱いますか) | 測定済み throughput 低下を踏まえた常時適用方針をどうしますか。 | 解決済み (A) |
 | [Q-007](#q-007-bl-002-の低負荷サンプリング方式をどう検証しますか) | BL-002 の次のプロファイル方式をどう検証しますか。 | 解決済み (B) |
-
-Table: 質問一覧
 
 ## 明確化のための確認項目
 
@@ -562,6 +562,8 @@ Table: 質問一覧
 
 ## 版 1/2 の反映と検証の記録
 
+Table: 反映と検証の記録
+
 | 項目 | 実施内容 | 結果 / メモ |
 | --- | --- | --- |
 | コード・文書調査 (版 1) | `cplat` ソケット、TCP 接続・終端、送信・圧縮、ハンドル・通知・送信キュー、P1〜P5 検証記録、進行中案件を確認 | 事実と仮説を分離して本文へ記録済み |
@@ -570,9 +572,9 @@ Table: 質問一覧
 | `text_style_jp.py` | 変更 3 ファイルに対し `--dry-run` 確認後に `--in-place` を適用 | 適用結果を最終検証後に確認 |
 | ビルド・テスト・測定 | 本依頼の制約により未実施 | 対象外 (計画策定のみ) |
 
-Table: 反映と検証の記録
-
 ## 版 3〜6 の実行と中断記録
+
+Table: 版 3〜6 の実行と中断記録
 
 | 項目 | 実施内容 | 結果 / メモ |
 | --- | --- | --- |
@@ -581,5 +583,3 @@ Table: 反映と検証の記録
 | wrap プロファイル実行可能性 (版 5) | Windows と Linux で計装影響・CPU 計数を確認 | 関数別 CPU 寄与率の根拠としては不成立 |
 | Q-006/Q-007 回答 (版 6) | Q-006 A、Q-007 B を受領し、この検討文書と対策元 backlog を更新 | BL-001 の trade-off は受容済み。BL-002 は低負荷 pilot を合意 |
 | 一時中断 | ユーザー指示で Grok pilot セッションを停止し、一時作業領域を確認 | `profile/pilot/` はなく、pilot 用ソース、ビルド、測定は未着手。WBS 項目 12 から再開 |
-
-Table: 版 3〜6 の実行と中断記録

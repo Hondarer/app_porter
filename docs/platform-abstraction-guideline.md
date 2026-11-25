@@ -36,6 +36,8 @@ porter は通信に `cplat` の `net` カテゴリを使用し、OS のソケッ
 
 ## 移行前との対応
 
+Table: porter から cplat への型および関数対応表
+
 | 移行前 (porter) | 移行後 (cplat) |
 |---|---|
 | `PotrSocket` | `cplat_socket` |
@@ -45,8 +47,6 @@ porter は通信に `cplat` の `net` カテゴリを使用し、OS のソケッ
 | `potr_socket_cause_t` / `POTR_SOCKET_CAUSE_*` | `cplat_error_cause` / `CPLAT_CAUSE_*` |
 | `potr_socket_error_is()` | `cplat_error_is()` |
 | `potr_socket_lib_init()` / `potr_socket_lib_cleanup()` | 削除 (`cplat/net` が内部で初期化) |
-
-Table: porter から cplat への型および関数対応表
 
 ## コンパイラ依存の分岐
 

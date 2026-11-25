@@ -27,6 +27,8 @@ porter は、`AES-256-GCM` による **ペイロードの機密性**、**72 バ�
 
 ### 事前共有鍵方式 (auth = "psk") と証明書方式 (auth = "cert")
 
+Table: 認証・暗号化方式ごとのセキュリティ特性比較
+
 | 項目 | `auth = "psk"` (事前共有鍵方式) | `auth = "cert"` (証明書方式) |
 |---|---|---|
 | 鍵の指定・確立 | 設定ファイルの `encrypt_key` (64 文字 hex または SHA-256 passphrase) | DTLS 1.2 (UDP) / TLS 1.3 (TCP) ハンドシェイク (`POTR_FLAG_HANDSHAKE`) |
@@ -35,8 +37,6 @@ porter は、`AES-256-GCM` による **ペイロードの機密性**、**72 バ�
 | 鍵の導出 | — | RFC 5705 / RFC 8446 7.5 節 (`EXPORTER-porter-v2`、両端のセッション識別子) で方向別に 32 バイト鍵を導出 |
 | 一対多 (`multicast` / `broadcast`) | 全受信者が同一 `encrypt_key` を使用 | 受信者ごとに個別ハンドシェイク後、送信者が `POTR_FLAG_KEY` でグループ鍵を配布 |
 | 認証前のパケット | — | ハンドシェイク完了まで `POTR_FLAG_HANDSHAKE` 以外のパケットを破棄し、状態を変更しない |
-
-Table: 認証・暗号化方式ごとのセキュリティ特性比較
 
 ### セッション識別と N:1 モードのピア識別
 

@@ -12,12 +12,12 @@ TCP ポートを待ち受け、接続ごとに別プロセスで処理を行う�
 
 本ドキュメントでは以下の 2 つのモデルを Linux と Windows それぞれで実装します。
 
+Table: TCP サーバーのプロセス モデルと特徴
+
 | モデル | 特徴 |
 |--------|------|
 | 接続ごとに fork | 接続を受け付けるたびに新しいプロセスを生成 |
 | プリフォーク | 事前に N 個のワーカー プロセスを起動しておく |
-
-Table: TCP サーバーのプロセス モデルと特徴
 
 ## コマンド ライン インターフェイス
 
@@ -25,14 +25,14 @@ Table: TCP サーバーのプロセス モデルと特徴
 tcpServer [--mode fork|prefork] [--port <num>] [--workers <num>] [--conns-per-worker <num>]
 ```
 
+Table: tcpServer のコマンド ライン引数一覧
+
 | 引数 | デフォルト | 説明 |
 |------|-----------|------|
 | `--mode` | `prefork` | `fork` = 接続ごと生成、`prefork` = 事前生成 |
 | `--port` | `8080` | 待ち受けポート番号 |
 | `--workers` | `4` | prefork 時のワーカー数 |
 | `--conns-per-worker` | `1` | prefork 時の 1 ワーカーあたり同時接続数。1 の場合は逐次処理、2 以上の場合はイベント駆動型の多重処理 |
-
-Table: tcpServer のコマンド ライン引数一覧
 
 ## ファイル構成
 
@@ -175,6 +175,8 @@ Windows では `fork()` がないため、親プロセスが `accept()` を行�
 
 ### Linux (tcpServer_linux.c)
 
+Table: Linux 版 tcpServer の主要関数一覧
+
 | 関数 | 説明 |
 |------|------|
 | `sigchld_handler()` | ゾンビ プロセスの回収 |
@@ -187,9 +189,9 @@ Windows では `fork()` がないため、親プロセスが `accept()` を行�
 | `run_fork_server(port)` | accept → fork ループ |
 | `run_prefork_server(port, n, conns_per_worker)` | n ワーカー生成 + pause + SIGTERM |
 
-Table: Linux 版 tcpServer の主要関数一覧
-
 ### Windows (tcpServer_windows.c)
+
+Table: Windows 版 tcpServer の主要関数一覧
 
 | 関数 | 説明 |
 |------|------|
@@ -205,8 +207,6 @@ Table: Linux 版 tcpServer の主要関数一覧
 | `run_fork_server(port)` | accept + CreateProcess(`--child`) ループ |
 | `run_prefork_server(port, n, conns_per_worker)` | listen_socket 確保 + workers 起動 + `WSADuplicateSocketW` による引き渡し・ACK 確認後の親側参照クローズ |
 
-Table: Windows 版 tcpServer の主要関数一覧
-
 ## stdin, stdout, stderr の継承
 
 両モデルとも、子プロセスは親の標準入出力を継承します。子プロセスの `printf()` は親と同じコンソールに出力されます。
@@ -221,6 +221,8 @@ Table: Windows 版 tcpServer の主要関数一覧
 
 ## 2 つのモデルの比較
 
+Table: 接続ごと fork とプリフォーク モデルの比較
+
 | 項目 | 接続ごとに fork | プリフォーク |
 |------|-----------------|--------------|
 | プロセス生成コスト | 接続のたびに発生 | 起動時のみ |
@@ -228,8 +230,6 @@ Table: Windows 版 tcpServer の主要関数一覧
 | メモリ使用量 | 接続数に比例 | 一定 |
 | 実装の複雑さ | シンプル | やや複雑 |
 | 過負荷時の挙動 | 新規 fork が遅延 | 新規接続がキューで待機 |
-
-Table: 接続ごと fork とプリフォーク モデルの比較
 
 ## ビルド方法
 

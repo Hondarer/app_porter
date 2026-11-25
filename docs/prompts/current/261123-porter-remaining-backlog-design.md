@@ -19,6 +19,8 @@
 
 `app/porter/docs/prompts/current/` の 4 つの残課題一覧にある未対処の 13 項目のうち、次の 5 項目を対策します。
 
+Table: この案件の作業と対策元の項目
+
 | 作業 | 対策元の項目 | 内容 |
 | --- | --- | --- |
 | 作業 1 | `../past/261115-porter-multicast-src-contract-backlog.md` の BL-004 | 解消済みであることの記録 |
@@ -26,8 +28,6 @@
 | 作業 3 | `../past/261121-porter-flow-control-refine-backlog.md` の BL-006 | `docs/protocol.md` の、実装と合わない記述の修正 |
 | 作業 4 | `../past/261121-porter-flow-control-refine-backlog.md` の BL-001 | `unicast` の処理件数の改善 (計測、方式の合意、実装の 3 段階) |
 | 作業 5 | `../past/261121-porter-flow-control-refine-backlog.md` の BL-004 | SIGSEGV の再現の試験 |
-
-Table: この案件の作業と対策元の項目
 
 残る 8 項目は、この案件では扱いません。対策元の残課題一覧に残し、この案件の残課題一覧 (`261123-porter-remaining-backlog-backlog.md`) へ転記します。
 
@@ -43,6 +43,8 @@ Table: この案件の作業と対策元の項目
 ## 作業 3: docs/protocol.md の修正
 
 `docs/protocol.md` のうち、実装 (`prod/libsrc/porter/potr_flow_control.c`、`protocol/packet.c`、`protocol/receiver_report.c`、`thread/`、`api/api_open_paths_udp.c`) と合わない次の 13 か所を、実装に合わせて直します。行番号は、作業の開始前の `docs/protocol.md` のものです。直す前に、各行を実装と照らして確かめます。実装と、案件 261121 の最終仕様が食い違う箇所を見つけた場合は、直さずに、ユーザーに確認します。
+
+Table: docs/protocol.md の修正の一覧
 
 | 番号 | 行 | 直す内容 |
 | --- | --- | --- |
@@ -60,8 +62,6 @@ Table: この案件の作業と対策元の項目
 | 12 | 939 | 「次の受信報告で監視対象に選ばれるまで (既定で最長 4.5 秒)」を、臨時の受信報告 (送信者の採用時と、読み出しが遅れたとき。間隔は `flow_control_request_interval_ms` 以上) と選び直しの説明に、改めます。 |
 | 13 | 755 | 破棄の条件が、`seq_num` が 0 の場合の `ack_num` についてのものであることを、明示します。 |
 
-Table: docs/protocol.md の修正の一覧
-
 > [!NOTE]
 > 番号 13 は、記述は実装と合っていますが、読み違えやすいため、条件を明示します。
 
@@ -73,6 +73,8 @@ Table: docs/protocol.md の修正の一覧
 
 Linux (WSL) の同じホストのループバックで、`porter-bench` の `unicast` (`p1`) と `tcp` (`p5`、片方向) を、送信スレッド 1 つで、交互に測ります。次の 6 条件のうち、待ち合わせを指定した 5,000 byte を除く 5 条件で、`unicast` ÷ `tcp` の処理件数の比が 0.5 以上であることを、受入の基準とします。あわせて、6 条件のすべてで、対策の前の比を、対策の後に下げないこととします。
 
+Table: 受入の 6 条件と、対策の前の比
+
 | メッセージ長 | 送信の指定 | 対策の前の比 (2026-11-21) |
 | --- | --- | --- |
 | 64 byte | 指定なし | 1.03 |
@@ -81,8 +83,6 @@ Linux (WSL) の同じホストのループバックで、`porter-bench` の `uni
 | 64 byte | 待ち合わせを指定 | 0.86 |
 | 1,000 byte | 待ち合わせを指定 | 0.88 |
 | 5,000 byte | 待ち合わせを指定 | 0.34 |
-
-Table: 受入の 6 条件と、対策の前の比
 
 「下げない」の判定は、測定のばらつきの範囲 (同じ版を繰り返し測った値の幅) を超えて下がっていないこと、とします。ばらつきの幅は、段階 1 の測定で求めます。
 
@@ -184,10 +184,10 @@ Table: 受入の 6 条件と、対策の前の比
 
 ## 知見の反映計画
 
+Table: 知見の反映計画
+
 | 知見 | 反映先 |
 | --- | --- |
 | フロー制御の動作 (作業 3 の 13 か所) | `docs/protocol.md` |
 | `unicast` の対策の設計の判断 (段階 2 で合意する方式) | 改版で定めます (候補: `docs/protocol.md`、`docs/architecture.md`、該当するソースのコメント) |
 | 性能の計測の手順のうち、今後も使うもの (OS の呼び出しの回数の取り方など) | `docs/performance-measurement.md` (段階 1 の後に、追加の要否を判断します) |
-
-Table: 知見の反映計画

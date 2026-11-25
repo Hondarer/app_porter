@@ -23,12 +23,12 @@
 
 porter のサービス定義は、送信側と受信側で共有します。マルチキャストでも、unicast と同じく `src` を送信側、`dst` を受信側のアドレスとして扱います。
 
+Table: マルチキャストの経路 N の設定キーの意味
+
 | キー | 送信側 | 受信側 |
 | --- | --- | --- |
 | `src_addrN` | 送信に使う NIC (`IP_MULTICAST_IF`) とグループ参加の NIC | 許可する送信元 IP。NACK、受信報告、証明書認証の返送先 |
 | `dst_addrN` | 使わない | グループ参加に使う NIC。省略時は `src_addrN` |
-
-Table: マルチキャストの経路 N の設定キーの意味
 
 経路は 1 から順に列挙し、`src_addrN` が空の最初の経路で列挙を終えます。`src_addrN` がなく `dst_addrN` だけがある経路は使いません。この規則は、ほかの UDP 通信種別の経路の列挙と同じです。
 
@@ -50,6 +50,8 @@ Table: マルチキャストの経路 N の設定キーの意味
 
 公開構造体 `potr_service_def` の形は変えません。既存の `dst_addr` 配列の意味を、マルチキャスト受信側に広げます。
 
+Table: 実装の変更対象
+
 | 対象 | 変更 |
 | --- | --- |
 | `prod/include_internal/porter/potr_context.h` | 経路ごとに、マルチキャストのグループ参加に使った NIC (解決済み IPv4 アドレス) を保持する配列を追加します。 |
@@ -57,20 +59,18 @@ Table: マルチキャストの経路 N の設定キーの意味
 | `prod/libsrc/porter/api/potr_service_close.c` | グループ離脱に、参加時に保持した NIC を使います。 |
 | `prod/libsrc/porter/thread/thread_recv_validate.c` ほか | 変更しません。受信側の送信元照合と、NACK、受信報告、証明書認証の返送先は、引き続き `src_addrN` を使います。 |
 
-Table: 実装の変更対象
-
 > [!NOTE]
 > 公開構造体と公開関数は変わらないため、`exportTest.cc` の関数表と変数表、`docs/api.md` の戻り値表とスレッド セーフ表は変更しません。
 
 ## テスト
+
+Table: 追加・更新する単体テスト
 
 | テスト | 確認内容 |
 | --- | --- |
 | `test/src/libporter/apiOpenPathsUdpTest` | 受信側で `dst_addr1` を指定したとき、`cplat_socket_join_multicast_group()` に `dst_addr1` の NIC が渡ること。省略したとき `src_addr1` の NIC が渡ること。送信側は `dst_addr1` があっても `src_addr1` の NIC を使うこと。`dst_addr2` だけがある経路は列挙されないこと。`dst_addr1` の解決に失敗したとき open に失敗すること。 |
 | `test/src/libporter/potrServiceCloseTest` | マルチキャストの close で、`cplat_socket_leave_multicast_group()` に参加時と同じ NIC が渡ること。 |
 | `test/src/libporter/configLoadServiceTest` | マルチキャストのサービス定義で `dst_addr1` が読み込まれること (既存の確認がない場合に追加)。 |
-
-Table: 追加・更新する単体テスト
 
 単体テストのビルドと実行は、ユーザーが行います。
 
@@ -82,6 +82,8 @@ Table: 追加・更新する単体テスト
 
 ## 正本への反映計画
 
+Table: 正本とコード コメントへの反映計画
+
 | 反映先 | 内容 |
 | --- | --- |
 | `docs/config.md` の「全通信種別で共通のフィールド」 | `src_addr` と、新たにマルチキャストでも使う `dst_addr` の説明 |
@@ -91,8 +93,6 @@ Table: 追加・更新する単体テスト
 | `prod/sample-config/porter-services.jsonc` | 別ホスト間のマルチキャスト構成例 (`dst_addr1` 付き) を追加 |
 | コード コメント (`api_open_paths_multicast()`、`potr_service_close.c` の離脱処理) | 受信側の参加 NIC の決め方と、離脱に参加時と同じ NIC を使う理由 |
 
-Table: 正本とコード コメントへの反映計画
-
 機能仕様 `docs/functional-spec/transport.md` は変更しません。`POTR-TRANSPORT-QUAL-001` は、今回の変更でマルチキャストでも満たされます。
 
 ## 結合テストの接続待ちの修正
@@ -101,13 +101,13 @@ CI で不定期に失敗した結合テスト `handleConcurrencyTest` の準備�
 
 `unicast_bidir` のクライアントは、サーバーが返した PING 応答を受けて CONNECTED になります。サーバー (`unicast_bidir_n1`) は、クライアントの PING を受けた時点でそのピアを CONNECTED にします。このため、サーバー側の CONNECTED はクライアント側より先になります。準備処理 `open_n1()` はサーバー側だけを待っていたため、直後にクライアントから送るテストが `POTR_ERR_DISCONNECTED` で失敗することがありました。
 
+Table: handleConcurrencyTest の変更
+
 | 対象 | 変更 |
 | --- | --- |
 | クライアント側の記録 | クライアントの CONNECTED 数を数える変数を追加します。`client_callback()` の CONNECTED で 1 増やし、DISCONNECTED で 1 減らします。既存の `s_client_connected` は残します。 |
 | `SetUp()` | 追加した数を 0 に戻します。 |
 | `open_n1()` | サーバー側で全クライアントが CONNECTED になる待ちに加えて、クライアント側の CONNECTED 数が `n_clients` に達するまで待ちます。待ち時間の上限は既存の `wait_for()` の既定値 (10 秒) とします。 |
-
-Table: handleConcurrencyTest の変更
 
 > [!NOTE]
 > 通常運用の N:1 では、N 側のクライアントが随時接続・切断し、全クライアントが接続済みである必要はありません。この修正は、テストの準備で開いた `n_clients` 個のクライアントが両側で通信を確立したことを待つだけで、`max_peers` までの接続は待ちません。

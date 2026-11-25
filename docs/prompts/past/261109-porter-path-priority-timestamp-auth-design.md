@@ -27,16 +27,18 @@
 
 本案件は、次の 2 つの作業を前提とします。どちらも本案件とは別の作業として行い、2026-11-13 時点で完了しています。
 
+Table: 本案件の前提となる作業と完了した内容
+
 | 前提の作業 | 完了した内容 |
 |---|---|
 | `app/openssl` の新設 | OpenSSL 3.5.9 の libssl と libcrypto を、Linux/GCC と Windows/MSVC の両方でビルドする |
 | cplat の Linux 実装の切り替え | `app/cplat/prod/libsrc/cplat/crypto/crypto_linux.c`、`random_linux.c` が、システムの OpenSSL ではなく `app/openssl` の libcrypto を使う |
 
-Table: 本案件の前提となる作業と完了した内容
-
 ### app/openssl が提供する内容
 
 本案件は、`app/openssl` の次の内容を前提にします。正本は `app/openssl/README.md` です。
+
+Table: app/openssl が提供する内容
 
 | 項目 | 内容 |
 |---|---|
@@ -48,8 +50,6 @@ Table: 本案件の前提となる作業と完了した内容
 | 機能 | TLS 1.3 と DTLS 1.2 が有効。両 OS でアセンブラー実装が有効 |
 | OS の OpenSSL との分離 | Linux では、シンボル バージョンを `OPENSSL_APP_3.0.0` に変え、利用側のプロセスが OS の OpenSSL を読み込んでも呼び出しが混ざらない。Windows では DLL 名で区別する |
 | 単体テスト用の mock | `test/` の `mock_openssl`。テスト対象のヘッダーを差し替え、関数呼び出しをマクロで `mock_<関数名>` へ置き換える。利用側のテストは mock だけをリンクし、mock が実行時に実ライブラリへ委譲する |
-
-Table: app/openssl が提供する内容
 
 > [!NOTE]
 > OpenSSL の API は Linux と Windows で同じであり、OS 差異がありません。porter のプラットフォーム抽象化規範が cplat の責務とするのは OS 差異の吸収であるため、porter は cjson と同じく OpenSSL を直接使います。データの AES-256-GCM は、既存の cplat の暗号 API を引き続き使います。
@@ -72,12 +72,12 @@ Table: app/openssl が提供する内容
 
 設定ファイルの経路キーを `src_addr1` から `src_addr8`、`dst_addr1` から `dst_addr8` に広げ、次の項目を追加します。
 
+Table: 優先グループのために追加するサービス設定項目
+
 | キー | 型 | 既定値 | 説明 |
 |---|---|---|---|
 | `path_group1` 〜 `path_group8` | uint8 | 1 | 各経路の優先グループ番号 (1〜4)。範囲外の値は設定エラーとする |
 | `group_failback_ms` | uint32 | 0 | 上位グループの回復を判定するまでの時間 [ms]。0 の場合は実効 `health_timeout_ms` と同じ値を使う |
-
-Table: 優先グループのために追加するサービス設定項目
 
 `potr_service_def` には `uint8_t path_group[POTR_MAX_PATH]` と `uint32_t group_failback_ms` を追加します。  
 `path_group` を省略した既存の設定は、全経路が優先グループ 1 に属し、現行の全経路送出と同じ動作になります。  
@@ -89,14 +89,14 @@ RAW モード (`unicast_raw`、`multicast_raw`、`broadcast_raw`) に優先グ�
 
 経路が届くかどうかは、既存のヘルス チェックによる論理接続状態で判定します。通信種別ごとの判定元は次のとおりです。
 
+Table: 通信種別ごとの経路状態の判定元
+
 | 通信種別 | 送信者が使う経路状態 |
 |---|---|
 | `unicast_bidir`、`unicast_bidir_n1` | 相手から返る PING ペイロードの経路状態 (既存) |
 | `tcp`、`tcp_bidir` | 経路ごとの TCP 接続と PING の状態 (既存) |
 | `unicast`、`multicast`、`broadcast` | 受信者からの受信報告 (新設、[受信報告](#受信報告) を参照) |
 | RAW モード | 判定しない (全経路へ送る) |
-
-Table: 通信種別ごとの経路状態の判定元
 
 グループは、そのグループに届く経路が 1 つ以上あるときに「到達可能」とします。  
 一対多 (`multicast`、`broadcast`) では、報告中の全受信者について、そのグループに届く経路が 1 つ以上あるときに到達可能とします。1 者でも届かない受信者がいれば、そのグループは到達不能です。
@@ -142,6 +142,8 @@ Figure: 送信グループの選択
 
 ### 制御パケットの送出経路
 
+Table: パケット種別ごとの送出経路
+
 | パケット | 送出経路 |
 |---|---|
 | DATA | 選択中のグループ (切り戻し中は 2 グループ) の経路 |
@@ -151,8 +153,6 @@ Figure: 送信グループの選択
 | REJECT | 選択中のグループの経路 |
 | FIN、FIN_ACK | 全グループの全経路 |
 | ハンドシェイク、鍵配布 | 全グループの全経路 |
-
-Table: パケット種別ごとの送出経路
 
 片方向の送信者の PING は、現行では「最後の PING または有効 DATA の送信」から `health_interval_ms` が経過したときに送ります。待機グループには DATA が流れないため、この判定を経路ごとに行います。
 
@@ -185,6 +185,8 @@ TCP の受信側は、欠けた通番を受け取るとストリームを切断�
 
 新しい外側パケット フラグ `POTR_FLAG_REPORT` (`0x0100`) を設けます。
 
+Table: 受信報告パケットの形式
+
 | 項目 | 内容 |
 |---|---|
 | ヘッダーのセッション識別子 | 受信者が `potr_service_open()` 時に生成する自身のセッション識別子 (送信者と同じ方法) |
@@ -192,8 +194,6 @@ TCP の受信側は、欠けた通番を受け取るとストリームを切断�
 | ペイロード | 経路ごとに 1 バイトの受信状態 (`POTR_PING_STATE_*`)、`POTR_MAX_PATH` バイト。PING ペイロードと同じ形式 |
 | 暗号化 | サービスで暗号化が有効な場合、PING と同じくペイロードを暗号化し、ヘッダーを改ざん検出の対象にする |
 | 宛先 | 送信者のアドレスとポート (NACK と同じ) |
-
-Table: 受信報告パケットの形式
 
 ### 送出の間隔
 
@@ -214,6 +214,8 @@ Table: 受信報告パケットの形式
 
 プロトコル版を 2 に上げます (`POTR_PROTOCOL_VERSION = 2`)。ヘッダーは 40 バイトから 72 バイトになります。版 1 のパケットは、現行の規則どおり受信時に破棄します。
 
+Table: プロトコル版 2 の外側パケット ヘッダー
+
 | オフセット | フィールド | 型 (NBO) | 内容 |
 |---|---|---|---|
 | 0 | `service_id` | int64 | 既存 |
@@ -230,8 +232,6 @@ Table: 受信報告パケットの形式
 | 56 | `tx_tv_nsec` | int32 | 送出時の実時刻 (ナノ秒部、0〜999,999,999) |
 | 60 | `reserved` | uint32 | 予約。送信時は 0 とし、受信時は値を無視する |
 | 64 | `tx_mono_ns` | uint64 | セッション開始からの経過時間 [ns] |
-
-Table: プロトコル版 2 の外側パケット ヘッダー
 
 `protocol_version` の位置は版 1 と同じです。版 1 の受信者も版の不一致を検出して破棄できます。  
 送出時の実時刻の秒部とナノ秒部を隣り合わせに置き、64 ビットのフィールドを 8 バイト境界にそろえるため、`tx_tv_nsec` の後に 4 バイトの `reserved` を設けます。`reserved` もヘッダーの一部として改ざん検出の対象に含めます。
@@ -253,12 +253,12 @@ AES-256-GCM の nonce (12 バイト) は、`session_id` (4 バイト) と `tx_co
 
 ### 送信時刻の取得
 
+Table: 送信時刻フィールドの取得元と時点
+
 | フィールド | 取得元 | 取得の時点 |
 |---|---|---|
 | `tx_tv_sec`、`tx_tv_nsec` | cplat の実時刻 API (Linux は `CLOCK_REALTIME`、Windows は FILETIME による 100 [ns] 単位) | 各経路への送出直前。再送時も取り直す |
 | `tx_mono_ns` | 新設する cplat の高分解能の単調増加時計 API。セッション開始時に採取した値との差 | 同上 |
-
-Table: 送信時刻フィールドの取得元と時点
 
 時刻は経路ごとに取得するため、暗号化を有効にした場合は経路ごとに暗号処理を行います。  
 時計の取得に失敗した場合は、実時刻を `tx_tv_sec = 0`、`tx_tv_nsec = -1`、単調増加時刻を `tx_mono_ns = UINT64_MAX` とし、送出は続けます。  
@@ -273,6 +273,8 @@ Table: 送信時刻フィールドの取得元と時点
 
 サービスごとに、既存の事前共有鍵方式と証明書方式のいずれかを選びます。証明書方式では暗号化を必須とし、平文の通信は受理しません。
 
+Table: 証明書方式のサービス設定項目
+
 | キー | 型 | 説明 |
 |---|---|---|
 | `auth` | 文字列 | `"psk"` (既定、既存の `encrypt_key` を使う) または `"cert"` |
@@ -283,8 +285,6 @@ Table: 送信時刻フィールドの取得元と時点
 | `crl_file` | 文字列 | 失効リスト (PEM)。省略可 |
 | `peer_names` | 文字列の配列 | CA で検証する相手の名前。証明書の SAN の DNS 名または URI と照合する |
 
-Table: 証明書方式のサービス設定項目
-
 `ca_file` と `pinned_certs` の少なくとも一方が必要です。`ca_file` を指定した場合、`peer_names` は必須で、省略は設定エラーとします。
 
 相手の証明書は、次のいずれか一方を満たせば受理します。
@@ -294,14 +294,14 @@ Table: 証明書方式のサービス設定項目
 
 `potr_service_open()` を直接呼ぶ利用側は、`potr_service_def` の次のメンバーで同じ設定を渡します。構造体を 0 で初期化した場合は事前共有鍵方式です。
 
+Table: 証明書方式の設定を渡す potr_service_def のメンバー
+
 | メンバー | 型 | 対応するキー |
 |---|---|---|
 | `auth` | `potr_auth` (`POTR_AUTH_PSK = 0`、`POTR_AUTH_CERT = 1`) | `auth` |
 | `cert_file`、`key_file`、`ca_file`、`crl_file` | `const char *` | 同名のキー |
 | `pinned_certs`、`pinned_cert_count` | `const char *const *`、`size_t` | `pinned_certs` |
 | `peer_names`、`peer_name_count` | `const char *const *`、`size_t` | `peer_names` |
-
-Table: 証明書方式の設定を渡す potr_service_def のメンバー
 
 ポインターのメンバーは `potr_service_open()` の呼び出し中だけ参照し、porter は保持しません。設定ファイル経由では、設定の読み込みが文字列を所有し、`potr_service_open()` の呼び出し後に解放します。
 
@@ -317,12 +317,12 @@ Table: 証明書方式の設定を渡す potr_service_def のメンバー
 
 ハンドシェイクは、porter が OpenSSL のメモリ入出力 (メモリ BIO) を直接使って行い、その送受信バイト列を porter の新しいパケット種別 `POTR_FLAG_HANDSHAKE` (`0x0200`) のペイロードで運びます。OpenSSL を呼び出す処理は porter の内部の 1 つのモジュールに集め、他の処理からは OpenSSL の型を見せません。
 
+Table: 通信種別ごとのハンドシェイクの方式
+
 | 通信種別 | 方式 | 鍵の導出 |
 |---|---|---|
 | UDP の全通信種別 | DTLS 1.2 | RFC 5705 の鍵導出機能 |
 | `tcp`、`tcp_bidir` | TLS 1.3 | RFC 8446 7.5 節の鍵導出機能 |
-
-Table: 通信種別ごとのハンドシェイクの方式
 
 - 暗号の組は、一時的な鍵交換 (ECDHE) と認証付き暗号 (AES-256-GCM) の組に限定し、前方秘匿性を確保します。
 - ハンドシェイクの役割は、接続を開始する側 (TCP の SENDER、`unicast_bidir` の SENDER、片方向の受信者) をクライアント、他方をサーバーとします。
@@ -351,26 +351,28 @@ Table: 通信種別ごとのハンドシェイクの方式
 
 本案件では、cplat に高分解能の単調増加時計の API を 1 つ追加します。既存の `cplat_clock_get_monotonic()` は Windows で `GetTickCount64()` を使い、ミリ秒刻みであるため、経路ごとの送出時刻の差を観測できません。
 
+Table: cplat に追加する API
+
 | 区分 | 内容 | Linux | Windows |
 |---|---|---|---|
 | 時計 | 高分解能の単調増加時計をナノ秒で返す関数 | `clock_gettime(CLOCK_MONOTONIC)` | `QueryPerformanceCounter()` |
 
-Table: cplat に追加する API
-
 新しい API の Doxygen コメントは、OS の公式リファレンスを根拠に記載し、OS ごとの差異だけを追記します。cplat の既存の暗号 API (`cplat_crypto_encrypt()` など) と既存の時計 API は変更しません。
 
 新しい API には、次の mock を追加します。
+
+Table: 時計 API のために追加する mock
 
 | 追加先 | 内容 |
 |---|---|
 | `app/cplat/test/` の `mock_cplat` | 新しい時計 API の mock。既定で実 libcplat へ委譲する |
 | `framework/testfw` の `mock_windows` | `QueryPerformanceCounter()` と `QueryPerformanceFrequency()` の mock。呼び出し元情報を受け取り、既定で実関数へ委譲する |
 
-Table: 時計 API のために追加する mock
-
 Windows の実装の失敗経路と換算は、`mock_windows` で `QueryPerformanceCounter()` と `QueryPerformanceFrequency()` の結果を制御して確認します。
 
 ## porter の OpenSSL の利用
+
+Table: porter による OpenSSL の利用
 
 | 項目 | 内容 |
 |---|---|
@@ -380,12 +382,12 @@ Windows の実装の失敗経路と換算は、`mock_windows` で `QueryPerforma
 | 集約 | OpenSSL を呼び出す処理は porter 内部の 1 つのモジュールに集め、内部ヘッダーには OpenSSL の型を出さない |
 | テスト | porter の証明書方式のテストは `mock_openssl` だけをリンクし、実ライブラリを同時にリンクしない。OpenSSL の関数の失敗は mock で注入する |
 
-Table: porter による OpenSSL の利用
-
 ### OpenSSL の mock の追加
 
 `mock_openssl` は、ワークスペースの app が使う関数だけを置き換えます。現在は EVP と RAND の関数だけであり、libssl の関数は含みません。  
 porter が使う OpenSSL の関数は、失敗を注入しない関数も含めてすべて `app/openssl` の `mock_openssl` に追加します。テスト対象が mock のない関数を呼ぶと、リンクが未解決になるためです。
+
+Table: mock_openssl への追加
 
 | 追加先 | 内容 |
 |---|---|
@@ -394,12 +396,12 @@ porter が使う OpenSSL の関数は、失敗を注入しない関数も含め�
 | `test/libsrc/mock_openssl/` | `mock_openssl.cc` の `ON_CALL` と、関数ごとの `mock_<関数名>.cc` |
 | `README.md` | 置き換える関数の一覧 |
 
-Table: mock_openssl への追加
-
 OpenSSL の関数形式マクロ (`SSL_CTX_set_min_proto_version()` など) は、展開先の関数 (`SSL_CTX_ctrl()` など) を mock の対象にします。  
 `mock_openssl` を変更した後は、`app/openssl` を make してから、`mock_openssl` を使う cplat のテストと porter のテストを実行します。
 
 ## 正本文書への反映計画
+
+Table: 正本文書への反映計画
 
 | 反映先 | 反映する内容 |
 |---|---|
@@ -415,8 +417,6 @@ OpenSSL の関数形式マクロ (`SSL_CTX_set_min_proto_version()` など) は�
 | `app/cplat/docs/` と公開ヘッダー | 追加する時計 API の契約 |
 | `app/openssl/README.md` | `mock_openssl` が置き換える関数の一覧と、libssl の実委譲 |
 
-Table: 正本文書への反映計画
-
 機能仕様には、関数名、型名、実装方式を記載せず、利用側から見た要件と振る舞いだけを記載します。
 
 ### 図の記法
@@ -431,6 +431,8 @@ Table: 正本文書への反映計画
 > 本案件の変更対象のうち、`docs/config.md` などには PlantUML の図があります。これらの図は、内容を変更する場合に限り Mermaid へ書き換えます。
 
 ## 受入条件
+
+Table: 受入条件
 
 | 区分 | 条件 |
 |---|---|
@@ -450,11 +452,11 @@ Table: 正本文書への反映計画
 | mock | 時計 API の mock で、Windows の時計の取得失敗を注入できる。`mock_openssl` を変更した後も cplat の暗号と乱数のテストが通る。porter の証明書方式のテストが `mock_openssl` だけをリンクして通り、OpenSSL の関数の失敗を注入できる |
 | 検証環境 | Linux と Windows の両方で局所テストが通り、Linux と Windows の間で相互接続を確認する。内容のある `.warn` がない。変更した Markdown が `text_style_jp.py` の確認を通り、`check_functional_spec.py` が通る |
 
-Table: 受入条件
-
 ビルドとテストの実行はユーザーが行い、エージェントは結果を確認して修正します。framework や複数 app にまたがる全体テストは、コストを説明してから実施を確認します。本案件は `framework/testfw` を変更するため、framework の全体テストの実施をこの規則で確認します。
 
 ## 作業の範囲と順序
+
+Table: 作業の範囲と順序
 
 | 順序 | 作業 | 主な対象 |
 |---|---|---|
@@ -466,5 +468,3 @@ Table: 受入条件
 | 6 | 証明書方式と OpenSSL の mock | OpenSSL を呼び出す内部モジュール、設定の読み込み、接続処理、受信の検証、`appdeps.mk`、`prod/libsrc/porter/makepart.mk`、`app/openssl/test/` の `mock_openssl` |
 | 7 | 文書の同期 (図は [図の記法](#図の記法) に従い Mermaid で記載) | [正本文書への反映計画](#正本文書への反映計画) の各文書 |
 | 8 | テストと検証 | `test/` (BL-001 の nonce の一意性と BL-002 の境界値を含む)、`exportTest.cc` (公開関数は追加しないが、確認を行う) |
-
-Table: 作業の範囲と順序

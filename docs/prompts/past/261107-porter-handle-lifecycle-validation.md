@@ -57,6 +57,8 @@ TCP の予備測定では両版で終了時エラーが発生したため、上�
 親リポジトリは `aadbb96b4ce1e8350813896d9a916b5074cf86d7`、porter は `1b24a89920d505081c6e0e7200cc1b22e1b8081a` です。  
 確認時の porter HEAD `cbd70f3e82acf2324b98fc228f1186e8866bc922` との差分は別案件の検討文書 3 件と `current/.gitkeep` のみで、実装・テスト・ビルド構成に差はありません。
 
+Table: 指定 CI のジョブと結合試験の確認結果
+
 | ジョブ | 結果 | ハンドル並行操作の結合試験 |
 | --- | --- | --- |
 | [Windows](https://github.com/Hondarer/c-modernization-kit/actions/runs/42605427102/job/129120095940) | 成功 | 6 件成功 |
@@ -65,8 +67,6 @@ TCP の予備測定では両版で終了時エラーが発生したため、上�
 | [Oracle Linux 10](https://github.com/Hondarer/c-modernization-kit/actions/runs/42605427102/job/129120096436) | 成功 | 6 件成功 |
 | deploy-pages | 成功 | 対象外 |
 | warnings-summary | 成功 | 対象外 |
-
-Table: 指定 CI のジョブと結合試験の確認結果
 
 各 OS のジョブ ログで、以前間欠失敗した `concurrent_fragmented_compressed_sends_arrive_intact` を含む 6 件の成功を確認しました。  
 4 環境とも警告収集対象の `app/**/prod/**/*.warn`、`app/**/test/**/*.warn` などに該当ファイルがなく、警告アーティファクトはありません。  

@@ -16,13 +16,13 @@
 
 `POTR_EVENT_PATH_CONNECTED` / `POTR_EVENT_PATH_DISCONNECTED` のときは、引数の意味が次のように変わります。
 
+Table: PATH イベント時のコールバック引数の意味
+
 | 引数 | 意味 |
 |---|---|
 | `peer_id` | N:1 モードでは対象 peer の ID。1:1 モードでは `POTR_PEER_NA` |
 | `data` | `const int[POTR_MAX_PATH]` の path 論理接続状態スナップショット |
 | `len` | 状態が変化した path index |
-
-Table: PATH イベント時のコールバック引数の意味
 
 `path_states` は常にイベント発火後の状態です。`PATH_DISCONNECTED` のときも対象 path は 0 です。  
 `CONNECTED` / `DISCONNECTED` は path 論理接続状態の OR が 0->1 / 1->0 に変化したときのみ発火します。  
@@ -30,14 +30,16 @@ Table: PATH イベント時のコールバック引数の意味
 
 ### potr_tracer_get() の戻り値
 
+Table: potr_tracer_get の戻り値一覧
+
 | 戻り値 | 意味 |
 |---|---|
 | `cplat_tracer *` | 取得した共有トレーサー。利用側は破棄しません |
 | `NULL` | トレーサーを生成できませんでした。設定や開始を行わず、必要なら後の呼び出しで再取得します |
 
-Table: potr_tracer_get の戻り値一覧
-
 ### potr_service_send() の戻り値
+
+Table: potr_service_send の戻り値一覧
 
 | 戻り値 | 意味 |
 |---|---|
@@ -51,8 +53,6 @@ Table: potr_tracer_get の戻り値一覧
 | `POTR_ERR_UNSUPPORTED` | 片方向の受信専用サービスに送信を要求した |
 | `POTR_ERR_CANCELED` | サービスの終了処理による送信中止 |
 | `POTR_ERR_UNKNOWN` | 圧縮など分類不能な内部処理の失敗 |
-
-Table: potr_service_send の戻り値一覧
 
 `POTR_ERR_FULL` を返した場合、そのメッセージは 1 つも登録されていません。  
 1 件のメッセージが複数の断片になる場合も、一部の断片だけが登録されることはありません。`POTR_PEER_ALL` の送信は、全 peer の分を登録できなければ、どの peer 宛も登録しません。  
@@ -70,6 +70,8 @@ OS の受信バッファーに基づく送出上限は、容量 (`flow_control_c
 
 `potr_service_open()`、`potr_service_open_from_config()`、`potr_service_get_type()`、`potr_config_validate_file()`、`potr_config_list_service_ids()` では、API の呼び出し方の誤りと設定内容の誤りを結果コードで区別します。
 
+Table: 設定検証・開始系 API の主な戻り値一覧
+
 | 結果コード | 意味 | 返す主な API |
 |---|---|---|
 | `POTR_OK` | 成功 | 全 API |
@@ -81,13 +83,13 @@ OS の受信バッファーに基づく送出上限は、容量 (`flow_control_c
 | `POTR_ERR_OUT_OF_MEMORY` | メモリまたは内部バッファーの確保失敗 | 5 関数すべて |
 | `POTR_ERR_UNKNOWN` | スレッド生成など分類不能な内部処理の失敗 | `potr_service_open()`、`potr_service_open_from_config()`、`potr_config_validate_file()` |
 
-Table: 設定検証・開始系 API の主な戻り値一覧
-
 `potr_config_validate_file()` は、トレースへ出力せず `potr_config_validate_options::on_issue` コールバックへ誤りを渡します。`potr_config_service_ids_free()` は `potr_config_list_service_ids()` が返した配列を解放します (`libporter` 内で確保するため、必ず専用関数で解放してください)。
 
 ## スレッド セーフ
 
 各 API のスレッド セーフ性を以下に示します。
+
+Table: porter API のスレッド セーフ性一覧
 
 | API | スレッド セーフ | 備考 |
 |---|---|---|
@@ -102,10 +104,10 @@ Table: 設定検証・開始系 API の主な戻り値一覧
 | `potr_config_list_service_ids()` | はい (条件付き) | JSONC 解析は共通ロックを通る。cJSON 直接解析・`cJSON_GetErrorPtr()` 参照と並行実行しないこと |
 | `potr_config_service_ids_free()` | はい | 同じ配列を同時に解放しない場合。`potr_config_list_service_ids()` で確保した配列を解放する |
 
-Table: porter API のスレッド セーフ性一覧
-
 通知はハンドルごとの専用スレッドで、登録順に直列実行します。  
 I/O を保護するロックを保持して利用者のコールバックを呼び出しません。
+
+Table: 受信コールバック内から呼び出した場合の動作
 
 | API | 同一ハンドルのコールバック内から呼び出した場合 |
 | --- | --- |
@@ -113,22 +115,22 @@ I/O を保護するロックを保持して利用者のコールバックを呼�
 | `potr_service_close()` | `POTR_ERR_UNSUPPORTED`。終了要求を設定しない |
 | `potr_peer_disconnect()` | N:1 で切断可能。切断通知は現在のコールバックの後に実行 |
 
-Table: 受信コールバック内から呼び出した場合の動作
-
 ### サービスを開く API の使い分け
+
+Table: サービス開始 API の入力と用途の使い分け
 
 | API | 入力 | 用途 |
 |---|---|---|
 | `potr_service_open()` | `potr_global_config` + `potr_service_def` 構造体 | テストやプログラム的な設定構築。構成ファイル不要 |
 | `potr_service_open_from_config()` | 構成ファイル パス + service_id | 構成ファイル ベースの既存フロー。後方互換 |
 
-Table: サービス開始 API の入力と用途の使い分け
-
 `potr_service_open_from_config()` の実装は構成ファイルを解析して構造体を構築し、`potr_service_open()` に委譲します。
 
 #### potr_service_def の証明書方式設定
 
 `potr_service_def` を 0 初期化した場合、`auth` は `POTR_AUTH_PSK` (事前共有鍵方式) になります。証明書方式 (`POTR_AUTH_CERT`) を使用する場合は、次のメンバーを設定して `potr_service_open()` へ渡します。
+
+Table: 証明書方式の設定を渡す `potr_service_def` のメンバー
 
 | メンバー | 型 | 内容 |
 |---|---|---|
@@ -141,8 +143,6 @@ Table: サービス開始 API の入力と用途の使い分け
 | `pinned_cert_count` | `size_t` | `pinned_certs` の要素数 |
 | `peer_names` | `const char *const *` | CA 検証で証明書の SAN (DNS 名または URI) と照合する相手名の配列 |
 | `peer_name_count` | `size_t` | `peer_names` の要素数。`ca_file` 指定時は 1 以上が必須 |
-
-Table: 証明書方式の設定を渡す `potr_service_def` のメンバー
 
 これらのポインターおよび配列内の文字列は `potr_service_open()` の呼び出し中だけ参照し、porter は保持しません (証明書、秘密鍵、CRL は open 時に 1 回だけ読み込みます)。
 

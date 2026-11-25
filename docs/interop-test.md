@@ -20,13 +20,13 @@ Windows (MSVC でビルド) と Linux (GCC でビルド) で、次の内容が�
 
 `--direction` で、sender と receiver の OS を選びます。
 
+Table: 向きの値
+
 | 値 | sender | receiver |
 |---|---|---|
 | `windows-to-wsl` (既定) | Windows | WSL |
 | `wsl-to-windows` | WSL | Windows |
 | `both` | 両方を、この順に続けて実行 | |
-
-Table: 向きの値
 
 向きに応じて、設定ファイルの `src` と `dst` のアドレスを入れ替えます。sender 側の OS のアドレスが `src`、receiver 側の OS のアドレスが `dst` です。  
 証明書認証では、OS ではなく役割に対応させます。sender の役割の側が `server.pem` と `porter.test` を、receiver の役割の側が `client.pem` と `urn:porter:peer` を使います。  
@@ -45,6 +45,8 @@ Table: 向きの値
 
 スクリプトは [bin/interop_matrix.py](../bin/interop_matrix.py) です。環境固有の値は、すべて引数で渡します。
 
+Table: interop_matrix.py の引数
+
 | 引数 | 必須 | 説明 |
 |---|---|---|
 | `--windows-root` | 必須 | Windows 側のリポジトリ ルート |
@@ -61,8 +63,6 @@ Table: 向きの値
 | `--wait-margin-seconds` | 任意 | `flow-control`: 全件の消費に要する時間 (件数 × 遅れ) に足す待ちの余裕 (秒)。既定は 60 |
 | `--burst-nonblocking` | 任意 | `flow-control`: `burst` を非ブロッキングで送り、`POTR_ERR_FULL` を受けて送り直す。省略時は `POTR_SEND_BLOCKING` で送る。UDP の通信種別では、非ブロッキングの連続送信が受信側の OS の受信バッファーをあふれさせ、フロー制御と無関係の欠落と切断が起きることがある |
 | `auth/type` (位置引数、複数可) | 任意 | 実行する組み合わせ。省略時は、シナリオの対象すべてを実行します |
-
-Table: interop_matrix.py の引数
 
 組み合わせは `psk/unicast` の形式で指定します。認証は `psk` または `cert`、通信種別は `unicast`、`unicast_bidir`、`unicast_bidir_n1`、`tcp`、`tcp_bidir`、`multicast` です。  
 `flow-control` の対象は、`psk/unicast`、`psk/unicast_bidir`、`psk/tcp`、`psk/multicast` の 4 つです。  
@@ -121,14 +121,14 @@ python app\porter\bin\interop_matrix.py ... --scenario flow-control --direction 
 
 設定値と根拠は、次のとおりです。
 
+Table: flow-control の設定値と根拠
+
 | 項目 | 値 | 根拠 |
 |---|---|---|
 | `flow_control_capacity` | 2 MB (2,097,152 バイト) | 要求のしきい値 (`flow_control_suppress_percent` の既定 80%) は約 1.6 MB。しきい値から容量までの余裕は約 410 KB で、`max_message_size` の既定 (65,535 バイト) 以上であり、構成の検査を満たす |
 | `burst` の件数と大きさ | 400 件、各 16,384 バイト (約 6.3 MiB) | 容量の約 3 倍、しきい値の約 4 倍。抑制がなければ、受信側の通知キューが容量を超える量 |
 | 受信コールバックの遅れ | 1 件あたり 20 ms | 受信側の消費は約 800 KB/s で、ネットワークの速度より十分に遅い。全件の消費に約 8 秒かかる |
 | 待ちの上限 | 件数 × 遅れ + 60 秒 | 抑制と解除の繰り返し (要求の再送周期 200 ms、有効期限 1,000 ms) と、プロセスの起動の揺れを見込む |
-
-Table: flow-control の設定値と根拠
 
 組み合わせごとに、次の順で実行します。
 
@@ -170,6 +170,8 @@ psk/tcp [flow-control]: PASS (sent=400 full=37 elapsed_ms=9120 received=400 out_
 
 最後に `TOTAL: <成功数>/<実行数> PASS` を出し、すべて成功した場合は終了コード 0、それ以外は 1 を返します。
 
+Table: 結果の状態
+
 | 状態 | 意味 |
 |---|---|
 | `PASS` | すべての判定を満たした |
@@ -177,17 +179,15 @@ psk/tcp [flow-control]: PASS (sent=400 full=37 elapsed_ms=9120 received=400 out_
 | `BLOCKED` | receiver または sender が、制限時間内に開かなかった |
 | `ERROR` | 試験の駆動中に例外が起きた (詳細に例外の内容を記録) |
 
-Table: 結果の状態
-
 出力先には、次のファイルが残ります。
+
+Table: 出力先のファイル
 
 | ファイル | 内容 |
 |---|---|
 | `<auth>-<type>-win.json`、`<auth>-<type>-wsl.json` | 各側が読む構成ファイル |
 | `<auth>-<type>.log` | 両側の標準出力。行頭の `win:` と `wsl:` で側を区別します |
 | `results.json` | 組み合わせごとの `case`、`status`、`detail` |
-
-Table: 出力先のファイル
 
 向きが `windows-to-wsl` 以外、またはシナリオが `basic` 以外の場合、ファイル名の `<auth>-<type>` の後ろへ `-wsl-to-windows` や `-flow-control` を足します。
 

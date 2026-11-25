@@ -39,14 +39,14 @@ UDP の再送を行う通信種別 (`POTR_TYPE_UNICAST`、`POTR_TYPE_MULTICAST`�
 
 受信側は、REJECT の `ack_num` (再送不能の通番) が自分の欠番に当たるかを、受信ウィンドウの `next_seq` (次に配信する通番) と比べて判定します。
 
+Table: REJECT の通番の位置と判定
+
 | `ack_num` の位置 | 判定 | 処理 |
 | --- | --- | --- |
 | `next_seq` より前 (配信済み) | 欠番ではない | 無視する |
 | `next_seq` 以降で、受信ウィンドウ内に受信済み | 欠番ではない | 無視する |
 | `next_seq` 以降で、受信ウィンドウ内に未受信 | 欠番 | 再送不能の欠落として処理する |
 | 受信ウィンドウより先 | 欠番 | 再送不能の欠落として処理する |
-
-Table: REJECT の通番の位置と判定
 
 前後の比較は、通番の周回を考慮した符号付きの差 (`(int32_t)(ack_num - next_seq) >= 0`) で行います。受信ウィンドウ内の受信済みかどうかは `potr_internal_window_recv_has_packet()` で判定し、受信ウィンドウより先の通番は未受信として扱います。
 
@@ -132,17 +132,19 @@ recv[service_id=%lld]: peer=%u seq=%u out of recv_window, dropping (base_seq=%u 
 
 [機能仕様 メッセージ配送](../../functional-spec/delivery.md) を次のとおり変更します。要件 ID と UUID の扱いは [機能仕様の記載規範](../../../../general/docs/functional-spec-guideline.md) の「要件 ID と UUID の変更」に従います。
 
+Table: メッセージ配送の機能要件の変更
+
 | 要件 | 変更 | 要件文 |
 | --- | --- | --- |
 | `POTR-DELIVERY-FUNC-005` (`f7deed1b-170c-4007-9e48-1b4a8c92d7af`) | 廃止 (別の論理要件に置き換えるため) | 削除 |
 | `POTR-DELIVERY-FUNC-011` <!-- potr-req: uuid=5f4ebd3c-2656-428f-9683-340467f3b7ca --> (`5f4ebd3c-2656-428f-9683-340467f3b7ca`) | 新設 | porter のメッセージ配送機能は、再送を行う通信種別において、構成で指定された待ち時間を超えても欠落が解消しない場合、欠落した範囲の再送を送信側へ繰り返し要求します。 |
 | `POTR-DELIVERY-FUNC-007` <!-- potr-req: uuid=b7ac35fc-7901-4f33-9ec3-ed139ffec8c1 --> (`b7ac35fc-7901-4f33-9ec3-ed139ffec8c1`) | 具体化 (UUID を維持) | porter のメッセージ配送機能は、自身の欠落した範囲について再送できないことを通知された場合、その通信を切断として利用側へ通知します。 |
 
-Table: メッセージ配送の機能要件の変更
-
 `POTR-DELIVERY-FUNC-011` <!-- potr-req: uuid=5f4ebd3c-2656-428f-9683-340467f3b7ca --> の番号は、Git 履歴を含めて過去に使用した最大番号 (`FUNC-010`) の次です。新設の行は、機能要件の表で `FUNC-010` の次に置きます。
 
 本文は次のとおり変更します。
+
+Table: メッセージ配送の本文の変更
 
 | 節 | 現在 | 変更後 |
 | --- | --- | --- |
@@ -151,11 +153,11 @@ Table: メッセージ配送の機能要件の変更
 | 順序の復元と待ち時間 | 待ち時間を超えても欠落が解消しない場合、その通信を切断として利用側へ通知します。 | 待ち時間を超えても欠落が解消しない場合、欠落した範囲の再送を送信側へ要求します。欠落が解消するまで、待ち時間ごとに要求を繰り返します。 |
 | 切断の通知 | 表の 1 行目「待ち時間を超えても欠落が解消しない」 | 行を削除する |
 
-Table: メッセージ配送の本文の変更
-
 「順序の復元と待ち時間」の「欠落した範囲を除外して後続のメッセージを引き渡すことはありません。」は維持します。
 
 ## 詳細設計の文書の変更
+
+Table: 詳細設計の文書の変更
 
 | 文書 | 節 | 変更 |
 | --- | --- | --- |
@@ -165,9 +167,9 @@ Table: メッセージ配送の本文の変更
 | `docs/fin-ordering.md` | エッジ ケース | `protocol.md` と同じ 2 行を同じ内容に改める |
 | `docs/sequence-data.md` | REJECT による切断と復帰 | 「欠落 seq=0 をスキップ、seq=1 から再開」を「受信の状態を破棄」に改め、次に届いたパケットで初期化する流れにする |
 
-Table: 詳細設計の文書の変更
-
 ## コードの変更
+
+Table: コードの変更対象
 
 | ファイル | 変更 |
 | --- | --- |
@@ -177,11 +179,11 @@ Table: 詳細設計の文書の変更
 | `test/src/libporter/windowTest/windowTest.cc` | `potr_internal_window_recv_skip()` のテストを削除する |
 | `test/src/libporter/threadRecvWindowTest/` | 単体テストを追加する (次節)。必要に応じて `makepart.mk` と `thread_recv_window.inject.*` を更新する |
 
-Table: コードの変更対象
-
 ## 単体テスト
 
 `test/src/libporter/threadRecvWindowTest/` に、次の観点のテストを追加します。テストは [テスト方法](../../../../../framework/testfw/docs/how-to-test.md) と既存テストの書式に従います。
+
+Table: 追加する単体テストの観点
 
 | 観点 | 期待する結果 |
 | --- | --- |
@@ -193,8 +195,6 @@ Table: コードの変更対象
 | REJECT の後に届いた DATA | その通番で受信ウィンドウを初期化して配信する |
 | 受信ウィンドウより先の DATA | パケットを捨て、`next_seq` の NACK を送る |
 | 配信済みの古い通番の DATA | パケットを捨て、NACK を送らない |
-
-Table: 追加する単体テストの観点
 
 ## 受入条件
 
@@ -211,14 +211,14 @@ P3 の再測定は、前案件の測定用プログラム (`bench.cc`、`build-w
 
 ## 知見の反映計画
 
+Table: 知見の反映先
+
 | 反映先 | 内容 |
 | --- | --- |
 | 機能仕様 `delivery.md` | 「機能仕様の変更」の要件と本文 |
 | `protocol.md`、`fin-ordering.md`、`sequence-data.md` | 「詳細設計の文書の変更」の内容 |
 | `thread_recv_window.c` のコメント | 自分の欠番に限って REJECT を扱う理由 (一対多では他の受信者向けの REJECT も届くこと)、受信の状態を破棄して次のパケットから再開する理由 (1 通番ずつでは送信側の保持範囲に追い付けないこと)、範囲外の先の通番で NACK を送る理由 |
 | `thread_recv_window.h` の Doxygen | `thread_recv_window_on_reject()` の振る舞い (判定、FIN の発火、状態の破棄) |
-
-Table: 知見の反映先
 
 ## 残課題の扱い
 

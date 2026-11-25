@@ -13,6 +13,8 @@
 
 porter のハンドル (`potr_context *`) について、同一ハンドルから複数スレッドで `potr_service_send` を呼べるようにします。あわせて、利用者が API の契約を守っていても起きる不具合 4 件を修正します。
 
+Table: 今回の対応項目
+
 | ID | 内容 |
 | --- | --- |
 | B-1 | N:1 送信スレッドが `peers_mutex` を外した後にピア領域を使い、ピア解放と競合する |
@@ -20,8 +22,6 @@ porter のハンドル (`potr_context *`) について、同一ハンドルか�
 | B-3 | コールバック内で `potr_service_close` を呼ぶと、受信スレッドが自分自身を join して終了しない |
 | B-4 | TCP close が `ctx->send_has_data` をロックなしで読む |
 | C-1 | 同一ハンドルの並行送信の許可 (部分直列化) |
-
-Table: 今回の対応項目
 
 範囲外は次のとおりです。
 
@@ -64,13 +64,13 @@ B-1 → B-2/B-3 → B-4 → C-1 の順に、1 項目ずつ実施します。各�
 
 検出時はすべて `POTR_ERR_UNSUPPORTED` を返し、トレースに理由を出力します。
 
+Table: コールバック内呼び出しを検出する API
+
 | API | 検出の条件 | 判定位置 |
 | --- | --- | --- |
 | `potr_service_send` | N:1 (`is_multi_peer`) のときだけ | 引数検証の後、圧縮の前 |
 | `potr_service_close` | 全通信種別 | NULL 検証の後、`close_requested` の設定前 |
 | `potr_peer_disconnect` | 全通信種別 (N:1 以外は従来どおり `POTR_ERR_UNSUPPORTED`) | 引数検証の後、`peers_mutex` の取得前 |
-
-Table: コールバック内呼び出しを検出する API
 
 N:1 以外の `potr_service_send` は、コールバック内からの呼び出し (ブロッキング送信を含む) を従来どおり受け付けます。
 
@@ -81,14 +81,14 @@ N:1 以外の `potr_service_send` は、コールバック内からの呼び出�
 
 `cplat_process_get_tid()` と `cplat_process_get_pid()` の説明から、用途を診断に限る記述を外します。関数、戻り値、実装は変更しません。
 
+Table: cplat の説明の変更箇所
+
 | 対象 | 変更内容 |
 | --- | --- |
 | `app/cplat/prod/include/cplat/runtime/process.h` の 2 関数の Doxygen | 「診断目的で…使用します」を、ログ出力などの記録に加え、処理が特定のプロセスやスレッドで実行中かを判定する用途にも使えると読める表現にする |
 | `app/cplat/docs/api-cheatsheet.md` の `cplat_process_get_tid()` の行 | 「診断目的の識別子です」を、用途を限らない表現にする |
 | `app/cplat/docs/functional-spec/runtime.md` の要件 `CPLAT-RUNTIME-FUNC-010` <!-- cplat-req: uuid=0e823b69-8e80-457a-997a-60fb0fdecc79 -->、`CPLAT-RUNTIME-FUNC-011` <!-- cplat-req: uuid=7f2bb4ce-766b-4fde-8577-ab1c9aecdb3c --> | 要件文から「診断で」を外す。要件 ID と UUID は維持する |
 | 同ファイルの「プロセスとスレッドの識別」節 | 用途の説明を、記録の切り分けと実行中のプロセスやスレッドの判定の両方を含む表現にする |
-
-Table: cplat の説明の変更箇所
 
 要件 `CPLAT-RUNTIME-FUNC-010` <!-- cplat-req: uuid=0e823b69-8e80-457a-997a-60fb0fdecc79 --> と `CPLAT-RUNTIME-FUNC-011` <!-- cplat-req: uuid=7f2bb4ce-766b-4fde-8577-ab1c9aecdb3c --> を参照する下流成果物は、履歴文書 `app/cplat/docs/proposals/string-catalog-trace-kind-design.md` だけです。この文書は追加時の記録のため変更しません。
 
@@ -103,13 +103,13 @@ Table: cplat の説明の変更箇所
 
 ### 並行送信の妨げになる箇所と対策
 
+Table: 並行送信の妨げになる箇所と対策
+
 | 箇所 | 対策 |
 | --- | --- |
 | 共有の圧縮領域 `ctx->compress_buf` | 呼び出しごとに一時領域を確保する |
 | 断片の 1 要素ずつのキュー登録 | 1 メッセージ分の登録を、キューの登録用 mutex で直列化する |
 | ブロッキング送信のキュー全体の空き待ち | 登録順の番号 (チケット) で、自分の最後の断片の完了を待つ |
-
-Table: 並行送信の妨げになる箇所と対策
 
 ### 送信キュー
 
@@ -151,6 +151,8 @@ Table: 並行送信の妨げになる箇所と対策
 
 ### 公開 API の振る舞いの変化
 
+Table: 公開 API の振る舞いの変化
+
 | 項目 | 変更前 | 変更後 |
 | --- | --- | --- |
 | 同一ハンドルの `potr_service_send` の並行呼び出し | 不可 | 可。各スレッド内の送信順序は保たれ、スレッド間の順序は登録用 mutex を取得した順になる |
@@ -161,13 +163,13 @@ Table: 並行送信の妨げになる箇所と対策
 | `potr_service_close` の `POTR_ERR_UNSUPPORTED` | なし | 自ハンドルのコールバック内から呼んだ |
 | `potr_peer_disconnect` の `POTR_ERR_UNSUPPORTED` | N:1 以外で呼んだ | 自ハンドルのコールバック内から呼んだ場合も含む |
 
-Table: 公開 API の振る舞いの変化
-
 公開関数のシグネチャは変わらないため、`exportTest` のエクスポート表は変更しません。
 
 ## 試験
 
 ### 単体テスト
+
+Table: 単体テストの追加・更新
 
 | 対象 | 追加・更新する確認 |
 | --- | --- |
@@ -177,8 +179,6 @@ Table: 公開 API の振る舞いの変化
 | `test/src/libporter/potrServiceCloseTest/` | コールバック内判定で `POTR_ERR_UNSUPPORTED` を返すこと (B-3)、TCP の `send_has_data` の取得経路 (B-4) |
 | `test/src/libporter/potr_peer_disconnect_test/` | コールバック内判定で `POTR_ERR_UNSUPPORTED` を返すこと |
 | `test/src/libporter/potrSendQueueTest/` | 番号の発行、完了順での番号待ちの解除、`push_mutex` の生成と破棄 |
-
-Table: 単体テストの追加・更新
 
 ### 結合試験
 
@@ -193,6 +193,8 @@ B-1 の結合試験は競合の発生が確率的なため、異常が起きな�
 
 ## 知見の反映計画
 
+Table: 知見の反映計画
+
 | 反映先 | 反映する内容 |
 | --- | --- |
 | `app/porter/docs/api.md` のスレッド セーフ表と「ハンドルとスレッドの対応」節 | 同一ハンドルの並行送信が可能なこと、close は他 API と並行不可なこと、コールバック内から呼べない API と戻り値 |
@@ -204,8 +206,6 @@ B-1 の結合試験は競合の発生が確率的なため、異常が起きな�
 | `potr_send_thread.c` の `send_packed_peer_mode` のコメント | `peers_mutex` を flush の間保持する理由 |
 | `app/porter/docs/functional-spec/` | 並行送信やコールバック内呼び出しの記載の有無を確認し、利用側から見た要件に影響する場合だけ見直す |
 | cplat の 3 文書 | [cplat の識別子取得 API の説明の汎用化](#cplat-の識別子取得-api-の説明の汎用化) のとおり |
-
-Table: 知見の反映計画
 
 `docs/doxybook2_public/` と `docs/doxybook2_internal/` は自動生成物のため、手作業で変更しません。
 
@@ -228,9 +228,9 @@ Table: 知見の反映計画
 
 ## 対象ファイル
 
+Table: 対象ファイル
+
 | サブモジュール | ファイル |
 | --- | --- |
 | `app/porter` | `prod/libsrc/porter/thread/potr_send_thread.c`、`prod/libsrc/porter/potr_path_event.c`、`prod/include_internal/porter/potr_path_event.h`、`prod/include_internal/porter/potr_context.h`、`prod/libsrc/porter/api/potr_service_send.c`、`prod/libsrc/porter/api/potr_service_close.c`、`prod/libsrc/porter/api/potr_peer_disconnect.c`、`prod/libsrc/porter/api/potr_service_open.c`、`prod/libsrc/porter/api/api_context_cleanup.c`、`prod/include_internal/porter/infra/potr_send_queue.h`、`prod/libsrc/porter/infra/potr_send_queue.c`、`prod/include/porter/porter_spec.h`、`prod/include/porter/porter_type.h`、`docs/api.md`、`docs/sequence-data.md`、`docs/architecture.md`、`test/` 配下の上記試験 |
 | `app/cplat` | `prod/include/cplat/runtime/process.h`、`docs/api-cheatsheet.md`、`docs/functional-spec/runtime.md` |
-
-Table: 対象ファイル

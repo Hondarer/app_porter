@@ -33,6 +33,8 @@
      *
      *  ビルド条件に応じて以下の値を取ります。
      *
+     *  Table: POTR_EXPORT のビルド条件別の展開値
+     *
      *  | 条件                                                  | 値                                        |
      *  | ----------------------------------------------------- | ----------------------------------------- |
      *  | Linux / `POTR_STATIC` 定義時 (静的リンク)             | (空)                                      |
@@ -41,8 +43,6 @@
      *  | Windows / `POTR_STATIC` 定義時 (静的リンク)           | (空)                                      |
      *  | Windows / `POTR_EXPORTS` 定義時 (DLL ビルド)          | `__declspec(dllexport)`                   |
      *  | Windows / `POTR_EXPORTS` 未定義時 (DLL 利用側)        | `__declspec(dllimport)`                   |
-     *
-     *  Table: POTR_EXPORT のビルド条件別の展開値
      */
     #define POTR_EXPORT
 

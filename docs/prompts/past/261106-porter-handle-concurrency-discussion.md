@@ -86,6 +86,8 @@
 
 参照資料と版: 2026-11-06 時点の作業ツリー (main、15acdc53)。主な参照箇所は次のとおりです。
 
+Table: 主な参照資料
+
 | 参照 | 内容 |
 | --- | --- |
 | [potr_service_send.c](../../../prod/libsrc/porter/api/potr_service_send.c) | 送信 API。共有圧縮領域、断片の登録、ブロッキング送信 |
@@ -97,8 +99,6 @@
 | [potr_service_close.c](../../../prod/libsrc/porter/api/potr_service_close.c) | close 処理 (297 行で `send_has_data` をロックなしで参照) |
 | [api.md](../../api.md) | 公開 API のスレッド セーフ表 |
 | [compiler.h](../../../../cplat/prod/include/cplat/base/compiler.h) | `THREAD_LOCAL` マクロ |
-
-Table: 主な参照資料
 
 ## 現行の合意内容
 
@@ -128,6 +128,8 @@ Table: 主な参照資料
 
 ## 観点別の確認
 
+Table: 観点別の確認状況
+
 | 観点 | 状態 | 根拠・関連 Q |
 | --- | --- | --- |
 | 目的・利用者 | 確認済み | ハンドル利用者が同一ハンドルから複数スレッドで送信できるようにし、既存不具合を除く ([現行の合意内容](#現行の合意内容)) |
@@ -137,9 +139,9 @@ Table: 主な参照資料
 | 実現性・例外 | 確認済み | [Q-002](#q-002-圧縮用一時領域の方式)、[Q-004](#q-004-n1-送信スレッドのピア参照競合の修正方式)、[Q-006](#q-006-コールバック内呼び出しを検出する-api) の Assessment |
 | 受入条件・検証 | 確認済み | [Q-009](#q-009-結合試験の追加範囲)。受入条件の全体は最終仕様で定める |
 
-Table: 観点別の確認状況
-
 ## 質問一覧
+
+Table: 質問一覧
 
 | Q-ID | 論点 | 状態 | 依存・関連 |
 | --- | --- | --- | --- |
@@ -155,8 +157,6 @@ Table: 観点別の確認状況
 | [Q-010](#q-010-既存の-cplat_process_get_tid-の利用) | 既存の `cplat_process_get_tid` の利用 | 解決済み | [Q-007](#q-007-コールバック内呼び出しの検出手段) |
 | [Q-011](#q-011-cplat-の説明を汎用化する対象-api) | cplat の説明を汎用化する対象 API | 解決済み | [Q-010](#q-010-既存の-cplat_process_get_tid-の利用) |
 | [Q-012](#q-012-cplat-の機能要件-func-011-の-id-と-uuid-の扱い) | cplat の機能要件 FUNC-011 の ID と UUID の扱い | 解決済み | [Q-010](#q-010-既存の-cplat_process_get_tid-の利用)、[Q-011](#q-011-cplat-の説明を汎用化する対象-api) |
-
-Table: 質問一覧
 
 ## 明確化のための確認項目
 
@@ -410,13 +410,13 @@ close はコールバックを呼んだスレッドを join するため、コ�
 
 各 API がコールバック内で停止するかどうかを確認した結果は次のとおりです。
 
+Table: コールバック内呼び出しで停止する条件
+
 | API | 停止する条件 |
 | --- | --- |
 | `potr_service_send` | N:1 で停止。TCP ではコールバックからの返信を試験で確認済み (`tcpMultipathTest.cc:481`) |
 | `potr_service_close` | 全通信種別で停止 (自スレッドの join) |
 | `potr_peer_disconnect` | N:1 で停止 (文書で警告済み) |
-
-Table: コールバック内呼び出しで停止する条件
 
 N:1 以外の `potr_service_send` を検出対象にすると、現在動作しているコールバックからの返信が使えなくなります。
 
@@ -654,13 +654,13 @@ if (cplat_atomic_load_i32(&ctx->callback_active, ...) != 0 &&
 単一選択で A のみが選ばれ、補足で cplat 側の説明の汎用化を同じ案件で計画するよう指示されています。Recommendation の制約に書いた「説明文の修正の要否」は、この補足で「要」と確定しました。  
 汎用化の対象を調べたところ、「診断目的」に限った記述は次の 3 か所にありました。
 
+Table: cplat で用途を診断に限っている記述
+
 | 箇所 | 現在の記述 |
 | --- | --- |
 | [process.h](../../../../cplat/prod/include/cplat/runtime/process.h) 74 行目 (TID)、61 行目 (PID) | 「ログ出力など、診断目的で…使用します」 |
 | [api-cheatsheet.md](../../../../cplat/docs/api-cheatsheet.md) 386 行目 (TID) | 「診断目的の識別子です」 |
 | [runtime.md](../../../../cplat/docs/functional-spec/runtime.md) 35-36 行目の要件 `CPLAT-RUNTIME-FUNC-010` <!-- cplat-req: uuid=0e823b69-8e80-457a-997a-60fb0fdecc79 --> (PID)、`CPLAT-RUNTIME-FUNC-011` <!-- cplat-req: uuid=7f2bb4ce-766b-4fde-8577-ab1c9aecdb3c --> (TID) と 72-75 行目の本文 | 「診断で識別するための数値を取得します」 |
-
-Table: cplat で用途を診断に限っている記述
 
 機能仕様の要件文も用途を限っているため、汎用化すると要件文が変わります。PID も同じ記述を持つため、対象の範囲を [Q-011](#q-011-cplat-の説明を汎用化する対象-api)、要件 ID と UUID の扱いを [Q-012](#q-012-cplat-の機能要件-func-011-の-id-と-uuid-の扱い) で確認します。
 

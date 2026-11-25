@@ -24,11 +24,11 @@
 
 ## 残課題一覧
 
+Table: TCP 双方向 N:1 通信の残課題
+
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
 | BL-001 | TCP 双方向 N:1 通信の実施要否判断と設計・実装 | 過去 backlog からの転記 (BL-004 / BL-025) | 低 | 次フェーズへ転記 (継続案件 261123-porter-remaining-backlog では扱わない。`../current/261123-porter-remaining-backlog-backlog.md` の BL-001 へ転記) |
-
-Table: TCP 双方向 N:1 通信の残課題
 
 ## BL-001 TCP 双方向 N:1 通信の実施要否判断と設計・実装
 

@@ -33,6 +33,8 @@
 
 - **現状の事象**: ワークスペース ルートで `python3 app/general/bin/check_functional_spec.py` を実行すると、「要件 ID に UUID が併記されていません」が 35 件出て、終了コード 1 で失敗します (2026-11-18、親 `b2f6c568`、porter `4abc542`、cplat `19302982` の時点。この案件の変更を除く)。内訳は次のとおりです。
 
+    Table: 機能仕様の検査の既存の問題
+
     | 対象 | 件数 |
     | --- | --- |
     | `app/cplat/docs/prompts/current/cplat-account-session-discussion.md` | 8 |
@@ -43,8 +45,6 @@
     | `app/porter/docs/prompts/past/261109-porter-path-priority-timestamp-auth-discussion.md` | 1 |
     | `app/porter/prod/libsrc/porter/api/potr_service_send.c` の 244 行目 | 1 |
     | 上記の `potr_service_send.c` の写し (`test/src/integration/certificateTest/`、`test/src/libporter/potr_service_send_test/`) | 2 |
-
-    Table: 機能仕様の検査の既存の問題
 
     行ごとの要件 ID は、検査を実行すると表示されます。この一覧に要件 ID を書くと同じ検査の対象になるため、件数だけを記載しています。製品のソースの問題は、`potr_service_send.c` のコメントの 1 か所だけです。末尾の 2 件は、テストのビルドが製品のソースから取り込む Git 管理外の写しで、製品のソースを直せば解消します。残りの 32 件は、agree-before-implement の検討文書、最終仕様、残課題一覧の本文で要件 ID を書いた箇所です。
 

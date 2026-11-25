@@ -26,12 +26,14 @@
     @endcode
  *
  *  @par            オプション
+ *  @parblock
+ *  Table: porter-test のコマンドライン オプション
+ *
  *  | オプション                | 説明                                                                               |
  *  | ------------------------- | ---------------------------------------------------------------------------------- |
  *  | -l \<level\>              | ログレベルを指定します。指定がない場合はログ出力なし。                             |
  *  | --recv-delay-ms \<ms\>    | POTR_EVENT_DATA を受けるたびに、指定した時間 [ms] だけ待ちます。0 から 600000。既定は 0。 |
- *
- *  Table: porter-test のコマンドライン オプション
+ *  @endparblock
  *
  *  role に指定可能な値: sender, receiver\n
  *  level に指定可能な値: VERBOSE, INFO, WARNING, ERROR, CRITICAL (大文字小文字不問)\n

@@ -17,6 +17,8 @@ CI では `porter-bench` のビルドだけを行い、測定は実行しませ�
 
 ## 構成
 
+Table: 性能測定の構成
+
 | 場所 | 内容 |
 |---|---|
 | [prod/src/cmd/porter-bench/](../prod/src/cmd/porter-bench/porter-bench.cc) | 測定コマンド。`porter-test` と同じく、通常の `make` でビルドします。 |
@@ -25,8 +27,6 @@ CI では `porter-bench` のビルドだけを行い、測定は実行しませ�
 | [bin/porter_bench_summarize.py](../bin/porter_bench_summarize.py) | 集計した CSV から、2 つの版の主要な指標を並べます。 |
 | [bin/porter_bench_summarize_variants.py](../bin/porter_bench_summarize_variants.py) | 版ごとの結果の CSV から、各回の値の統計量を、複数の版を並べて集計します。 |
 | [bin_test/test_porter_bench.py](../bin_test/test_porter_bench.py) | 上記のスクリプトの単体テストです。 |
-
-Table: 性能測定の構成
 
 ## ビルド
 
@@ -48,6 +48,8 @@ porter は共有ライブラリ (Linux は `libporter.so`、Windows は `porter.
 ```text
 porter-bench --cond <p1|p2|p3|p4|p5|p6|p7> [options]
 ```
+
+Table: porter-bench の引数
 
 | 引数 | 説明 | 既定値 |
 |---|---|---|
@@ -79,12 +81,12 @@ porter-bench --cond <p1|p2|p3|p4|p5|p6|p7> [options]
 | `--no-header` | CSV のヘッダー行を出力しません。 | 出力する |
 | `--trace-level <none\|error\|warning\|info\|debug>` | porter のトレースを標準エラー出力へ出すレベル。 | `warning` |
 
-Table: porter-bench の引数
-
 終了コードは、測定に成功して CSV を出力した場合が 0、引数の誤りまたは測定の失敗が 1 です。失敗した場合は CSV を出力しません。  
 測定には、トレースの出力が影響しないよう、`--trace-level none` を指定することを推奨します。`porter_bench_ab.py` は常に指定します。
 
 ## 測定条件
+
+Table: 測定条件
 
 | 条件 | 内容 |
 |---|---|
@@ -95,8 +97,6 @@ Table: porter-bench の引数
 | p5 | p1 と同等の負荷を TCP (`POTR_TYPE_TCP_BIDIR` または `POTR_TYPE_TCP`) で実行します。送信、受信、close の各段階のエラーを標準エラー出力へ出します。 |
 | p6 | 同一プロセス内で `POTR_TYPE_MULTICAST` の送信者 1 つと受信者 `--receivers` 個をループバックで動かします。先頭の `--slow-receivers` 個の受信者は受信コールバックで `--cb-sleep-ms` 待ちます。全受信者の受信報告が送信者に届いた後に、待ち合わせなしの連続送信を行い、健全な受信者の全員が最後のメッセージを受信するまでの処理件数と切断回数を測ります。 |
 | p7 | 同一プロセス内で `POTR_TYPE_UNICAST_BIDIR_N1` のサーバー 1 つと `--clients` 個のクライアントを動かします。サーバーが `POTR_PEER_ALL` へ連続送信し、停止クライアントの切断と健全なクライアントの受信を測ります。 |
-
-Table: 測定条件
 
 測定に使う設定は、porter-bench が内部で組み立てます。構成ファイルは使いません。  
 通知キュー容量によるフロー制御は、p7 の停止クライアントを除いて既定で無効 (`flow_control_capacity` が 0) です。グローバル設定を変更して測定する場合は、`--config <key>=<value>` を指定します。
@@ -130,6 +130,8 @@ p7 は、サーバーと全クライアントの接続後、クライアント�
 受信件数は p6 と同じく、ペイロードの通番が測定範囲内にある通知を数えます。  
 重複や順序の独立した指標はなく、欠落した分は受信件数の不足として現れます。
 
+Table: p7 の受信と切断の指標
+
 | 指標 | 内容 |
 |---|---|
 | `healthy_received_min` | 健全なクライアントの測定対象の受信件数の最少。 |
@@ -138,8 +140,6 @@ p7 は、サーバーと全クライアントの接続後、クライアント�
 | `stalled_disconnect_count` | サーバー側で切断通知を受けた停止クライアントの数。同じクライアントは 1 個として数えます。 |
 | `stalled_disconnect_ms` | 最初の送信から、サーバー側で最初の停止クライアントの切断通知を受けるまでの時間 [ms]。通知がなければ -1。 |
 | `send_full_count` | ウォーム アップを含む全送信区間で、`POTR_ERR_FULL`、`POTR_ERR_DISCONNECTED`、`POTR_ERR_TIMEOUT` を受けて再試行した回数。 |
-
-Table: p7 の受信と切断の指標
 
 切断通知は最初の送信から完了または時間切れまでを数え、測定終了のためにハンドルを閉じた際の通知は含めません。  
 受信を止めたピアを切断する機能が無効な構成でも、時間切れまで測定して値を出力します。
@@ -161,6 +161,8 @@ p7 の上記条件では、`healthy_received_min=10000`、`healthy_disconnect_co
 
 CSV の列は `os,version,cond,params,run,metric,value` です。
 
+Table: CSV の列
+
 | 列 | 内容 |
 |---|---|
 | `os` | `windows` または `linux`。 |
@@ -169,8 +171,6 @@ CSV の列は `os,version,cond,params,run,metric,value` です。
 | `params` | `;` 区切りの条件パラメーター。 |
 | `run` | `1` から `--runs` までの各回の番号に続けて、条件全体の `min`、`median`、`max`。 |
 | `metric`、`value` | 指標の名前と値。 |
-
-Table: CSV の列
 
 `params` は `key=value` を `;` で区切ります。  
 `--config` の上書きは、すべての条件で `cfg.<key>=<value>` として指定順に末尾へ追加します。  
@@ -183,6 +183,8 @@ p3 の `cb_sleep_ms` は常に記録します。
 
 指標は、条件ごとに次のとおりです。
 
+Table: 条件ごとの指標
+
 | 条件 | 指標 |
 |---|---|
 | p1、p5 | `throughput_msg_s`、`api_p50_us`、`api_p95_us`、`api_p99_us`、`notify_p50_us`、`notify_p95_us`、`notify_p99_us`、`cpu_time_ms`、`send_full_count` |
@@ -191,8 +193,6 @@ p3 の `cb_sleep_ms` は常に記録します。
 | p4 | `close_p50_us`、`close_p95_us`、`close_p99_us`、`rss_slope_bytes_per_cycle`、`priv_slope_bytes_per_cycle`、`handles_slope_per_cycle`、`threads_slope_per_cycle`、およびチェックポイント (`c0`、`c100`、...) ごとの `rss_inc_bytes_c<N>`、`priv_inc_bytes_c<N>`、`handles_c<N>`、`threads_c<N>` |
 | p6 | `throughput_msg_s`、`healthy_received_min`、`healthy_disconnect_count`、`slow_received_min`、`slow_disconnect_count`、`send_full_count` |
 | p7 | `throughput_msg_s`、`healthy_received_min`、`healthy_disconnect_count`、`stalled_received_min`、`stalled_disconnect_count`、`stalled_disconnect_ms`、`send_full_count` |
-
-Table: 条件ごとの指標
 
 ### 送信キューが満杯の場合の扱い
 
@@ -257,6 +257,8 @@ cplat など、porter が依存するほかのライブラリも変更の対象�
 `porter_bench_ab.py` は、条件を外側、版を内側にして逐次実行します。時間経過による環境の変化が、特定の版へ偏らないようにするためです。  
 複数のスクリプトを同時に実行しないでください。同時に動く負荷で測定値が変わります。
 
+Table: porter_bench_ab.py の引数
+
 | 引数 | 説明 | 既定値 |
 |---|---|---|
 | `--exe <版の名前>=<パス>` | 版の名前と実行ファイルのパス。2 回以上指定します。先頭が基準の版です。 | - |
@@ -265,15 +267,13 @@ cplat など、porter が依存するほかのライブラリも変更の対象�
 | `--port <P>` | ループバックの基準ポート番号。 | `29000` |
 | `--timeout <s>` | 1 回の実行の制限時間 [s]。 | `900` |
 
-Table: porter_bench_ab.py の引数
+Table: 測定する条件の行列
 
 | 行列 | 内容 |
 |---|---|
 | `basic` | p1 から p5 を、既定の引数で 1 条件ずつ (5 条件)。 |
 | `tcp` | TCP の送信方式を、p4 (TCP) を 1 条件、p5 (片方向) をペイロード長 {64, 5000} と送信フラグ 4 種とスレッド数 {1, 4} の組み合わせで 16 条件、p5 (双方向) を 1 条件の、合わせて 18 条件。 |
 | `full` | `basic` と `tcp` を、重複を除いて結合 (22 条件)。 |
-
-Table: 測定する条件の行列
 
 実行の記録は `<出力ディレクトリ>/run-log.txt` に追記します。  
 1 回でも失敗または時間切れがあると、終了コードは 1 です。失敗した条件は、`.err` を確認してください。  
@@ -313,13 +313,13 @@ python3 app/porter/bin/porter_bench_summarize.py ~/porter-bench/aggregate.csv --
 
 porter-bench は、メモリ使用量、ハンドル数、スレッド数を、OS の API で取得します。
 
+Table: 資源の取得に使う API
+
 | OS | 取得する値 | 使用する API |
 |---|---|---|
 | Linux | 常駐メモリ、ピーク、匿名メモリ、スレッド数 | `/proc/self/status` の `VmRSS`、`VmHWM`、`RssAnon`、`Threads` |
 | Linux | ファイル記述子の数 | `/proc/self/fd` の列挙 |
 | Windows | 常駐メモリ、ピーク、専用メモリ | `GetProcessMemoryInfo()` の `WorkingSetSize`、`PeakWorkingSetSize`、`PrivateUsage` |
 | Windows | ハンドル数、スレッド数 | `GetProcessHandleCount()`、`CreateToolhelp32Snapshot()` |
-
-Table: 資源の取得に使う API
 
 Linux の `RssAnon` は、Windows の `PrivateUsage` に相当する値として扱います。両 OS の値は同じ意味ではないため、OS をまたいだ絶対値の比較には使わないでください。

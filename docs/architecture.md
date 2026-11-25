@@ -41,12 +41,12 @@ Figure: ハンドルの寿命と非同期通知の実行関係
 
 porter は通信の参加者を **送信者 (SENDER)** と **受信者 (RECEIVER)** に区別します。
 
+Table: porter 通信参加者の役割定義
+
 | 役割 | 説明 |
 |---|---|
 | SENDER | `potr_service_send()` でデータを送出します。ヘルス チェック PING を送信します。 |
 | RECEIVER | 到着したパケットをコールバックで上位層へ渡します。NACK で再送を要求します。 |
-
-Table: porter 通信参加者の役割定義
 
 1:1 (ユニキャスト) 通信では送信者 1 : 受信者 1 の構成となります。  
 1:N (マルチキャスト・ブロードキャスト) 通信では送信者 1 : 受信者 N の構成となります。
@@ -58,12 +58,12 @@ Table: porter 通信参加者の役割定義
 - 1:1 モードでは、両端が送受信・NACK・ヘルス チェックを独立して行います。`POTR_ROLE_SENDER` / `POTR_ROLE_RECEIVER` は設定上のラベルであり、データ方向そのものを制約しません
 - N:1 モードでは、サーバー側は `src_addr` を省略した `POTR_ROLE_RECEIVER` として開かれ、クライアントごとの状態はピア テーブルで管理されます
 
+Table: unicast_bidir のモード別 Role の意味
+
 | モード | Role / 設定の意味 |
 |---|---|
 | 1:1 | `POTR_ROLE_SENDER` は `src_addr:src_port` で bind し、`dst_addr:dst_port` へ送信する側。`POTR_ROLE_RECEIVER` は `dst_addr:dst_port` で bind し、必要に応じて送信元を学習して返信する側 |
 | N:1 | サーバーは `POTR_ROLE_RECEIVER` として `dst_addr:dst_port` で待ち受けます。各クライアントは従来どおり `src_addr` を持つ `unicast_bidir` エンドポイントとして接続します。 |
-
-Table: unicast_bidir のモード別 Role の意味
 
 > UDP は無接続であるため、1:1 モードではどちらの端が先に `potr_service_open_from_config()` / `potr_service_open()` を呼び出しても動作に違いはありません。N:1 モードではサーバーが受信ソケットを先に開いて待ち受ける運用が自然です。
 
@@ -71,12 +71,12 @@ Table: unicast_bidir のモード別 Role の意味
 
 `POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR` では Role は **TCP 接続方向のみ** を意味します。
 
+Table: TCP 通信種別における Role の役割とデータ送受信
+
 | Role | TCP の役割 | データ送受信 |
 |---|---|---|
 | `POTR_ROLE_SENDER` | TCP クライアント (`connect()`) | tcp: 送信のみ / tcp_bidir: 送受信 |
 | `POTR_ROLE_RECEIVER` | TCP サーバー (`listen()` → `accept()`) | tcp: 受信のみ / tcp_bidir: 送受信 |
-
-Table: TCP 通信種別における Role の役割とデータ送受信
 
 UDP は無接続のため先に開いた方が待機するだけですが、TCP では RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を呼び出して `listen()` に入っている必要があります。
 
@@ -108,13 +108,13 @@ flowchart TD
 
 Figure: 送信者のスレッド構成
 
+Table: 送信者 (SENDER) のスレッド構成と役割
+
 | スレッド | 役割 |
 |---|---|
 | 送信スレッド | 送信キューからエレメントを取り出し、DATA パケットを構築して全パスへ sendto します。 |
 | 受信スレッド | NACK / REJECT / FIN / FIN_ACK などの制御パケットを処理し、再送・close 完了通知・DISCONNECTED 発火を行います。 |
 | ヘルス チェック スレッド | 非 TCP は 1 サービス 1 本。片方向 type 1-6 は最後の PING / 有効 DATA 送信時刻を監視して期限到達時だけ PING を送信し、双方向系は一定間隔で PING を送信します。 |
-
-Table: 送信者 (SENDER) のスレッド構成と役割
 
 ### 受信者のスレッド
 
@@ -204,13 +204,13 @@ flowchart TD
 
 Figure: unicast_bidir N:1 サーバーのスレッド構成
 
+Table: N:1 サーバー モードのスレッド構成と役割
+
 | スレッド | 役割 |
 |---|---|
 | 送信スレッド | 共有送信キューから `peer_id` 付きエレメントを取り出し、対応するピアの送信先へ `sendto` します。`POTR_PEER_ALL` は `potr_service_send()` 呼び出し時点で全ピア分に展開されます。 |
 | 受信スレッド | `recvfrom` 後に暗号化必須判定と GCM 認証を行い、成功したパケットだけを session triplet (`session_id` + `session_tv_sec` + `session_tv_nsec`) でピア特定します。未知セッションは DATA / PING のみ新規ピア作成対象とします。 |
 | ヘルス チェック スレッド | 非 TCP の共有 1 本が接続中の各ピアを巡回し、`health_interval_ms` に従って PING を送信し、`health_timeout_ms` 超過で個別に切断を検知します。双方向 UDP ではこの定周期 PING が接続確立の前提であり、実効 `health_interval_ms = 0` のままでは `CONNECTED` しません。 |
-
-Table: N:1 サーバー モードのスレッド構成と役割
 
 ### TCP / TCP_BIDIR のスレッド構成
 
@@ -261,6 +261,8 @@ flowchart TD
 
 Figure: TCP SENDER のスレッド構成 (path 数 = N の例)
 
+Table: TCP SENDER のスレッド構成と役割
+
 | スレッド | 数 | 役割 |
 |---|---|---|
 | connect スレッド | N | path ごとに起動。`connect()` で接続を確立し、成功したら recv / health スレッドを起動します。切断後は `reconnect_interval_ms` 待機して再試行します。 |
@@ -268,9 +270,9 @@ Figure: TCP SENDER のスレッド構成 (path 数 = N の例)
 | recv スレッド | N | path ごとに起動。PING 応答 (`ack_num > 0`) を受信して対応する health スレッドに通知します。TCP 接続断を検知したら `tcp_active_paths` をデクリメントし、0 になった時点で `POTR_EVENT_DISCONNECTED` を発火します。 |
 | health スレッド | N | path ごとに起動。`tcp_health_interval_ms` 周期で PING 要求を送信します。`tcp_health_timeout_ms` 以内に応答を受信しなければその path の接続断と判定して対象世代へ閉じる要求 (`potr_internal_tcp_conn_request_close()`) を発行します。 |
 
-Table: TCP SENDER のスレッド構成と役割
-
 **スレッド数の合計** (SENDER、path 数 N のとき):
+
+Table: TCP SENDER のスレッド種別と合計数
 
 | スレッド種別 | 数 |
 |---|---|
@@ -279,8 +281,6 @@ Table: TCP SENDER のスレッド構成と役割
 | recv スレッド | N |
 | health スレッド | N |
 | **合計** | **3N + 1** |
-
-Table: TCP SENDER のスレッド種別と合計数
 
 #### TCP RECEIVER のスレッド
 
@@ -319,16 +319,18 @@ flowchart TD
 
 Figure: TCP RECEIVER のスレッド構成 (path 数 = N の例)
 
+Table: TCP RECEIVER のスレッド構成と役割
+
 | スレッド | 数 | 役割 |
 |---|---|---|
 | accept スレッド | N | path ごとに起動。`listen()` ソケットで `accept()` を待機し、接続確立後に recv スレッドを起動します。 |
 | recv スレッド | N | path ごとに起動。ヘッダー読み取り → ペイロード読み取りの 2 ステップで受信します。`recv_window_mutex` で保護しながら `potr_internal_window_recv_push()` で重複排除します。`ack_num=0` の PING 要求に即応答し、`tcp_health_timeout_ms` 以内に PING 要求を受信しない場合は接続断と判定します。 |
 
-Table: TCP RECEIVER のスレッド構成と役割
-
 #### TCP_BIDIR のスレッド構成
 
 両端が対称なスレッド構成 (connect スレッド × N + 送信 + 受信 × N + ヘルス チェック × N) を持ちます。
+
+Table: TCP および TCP_BIDIR のスレッド構成比較
 
 | 通信種別 | Role | connect スレッド | 送信スレッド | recv スレッド | health スレッド |
 |---|---|---|---|---|---|
@@ -337,8 +339,6 @@ Table: TCP RECEIVER のスレッド構成と役割
 | TCP_BIDIR | SENDER | N 本 (connect/再接続) | 1 本 (接続後起動) | N 本 (接続後起動) | N 本 (接続後起動) |
 | TCP_BIDIR | RECEIVER | N 本 (accept ループ) | 1 本 (接続後起動) | N 本 (接続後起動) | N 本 (接続後起動) |
 
-Table: TCP および TCP_BIDIR のスレッド構成比較
-
 #### TCP 接続管理
 
 **CONNECTED / DISCONNECTED イベントの発火条件**
@@ -346,12 +346,12 @@ Table: TCP および TCP_BIDIR のスレッド構成比較
 アクティブ path 数 (`tcp_active_paths`) をカウンターで管理します。  
 カウンターの更新は `tcp_state_mutex` で保護します。
 
+Table: TCP 接続イベントの発火条件
+
 | イベント | 発火条件 |
 |---|---|
 | `POTR_EVENT_CONNECTED` | アクティブ path 数が 0 → 1 になった時 (最初の 1 本が接続した瞬間) |
 | `POTR_EVENT_DISCONNECTED` | アクティブ path 数が 1 → 0 になった時 (全 path が切断された瞬間) |
-
-Table: TCP 接続イベントの発火条件
 
 2 本目以降の接続確立・切断では上記イベントは発火しません。
 
@@ -377,6 +377,8 @@ path を飛ばし、かつその path の警告を抑制していないときに
 再送と順序整列は受信状態ビュー経由で 1:1 と N:1 が共有します。  
 構成済みスロットへのパケット振り分けも共有し、受信ループはソケット I/O とピア解決を担当し、タイムアウト時と TCP の受信状態変化時に監視処理を呼びます。
 
+Table: porter コンポーネントの責務と境界条件一覧
+
 | 実装 | 責務 | 境界で守る条件 |
 |---|---|---|
 | `api/potr_service_open.c` | 設定検証、コンテキストの確保、スレッド起動、失敗時の資源解放 | 起動完了後にハンドルを呼び出し元へ返却 |
@@ -394,8 +396,6 @@ path を飛ばし、かつその path の警告を抑制していないときに
 | `thread/thread_recv_fin.c` | pending FIN の判定、`FIN_ACK` 送受信、FIN による切断 | 判定と発火を分離し、`recv_window_mutex` 保持中は発火しない |
 | `thread/thread_recv_window.c` | ウィンドウ投入、NACK 再送要求、REJECT、リオーダー | ループへ個別の状態操作を公開せず、再送と順序整列を入口関数へ集約する |
 | `thread/thread_recv_dispatch.c` | 構成済みスロットへの FIN / REJECT / DATA / PING 振り分け | ピア検索と mutex は呼び出し側が担当する |
-
-Table: porter コンポーネントの責務と境界条件一覧
 
 表のパスは `prod/libsrc/porter/` を起点とします。  
 分割した関数の契約は同じディレクトリの私有ヘッダーへ記載し、公開 API やライブラリ内共有 API には追加しません。
@@ -510,6 +510,8 @@ Figure: porter コンポーネント構成
 porter の全状態は `potr_context` 構造体 (`potr_context *` の実体) に集約されます。  
 この構造体はアプリケーションには不透明 (opaque) であり、内部実装のみがアクセスします。
 
+Table: potr_context が保持する情報カテゴリ
+
 | カテゴリ | 保持する情報 |
 |---|---|
 | 設定 | サービス定義 (通信種別・アドレス・ポート・暗号化鍵)、グローバル設定 (ウィンドウ サイズ・ヘルス チェック間隔) |
@@ -518,15 +520,6 @@ porter の全状態は `potr_context` 構造体 (`potr_context *` の実体) に
 | ウィンドウ | 送信ウィンドウ・受信ウィンドウ (各パケットのコピーを保持) |
 | 送信キュー | ペイロード エレメントのリング バッファー (1024 要素) |
 | セッション状態 | 自セッション ID / 相手セッション ID・開始時刻 |
-
-### 非ブロッキング通信・世代所有・解除オブジェクト
-
-`libporter` が管理するすべてのソケットは、通信開始前に `cplat_socket_watch_attach()` で登録して非ブロッキングのまま運用し、ブロッキングへ戻しません。
-
-- **UDP**: `udp_watch[i]` とサービス共通の解除オブジェクト `recv_cancel` を使用し、送信は `udp_send_mutex[i]` の下で `potr_internal_udp_sendto()` (100 [ms] 絶対期限、延長なし、短い送信は `POTR_ERR_IO`) に統一します。
-- **TCP 接続世代**: 接続管理スレッドが経路 `i` の接続世代 (`tcp_conn_generation[i]`, `tcp_conn_watch[i]`, `tcp_conn_cancel[i]`) を所有します。停止要求は `potr_internal_tcp_conn_request_close()` により `tcp_lifecycle_mutex[i]` の下で閉じる状態を設定して `tcp_conn_cancel[i]` へ通知します (送信用ロック `tcp_send_mutex[i]` は取得しません)。解放 (`potr_internal_tcp_conn_release()`) は受信・ヘルス チェック終了後に `tcp_send_mutex[i]` -> `tcp_lifecycle_mutex[i]` の順で取得し、公開解除後に `watch_detach` -> `socket_close` -> `cancel_dispose` の順で行います。
-- **解除通知と Windows 構成**: 有効な解除オブジェクトへの `cplat_socket_wait_cancel_signal()` は常に `CPLAT_OK` を返し、OS の起床通知が失敗しても待機側の最大 50 [ms] ごとの内部確認で解除を検出します。Windows の `cplat_socket_watch` は登録ごとに 3 つの手動リセット イベントとロックを用い、内部スレッドを生成しません。
-- **送信待機と時刻記録**: `cplat_socket_watch_wait_writable()` が `CPLAT_OK` を返しても切断やエラーの場合があるため送信成功とせず、必ず再送信の結果で判定します。部分入出力時は処理済みバイト数を反映し、TCP の途中送信失敗後は対象世代へ閉じる要求を発行します。`last_ping_send_ms` と `last_valid_data_send_ms` は送信成功時のみ更新し、`flow_last_data_send_ms` (1:1 / N:1) は送出試行時刻として全経路失敗時も更新します (時計取得失敗時は前回値保持)。
 | 接続状態 | `health_alive` (1: 疎通中、0: 未接続または切断) |
 | ヘルス チェック | 最終送信時刻・最終受信時刻 (パス別) |
 | フラグメント バッファー | フラグメント結合用バッファー (最大 65,535 バイト) |
@@ -534,8 +527,6 @@ porter の全状態は `potr_context` 構造体 (`potr_context *` の実体) に
 | 暗号バッファー | 暗号化・復号作業バッファー (max_payload + 16 バイト) |
 | NACK 重複抑制 | 直近 NACK のリング バッファー (16 要素) |
 | リオーダー状態 | `reorder_pending` フラグ・待機通番・タイムアウト期限 (`reorder_timeout_ms > 0` のときのみ使用) |
-
-Table: potr_context が保持する情報カテゴリ
 
 > **TCP 通信種別について**: `POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR` では以下の追加フィールドを保持します。
 >
@@ -554,6 +545,15 @@ Table: potr_context が保持する情報カテゴリ
 
 > **unicast_bidir について**: 1:1 モードの `POTR_ROLE_RECEIVER` は送信ウィンドウ・送信キュー・送信スレッド・ヘルス チェック スレッドも保持します。N:1 モードではさらに `is_multi_peer`、`peers`、`max_peers`、`peers_mutex` などの共有管理情報を持ち、各ピアの詳細状態は `potr_internal_peer_context` に分離されます。
 
+### 非ブロッキング通信・世代所有・解除オブジェクト
+
+`libporter` が管理するすべてのソケットは、通信開始前に `cplat_socket_watch_attach()` で登録して非ブロッキングのまま運用し、ブロッキングへ戻しません。
+
+- **UDP**: `udp_watch[i]` とサービス共通の解除オブジェクト `recv_cancel` を使用し、送信は `udp_send_mutex[i]` の下で `potr_internal_udp_sendto()` (100 [ms] 絶対期限、延長なし、短い送信は `POTR_ERR_IO`) に統一します。
+- **TCP 接続世代**: 接続管理スレッドが経路 `i` の接続世代 (`tcp_conn_generation[i]`, `tcp_conn_watch[i]`, `tcp_conn_cancel[i]`) を所有します。停止要求は `potr_internal_tcp_conn_request_close()` により `tcp_lifecycle_mutex[i]` の下で閉じる状態を設定して `tcp_conn_cancel[i]` へ通知します (送信用ロック `tcp_send_mutex[i]` は取得しません)。解放 (`potr_internal_tcp_conn_release()`) は受信・ヘルス チェック終了後に `tcp_send_mutex[i]` -> `tcp_lifecycle_mutex[i]` の順で取得し、公開解除後に `watch_detach` -> `socket_close` -> `cancel_dispose` の順で行います。
+- **解除通知と Windows 構成**: 有効な解除オブジェクトへの `cplat_socket_wait_cancel_signal()` は常に `CPLAT_OK` を返し、OS の起床通知が失敗しても待機側の最大 50 [ms] ごとの内部確認で解除を検出します。Windows の `cplat_socket_watch` は登録ごとに 3 つの手動リセット イベントとロックを用い、内部スレッドを生成しません。
+- **送信待機と時刻記録**: `cplat_socket_watch_wait_writable()` が `CPLAT_OK` を返しても切断やエラーの場合があるため送信成功とせず、必ず再送信の結果で判定します。部分入出力時は処理済みバイト数を反映し、TCP の途中送信失敗後は対象世代へ閉じる要求を発行します。`last_ping_send_ms` と `last_valid_data_send_ms` は送信成功時のみ更新し、`flow_last_data_send_ms` (1:1 / N:1) は送出試行時刻として全経路失敗時も更新します (時計取得失敗時は前回値保持)。
+
 ## クロスプラットフォーム抽象化
 
 ソケットに関するプラットフォーム差異は `cplat` の `net` カテゴリが吸収します。  
@@ -565,6 +565,8 @@ porter はソケット型・無効値・初期化・クローズのいずれに�
 
 `potr_context.h` は、ソケット以外の残るプラットフォーム差異を引き続き抽象化します。
 
+Table: プラットフォーム抽象化の型と定義
+
 | 機能 | Linux | Windows |
 |---|---|---|
 | スレッド型 | `cplat_thread *` | `cplat_thread *` |
@@ -574,8 +576,6 @@ porter はソケット型・無効値・初期化・クローズのいずれに�
 | カレンダー時刻 (セッション ID 用) | cplat 経由 `clock_gettime(CLOCK_REALTIME, ...)` | cplat 経由 `GetSystemTimeAsFileTime()` |
 | 呼び出し規約 (`POTRAPI`) | (なし) | `__stdcall` |
 | 暗号化 (`crypto` モジュール) | OpenSSL EVP AES-256-GCM | Windows CNG (BCrypt) AES-256-GCM |
-
-Table: プラットフォーム抽象化の型と定義
 
 ## データフロー概要
 
@@ -705,14 +705,14 @@ sequenceDiagram
 
 Figure: フロー制御の送出上限の通知と、抑制の要求と解除
 
+Table: フロー制御におけるスレッドの役割
+
 | スレッド | フロー制御での役割 |
 |---|---|
 | 受信側の受信スレッド | DATA の登録時に占有量へ加算します。要求のしきい値を超えたら抑制の要求を送出し、再送周期ごとに再送します。容量を超える DATA は破棄し、その相手を切断します。相手を採用した後の最初の送出上限と、順序どおりに受信した DATA パケットごとの送出上限の更新、送り終えた相手への通知を送出します。問い合わせを受けた場合は、その時点の状態と送出上限を 1 回返します。送出上限を使わない受信側は、最初に送出できる時点で「上限なし」を 1 回送り、問い合わせにも「上限なし」を返します。`multicast` と `broadcast` の受信者は、監視対象の一覧を受理し、自身を含む一覧を受けるたびに、その時点の送出上限を 1 回返します。監視対象の間だけ、送出上限の更新を送出します。受信報告に、その時点の送出上限を載せます。 |
 | 受信側の通知スレッド | コールバックからの復帰時に占有量から減算します。解除のしきい値を下回ったら、その場で解除 (新しい送出上限を載せる) を送出します。 |
 | 送信側の受信スレッド | 抑制の要求と解除を受理したときだけ、要求の期限と送出上限を更新し、送信スレッドへ通知します。上限なしを受けた場合は、その相手に送出上限がないものとして扱います。`multicast` と `broadcast` 以外の UDP では、相手がいない状態で相手からパケットを受けると、その通番から初期の幅に戻し、問い合わせを 1 回送出します。`multicast` と `broadcast` の送信者は、受信報告、NACK、抑制の要求から受信者の余裕を記録して監視対象を選び直し、監視対象の一覧を、監視対象が変わった時点と再送周期ごとに送出します。 |
 | 送信側の送信スレッド | 相手が「止める状態」の間、送信キューから取り出した DATA の送出を待ちます。解除、期限の経過、送出上限の更新または破棄、close の開始で再開します。UDP では、送出上限または初期の幅で止まっている間、問い合わせを送出します。最初の問い合わせは止まり始めてから 10 ms 後で、以後は間隔を 2 倍にし、`flow_control_request_interval_ms` を上限とします。`multicast` と `broadcast` では、問い合わせの代わりに、同じ間隔で監視対象の一覧を送出し直します。 |
-
-Table: フロー制御におけるスレッドの役割
 
 - 解除は、占有量の減算を行った通知スレッドが送出します。受信スレッドの周期処理を待つと、送信側の再開が再送周期の分だけ遅れるためです。パケットの封緘と送出は、送信スレッド、受信スレッド、ヘルス チェック スレッドも並行して行っており、送出通番はアトミックに採番します。
 - 受信側は、占有量と要求の状態の遷移、およびフロー制御パケットの送出を、1 つの排他の下で一組として行います。受信スレッドの要求と通知スレッドの解除が、状態の遷移と異なる順序で送出されることを防ぐためです。N:1 モードでは、ピアの宛先を参照するため、`peers_mutex`、フロー制御の排他の順に取得します。
@@ -729,14 +729,14 @@ Table: フロー制御におけるスレッドの役割
 フロー制御を使わない構成では、フロー制御のための時刻の取得とロックの取得を、送信と受信のたびには行いません。  
 相手がフロー制御パケットを 1 個も送らない場合に、フロー制御を追加する前と同じ処理量で送受信するためです。
 
+Table: フロー制御を使わない場合に判定を省く条件
+
 | 経路 | 判定を省く条件 | 条件の更新 |
 |---|---|---|
 | 受信側 | 容量が 0 で、OS の受信バッファーに基づく送出上限も使わず、フロー制御の資源を生成していない | サービスを開くときに決まり、以後は変わりません。容量が 0 の受信側は、資源を生成した場合も、占有量の加算と減算を行いません。 |
 | 送信側 (片方向 UDP) | 受信者の管理表に要求か送出上限が残っている可能性がない | 受信スレッドがフロー制御パケットを受理したときに立て、送信スレッドが管理表を走査して要求と送出上限が残っていないときに下ろします。 |
 | 送信側 (双方向 UDP の 1:1 と TCP) | 要求の期限と送出上限がどちらも 0 | 受信スレッドがフロー制御パケットを受けたときに書き込み、セッションの変更と相手の切断の判定で 0 へ戻します。TCP の全経路の切断では、送出上限を 0 へ戻します。 |
 | 送信側 (N:1 モード) | 要求または送出上限を保持しているピアの数が 0 で、送信スレッドが保留しているエントリもない | ピアの数は `peers_mutex` の下で増減します。フロー制御パケットを受けたピアを 1 回だけ数え、要求の期限の経過、送出上限の破棄、相手の切断、セッションの変更で要求と送出上限がどちらもなくなったピアと、解放したピアを外します。 |
-
-Table: フロー制御を使わない場合に判定を省く条件
 
 - 判定を省く条件は、アトミックの読み取りだけで確かめます。条件が成り立たない場合は、ピアごと、または相手ごとに判定します。
 - ピアの数は、抑制が必要なピアを必ず含みます。数を減らし忘れた場合は判定を省けなくなるだけで、動作は変わりません。
@@ -835,6 +835,8 @@ potr_service_open_from_config("porter-services.jsonc", 4020, POTR_ROLE_RECEIVER,
 
 ## 通信種別の比較
 
+Table: 通信種別ごとの特性比較
+
 | 項目 | unicast | tcp | tcp_bidir | unicast_bidir |
 |---|---|---|---|---|
 | トランスポート | UDP | TCP | TCP | UDP |
@@ -850,13 +852,13 @@ potr_service_open_from_config("porter-services.jsonc", 4020, POTR_ROLE_RECEIVER,
 | マルチパス | ○ (最大 8 経路) | ○ (最大 8 経路) | ○ (最大 8 経路) | ○ (最大 8 経路) |
 | コールバック | RECEIVER 必須 | RECEIVER 必須 (SENDER 任意) | 両端必須 | 両端必須 (N:1 は `peer_id` 付き) |
 
-Table: 通信種別ごとの特性比較
-
 ---
 
 ## UDP / TCP 機能共有状況
 
 各機能ブロックが UDP・TCP のどれで使われるかを示します。
+
+Table: UDP と TCP における機能ブロックの共有状況
 
 | 機能ブロック | UDP | TCP | 備考 |
 |---|---|---|---|
@@ -871,9 +873,9 @@ Table: 通信種別ごとの特性比較
 | `sender_connect_loop()` | ❌ | ✅ | TCP SENDER 専用 |
 | `receiver_accept_loop()` | ❌ | ✅ | TCP RECEIVER 専用 |
 
-Table: UDP と TCP における機能ブロックの共有状況
-
 ### window の使用目的の違い
+
+Table: UDP と TCP におけるウィンドウ利用目的の比較
 
 | 目的 | UDP | TCP |
 |---|---|---|
@@ -881,8 +883,6 @@ Table: UDP と TCP における機能ブロックの共有状況
 | 順序整列 | ✅ | ✅ |
 | NACK 再送 | ✅ | ❌ |
 | `potr_internal_window_send_push()` | ✅ | ❌ |
-
-Table: UDP と TCP におけるウィンドウ利用目的の比較
 
 TCP は各接続でトランスポート層が再送を保証するため `potr_internal_window_send_push()` は不要。  
 `potr_internal_window_recv_push/pop()` は複数 path からの重複排除・順序整列のみを目的として使用します。
@@ -932,14 +932,14 @@ tcp_recv_thread_func(path_idx)
 
 ## スレッド起動タイミング
 
+Table: UDP と TCP のスレッド起動タイミング比較
+
 | スレッド | UDP | TCP |
 |---|---|---|
 | connect / accept | なし | `potr_service_open()` 時に path 数分 |
 | recv | `potr_service_open()` 時に 1 本 | path 接続ごとに 1 本 (`start_connected_threads()` 内) |
 | send | `potr_service_open()` 時に 1 本 | 最初の path 接続後 (全 path 共有 1 本) |
 | health | `potr_service_open()` 時に 1 本 | path 接続ごとに 1 本 (`start_connected_threads()` 内) |
-
-Table: UDP と TCP のスレッド起動タイミング比較
 
 UDP は `potr_service_open.c` が直接全スレッドを起動します。  
 TCP は ConnectThread が接続確立後に `start_connected_threads()` (`potr_connect_thread.c`) を呼び出して recv/send/health の各スレッドを起動します。
@@ -955,13 +955,13 @@ N:1 モード (`max_peers > 1`) では `n_path = 1` に固定。
 
 ## CONNECTED / DISCONNECTED イベント管理
 
+Table: UDP と TCP の接続イベント発火条件比較
+
 | | UDP | TCP |
 |---|---|---|
 | `POTR_EVENT_CONNECTED` 発火条件 | 初受信時 (recv スレッド) | アクティブ path 数が 0 → 1 になった時 (connect スレッド) |
 | `POTR_EVENT_DISCONNECTED` 発火条件 | health timeout | アクティブ path 数が 1 → 0 になった時 (recv / health スレッド) |
 | 状態管理 | `health_alive` フラグ | `tcp_active_paths` カウンター (`tcp_state_mutex` 保護) |
-
-Table: UDP と TCP の接続イベント発火条件比較
 
 ---
 
@@ -981,13 +981,13 @@ Table: UDP と TCP の接続イベント発火条件比較
 
 アドレス フィルター通過後、`thread_connect_read_first_packet()` で最初のアプリケーション パケットをタイムアウト付きで受信し、パケット内の session triplet (`session_id`, `session_tv_sec`, `session_tv_nsec`) を取得します。`session_establish_mutex` を取得した上で `thread_connect_session_compare()` を呼び、3 種類に分類して処理します。
 
+Table: TCP セッション識別結果の分類と処置
+
 | 分類 | 意味 | 処置 |
 |---|---|---|
 | `TCP_SESSION_NEW` | 新セッション (または初回接続) | 全アクティブ パスを切断し `reset_connection_state()` を呼び出します。その後 recv スレッドを起動します。 |
 | `TCP_SESSION_SAME` | 既存セッションの追加パス | `reset_connection_state()` は呼び出さずに recv スレッドを起動します。 |
 | `TCP_SESSION_OLD` | 期限切れセッション | `close()` して破棄し、次の `accept()` に戻ります。 |
-
-Table: TCP セッション識別結果の分類と処置
 
 先読みしたパケットは `tcp_first_pkt_buf[path_idx]` に格納され、recv スレッドがループ開始時に優先的に処理します。これにより、UDP の `recvfrom()` が原子的に行うデータ受信・送信元識別・セッション識別を、TCP でもセッション層レベルで対称に実現します。
 
@@ -996,6 +996,8 @@ Table: TCP セッション識別結果の分類と処置
 コンテキストは共通バッファー、ウィンドウ、残存ソケット、ピアテーブル、鍵とコールバック用ロックを所有し、使用する全スレッドの終了待ち後に共通処理で解放します。  
 N:1 のコンテキスト側ウィンドウとピア側ウィンドウは、別々に確保した資源として回収します。  
 通信の終了手順とスレッド停止は解放の呼び出し側が担い、共通解放処理は FIN 送信、キュー排出やスレッド停止を実行しません。
+
+Table: サービス資源の所有者と使用終了条件
 
 | 資源 | 所有者と解放条件 |
 | --- | --- |
@@ -1007,8 +1009,6 @@ N:1 のコンテキスト側ウィンドウとピア側ウィンドウは、別�
 | send 用ロック | send の start が生成し、起動失敗の巻き戻しか stop の終了待ち後に回収 |
 | 送信キュー | 初期化成功後はサービスが所有し、利用スレッドの停止後に開始失敗側か通常終了側が回収 |
 | TCP 受信者用先読みバッファーとセッション確立ロック | connect の start が生成し、準備失敗時か全 connect スレッドの終了待ち後に回収 |
-
-Table: サービス資源の所有者と使用終了条件
 
 `running` フラグは停止要求と稼働状態を表し、生成済みハンドルの所有権とは区別します。  
 スレッドが自然終了してフラグが 0 になっても、所有するハンドルの終了待ちを省略しません。  

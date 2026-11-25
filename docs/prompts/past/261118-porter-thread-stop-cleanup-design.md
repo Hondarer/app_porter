@@ -26,6 +26,8 @@ porter の内部には、スレッドの終了待ち (join) が失敗するこ�
 
 次の 5 つの関数の戻り値を `int` から `void` に変えます。
 
+Table: 戻り値を void に変える停止関数
+
 | 関数 | 宣言 |
 | --- | --- |
 | `potr_internal_health_thread_stop()` | `prod/include_internal/porter/thread/potr_health_thread.h` |
@@ -33,8 +35,6 @@ porter の内部には、スレッドの終了待ち (join) が失敗するこ�
 | `potr_internal_comm_recv_thread_stop()` | `prod/include_internal/porter/thread/potr_recv_thread.h` |
 | `potr_internal_tcp_recv_thread_stop()` | 同上 |
 | `potr_internal_notify_stop()` | `prod/include_internal/porter/potr_notify.h` |
-
-Table: 戻り値を void に変える停止関数
 
 - `ctx` が `NULL` の場合と、`path_idx` が `0` から `POTR_MAX_PATH - 1` の範囲外の場合は、何もせずに戻ります。既存の `potr_internal_connect_thread_stop()` と同じ扱いです。
 - それ以外の動作 (停止の要求、終了待ち、ハンドルと資源を `NULL` へ戻す処理、未起動や停止済みでの無処理) は変えません。
@@ -94,14 +94,14 @@ void potr_internal_handle_end_close(potr_context *ctx);
 
 「終了処理が失敗した場合は、終了を再試行できる」という記述を、次の 4 か所から削除します。現在の実装に、資源を保持したまま終了が失敗する経路はありません。
 
+Table: 削除する記述
+
 | 文書 | 削除する記述 |
 | --- | --- |
 | `docs/functional-spec/service.md` の「通知の順序と継続不能時の動作」 | 終了処理自体が失敗した場合は、通常操作を再開せず、終了を再試行できます。 |
 | `prod/include/porter/porter_spec.h` の `potr_service_close()` の `@attention` | 停止失敗時は通常操作を拒否したまま close を再試行できます。 |
 | `docs/api.md` の「close と無効ハンドル」 | スレッド停止が失敗した場合は通常操作を拒否したまま、close による回収を再試行できます。 |
 | `docs/architecture.md` | スレッド停止の失敗時は資源を保持し、完了済みの段階を二重処理せず再試行します。 |
-
-Table: 削除する記述
 
 `docs/architecture.md` の「join 成功後はハンドルを NULL」という記述は、「終了待ちの後はハンドルを NULL」に直します。
 
@@ -110,14 +110,16 @@ Table: 削除する記述
 
 ## 知見の反映計画
 
+Table: 知見の反映先
+
 | 反映先 | 内容 |
 | --- | --- |
 | 5 つの停止関数の宣言の Doxygen | 終了待ちは失敗しないこと。不正な引数は無処理で戻ること。 |
 | `docs/coding-guideline.md` の「エラー処理と戻り値規約」 | 小節「スレッドの停止関数」を追加します。スレッドの停止関数は `void` とすること。呼び出し元は、停止の後の資源の解放を無条件に行うこと。根拠は、`cplat_thread_join()` が失敗を返さないこと。 |
 
-Table: 知見の反映先
-
 ## テストと mock の変更
+
+Table: テストと mock の変更
 
 | 対象 | 変更 |
 | --- | --- |
@@ -127,8 +129,6 @@ Table: 知見の反映先
 | `potrHealthThreadTest`、`potrRecvThreadTest`、`potrNotifyTest`、`threadRecvWindowRejectTest` | 停止関数の戻り値の確認を削除し、停止後の状態 (ハンドルが `NULL` であることなど) の確認を残します。不正な引数のテストがあれば、無処理で戻ることの確認に直します。 |
 | `potrHandleTest` | `close_failure_allows_only_retry_and_closed_value_is_not_reused` から、終了失敗後の再試行の手順と確認を削除します。終了済みの公開値を再利用しないことの確認は残し、テスト名を内容に合わせます。`potr_internal_handle_end_close()` の呼び出しを新しい宣言に合わせます。 |
 | そのほかの単体テスト | 宣言の変更でコンパイルできなくなる箇所を直します。 |
-
-Table: テストと mock の変更
 
 `test/src/libporter/` の各テスト ディレクトリにある製品ソースと同名のファイルは、ビルドが取り込む Git 管理外のファイルです。変更しません。
 

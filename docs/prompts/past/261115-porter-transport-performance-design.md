@@ -31,6 +31,8 @@ BL-001 は `app/cplat` への汎用 `TCP_NODELAY` API 追加と `porter` 全 TCP
 
 ### 対象範囲と対象外範囲
 
+Table: 本計画の対象範囲と対象外範囲
+
 | 区分 | 対象 | 内容 |
 | --- | --- | --- |
 | 対象 (BL-001) | `app/cplat` ソケット層 | 汎用 `TCP_NODELAY` 設定 API の追加、両 OS 実装、逆引き文書・エクスポート・`mock_cplat`・単体テストの同期 |
@@ -39,8 +41,6 @@ BL-001 は `app/cplat` への汎用 `TCP_NODELAY` API 追加と `porter` 全 TCP
 | 対象外 | `porter` 公開 API・設定構造体 | `prod/include/porter/` の関数追加、`potr_global_config` / `potr_service_def` への `TCP_NODELAY` 設定項目追加は行わない |
 | 対象外 | `cplat` 既定挙動の変更 | `cplat_socket_open()` や `cplat_socket_accept()` で `TCP_NODELAY` を暗黙有効化せず、他利用者の既定を維持する |
 | 対象外 | 未計測の推測先行改修 | プロファイル取得前の BL-002 製品コード変更、および新規課題の自動合流は行わない |
-
-Table: 本計画の対象範囲と対象外範囲
 
 ### 高速化において維持すべき公開契約と安全性
 
@@ -76,6 +76,8 @@ BL-001 および将来の BL-002 改善施策のいずれにおいても、現�
 
 `app/cplat/AGENTS.md` の公開 API 変更規則に従い、実装時には次の同期対象を同一変更内で更新します。
 
+Table: cplat の汎用 TCP_NODELAY API 追加に伴う同期対象一覧
+
 | 同期対象 | パス | 更新内容 |
 | --- | --- | --- |
 | 公開ヘッダー | `app/cplat/prod/include/cplat/net/socket.h` | `cplat_socket_set_nodelay()` の宣言、戻り値 (`CPLAT_OK` / `CPLAT_ERR_INVALID_ARGUMENT` / `CPLAT_ERR_UNKNOWN`)、スレッド セーフ契約の Doxygen コメントを追加 |
@@ -86,19 +88,17 @@ BL-001 および将来の BL-002 改善施策のいずれにおいても、現�
 | モック (`mock_cplat`) | `app/cplat/test/include/mock_cplat.h`、`test/libsrc/mock_cplat/mock_cplat.cc`、`test/libsrc/mock_cplat/net/mock_cplat_socket_set_nodelay.cc` | `create-mock-cplat-mock` 手順に従い `MOCK_CPLAT_LINK_IMPL`、実委譲関数、`MOCK_METHOD`、`ON_CALL` を追加 |
 | 単体テスト | `app/cplat/test/src/libcplatTest/net/socketTest/socketTest.cc` | TCP ソケットでの有効化 (`1`)・無効化 (`0`) の正常系、および `CPLAT_INVALID_SOCKET` 等を渡す異常系テストを追加 |
 
-Table: cplat の汎用 TCP_NODELAY API 追加に伴う同期対象一覧
-
 ### 接続確立時の設定位置と初回通信以前への配置
 
 `listen()` 側ソケットに設定した `TCP_NODELAY` が `accept()` 済みソケットへ継承されるかは OS 差異を伴う可能性があるため、継承に依存せず接続確立ソケットごとに明示設定します。  
 また、TLS 証明書のハンドシェイク (`POTR_AUTH_CERT`) や最初のパケット送出を含む初回通信より前に設定を完了させます。
 
+Table: porter 側の TCP_NODELAY 設定位置とタイミング
+
 | 接続経路 | 対象ファイルと関数 | 設定タイミング | 網羅される範囲 |
 | --- | --- | --- | --- |
 | SENDER (`connect` / 再接続) | `app/porter/prod/libsrc/porter/thread/thread_connect_prepare.c` `thread_connect_with_timeout()` | `cplat_socket_open(CPLAT_SOCKET_TCP, &sock, &detail)` 成功後、`cplat_socket_connect()` による通信開始前 (既存 `cplat_socket_set_reuse_address()` 設定の直後。段階 0 で接続前指定の有効性を OS 資料で確認し、必要な場合は接続確立直後・TLS ハンドシェイク前へ調整) | `POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR` の SENDER 初回接続、再接続、全 `path_idx` |
 | RECEIVER (`accept` / 再受け入れ) | `app/porter/prod/libsrc/porter/thread/potr_connect_thread.c` `receiver_accept_loop()` | `cplat_socket_accept()` 成功後、接続元フィルター (`thread_connect_peer_allowed()`) 通過後、かつ最初のパケット先読み (`thread_connect_read_first_packet()`) および TLS ハンドシェイク (`potr_internal_certificate_connect()`) より前 | `POTR_TYPE_TCP` / `POTR_TYPE_TCP_BIDIR` の RECEIVER 初回受け入れ、再受け入れ、全 `path_idx` |
-
-Table: porter 側の TCP_NODELAY 設定位置とタイミング
 
 > [!NOTE]
 > `POTR_TYPE_TCP_BIDIR` では SENDER と RECEIVER の双方で `thread_connect_with_timeout()` または `receiver_accept_loop()` が動作し、双方の送信スレッドがデータおよび制御パケット (`PING` / `FIN` / `FIN_ACK`) を送出します。  
@@ -119,6 +119,8 @@ Table: porter 側の TCP_NODELAY 設定位置とタイミング
 
 BL-002 で観測された非ブロッキング小メッセージ (-23.6%〜-34.5%)、圧縮 4 スレッド (-26.5%〜-72.3%、通知遅延 p99 最大約 8 倍)、Linux N:1 外部スレッド返信 (RTT 約 1.5 倍、件数 -31.3%) の劣化原因を切り分けるため、次の 8 観点を両 OS でプロファイル計測します。
 
+Table: BL-002 の 8 観点プロファイル対象と観測指標
+
 | No. | プロファイル観点 | 対象コード箇所 | 主に観測する指標 |
 | --- | --- | --- | --- |
 | 1 | CPU 時間内訳 | 送信・受信・通知スレッド全体 | スレッド別・関数別の占有率 (ユーザー空間 vs カーネル空間) |
@@ -129,8 +131,6 @@ BL-002 で観測された非ブロッキング小メッセージ (-23.6%〜-34.5
 | 6 | ロック競合 | `potr_handle.c` (`s_mutex` / `entry->mutex` の 1 呼び出しあたり計 3 回取得・解放) および各経路ロック | ロック取得待機時間、競合率、4 スレッド時のスケーリング阻害度 |
 | 7 | 起床とコンテキスト スイッチ | `potr_send_queue.c` (`push_locked()` / `complete_locked()` の無条件 `condvar` 通知)、`potr_notify.c` (`notify_thread`) | `WakeConditionVariable` / `futex` 呼び出し回数、コンテキスト スイッチ (CSWITCH) 回数 |
 | 8 | N:1 外部スレッド返信 | `potr_send_thread.c` (`send_packed_peer_mode()`)、`potr_recv_thread.c` (`n1_handle_packet()`) | `ctx->peers_mutex` 保持時間と相互ブロッキング、`ext` と `cb` の区間差分、ベンチマーク側中継キュー経費 |
-
-Table: BL-002 の 8 観点プロファイル対象と観測指標
 
 ### 区間計測による通知遅延の分解方針
 
@@ -146,6 +146,8 @@ Table: BL-002 の 8 観点プロファイル対象と観測指標
 プロファイルの結果に応じて、次の改善候補を条件付きで検討します。  
 いずれの候補も段階 2 の寄与率測定を経て採否および詳細設計を別判断で確定するものとし、事前の効果断定は行いません。
 
+Table: BL-002 の条件付き改善候補と採用・安全条件
+
 | 対象観点 | 条件付き改善候補 | 採用検討の条件 (トリガー) | 設計確定時に検証すべき安全制約 |
 | --- | --- | --- | --- |
 | 確保・全量消去・圧縮 | 圧縮一時バッファーの必要サイズ縮小 (入力長相応の割り当て)、スレッド ローカル/プール再利用、消去対象範囲の精査 | 圧縮 4 スレッドで `cplat_malloc` / `cplat_secure_zero` / ページ フォルトが支配的と判明した場合 | 圧縮出力上限 (`CPLAT_COMPRESS_HEADER_SIZE` 等) の不足防止、並行呼び出し非干渉、機密保持契約の維持 |
@@ -153,8 +155,6 @@ Table: BL-002 の 8 観点プロファイル対象と観測指標
 | 通知キュー | `free_nodes` のサイズ別バケット化または探索長制限、`cplat_secure_zero` の要否/範囲見直し | `q->mutex` 待機や線形探索コスト、通知回収コストが p50/p99 増加の主因と判明した場合 | FIFO 通知順序の維持、OOM 時の予約済み `error_notice` 動作維持、機密保持契約 |
 | ハンドル管理ロック | 読み取り側 (`acquire` / `release`) のロック回数削減 (世代・状態と参照カウントの原子操作化、またはテーブル ロック縮小) | `s_mutex` / `entry->mutex` が 4 スレッド通常送信のボトルネックと判明した場合 | `close` 待機との競合ゼロ、`POTR_ERR_INVALID_HANDLE` と非再利用保証の維持 |
 | N:1 外部スレッド返信 | `ctx->peers_mutex` の保持区間短縮 (暗号封緘と `sendto` の分離、またはピア参照保護の細粒度化) | Linux P2 (`ext` vs `cb`) で `peers_mutex` 競合が主因と判明した場合 (ベンチマーク中継経費と分離後) | ピア解放・再割り当て (`potr_internal_peer_free`) との競合・UAF 防止、ロック順序不変 |
-
-Table: BL-002 の条件付き改善候補と採用・安全条件
 
 ## 測定ベースライン、条件、分離規則、および成果物保管
 
@@ -176,12 +176,12 @@ Table: BL-002 の条件付き改善候補と採用・安全条件
 
 過去の検証記録との連続性を保つため、コンパイル フラグおよび負荷条件は元測定の基準を再現します。
 
+Table: 測定ビルド時のコンパイル フラグ仕様
+
 | 区分 | Windows/MSVC | Linux/GCC |
 | --- | --- | --- |
 | 製品 C ソース | `/std:c17 /O2 /MD /DNDEBUG /W4` と静的結合用定義 | `-O2 -DNDEBUG -fno-omit-frame-pointer -g -fPIC -fvisibility=hidden` と C17 指定 |
 | 測定プログラム (C++) | `/std:c++17 /O2 /MD /DNDEBUG /EHsc` | `-std=c++17 -O2 -DNDEBUG -fno-omit-frame-pointer` |
-
-Table: 測定ビルド時のコンパイル フラグ仕様
 
 - **実行方式**: 両 OS ともローカル ループバック (`127.0.0.1`) を使用し、1 プロセス内で 5 回反復します。各実行先頭のウォーム アップ (1000 件、P4 は 10 サイクル) を集計から除外し、5 回分の最小・中央値・最大を記録します。
 - **負荷条件**: P1/P5 は 64 / 5000 バイト (通常・圧縮・ブロッキング・圧縮+ブロッキング、1 / 4 スレッド)、各スレッド 10000 件、同時未完了はスレッドあたり 16 件とします。P2 はクライアント 4 本が 64 / 5000 バイト各 5000 件 (`cb` と `ext`)、P3 は 1 件 1[ms] 待機・5000 バイト 10000 件・間隔なし、P4 は open/close 1000 サイクル (UDP / TCP) とします。
@@ -191,14 +191,14 @@ Table: 測定ビルド時のコンパイル フラグ仕様
 
 元測定で判明済みの比較不能条件および過負荷不安定条件は、本計画の合否・性能比較対象から明確に除外します。
 
+Table: 比較不能条件と不安定条件の取り扱い規則
+
 | 条件 | 除外または特別扱いの理由 | 本計画での扱い |
 | --- | --- | --- |
 | 旧改修前版 Windows P5 5000B・圧縮なし 4 条件 | 旧改修前版の既知不具合 (`send buffer full, packet skipped`) により完了しない | 旧改修前版との比較対象から除外し、新基準版 (`TCP_NODELAY` off/on) を起点に比較 |
 | 旧改修前版 Linux P5 `TCP_BIDIR` | 旧改修前版の close 停止不具合により計測不能 | 同上。新基準版を起点に比較 |
 | P1 5000B・通常・4 スレッド (UDP 過負荷) | Linux UDP 受信バッファー (212,992 バイト) を大きく上回り、既定負荷 900 秒打ち切りや縮小負荷での 2 桁ばらつきが生じる | 定常スループットの比較・合否判定対象から除外し、過負荷観測専用の参考枠とする |
 | P3 低速コールバック (Windows) | 旧現行版 (`6e9002c`) では 5 回中 4 回 10000 件欠落していたが、`porter-reject-recovery` (`68ab091` / `11016c1`) により解消済み | 旧現行版との単純数値比較は行わず、新基準版および BL-001/BL-002 変更後に「全試行で受信が途切れず再開すること」とメモリ挙動を再検証する |
-
-Table: 比較不能条件と不安定条件の取り扱い規則
 
 ### BL-001 と BL-002 の比較組み合わせ・計装分離・同時測定禁止
 
@@ -212,14 +212,14 @@ Table: 比較不能条件と不安定条件の取り扱い規則
 
 各測定段階で生成される成果物は種別ごとに管理し、再現に必要なデータと一時的トレースを分離して保管します。
 
+Table: 測定成果物とプロファイル データの保管方針
+
 | 成果物種別 | 内容 | 保管形式と保管先の方針 |
 | --- | --- | --- |
 | 本測定 CSV | 非計装 5 回実行の最小・中央値・最大、OS、版ラベル、固定コミット、差分ハッシュ、入力圧縮性指標 | `app/porter/docs/prompts/current/` 配下へ新規検証記録と対で保存 |
 | 区間計測要約 | API 入口〜送出〜受信〜通知キュー〜コールバック入口の区間別時間分布 | 新規検証記録 Markdown または要約 CSV として保存 |
 | ビルド・実行警告ログ | ビルド時の `.warn` ファイル確認結果、および P1〜P5・`TCP_NODELAY` 失敗確認時の警告ログ抜粋 | 検証記録へ要約を記載。生の実行ログは作業領域へ保管 |
 | プロファイル要約・トレース | WPR/ETW・`perf` によるスレッド/関数別 CPU 比率、ロック待機、CSWITCH、パケット時刻列 | 集計表と知見を検証記録へ記載。大容量の生トレース (`.etl` / `perf.data` / `.pcap`) はリポジトリ外の一時作業領域へ保管 |
-
-Table: 測定成果物とプロファイル データの保管方針
 
 ## ステージ別実行計画と異常時分岐
 
@@ -230,6 +230,8 @@ framework または複数 app にまたがる全体テストを実施する場�
 
 ### ステージ定義
 
+Table: ステージ別の入力・操作・出力・終了条件
+
 | ステージ | 入力 | 主な操作 | 出力 | 終了条件 |
 | --- | --- | --- | --- | --- |
 | ステージ 0: 仕様確認と基準固定 | 本計画書、新基準版 HEAD (`porter 11016c1` / `cplat 822dc7da`)、Linux/Windows 公式資料 | Linux `tcp(7)`/`socket(7)` と Microsoft Learn で `TCP_NODELAY`・遅延 ACK・`connect` 前設定の有効性を一次確認する。測定環境・入力圧縮性・コンパイラ版・ベースライン ハッシュを固定記録する | 公式仕様確認メモ、基準環境仕様記録 | 公式仕様の前提に未確認がなく、両 OS の新基準ビルド環境が確定していること |
@@ -238,8 +240,6 @@ framework または複数 app にまたがる全体テストを実施する場�
 | ステージ 2.5: BL-002 設計確定と数値目標の別判断ゲート | ステージ 2 のプロファイル結果と安全性制約 | 主因と寄与率に基づき、どの改善候補を採用するか、改善後の具体的な数値目標・許容コストをどう定めるかをユーザーと別途合意し、BL-002 の実装設計を確定する | BL-002 実装設計と数値目標の合意記録 | BL-002 の実装対象施策と受入数値基準がユーザー合意により確定していること (現状維持・見送り決定も含む) |
 | ステージ 3: BL-002 段階的改善と A/B 本測定 | ステージ 2.5 で承認された改善設計 | 承認された施策を 1 要素ずつ (または寄与分離可能な単位で) 実装し、安全性単体テスト追加と非計装 5 回 A/B 本測定 (`TCP_NODELAY` 双方 on、UDP/TCP) を交互実行する | 施策ごとのコード差分、単体テスト結果、非計装 A/B 本測定 CSV | 承認された全施策について独立効果と安全契約維持が確認されていること |
 | ステージ 4: 総合検証と完了整理 | 全変更適用版、本測定 CSV 群 | 両 OS での P1〜P5 総合測定 (P3 再検証含む)、`make test`、`.warn` 0 件確認、知見の正本・コメント反映、検証記録と残課題一覧の整理を実施する | 総合検証記録 Markdown、確定 CSV、更新済み文書・コメント、残課題一覧 | 全テスト成功、`.warn` 0 件、P3 再開・P4 傾き 0 確認、第 3 ゲート提示条件の充足 |
-
-Table: ステージ別の入力・操作・出力・終了条件
 
 ### 失敗・事象未再現・環境不足時の分岐規則
 
@@ -276,6 +276,8 @@ Table: ステージ別の入力・操作・出力・終了条件
 
 将来の実測・実装工程が完了した段階で、恒久的に必要な仕様・設計判断だけを厳選して次の反映先へ残します。
 
+Table: 永続的知見の反映計画一覧
+
 | 反映対象 | 反映する恒久知見の内容 | 反映タイミング |
 | --- | --- | --- |
 | `app/cplat/prod/include/cplat/net/socket.h`、`app/cplat/docs/api-cheatsheet.md` | `cplat_socket_set_nodelay()` の API 契約と `setsockopt(TCP_NODELAY)` 対応関係 | ステージ 1 (BL-001 実装時) |
@@ -283,5 +285,3 @@ Table: ステージ別の入力・操作・出力・終了条件
 | `app/porter/prod/libsrc/porter/thread/thread_connect_prepare.c`、`potr_connect_thread.c` | `TCP_NODELAY` を接続・受け入れ双方で初回通信以前に常時設定する意図、ベスト エフォート警告継続の根拠、および確認済み OS 仕様の `see: <URL>` | ステージ 1 (BL-001 実装時) |
 | `app/porter/` の検証記録 Markdown・本測定 CSV | 環境・版・差分ハッシュを固定した実測結果と測定限界 (正本 `docs/` へは環境依存の数値を書かない) | ステージ 1 / 3 / 4 |
 | BL-002 改善箇所のコード コメント・設計文書 | ステージ 2.5 で採用が確定した構造変更に限り、ロック順序や消去範囲の恒久仕様を記載 (作業中の試行錯誤や暫定禁止事項は含めない) | ステージ 3 / 4 |
-
-Table: 永続的知見の反映計画一覧

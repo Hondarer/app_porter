@@ -34,6 +34,8 @@ waitForExit(recv_h_, 3000);
 
 CI ログ (`prompt/logs_77673940312.zip`) 解析で最初に見つかった事例と、同一ファイル内の横展開監査で見つかった事例です。いずれも本パターンの欠落が原因でした。
 
+Table: 結合テストにおける待機処理欠落の修正事例一覧
+
 | テスト名 | 欠落していた待機 |
 |---|---|
 | `encrypted_n1_client_reaches_connected_before_send` | `waitForOutput(recv_h_, "n1-connected-ok", ...)` |
@@ -41,8 +43,6 @@ CI ログ (`prompt/logs_77673940312.zip`) 解析で最初に見つかった事�
 | `encrypted_n1_bad_tag_does_not_consume_peer_slot` | `waitForOutput(recv_h_, "n1-secure-ok", ...)` |
 | `tcp_bidir_connects_without_periodic_health_ping` | `waitForOutput(recv_h_, "tcp-before-connected", ...)` |
 | `tcp_bidir_without_periodic_health_ping_ignores_timeout` | `waitForOutput(recv_h_, "tcp-timeout-ignored", ...)` |
-
-Table: 結合テストにおける待機処理欠落の修正事例一覧
 
 `encrypted_tcp_bidir_stays_healthy_and_receives` は、このレース パターンを過去に踏んだ形跡があり、対処済みのコード上に経緯コメントが残されています。同種の不具合が繰り返し発生していることから、本注意点を README として明文化しました。
 

@@ -10,13 +10,13 @@
 
 ## 要件 ID の構成
 
+Table: porter 要件 ID の構成要素
+
 | 項目 | 値 |
 |---|---|
 | 要件 ID 接頭辞 | `POTR` |
 | 参照コメント タグ | `potr-req` |
 | 機能要件表の見出し | `porter の要件` |
-
-Table: porter 要件 ID の構成要素
 
 要件 ID は `POTR-<CATEGORY>-<TYPE>-NNN` の形式になります。  
 例を次に示します。
@@ -30,6 +30,8 @@ POTR-HEALTH-QUAL-001
 
 要件文は、カテゴリに対応する次の主語で始めます。
 
+Table: 機能仕様カテゴリごとの要件文の主語
+
 | カテゴリ | 主語 |
 |---|---|
 | `BASE` | porter の基盤機能 |
@@ -42,8 +44,6 @@ POTR-HEALTH-QUAL-001
 | `SERVICE` | porter のサービス管理機能 |
 | `SESSION` | porter のセッション識別機能 |
 | `TRANSPORT` | porter の通信種別機能 |
-
-Table: 機能仕様カテゴリごとの要件文の主語
 
 カテゴリは、`docs/functional-spec/` に配置する機能仕様のファイル名と一対一で対応します。  
 機能カテゴリを追加または削除する場合は、この表も同じ変更で更新してください。

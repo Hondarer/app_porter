@@ -53,6 +53,8 @@ porter は JSONC 形式のテキスト ファイルでサービスを定義し�
     - `potr_config_validate_file()` は設定ファイル全体 (ルート、`global`、全サービス) を検証し、見つけた誤りを `potr_config_issue` としてコールバックへ渡します (トレース出力なし)。ルート構造に誤りがなければ、本文検査前に `on_service` で各サービス ID をファイル順で通知します。また、証明書方式の有効なファイル パスを `on_auth_file` で通知します。構文・読み取り・メモリ不足を除き、独立した項目とサービスのすべての誤りを報告します。
     - `potr_config_list_service_ids()` と `potr_config_service_ids_free()` は、ルートの構造とサービス ID の正規性を検証した上で、定義された ID をファイル順で返します。
 
+Table: 設定操作ごとの検査範囲
+
 | 誤りの場所と内容 | `potr_config_validate_file()` | `potr_config_list_service_ids()` | `potr_service_open_from_config()` / `potr_service_get_type()` |
 |---|---|---|---|
 | 文書全体の構文・生 NUL・文字列内 `\u0000` | 拒否 | 拒否 | 拒否 |
@@ -61,11 +63,11 @@ porter は JSONC 形式のテキスト ファイルでサービスを定義し�
 | 指定サービス本体の誤り | 拒否 (全サービス) | 検査しない | 拒否 |
 | ほかのサービス本体の誤り | 拒否 (全サービス) | 検査しない | 検査しない |
 
-Table: 設定操作ごとの検査範囲
-
 ## global オブジェクト
 
 すべてのサービスに適用されるグローバル設定です。範囲外の値、解釈できない値、重複キー、知らないキーはすべて `POTR_ERR_INVALID_CONFIG` になります。
+
+Table: global オブジェクトの設定項目一覧
 
 | キー | 型 | 値域 | 既定値 | 説明 |
 |---|---|---|---|---|
@@ -92,8 +94,6 @@ Table: 設定操作ごとの検査範囲
 | `flow_control_receive_buffer_percent` | uint32 | `-1`、0〜100 (0 は既定値) | 100 | OS 受信バッファーに基づく送出上限の割合 (%)。`-1` で無効化 |
 | `udp_receive_buffer_size` | uint32 | `-1`、0〜4,294,967,294 (0 は既定値) | 4,194,304 | UDP ソケットへ要求する受信バッファーの大きさ (バイト)。`-1` で要求しない |
 
-Table: global オブジェクトの設定項目一覧
-
 ### window_size の影響
 
 ウィンドウ サイズは再送可能な過去パケット数の上限です。  
@@ -111,13 +111,13 @@ evict 済みの通番を受信者が NACK で要求した場合、REJECT を返�
 
 ### reorder_timeout_ms の使い所
 
+Table: 構成別の reorder_timeout_ms 推奨設定
+
 | 構成 | 推奨値 | 理由 |
 |---|---|---|
 | 単一パス・同一 LAN | 0 (無効) | 遅延変動が小さく追い越しが極めて稀な環境 |
 | マルチパス (2 経路以上) | 10〜30 ms | 経路差異で数 ms〜数十 ms の追い越しが起こりうる |
 | 遠距離 WAN / 無線 LAN | 30〜100 ms | 遅延変動が大きく再順序付けが頻繁に発生する環境 |
-
-Table: 構成別の reorder_timeout_ms 推奨設定
 
 - 設定値を大きくするほど、追い越しを吸収できるが NACK の遅延 (= 再送遅延) も増加します。
 - RAW モードでは DISCONNECTED の遅延にも直結するため、リアルタイム性の要件と合わせて調整してください。
@@ -129,13 +129,13 @@ Table: 構成別の reorder_timeout_ms 推奨設定
 
 これを回避するため、タイマー起動時に **100%〜200%** の範囲でランダムなジッタを自動付加します。
 
+Table: 通信種別ごとの実効並べ替えタイムアウト
+
 | 通信種別 | 実効タイムアウト |
 |---|---|
 | `unicast` (通常モード) | `reorder_timeout_ms` (固定) |
 | `multicast` / `broadcast` (通常モード) | `reorder_timeout_ms` 〜 `reorder_timeout_ms × 2` (ランダム分散) |
 | `*_raw` (RAW モード全種別) | `reorder_timeout_ms` (固定、DISCONNECTED 発行用) |
-
-Table: 通信種別ごとの実効並べ替えタイムアウト
 
 - ジッタは monotonic クロックのナノ秒部を乱数源とするため、外部 RNG への依存はありません。
 - `reorder_timeout_ms = 20` に設定すると実際のタイマーは **20〜40 ms** の範囲に分散されます。
@@ -152,6 +152,8 @@ Table: 通信種別ごとの実効並べ替えタイムアウト
 送信側は、自身の設定によらず、受けた抑制の要求と送出上限に常に従います。  
 RAW モード (`unicast_raw` / `multicast_raw` / `broadcast_raw`) は、フロー制御の設定を無視します。
 
+Table: フロー制御の設定を使う側
+
 | 設定 | 使う側 |
 |---|---|
 | `flow_control_capacity`、`flow_control_suppress_percent`、`flow_control_resume_percent`、`flow_control_request_interval_ms` | 受信側 (双方向の通信種別では両端) |
@@ -159,8 +161,6 @@ RAW モード (`unicast_raw` / `multicast_raw` / `broadcast_raw`) は、フロ�
 | `flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_grace_ms` | `multicast` / `broadcast` の送信側、および `unicast_bidir_n1` のサーバー |
 | `flow_control_feedback_percent`、`flow_control_monitored_receiver_count` | `multicast` / `broadcast` の送信側 |
 | `flow_control_receive_buffer_percent` | `unicast`、`multicast`、`broadcast`、`unicast_bidir`、`unicast_bidir_n1` の受信側 (双方向の通信種別では両端) |
-
-Table: フロー制御の設定を使う側
 
 #### 値の決まり方
 
@@ -216,13 +216,13 @@ Table: フロー制御の設定を使う側
 占有量が容量を超えると、受信側は超えた DATA を破棄し、その相手との通信を切断として通知します。  
 送出上限により、送信側は占有量が要求のしきい値に達する付近で止まります。要求のしきい値から容量までの余裕「容量 × (100 − `flow_control_suppress_percent`) ÷ 100」は、送出上限で抑えられない次の量を受け止めるために使います。
 
+Table: 容量の余裕で受け止める量
+
 | 余裕で受け止める量 | 目安 |
 |---|---|
 | 圧縮した DATA の展開による増加 | 展開後の大きさと `max_payload` の差 |
 | 最初の送出上限が届く前に送出された DATA | 初期の幅 (4 パケット) |
 | 送出上限を 1 パケット分超える送出と、フラグメントの途中にある DATA | `max_message_size` 程度 |
-
-Table: 容量の余裕で受け止める量
 
 余裕が `max_message_size` 未満の構成は、検証およびサービスを開く処理が設定エラー (`POTR_ERR_INVALID_CONFIG`) を返します。フラグメントの途中にあった最大長のメッセージ 1 件が、送出上限で止まった後に完成するだけで、容量を超えるためです。  
 既定の要求のしきい値 (80%) では、容量が `max_message_size` の 5 倍以上であることに相当します。要求のしきい値を 100% にした構成は、余裕が 0 になるため、容量が 0 でない限り設定エラーになります。
@@ -235,12 +235,12 @@ Table: 容量の余裕で受け止める量
 
 #### 再送周期と有効期限
 
+Table: 抑制の要求の再送周期と有効期限
+
 | 設定 | 既定値 | 意味 |
 |---|---|---|
 | `flow_control_request_interval_ms` | 200 ms | 受信側が、要求中の間に抑制の要求を再送する周期です。フロー制御が有効な受信側は、受信スレッドの待ち時間の上限をこの値にします。 |
 | `flow_control_request_lifetime_ms` | 1,000 ms | 送信側が、受けた抑制の要求を有効とみなす時間です。送出上限で止まっている間に、相手からのパケットが途絶えたとみなして送出上限を破棄するまでの時間にも使います。 |
-
-Table: 抑制の要求の再送周期と有効期限
 
 既定値は、要求の再送が数回続けて失われても抑制が外れず、受信側が停止した場合も約 1 秒で送信側が送出を再開する組み合わせです。
 
@@ -255,14 +255,14 @@ Table: 抑制の要求の再送周期と有効期限
 UDP では、送信側が連続して送出すると、受信スレッドが読み出すより速くパケットが届き、受信側の OS の受信バッファーがあふれます。あふれた DATA の数が送信側の再送用の保持範囲 (`window_size`) を超えると、再送できずに切断になります。  
 これを防ぐため、受信側は、OS の受信バッファーに収まると見積もった DATA パケットの数 (受信バッファーの幅) を求め、送出上限の許可数をこの幅で抑えます。
 
+Table: OS の受信バッファーに基づく送出上限が働く受信側
+
 | 通信種別 | 働く受信側 |
 |---|---|
 | `unicast` | 受信者 |
 | `multicast`、`broadcast` | 受信報告を送る構成 (実効 `health_interval_ms` が 0 でない) の受信者。送出上限を知らせるのは、送信側が選んだ監視対象の受信者だけ |
 | `unicast_bidir`、`unicast_bidir_n1` | 両端 (双方向のそれぞれに働く) |
 | `tcp`、`tcp_bidir`、RAW モード | 働かない (TCP は下位の通信が受信バッファーを守り、RAW モードは再送を行わない) |
-
-Table: OS の受信バッファーに基づく送出上限が働く受信側
 
 受信バッファーの幅は、次の式で求めます。
 
@@ -282,6 +282,8 @@ Table: OS の受信バッファーに基づく送出上限が働く受信側
 
 1 パケットの見積もりは、パケット 1 個が OS の受信バッファーを使う量の、安全側の見積もりです。Linux は、受信したパケットを、データの長さではなく、管理情報を含む確保済みの領域の大きさで数えます。領域は 2 のべき乗の大きさで確保されるため、最大でデータの長さの約 2 倍に管理情報を加えた量になります。Windows も同じ式を使います。
 
+Table: 受信バッファーの幅の例
+
 | 構成 | OS の受信バッファーの大きさ | 受信バッファーの幅 | 送出上限の更新 |
 |---|---|---|---|
 | 要求しない Linux (`net.core.rmem_default`)、`max_payload` 1,400 | 212,992 byte | 42 パケット | 21 パケットにつき 1 個 |
@@ -289,8 +291,6 @@ Table: OS の受信バッファーに基づく送出上限が働く受信側
 | 取得値が 4 MiB、`max_payload` 1,400 | 4,194,304 byte | 約 834 パケット | 約 417 パケットにつき 1 個 |
 | 要求しない Windows、`max_payload` 1,400 | 65,536 byte | 13 パケット | 約 6 パケットにつき 1 個 |
 | 既定の要求 4 MiB のあと、Linux の `net.core.rmem_max` が既定のままの `unicast_bidir_n1` のサーバーで、送信中のピアが 4 つ | 425,984 byte (取得値) | ピアごとに 21 パケット | ピアごとに約 10 パケットにつき 1 個 |
-
-Table: 受信バッファーの幅の例
 
 受信側は、前回知らせた範囲の半分を受信するたびに送出上限を更新するため、更新のフロー制御パケットは「受信バッファーの幅 ÷ 2」パケットにつき 1 個です。幅が大きいほど更新が減り、一時的な遅れを受け止められます。あふれの回避と処理件数を両立させるには、OS の受信バッファーを大きくします。幅は、OS の受信バッファーの大きさに比例します。
 
@@ -347,6 +347,8 @@ OS の受信バッファーに基づく送出上限は、あふれを完全に�
                    ただし、「活動中の受信者数 − 1」を超えない
 ```
 
+Table: 除外する数の上限の例
+
 | 活動中の受信者数 | 除外する数の上限 (既定の設定) |
 |---|---|
 | 1 | 0 |
@@ -354,8 +356,6 @@ OS の受信バッファーに基づく送出上限は、あふれを完全に�
 | 10 | 1 |
 | 50 | 5 |
 | 100 | 10 |
-
-Table: 除外する数の上限の例
 
 - 活動中の受信者数は、受信報告が有効期限内に届いている受信者の数 (除外中を含む) です。活動中の受信者が 1 台以下の場合、除外する数の上限は 0 です。
 - `flow_control_excluded_receiver_count` と `flow_control_excluded_receiver_percent` の両方を無効 (`-1`) にした場合、除外する数の上限は 0 となり、どの受信者も除外しません。
@@ -385,14 +385,14 @@ Table: 除外する数の上限の例
 監視する数の上限 = 64 と「(max_payload − 2) ÷ 16 (切り捨て)」の小さいほう
 ```
 
+Table: 監視する数の例
+
 | 受信者の OS の受信バッファー | 許可数の上限 | 予算 5% に収まる数 | 監視する数 (既定の下限 4 台を適用) |
 |---|---|---|---|
 | 要求しない Linux (212,992 byte) | 42 | 1 | 4 (候補が 4 台未満の場合は、全員) |
 | 既定の要求後、`net.core.rmem_max` が既定の Linux (425,984 byte) | 84 | 2 | 4 (候補が 4 台未満の場合は、全員) |
 | 1 MiB | 約 208 | 5 | 5 |
 | 4 MiB | 約 834 | 20 | 20 |
-
-Table: 監視する数の例
 
 - `flow_control_monitored_receiver_count` は監視する数の下限です。既定値は 4 台です。受信者が 4 台以下の構成では、OS の受信バッファーの大きさによらず、全員を監視します。`0` は下限を指定しないことです。予算の条件を満たす数が、そのまま監視する数になります。
 - 予算だけで決めると、受信バッファーの幅が小さい場合に、監視する数が 1 台か 2 台になり、監視対象でない受信者が、あふれによる欠落から回復できずに、切断になることがあります。受信者が多い構成では、予算による数が下限を上回る場合に、予算による数になります。
@@ -403,6 +403,8 @@ Table: 監視する数の例
 
 グローバル設定の `udp_*` / `tcp_*` は、コードの組み込み既定値に次ぐ「サービス定義へ適用する既定値」です。最終的な動作は、通信種別に応じて選ばれたグローバル既定値に対し、`services` 内にあるサービスの `health_interval_ms` / `health_timeout_ms` を重ねた実効値で決まります。実効 `health_interval_ms > 0` のとき、片方向 type 1-6 は「最後の PING または有効 DATA 送信」から本値経過時だけ PING を送信し、双方向 UDP は設定周期で PING を送信します。TCP は実効 `health_interval_ms` にかかわらず接続直後に bootstrap PING を送信し、`health_interval_ms > 0` のときだけ定周期 PING と timeout 監視を有効にします。
 
+Table: 通信モデル別のヘルス チェック動作
+
 | 通信モデル / 種別 | PING 送信 | タイムアウト監視 |
 |---|---|---|
 | 一方向 UDP (`unicast` / `multicast` / `broadcast` / `*_raw`) | SENDER は open 直後の即時 PING を送信せず、最後の `PING` または有効 `DATA` 送信から `health_interval_ms` 経過時にだけ PING を送信します。RECEIVER は返信しません。 | RECEIVER が有効な `PING` / `DATA` の最終受信時刻を監視 |
@@ -410,11 +412,11 @@ Table: 監視する数の例
 | TCP (`tcp`) | 接続直後に bootstrap PING を送信します。`health_interval_ms > 0` のときだけ SENDER が周期送信し、RECEIVER が応答します。 | `health_interval_ms > 0` のときだけ SENDER は PING 応答待機、RECEIVER は PING 要求到着を監視 |
 | 双方向 TCP (`tcp_bidir`) | 接続直後に両端が bootstrap PING を送信します。`health_interval_ms > 0` のときだけ両端が周期送信し、要求には即応答します。 | `health_interval_ms > 0` のときだけ両端が PING 応答待機と PING 要求到着を監視 |
 
-Table: 通信モデル別のヘルス チェック動作
-
 一方向 UDP (type 1-6) の RECEIVER は、有効な `PING` または `DATA` を受信すると `health_alive` を立てて `POTR_EVENT_CONNECTED` を発火します。`health_interval_ms = 0` で PING 送信が無効でも、有効な `DATA` が到着すれば CONNECTED します。双方向 UDP は、PING の送受信で CONNECTED します。TCP は `health_interval_ms = 0` でも bootstrap PING の往復により CONNECTED できますが、定周期 PING と timeout 監視は無効になります。
 
 双方向 UDP (`unicast_bidir` / `unicast_bidir_n1`) は、相手が返してきた PING ペイロードに `POTR_PING_STATE_NORMAL` が含まれて初めて `CONNECTED` します。したがって実効 `health_interval_ms = 0` で PING 自動送信が無効な構成では、`health_timeout_ms` の有無にかかわらず初回 `CONNECTED` に到達しません。
+
+Table: ヘルス チェック設定値とその効果
 
 | 設定 | 効果 |
 |---|---|
@@ -423,13 +425,13 @@ Table: 通信モデル別のヘルス チェック動作
 | `tcp_health_interval_ms = 0` | TCP 通信種別に適用する既定の定周期 PING 周期を 0 にします。サービス側で `health_interval_ms` を指定しない限り、TCP サービスは bootstrap PING の往復だけで CONNECTED し、その後の定周期 PING は送信しません。 |
 | `tcp_health_timeout_ms = 0` | TCP 通信種別に適用する既定のタイムアウトを 0 にします。サービス側で `health_timeout_ms` を指定しない限り、TCP サービスの PING 要求 / 応答監視は無効になります。 |
 
-Table: ヘルス チェック設定値とその効果
-
 ## services の各サービス
 
 `services` のキーには、十進文字列のサービス ID を指定します。
 
 ### 全通信種別で共通のフィールド
+
+Table: 全通信種別共通のサービス設定項目
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
@@ -446,11 +448,11 @@ Table: ヘルス チェック設定値とその効果
 | `auth` | 文字列 | 省略可 | 認証・暗号方式。`"psk"` (既定値、事前共有鍵方式) または `"cert"` (証明書方式) |
 | `encrypt_key` | 文字列 | 省略可 | `auth = "psk"` 時の AES-256-GCM 事前共有鍵。以下の 2 形式を受け付けます:<br>**① hex 鍵**: 256 ビット (32 バイト) を 64 文字の 16 進数文字列 (`0-9`、`a-f`、`A-F`) で指定<br>**② パスフレーズ**: 64 文字のうち 1 文字でも 16 進数でない文字がある場合、および 64 文字以外の 1 文字以上の文字列はパスフレーズとして SHA-256 で 32 バイト鍵に変換します。省略時は暗号化なし、`auth = "cert"` では設定エラー |
 
-Table: 全通信種別共通のサービス設定項目
-
 ### 通信種別と項目の対応
 
 全種別で指定できる項目は、`type`、`dst_port`、`src_port`、`pack_wait_ms`、`health_interval_ms`、`health_timeout_ms`、`auth`、`encrypt_key`、証明書の 6 項目です。それ以外の項目を `-` の通信種別へ記載すると設定エラー (`POTR_CONFIG_ISSUE_NOT_APPLICABLE` / `POTR_ERR_INVALID_CONFIG`) になります。
+
+Table: 通信種別ごとに使えるサービスの項目
 
 | キー | unicast | unicast_raw | multicast | multicast_raw | broadcast | broadcast_raw | unicast_bidir | unicast_bidir_n1 | tcp | tcp_bidir |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -467,13 +469,13 @@ Table: 全通信種別共通のサービス設定項目
 | `flow_control_receive_buffer_percent` | 可 | - | 可 | - | 可 | - | 可 | 可 | - | - |
 | `udp_receive_buffer_size` | 可 | 可 | 可 | 可 | 可 | 可 | 可 | 可 | - | - |
 
-Table: 通信種別ごとに使えるサービスの項目
-
 注記: RAW の 1 対 N 種別 (`multicast_raw`、`broadcast_raw`) の `max_peers` (値域: `1` 〜 `2,147,483,647`、省略時 `1,024`) は、`auth = "cert"` 選択時の受信者証明書管理の上限数として使用します (`receiver_report` 自体は RAW では使用しません)。
 
 ### 経路の指定と連続性
 
 経路番号 `N` は `1` から `8` の先頭ゼロなし十進数のみ有効です (`src_addr9` などの範囲外は `OUT_OF_RANGE`、`src_addr` や `src_addr01` は `UNKNOWN_KEY`)。経路を決めるキーは 1 から連続している必要があり、番号の飛びや、経路を決めるキーのない番号のアドレス・`path_groupN` は設定エラーです (`potr_service_open()` に構造体を直接渡す場合も全 8 経路を走査して同じ連続性を検査します)。
+
+Table: 通信種別ごとの経路の指定
 
 | 種別 | 経路を決めるキー | 経路ごとの必須 | 経路ごとの任意 | そのほかの必須 |
 |---|---|---|---|---|
@@ -484,16 +486,14 @@ Table: 通信種別ごとに使えるサービスの項目
 | `unicast_bidir_n1` | `dst_addrN` | `dst_addrN` | `path_groupN` | なし (`dst_addr1` 省略時は暗黙の経路 1 のみ使用) |
 | `tcp`、`tcp_bidir` | `dst_addrN` | `dst_addrN` | `src_addrN`、`path_groupN` | `dst_addr1` |
 
-Table: 通信種別ごとの経路の指定
-
 ### multicast 専用フィールド
+
+Table: multicast 専用の設定項目
 
 | キー | 型 | 必須 | 既定値 | 説明 |
 |---|---|---|---|---|
 | `multicast_group` | 文字列 | 必須 | — | マルチキャスト グループ IPv4 アドレス (`224.0.0.0` 〜 `239.255.255.255`) |
 | `ttl` | uint8 | 省略可 | 1 | マルチキャスト送信 TTL (`1` 〜 `255`、`multicast` / `multicast_raw` の送信役全経路のソケットに適用。受信役では設定共有のため有効値を受け付けますがソケットへは設定しません。設定ファイルの `0` および他種別への指定は `POTR_ERR_INVALID_CONFIG`、構造体直接渡しの `0` は実効値 1 として扱います) |
-
-Table: multicast 専用の設定項目
 
 ### unicast_raw / multicast_raw / broadcast_raw (RAW モード)
 
@@ -501,6 +501,8 @@ RAW モードは通常モード (`unicast` / `multicast` / `broadcast`) と同�
 追加の専用フィールドはありません。
 
 **通常モードとの差異**:
+
+Table: 通常モードと RAW モードの機能比較
 
 | 項目 | 通常モード | RAW モード |
 |---|---|---|
@@ -510,14 +512,14 @@ RAW モードは通常モード (`unicast` / `multicast` / `broadcast`) と同�
 | 通番 (`seq_num`) | 再送制御・ウィンドウ管理に使用 | AES ノンス生成用のみ (再送制御には使用しない) |
 | ヘルス チェック | `health_interval_ms` / `health_timeout_ms` に従う | 同左 (制限なし) |
 
-Table: 通常モードと RAW モードの機能比較
-
 RAW モードでもスライディング ウィンドウによる **順序整列** と **セッション管理** は有効です。  
 RAW モードでは優先グループ (`path_group1` 〜 `path_group8`) とフロー制御の項目は種別に合わない項目として設定エラー (`POTR_ERR_INVALID_CONFIG`) になります (構造体を直接渡す場合の `path_group[i]` が `0` または `1` のときは既定値として許容し、`2` 以上は設定エラーになります)。
 
 ### unicast_bidir 専用フィールド
 
 `unicast_bidir` は常に **1:1 双方向通信** です。SENDER・RECEIVER の双方が独立して送受信・NACK・ヘルス チェックを行います。
+
+Table: unicast_bidir の送信元指定に応じた bind およびフィルター動作
 
 | src 情報の指定 | SENDER の bind 動作 | RECEIVER の bind 動作 | 送信元フィルター |
 |---|---|---|---|
@@ -526,7 +528,7 @@ RAW モードでは優先グループ (`path_group1` 〜 `path_group8`) とフ�
 | `src_addr1` 省略 (SENDER) | `INADDR_ANY:src_port` で bind (OS がアダプターを自動選択) | — | なし |
 | `src_addr1` 省略 (RECEIVER) | — | `dst_addr1:dst_port` で bind し、最初の受信パケットから SENDER のアドレスを動的学習します。 | なし (学習後は学習アドレスから受信) |
 
-Table: unicast_bidir の送信元指定に応じた bind およびフィルター動作
+Table: unicast_bidir 専用の設定項目
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
@@ -535,11 +537,11 @@ Table: unicast_bidir の送信元指定に応じた bind およびフィルタ�
 | `dst_addr1` | 文字列 | 条件付き | SENDER: 送信先アドレス。RECEIVER: bind アドレス。省略時は `INADDR_ANY` で bind します。 |
 | `dst_port` | uint16 | 必須 | SENDER: 送信先ポート (RECEIVER の bind ポート) |
 
-Table: unicast_bidir 専用の設定項目
-
 ### unicast_bidir_n1 専用フィールド
 
 `unicast_bidir_n1` は **N:1 双方向通信** です。サーバー (`POTR_ROLE_RECEIVER`) が複数クライアントを同時に受け入れます。クライアントは `unicast_bidir` (1:1) として接続します。
+
+Table: unicast_bidir_n1 専用の設定項目
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
@@ -548,9 +550,9 @@ Table: unicast_bidir 専用の設定項目
 | `src_port` | uint16 | 省略可 | 送信元ポート フィルター。`0` または省略でフィルターなし (全クライアント受け入れ) |
 | `max_peers` | uint32 | 省略可 | 最大同時接続クライアント数。既定値は `1024` |
 
-Table: unicast_bidir_n1 専用の設定項目
-
 ### tcp / tcp_bidir 専用フィールド
+
+Table: tcp および tcp_bidir 専用の設定項目
 
 | キー | 型 | 必須 | 既定値 | 説明 |
 |---|---|---|---|---|
@@ -561,11 +563,11 @@ Table: unicast_bidir_n1 専用の設定項目
 | `reconnect_interval_ms` | uint32 | 省略可 | 5,000 | SENDER の自動再接続間隔 (ms)。`0` で自動再接続なし。RECEIVER では使用しない。上限は 2,147,483,646 で、役割によらず検査します。超える場合、設定エラー (`POTR_ERR_INVALID_CONFIG`) を返します。 |
 | `connect_timeout_ms` | uint32 | 省略可 | 10,000 | SENDER の TCP 接続タイムアウト (ms)。`0` で OS 既定値 (porter の期限を設けません)。RECEIVER では使用しない |
 
-Table: tcp および tcp_bidir 専用の設定項目
-
 **tcp / tcp_bidir では誤りになるフィールド** (参照: 「通信種別と項目の対応」表)
 
 `tcp` と `tcp_bidir` で次のフィールドを設定ファイルへ記述すると、`POTR_CONFIG_ISSUE_NOT_APPLICABLE` (`POTR_ERR_INVALID_CONFIG`) になります。
+
+Table: TCP 通信で誤りになる他種別専用項目
 
 | フィールド | 他の種別での用途 |
 |---|---|
@@ -575,8 +577,6 @@ Table: tcp および tcp_bidir 専用の設定項目
 | `flow_control_excluded_receiver_count`、`flow_control_excluded_receiver_percent`、`flow_control_grace_ms` | 1 対 N / N:1 の除外設定 |
 | `flow_control_feedback_percent`、`flow_control_monitored_receiver_count` | 1 対 N の監視設定 |
 | `flow_control_receive_buffer_percent`、`udp_receive_buffer_size` | UDP 受信バッファー関連 |
-
-Table: TCP 通信で誤りになる他種別専用項目
 
 ### TCP マルチパス設定
 
@@ -603,6 +603,8 @@ Table: TCP 通信で誤りになる他種別専用項目
 
 各 path[i] に独立して適用されます。
 
+Table: TCP SENDER における送信元指定別の bind 動作
+
 | `src_addr1` | `src_port` | `connect()` 前の `bind()` 動作 |
 |---|---|---|
 | 未指定 | `0` または省略 | `bind()` しない |
@@ -610,11 +612,11 @@ Table: TCP 通信で誤りになる他種別専用項目
 | 指定 | `0` または省略 | `src_addr1:0` (エフェメラル ポート) で bind |
 | 指定 | 指定 | `src_addr1:src_port` で bind |
 
-Table: TCP SENDER における送信元指定別の bind 動作
-
 #### RECEIVER の接続フィルター動作 (src_addr1 / src_port の組み合わせ)
 
 各 path[i] の `accept()` 後に接続元を検証します。
+
+Table: TCP RECEIVER における接続元検証動作
 
 | `src_addr1` | `src_port` | フィルター動作 |
 |---|---|---|
@@ -623,21 +625,21 @@ Table: TCP SENDER における送信元指定別の bind 動作
 | 指定 | `0` または省略 | 接続元 IP が一致する接続のみ受理 |
 | 指定 | 指定 | 接続元 IP・ポートの両方が一致する接続のみ受理 |
 
-Table: TCP RECEIVER における接続元検証動作
-
 ### broadcast 専用フィールド
+
+Table: broadcast 専用の設定項目
 
 | キー | 型 | 必須 | 説明 |
 |---|---|---|---|
 | `broadcast_addr` | 文字列 | 省略可 (`255.255.255.255`) | 送信者: 送信先ブロードキャスト アドレス (有効な IPv4 表記。例: `192.168.1.255`) |
-
-Table: broadcast 専用の設定項目
 
 `broadcast` 選択時のネットワーク負荷に関する注意事項は、後述の「broadcast (1:N 通信)」を参照してください。
 
 ### encrypt_key の詳細
 
 `encrypt_key` を設定すると AES-256-GCM による暗号化・認証タグが有効になります。
+
+Table: 暗号化鍵の指定形式と仕様
 
 | 項目 | 説明 |
 |---|---|
@@ -651,8 +653,6 @@ Table: broadcast 専用の設定項目
 | 受信要件 | 暗号化が有効な受信側は `POTR_FLAG_ENCRYPTED` 付きパケットのみ受理します。平文パケット、およびタグ検証失敗パケットは破棄します。 |
 | マルチキャスト | 受信者全員が同一の `encrypt_key` を持っていれば動作します。 |
 
-Table: 暗号化鍵の指定形式と仕様
-
 #### ノンス構成
 
 GCM ノンス (12 バイト) は以下の構成です。
@@ -661,14 +661,16 @@ GCM ノンス (12 バイト) は以下の構成です。
 [session_id: 4B NBO][tx_counter: 8B NBO]
 ```
 
+Table: GCM ノンスのフィールド構成
+
 | フィールド | バイト | 内容 |
 |---|---|---|
 | `session_id` | 4 | 送信元の自セッション ID (ネットワーク バイト オーダー) |
 | `tx_counter` | 8 | セッションごとの送出通番 (ネットワーク バイト オーダー)。経路ごとの複製や制御パケットも含め、送出ごとに 1 増える |
 
-Table: GCM ノンスのフィールド構成
-
 各パケット種別の flags 値 (例):
+
+Table: パケット種別別の flags 値一覧
 
 | パケット種別 | flags (16 進) |
 |---|---|
@@ -682,11 +684,11 @@ Table: GCM ノンスのフィールド構成
 | HANDSHAKE | `0x0200` (HANDSHAKE) |
 | KEY (暗号化あり) | `0x0420` (KEY \| ENCRYPTED) |
 
-Table: パケット種別別の flags 値一覧
-
 ### 証明書方式 (auth = "cert")
 
 `auth` に `"cert"` を指定すると、事前共有鍵 (`encrypt_key`) ではなく X.509 証明書による相互認証と、TLS 1.3 (TCP) / DTLS 1.2 (UDP) のハンドシェイクで確立した鍵による通信保護を行います。証明書方式では暗号化が必須となり、平文の通信は受理しません。
+
+Table: 証明書方式のサービス設定項目
 
 | キー | 型 | 必須 | 既定値 | 説明 |
 |---|---|---|---|---|
@@ -698,8 +700,6 @@ Table: パケット種別別の flags 値一覧
 | `crl_file` | 文字列 | 省略可 | — | 失効リスト ファイル (PEM 形式) |
 | `peer_names` | 文字列の配列 | `ca_file` 指定時必須 | — | CA で検証する相手の名前。証明書の SAN の DNS 名または URI と照合する |
 
-Table: 証明書方式のサービス設定項目
-
 `ca_file` と `pinned_certs` は少なくとも一方の指定が必要です。`ca_file` を指定した場合、`peer_names` は必須であり、省略すると設定エラーになります。  
 証明書、秘密鍵、CA、CRL、`pinned_certs` の各ファイルは、`potr_service_open()` / `potr_service_open_from_config()` 時に `cplat_fopen()` (`"rb"`) でファイルごとに 1 回だけ開いて読み込みます。読み取り前に stdio のバッファリングを無効化し、`fread()` の各回で `ferror()` を確認しながら内容を OpenSSL の保護メモリ BIO (`BIO_s_secmem()`) へ蓄積し、ファイルを閉じてチャンクを消去した後で同じメモリ BIO から PEM を解析します。ファイル全体の PEM ブロックの開始・終了およびラベル名を検査し、空ファイル、閉じていないブロック、壊れたブロック、暗号化秘密鍵 (パスフレーズの対話入力は行いません) を拒否します。証明書チェーンの先頭は自端証明書、後続は中間証明書として保持し、CA と CRL は全ブロックを信頼ストアへ登録します。開けない場合・読み取り失敗は `POTR_ERR_IO`、形式不正や鍵不一致は `POTR_ERR_INVALID_CONFIG`、確保失敗 (`ERR_R_MALLOC_FAILURE` を含むキューのエラーを含む) は `POTR_ERR_OUT_OF_MEMORY`、未分類の OpenSSL 内部エラーは `POTR_ERR_UNKNOWN` を返します。証明書や CRL を更新して反映するには、サービスを開き直す必要があります。
 
@@ -709,14 +709,14 @@ Table: 証明書方式のサービス設定項目
 
 `potr_service_open()` へ直接渡す `potr_service_def` では、次のメンバーで同じ設定を指定します (構造体を 0 で初期化した場合は `POTR_AUTH_PSK` となり、事前共有鍵方式として動作します)。
 
+Table: 証明書方式の設定を渡す `potr_service_def` のメンバー
+
 | メンバー | 型 | 対応するキー |
 |---|---|---|
 | `auth` | `potr_auth` (`POTR_AUTH_PSK = 0`、`POTR_AUTH_CERT = 1`) | `auth` |
 | `cert_file`、`key_file`、`ca_file`、`crl_file` | `const char *` | 同名のキー (`crl_file` 省略時は `NULL`) |
 | `pinned_certs`、`pinned_cert_count` | `const char *const *`、`size_t` | `pinned_certs` |
 | `peer_names`、`peer_name_count` | `const char *const *`、`size_t` | `peer_names` (`ca_file` 指定時は 1 以上) |
-
-Table: 証明書方式の設定を渡す `potr_service_def` のメンバー
 
 これらのポインターおよび配列内の文字列は `potr_service_open()` の呼び出し中だけ参照し、porter は保持しません。
 
@@ -729,14 +729,14 @@ Table: 証明書方式の設定を渡す `potr_service_def` のメンバー
 
 #### DNS 解決のポリシー
 
+Table: DNS 解決のポリシー仕様
+
 | 項目 | 仕様 |
 |---|---|
 | 解決タイミング | `potr_service_open_from_config()` / `potr_service_open()` 呼び出し時に 1 回のみ解決します。 |
 | 再解決 | プロセス生存中は再解決しません。DNS 更新後に接続できなくなった場合はプロセスを再起動します。 |
 | 複数アドレス返却時 | 仕様上未定義。実装上は先頭アドレスを採用します。 |
 | IPv6 | 非対応 |
-
-Table: DNS 解決のポリシー仕様
 
 ## 通信種別ごとのソケット動作
 
@@ -757,14 +757,14 @@ sequenceDiagram
 
 Figure: unicast のソケット bind / sendto
 
+Table: unicast (1:1) のソケット動作仕様
+
 | | 送信者 | 受信者 |
 |---|---|---|
 | bind アドレス | `src_addr1` | `dst_addr1` |
 | bind ポート | `src_port` (0 = OS 自動) | `dst_port` |
 | 送信先 | `dst_addr1:dst_port` | — |
 | 送信元フィルター | — | `src_addr1` |
-
-Table: unicast (1:1) のソケット動作仕様
 
 受信者は `dst_addr1` でソケットを bind するため、`dst_addr1` は当該ホストの NIC に割り当てられているアドレスでなければなりません。
 
@@ -787,6 +787,8 @@ sequenceDiagram
 
 Figure: unicast_bidir 1:1 のソケット bind / sendto
 
+Table: unicast_bidir (1:1) のソケット動作仕様
+
 | | Side A (SENDER) | Side B (RECEIVER) |
 |---|---|---|
 | bind アドレス | `src_addr1` | `dst_addr1` |
@@ -794,8 +796,6 @@ Figure: unicast_bidir 1:1 のソケット bind / sendto
 | 送信先アドレス | `dst_addr1` | `src_addr1` (省略時は最初の受信パケットから動的学習) |
 | 送信先ポート | `dst_port` | `src_port` (`0` / 省略時は受信した送信元ポートを動的学習) |
 | 送信元フィルター | — | `src_addr1` 指定時はアドレスを照合。省略時は動的学習後に学習済みアドレスを照合 |
-
-Table: unicast_bidir (1:1) のソケット動作仕様
 
 #### N:1 モード (unicast_bidir_n1)
 
@@ -818,6 +818,8 @@ sequenceDiagram
 
 Figure: unicast_bidir_n1 のソケット bind / sendto
 
+Table: unicast_bidir_n1 (N:1) のソケット動作仕様
+
 | | N:1 サーバー (unicast_bidir_n1) | クライアント (unicast_bidir) |
 |---|---|---|
 | bind アドレス | `dst_addr1` (省略時 `INADDR_ANY`) | `src_addr1` |
@@ -825,8 +827,6 @@ Figure: unicast_bidir_n1 のソケット bind / sendto
 | 送信先 | `recvfrom` で学習した各ピアの送信元 | `dst_addr1:dst_port` |
 | 送信元フィルター | `src_port` 指定時のみポートで照合 | — |
 | 最大接続数 | `max_peers` | — |
-
-Table: unicast_bidir_n1 (N:1) のソケット動作仕様
 
 `encrypt_key` を設定した N:1 サーバーは、`POTR_FLAG_ENCRYPTED` の確認と GCM タグ検証を新規 peer 確保より前に行います。認証失敗パケットは `max_peers` を消費しません。
 
@@ -850,6 +850,8 @@ sequenceDiagram
 
 Figure: multicast のソケット bind / sendto
 
+Table: multicast (1:N) のソケット動作仕様
+
 | | 送信者 | 受信者 |
 |---|---|---|
 | bind アドレス | `INADDR_ANY` | `INADDR_ANY` |
@@ -858,8 +860,6 @@ Figure: multicast のソケット bind / sendto
 | 送信先 | `multicast_group:dst_port` | — |
 | 送信元フィルター | — | `src_addrN` |
 | NACK の返送先 | — | `src_addrN` |
-
-Table: multicast (1:N) のソケット動作仕様
 
 送信側と受信側が別のホストにある場合は、`src_addrN` に送信側のアドレスを、`dst_addrN` に受信側の参加 NIC を指定します。次の例は、送信側 `192.168.1.10`、受信側の NIC `192.168.1.20` です。
 
@@ -875,6 +875,8 @@ Table: multicast (1:N) のソケット動作仕様
 
 ### broadcast (1:N 通信)
 
+Table: broadcast (1:N) のソケット動作仕様
+
 | | 送信者 | 受信者 |
 |---|---|---|
 | bind アドレス | `src_addr1` | `INADDR_ANY` |
@@ -882,8 +884,6 @@ Table: multicast (1:N) のソケット動作仕様
 | ソケット オプション | `SO_BROADCAST` 有効 | `SO_BROADCAST` 有効 |
 | 送信先 | `broadcast_addr:dst_port` | — |
 | 送信元フィルター | — | `src_addr1` |
-
-Table: broadcast (1:N) のソケット動作仕様
 
 > [!WARNING]
 > 同一セグメント内の 1:N 配信であっても、原則として `broadcast` (`broadcast_raw`) ではなく `multicast` (`multicast_raw`) の使用を推奨します。  
@@ -910,14 +910,14 @@ sequenceDiagram
 
 Figure: tcp のソケット connect / accept
 
+Table: TCP および TCP_BIDIR のソケット動作仕様
+
 | | SENDER | RECEIVER |
 |---|---|---|
 | ソケット種別 | `SOCK_STREAM` | `SOCK_STREAM` |
 | 動作 | `connect(dst_addr1, dst_port)` | `bind(dst_addr1, dst_port)` → `listen()` → `accept()` |
 | listen ソケット | なし | あり (接続待機専用) |
 | 接続ソケット | `connect()` の fd | `accept()` の fd |
-
-Table: TCP および TCP_BIDIR のソケット動作仕様
 
 RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を呼び出して `listen()` に入っている必要があります。
 
@@ -939,13 +939,13 @@ RECEIVER が先に `potr_service_open_from_config()` / `potr_service_open()` を
 
 ### 1:1 モードと N:1 モードの使い分け
 
+Table: 用途別の推奨通信種別
+
 | 用途 | 推奨する type |
 |---|---|
 | 双方向 1:1 通信 (相手アドレス既知) | `unicast_bidir` (src_addr1 あり) |
 | RECEIVER が SENDER のアドレスを事前に知らない 1:1 | `unicast_bidir` (RECEIVER 側 src_addr1 省略) |
 | 複数クライアントを同時に受け入れる N:1 サーバー | `unicast_bidir_n1` |
-
-Table: 用途別の推奨通信種別
 
 ## マルチパスと優先グループ設定
 
@@ -980,6 +980,8 @@ PING、ハンドシェイク、鍵配布、FIN、FIN_ACK は、待機グルー�
 
 次のいずれかに該当する場合、`potr_service_open_from_config()`、`potr_service_get_type()`、`potr_config_validate_file()`、および `potr_service_open()` は設定エラーとして `POTR_ERR_INVALID_CONFIG` (ファイルを開けない場合や読み取りの `ferror()` が真の場合、名前解決・ソケット失敗時は `POTR_ERR_IO`) を返します。なお、`potr_service_open()` などの API の呼び出し方の誤り (NULL 引数、未定義の役割、役割とコールバックの組み合わせ、未定義フラグ等) は `POTR_ERR_INVALID_ARGUMENT` を返します。
 
+Table: 主な設定エラーの条件一覧
+
 | 区分 | 誤りの種別 / 内容 |
 |---|---|
 | 構文と NUL (`SYNTAX`) | JSONC の構文誤り、生の NUL バイト、文字列内の `\u0000` (1 件報告して打ち切り) |
@@ -995,8 +997,6 @@ PING、ハンドシェイク、鍵配布、FIN、FIN_ACK は、待機グルー�
 | 鍵導出失敗 (`KEY_DERIVATION`) | `encrypt_key` のパスフレーズからの鍵導出失敗 (鍵領域は消去し、値自体はトレースへ出しません) |
 | 認証ファイルの読み込み | ファイルを開けない・バッファリング設定失敗・`ferror()` が真の場合は `POTR_ERR_IO`、確保失敗またはエラー キュー内の `ERR_R_MALLOC_FAILURE` は `POTR_ERR_OUT_OF_MEMORY`、PEM 形式不正・空ファイル・暗号化秘密鍵・秘密鍵不一致は `POTR_ERR_INVALID_CONFIG`、未分類の OpenSSL 内部エラーは `POTR_ERR_UNKNOWN` |
 
-Table: 主な設定エラーの条件一覧
-
 ## 設定の確認 (porter-config-check)
 
 `porter-config-check` は、サービスを開かずに設定ファイルを検証する確認用コマンド (`prod/cbin/porter-config-check`) です。  
@@ -1006,14 +1006,14 @@ Table: 主な設定エラーの条件一覧
 porter-config-check [-h] [--check-files] [--role ROLE] config_path
 ```
 
+Table: `porter-config-check` の引数とオプション
+
 | 引数・オプション | 意味 |
 |---|---|
 | `config_path` | 検証する設定ファイルのパス (必須の位置引数) |
 | `--check-files` | 証明書方式の認証のファイル (`cert_file`、`key_file`、`ca_file`、`crl_file`、`pinned_certs` の各要素) が存在し、通常ファイルとして読み取れることも確認します |
 | `--role ROLE` | 役割依存の条件を検査する対象を `sender`、`receiver`、`all` から指定します。既定は `all` です |
 | `-h`、`--help` | 使い方を標準出力へ出して終了コード 0 で終了します |
-
-Table: `porter-config-check` の引数とオプション
 
 `--check-files` の相対パスはコマンドの作業ディレクトリから解決します。サービスを開く処理も設定ファイルに書かれたパスのまま開くため、確認はサービスのプロセスと同じ作業ディレクトリで実行してください。
 
@@ -1037,13 +1037,13 @@ Table: `porter-config-check` の引数とオプション
 
 終了コードは、実行失敗を最優先に判定したうえで、設定の誤りの有無で決定します。
 
+Table: `porter-config-check` の終了コード
+
 | 終了コード | 意味 |
 |---|---|
 | `0` | 誤りがありません (`-h` / `--help` の表示成功を含みます) |
 | `1` | 実行の失敗 (引数の誤り、ファイルを開けない、読み取りの失敗、メモリ不足、出力の書き込み・フラッシュの失敗) |
 | `2` | 設定の誤りが 1 件以上あります (構文の誤り、`--check-files` の誤りを含みます) |
-
-Table: `porter-config-check` の終了コード
 
 ## サンプル設定ファイル
 

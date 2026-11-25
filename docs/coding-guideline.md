@@ -38,6 +38,8 @@ porter もこの規則に従い、`include_internal/` で宣言する関数・�
 
 ### 公開関数の改名対応
 
+Table: 公開関数の旧名新名対応表
+
 | 旧名 | 新名 |
 |---|---|
 | `potrOpenService` | `potr_service_open` |
@@ -48,11 +50,11 @@ porter もこの規則に従い、`include_internal/` で宣言する関数・�
 | `potrSend` | `potr_service_send` |
 | `potrDisconnectPeer` | `potr_peer_disconnect` |
 
-Table: 公開関数の旧名新名対応表
-
 `potr_service_send` はサービス ハンドルを使ってデータを送信する API です。
 
 ### 公開型の改名対応
+
+Table: 公開型の旧名新名対応表
 
 | 旧名 | 新名 | 種別 |
 |---|---|---|
@@ -66,9 +68,9 @@ Table: 公開関数の旧名新名対応表
 | `PotrPeerId` | `potr_peer_id` | 整数型の alias |
 | `PotrRecvCallback` | `potr_recv_fn` | 関数ポインター |
 
-Table: 公開型の旧名新名対応表
-
 ### 内部型の改名対応
+
+Table: 内部型の旧名新名対応表
 
 | 旧名 | 新名 | 種別 |
 |---|---|---|
@@ -81,8 +83,6 @@ Table: 公開型の旧名新名対応表
 | `PotrPacketSessionHdr` | `potr_internal_packet_session_hdr` | struct |
 | `PotrWindow` | `potr_internal_window` | struct |
 | `PotrConnectedThreadsOps` | `potr_internal_connected_threads_ops` | struct |
-
-Table: 内部型の旧名新名対応表
 
 > [!NOTE]
 > `PotrSocket`、`potr_socket_cause_t` はこの表から除外しています。
@@ -122,6 +122,8 @@ porter の公開 API および内部関数が戻り値として使用する共�
 結果コードを使う公開ヘッダー、内部ヘッダー、実装、およびテストは、`porter_const.h` を経由せずに `porter_result.h` を直接インクルードします。  
 `porter_result.h` が正であり、本節のコード一覧は参照用の写しです。
 
+Table: porter 共通結果コード一覧
+
 | カテゴリ | コード | 値 | 意味 |
 |---|---|---:|---|
 | 成功・その他 | `POTR_OK` | 0 | 成功 |
@@ -141,8 +143,6 @@ porter の公開 API および内部関数が戻り値として使用する共�
 | 通信・I/O | `POTR_ERR_IO` | -23 | ファイルまたはネットワークの I/O 失敗 |
 | 通信・I/O | `POTR_ERR_PROTOCOL` | -24 | 受信データがプロトコル要件不適合 |
 | 制御 | `POTR_ERR_CANCELED` | -40 | シャットダウンによる待機または処理の中断 |
-
-Table: porter 共通結果コード一覧
 
 数値範囲は用途を識別しやすくするための区分であり、範囲だけを使った判定規約ではありません。  
 コード値を変更または追加する場合は、公開 API、内部処理、テスト、および porter 利用側の全箇所への影響を調査します。
@@ -201,6 +201,8 @@ if (ret != CPLAT_OK)
 以下の関数群は、設計意図により共通結果コードの適用対象外とします。  
 対象外の関数には、対象外である理由をコメントとして該当宣言に残します ([コーディング規範](../../general/docs/coding-guideline.md) の「一括変更で対象外とした箇所の明示」に従う)。
 
+Table: 共通結果コード適用対象外の関数と理由
+
 | 対象外の関数群 | 現行規約 | 理由 |
 |---|---|---|
 | 0/1 述語 (`potr_internal_seqnum_in_window`、`potr_internal_window_send_full`、`potr_internal_window_recv_needs_nack`、`potr_context.h` の inline 述語) | 真 1 / 偽 0 | 失敗モードのない純関数であり、成否の概念が適用されない |
@@ -208,8 +210,6 @@ if (ret != CPLAT_OK)
 | 値をそのまま返す関数 (`potr_internal_packet_wire_size`、`raw_base_type` などの getter) | 値そのもの | 結果コードの概念が適用されない |
 | ハンドル・ポインター返却系 (`potr_tracer_get`、`potr_internal_peer_create`、`potr_internal_peer_find_by_*` など) | 成功時ポインター / 失敗・不在時 NULL | ポインター返却 API の慣用 |
 | 戻り値を持たない関数 | `void` | 同上 |
-
-Table: 共通結果コード適用対象外の関数と理由
 
 > [!NOTE]
 > ソケットに対する直接委譲ラッパー (`potr_sendto`、`potr_recvfrom`、`potr_poll_readable`、`potr_poll_writable`) と合成ラッパー (`potr_socket_open`、`potr_bind`、`potr_listen`、`potr_accept`、`potr_connect`、`potr_setsockopt`、`potr_socket_get_pending_error`) は、この表から除外しています。

@@ -11,12 +11,12 @@
 
 porter ライブラリの TCP サポートは以下の 2 種別のみです。
 
+Table: 既存の TCP サポート種別と接続形式
+
 | 種別 | 方向 | 接続数 |
 |---|---|---|
 | `POTR_TYPE_TCP` | 単方向 (SENDER → RECEIVER) | 1:1 |
 | `POTR_TYPE_TCP_BIDIR` | 双方向 (SENDER ↔ RECEIVER) | 1:1 |
-
-Table: 既存の TCP サポート種別と接続形式
 
 RECEIVER は 1 台の SENDER との接続しか同時に維持できません。これは `receiver_accept_loop()` が `accept()` → `join_recv_thread()` (切断まで待機) → 次の `accept()` という逐次処理になっているためです。
 
@@ -44,14 +44,14 @@ SENDER 側の変更は不要です。既存の `POTR_TYPE_TCP` または `POTR_T
 
 ### RECEIVER 側の動作変更
 
+Table: TCP 1:1 と N:1 における RECEIVER 側の動作比較
+
 | 機能 | 既存 1:1 | N:1 |
 |---|---|---|
 | 同時接続数 | 1 | `max_peers` まで |
 | ピア識別 | `POTR_PEER_NA` | `peer_id` で各 SENDER を識別 |
 | RECEIVER からの送信 (BIDIR) | 単一接続へ | `peer_id` 指定で特定 SENDER へ |
 | マルチパス | 最大 `POTR_MAX_PATH` パス/接続 | 各 SENDER が最大 `POTR_MAX_PATH` パスで接続可 |
-
-Table: TCP 1:1 と N:1 における RECEIVER 側の動作比較
 
 ---
 
@@ -809,6 +809,8 @@ if (potr_is_tcp_n1_type(ctx->service.type))
 
 追加する TCP N:1 フィールドのサイズ概算 (POTR_MAX_PATH=4 の場合) は次のとおりです。
 
+Table: TCP N:1 追加フィールドのサイズ概算
+
 | フィールド | サイズ (approx) |
 |---|---|
 | `tcp_conn_fd[4]` (int or SOCKET) | 16〜32 B |
@@ -822,8 +824,6 @@ if (potr_is_tcp_n1_type(ctx->service.type))
 | `tcp_recv_window_mutex` | 40 B |
 | その他整数フィールド | 〜32 B |
 | **合計** | **約 730〜760 B 増加** |
-
-Table: TCP N:1 追加フィールドのサイズ概算
 
 `max_peers = 1024` の場合、ピア テーブル全体で約 750 KB 増加します。
 
@@ -895,13 +895,13 @@ TCP と UDP のセッション識別をセッション層レベルで対称に�
 
 3. **セッション比較 (`tcp_session_compare()`) による 3 分類**
 
+   Table: tcp_session_compare の比較結果と処置
+
    | 結果 | 意味 | 処置 |
    |---|---|---|
    | `TCP_SESSION_NEW` | 新しいセッション (または初回接続) | 他の全アクティブ パスを切断し `reset_connection_state()` を呼ぶ。その後 `tcp_conn_fd[path_idx]` を設定してスレッドを起動します。 |
    | `TCP_SESSION_SAME` | 既存セッションの同一セッション ID | 追加パスとして接続します。`reset_connection_state()` は呼ばない。 |
    | `TCP_SESSION_OLD` | 過去のセッション (期限切れ) | 接続を閉じてループを継続します。 |
-
-   Table: tcp_session_compare の比較結果と処置
 
 4. **先読みバッファーの引き渡し**  
    accept スレッドが読み取った最初のパケットを `tcp_first_pkt_buf[path_idx]` / `tcp_first_pkt_len[path_idx]` に格納します。recv スレッドはループ開始時にこのバッファーを先に処理し、通常の recv ループに入る。
@@ -930,6 +930,8 @@ TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 
 
 ## 変更ファイル一覧
 
+Table: TCP N:1 対応に伴う変更ファイル一覧
+
 | ファイル | 変更種別 | 内容 |
 |---|---|---|
 | `app/porter/prod/include/porter_type.h` | 変更 | `POTR_TYPE_TCP_N1 = 10`, `POTR_TYPE_TCP_BIDIR_N1 = 11` を追加 |
@@ -946,8 +948,6 @@ TCP N:1 の `peer_create_tcp()` を実装する際は、上記の session-layer 
 | `app/porter/prod/api/potr_service_close.c` | 変更 | TCP N:1 終了処理追加 |
 | `app/porter/prod/api/potr_service_send.c` | 変更 | BIDIR_N1 RECEIVER からの送信許可; peer_id ルーティング |
 | `app/porter/prod/api/potr_peer_disconnect.c` | 変更 | TCP N:1 ピア切断対応 |
-
-Table: TCP N:1 対応に伴う変更ファイル一覧
 
 ---
 

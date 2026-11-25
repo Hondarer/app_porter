@@ -10,6 +10,8 @@ porter フレームワークにおける potr_type ごとの PING 送出ロジ�
 
 次の表は各 potr_type の概要をまとめたものです。
 
+Table: potr_type ごとの PING 送出とタイムアウト検出動作
+
 | potr_type | 値 | PING 送出 | タイムアウト検出 |
 |---|---|---|---|
 | UNICAST_RAW | 1 | SENDER (health スレッド) | RECEIVER 側 (有効な PING / DATA の受信タイムアウト) |
@@ -22,8 +24,6 @@ porter フレームワークにおける potr_type ごとの PING 送出ロジ�
 | UNICAST_BIDIR_N1 | 8 | サーバー (全ピア宛) + クライアント (サーバー宛) | 両端・ピア単位 (PING 受信タイムアウト) |
 | TCP | 9 | 両端 (tcp_health スレッド・パスごと) | 両端 (PING 受信タイムアウト) |
 | TCP_BIDIR | 10 | 両端 (tcp_health スレッド・パスごと) | 両端 (PING 受信タイムアウト) |
-
-Table: potr_type ごとの PING 送出とタイムアウト検出動作
 
 ## 設定パラメーター
 
@@ -50,13 +50,13 @@ tcp_health_timeout_ms  : TCP 系 PING 受信タイムアウト (ms)。両端で�
 
 PING パケットのペイロードには自端の各パス PING 受信状態を `POTR_MAX_PATH` (= 8) バイトで格納します。各バイトがパス インデックス順に対応します。
 
+Table: PING ペイロードにおけるパス受信状態の値と定義
+
 | 値 | 定数 | 意味 |
 |---|---|---|
 | `0` | `POTR_PING_STATE_UNDEFINED` | 不定 (片方向通信 / まだ有効な PING / DATA 未受信) |
 | `1` | `POTR_PING_STATE_NORMAL` | 正常 (ヘルス チェック信号を継続受信中) |
 | `2` | `POTR_PING_STATE_ABNORMAL` | 異常 (PING 途絶・タイムアウト) |
-
-Table: PING ペイロードにおけるパス受信状態の値と定義
 
 片方向通信 (type 1-6) では送信側が返送用 PING を持たないため、送出される PING ペイロードは全バイト `UNDEFINED` のままです。一方、受信側ローカルの `path_ping_state[]` は有効な `PING` または `DATA` を受けると `NORMAL` に更新されます。双方向通信 (type 7-10) は実際の PING 受信状態を格納します。
 
@@ -79,13 +79,13 @@ Table: PING ペイロードにおけるパス受信状態の値と定義
 
 `POTR_EVENT_CONNECTED` の発火条件は通信形態によって異なります。
 
+Table: 通信形態ごとの CONNECTED イベント発火条件
+
 | 通信形態 | CONNECTED の発火条件 |
 |---|---|
 | 片方向 (type 1-6) | いずれかの path logical が 0->1 になったとき |
 | 双方向 UDP (type 7, 8) | `path_ping_state[k] == NORMAL` かつ `remote_path_ping_state[k] == NORMAL` の path が 1 本以上になったとき |
 | TCP (type 9, 10) | `tcp_conn_fd[k]` 有効かつ `path_ping_state[k] == NORMAL` かつ `remote_path_ping_state[k] == NORMAL` の path が 1 本以上になったとき |
-
-Table: 通信形態ごとの CONNECTED イベント発火条件
 
 双方向 UDP では `remote_path_ping_state[k] == POTR_PING_STATE_NORMAL` が一つ以上存在するときに CONNECTED を発火します。これは「相手端が自端からの PING を正常受信済みである」ことを意味し、往復疎通が確認できた時点で CONNECTED となります。
 
@@ -116,6 +116,8 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 
 ### type 1-6: UNICAST_RAW / MULTICAST_RAW / BROADCAST_RAW / UNICAST / MULTICAST / BROADCAST
 
+Table: 片方向通信 (type 1-6) の接続状態別の実装
+
 | 状態 | 実装 |
 |---|---|
 | CONNECTED 前 | `PING` は health スレッドが「最後の PING または有効 DATA 送信」から `health_interval_ms` 経過したときだけ送信します。open 直後の即時 PING はありません。`potr_service_send()` は通常どおり `DATA` を送信キューへ格納します。受信側は最初の有効な `PING` または `DATA` を受理した時点で `health_alive == 1` になり、`POTR_EVENT_CONNECTED` を発火します。 |
@@ -123,9 +125,9 @@ TCP はコネクション確立 (accept / connect 完了) だけでは CONNECTED
 | CONNECTED 解除 | `health_timeout_ms` 超過、`FIN` 受信、`REJECT` 受信、RAW 系のギャップ検出で `health_alive == 0` に戻り、以後は再び CONNECTED 前と同じ扱いになります。 |
 | potr_event 順序 | 初回の有効 `DATA` を受理した場合も、先に `POTR_EVENT_CONNECTED` を発火してから `POTR_EVENT_DATA` を配送します。 |
 
-Table: 片方向通信 (type 1-6) の接続状態別の実装
-
 ### type 7: UNICAST_BIDIR
+
+Table: UNICAST_BIDIR (type 7) の接続状態別の実装
 
 | 状態 | 実装 |
 |---|---|
@@ -134,9 +136,9 @@ Table: 片方向通信 (type 1-6) の接続状態別の実装
 | CONNECTED 解除 | `health_timeout_ms` 超過、`FIN` 受信、状態を変える `REJECT`、通知キューの容量超過で `health_alive == 0` に戻り、以後は再び CONNECTED 前と同じ扱いになります。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。 |
 
-Table: UNICAST_BIDIR (type 7) の接続状態別の実装
-
 ### type 8: UNICAST_BIDIR_N1
+
+Table: UNICAST_BIDIR_N1 (type 8) の接続状態別の実装
 
 | 状態 | 実装 |
 |---|---|
@@ -145,9 +147,9 @@ Table: UNICAST_BIDIR (type 7) の接続状態別の実装
 | CONNECTED 解除 | ピア単位で `health_timeout_ms` 超過、`FIN` 受信、状態を変える `REJECT`、通知キューの容量超過時に `peer->health_alive == 0` となります。`FIN` とタイムアウトでは `potr_internal_peer_free()` でピアを削除し、REJECT と容量超過では受信セッション状態を破棄します。以後はその peer を未接続として扱い、再接続は再度 `PING` 起点で行います。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。未知 peer の初回 `DATA` でも peer table は前進しません。 |
 
-Table: UNICAST_BIDIR_N1 (type 8) の接続状態別の実装
-
 ### type 9-10: TCP / TCP_BIDIR
+
+Table: TCP / TCP_BIDIR (type 9-10) の接続状態別の実装
 
 | 状態 | 実装 |
 |---|---|
@@ -155,8 +157,6 @@ Table: UNICAST_BIDIR_N1 (type 8) の接続状態別の実装
 | CONNECTED 後 | `health_alive == 1` になり、`potr_service_send()` が成功します。受信側も `DATA` を配送します。送信スレッドは各 path へ `DATA` を書き込む前に、その path で相手端へ通知済みの経路状態が現在と同じかを確かめ、異なれば最新の経路状態を載せた `PING` を先に書き込みます。TCP はストリーム内の順序を保つため、相手端は `DATA` より先に `PING` を処理して CONNECTED になり、CONNECTED 前の破棄で `DATA` を失いません。 |
 | CONNECTED 解除 | path ごとの PING タイムアウトや TCP 切断で `tcp_active_paths` が減少し、全 path が失われると connect スレッドが `health_alive == 0` に戻して `POTR_EVENT_DISCONNECTED` を発火します。加えて正常 close では、recv スレッドが protocol-level `FIN` を受信して最後の DATA 配送完了後に `FIN_ACK` を返信し、その直後に `POTR_EVENT_DISCONNECTED` を発火します。以後は再び CONNECTED 前と同じ扱いになり、再接続後に `PING` 交換で CONNECTED へ復帰します。 |
 | potr_event 順序 | `POTR_EVENT_CONNECTED` 前に `POTR_EVENT_DATA` は発火しません。 |
-
-Table: TCP / TCP_BIDIR (type 9-10) の接続状態別の実装
 
 ## potr_event 順序
 
@@ -204,6 +204,8 @@ RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送信せず `POTR_EV
 また、待機から戻るたびに受信期限を `thread_recv_health_check_service()` (1:1) または `thread_recv_health_check_peers()` (N:1) で確認し、N:1 モードでは遅いピアの猶予時間の判定 (`thread_recv_health_check_slow_peers()`) も実行します。無受信の検出の遅れは、1 回の待機の上限を超えません。  
 1 回の待機の上限は、次の条件を上から順に適用して決めます。
 
+Table: 受信スレッド (`recv_thread_func()`) の待機の上限を決める条件
+
 | 条件 (`recv_thread_func()` 内の適用順) | 対象となる構成 | 待機の上限 [ms] |
 | --- | --- | --- |
 | 受信期限の監視 | 受信者、または `unicast_bidir` で `health_timeout_ms > 0` の場合 | `max(health_timeout_ms / 3, 100)` (`health_timeout_ms < 300` のときは `100` が下限) |
@@ -214,8 +216,6 @@ RAW 系 (type 1, 2, 3) のギャップ検出時は NACK を送信せず `POTR_EV
 | 受信報告の送信の時刻 | 片方向通常モードの受信者で、受信報告を送る構成 (実効の `health_interval_ms` が 0 でない) であり、次の受信報告の予定時刻 (`next_report_ms`) が現在時刻より後の場合 | 上の値と「次の報告予定時刻 − 現在時刻」の小さいほう |
 | `multicast` と `broadcast` の送信側の監視の時刻 | `multicast` または `broadcast` の送信者で、次の監視対象一覧の送出予定時刻 (`flow_monitor_next_ms`) が現在時刻より後の場合 (詳細は [設定仕様](config.md#multicast-と-broadcast-の監視対象) および [プロトコル仕様](protocol.md#監視対象の一覧のパケット) を参照) | 上の値と「次の送出予定時刻 − 現在時刻」の小さいほう |
 | フロー制御パケットを送出する受信側の要求の間隔 | フロー制御パケットを送出する受信側 (`flow_control != NULL`。容量が 0 でない、または OS の受信バッファーに基づく送出上限を使う受信側) の場合 (詳細は [設定仕様](config.md#再送周期と有効期限) および [設定仕様](config.md#os-の受信バッファーに基づく送出上限) を参照) | 上の値と `flow_control_request_interval_ms` の小さいほう |
-
-Table: 受信スレッド (`recv_thread_func()`) の待機の上限を決める条件
 
 `health_timeout_ms` が 300 [ms] 未満の場合は、待機の上限の下限 (100 [ms]) が適用され、待機の上限が `health_timeout_ms` の 3 分の 1 より長くなります。  
 N:1 モードでほかのピアへの送信を妨げている遅いピアが記録されている間は、`thread_recv_health_check_slow_peers()` が次の判定予定時刻 (判定間隔の上限 `POTR_INTERNAL_FLOW_RECHECK_MS` = 50 [ms]) を返すため、待機の上限が短縮されます。妨げが記録されているピアがない間は 0 を返し、待機の上限には影響しません。  
@@ -296,6 +296,8 @@ TCP 系の処理は次のとおりです。
 
 ## 実装ファイル早見表
 
+Table: 死活監視機能の実装ファイルと関数一覧
+
 | 機能 | ファイル | 関数 |
 |---|---|---|
 | PING パケット構築 | `protocol/packet.c` | `potr_internal_packet_build_ping()` |
@@ -307,5 +309,3 @@ TCP 系の処理は次のとおりです。
 | TCP タイムアウト検出 | `thread/potr_recv_thread.c` | `tcp_recv_thread_func()` 内 |
 | health スレッド起動/停止 | `thread/potr_health_thread.h` | `potr_internal_health_thread_start/stop()` |
 | tcp_health スレッド起動/停止 | `thread/potr_health_thread.h` | `potr_internal_tcp_health_thread_start/stop()` |
-
-Table: 死活監視機能の実装ファイルと関数一覧

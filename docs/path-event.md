@@ -21,13 +21,13 @@ porter はセッション全体の接続状態だけでなく、各 path の論�
 
 `POTR_EVENT_PATH_CONNECTED` / `POTR_EVENT_PATH_DISCONNECTED` のとき、`potr_recv_fn` の引数は次の意味を持ちます。
 
+Table: パスイベント通知時の potr_recv_fn 引数の意味
+
 | 引数 | 意味 |
 |---|---|
 | `peer_id` | N:1 モードでは対象 peer の ID。1:1 モードでは `POTR_PEER_NA` |
 | `data` | `const int[POTR_MAX_PATH]` の path 論理接続状態スナップショット |
 | `len` | 状態が変化した path index |
-
-Table: パスイベント通知時の potr_recv_fn 引数の意味
 
 `path_states` は常にイベント発火後の状態です。  
 したがって `PATH_DISCONNECTED` でも `path_states[path_idx]` は必ず 0 です。
