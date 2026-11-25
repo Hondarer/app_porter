@@ -104,6 +104,10 @@ Table: porter API のスレッド セーフ性一覧
 | `potr_config_list_service_ids()` | はい (条件付き) | JSONC 解析はスレッドごとに独立した状態を使い、ほかの解析 (cJSON の直接解析を含む) と並行実行可。ロード後に `cJSON_InitHooks()` を呼ばないこと |
 | `potr_config_service_ids_free()` | はい | 同じ配列を同時に解放しない場合。`potr_config_list_service_ids()` で確保した配列を解放する |
 
+> [!IMPORTANT]
+> JSONC 解析をほかの解析と並行に実行できるのは、`app/cjson` の libcjson_app が、同梱の cJSON 本体へ独自のパッチ (`patches/0003-thread-local-global-error.patch`) を当て、解析の誤りの位置 (`global_error`) をスレッド ローカルにしているためです。  
+> パッチを当てていない cJSON (上流の配布物やシステムの cJSON) とリンクした場合は、この並行実行は成り立ちません。
+
 通知はハンドルごとの専用スレッドで、登録順に直列実行します。  
 I/O を保護するロックを保持して利用者のコールバックを呼び出しません。
 
