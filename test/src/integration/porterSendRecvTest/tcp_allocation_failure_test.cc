@@ -1,5 +1,6 @@
 #include <testfw.h>
 #include <porter.h>
+#include <porter_test_trace.h>
 #include <porter/porter_result.h>
 #include <cplat/compress/compress.h>
 #include <cplat/crt/stdlib.h>
@@ -146,16 +147,20 @@ class tcp_allocation_failure_test : public TestWithParam<allocation_case>
     // [サブ手順 名前=tcp_allocation_failure_test.SetUp]
     void SetUp() override
     {
+        uint16_t port = allocateTestPort(); // [状態] - 待ち受けに使うポートを allocateTestPort() で払い出す。
+        ASSERT_NE(0U, port); // [状態確認] - allocateTestPort() の戻り値が 0 以外であること。
         // プロセス共通トレーサーの寿命は service_close を超えるため、追跡開始前に初期化します。
         ASSERT_NE(nullptr, potr_tracer_get());
         // [状態確認] - potr_tracer_get() の戻り値が nullptr 以外であること。
+        ASSERT_TRUE(porter_test_start_error_trace()); // [状態] - porter のトレーサーの標準エラー出力を ERROR で開始する。
+        // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
         global.window_size = 16;
         global.max_payload = payload_size;
         global.max_message_size = message_size;
         global.send_queue_depth = 16;
         service.service_id = 7183;
         service.type = POTR_TYPE_TCP;
-        service.dst_port = 19873;
+        service.dst_port = port;
         service.encrypt_enabled = 1;
         for (size_t i = 0; i < POTR_MAX_PATH; ++i)
         {

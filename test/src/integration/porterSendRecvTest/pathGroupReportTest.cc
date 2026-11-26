@@ -7,6 +7,7 @@
  */
 #include <testfw.h>
 #include <porter.h>
+#include <porter_test_trace.h>
 #include <cplat/crt/string.h>
 #include <cplat/net/socket.h>
 #include <cplat/net/byteorder.h>
@@ -39,6 +40,17 @@ class pathGroupReportTest : public testing::Test
     potr_context *sender = nullptr;
     potr_context *receiver = nullptr;
     cplat_socket observer = CPLAT_INVALID_SOCKET;
+    std::vector<uint16_t> ports;
+
+    // [サブ手順 名前=pathGroupReportTest.SetUp]
+    void SetUp() override
+    {
+        ASSERT_TRUE(allocateTestPorts(2U, ports)); // [状態] - 送信元と宛先のポートを allocateTestPorts() で 2 個払い出す。
+        // [状態確認] - allocateTestPorts() の戻り値が true であること。
+        ASSERT_TRUE(porter_test_start_error_trace()); // [状態] - porter のトレーサーの標準エラー出力を ERROR で開始する。
+        // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
+    }
+    // [サブ手順終了]
 
     // [サブ手順 名前=pathGroupReportTest.TearDown]
     void TearDown() override
@@ -63,6 +75,7 @@ class pathGroupReportTest : public testing::Test
 }
 
 // 受信者の報告により DATA が到達できる下位グループへ切り替わることの確認
+// [サブ手順参照 名前=pathGroupReportTest.SetUp]
 TEST_F(pathGroupReportTest, receiver_reports_select_reachable_group)
 {
     // Arrange
@@ -78,8 +91,8 @@ TEST_F(pathGroupReportTest, receiver_reports_select_reachable_group)
     global.udp_health_timeout_ms = 1000;
     source.service_id = 7134;
     source.type = POTR_TYPE_UNICAST;
-    source.src_port = 19734;
-    source.dst_port = 19735;
+    source.src_port = ports[0];
+    source.dst_port = ports[1];
     source.max_peers = 4;
     source.path_group[0] = 1;
     source.path_group[1] = 3;

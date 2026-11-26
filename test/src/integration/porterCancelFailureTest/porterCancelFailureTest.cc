@@ -138,6 +138,9 @@ TEST(porterCancelFailureTest, indefinite_accept_wait_recovers_within_1s_when_os_
 TEST(porterCancelFailureTest, indefinite_connect_wait_recovers_within_1s_when_os_signal_fails)
 {
     // Arrange
+    // 払い出しは実際のソケットの関数を使うため、OS の関数の mock を作る前に行う。
+    const uint16_t port = allocateTestPort(); // [状態] - 接続先のポートを allocateTestPort() で払い出す。
+    ASSERT_NE(0U, port); // [状態確認] - allocateTestPort() の戻り値が 0 以外であること。
     NiceMock<Mock_porter> mock_porter;
 #if defined(PLATFORM_WINDOWS)
     NiceMock<Mock_winsock> mock_winsock;
@@ -161,7 +164,7 @@ TEST(porterCancelFailureTest, indefinite_connect_wait_recovers_within_1s_when_os
     ctx.role = POTR_ROLE_SENDER;
     ctx.service.type = POTR_TYPE_TCP;
     ctx.service.service_id = 9002;
-    ctx.service.dst_port = 19999U;
+    ctx.service.dst_port = port;
     ctx.service.connect_timeout_ms = 0U; /* 無期限の connect 待機 */
     ctx.service.reconnect_interval_ms = 1000U;
     ctx.global.max_payload = 64U;
