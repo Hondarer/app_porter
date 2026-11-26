@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-25 22:27:14 JST
-最終更新エージェント: claude code (opus サブエージェント、主セッション session_01KJc53UFydnbt2gLXTJC1ZC。継続案件 `261123-porter-remaining-backlog-phase2` の範囲の決定を記録)
+最終更新日時: 2026-11-27 05:11:18 JST
+最終更新エージェント: agy (gemini-4-neon-medium、主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
 稼働 OS: Linux (WSL)
 上流文書: `261123-porter-remaining-backlog-overview.md` (全体管理文書)、`261123-porter-remaining-backlog-design.md` (最終仕様)、`261123-porter-remaining-backlog-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-lightadr.md` (簡易 ADR)。転記元の残課題一覧は、`../past/261115-porter-tcp-bidir-n1-backlog.md`、`../past/261115-porter-multicast-src-contract-backlog.md`、`../past/261117-porter-transport-performance-redo-backlog.md`、`../past/261121-porter-flow-control-refine-backlog.md` です。いずれも削除されている場合があります。
 下流文書: この残課題一覧を対策する継続作業は、`261123-porter-remaining-backlog-phase2-overview.md` (全体管理文書)、`261123-porter-remaining-backlog-phase2-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-phase2-lightadr.md` (簡易 ADR)、`261123-porter-remaining-backlog-phase2-design.md` (最終仕様)、`261123-porter-remaining-backlog-phase2-backlog.md` (残課題一覧) です。未作成の場合や、削除されている場合があります。
@@ -376,7 +376,8 @@ Table: 残課題一覧
 - **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。  
     2026-11-25 に、ユーザーがこの項目を継続案件の対策の範囲にすると決めました (継続案件の検討用 Markdown の Q-001)。合意した方針は、適用の範囲を UDP の DATA の送出のすべて (1 対 1 の 4 つの通信種別と N 対 1。暗号化と複数経路を含む)、Windows も Registered I/O などで一括の送信にする、Linux の性能の基準は待ち合わせを指定した 5,000 byte の `tcp` との比が 0.5 以上でほかの条件が下がらない、一部だけ送れた場合の残りは 1 個ずつ 1 回ずつ試みる、です (簡易 ADR の LADR-003 から LADR-006)。Windows の実装の担当、Registered I/O の実現性の確認、cplat の API の形、Windows の性能の基準、N 対 1 のまとめる単位を、追加の質問 (Q-008 から Q-014) で確認しています。  
     2026-11-25 に、追加の質問の回答で、次を決めました (簡易 ADR の LADR-002、LADR-003、LADR-004、LADR-008、LADR-009)。Linux のセッションが Windows の実装の初版まで書き、Windows のセッションがビルド、テスト、測定を行う。最終仕様の前に Windows で Registered I/O の試作を行い、使えない、または速くない場合は Windows を `sendto` の繰り返しにする。cplat には、呼び出し元のバッファーを渡して先頭から送れた個数を返す同期の関数を追加する。N 対 1 は同じピア宛てに続くパケットだけをまとめる。Windows の基準は、変更の前より待ち合わせを指定した 5,000 byte の処理件数が上がり、ほかの条件が下がらないこと。現在は、Windows の試作の結果を待っています。  
-    2026-11-25 に、Windows の試作で、Registered I/O のソケットでは `WSAEventSelect()`、`sendto`、`recvfrom` が `WSAENOTSOCK` で失敗すると分かり、Windows の一括の送信は `sendto` の繰り返しに確定しました。最終仕様 `261123-porter-remaining-backlog-phase2-design.md` を作成し、状態を「対応中」にしました。確定した方針は、cplat に登録したソケットの一括の送信の関数 (`cplat_socket_watch_sendto_multi()`。Linux は `sendmmsg()`) を追加し、porter の送信スレッドが UDP の DATA を、1 対 1 は送信キューに続く外側パケットを、N 対 1 は同じピア宛てに続く外側パケットを、最大 16 個まで 1 回で送る、です。Windows の処理件数が上がることの確認と、暗号化と複数経路の性能の測定は、継続案件の残課題一覧の BL-012 と BL-013 へ送りました。
+    2026-11-25 に、Windows の試作で、Registered I/O のソケットでは `WSAEventSelect()`、`sendto`、`recvfrom` が `WSAENOTSOCK` で失敗すると分かり、Windows の一括の送信は `sendto` の繰り返しに確定しました。最終仕様 `261123-porter-remaining-backlog-phase2-design.md` を作成し、状態を「対応中」にしました。確定した方針は、cplat に登録したソケットの一括の送信の関数 (`cplat_socket_watch_sendto_multi()`。Linux は `sendmmsg()`) を追加し、porter の送信スレッドが UDP の DATA を、1 対 1 は送信キューに続く外側パケットを、N 対 1 は同じピア宛てに続く外側パケットを、最大 16 個まで 1 回で送る、です。Windows の処理件数が上がることの確認と、暗号化と複数経路の性能の測定は、継続案件の残課題一覧の BL-012 と BL-013 へ送りました。  
+    2026-11-27 に、`framework/testfw`、`app/cplat`、`app/porter` の実装および Linux・Windows 双方での検証を完了し、サブモジュール (testfw `75cd774`、cplat `8252c026`、porter `063d8cc`) と親リポジトリ (`dbc28819`) を main へ push しました。Linux はビルド、`make test` (cplat 2,243 件、porter 985 件、訂正後の `potrFlowControlTest` 163 件を含む)、`check_functional_spec.py`、性能測定 (受入条件 1 から 3 すべて適合。`p1` 5,000 byte `blocking` の `target` ÷ `tcp` は 0.97、`base` 比 +101.5 [%]) が完了しています。Windows はビルド、テスト (cplat 2,105 件、porter 768 件と変更対象 3 テスト)、性能測定 (依頼 18。9 条件中 8 条件適合、`p1` 5,000 byte `blocking` は +20.8 [%] で `tcp` 比 0.83、`p1` 1,000 byte `blocking` は 3 回測定で -1.8 [%] だが追加 5 回交互測定で +0.05 [%] のため主エージェント判断で条件付きで適合) が完了しています。CI `45888369745` の結果待ちのため、状態は「対応中」のままとし、CI 確認後に最終状態を確定します。
 
 ### 影響範囲とリスク
 
