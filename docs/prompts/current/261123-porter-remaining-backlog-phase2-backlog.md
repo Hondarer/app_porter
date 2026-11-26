@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-27 02:09:13 JST
-最終更新エージェント: agy (gemini-4-hydrogen-medium、主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
+最終更新日時: 2026-11-27 02:33:17 JST
+最終更新エージェント: agy (gemini-4-neon-medium、主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
 稼働 OS: Linux (WSL)
 上流文書: `261123-porter-remaining-backlog-phase2-overview.md` (全体管理文書)、`261123-porter-remaining-backlog-phase2-design.md` (最終仕様)、`261123-porter-remaining-backlog-phase2-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-phase2-lightadr.md` (簡易 ADR)。転記元の残課題一覧は、`261123-porter-remaining-backlog-backlog.md` です。いずれも削除されている場合があります。
 下流文書: この残課題一覧を対策する継続作業が開始された場合は、その全体管理文書・検討用 Markdown・最終仕様・残課題一覧のパスを追記します。未作成の場合や、削除されている場合があります。
@@ -41,6 +41,8 @@ Table: 残課題一覧
 | BL-012 | Windows の一括の送信の性能の基準 (処理件数が上がる) を満たせない | 作業中摘出 | 低 | 未着手 |
 | BL-013 | 暗号化と複数経路の UDP の一括の送信の性能を測っていない | 作業中摘出 | 低 | 未着手 |
 | BL-014 | make test の実行の省略の判定が、テストの実行ファイルの古さを見ず、古い実行ファイルの結果のまま成功と扱うことがある | 作業中摘出 | 中 | 未着手 |
+| BL-015 | Windows の p1 の 1,000 byte の blocking で、target が base より 1.8% 低く出た | 作業中摘出 | 低 | 未着手 |
+| BL-016 | porter-bench の p7 が、p6 や別の p7 の直後に起動すると "[P7] stage=connect_or_register failed" で失敗することがある | 作業中摘出 | 低 | 未着手 |
 
 ## BL-001 TCP 双方向 N:1 通信の実施要否判断と設計・実装
 
@@ -446,3 +448,61 @@ Table: 残課題一覧
 
 - **恒久対応案**: `framework/makefw` の `test.stamp` と `assured.stamp` の判定 (`makefiles` の `test` の規則と `bin_internal` のスクリプト) を調べ、実行ファイルの内容やリンクの入力を判定に含めるかを検討します。対策先は `framework/makefw` です。
 - **参考情報**: 継続案件の全体管理文書 `261123-porter-remaining-backlog-phase2-overview.md` の「反映と検証の記録」(作業 WBS 4.5 から 4.10 の訂正注記)。
+
+## BL-015 Windows の p1 の 1,000 byte の blocking で、target が base より 1.8% 低く出た
+
+区分: 作業中摘出  
+優先度 / 影響度: 低
+
+### 概要と問題点
+
+- **現状の事象**: Windows の `porter-bench` の `p1` (1,000 byte、`blocking`) の 3 回の測定で、`base` の中央値 30,051 [msg/s] (幅 29,974 から 30,303) に対して `target` が 29,500 [msg/s] (幅 29,436 から 29,672) となり、幅が重ならず 1.8 [%] 低く出ました。
+    - 同じ条件を `base` と `target` の交互で追加 5 回測定したところ、`base` の中央値は 29,808 [msg/s] (幅 29,467 から 30,077)、`target` の中央値は 29,824 [msg/s] (幅 29,380 から 29,927) で幅が重なり、中央値の差は +0.05 [%] でした。
+    - 差の大きさ (-1.8 [%]) は、ほかの条件の 3 回の幅と同じ程度です。
+    - Windows の一括の送信は `sendto` の繰り返しであり、`blocking` では 1 呼び出しに 1 個しか送らないため、大きな差が出る仕組みがなく、測定のばらつきの可能性が高いと見ています。
+- **本来あるべき姿**: 十分な回数の測定で、`base` と `target` の間に有意な性能低下がないことが確認されていること。
+
+### 経緯と見送り理由
+
+- **摘出契機**: 継続案件 `261123-porter-remaining-backlog-phase2` の Windows の性能の測定 (作業 WBS 4.12、2026-11-27、依頼 18) で判明しました。
+- **今回の見送り理由**: 追加の 5 回の交互の測定で差がなく、実装上も大きな差が出る仕組みがないことから、主エージェントの判断で受入条件 4 を「条件付きで適合」としました。追加の検証はこの案件の範囲外とし、残課題一覧へ起票します。
+- **継続作業での経緯と対処**: なし。
+
+### 影響範囲とリスク
+
+- **影響対象**: Windows の `unicast` (`blocking`、1,000 byte) の送信性能の評価。
+- **放置した場合のリスク**: ばらつきではなく微小な劣化が存在する場合に、見落とす可能性があります。
+
+### 推奨される対応策
+
+- **恒久対応案**: 測定の回数を増やして (例えば 10 回の交互)、`base` と `target` の間に差があるかどうかを確かめます。
+- **参考情報**: 継続案件の全体管理文書 `261123-porter-remaining-backlog-phase2-overview.md` の「反映と検証の記録」(作業 WBS 4.12: Windows の性能の測定)。Windows の CSV の置き場所は `C:\Users\tetsuo\AppData\Local\Temp\pb\results` と `pb\extra`。
+
+## BL-016 porter-bench の p7 が、p6 や別の p7 の直後に起動すると "[P7] stage=connect_or_register failed" で失敗することがある
+
+区分: 作業中摘出  
+優先度 / 影響度: 低
+
+### 概要と問題点
+
+- **現状の事象**: `porter-bench` の `p7` が、`p6` や別の `p7` の直後に起動すると、`[P7] stage=connect_or_register failed` (終了コード 1、CSV 0 byte) で失敗することがあります。
+    - Windows で 3 回 (`base` の round 1 と round 3、測り直しの中の `target` の round 3)、Linux で 1 回 (`base` の round 3) 起きており、変更の前と後の両方の版で起きています。
+    - Windows で単独の起動を `base` と `target` 各 5 回行った場合は、10 回とも成功しました。
+    - 変更の前と後の両方の版で起きるため、この案件の変更によるものではないと見ています。原因は未調査です。
+- **本来あるべき姿**: 複数の条件を連続して実行しても、`p7` が安定して接続・登録を完了できること。
+
+### 経緯と見送り理由
+
+- **摘出契機**: 継続案件 `261123-porter-remaining-backlog-phase2` の Linux および Windows の性能の測定 (作業 WBS 4.12、2026-11-26 から 2026-11-27) で判明しました。
+- **今回の見送り理由**: 変更の前と後の両方の版で起きる既存の事象であり、`porter-bench` の改修はこの案件 (BL-010 対策) の範囲外のため、残課題一覧へ起票します。
+- **継続作業での経緯と対処**: なし。
+
+### 影響範囲とリスク
+
+- **影響対象**: `app/porter/prod/src/cmd/porter-bench/` による連続した性能測定の再現性と作業効率。
+- **放置した場合のリスク**: 連続測定の途中で `p7` が失敗し、測り直しが必要になります。
+
+### 推奨される対応策
+
+- **恒久対応案**: 前の条件 (`p6` や別の `p7`) の終了後に残るソケットやポートの解放の待ちとの関係を調べ、必要に応じて待機やポートの扱いを見直します。
+- **参考情報**: 継続案件の全体管理文書 `261123-porter-remaining-backlog-phase2-overview.md` の「反映と検証の記録」(作業 WBS 4.12 の Linux および Windows の性能の測定)。`app/porter/prod/src/cmd/porter-bench/`。

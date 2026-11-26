@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 全体管理文書 (overview)
-最終更新日時: 2026-11-27 02:09:13 JST
-最終更新エージェント: agy (gemini-4-hydrogen-medium、主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
+最終更新日時: 2026-11-27 02:33:17 JST
+最終更新エージェント: agy (gemini-4-neon-medium、主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
 稼働 OS: Linux (WSL)
 上流文書: 対策元の残課題一覧は、`261123-porter-remaining-backlog-backlog.md` です。削除されている場合があります。
 下流文書: `261123-porter-remaining-backlog-phase2-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-phase2-lightadr.md` (簡易 ADR)、`261123-porter-remaining-backlog-phase2-design.md` (最終仕様)、`261123-porter-remaining-backlog-phase2-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
@@ -57,8 +57,8 @@
     - ✅ 4.9. 正本ドキュメントおよびコード コメントへの永続的知見の反映 (`potr_send_thread.c` の先頭のコメント、`potr_send_thread.h`、`potr_socket_io.h`、`docs/architecture.md`、`docs/protocol.md`、cplat の Windows と Linux の実装のコメント)
     - ✅ 4.10. Linux の `make test` (`app/cplat`、`app/porter`)、`.warn` の確認、`text_style_jp.py`
     - ✅ 4.11. Windows のセッションでのビルドとテストと修正 (主エージェントが差分を仲介。依頼 16 と 17 で cplat と porter のビルド、テスト、`mock` の `/INCLUDE` リンクが成功。MSVC の警告と内容のある `.warn` はなく、MSVC 向けの修正は不要)
-    - 🔄 4.12. Linux と Windows の性能の測定と記録 (受入条件 1 から 4。Linux は測定済み、Windows は未測定。受入条件 4 (Windows) は未判定) ← **CURRENT**
-    - ⏸️ 4.13. サブモジュールの順の main へのコミットと push、親リポジトリの参照の更新、CI の確認 (Git の操作は主エージェント)
+    - ✅ 4.12. Linux と Windows の性能の測定と記録 (受入条件 1 から 4。Linux と Windows の両方を測定済み。受入条件 1 から 3 は適合、受入条件 4 (Windows) は主エージェント判断で条件付きで適合)
+    - 🔄 4.13. サブモジュールの順の main へのコミットと push、親リポジトリの参照の更新、CI の確認 (Git の操作は主エージェント) ← **CURRENT**
     - ⏸️ 4.14. 受入条件への適合確認と、対策元の残課題一覧の BL-010 の更新
     - ⏸️ 4.15. 簡易 ADR の最終確認
     - ⏸️ 4.16. 残課題一覧 (`261123-porter-remaining-backlog-phase2-backlog.md`) の再構築と整理 (対策元の残課題一覧の最終状態と転記先の確定)
@@ -163,6 +163,7 @@ Table: 経緯
 | 2026-11-26 22:20 | 作業 WBS 4.5 から 4.10 の完了 | Linux のビルド、局所テスト、`make test` (`app/porter`、`app/cplat`) が成功。結果は「反映と検証の記録」に記録。4.11 (Windows の検証) で停止 (主エージェントが仲介) |
 | 2026-11-26 22:44 | 作業 WBS 4.12 の Linux の性能の測定と記録 | Linux (WSL) の性能の測定結果を集計し、「反映と検証の記録」へ記録。受入条件 1 から 3 はすべて適合 (`p1` 5,000 byte `blocking` の `target` ÷ `tcp` は 0.97)。受入条件 4 (Windows) は未測定・未判定 |
 | 2026-11-27 02:09 | 作業 WBS 4.11 の完了と Linux 件数の訂正 | Windows の検証結果 (依頼 16 と 17) を「反映と検証の記録」へ記録し、4.11 を完了へ更新。Linux の `potrFlowControlTest` 件数の訂正 (162 件→163 件) を追記し、残課題一覧に BL-014 を起票 |
+| 2026-11-27 02:33 | 作業 WBS 4.12 の Windows の性能の測定と記録、4.12 の完了 | Windows の性能の測定結果 (依頼 18) と受入条件 4 の判定 (主エージェント判断で条件付きで適合) を「反映と検証の記録」へ記録し、4.12 を完了、4.13 を実施中へ更新。残課題一覧に BL-015、BL-016 を起票 |
 
 ## 反映と検証の記録
 
@@ -278,3 +279,44 @@ Table: 作業 WBS 4.12 の Linux の性能の測定結果 (処理件数 `through
 - 参考: 今回の測定における `base` ÷ `tcp` は、64 byte が 1.04 (`normal`) と 1.07 (`blocking`)、1,000 byte が 1.11 と 1.08、5,000 byte が 0.77 と 0.48 です。
 - 健全な受信者とクライアントの切断の回数 (`healthy_disconnect_count`): `p6`、`p7` ともに、`base`、`target` の 3 回の中央値、幅 (および全 15 測定) がすべて 0 回であり、変更の前より増えていません (`healthy_received_min` も全 15 測定で 10,000 件、`p7` の `stalled_disconnect_count` は全 15 測定で 1 件、`p2` の `dropped_count` は全 15 測定で 0 件)。
 - 受入条件の判定 (Linux): 受入条件 1 (`p1` 5,000 byte `blocking` の `target` ÷ `tcp` が 0.97 で 0.5 以上)、受入条件 2 (`p1` のほかの 5 条件で変動の幅を超えて下がらない)、受入条件 3 (`p2`、`p6`、`p7` で変動の幅を超えて下がらず、`p6` と `p7` の健全な受信者・クライアントの切断回数が増えない) は、すべて適合です。受入条件 4 (Windows) は未測定のため未判定です。
+
+### 作業 WBS 4.12: Windows の性能の測定 (2026-11-27、Windows)
+
+- 実施: Windows 側の Claude Code セッション (主エージェントが仲介、依頼 18)。
+- ビルドの方法: 作業ツリーの複製 (`C:\Users\tetsuo\AppData\Local\Temp\pb\{base,target}-ws`) でビルドしました。`base` は `cplat` `84ea0ec6`、`porter` `cdfa5ecd`、`testfw` `84b1b78f` です。`target` は `testfw` `75cd774`、`cplat` `8252c026`、`porter` `72c8930` です。共通は `makefw` `5889240d`、`cjson` `57db8017`、`zlib` `d3eba7ff`、`openssl` `5cc810ee` です。`MAKEFW_HOME` などは複製を指し、`zlib`、`cjson`、`cplat`、`porter` の順に `prod` をビルドして警告は 0 件でした。`openssl` は `base` と `target` で同じ版 (`5cc810ee`) のため、リポジトリのビルド済みの `prod/include` と `prod/lib` を複製へコピーして使いました。
+- 退避したファイル: `porter-bench.exe`、`libporter.dll`、`libcplat.dll`、`libcplat_eventlog_messages.dll`、`libcjson_app.dll`、`libzlib_app.dll`、`libssl-3-x64_app.dll`、`libcrypto-3-x64_app.dll`。
+- CSV の置き場所 (Windows): `C:\Users\tetsuo\AppData\Local\Temp\pb\results` (72 個)、`pb\summary.csv`、`pb\extra`、`pb\replaced` (リポジトリには入れていません)。
+- 集計と判定の定義: Linux の測定と同じです。各実行は 5 測定の中央値とし、表の値は 3 回の中央値、幅は 3 回の最小から最大とします。指標は `throughput_msg_s` [msg/s] です。「測定の変動の幅を超えて下がる」は、`base` と `target` の 3 回の値の幅が重ならず、`target` が低い場合 (`target` の最大 < `base` の最小) とします。
+
+Table: 作業 WBS 4.12 の Windows の性能の測定結果 (処理件数 `throughput_msg_s` [msg/s])
+
+| 条件 | `base` 中央値 (3 回の幅) | `target` 中央値 (3 回の幅) | 変化率 | `tcp` (`p5`) 中央値 (3 回の幅) | `target` ÷ `tcp` (`base` ÷ `tcp`) | 判定 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `p1` 64 byte `normal` | 273,819 (269,826 から 279,577) | 277,435 (262,019 から 277,752) | +1.3 [%] | 243,356 (236,856 から 244,651) | 1.14 (1.13) | 適合 (変動の幅の範囲内) |
+| `p1` 64 byte `blocking` | 30,028 (29,485 から 30,556) | 30,017 (29,655 から 30,173) | -0.04 [%] | 22,715 (22,599 から 23,513) | 1.32 (1.32) | 適合 (変動の幅の範囲内) |
+| `p1` 1,000 byte `normal` | 85,800 (82,491 から 86,136) | 115,994 (113,834 から 119,816) | +35.2 [%] | 104,996 (92,047 から 108,219) | 1.10 (0.82) | 適合 (変動の幅を超えて向上) |
+| `p1` 1,000 byte `blocking` | 30,051 (29,974 から 30,303) | 29,500 (29,436 から 29,672) | -1.8 [%] | 21,783 (21,668 から 21,896) | 1.35 (1.38) | 不適合 (幅が重ならず低い。下記判定と BL-015 を参照) |
+| `p1` 5,000 byte `normal` | 22,052 (21,916 から 22,111) | 29,870 (28,996 から 30,077) | +35.5 [%] | 27,650 (27,497 から 29,808) | 1.08 (0.80) | 適合 (変動の幅を超えて向上) |
+| `p1` 5,000 byte `blocking` | 13,767 (13,537 から 13,982) | 16,624 (16,337 から 16,624) | +20.8 [%] | 19,929 (19,556 から 21,203) | 0.83 (0.69) | 適合 (変動の幅を超えて向上) |
+| `p2` (N 対 1) | 82,983 (81,835 から 90,453) | 83,707 (82,630 から 86,009) | +0.9 [%] | - | - | 適合 (変動の幅の範囲内) |
+| `p6` (`multicast`、受信者 3) | 5,491 (5,446 から 5,503) | 5,509 (5,479 から 5,553) | +0.3 [%] | - | - | 適合 (変動の幅の範囲内) |
+| `p7` (N 対 1、停止クライアント 1) | 22,305 (22,255 から 22,845) | 22,294 (21,974 から 22,915) | -0.05 [%] | - | - | 適合 (変動の幅の範囲内) |
+
+- 付帯の指標:
+    - `p1` の `send_full_count` は全条件で 0 でした。
+    - `p2` の `dropped_count`、`send_full_count` は 0 でした。
+    - `p6` の `healthy_disconnect_count`、`slow_disconnect_count` は 0、`healthy_received_min` は 10,000 でした。`send_full_count` は `base` が 31,209、31,119、32,066、`target` が 18,274、18,269、18,275 でした。
+    - `p7` の `healthy_disconnect_count` は 0、`stalled_disconnect_count` は両方 1 でした。
+- `p1` 1,000 byte `blocking` の追加の確認 (判定の 3 回には含めず、同じ条件を `base` と `target` の交互で 5 回測定):
+    - `base`: 29,808、29,960、29,467、30,077、29,777 (中央値 29,808、幅 29,467 から 30,077)
+    - `target`: 29,384、29,864、29,824、29,927、29,380 (中央値 29,824、幅 29,380 から 29,927)
+    - 幅は重なり、中央値の差は +0.05 [%] でした。
+- 測定中の `p7` の失敗と測り直し: `p7` で `[P7] stage=connect_or_register failed` (終了コード 1、CSV 0 byte) が 3 回発生しました (`base` の round 1 と round 3、測り直しの中の `target` の round 3)。いずれも `p6` の直後か別の `p7` の直後の起動でした。単独で `base` と `target` を 5 回ずつ実行すると 10 回とも成功しました。両方の版で起きるため、`target` の変更によるものではないと見ています (原因は未調査)。交互の順を保つため、round 1 と round 3 は `base` と `target` の両方を測り直しました。Linux でも `base` の `p7` の round 3 で同じ失敗が 1 回ありました (残課題一覧の BL-016)。
+- 受入条件 4 の判定 (Windows): **条件付きで適合** とします。
+    - 9 条件のうち 8 条件は、最終仕様の定義で「下がっていない」です (`p1` の 1,000 byte `normal`、5,000 byte `normal`、5,000 byte `blocking` は変動の幅を超えて向上、ほかの 5 条件は変動の幅の範囲内)。
+    - `p1` の 1,000 byte `blocking` だけは、最終仕様の定義上「変動の幅を超えて下がった」(-1.8 [%]) であり、最終仕様の定義のとおりに判定すれば、この 1 条件は不適合です。
+    - 条件付きで適合とした根拠は次の 3 点です。
+        1. 同じ条件の追加の 5 回の交互の測定では、幅が重なり、中央値の差は +0.05 [%] でした。
+        2. 差の大きさ (-1.8 [%]) は、ほかの条件の 3 回の幅と同じ程度でした。
+        3. Windows の一括の送信は `sendto` の繰り返しで、`blocking` では 1 呼び出しに 1 個しか送らないため、大きな差が出る仕組みがありません。
+    - この条件付きの判定は主エージェント (最終仕様の作成者) の判断であり、第 3 ゲートでユーザーに示します (残課題一覧の BL-015)。
