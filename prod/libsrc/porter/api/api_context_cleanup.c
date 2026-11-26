@@ -21,32 +21,9 @@
 #include <porter/potr_peer_table.h>
 #include <porter/protocol/packet.h>
 
-static void dispose_secret_buffer(void *buffer, size_t size)
-{
-    if (buffer != NULL)
-    {
-        cplat_secure_zero(buffer, size);
-        cplat_free(buffer);
-    }
-}
-
-static void dispose_lock(cplat_local_lock **lock)
-{
-    if (*lock != NULL)
-    {
-        cplat_local_lock_dispose(*lock);
-        *lock = NULL;
-    }
-}
-
-static void dispose_condvar(cplat_condvar **cv)
-{
-    if (*cv != NULL)
-    {
-        cplat_condvar_dispose(*cv);
-        *cv = NULL;
-    }
-}
+static void dispose_secret_buffer(void *buffer, size_t size);
+static void dispose_lock(cplat_local_lock **lock);
+static void dispose_condvar(cplat_condvar **cv);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -196,4 +173,31 @@ void api_context_dispose_resources(potr_context *ctx)
     cplat_secure_zero(ctx->service.encrypt_key, sizeof(ctx->service.encrypt_key));
     potr_internal_certificate_dispose(ctx);
     potr_internal_callback_mutex_dispose(ctx);
+}
+
+static void dispose_secret_buffer(void *buffer, size_t size)
+{
+    if (buffer != NULL)
+    {
+        cplat_secure_zero(buffer, size);
+        cplat_free(buffer);
+    }
+}
+
+static void dispose_lock(cplat_local_lock **lock)
+{
+    if (*lock != NULL)
+    {
+        cplat_local_lock_dispose(*lock);
+        *lock = NULL;
+    }
+}
+
+static void dispose_condvar(cplat_condvar **cv)
+{
+    if (*cv != NULL)
+    {
+        cplat_condvar_dispose(*cv);
+        *cv = NULL;
+    }
 }

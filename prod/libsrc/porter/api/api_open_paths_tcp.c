@@ -25,6 +25,97 @@
 #include "api_open_paths_tcp.h"
 #include "api_open_paths_common.h"
 
+static void rollback_tcp_listen_paths(potr_context *ctx);
+static int open_socket_tcp_receiver(potr_context *ctx, const int path_idx);
+static int open_socket_tcp_sender(potr_context *ctx, const int path_idx);
+
+/* TCP / TCP_BIDIR: RECEIVER は listen ソケット作成、SENDER はアドレス解決のみ行う。 */
+/* Doxygen コメントは、ヘッダーに記載 */
+int api_open_paths_tcp(potr_context *ctx, const potr_role role)
+{
+    int i;
+    int result;
+
+    if (ctx->service.dst_port == 0)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " TCP requires dst_port",
+                   ctx->service.service_id);
+        return POTR_ERR_INVALID_CONFIG;
+    }
+
+    if (role == POTR_ROLE_RECEIVER)
+    {
+        /* 非空の dst_addr[i] ごとに listen ソケットを作成する。 */
+        for (i = 0; i < (int)POTR_MAX_PATH; i++)
+        {
+            if (ctx->service.dst_addr[i][0] == '\0')
+            {
+                break;
+            }
+
+            result = open_socket_tcp_receiver(ctx, i);
+            if (result != POTR_OK)
+            {
+                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                           "potr_service_open: service_id=%" PRId64 " TCP listen failed"
+                           " (path=%d dst_addr=%s dst_port=%u)",
+                           ctx->service.service_id, i, ctx->service.dst_addr[i], (unsigned)ctx->service.dst_port);
+                rollback_tcp_listen_paths(ctx);
+                return result;
+            }
+
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                       "potr_service_open: service_id=%" PRId64 " TCP path[%d] listening"
+                       " on %s:%u",
+                       ctx->service.service_id, i, ctx->service.dst_addr[i], (unsigned)ctx->service.dst_port);
+            ctx->n_path = i + 1;
+        }
+
+        if (ctx->n_path == 0)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                       "potr_service_open: service_id=%" PRId64 " TCP RECEIVER requires"
+                       " at least one dst_addr",
+                       ctx->service.service_id);
+            return POTR_ERR_INVALID_CONFIG;
+        }
+    }
+    else
+    {
+        /* 非空の dst_addr[i] ごとにアドレスを解決する。 */
+        for (i = 0; i < (int)POTR_MAX_PATH; i++)
+        {
+            if (ctx->service.dst_addr[i][0] == '\0')
+            {
+                break;
+            }
+
+            result = open_socket_tcp_sender(ctx, i);
+            if (result != POTR_OK)
+            {
+                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                           "potr_service_open: service_id=%" PRId64 " TCP sender"
+                           " dst_addr resolve failed (path=%d %s)",
+                           ctx->service.service_id, i, ctx->service.dst_addr[i]);
+                return result;
+            }
+
+            ctx->n_path = i + 1;
+        }
+
+        if (ctx->n_path == 0)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                       "potr_service_open: service_id=%" PRId64 " TCP SENDER requires"
+                       " at least one dst_addr",
+                       ctx->service.service_id);
+            return POTR_ERR_INVALID_CONFIG;
+        }
+    }
+
+    return POTR_OK;
+}
+
 /* 途中失敗時に作成済みの TCP リスナー登録とソケットを回収する。 */
 static void rollback_tcp_listen_paths(potr_context *ctx)
 {
@@ -156,93 +247,6 @@ static int open_socket_tcp_sender(potr_context *ctx, const int path_idx)
         if (result != POTR_OK)
         {
             return result;
-        }
-    }
-
-    return POTR_OK;
-}
-
-/* TCP / TCP_BIDIR: RECEIVER は listen ソケット作成、SENDER はアドレス解決のみ行う。 */
-/* Doxygen コメントは、ヘッダーに記載 */
-int api_open_paths_tcp(potr_context *ctx, const potr_role role)
-{
-    int i;
-    int result;
-
-    if (ctx->service.dst_port == 0)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_open: service_id=%" PRId64 " TCP requires dst_port",
-                   ctx->service.service_id);
-        return POTR_ERR_INVALID_CONFIG;
-    }
-
-    if (role == POTR_ROLE_RECEIVER)
-    {
-        /* 非空の dst_addr[i] ごとに listen ソケットを作成する。 */
-        for (i = 0; i < (int)POTR_MAX_PATH; i++)
-        {
-            if (ctx->service.dst_addr[i][0] == '\0')
-            {
-                break;
-            }
-
-            result = open_socket_tcp_receiver(ctx, i);
-            if (result != POTR_OK)
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                           "potr_service_open: service_id=%" PRId64 " TCP listen failed"
-                           " (path=%d dst_addr=%s dst_port=%u)",
-                           ctx->service.service_id, i, ctx->service.dst_addr[i], (unsigned)ctx->service.dst_port);
-                rollback_tcp_listen_paths(ctx);
-                return result;
-            }
-
-            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
-                       "potr_service_open: service_id=%" PRId64 " TCP path[%d] listening"
-                       " on %s:%u",
-                       ctx->service.service_id, i, ctx->service.dst_addr[i], (unsigned)ctx->service.dst_port);
-            ctx->n_path = i + 1;
-        }
-
-        if (ctx->n_path == 0)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                       "potr_service_open: service_id=%" PRId64 " TCP RECEIVER requires"
-                       " at least one dst_addr",
-                       ctx->service.service_id);
-            return POTR_ERR_INVALID_CONFIG;
-        }
-    }
-    else
-    {
-        /* 非空の dst_addr[i] ごとにアドレスを解決する。 */
-        for (i = 0; i < (int)POTR_MAX_PATH; i++)
-        {
-            if (ctx->service.dst_addr[i][0] == '\0')
-            {
-                break;
-            }
-
-            result = open_socket_tcp_sender(ctx, i);
-            if (result != POTR_OK)
-            {
-                POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                           "potr_service_open: service_id=%" PRId64 " TCP sender"
-                           " dst_addr resolve failed (path=%d %s)",
-                           ctx->service.service_id, i, ctx->service.dst_addr[i]);
-                return result;
-            }
-
-            ctx->n_path = i + 1;
-        }
-
-        if (ctx->n_path == 0)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                       "potr_service_open: service_id=%" PRId64 " TCP SENDER requires"
-                       " at least one dst_addr",
-                       ctx->service.service_id);
-            return POTR_ERR_INVALID_CONFIG;
         }
     }
 

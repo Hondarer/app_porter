@@ -45,6 +45,143 @@
 #include "thread_recv_validate.h"
 #include "thread_connect_prepare.h"
 
+static void sync_tcp_service_path_state_locked(potr_context *ctx);
+static void set_tcp_path_ping_state(potr_context *ctx, int path_idx, uint8_t next_state);
+static int publish_tcp_conn(potr_context *ctx, int path_idx, cplat_socket sock, cplat_socket_watch *watch,
+                            uint64_t *generation_out);
+static void close_unpublished_tcp_conn(cplat_socket sock, cplat_socket_watch *watch);
+static int tcp_flow_control_refused(potr_context *ctx);
+static void reconnect_wait(potr_context *ctx, int path_idx, int wait_ms);
+static void join_recv_thread(potr_context *ctx, int path_idx);
+static void reset_connection_state(potr_context *ctx);
+static void reset_all_paths_disconnected(potr_context *ctx);
+static int start_connected_threads(potr_context *ctx, int path_idx, uint64_t generation);
+static void stop_connected_threads(potr_context *ctx, int path_idx, uint64_t generation);
+static void sender_connect_loop(potr_context *ctx, int path_idx);
+static void receiver_accept_loop(potr_context *ctx, int path_idx);
+static void connect_thread_func(void *arg);
+static void dispose_connect_resources(potr_context *ctx);
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_connect_thread_start(potr_context *ctx)
+{
+    int i;
+
+    if (ctx == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    if (ctx->role == POTR_ROLE_RECEIVER)
+    {
+        if (cplat_local_lock_create(&ctx->session_establish_mutex) != CPLAT_OK)
+        {
+            /* 同期資源生成 API は詳細原因を提供しない */
+            return POTR_ERR_UNKNOWN;
+        }
+
+        for (i = 0; i < ctx->n_path; i++)
+        {
+            ctx->tcp_first_pkt_len[i] = 0;
+            ctx->tcp_first_pkt_buf[i] = (uint8_t *)cplat_malloc(POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
+            if (ctx->tcp_first_pkt_buf[i] == NULL)
+            {
+                dispose_connect_resources(ctx);
+                return POTR_ERR_OUT_OF_MEMORY;
+            }
+        }
+    }
+
+    for (i = 0; i < ctx->n_path; i++)
+    {
+        cplat_atomic_store_i32(&ctx->connect_thread_running[i], 1, CPLAT_MEMORY_ORDER_RELEASE);
+        ctx->connect_args[i].ctx = ctx;
+        ctx->connect_args[i].path_idx = i;
+
+        if (cplat_thread_create(&ctx->connect_thread[i], connect_thread_func, &ctx->connect_args[i]) != CPLAT_OK)
+        {
+            cplat_atomic_store_i32(&ctx->connect_thread_running[i], 0, CPLAT_MEMORY_ORDER_RELEASE);
+
+            /* FIN 手順を実行せず、起動成功分の終了待ち後に準備資源を回収する。 */
+            potr_internal_connect_thread_stop(ctx);
+
+            /* スレッド生成 API は詳細原因を提供しない。 */
+            return POTR_ERR_UNKNOWN;
+        }
+    }
+
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_connect_thread_stop(potr_context *ctx)
+{
+    int i;
+    int has_threads = 0;
+
+    if (ctx == NULL)
+    {
+        return;
+    }
+
+    for (i = 0; i < ctx->n_path; i++)
+    {
+        if (ctx->connect_thread[i] != NULL)
+        {
+            has_threads = 1;
+        }
+
+        cplat_atomic_store_i32(&ctx->connect_thread_running[i], 0, CPLAT_MEMORY_ORDER_RELEASE);
+    }
+
+    if (has_threads)
+    {
+        cplat_local_lock_lock(ctx->tcp_state_mutex);
+        cplat_condvar_broadcast(ctx->tcp_state_cv);
+        cplat_local_lock_unlock(ctx->tcp_state_mutex);
+
+        /*
+         * 管理用 cancel と全公開世代の cancel を通知して待機を解除する。
+         * リスナー ソケットと接続ソケットは、接続管理スレッドの終了待ちより前に閉じない。
+         * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-closesocket
+         */
+        for (i = 0; i < ctx->n_path; i++)
+        {
+            if (ctx->tcp_connect_cancel[i] != NULL)
+            {
+                /*
+                 * 有効な cancel オブジェクトへの通知は必ず CPLAT_OK を返し、OS 通知失敗時も
+                 * 待機側が最大 50 [ms] の内部間隔で解除を検出するため、戻り値は明示的に破棄する。
+                 */
+                (void)cplat_socket_wait_cancel_signal(ctx->tcp_connect_cancel[i], NULL);
+            }
+        }
+
+        potr_internal_tcp_conn_request_close_all(ctx);
+
+        for (i = 0; i < ctx->n_path; i++)
+        {
+            if (ctx->connect_thread[i] != NULL)
+            {
+                cplat_thread_join(ctx->connect_thread[i]);
+                ctx->connect_thread[i] = NULL;
+            }
+        }
+    }
+
+    /* connect が生成した従属スレッドも、所有ハンドルが残っていれば回収する。 */
+    for (i = 0; i < ctx->n_path; i++)
+    {
+        potr_internal_tcp_recv_thread_stop(ctx, i);
+        potr_internal_tcp_health_thread_stop(ctx, i);
+    }
+
+    potr_internal_send_thread_stop(ctx);
+    dispose_connect_resources(ctx);
+}
+
 /*
  * TCP 各パスの最新状態を取得してサービス経路状態へ同期し、経路イベントを発行する。
  * 呼び出し元は tcp_state_mutex を取得済みであること。
@@ -967,124 +1104,4 @@ static void dispose_connect_resources(potr_context *ctx)
         cplat_local_lock_dispose(ctx->session_establish_mutex);
         ctx->session_establish_mutex = NULL;
     }
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_connect_thread_start(potr_context *ctx)
-{
-    int i;
-
-    if (ctx == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    if (ctx->role == POTR_ROLE_RECEIVER)
-    {
-        if (cplat_local_lock_create(&ctx->session_establish_mutex) != CPLAT_OK)
-        {
-            /* 同期資源生成 API は詳細原因を提供しない */
-            return POTR_ERR_UNKNOWN;
-        }
-
-        for (i = 0; i < ctx->n_path; i++)
-        {
-            ctx->tcp_first_pkt_len[i] = 0;
-            ctx->tcp_first_pkt_buf[i] = (uint8_t *)cplat_malloc(POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
-            if (ctx->tcp_first_pkt_buf[i] == NULL)
-            {
-                dispose_connect_resources(ctx);
-                return POTR_ERR_OUT_OF_MEMORY;
-            }
-        }
-    }
-
-    for (i = 0; i < ctx->n_path; i++)
-    {
-        cplat_atomic_store_i32(&ctx->connect_thread_running[i], 1, CPLAT_MEMORY_ORDER_RELEASE);
-        ctx->connect_args[i].ctx = ctx;
-        ctx->connect_args[i].path_idx = i;
-
-        if (cplat_thread_create(&ctx->connect_thread[i], connect_thread_func, &ctx->connect_args[i]) != CPLAT_OK)
-        {
-            cplat_atomic_store_i32(&ctx->connect_thread_running[i], 0, CPLAT_MEMORY_ORDER_RELEASE);
-
-            /* FIN 手順を実行せず、起動成功分の終了待ち後に準備資源を回収する。 */
-            potr_internal_connect_thread_stop(ctx);
-
-            /* スレッド生成 API は詳細原因を提供しない。 */
-            return POTR_ERR_UNKNOWN;
-        }
-    }
-
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void potr_internal_connect_thread_stop(potr_context *ctx)
-{
-    int i;
-    int has_threads = 0;
-
-    if (ctx == NULL)
-    {
-        return;
-    }
-
-    for (i = 0; i < ctx->n_path; i++)
-    {
-        if (ctx->connect_thread[i] != NULL)
-        {
-            has_threads = 1;
-        }
-
-        cplat_atomic_store_i32(&ctx->connect_thread_running[i], 0, CPLAT_MEMORY_ORDER_RELEASE);
-    }
-
-    if (has_threads)
-    {
-        cplat_local_lock_lock(ctx->tcp_state_mutex);
-        cplat_condvar_broadcast(ctx->tcp_state_cv);
-        cplat_local_lock_unlock(ctx->tcp_state_mutex);
-
-        /*
-         * 管理用 cancel と全公開世代の cancel を通知して待機を解除する。
-         * リスナー ソケットと接続ソケットは、接続管理スレッドの終了待ちより前に閉じない。
-         * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-closesocket
-         */
-        for (i = 0; i < ctx->n_path; i++)
-        {
-            if (ctx->tcp_connect_cancel[i] != NULL)
-            {
-                /*
-                 * 有効な cancel オブジェクトへの通知は必ず CPLAT_OK を返し、OS 通知失敗時も
-                 * 待機側が最大 50 [ms] の内部間隔で解除を検出するため、戻り値は明示的に破棄する。
-                 */
-                (void)cplat_socket_wait_cancel_signal(ctx->tcp_connect_cancel[i], NULL);
-            }
-        }
-
-        potr_internal_tcp_conn_request_close_all(ctx);
-
-        for (i = 0; i < ctx->n_path; i++)
-        {
-            if (ctx->connect_thread[i] != NULL)
-            {
-                cplat_thread_join(ctx->connect_thread[i]);
-                ctx->connect_thread[i] = NULL;
-            }
-        }
-    }
-
-    /* connect が生成した従属スレッドも、所有ハンドルが残っていれば回収する。 */
-    for (i = 0; i < ctx->n_path; i++)
-    {
-        potr_internal_tcp_recv_thread_stop(ctx, i);
-        potr_internal_tcp_health_thread_stop(ctx, i);
-    }
-
-    potr_internal_send_thread_stop(ctx);
-    dispose_connect_resources(ctx);
 }

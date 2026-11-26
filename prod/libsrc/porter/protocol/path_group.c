@@ -8,21 +8,7 @@
 #include <string.h>
 #include <porter/protocol/path_group.h>
 
-/* 経路集合を返す値関数のため、結果コードの対象外です。 */
-static uint8_t group_paths(const potr_internal_path_group_input *input, uint8_t group)
-{
-    uint8_t paths = 0U;
-    size_t i;
-
-    for (i = 0U; i < POTR_MAX_PATH; i++)
-    {
-        if (input->available[i] && (group == 0U || input->group[i] == group))
-        {
-            paths |= (uint8_t)(1U << i);
-        }
-    }
-    return paths;
-}
+static uint8_t group_paths(const potr_internal_path_group_input *input, uint8_t group);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -166,4 +152,20 @@ void potr_internal_path_group_evaluate(const potr_internal_path_group_input *inp
     result->next_group = after->selected;
     result->changed = (uint8_t)(before->selected != 0U && before->selected != after->selected);
     result->tcp_resend = (uint8_t)(after->resend_group != 0U);
+}
+
+/* 経路集合を返す値関数のため、結果コードの対象外です。 */
+static uint8_t group_paths(const potr_internal_path_group_input *input, uint8_t group)
+{
+    uint8_t paths = 0U;
+    size_t i;
+
+    for (i = 0U; i < POTR_MAX_PATH; i++)
+    {
+        if (input->available[i] && (group == 0U || input->group[i] == group))
+        {
+            paths |= (uint8_t)(1U << i);
+        }
+    }
+    return paths;
 }

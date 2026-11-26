@@ -21,6 +21,10 @@
 
 #include "thread_recv_slot.h"
 
+static void slot_emit_data(thread_recv_slot *slot, const uint8_t *data, size_t len);
+static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, size_t payload_len, int compressed,
+                              size_t packet_count);
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
 void thread_recv_slot_init_ctx(thread_recv_slot *slot, potr_context *ctx)
@@ -91,66 +95,6 @@ void thread_recv_slot_init_peer(thread_recv_slot *slot, potr_context *ctx, potr_
     slot->path_last_recv_ts = peer->path_last_recv_ts;
     slot->path_ping_state = peer->path_ping_state;
     slot->remote_path_ping_state = peer->remote_path_ping_state;
-}
-
-/* 受信データを必要に応じて展開し、コールバックへ渡す。 */
-/*
- * DATA を通知キューへ登録する。通知キューの容量を超える場合は登録せず、slot->flow_overflow を 1 にする。
- */
-static void slot_emit_data(thread_recv_slot *slot, const uint8_t *data, size_t len)
-{
-    potr_context *ctx = slot->ctx;
-
-    if (potr_internal_flow_control_admit(ctx, slot->peer_id, *slot->peer_session_id, slot->peer_session_ts, len) !=
-        POTR_OK)
-    {
-        slot->flow_overflow = 1;
-        return;
-    }
-
-    potr_internal_callback_emit(ctx, slot->peer_id, POTR_EVENT_DATA, data, len);
-}
-
-static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, size_t payload_len, int compressed,
-                              size_t packet_count)
-{
-    potr_context *ctx = slot->ctx;
-
-    if (compressed)
-    {
-        size_t dec_len = ctx->compress_buf_size;
-
-        int ret = cplat_decompress(ctx->recv_compress_buf, &dec_len, payload, payload_len);
-        if (ret == CPLAT_OK)
-        {
-            size_t per_packet = dec_len;
-
-            if (packet_count > 1U)
-            {
-                per_packet = (dec_len + packet_count - 1U) / packet_count;
-            }
-
-            slot->packet_expanded_size += per_packet;
-            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: decompress %zu -> %zu bytes",
-                       ctx->service.service_id, payload_len, dec_len);
-            slot_emit_data(slot, ctx->recv_compress_buf, dec_len);
-        }
-        else
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
-                       "recv[service_id=%" PRId64 "]: decompress failed (src_len=%zu result=%d)",
-                       ctx->service.service_id, payload_len, ret);
-        }
-    }
-    else
-    {
-        if (packet_count <= 1U)
-        {
-            slot->packet_expanded_size += payload_len;
-        }
-
-        slot_emit_data(slot, payload, payload_len);
-    }
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -244,5 +188,65 @@ void thread_recv_slot_deliver_payload_elem(thread_recv_slot *slot, const potr_pa
 
             slot_recv_deliver(slot, elem->payload, (size_t)elem->payload_len, is_compressed, 1U);
         }
+    }
+}
+
+/* 受信データを必要に応じて展開し、コールバックへ渡す。 */
+/*
+ * DATA を通知キューへ登録する。通知キューの容量を超える場合は登録せず、slot->flow_overflow を 1 にする。
+ */
+static void slot_emit_data(thread_recv_slot *slot, const uint8_t *data, size_t len)
+{
+    potr_context *ctx = slot->ctx;
+
+    if (potr_internal_flow_control_admit(ctx, slot->peer_id, *slot->peer_session_id, slot->peer_session_ts, len) !=
+        POTR_OK)
+    {
+        slot->flow_overflow = 1;
+        return;
+    }
+
+    potr_internal_callback_emit(ctx, slot->peer_id, POTR_EVENT_DATA, data, len);
+}
+
+static void slot_recv_deliver(thread_recv_slot *slot, const uint8_t *payload, size_t payload_len, int compressed,
+                              size_t packet_count)
+{
+    potr_context *ctx = slot->ctx;
+
+    if (compressed)
+    {
+        size_t dec_len = ctx->compress_buf_size;
+
+        int ret = cplat_decompress(ctx->recv_compress_buf, &dec_len, payload, payload_len);
+        if (ret == CPLAT_OK)
+        {
+            size_t per_packet = dec_len;
+
+            if (packet_count > 1U)
+            {
+                per_packet = (dec_len + packet_count - 1U) / packet_count;
+            }
+
+            slot->packet_expanded_size += per_packet;
+            POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv[service_id=%" PRId64 "]: decompress %zu -> %zu bytes",
+                       ctx->service.service_id, payload_len, dec_len);
+            slot_emit_data(slot, ctx->recv_compress_buf, dec_len);
+        }
+        else
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR,
+                       "recv[service_id=%" PRId64 "]: decompress failed (src_len=%zu result=%d)",
+                       ctx->service.service_id, payload_len, ret);
+        }
+    }
+    else
+    {
+        if (packet_count <= 1U)
+        {
+            slot->packet_expanded_size += payload_len;
+        }
+
+        slot_emit_data(slot, payload, payload_len);
     }
 }

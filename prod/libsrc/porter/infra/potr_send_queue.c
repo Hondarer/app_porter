@@ -23,6 +23,10 @@
 
 #include <porter/infra/potr_send_queue.h>
 
+static void push_locked(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
+                        uint16_t payload_len, uint64_t *ticket);
+static void complete_locked(potr_internal_send_queue *q);
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_internal_send_queue_init(potr_internal_send_queue *q, size_t depth, uint16_t max_payload)
@@ -115,28 +119,6 @@ void potr_internal_send_queue_dispose(potr_internal_send_queue *q)
     cplat_free(q->payload_pool);
     q->entries = NULL;
     q->payload_pool = NULL;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-/* 空きがあることを確認済みのキューへエントリを書き込む。呼び出し元は q->mutex を保持する。 */
-static void push_locked(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
-                        uint16_t payload_len, uint64_t *ticket)
-{
-    q->entries[q->tail].peer_id = peer_id;
-    q->entries[q->tail].flags = flags;
-    q->entries[q->tail].payload_len = payload_len;
-    memcpy(q->entries[q->tail].payload, payload, payload_len);
-    q->tail = (q->tail + 1U) % q->depth;
-    q->count++;
-    q->pushed_seq++;
-
-    if (ticket != NULL)
-    {
-        *ticket = q->pushed_seq;
-    }
-
-    cplat_condvar_signal(q->not_empty);
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -383,30 +365,6 @@ int potr_internal_send_queue_try_pop(potr_internal_send_queue *q, potr_internal_
     return POTR_OK;
 }
 
-/* inflight エントリを 1 つ完了とし、待機中のスレッドを起床させる。呼び出し元は mutex を保持する。 */
-static void complete_locked(potr_internal_send_queue *q)
-{
-    if (q->inflight > 0U)
-    {
-        q->inflight--;
-    }
-
-    /* 送信スレッドは取り出した順に完了させるため、completed_seq 以下の番号はすべて処理済みである。 */
-    q->completed_seq++;
-    cplat_condvar_broadcast(q->progress);
-
-    if (q->count == 0U && q->inflight == 0U)
-    {
-        cplat_condvar_broadcast(q->drained);
-    }
-
-    /*
-     * inflight の減少により count + inflight < depth となる可能性があるため、
-     * push_wait で待機中のスレッドを起床させる。
-     */
-    cplat_condvar_signal(q->not_full);
-}
-
 /* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_internal_send_queue_defer(potr_internal_send_queue *q)
@@ -579,4 +537,50 @@ void potr_internal_send_queue_shutdown(potr_internal_send_queue *q)
     cplat_condvar_broadcast(q->not_empty);
     cplat_condvar_broadcast(q->not_full);
     cplat_local_lock_unlock(q->mutex);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+/* 空きがあることを確認済みのキューへエントリを書き込む。呼び出し元は q->mutex を保持する。 */
+static void push_locked(potr_internal_send_queue *q, potr_peer_id peer_id, uint16_t flags, const void *payload,
+                        uint16_t payload_len, uint64_t *ticket)
+{
+    q->entries[q->tail].peer_id = peer_id;
+    q->entries[q->tail].flags = flags;
+    q->entries[q->tail].payload_len = payload_len;
+    memcpy(q->entries[q->tail].payload, payload, payload_len);
+    q->tail = (q->tail + 1U) % q->depth;
+    q->count++;
+    q->pushed_seq++;
+
+    if (ticket != NULL)
+    {
+        *ticket = q->pushed_seq;
+    }
+
+    cplat_condvar_signal(q->not_empty);
+}
+
+/* inflight エントリを 1 つ完了とし、待機中のスレッドを起床させる。呼び出し元は mutex を保持する。 */
+static void complete_locked(potr_internal_send_queue *q)
+{
+    if (q->inflight > 0U)
+    {
+        q->inflight--;
+    }
+
+    /* 送信スレッドは取り出した順に完了させるため、completed_seq 以下の番号はすべて処理済みである。 */
+    q->completed_seq++;
+    cplat_condvar_broadcast(q->progress);
+
+    if (q->count == 0U && q->inflight == 0U)
+    {
+        cplat_condvar_broadcast(q->drained);
+    }
+
+    /*
+     * inflight の減少により count + inflight < depth となる可能性があるため、
+     * push_wait で待機中のスレッドを起床させる。
+     */
+    cplat_condvar_signal(q->not_full);
 }

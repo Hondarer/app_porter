@@ -67,6 +67,449 @@ struct potr_internal_auth_session
     char failure_text[POTR_AUTH_FAILURE_TEXT_MAX];
 };
 
+/** 認証ファイルを読み取るチャンクの大きさ [byte]。 */
+#define POTR_AUTH_FILE_CHUNK_SIZE 4096U
+
+/** PEM ブロック検査で行頭を保持する上限の大きさ [byte]。 */
+#define POTR_AUTH_PEM_LINE_CAP 128U
+
+/** PEM ブロックのラベル名の最大長 [byte]。 */
+#define POTR_AUTH_PEM_LABEL_MAX 64U
+
+static_assert(POTR_AUTH_FILE_CHUNK_SIZE > 0U && POTR_AUTH_FILE_CHUNK_SIZE <= (size_t)INT_MAX,
+              "porter: POTR_AUTH_FILE_CHUNK_SIZE must fit in int for BIO_write");
+
+static const char *const kCertPemLabels[] = {"CERTIFICATE", "X509 CERTIFICATE"};
+static const char *const kKeyPemLabels[] = {"PRIVATE KEY",     "RSA PRIVATE KEY", "EC PRIVATE KEY",
+                                            "DSA PRIVATE KEY", "SM2 PRIVATE KEY", "ANY PRIVATE KEY",
+                                            "ENCRYPTED PRIVATE KEY"};
+static const char *const kCrlPemLabels[] = {"X509 CRL"};
+
+typedef struct potr_pem_scanner
+{
+    const char *const *allowed_labels;
+    size_t allowed_label_count;
+    size_t line_len;
+    size_t current_label_len;
+    size_t block_count;
+    size_t total_bytes;
+    int in_block;
+    int has_body_char;
+    int line_has_non_ws;
+    int line_truncated;
+    int invalid;
+    int pad; /**< 明示的アラインメントです。0 を指定します。 */
+    char current_label[POTR_AUTH_PEM_LABEL_MAX];
+    char line_buf[POTR_AUTH_PEM_LINE_CAP];
+} potr_pem_scanner;
+
+static int reject_password(char *buffer, int size, int writing, void *userdata);
+static int valid_string(const char *text);
+static int validate_config(const potr_internal_auth_config *config);
+static int is_internal_openssl_error(unsigned long error, int lib, int reason);
+static int is_config_openssl_lib(int lib);
+static int classify_openssl_error_queue(void);
+static int classify_openssl_alloc_error_queue(void);
+static int classify_openssl_bio_write_error_queue(void);
+static int classify_pem_loop_eof(size_t loaded, size_t expected_blocks);
+static void pem_scanner_init(potr_pem_scanner *scanner, const char *const *allowed_labels,
+                             size_t allowed_label_count);
+static int match_allowed_pem_label(const char *label, size_t label_len, const char *const *allowed_labels,
+                                   size_t allowed_label_count);
+static void pem_scanner_finish_line(potr_pem_scanner *scanner);
+static void pem_scanner_feed_chunk(potr_pem_scanner *scanner, const unsigned char *chunk, size_t length);
+static int load_file_to_secmem_bio(const char *path, const char *const *allowed_labels,
+                                   size_t allowed_label_count, size_t min_blocks, size_t max_blocks,
+                                   BIO **bio_out, size_t *block_count_out);
+static int load_pinned_certificate(const char *path, X509 **certificate_out);
+static int copy_trust_config(potr_internal_auth_credentials *credentials, const potr_internal_auth_config *config);
+static int load_cert_chain(SSL_CTX *context, const char *path);
+static int load_private_key(SSL_CTX *context, const char *path);
+static int load_ca_certificates(SSL_CTX *context, const char *path);
+static int load_revocations(SSL_CTX *context, const char *path);
+static int matches_peer_name(const potr_internal_auth_credentials *credentials, X509 *certificate);
+static const char *verification_reason(const int error);
+static int verify_certificate(X509_STORE_CTX *store, void *userdata);
+static int configure_context(potr_internal_auth_credentials *credentials, const potr_internal_auth_config *config);
+static void fail_session(potr_internal_auth_session *session, const char *reason);
+static void fail_session_with_detail(potr_internal_auth_session *session, const char *reason, const unsigned long detail);
+static void advance_handshake(potr_internal_auth_session *session, const int established_input);
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_auth_credentials_create(const potr_internal_auth_config *config,
+    const potr_internal_auth_transport transport, potr_internal_auth_credentials **credentials_out)
+{
+    potr_internal_auth_credentials *credentials;
+    int ret;
+    if (credentials_out == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    *credentials_out = NULL;
+    if (transport != POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM && transport != POTR_INTERNAL_AUTH_TRANSPORT_STREAM)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    ret = validate_config(config);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+    credentials = (potr_internal_auth_credentials *)cplat_calloc(1U, sizeof(*credentials));
+    if (credentials == NULL)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    credentials->transport = transport;
+    ERR_clear_error();
+    if (transport == POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM)
+    {
+        credentials->context = SSL_CTX_new(DTLS_method());
+    }
+    else
+    {
+        credentials->context = SSL_CTX_new(TLS_method());
+    }
+    if (credentials->context == NULL)
+    {
+        potr_internal_auth_credentials_dispose(credentials);
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    ret = configure_context(credentials, config);
+    if (ret == POTR_OK)
+    {
+        ret = copy_trust_config(credentials, config);
+    }
+    if (ret != POTR_OK)
+    {
+        potr_internal_auth_credentials_dispose(credentials);
+        return ret;
+    }
+    *credentials_out = credentials;
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_auth_credentials_dispose(potr_internal_auth_credentials *credentials)
+{
+    if (credentials == NULL)
+    {
+        return;
+    }
+    for (size_t i = 0; i < credentials->pinned_cert_count; ++i)
+    {
+        X509_free(credentials->pinned_certs[i]);
+    }
+    for (size_t i = 0; i < credentials->peer_name_count; ++i)
+    {
+        cplat_free(credentials->peer_names[i]);
+    }
+    cplat_free(credentials->pinned_certs);
+    cplat_free(credentials->peer_names);
+    SSL_CTX_free(credentials->context);
+    cplat_secure_zero(credentials, sizeof(*credentials));
+    cplat_free(credentials);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_auth_session_create(const potr_internal_auth_credentials *credentials,
+    const potr_internal_auth_role role, const size_t max_record_size, potr_internal_auth_session **session_out)
+{
+    potr_internal_auth_session *session;
+    const BIO_METHOD *method;
+    if (session_out == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    *session_out = NULL;
+    if (credentials == NULL || (role != POTR_INTERNAL_AUTH_ROLE_CLIENT && role != POTR_INTERNAL_AUTH_ROLE_SERVER)
+        || max_record_size == 0U || max_record_size > (size_t)INT_MAX)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    session = (potr_internal_auth_session *)cplat_calloc(1U, sizeof(*session));
+    if (session == NULL)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    session->credentials = credentials;
+    session->max_record_size = max_record_size;
+    session->state = POTR_INTERNAL_AUTH_STATE_IN_PROGRESS;
+    session->failure_reason = "";
+    session->connection = SSL_new(credentials->context);
+    if (session->connection == NULL)
+    {
+        potr_internal_auth_session_dispose(session);
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    method = BIO_s_mem();
+    if (credentials->transport == POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM)
+    {
+        method = BIO_s_dgram_mem();
+    }
+    session->input = BIO_new(method);
+    session->output = BIO_new(method);
+    if (session->input == NULL || session->output == NULL)
+    {
+        /*
+         * メモリ BIO の確保の失敗の後始末であり、すでに POTR_ERR_OUT_OF_MEMORY を返す経路のため (NULL を渡した場合も 0 を返す)、
+         * この 2 つの BIO_free の戻り値は明示的に破棄する。
+         * see: https://docs.openssl.org/3.5/man3/BIO_new/
+         */
+        (void)BIO_free(session->input);
+        (void)BIO_free(session->output);
+        SSL_free(session->connection);
+        cplat_free(session);
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    /* 異なる 2 つの BIO の所有権を SSL に移す。session 内のポインターは以後借用する。
+     * see: https://docs.openssl.org/3.5/man3/SSL_set_bio/ */
+    SSL_set_bio(session->connection, session->input, session->output);
+    if (SSL_set_app_data(session->connection, session) != 1)
+    {
+        potr_internal_auth_session_dispose(session);
+        return POTR_ERR_UNKNOWN;
+    }
+    if (credentials->transport == POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM)
+    {
+        /* SSL_set_mtu は IP/UDP ヘッダーを含まない DTLS の MTU を指定する。
+         * OS の MTU 探索を禁止し、メモリ BIO が書き込みごとのデータグラム境界を保持する。
+         * SSL_set_options の戻り値は設定後のオプションのビット集合であり、失敗を表さないため、戻り値は明示的に破棄する。
+         * see: https://docs.openssl.org/3.5/man3/SSL_CTX_set_options/
+         * see: https://docs.openssl.org/3.5/man3/BIO_s_mem/ */
+        (void)SSL_set_options(session->connection, SSL_OP_NO_QUERY_MTU);
+        if (SSL_set_mtu(session->connection, (long)max_record_size) <= 0)
+        {
+            potr_internal_auth_session_dispose(session);
+            return POTR_ERR_INVALID_ARGUMENT;
+        }
+    }
+    if (role == POTR_INTERNAL_AUTH_ROLE_CLIENT)
+    {
+        SSL_set_connect_state(session->connection);
+    }
+    else
+    {
+        SSL_set_accept_state(session->connection);
+    }
+    *session_out = session;
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_auth_session_dispose(potr_internal_auth_session *session)
+{
+    if (session == NULL)
+    {
+        return;
+    }
+    SSL_free(session->connection);
+    cplat_secure_zero(session, sizeof(*session));
+    cplat_free(session);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_auth_session_receive(potr_internal_auth_session *session, const uint8_t *in,
+    const size_t in_len, potr_internal_auth_state *state_out)
+{
+    if (session == NULL || state_out == NULL || (in == NULL && in_len != 0U) || in_len > (size_t)INT_MAX)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    *state_out = session->state;
+    if (session->state == POTR_INTERNAL_AUTH_STATE_FAILED)
+    {
+        return POTR_OK;
+    }
+    if (in_len != 0U && BIO_write(session->input, in, (int)in_len) != (int)in_len)
+    {
+        fail_session(session, "handshake input failed");
+        *state_out = session->state;
+        return POTR_ERR_IO;
+    }
+    if (session->state != POTR_INTERNAL_AUTH_STATE_ESTABLISHED || in_len != 0U)
+    {
+        advance_handshake(session, session->state == POTR_INTERNAL_AUTH_STATE_ESTABLISHED);
+    }
+    *state_out = session->state;
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_auth_session_take_output(potr_internal_auth_session *session, uint8_t *out,
+    const size_t out_capacity, size_t *out_len_out)
+{
+    size_t length;
+    int ret;
+    if (out_len_out == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    *out_len_out = 0;
+    if (session == NULL || out == NULL || out_capacity == 0U)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    length = BIO_ctrl_pending(session->output);
+    if (length == 0U)
+    {
+        return POTR_OK;
+    }
+    if (session->credentials->transport == POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM)
+    {
+        /* datagram BIO の pending は先頭 1 データグラムの長さを返す。
+         * 小さい容量で読み出すと残りが捨てられるため、先に全長を検査する。
+         * see: https://docs.openssl.org/3.5/man3/BIO_s_mem/
+         * see: https://docs.openssl.org/3.5/man3/BIO_s_dgram_pair/ */
+        if (length > session->max_record_size)
+        {
+            fail_session(session, "datagram exceeds maximum record size");
+            return POTR_ERR_PROTOCOL;
+        }
+        if (length > out_capacity)
+        {
+            return POTR_ERR_INVALID_ARGUMENT;
+        }
+    }
+    else
+    {
+        if (length > session->max_record_size)
+        {
+            length = session->max_record_size;
+        }
+        if (length > out_capacity)
+        {
+            length = out_capacity;
+        }
+    }
+    ret = BIO_read(session->output, out, (int)length);
+    if (ret <= 0)
+    {
+        fail_session(session, "handshake output failed");
+        return POTR_ERR_IO;
+    }
+    *out_len_out = (size_t)ret;
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_auth_session_get_timeout_ms(potr_internal_auth_session *session,
+    int *has_timeout_out, uint32_t *timeout_ms_out)
+{
+    struct timeval timeout = {0};
+    int infinite;
+    uint64_t milliseconds;
+    if (session == NULL || has_timeout_out == NULL || timeout_ms_out == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    *has_timeout_out = 0;
+    *timeout_ms_out = 0;
+    if (session->credentials->transport == POTR_INTERNAL_AUTH_TRANSPORT_STREAM
+        || session->state == POTR_INTERNAL_AUTH_STATE_FAILED)
+    {
+        return POTR_OK;
+    }
+    /* timeval の定義は ssl.h が e_ostime.h 経由で提供する。実時間の既定時計を変更しない。
+     * see: https://docs.openssl.org/3.5/man3/SSL_get_event_timeout/ */
+    if (SSL_get_event_timeout(session->connection, &timeout, &infinite) != 1)
+    {
+        return POTR_ERR_UNKNOWN;
+    }
+    if (infinite)
+    {
+        return POTR_OK;
+    }
+    if (timeout.tv_sec < 0 || timeout.tv_usec < 0 || timeout.tv_usec >= POTR_AUTH_USEC_PER_SEC)
+    {
+        return POTR_ERR_UNKNOWN;
+    }
+    *has_timeout_out = 1;
+    if ((uint64_t)timeout.tv_sec > UINT32_MAX / POTR_AUTH_MSEC_PER_SEC)
+    {
+        *timeout_ms_out = UINT32_MAX;
+        return POTR_OK;
+    }
+    milliseconds = (uint64_t)timeout.tv_sec * POTR_AUTH_MSEC_PER_SEC +
+                   ((uint64_t)timeout.tv_usec + POTR_AUTH_USEC_ROUND) / POTR_AUTH_USEC_PER_MSEC;
+    if (milliseconds > UINT32_MAX)
+    {
+        milliseconds = UINT32_MAX;
+    }
+    *timeout_ms_out = (uint32_t)milliseconds;
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_auth_session_handle_timeout(potr_internal_auth_session *session, potr_internal_auth_state *state_out)
+{
+    if (session == NULL || state_out == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    /* DTLSv1_handle_timeout は再送なしが 0、再送ありが正値、失敗が負値。
+     * see: https://docs.openssl.org/3.5/man3/DTLSv1_handle_timeout/ */
+    if (session->credentials->transport == POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM
+        && session->state != POTR_INTERNAL_AUTH_STATE_FAILED && DTLSv1_handle_timeout(session->connection) < 0)
+    {
+        fail_session(session, "DTLS retransmission failed");
+    }
+    *state_out = session->state;
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_auth_session_export_keys(potr_internal_auth_session *session,
+    const uint8_t *context, const size_t context_len, uint8_t client_to_server_key[POTR_CRYPTO_KEY_SIZE],
+    uint8_t server_to_client_key[POTR_CRYPTO_KEY_SIZE])
+{
+    static const char label[] = "EXPORTER-porter-v2";
+    uint8_t material[POTR_CRYPTO_KEY_SIZE * 2U] = {0};
+    int ret;
+    if (session == NULL || (context == NULL && context_len != 0U)
+        || client_to_server_key == NULL || server_to_client_key == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+    if (session->state != POTR_INTERNAL_AUTH_STATE_ESTABLISHED)
+    {
+        return POTR_ERR_UNSUPPORTED;
+    }
+    /* 空の文脈にも use_context=1 を指定し、DTLS 1.2 の「文脈なし」と区別する。
+     * see: https://docs.openssl.org/3.5/man3/SSL_export_keying_material/ */
+    ret = SSL_export_keying_material(session->connection, material, sizeof(material), label, sizeof(label) - 1U,
+        context, context_len, 1);
+    if (ret != 1)
+    {
+        cplat_secure_zero(material, sizeof(material));
+        return POTR_ERR_UNKNOWN;
+    }
+    memcpy(client_to_server_key, material, POTR_CRYPTO_KEY_SIZE);
+    memcpy(server_to_client_key, material + POTR_CRYPTO_KEY_SIZE, POTR_CRYPTO_KEY_SIZE);
+    cplat_secure_zero(material, sizeof(material));
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+const char *potr_internal_auth_session_failure_reason(const potr_internal_auth_session *session)
+{
+    if (session == NULL || session->state != POTR_INTERNAL_AUTH_STATE_FAILED)
+    {
+        return "";
+    }
+    return session->failure_reason;
+}
+
 /* パスフレーズの契約がないため、OpenSSL の既定の端末入力を起こさず失敗させる。 */
 static int reject_password(char *buffer, int size, int writing, void *userdata)
 {
@@ -115,42 +558,6 @@ static int validate_config(const potr_internal_auth_config *config)
     }
     return POTR_OK;
 }
-
-/** 認証ファイルを読み取るチャンクの大きさ [byte]。 */
-#define POTR_AUTH_FILE_CHUNK_SIZE 4096U
-
-/** PEM ブロック検査で行頭を保持する上限の大きさ [byte]。 */
-#define POTR_AUTH_PEM_LINE_CAP 128U
-
-/** PEM ブロックのラベル名の最大長 [byte]。 */
-#define POTR_AUTH_PEM_LABEL_MAX 64U
-
-static_assert(POTR_AUTH_FILE_CHUNK_SIZE > 0U && POTR_AUTH_FILE_CHUNK_SIZE <= (size_t)INT_MAX,
-              "porter: POTR_AUTH_FILE_CHUNK_SIZE must fit in int for BIO_write");
-
-static const char *const kCertPemLabels[] = {"CERTIFICATE", "X509 CERTIFICATE"};
-static const char *const kKeyPemLabels[] = {"PRIVATE KEY",     "RSA PRIVATE KEY", "EC PRIVATE KEY",
-                                            "DSA PRIVATE KEY", "SM2 PRIVATE KEY", "ANY PRIVATE KEY",
-                                            "ENCRYPTED PRIVATE KEY"};
-static const char *const kCrlPemLabels[] = {"X509 CRL"};
-
-typedef struct potr_pem_scanner
-{
-    const char *const *allowed_labels;
-    size_t allowed_label_count;
-    size_t line_len;
-    size_t current_label_len;
-    size_t block_count;
-    size_t total_bytes;
-    int in_block;
-    int has_body_char;
-    int line_has_non_ws;
-    int line_truncated;
-    int invalid;
-    int pad; /**< 明示的アラインメントです。0 を指定します。 */
-    char current_label[POTR_AUTH_PEM_LABEL_MAX];
-    char line_buf[POTR_AUTH_PEM_LINE_CAP];
-} potr_pem_scanner;
 
 static int is_internal_openssl_error(unsigned long error, int lib, int reason)
 {
@@ -995,183 +1402,6 @@ static int configure_context(potr_internal_auth_credentials *credentials, const 
     return POTR_OK;
 }
 
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_auth_credentials_create(const potr_internal_auth_config *config,
-    const potr_internal_auth_transport transport, potr_internal_auth_credentials **credentials_out)
-{
-    potr_internal_auth_credentials *credentials;
-    int ret;
-    if (credentials_out == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-    *credentials_out = NULL;
-    if (transport != POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM && transport != POTR_INTERNAL_AUTH_TRANSPORT_STREAM)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-    ret = validate_config(config);
-    if (ret != POTR_OK)
-    {
-        return ret;
-    }
-    credentials = (potr_internal_auth_credentials *)cplat_calloc(1U, sizeof(*credentials));
-    if (credentials == NULL)
-    {
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-    credentials->transport = transport;
-    ERR_clear_error();
-    if (transport == POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM)
-    {
-        credentials->context = SSL_CTX_new(DTLS_method());
-    }
-    else
-    {
-        credentials->context = SSL_CTX_new(TLS_method());
-    }
-    if (credentials->context == NULL)
-    {
-        potr_internal_auth_credentials_dispose(credentials);
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-    ret = configure_context(credentials, config);
-    if (ret == POTR_OK)
-    {
-        ret = copy_trust_config(credentials, config);
-    }
-    if (ret != POTR_OK)
-    {
-        potr_internal_auth_credentials_dispose(credentials);
-        return ret;
-    }
-    *credentials_out = credentials;
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void potr_internal_auth_credentials_dispose(potr_internal_auth_credentials *credentials)
-{
-    if (credentials == NULL)
-    {
-        return;
-    }
-    for (size_t i = 0; i < credentials->pinned_cert_count; ++i)
-    {
-        X509_free(credentials->pinned_certs[i]);
-    }
-    for (size_t i = 0; i < credentials->peer_name_count; ++i)
-    {
-        cplat_free(credentials->peer_names[i]);
-    }
-    cplat_free(credentials->pinned_certs);
-    cplat_free(credentials->peer_names);
-    SSL_CTX_free(credentials->context);
-    cplat_secure_zero(credentials, sizeof(*credentials));
-    cplat_free(credentials);
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_auth_session_create(const potr_internal_auth_credentials *credentials,
-    const potr_internal_auth_role role, const size_t max_record_size, potr_internal_auth_session **session_out)
-{
-    potr_internal_auth_session *session;
-    const BIO_METHOD *method;
-    if (session_out == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-    *session_out = NULL;
-    if (credentials == NULL || (role != POTR_INTERNAL_AUTH_ROLE_CLIENT && role != POTR_INTERNAL_AUTH_ROLE_SERVER)
-        || max_record_size == 0U || max_record_size > (size_t)INT_MAX)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-    session = (potr_internal_auth_session *)cplat_calloc(1U, sizeof(*session));
-    if (session == NULL)
-    {
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-    session->credentials = credentials;
-    session->max_record_size = max_record_size;
-    session->state = POTR_INTERNAL_AUTH_STATE_IN_PROGRESS;
-    session->failure_reason = "";
-    session->connection = SSL_new(credentials->context);
-    if (session->connection == NULL)
-    {
-        potr_internal_auth_session_dispose(session);
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-    method = BIO_s_mem();
-    if (credentials->transport == POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM)
-    {
-        method = BIO_s_dgram_mem();
-    }
-    session->input = BIO_new(method);
-    session->output = BIO_new(method);
-    if (session->input == NULL || session->output == NULL)
-    {
-        /*
-         * メモリ BIO の確保の失敗の後始末であり、すでに POTR_ERR_OUT_OF_MEMORY を返す経路のため (NULL を渡した場合も 0 を返す)、
-         * この 2 つの BIO_free の戻り値は明示的に破棄する。
-         * see: https://docs.openssl.org/3.5/man3/BIO_new/
-         */
-        (void)BIO_free(session->input);
-        (void)BIO_free(session->output);
-        SSL_free(session->connection);
-        cplat_free(session);
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-    /* 異なる 2 つの BIO の所有権を SSL に移す。session 内のポインターは以後借用する。
-     * see: https://docs.openssl.org/3.5/man3/SSL_set_bio/ */
-    SSL_set_bio(session->connection, session->input, session->output);
-    if (SSL_set_app_data(session->connection, session) != 1)
-    {
-        potr_internal_auth_session_dispose(session);
-        return POTR_ERR_UNKNOWN;
-    }
-    if (credentials->transport == POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM)
-    {
-        /* SSL_set_mtu は IP/UDP ヘッダーを含まない DTLS の MTU を指定する。
-         * OS の MTU 探索を禁止し、メモリ BIO が書き込みごとのデータグラム境界を保持する。
-         * SSL_set_options の戻り値は設定後のオプションのビット集合であり、失敗を表さないため、戻り値は明示的に破棄する。
-         * see: https://docs.openssl.org/3.5/man3/SSL_CTX_set_options/
-         * see: https://docs.openssl.org/3.5/man3/BIO_s_mem/ */
-        (void)SSL_set_options(session->connection, SSL_OP_NO_QUERY_MTU);
-        if (SSL_set_mtu(session->connection, (long)max_record_size) <= 0)
-        {
-            potr_internal_auth_session_dispose(session);
-            return POTR_ERR_INVALID_ARGUMENT;
-        }
-    }
-    if (role == POTR_INTERNAL_AUTH_ROLE_CLIENT)
-    {
-        SSL_set_connect_state(session->connection);
-    }
-    else
-    {
-        SSL_set_accept_state(session->connection);
-    }
-    *session_out = session;
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void potr_internal_auth_session_dispose(potr_internal_auth_session *session)
-{
-    if (session == NULL)
-    {
-        return;
-    }
-    SSL_free(session->connection);
-    cplat_secure_zero(session, sizeof(*session));
-    cplat_free(session);
-}
-
 static void fail_session(potr_internal_auth_session *session, const char *reason)
 {
     session->state = POTR_INTERNAL_AUTH_STATE_FAILED;
@@ -1261,202 +1491,4 @@ static void advance_handshake(potr_internal_auth_session *session, const int est
             fail_session_with_detail(session, "handshake failed or peer rejected certificate", detail);
         }
     }
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_auth_session_receive(potr_internal_auth_session *session, const uint8_t *in,
-    const size_t in_len, potr_internal_auth_state *state_out)
-{
-    if (session == NULL || state_out == NULL || (in == NULL && in_len != 0U) || in_len > (size_t)INT_MAX)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-    *state_out = session->state;
-    if (session->state == POTR_INTERNAL_AUTH_STATE_FAILED)
-    {
-        return POTR_OK;
-    }
-    if (in_len != 0U && BIO_write(session->input, in, (int)in_len) != (int)in_len)
-    {
-        fail_session(session, "handshake input failed");
-        *state_out = session->state;
-        return POTR_ERR_IO;
-    }
-    if (session->state != POTR_INTERNAL_AUTH_STATE_ESTABLISHED || in_len != 0U)
-    {
-        advance_handshake(session, session->state == POTR_INTERNAL_AUTH_STATE_ESTABLISHED);
-    }
-    *state_out = session->state;
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_auth_session_take_output(potr_internal_auth_session *session, uint8_t *out,
-    const size_t out_capacity, size_t *out_len_out)
-{
-    size_t length;
-    int ret;
-    if (out_len_out == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-    *out_len_out = 0;
-    if (session == NULL || out == NULL || out_capacity == 0U)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-    length = BIO_ctrl_pending(session->output);
-    if (length == 0U)
-    {
-        return POTR_OK;
-    }
-    if (session->credentials->transport == POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM)
-    {
-        /* datagram BIO の pending は先頭 1 データグラムの長さを返す。
-         * 小さい容量で読み出すと残りが捨てられるため、先に全長を検査する。
-         * see: https://docs.openssl.org/3.5/man3/BIO_s_mem/
-         * see: https://docs.openssl.org/3.5/man3/BIO_s_dgram_pair/ */
-        if (length > session->max_record_size)
-        {
-            fail_session(session, "datagram exceeds maximum record size");
-            return POTR_ERR_PROTOCOL;
-        }
-        if (length > out_capacity)
-        {
-            return POTR_ERR_INVALID_ARGUMENT;
-        }
-    }
-    else
-    {
-        if (length > session->max_record_size)
-        {
-            length = session->max_record_size;
-        }
-        if (length > out_capacity)
-        {
-            length = out_capacity;
-        }
-    }
-    ret = BIO_read(session->output, out, (int)length);
-    if (ret <= 0)
-    {
-        fail_session(session, "handshake output failed");
-        return POTR_ERR_IO;
-    }
-    *out_len_out = (size_t)ret;
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_auth_session_get_timeout_ms(potr_internal_auth_session *session,
-    int *has_timeout_out, uint32_t *timeout_ms_out)
-{
-    struct timeval timeout = {0};
-    int infinite;
-    uint64_t milliseconds;
-    if (session == NULL || has_timeout_out == NULL || timeout_ms_out == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-    *has_timeout_out = 0;
-    *timeout_ms_out = 0;
-    if (session->credentials->transport == POTR_INTERNAL_AUTH_TRANSPORT_STREAM
-        || session->state == POTR_INTERNAL_AUTH_STATE_FAILED)
-    {
-        return POTR_OK;
-    }
-    /* timeval の定義は ssl.h が e_ostime.h 経由で提供する。実時間の既定時計を変更しない。
-     * see: https://docs.openssl.org/3.5/man3/SSL_get_event_timeout/ */
-    if (SSL_get_event_timeout(session->connection, &timeout, &infinite) != 1)
-    {
-        return POTR_ERR_UNKNOWN;
-    }
-    if (infinite)
-    {
-        return POTR_OK;
-    }
-    if (timeout.tv_sec < 0 || timeout.tv_usec < 0 || timeout.tv_usec >= POTR_AUTH_USEC_PER_SEC)
-    {
-        return POTR_ERR_UNKNOWN;
-    }
-    *has_timeout_out = 1;
-    if ((uint64_t)timeout.tv_sec > UINT32_MAX / POTR_AUTH_MSEC_PER_SEC)
-    {
-        *timeout_ms_out = UINT32_MAX;
-        return POTR_OK;
-    }
-    milliseconds = (uint64_t)timeout.tv_sec * POTR_AUTH_MSEC_PER_SEC +
-                   ((uint64_t)timeout.tv_usec + POTR_AUTH_USEC_ROUND) / POTR_AUTH_USEC_PER_MSEC;
-    if (milliseconds > UINT32_MAX)
-    {
-        milliseconds = UINT32_MAX;
-    }
-    *timeout_ms_out = (uint32_t)milliseconds;
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_auth_session_handle_timeout(potr_internal_auth_session *session, potr_internal_auth_state *state_out)
-{
-    if (session == NULL || state_out == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-    /* DTLSv1_handle_timeout は再送なしが 0、再送ありが正値、失敗が負値。
-     * see: https://docs.openssl.org/3.5/man3/DTLSv1_handle_timeout/ */
-    if (session->credentials->transport == POTR_INTERNAL_AUTH_TRANSPORT_DATAGRAM
-        && session->state != POTR_INTERNAL_AUTH_STATE_FAILED && DTLSv1_handle_timeout(session->connection) < 0)
-    {
-        fail_session(session, "DTLS retransmission failed");
-    }
-    *state_out = session->state;
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_auth_session_export_keys(potr_internal_auth_session *session,
-    const uint8_t *context, const size_t context_len, uint8_t client_to_server_key[POTR_CRYPTO_KEY_SIZE],
-    uint8_t server_to_client_key[POTR_CRYPTO_KEY_SIZE])
-{
-    static const char label[] = "EXPORTER-porter-v2";
-    uint8_t material[POTR_CRYPTO_KEY_SIZE * 2U] = {0};
-    int ret;
-    if (session == NULL || (context == NULL && context_len != 0U)
-        || client_to_server_key == NULL || server_to_client_key == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-    if (session->state != POTR_INTERNAL_AUTH_STATE_ESTABLISHED)
-    {
-        return POTR_ERR_UNSUPPORTED;
-    }
-    /* 空の文脈にも use_context=1 を指定し、DTLS 1.2 の「文脈なし」と区別する。
-     * see: https://docs.openssl.org/3.5/man3/SSL_export_keying_material/ */
-    ret = SSL_export_keying_material(session->connection, material, sizeof(material), label, sizeof(label) - 1U,
-        context, context_len, 1);
-    if (ret != 1)
-    {
-        cplat_secure_zero(material, sizeof(material));
-        return POTR_ERR_UNKNOWN;
-    }
-    memcpy(client_to_server_key, material, POTR_CRYPTO_KEY_SIZE);
-    memcpy(server_to_client_key, material + POTR_CRYPTO_KEY_SIZE, POTR_CRYPTO_KEY_SIZE);
-    cplat_secure_zero(material, sizeof(material));
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-const char *potr_internal_auth_session_failure_reason(const potr_internal_auth_session *session)
-{
-    if (session == NULL || session->state != POTR_INTERNAL_AUTH_STATE_FAILED)
-    {
-        return "";
-    }
-    return session->failure_reason;
 }

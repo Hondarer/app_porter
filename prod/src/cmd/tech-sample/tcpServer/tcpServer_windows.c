@@ -95,6 +95,321 @@ static_assert(TCPSERVER_PIPE_BUF_SIZE >= sizeof(WSAPROTOCOL_INFOW), "tcpServer: 
 static_assert(TCPSERVER_WORKER_PIPE_POLL_MS > 0 && TCPSERVER_WORKER_PIPE_POLL_MS < 1000,
               "tcpServer: TCPSERVER_WORKER_PIPE_POLL_MS must be in (0, 1000)");
 
+/*
+ * ============================================================
+ *  内部型定義
+ * ============================================================
+ */
+
+/**
+ *  @brief          ワーカー プロセスの情報を管理する構造体。
+ */
+typedef struct WorkerInfo
+{
+    HANDLE pipe;                 /**< ワーカーとの通信用パイプ。 */
+    HANDLE process;              /**< ワーカー プロセスのハンドル。 */
+    int conn_count;              /**< 受領済みのアクティブ接続数。 */
+    int pending;                 /**< 受領通知待ちの予約数 (0 または 1)。 */
+    int alive;                   /**< パイプを使用できる場合は 1。 */
+    int ack_ok;                  /**< 最後の受領結果。 */
+    DWORD process_id;            /**< 複製先のプロセス ID。 */
+    HANDLE ack_event;            /**< 監視スレッドが受領結果または切断を通知するイベント。 */
+    CRITICAL_SECTION state_lock; /**< 接続数、予約、稼働状態を保護する。 */
+} WorkerInfo;
+
+/**
+ *  @brief          ワーカー監視スレッドへ渡すコンテキスト。
+ */
+typedef struct WorkerMonitorArg
+{
+    int id;               /**< ワーカー ID。 */
+    WorkerInfo *workers;  /**< ワーカー情報配列へのポインター。 */
+    HANDLE *events;       /**< ワーカー イベント配列へのポインター。 */
+    int conns_per_worker; /**< 1 ワーカーあたりの同時接続数上限。 */
+} WorkerMonitorArg;
+
+enum WorkerReplyType
+{
+    WORKER_ACK = 1,
+    WORKER_DONE = 2
+};
+
+typedef struct WorkerReply
+{
+    DWORD type;
+    DWORD accepted;
+} WorkerReply;
+
+static DWORD get_native_executable_path(char **path_out);
+static DWORD build_command_line(const char *executable_path, const char *arguments, char **command_line_out);
+static BOOL start_child_process(const char *executable_path, const char *arguments, const BOOL inherit_handles,
+                                LPPROCESS_INFORMATION process_info, DWORD *error_out);
+static void prefork_trace(const char *stage, const DWORD worker_pid, const SOCKET connection, const int result);
+static void close_parent_socket(const SOCKET connection, const DWORD worker_pid);
+static int pipe_transfer(const HANDLE pipe, void *data, DWORD length, const int writing);
+static int worker_reply(const HANDLE pipe, const DWORD type, const DWORD accepted);
+static SOCKET receive_socket(const HANDLE pipe);
+static SOCKET create_listen_socket(int port);
+__declspec(noreturn) static void run_as_fork_child(SOCKET client_socket);
+static void worker_loop(const char *pipe_name, int conns_per_worker);
+static void set_event_or_exit(const HANDLE event);
+static void reset_event_or_exit(const HANDLE event);
+static void worker_monitor_thread(void *arg);
+static int find_available_worker(WorkerInfo *workers, HANDLE *events, int n, int conns_per_worker);
+static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, int conns_per_worker);
+
+/*
+ * ============================================================
+ *  プラットフォーム フック
+ * ============================================================
+ */
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void platform_init(ClientSessionFn session_fn)
+{
+    WSADATA wsaData;
+
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+    {
+        (void)fprintf(stderr, "WSAStartup 失敗\n"); /* 診断の出力先がほかにないため、戻り値は明示的に破棄する */
+        cplat_exit(1);
+    }
+
+    g_session_fn = session_fn;
+    #if defined(TCPSERVER_PREFORK_TEST)
+    prefork_probe_initialize();
+    #endif
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void platform_cleanup(void)
+{
+    /* プロセスの終了の直前の Winsock の後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+    (void)WSACleanup();
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int dispatch_internal_args(int argc, char *argv[])
+{
+    /* コマンド ライン引数を走査し、内部起動オプション (--child または --worker) を処理する。 */
+    for (int i = 1; i < argc - 1; i++)
+    {
+        if (strcmp(argv[i], "--child") == 0)
+        {
+            SOCKET sock = (SOCKET)_strtoui64(argv[i + 1], NULL, 10);
+            run_as_fork_child(sock);
+        }
+
+        if (strcmp(argv[i], "--worker") == 0)
+        {
+            /* --conns-per-worker が続く場合は、その値を読み取る。 */
+            int conns_per_worker = DEFAULT_CONNS_PER_WORKER;
+
+            for (int j = i + 2; j < argc - 1; j++)
+            {
+                if (strcmp(argv[j], "--conns-per-worker") == 0)
+                {
+                    {
+                        int64_t parsed;
+
+                        if (cplat_parse_int64(&parsed, argv[j + 1], 10) == CPLAT_OK && parsed > 0 &&
+                            parsed <= (int64_t)INT_MAX)
+                        {
+                            conns_per_worker = (int)parsed;
+                        }
+                    }
+
+                    break;
+                }
+            }
+
+            worker_loop(argv[i + 1], conns_per_worker);
+
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * ============================================================
+ *  サーバー実装
+ * ============================================================
+ */
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void run_fork_server(int port)
+{
+    SOCKET listen_socket = create_listen_socket(port);
+    char *exepath = NULL;
+    DWORD path_error;
+
+    /*
+     * 稼働状況は利用者が画面で確認する表示であり、診断も出力先がほかにないため、
+     * この関数の printf と fprintf の戻り値は明示的に破棄する。
+     */
+    path_error = get_native_executable_path(&exepath);
+    if (path_error != ERROR_SUCCESS)
+    {
+        (void)fprintf(stderr, "実行ファイルのパスを取得できません (GetLastError=%lu)\n", path_error);
+        cplat_exit(1);
+    }
+
+    (void)printf("[親プロセス %lu] fork モード、ポート %d で待ち受け開始\n", GetCurrentProcessId(), port);
+
+    /* クライアント接続を受け付けるたびに、子プロセスを生成してソケット ハンドルを引き渡す。 */
+    while (1)
+    {
+        SOCKET client_socket = accept(listen_socket, NULL, NULL);
+        if (client_socket == INVALID_SOCKET)
+        {
+            continue;
+        }
+
+        (void)printf("[親プロセス] 接続受付、子プロセス生成\n");
+
+        /*
+         * 子プロセスへソケット ハンドルを継承させるため、継承可能フラグを設定する。
+         * 設定できない場合は子プロセスが接続を使えないため、子プロセスを起動せずに接続を閉じ、次の接続を受け付ける。
+         */
+        if (!SetHandleInformation((HANDLE)client_socket, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
+        {
+            (void)fprintf(stderr, "[親プロセス] SetHandleInformation 失敗: %lu\n", GetLastError());
+            /* 子へ渡せなかった接続を閉じる後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+            (void)closesocket(client_socket);
+            continue;
+        }
+
+        char arguments[TCPSERVER_CHILD_ARGS_UTF8_CAP];
+        int format_result = cplat_snprintf(arguments, sizeof(arguments), " --child %llu",
+                                           (unsigned long long)client_socket);
+        PROCESS_INFORMATION pi = {0};
+        DWORD process_error = ERROR_SUCCESS;
+        BOOL process_started = FALSE;
+
+        if (format_result == CPLAT_OK)
+        {
+            process_started = start_child_process(exepath, arguments, TRUE, &pi, &process_error);
+        }
+        else
+        {
+            process_error = (format_result == CPLAT_ERR_BUFFER_TOO_SMALL) ? ERROR_INSUFFICIENT_BUFFER
+                                                                           : ERROR_INVALID_DATA;
+        }
+
+        if (process_started)
+        {
+            /* 起動した子プロセスのハンドルは使わず、閉じる処理の失敗で動作が変わらないため、この 2 つの戻り値は明示的に破棄する。 */
+            (void)CloseHandle(pi.hProcess);
+            (void)CloseHandle(pi.hThread);
+        }
+        else
+        {
+            (void)fprintf(stderr, "[親プロセス] 子プロセスの起動に失敗しました (GetLastError=%lu)\n", process_error);
+        }
+
+        /* 子プロセスの起動の後に親が持つ接続の複製を閉じる処理であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+        (void)closesocket(client_socket);
+    }
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void run_prefork_server(int port, int num_workers, int conns_per_worker)
+{
+    WorkerInfo *workers = (WorkerInfo *)cplat_malloc((size_t)num_workers * sizeof(WorkerInfo));
+    HANDLE *events = (HANDLE *)cplat_malloc((size_t)num_workers * sizeof(HANDLE));
+
+    /*
+     * 診断の出力先がほかになく、稼働状況は利用者が画面で確認する表示であるため、
+     * この関数の fprintf と printf の戻り値は明示的に破棄する。
+     */
+    if (workers == NULL || events == NULL)
+    {
+        (void)fprintf(stderr, "malloc 失敗\n");
+        cplat_exit(1);
+    }
+
+    SOCKET listen_socket = create_listen_socket(port);
+    (void)printf("[親プロセス %lu] prefork モード、ワーカー %d 個を起動中 (1 ワーカーあたり最大 %d 接続)...\n",
+                 GetCurrentProcessId(), num_workers, conns_per_worker);
+    start_prefork_workers(workers, events, num_workers, conns_per_worker);
+    (void)printf("[親プロセス] ポート %d で待ち受け開始\n", port);
+
+    /* クライアント接続を受け付け、空きのあるワーカー プロセスへ名前付きパイプ経由でソケットを引き渡す。 */
+    while (1)
+    {
+        SOCKET client_socket = accept(listen_socket, NULL, NULL);
+        if (client_socket == INVALID_SOCKET)
+        {
+            continue;
+        }
+
+    #if defined(TCPSERVER_PREFORK_TEST)
+        prefork_probe_accepted();
+    #endif
+        int worker_id = find_available_worker(workers, events, num_workers, conns_per_worker);
+        if (worker_id < 0)
+        {
+            close_parent_socket(client_socket, 0);
+            prefork_trace("no_worker", 0, client_socket, 0);
+            (void)fprintf(stderr, "利用可能なワーカーがありません\n");
+            continue;
+        }
+        WorkerInfo *worker = &workers[worker_id];
+        WSAPROTOCOL_INFOW protocol_info;
+        int duplicated = WSADuplicateSocketW(client_socket, worker->process_id, &protocol_info) == 0;
+        if (!duplicated || !pipe_transfer(worker->pipe, &protocol_info, sizeof(protocol_info), 1))
+        {
+            EnterCriticalSection(&worker->state_lock);
+            worker->pending = 0;
+            if (duplicated)
+            {
+                worker->alive = 0; /* 書きかけの転送があるパイプは再利用しない。 */
+            }
+            set_event_or_exit(events[worker_id]);
+            LeaveCriticalSection(&worker->state_lock);
+            if (duplicated)
+            {
+                /*
+                 * 書きかけの転送があるパイプを再利用しないための後始末であり、以後このパイプを使わないため、
+                 * 戻り値は明示的に破棄する。
+                 */
+                (void)DisconnectNamedPipe(worker->pipe);
+            }
+            close_parent_socket(client_socket, worker->process_id);
+            continue;
+        }
+        /* 受領通知の読み取りは監視スレッドへ委ねる。ワーカー終了も待機を解除する。 */
+        HANDLE wait_handles[] = {worker->ack_event, worker->process};
+        prefork_trace("ack_wait", worker->process_id, client_socket, 0);
+    #if defined(TCPSERVER_PREFORK_TEST)
+        prefork_probe_before_wait();
+    #endif
+        DWORD wait_result = WaitForMultipleObjects((DWORD)(sizeof(wait_handles) / sizeof(wait_handles[0])),
+                                                   wait_handles, FALSE, INFINITE);
+        EnterCriticalSection(&worker->state_lock);
+        int accepted = wait_result == WAIT_OBJECT_0 && worker->alive && worker->ack_ok;
+        if (wait_result != WAIT_OBJECT_0)
+        {
+            worker->alive = 0;
+            worker->pending = 0;
+            set_event_or_exit(events[worker_id]);
+        }
+        LeaveCriticalSection(&worker->state_lock);
+        close_parent_socket(client_socket, worker->process_id);
+        if (!accepted)
+        {
+            (void)fprintf(stderr, "ワーカー %d へのソケット引き渡しに失敗しました\n", worker_id);
+        }
+    }
+}
+
 /**
  *  @brief          実行ファイルの UTF-8 パスを取得します。
  *  @param[out]     path_out 成功時にパスの所有権を格納するポインター。
@@ -294,51 +609,6 @@ static void close_parent_socket(const SOCKET connection, const DWORD worker_pid)
     int result = closesocket(connection);
     prefork_trace("parent_close", worker_pid, connection, result);
 }
-
-/*
- * ============================================================
- *  内部型定義
- * ============================================================
- */
-
-/**
- *  @brief          ワーカー プロセスの情報を管理する構造体。
- */
-typedef struct WorkerInfo
-{
-    HANDLE pipe;                 /**< ワーカーとの通信用パイプ。 */
-    HANDLE process;              /**< ワーカー プロセスのハンドル。 */
-    int conn_count;              /**< 受領済みのアクティブ接続数。 */
-    int pending;                 /**< 受領通知待ちの予約数 (0 または 1)。 */
-    int alive;                   /**< パイプを使用できる場合は 1。 */
-    int ack_ok;                  /**< 最後の受領結果。 */
-    DWORD process_id;            /**< 複製先のプロセス ID。 */
-    HANDLE ack_event;            /**< 監視スレッドが受領結果または切断を通知するイベント。 */
-    CRITICAL_SECTION state_lock; /**< 接続数、予約、稼働状態を保護する。 */
-} WorkerInfo;
-
-/**
- *  @brief          ワーカー監視スレッドへ渡すコンテキスト。
- */
-typedef struct WorkerMonitorArg
-{
-    int id;               /**< ワーカー ID。 */
-    WorkerInfo *workers;  /**< ワーカー情報配列へのポインター。 */
-    HANDLE *events;       /**< ワーカー イベント配列へのポインター。 */
-    int conns_per_worker; /**< 1 ワーカーあたりの同時接続数上限。 */
-} WorkerMonitorArg;
-
-enum WorkerReplyType
-{
-    WORKER_ACK = 1,
-    WORKER_DONE = 2
-};
-
-typedef struct WorkerReply
-{
-    DWORD type;
-    DWORD accepted;
-} WorkerReply;
 
 /* byte モードのパイプでは短い読み書きを繰り返して構造体全体を転送する。
  * see: https://learn.microsoft.com/windows/win32/ipc/named-pipe-type-read-and-wait-modes
@@ -1016,258 +1286,6 @@ static void start_prefork_workers(WorkerInfo *workers, HANDLE *events, int n, in
 
     /* args はスレッドが使い続けるため解放しない (プロセス終了時に解放される)。 */
     cplat_free(exepath);
-}
-
-/*
- * ============================================================
- *  プラットフォーム フック
- * ============================================================
- */
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void platform_init(ClientSessionFn session_fn)
-{
-    WSADATA wsaData;
-
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
-    {
-        (void)fprintf(stderr, "WSAStartup 失敗\n"); /* 診断の出力先がほかにないため、戻り値は明示的に破棄する */
-        cplat_exit(1);
-    }
-
-    g_session_fn = session_fn;
-    #if defined(TCPSERVER_PREFORK_TEST)
-    prefork_probe_initialize();
-    #endif
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void platform_cleanup(void)
-{
-    /* プロセスの終了の直前の Winsock の後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
-    (void)WSACleanup();
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int dispatch_internal_args(int argc, char *argv[])
-{
-    /* コマンド ライン引数を走査し、内部起動オプション (--child または --worker) を処理する。 */
-    for (int i = 1; i < argc - 1; i++)
-    {
-        if (strcmp(argv[i], "--child") == 0)
-        {
-            SOCKET sock = (SOCKET)_strtoui64(argv[i + 1], NULL, 10);
-            run_as_fork_child(sock);
-        }
-
-        if (strcmp(argv[i], "--worker") == 0)
-        {
-            /* --conns-per-worker が続く場合は、その値を読み取る。 */
-            int conns_per_worker = DEFAULT_CONNS_PER_WORKER;
-
-            for (int j = i + 2; j < argc - 1; j++)
-            {
-                if (strcmp(argv[j], "--conns-per-worker") == 0)
-                {
-                    {
-                        int64_t parsed;
-
-                        if (cplat_parse_int64(&parsed, argv[j + 1], 10) == CPLAT_OK && parsed > 0 &&
-                            parsed <= (int64_t)INT_MAX)
-                        {
-                            conns_per_worker = (int)parsed;
-                        }
-                    }
-
-                    break;
-                }
-            }
-
-            worker_loop(argv[i + 1], conns_per_worker);
-
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
-/*
- * ============================================================
- *  サーバー実装
- * ============================================================
- */
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void run_fork_server(int port)
-{
-    SOCKET listen_socket = create_listen_socket(port);
-    char *exepath = NULL;
-    DWORD path_error;
-
-    /*
-     * 稼働状況は利用者が画面で確認する表示であり、診断も出力先がほかにないため、
-     * この関数の printf と fprintf の戻り値は明示的に破棄する。
-     */
-    path_error = get_native_executable_path(&exepath);
-    if (path_error != ERROR_SUCCESS)
-    {
-        (void)fprintf(stderr, "実行ファイルのパスを取得できません (GetLastError=%lu)\n", path_error);
-        cplat_exit(1);
-    }
-
-    (void)printf("[親プロセス %lu] fork モード、ポート %d で待ち受け開始\n", GetCurrentProcessId(), port);
-
-    /* クライアント接続を受け付けるたびに、子プロセスを生成してソケット ハンドルを引き渡す。 */
-    while (1)
-    {
-        SOCKET client_socket = accept(listen_socket, NULL, NULL);
-        if (client_socket == INVALID_SOCKET)
-        {
-            continue;
-        }
-
-        (void)printf("[親プロセス] 接続受付、子プロセス生成\n");
-
-        /*
-         * 子プロセスへソケット ハンドルを継承させるため、継承可能フラグを設定する。
-         * 設定できない場合は子プロセスが接続を使えないため、子プロセスを起動せずに接続を閉じ、次の接続を受け付ける。
-         */
-        if (!SetHandleInformation((HANDLE)client_socket, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
-        {
-            (void)fprintf(stderr, "[親プロセス] SetHandleInformation 失敗: %lu\n", GetLastError());
-            /* 子へ渡せなかった接続を閉じる後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
-            (void)closesocket(client_socket);
-            continue;
-        }
-
-        char arguments[TCPSERVER_CHILD_ARGS_UTF8_CAP];
-        int format_result = cplat_snprintf(arguments, sizeof(arguments), " --child %llu",
-                                           (unsigned long long)client_socket);
-        PROCESS_INFORMATION pi = {0};
-        DWORD process_error = ERROR_SUCCESS;
-        BOOL process_started = FALSE;
-
-        if (format_result == CPLAT_OK)
-        {
-            process_started = start_child_process(exepath, arguments, TRUE, &pi, &process_error);
-        }
-        else
-        {
-            process_error = (format_result == CPLAT_ERR_BUFFER_TOO_SMALL) ? ERROR_INSUFFICIENT_BUFFER
-                                                                           : ERROR_INVALID_DATA;
-        }
-
-        if (process_started)
-        {
-            /* 起動した子プロセスのハンドルは使わず、閉じる処理の失敗で動作が変わらないため、この 2 つの戻り値は明示的に破棄する。 */
-            (void)CloseHandle(pi.hProcess);
-            (void)CloseHandle(pi.hThread);
-        }
-        else
-        {
-            (void)fprintf(stderr, "[親プロセス] 子プロセスの起動に失敗しました (GetLastError=%lu)\n", process_error);
-        }
-
-        /* 子プロセスの起動の後に親が持つ接続の複製を閉じる処理であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
-        (void)closesocket(client_socket);
-    }
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void run_prefork_server(int port, int num_workers, int conns_per_worker)
-{
-    WorkerInfo *workers = (WorkerInfo *)cplat_malloc((size_t)num_workers * sizeof(WorkerInfo));
-    HANDLE *events = (HANDLE *)cplat_malloc((size_t)num_workers * sizeof(HANDLE));
-
-    /*
-     * 診断の出力先がほかになく、稼働状況は利用者が画面で確認する表示であるため、
-     * この関数の fprintf と printf の戻り値は明示的に破棄する。
-     */
-    if (workers == NULL || events == NULL)
-    {
-        (void)fprintf(stderr, "malloc 失敗\n");
-        cplat_exit(1);
-    }
-
-    SOCKET listen_socket = create_listen_socket(port);
-    (void)printf("[親プロセス %lu] prefork モード、ワーカー %d 個を起動中 (1 ワーカーあたり最大 %d 接続)...\n",
-                 GetCurrentProcessId(), num_workers, conns_per_worker);
-    start_prefork_workers(workers, events, num_workers, conns_per_worker);
-    (void)printf("[親プロセス] ポート %d で待ち受け開始\n", port);
-
-    /* クライアント接続を受け付け、空きのあるワーカー プロセスへ名前付きパイプ経由でソケットを引き渡す。 */
-    while (1)
-    {
-        SOCKET client_socket = accept(listen_socket, NULL, NULL);
-        if (client_socket == INVALID_SOCKET)
-        {
-            continue;
-        }
-
-    #if defined(TCPSERVER_PREFORK_TEST)
-        prefork_probe_accepted();
-    #endif
-        int worker_id = find_available_worker(workers, events, num_workers, conns_per_worker);
-        if (worker_id < 0)
-        {
-            close_parent_socket(client_socket, 0);
-            prefork_trace("no_worker", 0, client_socket, 0);
-            (void)fprintf(stderr, "利用可能なワーカーがありません\n");
-            continue;
-        }
-        WorkerInfo *worker = &workers[worker_id];
-        WSAPROTOCOL_INFOW protocol_info;
-        int duplicated = WSADuplicateSocketW(client_socket, worker->process_id, &protocol_info) == 0;
-        if (!duplicated || !pipe_transfer(worker->pipe, &protocol_info, sizeof(protocol_info), 1))
-        {
-            EnterCriticalSection(&worker->state_lock);
-            worker->pending = 0;
-            if (duplicated)
-            {
-                worker->alive = 0; /* 書きかけの転送があるパイプは再利用しない。 */
-            }
-            set_event_or_exit(events[worker_id]);
-            LeaveCriticalSection(&worker->state_lock);
-            if (duplicated)
-            {
-                /*
-                 * 書きかけの転送があるパイプを再利用しないための後始末であり、以後このパイプを使わないため、
-                 * 戻り値は明示的に破棄する。
-                 */
-                (void)DisconnectNamedPipe(worker->pipe);
-            }
-            close_parent_socket(client_socket, worker->process_id);
-            continue;
-        }
-        /* 受領通知の読み取りは監視スレッドへ委ねる。ワーカー終了も待機を解除する。 */
-        HANDLE wait_handles[] = {worker->ack_event, worker->process};
-        prefork_trace("ack_wait", worker->process_id, client_socket, 0);
-    #if defined(TCPSERVER_PREFORK_TEST)
-        prefork_probe_before_wait();
-    #endif
-        DWORD wait_result = WaitForMultipleObjects((DWORD)(sizeof(wait_handles) / sizeof(wait_handles[0])),
-                                                   wait_handles, FALSE, INFINITE);
-        EnterCriticalSection(&worker->state_lock);
-        int accepted = wait_result == WAIT_OBJECT_0 && worker->alive && worker->ack_ok;
-        if (wait_result != WAIT_OBJECT_0)
-        {
-            worker->alive = 0;
-            worker->pending = 0;
-            set_event_or_exit(events[worker_id]);
-        }
-        LeaveCriticalSection(&worker->state_lock);
-        close_parent_socket(client_socket, worker->process_id);
-        if (!accepted)
-        {
-            (void)fprintf(stderr, "ワーカー %d へのソケット引き渡しに失敗しました\n", worker_id);
-        }
-    }
 }
 
 #endif /* PLATFORM_WINDOWS */

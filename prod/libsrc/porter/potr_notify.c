@@ -37,87 +37,7 @@ struct potr_internal_notifications
     int sealed;
 };
 
-/*
- * 登録済みの連続した通知をまとめて取り出す。コールバック中はロックを保持しない。
- * ノードの返却もまとめ、通知 1 件ごとのロック取得と起床の追加コストを抑える。
- */
-static void notify_thread(void *arg)
-{
-    potr_context *ctx = (potr_context *)arg;
-    struct potr_internal_notifications *q = ctx->notifications;
-    cplat_atomic_store_u32(&ctx->callback_tid, cplat_process_get_tid(), CPLAT_MEMORY_ORDER_RELAXED);
-
-    for (;;)
-    {
-        potr_internal_notice *node;
-        potr_internal_notice *returned = NULL;
-        potr_internal_notice *returned_tail = NULL;
-        cplat_local_lock_lock(q->mutex);
-
-        while (q->head == NULL && q->sealed == 0)
-        {
-            cplat_condvar_wait(q->ready, q->mutex);
-        }
-
-        node = q->head;
-        if (node == NULL)
-        {
-            cplat_local_lock_unlock(q->mutex);
-            break;
-        }
-
-        q->head = NULL;
-        q->tail = NULL;
-        cplat_local_lock_unlock(q->mutex);
-
-        while (node != NULL)
-        {
-            potr_internal_notice *next = node->next;
-            const void *data = NULL;
-
-            if (node == &q->error_notice)
-            {
-                data = &q->error_code;
-            }
-            else if (node->bytes != 0U)
-            {
-                data = node + 1;
-            }
-
-            cplat_atomic_store_i32(&ctx->callback_active, 1, CPLAT_MEMORY_ORDER_RELEASE);
-            ctx->callback(ctx->service.service_id, node->peer_id, node->event, data, node->len);
-            cplat_atomic_store_i32(&ctx->callback_active, 0, CPLAT_MEMORY_ORDER_RELEASE);
-
-            /* コールバックから復帰した DATA を占有量から減算する。解除のしきい値を下回った場合は、ここで解除を送出する。 */
-            if (node->event == POTR_EVENT_DATA)
-            {
-                potr_internal_flow_control_release(ctx, node->peer_id, node->len);
-            }
-
-            if (node != &q->error_notice)
-            {
-                cplat_secure_zero(node + 1, node->bytes);
-                node->next = returned;
-                returned = node;
-
-                if (returned_tail == NULL)
-                {
-                    returned_tail = node;
-                }
-            }
-
-            node = next;
-        }
-
-        if (returned_tail != NULL)
-        {
-            cplat_local_lock_lock(q->mutex);
-            returned_tail->next = q->free_nodes;
-            q->free_nodes = returned;
-            cplat_local_lock_unlock(q->mutex);
-        }
-    }
-}
+static void notify_thread(void *arg);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -327,5 +247,87 @@ void potr_internal_notify_enqueue(potr_context *ctx, potr_peer_id peer_id, potr_
     if (failed != 0 && ctx->send_queue.mutex != NULL)
     {
         potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_OUT_OF_MEMORY);
+    }
+}
+
+/*
+ * 登録済みの連続した通知をまとめて取り出す。コールバック中はロックを保持しない。
+ * ノードの返却もまとめ、通知 1 件ごとのロック取得と起床の追加コストを抑える。
+ */
+static void notify_thread(void *arg)
+{
+    potr_context *ctx = (potr_context *)arg;
+    struct potr_internal_notifications *q = ctx->notifications;
+    cplat_atomic_store_u32(&ctx->callback_tid, cplat_process_get_tid(), CPLAT_MEMORY_ORDER_RELAXED);
+
+    for (;;)
+    {
+        potr_internal_notice *node;
+        potr_internal_notice *returned = NULL;
+        potr_internal_notice *returned_tail = NULL;
+        cplat_local_lock_lock(q->mutex);
+
+        while (q->head == NULL && q->sealed == 0)
+        {
+            cplat_condvar_wait(q->ready, q->mutex);
+        }
+
+        node = q->head;
+        if (node == NULL)
+        {
+            cplat_local_lock_unlock(q->mutex);
+            break;
+        }
+
+        q->head = NULL;
+        q->tail = NULL;
+        cplat_local_lock_unlock(q->mutex);
+
+        while (node != NULL)
+        {
+            potr_internal_notice *next = node->next;
+            const void *data = NULL;
+
+            if (node == &q->error_notice)
+            {
+                data = &q->error_code;
+            }
+            else if (node->bytes != 0U)
+            {
+                data = node + 1;
+            }
+
+            cplat_atomic_store_i32(&ctx->callback_active, 1, CPLAT_MEMORY_ORDER_RELEASE);
+            ctx->callback(ctx->service.service_id, node->peer_id, node->event, data, node->len);
+            cplat_atomic_store_i32(&ctx->callback_active, 0, CPLAT_MEMORY_ORDER_RELEASE);
+
+            /* コールバックから復帰した DATA を占有量から減算する。解除のしきい値を下回った場合は、ここで解除を送出する。 */
+            if (node->event == POTR_EVENT_DATA)
+            {
+                potr_internal_flow_control_release(ctx, node->peer_id, node->len);
+            }
+
+            if (node != &q->error_notice)
+            {
+                cplat_secure_zero(node + 1, node->bytes);
+                node->next = returned;
+                returned = node;
+
+                if (returned_tail == NULL)
+                {
+                    returned_tail = node;
+                }
+            }
+
+            node = next;
+        }
+
+        if (returned_tail != NULL)
+        {
+            cplat_local_lock_lock(q->mutex);
+            returned_tail->next = q->free_nodes;
+            q->free_nodes = returned;
+            cplat_local_lock_unlock(q->mutex);
+        }
     }
 }

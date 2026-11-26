@@ -27,75 +27,8 @@
 
 #include "thread_recv_session.h"
 
-/* スロットの pending FIN 状態と目標通番をクリアする。 */
-static void slot_clear_pending_fin(thread_recv_slot *slot)
-{
-    *slot->pending_fin = 0;
-    *slot->fin_target_seq = 0;
-}
-
-/*
- * 新しいセッションを採用したため、その相手から受けていた抑制の要求を取り消し、送出上限を未通知 (初期の幅) へ戻す。
- * 送出上限は相手の受信の位置に基づく値であり、別のセッションには当てはまらないためである。
- * N:1 モードのピアは、呼び出し元が peers_mutex を保持している。
- */
-static void slot_forget_flow_control(thread_recv_slot *slot)
-{
-    /* TCP は接続スレッドが接続単位で初期化する。初回 DATA より先に受けた通知も維持する。 */
-    if (slot->ctx->service.type == POTR_TYPE_TCP || slot->ctx->service.type == POTR_TYPE_TCP_BIDIR)
-    {
-        return;
-    }
-
-    uint32_t next_seq;
-
-    if (slot->peer != NULL)
-    {
-        if (slot->peer->send_window_mutex != NULL)
-        {
-            cplat_local_lock_lock(slot->peer->send_window_mutex);
-            next_seq = slot->peer->send_window.next_seq;
-            cplat_local_lock_unlock(slot->peer->send_window_mutex);
-        }
-        else
-        {
-            next_seq = slot->peer->send_window.next_seq;
-        }
-
-        slot->peer->flow_first_limit_ms = 0U;
-        slot->peer->flow_request_expire_ms = 0U;
-        slot->peer->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq;
-        slot->peer->flow_limit_stalled_ms = 0U;
-        slot->peer->flow_query_next_ms = 0U;
-        slot->peer->flow_query_interval_ms = 0U;
-        potr_internal_flow_control_peer_clear_blocking(slot->ctx, slot->peer);
-        potr_internal_flow_control_peer_sync(slot->ctx, slot->peer);
-        return;
-    }
-
-    if (slot->ctx->service.type == POTR_TYPE_MULTICAST || slot->ctx->service.type == POTR_TYPE_BROADCAST)
-    {
-        return;
-    }
-
-    if (slot->ctx->send_window_mutex != NULL)
-    {
-        cplat_local_lock_lock(slot->ctx->send_window_mutex);
-        next_seq = slot->ctx->send_window.next_seq;
-        cplat_local_lock_unlock(slot->ctx->send_window_mutex);
-    }
-    else
-    {
-        next_seq = slot->ctx->send_window.next_seq;
-    }
-
-    cplat_local_lock_lock(slot->ctx->flow_limit_mutex);
-    cplat_atomic_store_u64(&slot->ctx->flow_first_limit_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
-    cplat_atomic_store_u64(&slot->ctx->flow_request_expire_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
-    cplat_atomic_store_u64(&slot->ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq,
-                           CPLAT_MEMORY_ORDER_RELEASE);
-    cplat_local_lock_unlock(slot->ctx->flow_limit_mutex);
-}
+static void slot_clear_pending_fin(thread_recv_slot *slot);
+static void slot_forget_flow_control(thread_recv_slot *slot);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -382,4 +315,74 @@ void thread_recv_learn_sender_path(thread_recv_slot *slot, int path_idx, const c
             slot->dest_addr[path_idx].port = sender->port;
         }
     }
+}
+
+/* スロットの pending FIN 状態と目標通番をクリアする。 */
+static void slot_clear_pending_fin(thread_recv_slot *slot)
+{
+    *slot->pending_fin = 0;
+    *slot->fin_target_seq = 0;
+}
+
+/*
+ * 新しいセッションを採用したため、その相手から受けていた抑制の要求を取り消し、送出上限を未通知 (初期の幅) へ戻す。
+ * 送出上限は相手の受信の位置に基づく値であり、別のセッションには当てはまらないためである。
+ * N:1 モードのピアは、呼び出し元が peers_mutex を保持している。
+ */
+static void slot_forget_flow_control(thread_recv_slot *slot)
+{
+    /* TCP は接続スレッドが接続単位で初期化する。初回 DATA より先に受けた通知も維持する。 */
+    if (slot->ctx->service.type == POTR_TYPE_TCP || slot->ctx->service.type == POTR_TYPE_TCP_BIDIR)
+    {
+        return;
+    }
+
+    uint32_t next_seq;
+
+    if (slot->peer != NULL)
+    {
+        if (slot->peer->send_window_mutex != NULL)
+        {
+            cplat_local_lock_lock(slot->peer->send_window_mutex);
+            next_seq = slot->peer->send_window.next_seq;
+            cplat_local_lock_unlock(slot->peer->send_window_mutex);
+        }
+        else
+        {
+            next_seq = slot->peer->send_window.next_seq;
+        }
+
+        slot->peer->flow_first_limit_ms = 0U;
+        slot->peer->flow_request_expire_ms = 0U;
+        slot->peer->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq;
+        slot->peer->flow_limit_stalled_ms = 0U;
+        slot->peer->flow_query_next_ms = 0U;
+        slot->peer->flow_query_interval_ms = 0U;
+        potr_internal_flow_control_peer_clear_blocking(slot->ctx, slot->peer);
+        potr_internal_flow_control_peer_sync(slot->ctx, slot->peer);
+        return;
+    }
+
+    if (slot->ctx->service.type == POTR_TYPE_MULTICAST || slot->ctx->service.type == POTR_TYPE_BROADCAST)
+    {
+        return;
+    }
+
+    if (slot->ctx->send_window_mutex != NULL)
+    {
+        cplat_local_lock_lock(slot->ctx->send_window_mutex);
+        next_seq = slot->ctx->send_window.next_seq;
+        cplat_local_lock_unlock(slot->ctx->send_window_mutex);
+    }
+    else
+    {
+        next_seq = slot->ctx->send_window.next_seq;
+    }
+
+    cplat_local_lock_lock(slot->ctx->flow_limit_mutex);
+    cplat_atomic_store_u64(&slot->ctx->flow_first_limit_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&slot->ctx->flow_request_expire_ms, 0U, CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_atomic_store_u64(&slot->ctx->flow_send_limit, POTR_FLOW_SEND_LIMIT_UNNOTIFIED | (uint64_t)next_seq,
+                           CPLAT_MEMORY_ORDER_RELEASE);
+    cplat_local_lock_unlock(slot->ctx->flow_limit_mutex);
 }

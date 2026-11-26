@@ -25,6 +25,289 @@
 #include <porter/protocol/config_decode.h>
 #include <porter/protocol/config_schema.h>
 
+static int push_service_id(int64_t **arr, size_t *count, size_t *cap, int64_t id);
+static int parse_canonical_service_id(const char *key, int64_t *id_out);
+static int is_duplicate_sibling(const cJSON *obj, const cJSON *target);
+static int has_key_conflict(const cJSON *obj, const cJSON *target);
+static int report_with_key(potr_internal_config_reporter *reporter, potr_config_issue_kind kind, int has_service_id,
+                           int64_t service_id, const char *parent_path, const char *key_name, const char *message,
+                           const char *expected);
+static void mark_global_err(potr_internal_config_field_errors *errors, unsigned int field_id);
+static void mark_service_err(potr_internal_config_field_errors *errors, unsigned int field_id);
+static int parse_u32_field_item(const cJSON *item, const potr_internal_config_field_spec *spec, uint32_t *val_out,
+                                potr_config_issue_kind *err_kind_out, const char **err_msg_out);
+static void store_numeric_field(void *base, const potr_internal_config_field_spec *spec, uint32_t val);
+static int hex_nibble_value(char ch);
+static int parse_encrypt_key_value(const char *text, potr_service_def *service);
+static int parse_auth_enum_item(const cJSON *item, potr_auth *auth_out, potr_config_issue_kind *err_kind_out,
+                                const char **err_msg_out);
+static int decode_addr_string(const cJSON *item, char *dest, size_t dest_size, potr_internal_config_reporter *reporter,
+                              int64_t service_id, const char *service_path, const char *key_name, const char *expected,
+                              int *err_out);
+static int inspect_root_structure(const cJSON *root, potr_internal_config_reporter *reporter,
+                                  const cJSON **global_obj_out, const cJSON **services_obj_out,
+                                  potr_internal_config_id_list *id_list, int *root_has_error);
+static int decode_global_object(const cJSON *global_obj, potr_global_config *global,
+                                potr_internal_config_field_errors *errors, potr_internal_config_reporter *reporter,
+                                int *has_err_out);
+static void prescan_service_context(const cJSON *svc_obj, int *has_valid_type, potr_type *resolved_type,
+                                    int *has_valid_auth, potr_auth *resolved_auth, int *has_ca_file_key);
+static int check_auth_applicability(const potr_internal_config_field_spec *spec, int has_valid_auth, potr_auth auth,
+                                    int has_ca_file_key);
+static void emit_auth_file(potr_config_file_fn on_auth_file, void *user_data, int64_t service_id,
+                           const char *key_path, const char *path);
+static int decode_string_array_field(const cJSON *item, int64_t service_id, const char *service_path,
+                                     const char *key_name, const char *expected, const char ***arr_out,
+                                     size_t *count_out, int is_pinned_certs, potr_config_file_fn on_auth_file,
+                                     void *user_data, potr_internal_config_reporter *reporter, int *field_err_out);
+static int decode_service_object(const cJSON *svc_obj, const potr_global_config *global, int64_t service_id,
+                                 const char *service_path, uint32_t roles, potr_config_file_fn on_auth_file,
+                                 void *user_data, const potr_internal_config_field_errors *global_errors,
+                                 potr_internal_config_service *owned, potr_internal_config_reporter *reporter,
+                                 int *has_err_out);
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_config_decode_root(const struct cJSON *root, potr_internal_config_reporter *reporter,
+                                     potr_internal_config_id_list *id_list)
+{
+    const cJSON *global_obj = NULL;
+    const cJSON *services_obj = NULL;
+    int root_has_error = 0;
+
+    if (root == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    return inspect_root_structure(root, reporter, &global_obj, &services_obj, id_list, &root_has_error);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_config_decode_validate_all(const struct cJSON *root, uint32_t roles,
+                                             potr_config_service_fn on_service, potr_config_file_fn on_auth_file,
+                                             void *user_data, potr_internal_config_reporter *reporter)
+{
+    const cJSON *global_obj = NULL;
+    const cJSON *services_obj = NULL;
+    int root_has_error = 0;
+    int any_error = 0;
+    potr_global_config global;
+    potr_internal_config_field_errors global_errors;
+    int ret;
+
+    if (root == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    memset(&global_errors, 0, sizeof(global_errors));
+
+    ret = inspect_root_structure(root, reporter, &global_obj, &services_obj, NULL, &root_has_error);
+    if (ret == POTR_ERR_OUT_OF_MEMORY)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    if (root_has_error != 0)
+    {
+        any_error = 1;
+        if (!cjson_app_cJSON_IsObject(root))
+        {
+            return POTR_ERR_INVALID_CONFIG;
+        }
+    }
+
+    if (decode_global_object(global_obj, &global, &global_errors, reporter, &any_error) != POTR_OK)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+
+    if (services_obj != NULL)
+    {
+        const cJSON *svc_child;
+
+        for (svc_child = services_obj->child; svc_child != NULL; svc_child = svc_child->next)
+        {
+            const char *id_key = (svc_child->string != NULL) ? svc_child->string : "";
+            int64_t sid = 0;
+            potr_internal_config_path_buf svc_path;
+            potr_internal_config_service owned;
+
+            if (has_key_conflict(services_obj, svc_child) != 0 || parse_canonical_service_id(id_key, &sid) == 0)
+            {
+                continue;
+            }
+
+            if (root_has_error == 0 && on_service != NULL)
+            {
+                on_service(sid, user_data);
+            }
+
+            if (potr_internal_config_path_push(&svc_path, "/services", id_key) != POTR_OK)
+            {
+                return POTR_ERR_OUT_OF_MEMORY;
+            }
+
+            memset(&owned, 0, sizeof(owned));
+            ret = decode_service_object(svc_child, &global, sid, svc_path.ptr, roles, on_auth_file, user_data,
+                                        &global_errors, &owned, reporter, &any_error);
+            potr_internal_config_path_dispose(&svc_path);
+            potr_internal_config_service_dispose(&owned);
+
+            if (ret == POTR_ERR_OUT_OF_MEMORY)
+            {
+                return POTR_ERR_OUT_OF_MEMORY;
+            }
+        }
+    }
+
+    return (any_error != 0) ? POTR_ERR_INVALID_CONFIG : POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_config_decode_target_service(const struct cJSON *root, int64_t service_id, uint32_t roles,
+                                               potr_global_config *global_out,
+                                               potr_internal_config_service *service_out,
+                                               potr_internal_config_reporter *reporter)
+{
+    const cJSON *global_obj = NULL;
+    const cJSON *services_obj = NULL;
+    int root_has_error = 0;
+    int global_has_error = 0;
+    int target_has_error = 0;
+    potr_global_config global;
+    potr_internal_config_field_errors global_errors;
+    const cJSON *target_node = NULL;
+    const char *target_key = NULL;
+    int ret;
+
+    if (root == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    memset(&global_errors, 0, sizeof(global_errors));
+
+    ret = inspect_root_structure(root, reporter, &global_obj, &services_obj, NULL, &root_has_error);
+    if (ret == POTR_ERR_OUT_OF_MEMORY)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+
+    if (!cjson_app_cJSON_IsObject(root))
+    {
+        return POTR_ERR_INVALID_CONFIG;
+    }
+
+    if (decode_global_object(global_obj, &global, &global_errors, reporter, &global_has_error) != POTR_OK)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+
+    if (services_obj != NULL)
+    {
+        const cJSON *svc_child;
+
+        for (svc_child = services_obj->child; svc_child != NULL; svc_child = svc_child->next)
+        {
+            const char *id_key = (svc_child->string != NULL) ? svc_child->string : "";
+            int64_t parsed_id = 0;
+
+            if (has_key_conflict(services_obj, svc_child) != 0)
+            {
+                continue;
+            }
+
+            if (parse_canonical_service_id(id_key, &parsed_id) != 0 && parsed_id == service_id)
+            {
+                target_node = svc_child;
+                target_key = id_key;
+                break;
+            }
+        }
+    }
+
+    if (target_node == NULL)
+    {
+        if (root_has_error != 0 || global_has_error != 0)
+        {
+            return POTR_ERR_INVALID_CONFIG;
+        }
+        return POTR_ERR_NOT_FOUND;
+    }
+
+    {
+        potr_internal_config_path_buf svc_path;
+        potr_internal_config_service owned;
+
+        if (potr_internal_config_path_push(&svc_path, "/services", target_key) != POTR_OK)
+        {
+            return POTR_ERR_OUT_OF_MEMORY;
+        }
+
+        memset(&owned, 0, sizeof(owned));
+        ret = decode_service_object(target_node, &global, service_id, svc_path.ptr, roles, NULL, NULL, &global_errors,
+                                    &owned, reporter, &target_has_error);
+        potr_internal_config_path_dispose(&svc_path);
+
+        if (ret == POTR_ERR_OUT_OF_MEMORY)
+        {
+            potr_internal_config_service_dispose(&owned);
+            return POTR_ERR_OUT_OF_MEMORY;
+        }
+
+        if (root_has_error != 0 || global_has_error != 0 || target_has_error != 0)
+        {
+            potr_internal_config_service_dispose(&owned);
+            return POTR_ERR_INVALID_CONFIG;
+        }
+
+        if (global_out != NULL)
+        {
+            *global_out = global;
+        }
+        if (service_out != NULL)
+        {
+            *service_out = owned;
+        }
+        else
+        {
+            potr_internal_config_service_dispose(&owned);
+        }
+    }
+
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_config_service_dispose(potr_internal_config_service *loaded)
+{
+    if (loaded == NULL)
+    {
+        return;
+    }
+
+    if (loaded->pinned_certs != NULL)
+    {
+        cplat_free(loaded->pinned_certs);
+        loaded->pinned_certs = NULL;
+    }
+    if (loaded->peer_names != NULL)
+    {
+        cplat_free(loaded->peer_names);
+        loaded->peer_names = NULL;
+    }
+    if (loaded->document != NULL)
+    {
+        cjson_app_cJSON_Delete(loaded->document);
+        loaded->document = NULL;
+    }
+    cplat_secure_zero(&loaded->definition, sizeof(loaded->definition));
+}
+
 /* 配列の拡張時に古い配列の内容を消去せずに再利用できるため、ここでは明示的に確保と複写を行う。 */
 static int push_service_id(int64_t **arr, size_t *count, size_t *cap, int64_t id)
 {
@@ -1366,246 +1649,4 @@ static int decode_service_object(const cJSON *svc_obj, const potr_global_config 
     }
 
     return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_config_decode_root(const struct cJSON *root, potr_internal_config_reporter *reporter,
-                                     potr_internal_config_id_list *id_list)
-{
-    const cJSON *global_obj = NULL;
-    const cJSON *services_obj = NULL;
-    int root_has_error = 0;
-
-    if (root == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    return inspect_root_structure(root, reporter, &global_obj, &services_obj, id_list, &root_has_error);
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_config_decode_validate_all(const struct cJSON *root, uint32_t roles,
-                                             potr_config_service_fn on_service, potr_config_file_fn on_auth_file,
-                                             void *user_data, potr_internal_config_reporter *reporter)
-{
-    const cJSON *global_obj = NULL;
-    const cJSON *services_obj = NULL;
-    int root_has_error = 0;
-    int any_error = 0;
-    potr_global_config global;
-    potr_internal_config_field_errors global_errors;
-    int ret;
-
-    if (root == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    memset(&global_errors, 0, sizeof(global_errors));
-
-    ret = inspect_root_structure(root, reporter, &global_obj, &services_obj, NULL, &root_has_error);
-    if (ret == POTR_ERR_OUT_OF_MEMORY)
-    {
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-    if (root_has_error != 0)
-    {
-        any_error = 1;
-        if (!cjson_app_cJSON_IsObject(root))
-        {
-            return POTR_ERR_INVALID_CONFIG;
-        }
-    }
-
-    if (decode_global_object(global_obj, &global, &global_errors, reporter, &any_error) != POTR_OK)
-    {
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-
-    if (services_obj != NULL)
-    {
-        const cJSON *svc_child;
-
-        for (svc_child = services_obj->child; svc_child != NULL; svc_child = svc_child->next)
-        {
-            const char *id_key = (svc_child->string != NULL) ? svc_child->string : "";
-            int64_t sid = 0;
-            potr_internal_config_path_buf svc_path;
-            potr_internal_config_service owned;
-
-            if (has_key_conflict(services_obj, svc_child) != 0 || parse_canonical_service_id(id_key, &sid) == 0)
-            {
-                continue;
-            }
-
-            if (root_has_error == 0 && on_service != NULL)
-            {
-                on_service(sid, user_data);
-            }
-
-            if (potr_internal_config_path_push(&svc_path, "/services", id_key) != POTR_OK)
-            {
-                return POTR_ERR_OUT_OF_MEMORY;
-            }
-
-            memset(&owned, 0, sizeof(owned));
-            ret = decode_service_object(svc_child, &global, sid, svc_path.ptr, roles, on_auth_file, user_data,
-                                        &global_errors, &owned, reporter, &any_error);
-            potr_internal_config_path_dispose(&svc_path);
-            potr_internal_config_service_dispose(&owned);
-
-            if (ret == POTR_ERR_OUT_OF_MEMORY)
-            {
-                return POTR_ERR_OUT_OF_MEMORY;
-            }
-        }
-    }
-
-    return (any_error != 0) ? POTR_ERR_INVALID_CONFIG : POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_config_decode_target_service(const struct cJSON *root, int64_t service_id, uint32_t roles,
-                                               potr_global_config *global_out,
-                                               potr_internal_config_service *service_out,
-                                               potr_internal_config_reporter *reporter)
-{
-    const cJSON *global_obj = NULL;
-    const cJSON *services_obj = NULL;
-    int root_has_error = 0;
-    int global_has_error = 0;
-    int target_has_error = 0;
-    potr_global_config global;
-    potr_internal_config_field_errors global_errors;
-    const cJSON *target_node = NULL;
-    const char *target_key = NULL;
-    int ret;
-
-    if (root == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    memset(&global_errors, 0, sizeof(global_errors));
-
-    ret = inspect_root_structure(root, reporter, &global_obj, &services_obj, NULL, &root_has_error);
-    if (ret == POTR_ERR_OUT_OF_MEMORY)
-    {
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-
-    if (!cjson_app_cJSON_IsObject(root))
-    {
-        return POTR_ERR_INVALID_CONFIG;
-    }
-
-    if (decode_global_object(global_obj, &global, &global_errors, reporter, &global_has_error) != POTR_OK)
-    {
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-
-    if (services_obj != NULL)
-    {
-        const cJSON *svc_child;
-
-        for (svc_child = services_obj->child; svc_child != NULL; svc_child = svc_child->next)
-        {
-            const char *id_key = (svc_child->string != NULL) ? svc_child->string : "";
-            int64_t parsed_id = 0;
-
-            if (has_key_conflict(services_obj, svc_child) != 0)
-            {
-                continue;
-            }
-
-            if (parse_canonical_service_id(id_key, &parsed_id) != 0 && parsed_id == service_id)
-            {
-                target_node = svc_child;
-                target_key = id_key;
-                break;
-            }
-        }
-    }
-
-    if (target_node == NULL)
-    {
-        if (root_has_error != 0 || global_has_error != 0)
-        {
-            return POTR_ERR_INVALID_CONFIG;
-        }
-        return POTR_ERR_NOT_FOUND;
-    }
-
-    {
-        potr_internal_config_path_buf svc_path;
-        potr_internal_config_service owned;
-
-        if (potr_internal_config_path_push(&svc_path, "/services", target_key) != POTR_OK)
-        {
-            return POTR_ERR_OUT_OF_MEMORY;
-        }
-
-        memset(&owned, 0, sizeof(owned));
-        ret = decode_service_object(target_node, &global, service_id, svc_path.ptr, roles, NULL, NULL, &global_errors,
-                                    &owned, reporter, &target_has_error);
-        potr_internal_config_path_dispose(&svc_path);
-
-        if (ret == POTR_ERR_OUT_OF_MEMORY)
-        {
-            potr_internal_config_service_dispose(&owned);
-            return POTR_ERR_OUT_OF_MEMORY;
-        }
-
-        if (root_has_error != 0 || global_has_error != 0 || target_has_error != 0)
-        {
-            potr_internal_config_service_dispose(&owned);
-            return POTR_ERR_INVALID_CONFIG;
-        }
-
-        if (global_out != NULL)
-        {
-            *global_out = global;
-        }
-        if (service_out != NULL)
-        {
-            *service_out = owned;
-        }
-        else
-        {
-            potr_internal_config_service_dispose(&owned);
-        }
-    }
-
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void potr_internal_config_service_dispose(potr_internal_config_service *loaded)
-{
-    if (loaded == NULL)
-    {
-        return;
-    }
-
-    if (loaded->pinned_certs != NULL)
-    {
-        cplat_free(loaded->pinned_certs);
-        loaded->pinned_certs = NULL;
-    }
-    if (loaded->peer_names != NULL)
-    {
-        cplat_free(loaded->peer_names);
-        loaded->peer_names = NULL;
-    }
-    if (loaded->document != NULL)
-    {
-        cjson_app_cJSON_Delete(loaded->document);
-        loaded->document = NULL;
-    }
-    cplat_secure_zero(&loaded->definition, sizeof(loaded->definition));
 }

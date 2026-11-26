@@ -43,6 +43,58 @@
 #include <porter/thread/potr_recv_thread.h>
 #include <porter/thread/potr_send_thread.h>
 
+static void send_fin(potr_context *ctx);
+static uint32_t get_fin_target_seq(potr_context *ctx, int *has_data);
+static int send_tcp_fin(potr_context *ctx, uint32_t fin_target_seq);
+static void reset_tcp_close_wait(potr_context *ctx);
+static void begin_tcp_close_wait(potr_context *ctx, uint32_t fin_target_seq);
+static int resolve_tcp_close_after_peer_fin(const potr_context *ctx);
+static int wait_for_tcp_close_ack(potr_context *ctx, int has_data);
+static void stop_tcp_health_threads(potr_context *ctx);
+static void signal_tcp_connect_prep_stop(potr_context *ctx);
+static int close_impl(potr_context *handle);
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_service_close(potr_context *handle)
+{
+    potr_context *ctx = NULL;
+    int ret;
+
+    if (handle == NULL)
+    {
+        return close_impl(NULL);
+    }
+
+    ret = potr_internal_handle_begin_close(handle, &ctx);
+    if (ret != POTR_OK)
+    {
+        /*
+         * コールバックを実行したスレッドは close が停止・終了待ちする対象のため、自身の終了を待てない。
+         * 停止前に拒否し、ハンドルは有効なまま残す。
+         * 拒否の時点ではコンテキストを取得しないため、サービス ID の代わりにハンドルを出力する。
+         */
+        if (ret == POTR_ERR_UNSUPPORTED)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_close: called from its own callback (handle=%p)",
+                       (const void *)handle);
+        }
+
+        return ret;
+    }
+
+    /* スレッドの停止関数は終了待ちに失敗しないため、close_impl() の後はすべてのスレッドが終了している。 */
+    ret = close_impl(ctx);
+
+    potr_internal_notify_stop(ctx);
+    potr_internal_flow_control_stop(ctx);
+    api_context_dispose_resources(ctx);
+    potr_internal_handle_end_close(ctx);
+    cplat_free(ctx);
+
+    return ret;
+}
+
 /* FIN パケットを全パスへ送信する。 */
 static void send_fin(potr_context *ctx)
 {
@@ -495,45 +547,4 @@ static int close_impl(potr_context *handle)
     POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "potr_service_close: service closed");
 
     return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_service_close(potr_context *handle)
-{
-    potr_context *ctx = NULL;
-    int ret;
-
-    if (handle == NULL)
-    {
-        return close_impl(NULL);
-    }
-
-    ret = potr_internal_handle_begin_close(handle, &ctx);
-    if (ret != POTR_OK)
-    {
-        /*
-         * コールバックを実行したスレッドは close が停止・終了待ちする対象のため、自身の終了を待てない。
-         * 停止前に拒否し、ハンドルは有効なまま残す。
-         * 拒否の時点ではコンテキストを取得しないため、サービス ID の代わりにハンドルを出力する。
-         */
-        if (ret == POTR_ERR_UNSUPPORTED)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "potr_service_close: called from its own callback (handle=%p)",
-                       (const void *)handle);
-        }
-
-        return ret;
-    }
-
-    /* スレッドの停止関数は終了待ちに失敗しないため、close_impl() の後はすべてのスレッドが終了している。 */
-    ret = close_impl(ctx);
-
-    potr_internal_notify_stop(ctx);
-    potr_internal_flow_control_stop(ctx);
-    api_context_dispose_resources(ctx);
-    potr_internal_handle_end_close(ctx);
-    cplat_free(ctx);
-
-    return ret;
 }

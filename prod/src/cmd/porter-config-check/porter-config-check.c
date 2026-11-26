@@ -92,6 +92,176 @@ typedef struct config_check_state
     unsigned int pad;              /**< 明示的アラインメントです。0 を指定します。 */
 } config_check_state;
 
+static const char *potr_err_name(int err);
+static const char *issue_kind_name(potr_config_issue_kind kind);
+static void write_raw_text(FILE *fp, const char *text, int *failed);
+static void write_escaped(FILE *fp, const char *text, int *failed);
+static void increment_service_issue(config_check_state *state, int64_t service_id);
+static void on_service_cb(int64_t service_id, void *user_data);
+static void on_issue_cb(const potr_config_issue *issue, void *user_data);
+static void on_auth_file_cb(const potr_config_file_ref *file, void *user_data);
+static int parse_role_option(const char *role_str, uint32_t *roles_out);
+static int flush_stderr_ok(void);
+static void print_summary(config_check_state *state);
+
+/**
+ *  @brief          porter-config-check のエントリ ポイントです。
+ *  @param[in]      argc  コマンド ライン引数の数。
+ *  @param[in]      argv  コマンド ライン引数の配列。
+ *  @return         @ref EXIT_CODE_OK 、@ref EXIT_CODE_EXEC_FAILURE 、@ref EXIT_CODE_INVALID_CONFIG のいずれか。
+ */
+int main(int argc, char *argv[])
+{
+    int need_help = 0;
+    int check_files = 0;
+    const char *role_str = NULL;
+    const char *config_path = NULL;
+    uint32_t roles = POTR_CONFIG_ROLE_ALL;
+    int parse_result;
+    potr_config_validate_options opts;
+    config_check_state state;
+    int exec_failed = 0;
+
+    if (cplat_argparser_init(argc, argv,
+                             "porter の設定ファイルを、サービスを開かずに検証します。\n"
+                             "--check-files の相対パスは作業ディレクトリから解決するため、"
+                             "サービスのプロセスと同じ作業ディレクトリで実行してください。") != CPLAT_OK)
+    {
+        /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "引数の解析の準備に失敗しました。\n");
+        (void)flush_stderr_ok();
+        return EXIT_CODE_EXEC_FAILURE;
+    }
+
+    /* 登録の失敗は直後の cplat_argparser_get_register_error_count() でまとめて検査するため、戻り値は明示的に破棄する。 */
+    (void)cplat_argparser_register_flag("-h", "--help", "使い方を表示して終了します。", &need_help);
+    (void)cplat_argparser_register_flag(NULL, "--check-files",
+                                        "証明書方式の認証ファイルが読み取れることも確認します。", &check_files);
+    (void)cplat_argparser_register_option_string(NULL, "--role", "ROLE",
+                                                 "役割に依存する条件を検査する役割 (sender / receiver / all)。既定は all。",
+                                                 0, &role_str);
+    (void)cplat_argparser_register_positional_string("config_path", "検証する設定ファイルのパス。",
+                                                     CPLAT_ARGPARSER_REQUIRED, &config_path);
+
+    if (cplat_argparser_get_register_error_count() > 0)
+    {
+        /* 診断の出力先がほかにないため、出力の戻り値は明示的に破棄し、実行失敗の終了コードを返す。 */
+        (void)cplat_argparser_print_register_error_messages(stderr);
+        (void)flush_stderr_ok();
+        return EXIT_CODE_EXEC_FAILURE;
+    }
+
+    parse_result = cplat_argparser_parse();
+
+    if (need_help != 0)
+    {
+        if (cplat_argparser_print_usage(stdout) != CPLAT_OK || fflush(stdout) != 0 || ferror(stdout) != 0)
+        {
+            /* 標準出力の失敗後に診断を書くため、戻り値は明示的に破棄する。 */
+            (void)fprintf(stderr, "エラー: 使い方を標準出力へ書き込めませんでした。\n");
+            (void)flush_stderr_ok();
+            return EXIT_CODE_EXEC_FAILURE;
+        }
+
+        return EXIT_CODE_OK;
+    }
+
+    if (parse_result != CPLAT_OK)
+    {
+        /* 解析エラーの表示後はそのまま実行失敗として終了するため、出力関数の戻り値は明示的に破棄する。 */
+        (void)cplat_argparser_print_error_messages(stderr);
+        (void)cplat_argparser_print_usage(stderr);
+        (void)flush_stderr_ok();
+        return EXIT_CODE_EXEC_FAILURE;
+    }
+
+    if (parse_role_option(role_str, &roles) == 0)
+    {
+        /* 複製に失敗しても結果コードが記録され、既定の文で表示して終了するため、戻り値は明示的に破棄する。 */
+        (void)cplat_argparser_set_validation_error(CPLAT_ERR_OUT_OF_RANGE, "--role",
+                                                   "value of '--role' must be sender, receiver, or all");
+        /* 診断の表示後はそのまま実行失敗として終了するため、出力関数の戻り値は明示的に破棄する。 */
+        (void)cplat_argparser_print_error_messages(stderr);
+        (void)cplat_argparser_print_usage(stderr);
+        (void)flush_stderr_ok();
+        return EXIT_CODE_EXEC_FAILURE;
+    }
+
+    memset(&state, 0, sizeof(state));
+    state.config_path = config_path;
+
+    memset(&opts, 0, sizeof(opts));
+    opts.roles = roles;
+    opts.reserved = 0U;
+    opts.on_issue = on_issue_cb;
+    opts.on_service = on_service_cb;
+    opts.on_auth_file = (check_files != 0) ? on_auth_file_cb : NULL;
+    opts.user_data = &state;
+
+    state.validate_ret = potr_config_validate_file(config_path, &opts, NULL);
+
+    if (state.validate_ret != POTR_OK && state.validate_ret != POTR_ERR_INVALID_CONFIG)
+    {
+        const char *reason_text = (state.validate_ret == POTR_ERR_IO)
+                                      ? "設定ファイルを読み取れません"
+                                      : "設定ファイルを検証できません";
+
+        exec_failed = 1;
+        if (fprintf(stderr, "エラー: %s: %s (%s)\n", reason_text, config_path, potr_err_name(state.validate_ret)) < 0)
+        {
+            exec_failed = 1;
+        }
+    }
+    else if (state.record_oom != 0)
+    {
+        exec_failed = 1;
+        if (fprintf(stderr, "エラー: サービス一覧の記録領域を確保できませんでした (%s)\n",
+                    potr_err_name(POTR_ERR_OUT_OF_MEMORY)) < 0)
+        {
+            exec_failed = 1;
+        }
+    }
+    else
+    {
+        print_summary(&state);
+    }
+
+    if (fflush(stdout) != 0 || ferror(stdout) != 0)
+    {
+        state.stdout_failed = 1;
+    }
+
+    if (state.stdout_failed != 0 && exec_failed == 0)
+    {
+        exec_failed = 1;
+        /* 標準出力失敗の診断後に終了コード 1 で終了するため、戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "エラー: 検証結果を標準出力へ書き込めませんでした。\n");
+    }
+
+    if (exec_failed != 0 && flush_stderr_ok() == 0)
+    {
+        exec_failed = 1;
+    }
+
+    if (state.services != NULL)
+    {
+        cplat_free(state.services);
+        state.services = NULL;
+    }
+
+    if (exec_failed != 0 || state.stdout_failed != 0)
+    {
+        return EXIT_CODE_EXEC_FAILURE;
+    }
+
+    if (state.validate_ret == POTR_ERR_INVALID_CONFIG || state.total_issues > 0U)
+    {
+        return EXIT_CODE_INVALID_CONFIG;
+    }
+
+    return EXIT_CODE_OK;
+}
+
 /**
  *  @brief          結果コードに対応する識別子名を返します。
  *  @param[in]      err     結果コード。
@@ -547,162 +717,4 @@ static void print_summary(config_check_state *state)
             state->stdout_failed = 1;
         }
     }
-}
-
-/**
- *  @brief          porter-config-check のエントリ ポイントです。
- *  @param[in]      argc  コマンド ライン引数の数。
- *  @param[in]      argv  コマンド ライン引数の配列。
- *  @return         @ref EXIT_CODE_OK 、@ref EXIT_CODE_EXEC_FAILURE 、@ref EXIT_CODE_INVALID_CONFIG のいずれか。
- */
-int main(int argc, char *argv[])
-{
-    int need_help = 0;
-    int check_files = 0;
-    const char *role_str = NULL;
-    const char *config_path = NULL;
-    uint32_t roles = POTR_CONFIG_ROLE_ALL;
-    int parse_result;
-    potr_config_validate_options opts;
-    config_check_state state;
-    int exec_failed = 0;
-
-    if (cplat_argparser_init(argc, argv,
-                             "porter の設定ファイルを、サービスを開かずに検証します。\n"
-                             "--check-files の相対パスは作業ディレクトリから解決するため、"
-                             "サービスのプロセスと同じ作業ディレクトリで実行してください。") != CPLAT_OK)
-    {
-        /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
-        (void)fprintf(stderr, "引数の解析の準備に失敗しました。\n");
-        (void)flush_stderr_ok();
-        return EXIT_CODE_EXEC_FAILURE;
-    }
-
-    /* 登録の失敗は直後の cplat_argparser_get_register_error_count() でまとめて検査するため、戻り値は明示的に破棄する。 */
-    (void)cplat_argparser_register_flag("-h", "--help", "使い方を表示して終了します。", &need_help);
-    (void)cplat_argparser_register_flag(NULL, "--check-files",
-                                        "証明書方式の認証ファイルが読み取れることも確認します。", &check_files);
-    (void)cplat_argparser_register_option_string(NULL, "--role", "ROLE",
-                                                 "役割に依存する条件を検査する役割 (sender / receiver / all)。既定は all。",
-                                                 0, &role_str);
-    (void)cplat_argparser_register_positional_string("config_path", "検証する設定ファイルのパス。",
-                                                     CPLAT_ARGPARSER_REQUIRED, &config_path);
-
-    if (cplat_argparser_get_register_error_count() > 0)
-    {
-        /* 診断の出力先がほかにないため、出力の戻り値は明示的に破棄し、実行失敗の終了コードを返す。 */
-        (void)cplat_argparser_print_register_error_messages(stderr);
-        (void)flush_stderr_ok();
-        return EXIT_CODE_EXEC_FAILURE;
-    }
-
-    parse_result = cplat_argparser_parse();
-
-    if (need_help != 0)
-    {
-        if (cplat_argparser_print_usage(stdout) != CPLAT_OK || fflush(stdout) != 0 || ferror(stdout) != 0)
-        {
-            /* 標準出力の失敗後に診断を書くため、戻り値は明示的に破棄する。 */
-            (void)fprintf(stderr, "エラー: 使い方を標準出力へ書き込めませんでした。\n");
-            (void)flush_stderr_ok();
-            return EXIT_CODE_EXEC_FAILURE;
-        }
-
-        return EXIT_CODE_OK;
-    }
-
-    if (parse_result != CPLAT_OK)
-    {
-        /* 解析エラーの表示後はそのまま実行失敗として終了するため、出力関数の戻り値は明示的に破棄する。 */
-        (void)cplat_argparser_print_error_messages(stderr);
-        (void)cplat_argparser_print_usage(stderr);
-        (void)flush_stderr_ok();
-        return EXIT_CODE_EXEC_FAILURE;
-    }
-
-    if (parse_role_option(role_str, &roles) == 0)
-    {
-        /* 複製に失敗しても結果コードが記録され、既定の文で表示して終了するため、戻り値は明示的に破棄する。 */
-        (void)cplat_argparser_set_validation_error(CPLAT_ERR_OUT_OF_RANGE, "--role",
-                                                   "value of '--role' must be sender, receiver, or all");
-        /* 診断の表示後はそのまま実行失敗として終了するため、出力関数の戻り値は明示的に破棄する。 */
-        (void)cplat_argparser_print_error_messages(stderr);
-        (void)cplat_argparser_print_usage(stderr);
-        (void)flush_stderr_ok();
-        return EXIT_CODE_EXEC_FAILURE;
-    }
-
-    memset(&state, 0, sizeof(state));
-    state.config_path = config_path;
-
-    memset(&opts, 0, sizeof(opts));
-    opts.roles = roles;
-    opts.reserved = 0U;
-    opts.on_issue = on_issue_cb;
-    opts.on_service = on_service_cb;
-    opts.on_auth_file = (check_files != 0) ? on_auth_file_cb : NULL;
-    opts.user_data = &state;
-
-    state.validate_ret = potr_config_validate_file(config_path, &opts, NULL);
-
-    if (state.validate_ret != POTR_OK && state.validate_ret != POTR_ERR_INVALID_CONFIG)
-    {
-        const char *reason_text = (state.validate_ret == POTR_ERR_IO)
-                                      ? "設定ファイルを読み取れません"
-                                      : "設定ファイルを検証できません";
-
-        exec_failed = 1;
-        if (fprintf(stderr, "エラー: %s: %s (%s)\n", reason_text, config_path, potr_err_name(state.validate_ret)) < 0)
-        {
-            exec_failed = 1;
-        }
-    }
-    else if (state.record_oom != 0)
-    {
-        exec_failed = 1;
-        if (fprintf(stderr, "エラー: サービス一覧の記録領域を確保できませんでした (%s)\n",
-                    potr_err_name(POTR_ERR_OUT_OF_MEMORY)) < 0)
-        {
-            exec_failed = 1;
-        }
-    }
-    else
-    {
-        print_summary(&state);
-    }
-
-    if (fflush(stdout) != 0 || ferror(stdout) != 0)
-    {
-        state.stdout_failed = 1;
-    }
-
-    if (state.stdout_failed != 0 && exec_failed == 0)
-    {
-        exec_failed = 1;
-        /* 標準出力失敗の診断後に終了コード 1 で終了するため、戻り値は明示的に破棄する。 */
-        (void)fprintf(stderr, "エラー: 検証結果を標準出力へ書き込めませんでした。\n");
-    }
-
-    if (exec_failed != 0 && flush_stderr_ok() == 0)
-    {
-        exec_failed = 1;
-    }
-
-    if (state.services != NULL)
-    {
-        cplat_free(state.services);
-        state.services = NULL;
-    }
-
-    if (exec_failed != 0 || state.stdout_failed != 0)
-    {
-        return EXIT_CODE_EXEC_FAILURE;
-    }
-
-    if (state.validate_ret == POTR_ERR_INVALID_CONFIG || state.total_issues > 0U)
-    {
-        return EXIT_CODE_INVALID_CONFIG;
-    }
-
-    return EXIT_CODE_OK;
 }

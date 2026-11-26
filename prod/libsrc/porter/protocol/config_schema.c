@@ -45,6 +45,9 @@
 
 #define TCP_HEALTH_TIMEOUT_LIMIT (POTR_WAIT_MS_MAX / POTR_TCP_FIRST_PKT_TIMEOUT_SCALE)
 
+static const potr_internal_config_field_spec *find_in_table(const potr_internal_config_field_spec *table, size_t count,
+                                                            const char *name);
+
 static const potr_internal_config_field_spec s_global_schema[] = {
     {POTR_CONFIG_GFIELD_WINDOW_SIZE, 0U, "window_size", POTR_CONFIG_VAL_U16, 2U, POTR_MAX_WINDOW_SIZE,
      POTR_DEFAULT_WINDOW_SIZE, 0, 0, TYPE_ALL, POTR_CONFIG_AUTH_ANY, offsetof(potr_global_config, window_size),
@@ -195,27 +198,6 @@ static const potr_internal_config_field_spec s_service_schema[] = {
      POTR_CONFIG_U32_MAX, 0U, 1, 0, TYPE_UDP_MASK, POTR_CONFIG_AUTH_ANY,
      offsetof(potr_service_def, udp_receive_buffer_size), "-1 or 0..4294967294"},
 };
-
-static const potr_internal_config_field_spec *find_in_table(const potr_internal_config_field_spec *table, size_t count,
-                                                            const char *name)
-{
-    size_t i;
-
-    if (name == NULL)
-    {
-        return NULL;
-    }
-
-    for (i = 0U; i < count; i++)
-    {
-        if (strcmp(table[i].name, name) == 0)
-        {
-            return &table[i];
-        }
-    }
-
-    return NULL;
-}
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -466,4 +448,25 @@ void potr_internal_config_service_init_defaults(potr_service_def *service, int64
     }
 
     memcpy(service->broadcast_addr, default_bcast, strlen(default_bcast) + 1U);
+}
+
+static const potr_internal_config_field_spec *find_in_table(const potr_internal_config_field_spec *table, size_t count,
+                                                            const char *name)
+{
+    size_t i;
+
+    if (name == NULL)
+    {
+        return NULL;
+    }
+
+    for (i = 0U; i < count; i++)
+    {
+        if (strcmp(table[i].name, name) == 0)
+        {
+            return &table[i];
+        }
+    }
+
+    return NULL;
 }

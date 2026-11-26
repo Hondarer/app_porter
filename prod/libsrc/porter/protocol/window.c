@@ -23,6 +23,9 @@
 #include <porter/protocol/window.h>
 #include <cplat/net/byteorder.h>
 
+static uint16_t win_index(const potr_internal_window *win, uint32_t seq);
+static void win_advance_base(potr_internal_window *win);
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int potr_internal_window_init(potr_internal_window *win, uint32_t initial_seq, uint16_t window_size,
@@ -100,28 +103,6 @@ void potr_internal_window_dispose(potr_internal_window *win)
     win->packets = NULL;
     win->valid = NULL;
     win->payload_pool = NULL;
-}
-
-/**
- *  @brief          通番に対応するウィンドウ内インデックスを計算します。
- *  @param[in]      win  ウィンドウ構造体へのポインター。
- *  @param[in]      seq  インデックスを求める通番。
- *  @return         通番に対応する循環バッファー位置。
- *
- *  base_seq と base_index を同時に前進させることで、uint32 通番の周回時も
- *  格納時と取り出し時の対応を維持します。
- */
-static uint16_t win_index(const potr_internal_window *win, uint32_t seq)
-{
-    uint32_t distance = (uint32_t)(seq - win->base_seq);
-    return (uint16_t)(((uint32_t)win->base_index + distance) % (uint32_t)win->window_size);
-}
-
-/* ウィンドウの基底通番と循環バッファー上の基底位置を 1 つ進める。 */
-static void win_advance_base(potr_internal_window *win)
-{
-    win->base_seq++;
-    win->base_index = (uint16_t)(((uint32_t)win->base_index + 1U) % (uint32_t)win->window_size);
 }
 
 /* ---------- 送信側 ---------- */
@@ -331,4 +312,26 @@ void potr_internal_window_recv_reset(potr_internal_window *win, uint32_t new_bas
     win->base_seq = new_base_seq;
     win->next_seq = new_base_seq;
     win->base_index = 0U;
+}
+
+/**
+ *  @brief          通番に対応するウィンドウ内インデックスを計算します。
+ *  @param[in]      win  ウィンドウ構造体へのポインター。
+ *  @param[in]      seq  インデックスを求める通番。
+ *  @return         通番に対応する循環バッファー位置。
+ *
+ *  base_seq と base_index を同時に前進させることで、uint32 通番の周回時も
+ *  格納時と取り出し時の対応を維持します。
+ */
+static uint16_t win_index(const potr_internal_window *win, uint32_t seq)
+{
+    uint32_t distance = (uint32_t)(seq - win->base_seq);
+    return (uint16_t)(((uint32_t)win->base_index + distance) % (uint32_t)win->window_size);
+}
+
+/* ウィンドウの基底通番と循環バッファー上の基底位置を 1 つ進める。 */
+static void win_advance_base(potr_internal_window *win)
+{
+    win->base_seq++;
+    win->base_index = (uint16_t)(((uint32_t)win->base_index + 1U) % (uint32_t)win->window_size);
 }

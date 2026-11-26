@@ -61,54 +61,15 @@ struct potr_internal_handle
     int reserved;
 };
 
+static void registry_init(void);
+static size_t bucket_for(const void *handle, size_t capacity);
+static struct potr_internal_handle *lookup(potr_context *handle);
+
 static cplat_once_flag s_once;
 static cplat_local_lock *s_mutex;
 static struct potr_internal_handle **s_buckets;
 static size_t s_capacity;
 static size_t s_count;
-
-static void registry_init(void)
-{
-    /* 初期化失敗は s_mutex が NULL のままであることを呼び出し元が検出するため、戻り値は明示的に破棄する。 */
-    (void)cplat_local_lock_create(&s_mutex);
-}
-
-/* 登録表の容量は 2 の累乗であり、ポインター値を混ぜてから下位ビットで索引を求める。 */
-static size_t bucket_for(const void *handle, size_t capacity)
-{
-    uintptr_t value = (uintptr_t)handle;
-    value ^= value >> HANDLE_HASH_SHIFT_HIGH;
-    value ^= value >> HANDLE_HASH_SHIFT_LOW;
-
-    return (size_t)value & (capacity - 1U);
-}
-
-/* 登録表のロックは検索中だけ保持する。登録済みオブジェクト自体は常に生存する。 */
-static struct potr_internal_handle *lookup(potr_context *handle)
-{
-    struct potr_internal_handle *entry = NULL;
-    cplat_call_once(&s_once, registry_init);
-
-    if (s_mutex == NULL)
-    {
-        return NULL;
-    }
-
-    cplat_local_lock_lock(s_mutex);
-
-    if (s_capacity != 0U)
-    {
-        entry = s_buckets[bucket_for(handle, s_capacity)];
-        while (entry != NULL && (void *)entry != (void *)handle)
-        {
-            entry = entry->next;
-        }
-    }
-
-    cplat_local_lock_unlock(s_mutex);
-
-    return entry;
-}
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -428,4 +389,47 @@ void potr_internal_handle_end_close(potr_context *ctx)
     entry->ctx = NULL;
     entry->state = HANDLE_STATE_CLOSED;
     cplat_local_lock_unlock(entry->mutex);
+}
+
+static void registry_init(void)
+{
+    /* 初期化失敗は s_mutex が NULL のままであることを呼び出し元が検出するため、戻り値は明示的に破棄する。 */
+    (void)cplat_local_lock_create(&s_mutex);
+}
+
+/* 登録表の容量は 2 の累乗であり、ポインター値を混ぜてから下位ビットで索引を求める。 */
+static size_t bucket_for(const void *handle, size_t capacity)
+{
+    uintptr_t value = (uintptr_t)handle;
+    value ^= value >> HANDLE_HASH_SHIFT_HIGH;
+    value ^= value >> HANDLE_HASH_SHIFT_LOW;
+
+    return (size_t)value & (capacity - 1U);
+}
+
+/* 登録表のロックは検索中だけ保持する。登録済みオブジェクト自体は常に生存する。 */
+static struct potr_internal_handle *lookup(potr_context *handle)
+{
+    struct potr_internal_handle *entry = NULL;
+    cplat_call_once(&s_once, registry_init);
+
+    if (s_mutex == NULL)
+    {
+        return NULL;
+    }
+
+    cplat_local_lock_lock(s_mutex);
+
+    if (s_capacity != 0U)
+    {
+        entry = s_buckets[bucket_for(handle, s_capacity)];
+        while (entry != NULL && (void *)entry != (void *)handle)
+        {
+            entry = entry->next;
+        }
+    }
+
+    cplat_local_lock_unlock(s_mutex);
+
+    return entry;
 }

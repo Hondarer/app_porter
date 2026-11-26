@@ -90,6 +90,32 @@ static_assert(POTR_DEFAULT_TCP_HEALTH_TIMEOUT_MS <= POTR_TCP_HEALTH_TIMEOUT_MS_M
 /* 経路数の上限が、経路の集合を表す uint8_t のビット集合に収まることを確かめる。 */
 static_assert(POTR_MAX_PATH <= 8U, "porter: POTR_MAX_PATH must fit in the uint8_t path bitmask");
 
+static int generate_session(potr_context *ctx);
+static void ctx_cleanup(potr_context *ctx);
+static int open_validate_callback(const potr_context *ctx, potr_role role, potr_recv_fn callback);
+static void normalize_and_resolve_health(potr_context *ctx);
+static int alloc_context_buffers(potr_context *ctx);
+static int start_threads_tcp(potr_context *ctx, potr_role role);
+static int start_threads_udp(potr_context *ctx, potr_role role);
+static int open_service_impl(const potr_global_config *global, const potr_service_def *service, potr_role role,
+                             potr_recv_fn callback, potr_context **handle, int check_config);
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int api_service_open_validated(const potr_global_config *global, const potr_service_def *service, potr_role role,
+                               potr_recv_fn callback, potr_context **handle)
+{
+    return open_service_impl(global, service, role, callback, handle, 0);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_service_open(const potr_global_config *global, const potr_service_def *service, potr_role role,
+                      potr_recv_fn callback, potr_context **handle)
+{
+    return open_service_impl(global, service, role, callback, handle, 1);
+}
+
 /*
  * セッション識別子と開始時刻を生成してコンテキストに格納する。
  * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は (key, nonce) の再利用を招く。
@@ -659,20 +685,4 @@ static int open_service_impl(const potr_global_config *global, const potr_servic
     *handle = public_handle;
 
     return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int api_service_open_validated(const potr_global_config *global, const potr_service_def *service, potr_role role,
-                               potr_recv_fn callback, potr_context **handle)
-{
-    return open_service_impl(global, service, role, callback, handle, 0);
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_service_open(const potr_global_config *global, const potr_service_def *service, potr_role role,
-                      potr_recv_fn callback, potr_context **handle)
-{
-    return open_service_impl(global, service, role, callback, handle, 1);
 }

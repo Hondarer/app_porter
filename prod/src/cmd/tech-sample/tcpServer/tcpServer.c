@@ -30,35 +30,6 @@
 
 #include "tcpServer.h"
 
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void handle_client_session(ClientFd fd)
-{
-    char buffer[BUFFER_SIZE];
-    int n;
-
-    /* 稼働状況は利用者が画面で確認する表示であり、失敗を伝える先がないため、この関数の printf の戻り値は明示的に破棄する。 */
-    (void)printf("[PID %lu] クライアント処理開始\n", (unsigned long)get_pid());
-
-    /* クライアントからデータを受信し、受信した内容をそのままエコーバックする。 */
-    while ((n = (int)client_recv(fd, buffer, sizeof(buffer) - 1)) > 0)
-    {
-        buffer[n] = '\0';
-        (void)printf("[PID %lu] 受信: %s", (unsigned long)get_pid(), buffer);
-
-        /* 送信の失敗と一部だけの送信は、どちらもエコーが成立しないため、診断を出して受信のループを抜ける。 */
-        if ((int)client_send(fd, buffer, (size_t)n) != n)
-        {
-            /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
-            (void)fprintf(stderr, "[PID %lu] 送信に失敗しました\n", (unsigned long)get_pid());
-            break;
-        }
-    }
-
-    (void)printf("[PID %lu] クライアント切断\n", (unsigned long)get_pid());
-    (void)client_close(fd); /* エコーを終えた接続の後始末であり、結果が変わらないため、戻り値は明示的に破棄する */
-}
-
 /**
  *  @brief          メイン エントリ ポイント。
  *  @param[in]      argc コマンド ライン引数の数。
@@ -199,3 +170,32 @@ int main(int argc, char *argv[])
 #if defined(COMPILER_MSVC)
     #pragma warning(pop)
 #endif
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void handle_client_session(ClientFd fd)
+{
+    char buffer[BUFFER_SIZE];
+    int n;
+
+    /* 稼働状況は利用者が画面で確認する表示であり、失敗を伝える先がないため、この関数の printf の戻り値は明示的に破棄する。 */
+    (void)printf("[PID %lu] クライアント処理開始\n", (unsigned long)get_pid());
+
+    /* クライアントからデータを受信し、受信した内容をそのままエコーバックする。 */
+    while ((n = (int)client_recv(fd, buffer, sizeof(buffer) - 1)) > 0)
+    {
+        buffer[n] = '\0';
+        (void)printf("[PID %lu] 受信: %s", (unsigned long)get_pid(), buffer);
+
+        /* 送信の失敗と一部だけの送信は、どちらもエコーが成立しないため、診断を出して受信のループを抜ける。 */
+        if ((int)client_send(fd, buffer, (size_t)n) != n)
+        {
+            /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
+            (void)fprintf(stderr, "[PID %lu] 送信に失敗しました\n", (unsigned long)get_pid());
+            break;
+        }
+    }
+
+    (void)printf("[PID %lu] クライアント切断\n", (unsigned long)get_pid());
+    (void)client_close(fd); /* エコーを終えた接続の後始末であり、結果が変わらないため、戻り値は明示的に破棄する */
+}

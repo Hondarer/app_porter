@@ -23,6 +23,32 @@
 #include <porter/potr_peer_table.h>
 #include <porter/infra/potr_trace.h>
 
+static int disconnect_impl(potr_context *handle, potr_peer_id peer_id);
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
+{
+    potr_context *ctx = NULL;
+    int ret;
+
+    if (handle == NULL)
+    {
+        return disconnect_impl(NULL, peer_id);
+    }
+
+    ret = potr_internal_handle_acquire(handle, &ctx);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+
+    ret = disconnect_impl(ctx, peer_id);
+    potr_internal_handle_release(ctx);
+
+    return ret;
+}
+
 static int disconnect_impl(potr_context *handle, potr_peer_id peer_id)
 {
     potr_context *ctx = (potr_context *)handle;
@@ -97,28 +123,4 @@ static int disconnect_impl(potr_context *handle, potr_peer_id peer_id)
     cplat_local_lock_unlock(ctx->peers_mutex);
 
     return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_peer_disconnect(potr_context *handle, potr_peer_id peer_id)
-{
-    potr_context *ctx = NULL;
-    int ret;
-
-    if (handle == NULL)
-    {
-        return disconnect_impl(NULL, peer_id);
-    }
-
-    ret = potr_internal_handle_acquire(handle, &ctx);
-    if (ret != POTR_OK)
-    {
-        return ret;
-    }
-
-    ret = disconnect_impl(ctx, peer_id);
-    potr_internal_handle_release(ctx);
-
-    return ret;
 }

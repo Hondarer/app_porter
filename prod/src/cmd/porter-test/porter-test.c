@@ -171,30 +171,6 @@ static cplat_local_lock *s_screen_stop_lock = NULL;
 /** 終了要求 callback が中止対象として参照する画面ハンドル。同じ永続ロック下で破棄開始前に NULL 化する。 */
 static cplat_pinned_prompt *s_stop_target_screen = NULL;
 
-/* 登録解除できない終了要求 callback が main 終了処理後も安全に参照できるよう、永続ロックを 1 回だけ生成してプロセス終了まで破棄しない。 */
-static void init_screen_stop_lock(void)
-{
-    if (cplat_local_lock_create(&s_screen_stop_lock) != CPLAT_OK)
-    {
-        s_screen_stop_lock = NULL;
-    }
-}
-
-/* 終了要求 callback が使う永続ロックを返す。 */
-static cplat_local_lock *get_screen_stop_lock(void)
-{
-    cplat_call_once(&s_screen_stop_lock_once, init_screen_stop_lock);
-    return s_screen_stop_lock;
-}
-
-/* 終了要求 callback から参照される画面ハンドルを更新し、破棄直前に NULL 化する。 */
-static void set_stop_target_screen(cplat_local_lock *stop_lock, cplat_pinned_prompt *screen)
-{
-    cplat_local_lock_lock(stop_lock);
-    s_stop_target_screen = screen;
-    cplat_local_lock_unlock(stop_lock);
-}
-
 /** トレースしきい値レベル。trace hook が context として参照するため寿命を持続させる。 */
 static cplat_trace_level s_trace_level = CPLAT_TRACE_LEVEL_NONE;
 
@@ -226,6 +202,310 @@ typedef struct porter_test_session
     int is_bidir;         /**< 双方向サービスかどうか。 */
     int can_send;         /**< このロールで送信できるかどうか。 */
 } porter_test_session;
+
+static void init_screen_stop_lock(void);
+static cplat_local_lock *get_screen_stop_lock(void);
+static void set_stop_target_screen(cplat_local_lock *stop_lock, cplat_pinned_prompt *screen);
+static int is_text_data(const void *data, size_t len);
+static void porter_test_shutdown_request_callback(const cplat_shutdown_event *event, void *context);
+static void write_u32_le(unsigned char *dest, uint32_t value);
+static uint32_t read_u32_le(const unsigned char *src);
+static uint64_t monotonic_ms(void);
+static int is_burst_message(const void *data, size_t len);
+static void on_burst_message(const void *data);
+static int format_path_states(char *dest, size_t dest_size, const int *states);
+static void on_recv(int64_t service_id, potr_peer_id peer_id, potr_event event, const void *data, size_t len);
+static void trace_console_hook(cplat_tracer_hook_entry *prev, cplat_tracer *handle, cplat_trace_level level,
+                               const cplat_timespec *timestamp, const char *message, void *context);
+static int parse_trace_level(const char *str, cplat_trace_level *out);
+static int parse_role(const char *str, potr_role *out);
+static char *skip_spaces(char *p);
+static void trim_right(char *s);
+static char *next_token(char **cursor);
+static char *strip_matching_quotes(char *value);
+static void print_interactive_help(void);
+static int read_file_data(const char *path, unsigned char **data_out, size_t *len_out);
+static void apply_send_command(potr_context *handle, int is_file, char *cursor);
+static void apply_burst_command(potr_context *handle, char *cursor);
+static void ensure_tracer_started(void);
+static const char *potr_err_name(int err);
+static void print_open_failure(int64_t service_id, int err);
+static int do_open(porter_test_session *session, potr_role role, const char *config_path, int64_t service_id);
+static void do_close(porter_test_session *session);
+static void handle_open_command(porter_test_session *session, char *cursor);
+static void handle_log_command(char *cursor);
+static int process_line(porter_test_session *session, char *line);
+static void build_prompt_state(const porter_test_session *session, char *buf, size_t size);
+
+/**
+ *  @brief          メイン エントリ ポイント。
+ *  @param[in]      argc コマンド ライン引数の数。
+ *  @param[in]      argv コマンド ライン引数の配列。
+ *  @return         成功時は EXIT_SUCCESS、失敗時は EXIT_FAILURE を返します。
+ */
+int main(int argc, char *argv[])
+{
+    char line[INPUT_BUF_SIZE];
+    char prompt_state[PROMPT_STATE_SIZE];
+    const char *role_arg = NULL;
+    const char *config_path_arg = NULL;
+    const char *service_id_arg = NULL;
+    int positional_count = 0;
+    porter_test_session session;
+    int need_help = 0;
+    const char *log_level = NULL;
+    int recv_delay_ms = 0;
+
+    cplat_console_init();
+
+    session.handle = NULL;
+    session.service_id = 0;
+    session.role = POTR_ROLE_SENDER;
+    session.is_open = 0;
+    session.is_bidir = 0;
+    session.can_send = 0;
+
+    if (cplat_argparser_init(argc, argv, "porter の送受信動作を対話的に検証します。") != CPLAT_OK)
+    {
+        /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "引数の解析の準備に失敗しました。\n");
+        return EXIT_FAILURE;
+    }
+    /* 登録の失敗は直後の cplat_argparser_get_register_error_count() でまとめて検査するため、戻り値は明示的に破棄する。 */
+    (void)cplat_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
+    (void)cplat_argparser_register_option_string("-l", NULL, "level", "ログレベル。", 0, &log_level);
+    (void)cplat_argparser_register_option_int(NULL, "--recv-delay-ms", "ms",
+                                              "POTR_EVENT_DATA を受けるたびに待つ時間 [ms]。既定は 0。", 0, &recv_delay_ms);
+    (void)cplat_argparser_register_positional_string("role", "sender または receiver。", 0, &role_arg);
+    (void)cplat_argparser_register_positional_string("config_path", "設定ファイル。", 0, &config_path_arg);
+    (void)cplat_argparser_register_positional_string("service_id", "サービス ID。", 0, &service_id_arg);
+
+    if (cplat_argparser_get_register_error_count() > 0)
+    {
+        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、戻り値は明示的に破棄する。 */
+        (void)cplat_argparser_print_register_error_messages(stderr);
+        return EXIT_FAILURE;
+    }
+
+    int parse_result = cplat_argparser_parse();
+
+    if (need_help != 0)
+    {
+        if (cplat_argparser_print_usage(stdout) != CPLAT_OK || fflush(stdout) != 0 || ferror(stdout) != 0)
+        {
+            /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
+            (void)fprintf(stderr, "エラー: 使い方を標準出力へ書き込めませんでした。\n");
+            return EXIT_FAILURE;
+        }
+
+        return EXIT_SUCCESS;
+    }
+
+    if (parse_result != CPLAT_OK)
+    {
+        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの表示の関数の戻り値は明示的に破棄する。 */
+        (void)cplat_argparser_print_error_messages(stderr);
+        (void)cplat_argparser_print_usage(stderr);
+        return EXIT_FAILURE;
+    }
+
+    if (role_arg != NULL)
+    {
+        positional_count++;
+    }
+
+    if (config_path_arg != NULL)
+    {
+        positional_count++;
+    }
+
+    if (service_id_arg != NULL)
+    {
+        positional_count++;
+    }
+
+    if (recv_delay_ms < 0 || recv_delay_ms > RECV_DELAY_MAX_MS)
+    {
+        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの出力の戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "エラー: --recv-delay-ms は 0 から %d の整数で指定してください。\n\n", RECV_DELAY_MAX_MS);
+        (void)cplat_argparser_print_usage(stderr);
+        return EXIT_FAILURE;
+    }
+
+    s_recv_delay_ms = recv_delay_ms;
+
+    if (log_level != NULL)
+    {
+        if (!parse_trace_level(log_level, &s_trace_level))
+        {
+            /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの出力の戻り値は明示的に破棄する。 */
+            (void)fprintf(stderr,
+                          "エラー: 不明なログレベル \"%s\"。"
+                          "VERBOSE/INFO/WARNING/ERROR/CRITICAL のいずれかを指定してください。\n\n",
+                          log_level);
+            (void)cplat_argparser_print_usage(stderr);
+            return EXIT_FAILURE;
+        }
+
+        s_tracer_started = 0; /* 後段の ensure_tracer_started で開始する */
+        ensure_tracer_started();
+    }
+
+    /* 位置引数は 3 個すべて指定するか、すべて省略して対話コンソールで開くかのいずれかとする。 */
+    if (positional_count != 0 && positional_count != (int)POSITIONAL_ARG_COUNT)
+    {
+        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの出力の戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "エラー: role、config_path、service_id は %u 個すべてを指定してください。\n\n",
+                      (unsigned)POSITIONAL_ARG_COUNT);
+        (void)cplat_argparser_print_usage(stderr);
+        return EXIT_FAILURE;
+    }
+
+    cplat_atomic_store_i32(&s_running, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    s_shutdown_requested = 0;
+
+    cplat_local_lock *stop_lock;
+
+    s_screen = cplat_pinned_prompt_create(NULL);
+    if (s_screen == NULL)
+    {
+        /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "エラー: プロンプトの初期化に失敗しました。\n");
+        return EXIT_FAILURE;
+    }
+
+    /*
+     * 対話の案内と入力の表示は利用者が画面で確認する表示であり、診断も出力先がほかにないため、
+     * この関数の cplat_pinned_prompt_printf の戻り値は明示的に破棄する。
+     */
+    stop_lock = get_screen_stop_lock();
+    if (stop_lock == NULL)
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                         "エラー: 終了同期用ロックの初期化に失敗しました。\n");
+        cplat_pinned_prompt_dispose(s_screen);
+        s_screen = NULL;
+        return EXIT_FAILURE;
+    }
+
+    set_stop_target_screen(stop_lock, s_screen);
+
+    if (cplat_shutdown_request_register(porter_test_shutdown_request_callback, NULL) != CPLAT_OK)
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                         "エラー: 終了要求 callback の登録に失敗しました。\n");
+        set_stop_target_screen(stop_lock, NULL);
+        cplat_pinned_prompt_dispose(s_screen);
+        s_screen = NULL;
+        return EXIT_FAILURE;
+    }
+
+    /* 位置引数が指定された場合は起動時に open を実行する。失敗時も対話コンソールへ移行する。 */
+    if (positional_count == (int)POSITIONAL_ARG_COUNT)
+    {
+        potr_role role;
+
+        if (!parse_role(role_arg, &role))
+        {
+            (void)cplat_pinned_prompt_printf(
+                s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                "エラー: 不明なロール \"%s\"。sender または receiver を指定してください。\n", role_arg);
+        }
+        else
+        {
+            int64_t service_id;
+
+            if (cplat_parse_int64(&service_id, service_id_arg, 10) != CPLAT_OK)
+            {
+                (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                                 "エラー: service_id \"%s\" を整数として解釈できません。\n",
+                                                 service_id_arg);
+            }
+            else
+            {
+                /* 失敗は do_open が表示済みで、失敗時も対話コンソールへ移行するため、戻り値は明示的に破棄する。 */
+                (void)do_open(&session, role, config_path_arg, service_id);
+            }
+        }
+    }
+    else
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
+                                         "open <role> <config_path> <service_id> でサービスを開きます。"
+                                         "help でコマンド一覧を表示します。\n");
+    }
+
+    /* 対話入力ループを実行し、終了指示があるまでコマンドを順次処理する。 */
+    while (cplat_atomic_load_i32(&s_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
+    {
+        build_prompt_state(&session, prompt_state, sizeof(prompt_state));
+
+        if (cplat_pinned_prompt_readline_fmt(s_screen, line, sizeof(line), "porter-test[%s]> ", prompt_state) !=
+            CPLAT_OK)
+        {
+            break;
+        }
+
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "porter-test[%s]> %s\n",
+                                         prompt_state, line);
+
+        if (process_line(&session, line) == 0)
+        {
+            break;
+        }
+    }
+
+    if (s_shutdown_requested)
+    {
+        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "\n終了中...\n");
+    }
+
+    if (session.is_open)
+    {
+        /* 対話の途中の失敗と同じく、終了処理の失敗は表示だけとし、終了コードへ反映しない。 */
+        int close_ret = potr_service_close(session.handle);
+
+        session.is_open = 0;
+        if (close_ret != POTR_OK)
+        {
+            (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
+                                             "警告: サービス %" PRId64 " の終了処理が失敗しました (result=%d)。\n",
+                                             session.service_id, close_ret);
+        }
+    }
+
+    (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "終了しました。\n");
+    /* callback の登録解除 API がなく main 終了処理後も実行され得るため、同じ永続ロック下で画面ハンドルを先に NULL 化してから破棄する。 */
+    set_stop_target_screen(stop_lock, NULL);
+    cplat_pinned_prompt_dispose(s_screen);
+    s_screen = NULL;
+
+    return EXIT_SUCCESS;
+}
+
+/* 登録解除できない終了要求 callback が main 終了処理後も安全に参照できるよう、永続ロックを 1 回だけ生成してプロセス終了まで破棄しない。 */
+static void init_screen_stop_lock(void)
+{
+    if (cplat_local_lock_create(&s_screen_stop_lock) != CPLAT_OK)
+    {
+        s_screen_stop_lock = NULL;
+    }
+}
+
+/* 終了要求 callback が使う永続ロックを返す。 */
+static cplat_local_lock *get_screen_stop_lock(void)
+{
+    cplat_call_once(&s_screen_stop_lock_once, init_screen_stop_lock);
+    return s_screen_stop_lock;
+}
+
+/* 終了要求 callback から参照される画面ハンドルを更新し、破棄直前に NULL 化する。 */
+static void set_stop_target_screen(cplat_local_lock *stop_lock, cplat_pinned_prompt *screen)
+{
+    cplat_local_lock_lock(stop_lock);
+    s_stop_target_screen = screen;
+    cplat_local_lock_unlock(stop_lock);
+}
 
 /**
  *  @brief          データがテキストかバイナリかを判定します。
@@ -1756,250 +2036,4 @@ static void build_prompt_state(const porter_test_session *session, char *buf, si
     {
         (void)cplat_snprintf(buf, size, "receiver:%" PRId64, session->service_id);
     }
-}
-
-/**
- *  @brief          メイン エントリ ポイント。
- *  @param[in]      argc コマンド ライン引数の数。
- *  @param[in]      argv コマンド ライン引数の配列。
- *  @return         成功時は EXIT_SUCCESS、失敗時は EXIT_FAILURE を返します。
- */
-int main(int argc, char *argv[])
-{
-    char line[INPUT_BUF_SIZE];
-    char prompt_state[PROMPT_STATE_SIZE];
-    const char *role_arg = NULL;
-    const char *config_path_arg = NULL;
-    const char *service_id_arg = NULL;
-    int positional_count = 0;
-    porter_test_session session;
-    int need_help = 0;
-    const char *log_level = NULL;
-    int recv_delay_ms = 0;
-
-    cplat_console_init();
-
-    session.handle = NULL;
-    session.service_id = 0;
-    session.role = POTR_ROLE_SENDER;
-    session.is_open = 0;
-    session.is_bidir = 0;
-    session.can_send = 0;
-
-    if (cplat_argparser_init(argc, argv, "porter の送受信動作を対話的に検証します。") != CPLAT_OK)
-    {
-        /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
-        (void)fprintf(stderr, "引数の解析の準備に失敗しました。\n");
-        return EXIT_FAILURE;
-    }
-    /* 登録の失敗は直後の cplat_argparser_get_register_error_count() でまとめて検査するため、戻り値は明示的に破棄する。 */
-    (void)cplat_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
-    (void)cplat_argparser_register_option_string("-l", NULL, "level", "ログレベル。", 0, &log_level);
-    (void)cplat_argparser_register_option_int(NULL, "--recv-delay-ms", "ms",
-                                              "POTR_EVENT_DATA を受けるたびに待つ時間 [ms]。既定は 0。", 0, &recv_delay_ms);
-    (void)cplat_argparser_register_positional_string("role", "sender または receiver。", 0, &role_arg);
-    (void)cplat_argparser_register_positional_string("config_path", "設定ファイル。", 0, &config_path_arg);
-    (void)cplat_argparser_register_positional_string("service_id", "サービス ID。", 0, &service_id_arg);
-
-    if (cplat_argparser_get_register_error_count() > 0)
-    {
-        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、戻り値は明示的に破棄する。 */
-        (void)cplat_argparser_print_register_error_messages(stderr);
-        return EXIT_FAILURE;
-    }
-
-    int parse_result = cplat_argparser_parse();
-
-    if (need_help != 0)
-    {
-        if (cplat_argparser_print_usage(stdout) != CPLAT_OK || fflush(stdout) != 0 || ferror(stdout) != 0)
-        {
-            /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
-            (void)fprintf(stderr, "エラー: 使い方を標準出力へ書き込めませんでした。\n");
-            return EXIT_FAILURE;
-        }
-
-        return EXIT_SUCCESS;
-    }
-
-    if (parse_result != CPLAT_OK)
-    {
-        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの表示の関数の戻り値は明示的に破棄する。 */
-        (void)cplat_argparser_print_error_messages(stderr);
-        (void)cplat_argparser_print_usage(stderr);
-        return EXIT_FAILURE;
-    }
-
-    if (role_arg != NULL)
-    {
-        positional_count++;
-    }
-
-    if (config_path_arg != NULL)
-    {
-        positional_count++;
-    }
-
-    if (service_id_arg != NULL)
-    {
-        positional_count++;
-    }
-
-    if (recv_delay_ms < 0 || recv_delay_ms > RECV_DELAY_MAX_MS)
-    {
-        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの出力の戻り値は明示的に破棄する。 */
-        (void)fprintf(stderr, "エラー: --recv-delay-ms は 0 から %d の整数で指定してください。\n\n", RECV_DELAY_MAX_MS);
-        (void)cplat_argparser_print_usage(stderr);
-        return EXIT_FAILURE;
-    }
-
-    s_recv_delay_ms = recv_delay_ms;
-
-    if (log_level != NULL)
-    {
-        if (!parse_trace_level(log_level, &s_trace_level))
-        {
-            /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの出力の戻り値は明示的に破棄する。 */
-            (void)fprintf(stderr,
-                          "エラー: 不明なログレベル \"%s\"。"
-                          "VERBOSE/INFO/WARNING/ERROR/CRITICAL のいずれかを指定してください。\n\n",
-                          log_level);
-            (void)cplat_argparser_print_usage(stderr);
-            return EXIT_FAILURE;
-        }
-
-        s_tracer_started = 0; /* 後段の ensure_tracer_started で開始する */
-        ensure_tracer_started();
-    }
-
-    /* 位置引数は 3 個すべて指定するか、すべて省略して対話コンソールで開くかのいずれかとする。 */
-    if (positional_count != 0 && positional_count != (int)POSITIONAL_ARG_COUNT)
-    {
-        /* 診断の出力先がほかになく、終了コードはすでに失敗に決まっているため、この 2 つの出力の戻り値は明示的に破棄する。 */
-        (void)fprintf(stderr, "エラー: role、config_path、service_id は %u 個すべてを指定してください。\n\n",
-                      (unsigned)POSITIONAL_ARG_COUNT);
-        (void)cplat_argparser_print_usage(stderr);
-        return EXIT_FAILURE;
-    }
-
-    cplat_atomic_store_i32(&s_running, 1, CPLAT_MEMORY_ORDER_RELEASE);
-    s_shutdown_requested = 0;
-
-    cplat_local_lock *stop_lock;
-
-    s_screen = cplat_pinned_prompt_create(NULL);
-    if (s_screen == NULL)
-    {
-        /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
-        (void)fprintf(stderr, "エラー: プロンプトの初期化に失敗しました。\n");
-        return EXIT_FAILURE;
-    }
-
-    /*
-     * 対話の案内と入力の表示は利用者が画面で確認する表示であり、診断も出力先がほかにないため、
-     * この関数の cplat_pinned_prompt_printf の戻り値は明示的に破棄する。
-     */
-    stop_lock = get_screen_stop_lock();
-    if (stop_lock == NULL)
-    {
-        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                         "エラー: 終了同期用ロックの初期化に失敗しました。\n");
-        cplat_pinned_prompt_dispose(s_screen);
-        s_screen = NULL;
-        return EXIT_FAILURE;
-    }
-
-    set_stop_target_screen(stop_lock, s_screen);
-
-    if (cplat_shutdown_request_register(porter_test_shutdown_request_callback, NULL) != CPLAT_OK)
-    {
-        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                         "エラー: 終了要求 callback の登録に失敗しました。\n");
-        set_stop_target_screen(stop_lock, NULL);
-        cplat_pinned_prompt_dispose(s_screen);
-        s_screen = NULL;
-        return EXIT_FAILURE;
-    }
-
-    /* 位置引数が指定された場合は起動時に open を実行する。失敗時も対話コンソールへ移行する。 */
-    if (positional_count == (int)POSITIONAL_ARG_COUNT)
-    {
-        potr_role role;
-
-        if (!parse_role(role_arg, &role))
-        {
-            (void)cplat_pinned_prompt_printf(
-                s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                "エラー: 不明なロール \"%s\"。sender または receiver を指定してください。\n", role_arg);
-        }
-        else
-        {
-            int64_t service_id;
-
-            if (cplat_parse_int64(&service_id, service_id_arg, 10) != CPLAT_OK)
-            {
-                (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                                 "エラー: service_id \"%s\" を整数として解釈できません。\n",
-                                                 service_id_arg);
-            }
-            else
-            {
-                /* 失敗は do_open が表示済みで、失敗時も対話コンソールへ移行するため、戻り値は明示的に破棄する。 */
-                (void)do_open(&session, role, config_path_arg, service_id);
-            }
-        }
-    }
-    else
-    {
-        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT,
-                                         "open <role> <config_path> <service_id> でサービスを開きます。"
-                                         "help でコマンド一覧を表示します。\n");
-    }
-
-    /* 対話入力ループを実行し、終了指示があるまでコマンドを順次処理する。 */
-    while (cplat_atomic_load_i32(&s_running, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
-    {
-        build_prompt_state(&session, prompt_state, sizeof(prompt_state));
-
-        if (cplat_pinned_prompt_readline_fmt(s_screen, line, sizeof(line), "porter-test[%s]> ", prompt_state) !=
-            CPLAT_OK)
-        {
-            break;
-        }
-
-        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "porter-test[%s]> %s\n",
-                                         prompt_state, line);
-
-        if (process_line(&session, line) == 0)
-        {
-            break;
-        }
-    }
-
-    if (s_shutdown_requested)
-    {
-        (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "\n終了中...\n");
-    }
-
-    if (session.is_open)
-    {
-        /* 対話の途中の失敗と同じく、終了処理の失敗は表示だけとし、終了コードへ反映しない。 */
-        int close_ret = potr_service_close(session.handle);
-
-        session.is_open = 0;
-        if (close_ret != POTR_OK)
-        {
-            (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDERR,
-                                             "警告: サービス %" PRId64 " の終了処理が失敗しました (result=%d)。\n",
-                                             session.service_id, close_ret);
-        }
-    }
-
-    (void)cplat_pinned_prompt_printf(s_screen, CPLAT_PINNED_PROMPT_CHANNEL_STDOUT, "終了しました。\n");
-    /* callback の登録解除 API がなく main 終了処理後も実行され得るため、同じ永続ロック下で画面ハンドルを先に NULL 化してから破棄する。 */
-    set_stop_target_screen(stop_lock, NULL);
-    cplat_pinned_prompt_dispose(s_screen);
-    s_screen = NULL;
-
-    return EXIT_SUCCESS;
 }

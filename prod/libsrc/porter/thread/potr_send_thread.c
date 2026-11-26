@@ -90,6 +90,32 @@ static_assert(POTR_SEND_BATCH_MAX_BYTES >=
 static_assert(POTR_SEND_BATCH_MAX_PACKETS <= CPLAT_SOCKET_SENDTO_MULTI_MAX,
               "porter: POTR_SEND_BATCH_MAX_PACKETS must not exceed CPLAT_SOCKET_SENDTO_MULTI_MAX");
 
+/* 送信スレッド本体 */
+/** 1 回の走査で送出を見送るピアの数の上限。超える分は次の走査で扱う。 */
+#define FLOW_DEFERRED_SKIP_MAX 16U
+
+static_assert(FLOW_DEFERRED_SKIP_MAX >= 1U && FLOW_DEFERRED_SKIP_MAX <= UINT32_MAX,
+              "porter: FLOW_DEFERRED_SKIP_MAX out of range");
+
+/**
+ *  N:1 モードで、抑制中のピア宛のために送出を保留したエントリ。ペイロードは構造体の直後に置く。
+ *  送信キューの登録順を保つ 1 本のリストで管理し、同じピア宛のエントリの順序を変えない。
+ */
+typedef struct potr_internal_deferred_entry
+{
+    struct potr_internal_deferred_entry *next; /**< 次の保留エントリ。 */
+    potr_peer_id peer_id;                      /**< 宛先のピア識別子。 */
+    uint16_t flags;                            /**< ペイロード エレメント フラグ。 */
+    uint16_t payload_len;                      /**< ペイロード長 [byte]。 */
+} potr_internal_deferred_entry;
+
+static int should_track_valid_data_send_time(const potr_context *ctx);
+static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const potr_internal_payload_elem *entry);
+static int tcp_write_path(potr_context *ctx, int path_idx, const potr_packet *packets, size_t n_packets);
+static int tcp_write_all_paths(potr_context *ctx, const potr_packet *packets, size_t n_packets, uint8_t paths);
+static int tcp_flush_packets(potr_context *ctx, const uint8_t *payload_base, size_t payload_stride,
+                             const size_t *payload_lens, size_t n_packets);
+static int flush_packed(potr_context *ctx, size_t packed_len);
 static int udp_flush_packets(potr_context *ctx, const uint8_t *payload_base, size_t payload_stride,
                              const size_t *payload_lens, size_t n_packets);
 static int udp_send_path(potr_context *ctx, potr_internal_tx_session *session, int path_idx,
@@ -97,8 +123,69 @@ static int udp_send_path(potr_context *ctx, potr_internal_tx_session *session, i
                          int *results);
 static void udp_flush_packets_peer(potr_context *ctx, potr_internal_peer_context *peer, const uint8_t *payload_base,
                                    size_t payload_stride, const size_t *payload_lens, size_t n_packets);
+static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem *first, uint32_t allowance);
 static void pack_queued_entries(potr_context *ctx, const potr_peer_id *peer_id, uint8_t *packed_buf,
                                 size_t *packed_len, int *n_dequeued);
+static int send_batch(potr_context *ctx, const potr_internal_payload_elem *first, int *n_dequeued, uint32_t allowance);
+static int peer_send_deferred(potr_context *ctx, potr_peer_id peer_id, int *blocked, uint32_t *allowance);
+static int defer_entry_if_blocked(potr_context *ctx, const potr_internal_payload_elem *entry, uint32_t *allowance);
+static void send_deferred_entry(potr_context *ctx, potr_internal_deferred_entry *node);
+static void flush_deferred_entries(potr_context *ctx, int drop_all);
+static int pop_peer_mode(potr_context *ctx, potr_internal_payload_elem *first);
+static int flow_control_sender_idle(potr_context *ctx);
+static uint32_t wait_flow_resume(potr_context *ctx);
+static void send_thread_func(void *arg);
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_send_thread_start(potr_context *ctx)
+{
+    if (ctx == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    cplat_atomic_store_i32(&ctx->send_thread_running, 1, CPLAT_MEMORY_ORDER_RELEASE);
+
+    if (cplat_local_lock_create(&ctx->send_window_mutex) != CPLAT_OK)
+    {
+        cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
+
+        /* 同期資源生成 API は詳細原因を提供しない。 */
+        return POTR_ERR_UNKNOWN;
+    }
+
+    if (cplat_thread_create(&ctx->send_thread, send_thread_func, ctx) != CPLAT_OK)
+    {
+        cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
+        cplat_local_lock_dispose(ctx->send_window_mutex);
+        ctx->send_window_mutex = NULL;
+
+        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
+        return POTR_ERR_UNKNOWN;
+    }
+
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_send_thread_stop(potr_context *ctx)
+{
+    if (ctx->send_thread == NULL)
+    {
+        return;
+    }
+
+    cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
+    potr_internal_send_queue_shutdown(&ctx->send_queue);
+
+    cplat_thread_join(ctx->send_thread);
+
+    ctx->send_thread = NULL;
+    cplat_local_lock_dispose(ctx->send_window_mutex);
+    ctx->send_window_mutex = NULL;
+}
 
 /*
  * 有効データの送信時刻を記録するかを判定する。
@@ -122,7 +209,6 @@ static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const p
     memcpy(packed_buf + *packed_len, entry->payload, entry->payload_len);
     *packed_len += entry->payload_len;
 }
-
 
 /*
  * TCP の指定 path へ、packets の n_packets 個のパケットを順に封緘して連結し、1 回の送信呼び出しで書き込む。
@@ -1003,25 +1089,6 @@ static int send_batch(potr_context *ctx, const potr_internal_payload_elem *first
     return udp_flush_packets(ctx, ctx->send_batch_plain_buf, stride, payload_lens, n_packets);
 }
 
-/* 送信スレッド本体 */
-/** 1 回の走査で送出を見送るピアの数の上限。超える分は次の走査で扱う。 */
-#define FLOW_DEFERRED_SKIP_MAX 16U
-
-static_assert(FLOW_DEFERRED_SKIP_MAX >= 1U && FLOW_DEFERRED_SKIP_MAX <= UINT32_MAX,
-              "porter: FLOW_DEFERRED_SKIP_MAX out of range");
-
-/**
- *  N:1 モードで、抑制中のピア宛のために送出を保留したエントリ。ペイロードは構造体の直後に置く。
- *  送信キューの登録順を保つ 1 本のリストで管理し、同じピア宛のエントリの順序を変えない。
- */
-typedef struct potr_internal_deferred_entry
-{
-    struct potr_internal_deferred_entry *next; /**< 次の保留エントリ。 */
-    potr_peer_id peer_id;                      /**< 宛先のピア識別子。 */
-    uint16_t flags;                            /**< ペイロード エレメント フラグ。 */
-    uint16_t payload_len;                      /**< ペイロード長 [byte]。 */
-} potr_internal_deferred_entry;
-
 /*
  * ピアが抑制中か、またはそのピア宛の保留エントリが残っているかを返す。どちらの場合も、新しいエントリを先に送出しない。
  * blocked には、ピアが抑制中かどうかを返す。
@@ -1603,55 +1670,4 @@ static void send_thread_func(void *arg)
     cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
 
     return;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_send_thread_start(potr_context *ctx)
-{
-    if (ctx == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    cplat_atomic_store_i32(&ctx->send_thread_running, 1, CPLAT_MEMORY_ORDER_RELEASE);
-
-    if (cplat_local_lock_create(&ctx->send_window_mutex) != CPLAT_OK)
-    {
-        cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
-
-        /* 同期資源生成 API は詳細原因を提供しない。 */
-        return POTR_ERR_UNKNOWN;
-    }
-
-    if (cplat_thread_create(&ctx->send_thread, send_thread_func, ctx) != CPLAT_OK)
-    {
-        cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
-        cplat_local_lock_dispose(ctx->send_window_mutex);
-        ctx->send_window_mutex = NULL;
-
-        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
-        return POTR_ERR_UNKNOWN;
-    }
-
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void potr_internal_send_thread_stop(potr_context *ctx)
-{
-    if (ctx->send_thread == NULL)
-    {
-        return;
-    }
-
-    cplat_atomic_store_i32(&ctx->send_thread_running, 0, CPLAT_MEMORY_ORDER_RELEASE);
-    potr_internal_send_queue_shutdown(&ctx->send_queue);
-
-    cplat_thread_join(ctx->send_thread);
-
-    ctx->send_thread = NULL;
-    cplat_local_lock_dispose(ctx->send_window_mutex);
-    ctx->send_window_mutex = NULL;
 }

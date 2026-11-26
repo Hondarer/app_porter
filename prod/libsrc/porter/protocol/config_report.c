@@ -18,151 +18,9 @@
 /** トレース出力用の制御文字エスケープ後パス領域上限 [byte]。 */
 #define CONFIG_REPORT_TRACE_TEXT_CAP 512U
 
-/*
- * 制御文字 (0x00..0x1F および 0x7F) を単一行のエスケープ表記へ変換する。
- * ログ インジェクションや改行による 1 行崩れを防ぐために使う。
- */
-static void escape_for_trace(char *dest, size_t dest_size, const char *src)
-{
-    size_t out = 0U;
-    size_t i = 0U;
-    static const char hex_digits[] = "0123456789ABCDEF";
-
-    if (dest == NULL || dest_size == 0U)
-    {
-        return;
-    }
-
-    if (src == NULL)
-    {
-        dest[0] = '\0';
-        return;
-    }
-
-    while (src[i] != '\0')
-    {
-        unsigned char ch = (unsigned char)src[i];
-
-        if (ch == (unsigned char)'\n')
-        {
-            if (out + 2U >= dest_size)
-            {
-                break;
-            }
-            dest[out++] = '\\';
-            dest[out++] = 'n';
-        }
-        else if (ch == (unsigned char)'\r')
-        {
-            if (out + 2U >= dest_size)
-            {
-                break;
-            }
-            dest[out++] = '\\';
-            dest[out++] = 'r';
-        }
-        else if (ch == (unsigned char)'\t')
-        {
-            if (out + 2U >= dest_size)
-            {
-                break;
-            }
-            dest[out++] = '\\';
-            dest[out++] = 't';
-        }
-        else if (ch < 0x20U || ch == 0x7FU)
-        {
-            if (out + 4U >= dest_size)
-            {
-                break;
-            }
-            dest[out++] = '\\';
-            dest[out++] = 'x';
-            dest[out++] = hex_digits[(ch >> 4U) & 0x0FU];
-            dest[out++] = hex_digits[ch & 0x0FU];
-        }
-        else
-        {
-            if (out + 1U >= dest_size)
-            {
-                break;
-            }
-            dest[out++] = (char)ch;
-        }
-        i++;
-    }
-
-    if (src[i] != '\0' && dest_size >= 4U)
-    {
-        dest[dest_size - 4U] = '.';
-        dest[dest_size - 3U] = '.';
-        dest[dest_size - 2U] = '.';
-        dest[dest_size - 1U] = '\0';
-    }
-    else
-    {
-        dest[out] = '\0';
-    }
-}
-
-/*
- * キー文字列を RFC 6901 JSON Pointer のトークンとしてエスケープしつつ書き出す。
- * see: https://www.rfc-editor.org/rfc/rfc6901
- */
-static size_t measure_pointer_segment(const char *segment)
-{
-    size_t len = 0U;
-    size_t i = 0U;
-
-    while (segment[i] != '\0')
-    {
-        if (segment[i] == '~' || segment[i] == '/')
-        {
-            if (len > SIZE_MAX - 2U)
-            {
-                return SIZE_MAX;
-            }
-            len += 2U;
-        }
-        else
-        {
-            if (len == SIZE_MAX)
-            {
-                return SIZE_MAX;
-            }
-            len += 1U;
-        }
-        i++;
-    }
-
-    return len;
-}
-
-static void write_pointer_segment(char *dest, const char *segment)
-{
-    size_t out = 0U;
-    size_t i = 0U;
-
-    while (segment[i] != '\0')
-    {
-        if (segment[i] == '~')
-        {
-            dest[out++] = '~';
-            dest[out++] = '0';
-        }
-        else if (segment[i] == '/')
-        {
-            dest[out++] = '~';
-            dest[out++] = '1';
-        }
-        else
-        {
-            dest[out++] = segment[i];
-        }
-        i++;
-    }
-    dest[out] = '\0';
-}
+static void escape_for_trace(char *dest, size_t dest_size, const char *src);
+static size_t measure_pointer_segment(const char *segment);
+static void write_pointer_segment(char *dest, const char *segment);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -347,4 +205,150 @@ void potr_internal_config_path_dispose(potr_internal_config_path_buf *buf)
         buf->heap_buf = NULL;
     }
     buf->ptr = NULL;
+}
+
+/*
+ * 制御文字 (0x00..0x1F および 0x7F) を単一行のエスケープ表記へ変換する。
+ * ログ インジェクションや改行による 1 行崩れを防ぐために使う。
+ */
+static void escape_for_trace(char *dest, size_t dest_size, const char *src)
+{
+    size_t out = 0U;
+    size_t i = 0U;
+    static const char hex_digits[] = "0123456789ABCDEF";
+
+    if (dest == NULL || dest_size == 0U)
+    {
+        return;
+    }
+
+    if (src == NULL)
+    {
+        dest[0] = '\0';
+        return;
+    }
+
+    while (src[i] != '\0')
+    {
+        unsigned char ch = (unsigned char)src[i];
+
+        if (ch == (unsigned char)'\n')
+        {
+            if (out + 2U >= dest_size)
+            {
+                break;
+            }
+            dest[out++] = '\\';
+            dest[out++] = 'n';
+        }
+        else if (ch == (unsigned char)'\r')
+        {
+            if (out + 2U >= dest_size)
+            {
+                break;
+            }
+            dest[out++] = '\\';
+            dest[out++] = 'r';
+        }
+        else if (ch == (unsigned char)'\t')
+        {
+            if (out + 2U >= dest_size)
+            {
+                break;
+            }
+            dest[out++] = '\\';
+            dest[out++] = 't';
+        }
+        else if (ch < 0x20U || ch == 0x7FU)
+        {
+            if (out + 4U >= dest_size)
+            {
+                break;
+            }
+            dest[out++] = '\\';
+            dest[out++] = 'x';
+            dest[out++] = hex_digits[(ch >> 4U) & 0x0FU];
+            dest[out++] = hex_digits[ch & 0x0FU];
+        }
+        else
+        {
+            if (out + 1U >= dest_size)
+            {
+                break;
+            }
+            dest[out++] = (char)ch;
+        }
+        i++;
+    }
+
+    if (src[i] != '\0' && dest_size >= 4U)
+    {
+        dest[dest_size - 4U] = '.';
+        dest[dest_size - 3U] = '.';
+        dest[dest_size - 2U] = '.';
+        dest[dest_size - 1U] = '\0';
+    }
+    else
+    {
+        dest[out] = '\0';
+    }
+}
+
+/*
+ * キー文字列を RFC 6901 JSON Pointer のトークンとしてエスケープしつつ書き出す。
+ * see: https://www.rfc-editor.org/rfc/rfc6901
+ */
+static size_t measure_pointer_segment(const char *segment)
+{
+    size_t len = 0U;
+    size_t i = 0U;
+
+    while (segment[i] != '\0')
+    {
+        if (segment[i] == '~' || segment[i] == '/')
+        {
+            if (len > SIZE_MAX - 2U)
+            {
+                return SIZE_MAX;
+            }
+            len += 2U;
+        }
+        else
+        {
+            if (len == SIZE_MAX)
+            {
+                return SIZE_MAX;
+            }
+            len += 1U;
+        }
+        i++;
+    }
+
+    return len;
+}
+
+static void write_pointer_segment(char *dest, const char *segment)
+{
+    size_t out = 0U;
+    size_t i = 0U;
+
+    while (segment[i] != '\0')
+    {
+        if (segment[i] == '~')
+        {
+            dest[out++] = '~';
+            dest[out++] = '0';
+        }
+        else if (segment[i] == '/')
+        {
+            dest[out++] = '~';
+            dest[out++] = '1';
+        }
+        else
+        {
+            dest[out++] = segment[i];
+        }
+        i++;
+    }
+    dest[out] = '\0';
 }

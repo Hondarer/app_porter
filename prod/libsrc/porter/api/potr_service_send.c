@@ -32,6 +32,51 @@
 #include <cplat/net/byteorder.h>
 #include <porter/infra/potr_trace.h>
 
+/* 送信フラグは int の flags 引数に論理和で渡すため、int に収まり、互いに重ならないことを確かめる。 */
+static_assert((POTR_SEND_COMPRESS | POTR_SEND_BLOCKING) <= (unsigned)INT_MAX &&
+                  (POTR_SEND_COMPRESS & POTR_SEND_BLOCKING) == 0U,
+              "porter: send flags must fit in int and must not overlap");
+
+static size_t elem_payload_capacity(const potr_context *ctx);
+static size_t message_entry_count(const potr_context *ctx, size_t len);
+static void note_queue_full_if_deferred(potr_context *ctx);
+static int push_message(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, uint16_t base_flags,
+                        int wait, uint64_t *first_ticket, uint64_t *last_ticket);
+static int peer_is_suppressed(potr_context *ctx, potr_peer_id peer_id, int *deferred, uint64_t *now_ms_out);
+static int wait_peer_sendable(potr_context *ctx, potr_peer_id peer_id, int blocking, int wait_deferred,
+                              int record_blocking);
+static int send_to_peer(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, int flags,
+                        uint16_t base_flags, int record_blocking);
+static int send_to_peers_nonblocking(potr_context *ctx, const potr_peer_id *ids, int n_ids, const uint8_t *ptr,
+                                     size_t len, uint16_t base_flags);
+static int send_impl(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len, int flags);
+static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, int flags,
+                          uint16_t base_flags);
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len, int flags)
+{
+    potr_context *ctx = NULL;
+    int ret;
+
+    if (handle == NULL)
+    {
+        return send_impl(NULL, peer_id, data, len, flags);
+    }
+
+    ret = potr_internal_handle_acquire(handle, &ctx);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+
+    ret = send_impl(ctx, peer_id, data, len, flags);
+    potr_internal_handle_release(ctx);
+
+    return ret;
+}
+
 /*
  * 1 宛先へ 1 メッセージ分の断片を登録する (peers_mutex の取得は不要で、呼び出し元で検索済みである)。
  * 同一ハンドルへの並行送信で断片が他のメッセージと交互に並ばないよう、登録の間は push_mutex を保持する。
@@ -165,11 +210,6 @@ static int push_message(potr_context *ctx, potr_peer_id peer_id, const uint8_t *
 
     return result;
 }
-
-/* 送信フラグは int の flags 引数に論理和で渡すため、int に収まり、互いに重ならないことを確かめる。 */
-static_assert((POTR_SEND_COMPRESS | POTR_SEND_BLOCKING) <= (unsigned)INT_MAX &&
-                  (POTR_SEND_COMPRESS & POTR_SEND_BLOCKING) == 0U,
-              "porter: send flags must fit in int and must not overlap");
 
 /*
  * N:1 モードで、宛先のピアが抑制中 (有効な抑制の要求がある、または受けた送出上限に達している) かどうかを返す。
@@ -396,9 +436,6 @@ static int send_to_peers_nonblocking(potr_context *ctx, const potr_peer_id *ids,
 
     return result;
 }
-
-static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t *ptr, size_t len, int flags,
-                          uint16_t base_flags);
 
 static int send_impl(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len, int flags)
 {
@@ -665,28 +702,4 @@ static int route_and_send(potr_context *ctx, potr_peer_id peer_id, const uint8_t
 
     /* 1:1 モードでは、peer_id を無視する。 */
     return send_to_peer(ctx, POTR_PEER_NA, ptr, len, flags, base_flags, 0);
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_service_send(potr_context *handle, potr_peer_id peer_id, const void *data, size_t len, int flags)
-{
-    potr_context *ctx = NULL;
-    int ret;
-
-    if (handle == NULL)
-    {
-        return send_impl(NULL, peer_id, data, len, flags);
-    }
-
-    ret = potr_internal_handle_acquire(handle, &ctx);
-    if (ret != POTR_OK)
-    {
-        return ret;
-    }
-
-    ret = send_impl(ctx, peer_id, data, len, flags);
-    potr_internal_handle_release(ctx);
-
-    return ret;
 }

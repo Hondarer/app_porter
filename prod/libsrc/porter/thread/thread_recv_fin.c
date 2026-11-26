@@ -25,38 +25,9 @@
 #include "thread_recv_fin.h"
 #include "thread_recv_session.h"
 
-static int recv_window_reached_fin_target(uint32_t next_seq, uint32_t fin_target_seq)
-{
-    return next_seq == fin_target_seq;
-}
-
-static int fin_packet_has_target(const potr_packet *pkt)
-{
-    return (pkt->flags & POTR_FLAG_FIN_TARGET_VALID) != 0;
-}
-
-/*
- * TCP の FIN_ACK パケットを構築して送信する。
- * 成功時は POTR_OK、パケット構築または送信失敗時はエラー コードを返す。
- */
-static int send_tcp_fin_ack(potr_context *ctx, uint32_t fin_target_seq)
-{
-    potr_packet fin_ack_pkt;
-    potr_internal_packet_session_hdr shdr;
-    int result;
-
-    shdr.service_id = ctx->service.service_id;
-    shdr.session_id = ctx->session_id;
-    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
-
-    result = potr_internal_packet_build_fin_ack(&fin_ack_pkt, &shdr, fin_target_seq);
-    if (result != POTR_OK)
-    {
-        return result;
-    }
-
-    return potr_internal_tcp_send_control_packet(ctx, &fin_ack_pkt);
-}
+static int recv_window_reached_fin_target(uint32_t next_seq, uint32_t fin_target_seq);
+static int fin_packet_has_target(const potr_packet *pkt);
+static int send_tcp_fin_ack(potr_context *ctx, uint32_t fin_target_seq);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -177,4 +148,37 @@ void thread_recv_fin_on_ack(potr_context *ctx, uint32_t ack_num)
     }
 
     cplat_local_lock_unlock(ctx->tcp_close_mutex);
+}
+
+static int recv_window_reached_fin_target(uint32_t next_seq, uint32_t fin_target_seq)
+{
+    return next_seq == fin_target_seq;
+}
+
+static int fin_packet_has_target(const potr_packet *pkt)
+{
+    return (pkt->flags & POTR_FLAG_FIN_TARGET_VALID) != 0;
+}
+
+/*
+ * TCP の FIN_ACK パケットを構築して送信する。
+ * 成功時は POTR_OK、パケット構築または送信失敗時はエラー コードを返す。
+ */
+static int send_tcp_fin_ack(potr_context *ctx, uint32_t fin_target_seq)
+{
+    potr_packet fin_ack_pkt;
+    potr_internal_packet_session_hdr shdr;
+    int result;
+
+    shdr.service_id = ctx->service.service_id;
+    shdr.session_id = ctx->session_id;
+    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+
+    result = potr_internal_packet_build_fin_ack(&fin_ack_pkt, &shdr, fin_target_seq);
+    if (result != POTR_OK)
+    {
+        return result;
+    }
+
+    return potr_internal_tcp_send_control_packet(ctx, &fin_ack_pkt);
 }

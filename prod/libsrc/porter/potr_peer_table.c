@@ -35,75 +35,8 @@
 #include <cplat/net/endpoint.h>
 #include <cplat/net/socket.h>
 
-/*
- * ピアのセッション識別子と開始時刻を生成して peer に格納する。
- * 成功時は POTR_OK、乱数生成失敗時はエラー コードを返す。
- * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は
- * (key, nonce) の再利用を招くため、暗号論的乱数源から取得する。
- */
-static int peer_generate_session(potr_internal_peer_context *peer)
-{
-    int ret;
-
-    ret = cplat_random_bytes(&peer->session_id, sizeof(peer->session_id));
-    if (ret != CPLAT_OK)
-    {
-        return potr_internal_result_from_socket_result(ret, NULL);
-    }
-
-    potr_internal_tx_session_init(&peer->tx_session);
-    ret = cplat_clock_get_realtime(&peer->session_ts);
-    if (ret != CPLAT_OK)
-    {
-        return potr_internal_result_from_socket_result(ret, NULL);
-    }
-
-    return POTR_OK;
-}
-
-/*
- * 使用中でない peer_id を単調増加カウンターから生成して返す。
- * 呼び出し元は peers_mutex を取得している必要がある。
- */
-static potr_peer_id allocate_peer_id(potr_context *ctx)
-{
-    potr_peer_id candidate = ctx->next_peer_id;
-    int i;
-    int in_use;
-
-    for (;;)
-    {
-        /* 予約値である 0 と POTR_PEER_ALL をスキップする。 */
-        if (candidate == 0 || candidate == POTR_PEER_ALL)
-        {
-            candidate++;
-            continue;
-        }
-
-        /* 現在接続中のピアとの衝突を確認する。 */
-        in_use = 0;
-
-        for (i = 0; i < ctx->max_peers; i++)
-        {
-            if (ctx->peers[i].active && ctx->peers[i].peer_id == candidate)
-            {
-                in_use = 1;
-                break;
-            }
-        }
-
-        if (!in_use)
-        {
-            break;
-        }
-
-        candidate++;
-    }
-
-    ctx->next_peer_id = candidate + 1;
-
-    return candidate;
-}
+static int peer_generate_session(potr_internal_peer_context *peer);
+static potr_peer_id allocate_peer_id(potr_context *ctx);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -470,4 +403,74 @@ void potr_internal_peer_free(potr_context *ctx, potr_internal_peer_context *peer
 
     /* 送信中のピア数と順番の許可の枠から外す。peers_mutex は呼び出し元が保持済み。 */
     potr_internal_flow_control_on_peer_freed(ctx, freed_peer_id);
+}
+
+/*
+ * ピアのセッション識別子と開始時刻を生成して peer に格納する。
+ * 成功時は POTR_OK、乱数生成失敗時はエラー コードを返す。
+ * session_id は AES-256-GCM nonce の非決定要素であり、衝突または推測は
+ * (key, nonce) の再利用を招くため、暗号論的乱数源から取得する。
+ */
+static int peer_generate_session(potr_internal_peer_context *peer)
+{
+    int ret;
+
+    ret = cplat_random_bytes(&peer->session_id, sizeof(peer->session_id));
+    if (ret != CPLAT_OK)
+    {
+        return potr_internal_result_from_socket_result(ret, NULL);
+    }
+
+    potr_internal_tx_session_init(&peer->tx_session);
+    ret = cplat_clock_get_realtime(&peer->session_ts);
+    if (ret != CPLAT_OK)
+    {
+        return potr_internal_result_from_socket_result(ret, NULL);
+    }
+
+    return POTR_OK;
+}
+
+/*
+ * 使用中でない peer_id を単調増加カウンターから生成して返す。
+ * 呼び出し元は peers_mutex を取得している必要がある。
+ */
+static potr_peer_id allocate_peer_id(potr_context *ctx)
+{
+    potr_peer_id candidate = ctx->next_peer_id;
+    int i;
+    int in_use;
+
+    for (;;)
+    {
+        /* 予約値である 0 と POTR_PEER_ALL をスキップする。 */
+        if (candidate == 0 || candidate == POTR_PEER_ALL)
+        {
+            candidate++;
+            continue;
+        }
+
+        /* 現在接続中のピアとの衝突を確認する。 */
+        in_use = 0;
+
+        for (i = 0; i < ctx->max_peers; i++)
+        {
+            if (ctx->peers[i].active && ctx->peers[i].peer_id == candidate)
+            {
+                in_use = 1;
+                break;
+            }
+        }
+
+        if (!in_use)
+        {
+            break;
+        }
+
+        candidate++;
+    }
+
+    ctx->next_peer_id = candidate + 1;
+
+    return candidate;
 }

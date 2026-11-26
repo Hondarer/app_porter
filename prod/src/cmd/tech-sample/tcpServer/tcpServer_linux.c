@@ -48,8 +48,231 @@ static_assert((MAX_EPOLL_EVENTS >= 1U) && (MAX_EPOLL_EVENTS <= (unsigned int)INT
 
     #include "tcpServer.h"
 
+static void sigchld_handler(int sig);
+static void shutdown_handler(int sig);
+static int create_listen_socket(int port);
+static void worker_loop(int server_fd, int worker_id, int conns_per_worker);
+
 /* 終了シグナルを受けると shutdown_handler() が 0 にする */
 static volatile sig_atomic_t running = 1;
+
+/*
+ * ============================================================
+ *  プラットフォーム フック
+ * ============================================================
+ */
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void platform_init(ClientSessionFn session_fn)
+{
+    struct sigaction sa;
+
+    g_session_fn = session_fn;
+
+    /*
+     * 相手が切断した後の送信でプロセスが終了しないよう、SIGPIPE を無視する。
+     * 送信は EPIPE で失敗し、送信の失敗の診断へ進む。fork した子とワーカーも設定を引き継ぐ。
+     * 有効なシグナル番号とローカル変数の構造体を渡し、失敗の条件 (EINVAL、EFAULT) に当たらないため、
+     * sigemptyset と sigaction の戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man2/sigaction.2.html
+     * see: https://man7.org/linux/man-pages/man3/sigsetops.3.html
+     */
+    sa.sa_handler = SIG_IGN;
+    (void)sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    (void)sigaction(SIGPIPE, &sa, NULL);
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void platform_cleanup(void)
+{
+    /* Linux では後処理を必要としない。 */
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int dispatch_internal_args(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+
+    return 0;
+}
+
+/*
+ * ============================================================
+ *  サーバー実装
+ * ============================================================
+ */
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void run_fork_server(int port)
+{
+    int server_fd, client_fd;
+    struct sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
+    struct sigaction sa;
+
+    /*
+     * 終了した子プロセスのゾンビ化を防ぐため、SIGCHLD ハンドラーを設定する。
+     * 有効なシグナル番号とローカル変数の構造体を渡し、失敗の条件 (EINVAL、EFAULT) に当たらないため、
+     * sigemptyset と sigaction の戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man2/sigaction.2.html
+     * see: https://man7.org/linux/man-pages/man3/sigsetops.3.html
+     */
+    sa.sa_handler = sigchld_handler;
+    (void)sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    (void)sigaction(SIGCHLD, &sa, NULL);
+
+    server_fd = create_listen_socket(port);
+    /* 稼働状況は利用者が画面で確認する表示であり、失敗を伝える先がないため、この関数の printf の戻り値は明示的に破棄する。 */
+    (void)printf("[親プロセス %lu] fork モード、ポート %d で待ち受け開始\n", (unsigned long)get_pid(), port);
+
+    /* クライアントからの接続を受け付け、接続ごとに子プロセスを fork して通信を処理する。 */
+    while (1)
+    {
+        client_fd = accept(server_fd, (struct sockaddr *)&addr, &addr_len);
+        if (client_fd < 0)
+        {
+            perror("accept");
+            continue;
+        }
+
+        (void)printf("[親プロセス] 接続受付、子プロセス生成\n");
+
+        pid_t pid = fork();
+        if (pid < 0)
+        {
+            perror("fork");
+            /* fork の失敗後、子へ渡せなかった接続を閉じる後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+            (void)cplat_close(client_fd, NULL);
+        }
+        else if (pid == 0)
+        {
+            /*
+             * 子プロセス。
+             * cplat_exit() は親が登録したシャットダウン コールバックを
+             * fork で継承したまま実行してしまうため、生の exit() を使用する。
+             * 子プロセスが使わない待ち受けソケットの複製を閉じる処理であり、失敗しても動作が変わらないため、
+             * 戻り値は明示的に破棄する。
+             */
+            (void)cplat_close(server_fd, NULL);
+            g_session_fn(client_fd);
+            exit(0);
+        }
+        else
+        {
+            /*
+             * 親プロセス側では不要となったクライアント ソケットを閉じる。
+             * 子へ渡した接続の複製を閉じる処理であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。
+             */
+            (void)cplat_close(client_fd, NULL);
+        }
+    }
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void run_prefork_server(int port, int num_workers, int conns_per_worker)
+{
+    int server_fd;
+    struct sigaction sa;
+
+    /*
+     * SIGINT と SIGTERM で待機ループを抜けるため、ハンドラーを設定する。
+     * 有効なシグナル番号とローカル変数の構造体を渡し、失敗の条件 (EINVAL、EFAULT) に当たらないため、
+     * この関数の sigemptyset と sigaction の戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man2/sigaction.2.html
+     * see: https://man7.org/linux/man-pages/man3/sigsetops.3.html
+     */
+    sa.sa_handler = shutdown_handler;
+    (void)sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    (void)sigaction(SIGINT, &sa, NULL);
+    (void)sigaction(SIGTERM, &sa, NULL);
+
+    /* 終了した子プロセスのゾンビ化を防ぐため、SIGCHLD ハンドラーを設定する。 */
+    sa.sa_handler = sigchld_handler;
+    sa.sa_flags = SA_RESTART;
+    (void)sigaction(SIGCHLD, &sa, NULL);
+
+    server_fd = create_listen_socket(port);
+    /* 稼働状況は利用者が画面で確認する表示であり、失敗を伝える先がないため、この関数の printf の戻り値は明示的に破棄する。 */
+    (void)printf("[親プロセス %lu] prefork モード、ポート %d で待ち受け開始\n", (unsigned long)get_pid(), port);
+    (void)printf("[親プロセス] %d 個のワーカープロセスを起動 (1 ワーカーあたり最大 %d 接続)\n", num_workers,
+                 conns_per_worker);
+
+    pid_t *worker_pids = cplat_malloc((size_t)num_workers * sizeof(pid_t));
+    if (worker_pids == NULL)
+    {
+        perror("malloc");
+        cplat_exit(1);
+    }
+
+    /* 指定された数のワーカー プロセスを事前に生成する。 */
+    for (int i = 0; i < num_workers; i++)
+    {
+        pid_t pid = fork();
+        if (pid < 0)
+        {
+            perror("fork");
+            cplat_free(worker_pids);
+            cplat_exit(1);
+        }
+        else if (pid == 0)
+        {
+            cplat_free(worker_pids);
+            worker_loop(server_fd, i, conns_per_worker);
+
+            /* worker_loop() 内でプロセスが終了するため、ここには到達しない。 */
+        }
+
+        worker_pids[i] = pid;
+    }
+
+    (void)printf("[親プロセス] Ctrl+C で終了\n");
+
+    /* シグナルを受信するまで待機を継続する。 */
+    while (running)
+    {
+        pause();
+    }
+
+    (void)printf("\n[親プロセス] 全ワーカーを終了させます\n");
+
+    /*
+     * 全ワーカー プロセスへ SIGTERM を送信して終了を促す。
+     * ワーカーが終了済みで回収された場合 (ESRCH) は送る必要がないため、戻り値は明示的に破棄する。
+     */
+    for (int i = 0; i < num_workers; i++)
+    {
+        if (worker_pids[i] > 0)
+        {
+            (void)kill(worker_pids[i], SIGTERM);
+        }
+    }
+
+    /*
+     * 全ワーカー プロセスの終了を同期待機して回収する。
+     * SIGCHLD ハンドラーが先に回収した場合 (ECHILD) もワーカーは終了済みのため、戻り値は明示的に破棄する。
+     */
+    for (int i = 0; i < num_workers; i++)
+    {
+        if (worker_pids[i] > 0)
+        {
+            (void)waitpid(worker_pids[i], NULL, 0);
+        }
+    }
+
+    cplat_free(worker_pids);
+    /* 親プロセスの終了の直前に待ち受けソケットを閉じる後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
+    (void)cplat_close(server_fd, NULL);
+    (void)printf("[親プロセス] 終了\n");
+}
 
 /*
  * ============================================================
@@ -325,224 +548,6 @@ static void worker_loop(int server_fd, int worker_id, int conns_per_worker)
 
     (void)printf("[ワーカー %d] 終了\n", worker_id);
     exit(0);
-}
-
-/*
- * ============================================================
- *  プラットフォーム フック
- * ============================================================
- */
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void platform_init(ClientSessionFn session_fn)
-{
-    struct sigaction sa;
-
-    g_session_fn = session_fn;
-
-    /*
-     * 相手が切断した後の送信でプロセスが終了しないよう、SIGPIPE を無視する。
-     * 送信は EPIPE で失敗し、送信の失敗の診断へ進む。fork した子とワーカーも設定を引き継ぐ。
-     * 有効なシグナル番号とローカル変数の構造体を渡し、失敗の条件 (EINVAL、EFAULT) に当たらないため、
-     * sigemptyset と sigaction の戻り値は明示的に破棄する。
-     * see: https://man7.org/linux/man-pages/man2/sigaction.2.html
-     * see: https://man7.org/linux/man-pages/man3/sigsetops.3.html
-     */
-    sa.sa_handler = SIG_IGN;
-    (void)sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    (void)sigaction(SIGPIPE, &sa, NULL);
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void platform_cleanup(void)
-{
-    /* Linux では後処理を必要としない。 */
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int dispatch_internal_args(int argc, char *argv[])
-{
-    (void)argc;
-    (void)argv;
-
-    return 0;
-}
-
-/*
- * ============================================================
- *  サーバー実装
- * ============================================================
- */
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void run_fork_server(int port)
-{
-    int server_fd, client_fd;
-    struct sockaddr_in addr;
-    socklen_t addr_len = sizeof(addr);
-    struct sigaction sa;
-
-    /*
-     * 終了した子プロセスのゾンビ化を防ぐため、SIGCHLD ハンドラーを設定する。
-     * 有効なシグナル番号とローカル変数の構造体を渡し、失敗の条件 (EINVAL、EFAULT) に当たらないため、
-     * sigemptyset と sigaction の戻り値は明示的に破棄する。
-     * see: https://man7.org/linux/man-pages/man2/sigaction.2.html
-     * see: https://man7.org/linux/man-pages/man3/sigsetops.3.html
-     */
-    sa.sa_handler = sigchld_handler;
-    (void)sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    (void)sigaction(SIGCHLD, &sa, NULL);
-
-    server_fd = create_listen_socket(port);
-    /* 稼働状況は利用者が画面で確認する表示であり、失敗を伝える先がないため、この関数の printf の戻り値は明示的に破棄する。 */
-    (void)printf("[親プロセス %lu] fork モード、ポート %d で待ち受け開始\n", (unsigned long)get_pid(), port);
-
-    /* クライアントからの接続を受け付け、接続ごとに子プロセスを fork して通信を処理する。 */
-    while (1)
-    {
-        client_fd = accept(server_fd, (struct sockaddr *)&addr, &addr_len);
-        if (client_fd < 0)
-        {
-            perror("accept");
-            continue;
-        }
-
-        (void)printf("[親プロセス] 接続受付、子プロセス生成\n");
-
-        pid_t pid = fork();
-        if (pid < 0)
-        {
-            perror("fork");
-            /* fork の失敗後、子へ渡せなかった接続を閉じる後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
-            (void)cplat_close(client_fd, NULL);
-        }
-        else if (pid == 0)
-        {
-            /*
-             * 子プロセス。
-             * cplat_exit() は親が登録したシャットダウン コールバックを
-             * fork で継承したまま実行してしまうため、生の exit() を使用する。
-             * 子プロセスが使わない待ち受けソケットの複製を閉じる処理であり、失敗しても動作が変わらないため、
-             * 戻り値は明示的に破棄する。
-             */
-            (void)cplat_close(server_fd, NULL);
-            g_session_fn(client_fd);
-            exit(0);
-        }
-        else
-        {
-            /*
-             * 親プロセス側では不要となったクライアント ソケットを閉じる。
-             * 子へ渡した接続の複製を閉じる処理であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。
-             */
-            (void)cplat_close(client_fd, NULL);
-        }
-    }
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void run_prefork_server(int port, int num_workers, int conns_per_worker)
-{
-    int server_fd;
-    struct sigaction sa;
-
-    /*
-     * SIGINT と SIGTERM で待機ループを抜けるため、ハンドラーを設定する。
-     * 有効なシグナル番号とローカル変数の構造体を渡し、失敗の条件 (EINVAL、EFAULT) に当たらないため、
-     * この関数の sigemptyset と sigaction の戻り値は明示的に破棄する。
-     * see: https://man7.org/linux/man-pages/man2/sigaction.2.html
-     * see: https://man7.org/linux/man-pages/man3/sigsetops.3.html
-     */
-    sa.sa_handler = shutdown_handler;
-    (void)sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    (void)sigaction(SIGINT, &sa, NULL);
-    (void)sigaction(SIGTERM, &sa, NULL);
-
-    /* 終了した子プロセスのゾンビ化を防ぐため、SIGCHLD ハンドラーを設定する。 */
-    sa.sa_handler = sigchld_handler;
-    sa.sa_flags = SA_RESTART;
-    (void)sigaction(SIGCHLD, &sa, NULL);
-
-    server_fd = create_listen_socket(port);
-    /* 稼働状況は利用者が画面で確認する表示であり、失敗を伝える先がないため、この関数の printf の戻り値は明示的に破棄する。 */
-    (void)printf("[親プロセス %lu] prefork モード、ポート %d で待ち受け開始\n", (unsigned long)get_pid(), port);
-    (void)printf("[親プロセス] %d 個のワーカープロセスを起動 (1 ワーカーあたり最大 %d 接続)\n", num_workers,
-                 conns_per_worker);
-
-    pid_t *worker_pids = cplat_malloc((size_t)num_workers * sizeof(pid_t));
-    if (worker_pids == NULL)
-    {
-        perror("malloc");
-        cplat_exit(1);
-    }
-
-    /* 指定された数のワーカー プロセスを事前に生成する。 */
-    for (int i = 0; i < num_workers; i++)
-    {
-        pid_t pid = fork();
-        if (pid < 0)
-        {
-            perror("fork");
-            cplat_free(worker_pids);
-            cplat_exit(1);
-        }
-        else if (pid == 0)
-        {
-            cplat_free(worker_pids);
-            worker_loop(server_fd, i, conns_per_worker);
-
-            /* worker_loop() 内でプロセスが終了するため、ここには到達しない。 */
-        }
-
-        worker_pids[i] = pid;
-    }
-
-    (void)printf("[親プロセス] Ctrl+C で終了\n");
-
-    /* シグナルを受信するまで待機を継続する。 */
-    while (running)
-    {
-        pause();
-    }
-
-    (void)printf("\n[親プロセス] 全ワーカーを終了させます\n");
-
-    /*
-     * 全ワーカー プロセスへ SIGTERM を送信して終了を促す。
-     * ワーカーが終了済みで回収された場合 (ESRCH) は送る必要がないため、戻り値は明示的に破棄する。
-     */
-    for (int i = 0; i < num_workers; i++)
-    {
-        if (worker_pids[i] > 0)
-        {
-            (void)kill(worker_pids[i], SIGTERM);
-        }
-    }
-
-    /*
-     * 全ワーカー プロセスの終了を同期待機して回収する。
-     * SIGCHLD ハンドラーが先に回収した場合 (ECHILD) もワーカーは終了済みのため、戻り値は明示的に破棄する。
-     */
-    for (int i = 0; i < num_workers; i++)
-    {
-        if (worker_pids[i] > 0)
-        {
-            (void)waitpid(worker_pids[i], NULL, 0);
-        }
-    }
-
-    cplat_free(worker_pids);
-    /* 親プロセスの終了の直前に待ち受けソケットを閉じる後始末であり、失敗しても動作が変わらないため、戻り値は明示的に破棄する。 */
-    (void)cplat_close(server_fd, NULL);
-    (void)printf("[親プロセス] 終了\n");
 }
 
 #elif defined(PLATFORM_WINDOWS) && defined(COMPILER_MSVC)

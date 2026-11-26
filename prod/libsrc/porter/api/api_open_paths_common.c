@@ -24,26 +24,7 @@
 
 #include "api_open_paths_common.h"
 
-/*
- * cplat のアドレス解決/変換結果コードを porter の結果コードへ変換する。
- * cplat_ipv4_resolve() / cplat_ipv4_parse() の結果のうち、CPLAT_ERR_INVALID_ARGUMENT 以外の失敗は、
- * 結果コードの種類によらず POTR_ERR_IO とする。失敗時の詳細エラーはソケット由来ではない (GAI ドメイン等) ため
- * potr_internal_result_from_error() の要因ベース変換は適用しない。
- */
-static int result_from_ipv4_result(int cplat_result)
-{
-    if (cplat_result == CPLAT_OK)
-    {
-        return POTR_OK;
-    }
-
-    if (cplat_result == CPLAT_ERR_INVALID_ARGUMENT)
-    {
-        return POTR_ERR_INVALID_CONFIG;
-    }
-
-    return POTR_ERR_IO;
-}
+static int result_from_ipv4_result(int cplat_result);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 int api_paths_resolve_ipv4(const char *host, uint32_t *address_out)
@@ -63,4 +44,25 @@ int api_paths_resolve_ipv4(const char *host, uint32_t *address_out)
 int api_paths_parse_ipv4(const char *text, uint32_t *address_out)
 {
     return result_from_ipv4_result(cplat_ipv4_parse(text, address_out));
+}
+
+/*
+ * cplat のアドレス解決/変換結果コードを porter の結果コードへ変換する。
+ * cplat_ipv4_resolve() / cplat_ipv4_parse() の結果のうち、CPLAT_ERR_INVALID_ARGUMENT 以外の失敗は、
+ * 結果コードの種類によらず POTR_ERR_IO とする。失敗時の詳細エラーはソケット由来ではない (GAI ドメイン等) ため
+ * potr_internal_result_from_error() の要因ベース変換は適用しない。
+ */
+static int result_from_ipv4_result(int cplat_result)
+{
+    if (cplat_result == CPLAT_OK)
+    {
+        return POTR_OK;
+    }
+
+    if (cplat_result == CPLAT_ERR_INVALID_ARGUMENT)
+    {
+        return POTR_ERR_INVALID_CONFIG;
+    }
+
+    return POTR_ERR_IO;
 }

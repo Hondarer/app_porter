@@ -13,6 +13,8 @@
 #include <porter/protocol/packet.h>
 #include "thread_recv_report.h"
 
+static int send_report(potr_context *ctx);
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
 int thread_recv_report_interval(const potr_context *ctx, uint64_t *interval_ms)
@@ -29,78 +31,6 @@ int thread_recv_report_interval(const potr_context *ctx, uint64_t *interval_ms)
         }
         *interval_ms += (uint64_t)random_value % range;
     }
-    return POTR_OK;
-}
-
-/* 受信報告パケットを組み立て、全経路へ送出する。 */
-static int send_report(potr_context *ctx)
-{
-    potr_packet packet;
-    potr_internal_packet_session_hdr shdr;
-    uint8_t states[POTR_MAX_PATH];
-    int ret;
-    int i;
-
-    shdr.service_id = ctx->service.service_id;
-    shdr.session_id = ctx->session_id;
-    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
-    copy_path_ping_state(states, ctx->path_ping_state, POTR_MAX_PATH);
-    ret = potr_internal_packet_build_ping(&packet, &shdr, 0U, states, (uint16_t)POTR_MAX_PATH);
-    if (ret != POTR_OK)
-    {
-        return ret;
-    }
-    packet.flags = cplat_hton16(POTR_FLAG_REPORT);
-
-    /*
-     * unicast、multicast、broadcast の受信者は、受信報告のヘッダーに、その時点の自身の許可数の上限と送出上限を載せる。
-     * seq_num は許可数の上限 (1 以上 = ack_num に送出上限がある、0 = ない)、ack_num は送出上限である。
-     * パケットの数と大きさは変わらない。
-     */
-    {
-        uint32_t send_limit = 0U;
-        uint32_t max_allowance = 0U;
-
-        if (potr_internal_flow_control_report_limit(ctx, &send_limit, &max_allowance) != 0 && max_allowance != 0U)
-        {
-            packet.seq_num = cplat_hton32(max_allowance);
-            packet.ack_num = cplat_hton32(send_limit);
-        }
-    }
-
-    for (i = 0; i < ctx->n_path; i++)
-    {
-        uint8_t wire[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
-        size_t wire_len = sizeof(wire);
-        cplat_ipv4_endpoint destination = {0};
-
-        destination.address = ctx->src_addr_resolved[i];
-        if (destination.address == 0U)
-        {
-            destination.address = ctx->peer_address[i];
-        }
-        destination.port = cplat_hton16(ctx->service.src_port);
-        if (ctx->service.src_port == 0U)
-        {
-            destination.port = ctx->peer_port[i];
-        }
-        if (ctx->sock[i] == CPLAT_INVALID_SOCKET || destination.port == 0U || destination.address == 0U)
-        {
-            continue;
-        }
-        ret = potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &packet, wire, &wire_len);
-        if (ret == POTR_ERR_DISCONNECTED && ctx->service.auth == POTR_AUTH_CERT)
-        {
-            continue;
-        }
-        if (ret != POTR_OK)
-        {
-            return ret;
-        }
-        /* REPORT は次の周期に送り直すため、戻り値は明示的に破棄する。 */
-        (void)potr_internal_udp_sendto(ctx, i, wire, wire_len, &destination, NULL);
-    }
-
     return POTR_OK;
 }
 
@@ -202,6 +132,78 @@ int thread_recv_report_on_data_accepted(potr_context *ctx, uint64_t now_ms)
     ctx->has_ad_hoc_report = 1;
     ctx->last_ad_hoc_report_ms = now_ms;
     ctx->recv_report_lag_sent++;
+
+    return POTR_OK;
+}
+
+/* 受信報告パケットを組み立て、全経路へ送出する。 */
+static int send_report(potr_context *ctx)
+{
+    potr_packet packet;
+    potr_internal_packet_session_hdr shdr;
+    uint8_t states[POTR_MAX_PATH];
+    int ret;
+    int i;
+
+    shdr.service_id = ctx->service.service_id;
+    shdr.session_id = ctx->session_id;
+    session_ts_to_hdr(&ctx->session_ts, &shdr.session_tv_sec, &shdr.session_tv_nsec);
+    copy_path_ping_state(states, ctx->path_ping_state, POTR_MAX_PATH);
+    ret = potr_internal_packet_build_ping(&packet, &shdr, 0U, states, (uint16_t)POTR_MAX_PATH);
+    if (ret != POTR_OK)
+    {
+        return ret;
+    }
+    packet.flags = cplat_hton16(POTR_FLAG_REPORT);
+
+    /*
+     * unicast、multicast、broadcast の受信者は、受信報告のヘッダーに、その時点の自身の許可数の上限と送出上限を載せる。
+     * seq_num は許可数の上限 (1 以上 = ack_num に送出上限がある、0 = ない)、ack_num は送出上限である。
+     * パケットの数と大きさは変わらない。
+     */
+    {
+        uint32_t send_limit = 0U;
+        uint32_t max_allowance = 0U;
+
+        if (potr_internal_flow_control_report_limit(ctx, &send_limit, &max_allowance) != 0 && max_allowance != 0U)
+        {
+            packet.seq_num = cplat_hton32(max_allowance);
+            packet.ack_num = cplat_hton32(send_limit);
+        }
+    }
+
+    for (i = 0; i < ctx->n_path; i++)
+    {
+        uint8_t wire[POTR_PACKET_HEADER_SIZE + POTR_MAX_PATH + POTR_CRYPTO_TAG_SIZE];
+        size_t wire_len = sizeof(wire);
+        cplat_ipv4_endpoint destination = {0};
+
+        destination.address = ctx->src_addr_resolved[i];
+        if (destination.address == 0U)
+        {
+            destination.address = ctx->peer_address[i];
+        }
+        destination.port = cplat_hton16(ctx->service.src_port);
+        if (ctx->service.src_port == 0U)
+        {
+            destination.port = ctx->peer_port[i];
+        }
+        if (ctx->sock[i] == CPLAT_INVALID_SOCKET || destination.port == 0U || destination.address == 0U)
+        {
+            continue;
+        }
+        ret = potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &packet, wire, &wire_len);
+        if (ret == POTR_ERR_DISCONNECTED && ctx->service.auth == POTR_AUTH_CERT)
+        {
+            continue;
+        }
+        if (ret != POTR_OK)
+        {
+            return ret;
+        }
+        /* REPORT は次の周期に送り直すため、戻り値は明示的に破棄する。 */
+        (void)potr_internal_udp_sendto(ctx, i, wire, wire_len, &destination, NULL);
+    }
 
     return POTR_OK;
 }

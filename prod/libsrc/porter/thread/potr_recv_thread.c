@@ -92,6 +92,140 @@ static_assert(POTR_SEQNUM_HALF_SPACE == (1UL << 31), "porter: POTR_SEQNUM_HALF_S
 static_assert(RECV_TCP_POLL_INTERVAL_MS > 0U && RECV_TCP_POLL_INTERVAL_MS <= POTR_WAIT_MS_MAX,
               "porter: RECV_TCP_POLL_INTERVAL_MS out of range");
 
+static int check_service_replay(potr_context *ctx, const potr_packet *packet, const uint8_t *wire_header);
+static void n1_handle_packet(potr_context *ctx, potr_packet *pkt, const uint8_t *wire_hdr,
+                             const cplat_ipv4_endpoint *sender_addr, int path_idx);
+static int sender_handle_packet(thread_recv_slot *slot, const potr_packet *pkt);
+static void recv_thread_func(void *arg);
+static int tcp_recv_on_wait_timeout(potr_context *ctx, thread_recv_slot *svc_slot, int path_idx, int use_recv_timeout,
+                                    int use_flow_tick);
+static int tcp_handle_packet(potr_context *ctx, thread_recv_slot *svc_slot, const uint8_t *buf,
+                             uint16_t wire_payload_len, int path_idx, int replay_checked);
+static void tcp_recv_thread_func(void *arg);
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_comm_recv_thread_start(potr_context *ctx)
+{
+    if (ctx == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    cplat_atomic_store_i32(&ctx->running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
+
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv_thread[service_id=%" PRId64 "]: starting", ctx->service.service_id);
+
+    if (cplat_thread_create(&ctx->recv_thread[0], recv_thread_func, ctx) != CPLAT_OK)
+    {
+        cplat_atomic_store_i32(&ctx->running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv_thread[service_id=%" PRId64 "]: thread create failed",
+                   ctx->service.service_id);
+
+        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
+        return POTR_ERR_UNKNOWN;
+    }
+
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_comm_recv_thread_stop(potr_context *ctx)
+{
+    if (ctx == NULL)
+    {
+        return;
+    }
+
+    cplat_atomic_store_i32(&ctx->running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
+
+    /*
+     * 受信待機と送信待機を解除オブジェクトで中断する。別スレッドからソケットを閉じない。
+     * 有効な cancel オブジェクトへの通知は必ず CPLAT_OK を返し、OS 通知失敗時も
+     * 待機側が最大 50 [ms] の内部間隔で解除を検出するため、戻り値は明示的に破棄する。
+     * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-closesocket
+     */
+    if (ctx->recv_cancel != NULL)
+    {
+        (void)cplat_socket_wait_cancel_signal(ctx->recv_cancel, NULL);
+    }
+
+    if (ctx->recv_thread[0] != NULL)
+    {
+        cplat_thread_join(ctx->recv_thread[0]);
+
+        ctx->recv_thread[0] = NULL;
+    }
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_tcp_recv_thread_start(potr_context *ctx, int path_idx)
+{
+    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    cplat_atomic_store_i32(&ctx->running[path_idx], 1, CPLAT_MEMORY_ORDER_RELEASE);
+
+    ctx->tcp_recv_args[path_idx].ctx = ctx;
+    ctx->tcp_recv_args[path_idx].path_idx = path_idx;
+    if (ctx->tcp_lifecycle_mutex[path_idx] != NULL)
+    {
+        cplat_local_lock_lock(ctx->tcp_lifecycle_mutex[path_idx]);
+        ctx->tcp_recv_args[path_idx].generation = ctx->tcp_conn_generation[path_idx];
+        ctx->tcp_recv_args[path_idx].fd = ctx->tcp_conn_fd[path_idx];
+        ctx->tcp_recv_args[path_idx].watch = ctx->tcp_conn_watch[path_idx];
+        ctx->tcp_recv_args[path_idx].cancel = ctx->tcp_conn_cancel[path_idx];
+        cplat_local_lock_unlock(ctx->tcp_lifecycle_mutex[path_idx]);
+    }
+    else
+    {
+        ctx->tcp_recv_args[path_idx].generation = ctx->tcp_conn_generation[path_idx];
+        ctx->tcp_recv_args[path_idx].fd = ctx->tcp_conn_fd[path_idx];
+        ctx->tcp_recv_args[path_idx].watch = ctx->tcp_conn_watch[path_idx];
+        ctx->tcp_recv_args[path_idx].cancel = ctx->tcp_conn_cancel[path_idx];
+    }
+
+    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv_thread[service_id=%" PRId64 " path=%d]: starting",
+               ctx->service.service_id, path_idx);
+
+    if (cplat_thread_create(&ctx->recv_thread[path_idx], tcp_recv_thread_func, &ctx->tcp_recv_args[path_idx]) !=
+        CPLAT_OK)
+    {
+        cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
+        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "tcp_recv_thread[service_id=%" PRId64 " path=%d]: thread create failed",
+                   ctx->service.service_id, path_idx);
+
+        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
+        return POTR_ERR_UNKNOWN;
+    }
+
+    return POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_tcp_recv_thread_stop(potr_context *ctx, int path_idx)
+{
+    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
+    {
+        return;
+    }
+
+    cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
+    potr_internal_tcp_conn_request_close(ctx, path_idx, 0U);
+
+    if (ctx->recv_thread[path_idx] != NULL)
+    {
+        cplat_thread_join(ctx->recv_thread[path_idx]);
+
+        ctx->recv_thread[path_idx] = NULL;
+    }
+}
+
 /*
  * 片方向 UDP の REPORT と NACK は複数の返送元から届く。
  * 認証済みの送信元セッションごとに記録を保持し、返送元同士の通番とセッションを混同しない。
@@ -1083,127 +1217,4 @@ static void tcp_recv_thread_func(void *arg)
                path_idx);
 
     return;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_comm_recv_thread_start(potr_context *ctx)
-{
-    if (ctx == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    cplat_atomic_store_i32(&ctx->running[0], 1, CPLAT_MEMORY_ORDER_RELEASE);
-
-    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "recv_thread[service_id=%" PRId64 "]: starting", ctx->service.service_id);
-
-    if (cplat_thread_create(&ctx->recv_thread[0], recv_thread_func, ctx) != CPLAT_OK)
-    {
-        cplat_atomic_store_i32(&ctx->running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "recv_thread[service_id=%" PRId64 "]: thread create failed",
-                   ctx->service.service_id);
-
-        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
-        return POTR_ERR_UNKNOWN;
-    }
-
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void potr_internal_comm_recv_thread_stop(potr_context *ctx)
-{
-    if (ctx == NULL)
-    {
-        return;
-    }
-
-    cplat_atomic_store_i32(&ctx->running[0], 0, CPLAT_MEMORY_ORDER_RELEASE);
-
-    /*
-     * 受信待機と送信待機を解除オブジェクトで中断する。別スレッドからソケットを閉じない。
-     * 有効な cancel オブジェクトへの通知は必ず CPLAT_OK を返し、OS 通知失敗時も
-     * 待機側が最大 50 [ms] の内部間隔で解除を検出するため、戻り値は明示的に破棄する。
-     * see: https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-closesocket
-     */
-    if (ctx->recv_cancel != NULL)
-    {
-        (void)cplat_socket_wait_cancel_signal(ctx->recv_cancel, NULL);
-    }
-
-    if (ctx->recv_thread[0] != NULL)
-    {
-        cplat_thread_join(ctx->recv_thread[0]);
-
-        ctx->recv_thread[0] = NULL;
-    }
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_tcp_recv_thread_start(potr_context *ctx, int path_idx)
-{
-    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    cplat_atomic_store_i32(&ctx->running[path_idx], 1, CPLAT_MEMORY_ORDER_RELEASE);
-
-    ctx->tcp_recv_args[path_idx].ctx = ctx;
-    ctx->tcp_recv_args[path_idx].path_idx = path_idx;
-    if (ctx->tcp_lifecycle_mutex[path_idx] != NULL)
-    {
-        cplat_local_lock_lock(ctx->tcp_lifecycle_mutex[path_idx]);
-        ctx->tcp_recv_args[path_idx].generation = ctx->tcp_conn_generation[path_idx];
-        ctx->tcp_recv_args[path_idx].fd = ctx->tcp_conn_fd[path_idx];
-        ctx->tcp_recv_args[path_idx].watch = ctx->tcp_conn_watch[path_idx];
-        ctx->tcp_recv_args[path_idx].cancel = ctx->tcp_conn_cancel[path_idx];
-        cplat_local_lock_unlock(ctx->tcp_lifecycle_mutex[path_idx]);
-    }
-    else
-    {
-        ctx->tcp_recv_args[path_idx].generation = ctx->tcp_conn_generation[path_idx];
-        ctx->tcp_recv_args[path_idx].fd = ctx->tcp_conn_fd[path_idx];
-        ctx->tcp_recv_args[path_idx].watch = ctx->tcp_conn_watch[path_idx];
-        ctx->tcp_recv_args[path_idx].cancel = ctx->tcp_conn_cancel[path_idx];
-    }
-
-    POTR_TRACE(CPLAT_TRACE_LEVEL_VERBOSE, "tcp_recv_thread[service_id=%" PRId64 " path=%d]: starting",
-               ctx->service.service_id, path_idx);
-
-    if (cplat_thread_create(&ctx->recv_thread[path_idx], tcp_recv_thread_func, &ctx->tcp_recv_args[path_idx]) !=
-        CPLAT_OK)
-    {
-        cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
-        POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "tcp_recv_thread[service_id=%" PRId64 " path=%d]: thread create failed",
-                   ctx->service.service_id, path_idx);
-
-        /* cplat のスレッド生成失敗には、porter の分類へ変換できる詳細コードがない。 */
-        return POTR_ERR_UNKNOWN;
-    }
-
-    return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void potr_internal_tcp_recv_thread_stop(potr_context *ctx, int path_idx)
-{
-    if (ctx == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH)
-    {
-        return;
-    }
-
-    cplat_atomic_store_i32(&ctx->running[path_idx], 0, CPLAT_MEMORY_ORDER_RELEASE);
-    potr_internal_tcp_conn_request_close(ctx, path_idx, 0U);
-
-    if (ctx->recv_thread[path_idx] != NULL)
-    {
-        cplat_thread_join(ctx->recv_thread[path_idx]);
-
-        ctx->recv_thread[path_idx] = NULL;
-    }
 }

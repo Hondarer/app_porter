@@ -38,37 +38,8 @@ static_assert(POTR_CRYPTO_NONCE_SIZE == sizeof(((potr_packet *)0)->session_id) +
               "porter: nonce must consist of session_id and tx_counter");
 static_assert(POTR_CRYPTO_KEY_SIZE > 0U && POTR_CRYPTO_TAG_SIZE > 0U, "porter: crypto sizes must be positive");
 
-static uint64_t to_network_u64(uint64_t value)
-{
-    return ((uint64_t)cplat_hton32((uint32_t)value) << 32) | cplat_hton32((uint32_t)(value >> 32));
-}
-
-static int get_monotonic_ns(uint64_t *nanoseconds_out)
-{
-    cplat_timespec timestamp;
-    uint64_t seconds;
-    int ret;
-
-    ret = cplat_clock_get_monotonic(&timestamp);
-    if (ret != CPLAT_OK)
-    {
-        return ret;
-    }
-
-    if (timestamp.tv_sec < 0 || timestamp.tv_nsec < 0 || timestamp.tv_nsec >= (int64_t)NSEC_PER_SEC_U64)
-    {
-        return CPLAT_ERR_UNKNOWN;
-    }
-
-    seconds = (uint64_t)timestamp.tv_sec;
-    if (seconds > (UINT64_MAX - (uint64_t)timestamp.tv_nsec) / NSEC_PER_SEC_U64)
-    {
-        return CPLAT_ERR_OUT_OF_RANGE;
-    }
-
-    *nanoseconds_out = seconds * NSEC_PER_SEC_U64 + (uint64_t)timestamp.tv_nsec;
-    return CPLAT_OK;
-}
+static uint64_t to_network_u64(uint64_t value);
+static int get_monotonic_ns(uint64_t *nanoseconds_out);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -368,4 +339,36 @@ int potr_internal_replay_window_accept(potr_internal_replay_window *window, cons
     }
     window->bitmap[word] |= bit;
     return POTR_OK;
+}
+
+static uint64_t to_network_u64(uint64_t value)
+{
+    return ((uint64_t)cplat_hton32((uint32_t)value) << 32) | cplat_hton32((uint32_t)(value >> 32));
+}
+
+static int get_monotonic_ns(uint64_t *nanoseconds_out)
+{
+    cplat_timespec timestamp;
+    uint64_t seconds;
+    int ret;
+
+    ret = cplat_clock_get_monotonic(&timestamp);
+    if (ret != CPLAT_OK)
+    {
+        return ret;
+    }
+
+    if (timestamp.tv_sec < 0 || timestamp.tv_nsec < 0 || timestamp.tv_nsec >= (int64_t)NSEC_PER_SEC_U64)
+    {
+        return CPLAT_ERR_UNKNOWN;
+    }
+
+    seconds = (uint64_t)timestamp.tv_sec;
+    if (seconds > (UINT64_MAX - (uint64_t)timestamp.tv_nsec) / NSEC_PER_SEC_U64)
+    {
+        return CPLAT_ERR_OUT_OF_RANGE;
+    }
+
+    *nanoseconds_out = seconds * NSEC_PER_SEC_U64 + (uint64_t)timestamp.tv_nsec;
+    return CPLAT_OK;
 }

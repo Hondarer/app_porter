@@ -29,6 +29,9 @@
 #include "thread_recv_session.h"
 #include "thread_recv_window.h"
 
+static int dispatch_fin(thread_recv_slot *slot, const potr_packet *pkt);
+static int dispatch_ping(thread_recv_slot *slot, const potr_packet *pkt, int path_idx);
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
 void thread_recv_apply_remote_path_ping_state(uint8_t *dst, const uint8_t *src, size_t count)
@@ -53,81 +56,6 @@ void thread_recv_wake_udp_interrupt_ping(potr_context *ctx, int state_changed)
     {
         potr_internal_health_thread_wake(ctx);
     }
-}
-
-/*
- * FIN パケットを受信した際のセッション採用判定、pending 判定、切断発火を行う。
- * FIN による経路状態の変化では割り込み PING を要求しないため 0 を返す。
- */
-static int dispatch_fin(thread_recv_slot *slot, const potr_packet *pkt)
-{
-    potr_context *ctx = slot->ctx;
-    uint32_t fin_target_seq = 0U;
-    int fin_action;
-
-    if (slot->peer == NULL)
-    {
-        if (thread_recv_session_adopt(slot, pkt) == 0)
-        {
-            return 0;
-        }
-    }
-
-    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
-               "recv[service_id=%" PRId64 "]: peer=%u FIN received (fin_target_seq=%u recv_next=%u)",
-               ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)pkt->ack_num,
-               (unsigned)slot->recv_window->next_seq);
-
-    fin_action = thread_recv_fin_on_packet(slot, pkt, &fin_target_seq);
-    if (fin_action == THREAD_RECV_FIN_PENDING)
-    {
-        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "recv[service_id=%" PRId64 "]: peer=%u FIN pending (waiting for seq=%u)",
-                   ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)pkt->ack_num);
-        return 0;
-    }
-
-    if (fin_action == THREAD_RECV_FIN_FIRE)
-    {
-        thread_recv_fin_fire(slot, fin_target_seq);
-    }
-
-    return 0;
-}
-
-/*
- * PING パケットを受信した際の経路ヘルス状態更新、相手端経路状態の反映、PING 欠落スキャンを行う。
- * 双方向 UDP の PING 受信状態が変化した場合は 1、それ以外は 0 を返す。
- */
-static int dispatch_ping(thread_recv_slot *slot, const potr_packet *pkt, int path_idx)
-{
-    potr_context *ctx = slot->ctx;
-    int ping_state_changed = thread_recv_update_path_health(slot, path_idx);
-
-    if (cplat_atomic_load_i32(&slot->ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) != POTR_OK)
-    {
-        return 0;
-    }
-
-    if (pkt->payload_len >= POTR_MAX_PATH && pkt->payload != NULL)
-    {
-        thread_recv_apply_remote_path_ping_state(slot->remote_path_ping_state, pkt->payload, POTR_MAX_PATH);
-    }
-
-    if (is_raw_type(ctx->service.type))
-    {
-        thread_recv_window_scan_ping_gap(slot, pkt);
-        thread_recv_sync_path_state(slot);
-        return 0;
-    }
-
-    thread_recv_sync_path_state(slot);
-    thread_recv_window_scan_ping_gap(slot, pkt);
-    if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR || ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1)
-    {
-        return ping_state_changed;
-    }
-
-    return 0;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -303,4 +231,79 @@ int thread_recv_dispatch_packet(thread_recv_slot *slot, potr_packet *pkt, int pa
     }
 
     return state_changed;
+}
+
+/*
+ * FIN パケットを受信した際のセッション採用判定、pending 判定、切断発火を行う。
+ * FIN による経路状態の変化では割り込み PING を要求しないため 0 を返す。
+ */
+static int dispatch_fin(thread_recv_slot *slot, const potr_packet *pkt)
+{
+    potr_context *ctx = slot->ctx;
+    uint32_t fin_target_seq = 0U;
+    int fin_action;
+
+    if (slot->peer == NULL)
+    {
+        if (thread_recv_session_adopt(slot, pkt) == 0)
+        {
+            return 0;
+        }
+    }
+
+    POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+               "recv[service_id=%" PRId64 "]: peer=%u FIN received (fin_target_seq=%u recv_next=%u)",
+               ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)pkt->ack_num,
+               (unsigned)slot->recv_window->next_seq);
+
+    fin_action = thread_recv_fin_on_packet(slot, pkt, &fin_target_seq);
+    if (fin_action == THREAD_RECV_FIN_PENDING)
+    {
+        POTR_TRACE(CPLAT_TRACE_LEVEL_INFO, "recv[service_id=%" PRId64 "]: peer=%u FIN pending (waiting for seq=%u)",
+                   ctx->service.service_id, (unsigned)slot->peer_id, (unsigned)pkt->ack_num);
+        return 0;
+    }
+
+    if (fin_action == THREAD_RECV_FIN_FIRE)
+    {
+        thread_recv_fin_fire(slot, fin_target_seq);
+    }
+
+    return 0;
+}
+
+/*
+ * PING パケットを受信した際の経路ヘルス状態更新、相手端経路状態の反映、PING 欠落スキャンを行う。
+ * 双方向 UDP の PING 受信状態が変化した場合は 1、それ以外は 0 を返す。
+ */
+static int dispatch_ping(thread_recv_slot *slot, const potr_packet *pkt, int path_idx)
+{
+    potr_context *ctx = slot->ctx;
+    int ping_state_changed = thread_recv_update_path_health(slot, path_idx);
+
+    if (cplat_atomic_load_i32(&slot->ctx->fatal_error, CPLAT_MEMORY_ORDER_ACQUIRE) != POTR_OK)
+    {
+        return 0;
+    }
+
+    if (pkt->payload_len >= POTR_MAX_PATH && pkt->payload != NULL)
+    {
+        thread_recv_apply_remote_path_ping_state(slot->remote_path_ping_state, pkt->payload, POTR_MAX_PATH);
+    }
+
+    if (is_raw_type(ctx->service.type))
+    {
+        thread_recv_window_scan_ping_gap(slot, pkt);
+        thread_recv_sync_path_state(slot);
+        return 0;
+    }
+
+    thread_recv_sync_path_state(slot);
+    thread_recv_window_scan_ping_gap(slot, pkt);
+    if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR || ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1)
+    {
+        return ping_state_changed;
+    }
+
+    return 0;
 }

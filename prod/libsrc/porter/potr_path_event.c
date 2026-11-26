@@ -21,40 +21,8 @@
 #include <porter/potr_path_event.h>
 #include <porter/potr_notify.h>
 
-/**
- *  @brief          PING 受信状態が NORMAL かどうかを判定します。
- *  @param[in]      state   判定する PING 受信状態 (POTR_PING_STATE_*)。
- *  @return         POTR_PING_STATE_NORMAL の場合は 1、それ以外は 0 を返します。
- */
-static int path_state_is_normal(uint8_t state)
-{
-    if (state == POTR_PING_STATE_NORMAL)
-    {
-        return 1;
-    }
-
-    return 0;
-}
-
-/**
- *  @brief          論理接続中の path が 1 本以上存在するかを判定します。
- *  @param[in]      states  POTR_MAX_PATH 要素の path 論理接続状態配列。
- *  @return         1 本以上が接続中の場合は 1、すべて切断の場合は 0 を返します。
- */
-static int any_path_alive(const int *states)
-{
-    int k;
-
-    for (k = 0; k < (int)POTR_MAX_PATH; k++)
-    {
-        if (states[k] != 0)
-        {
-            return 1;
-        }
-    }
-
-    return 0;
-}
+static int path_state_is_normal(uint8_t state);
+static int any_path_alive(const int *states);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -370,4 +338,39 @@ void potr_internal_emit_peer_path_events_locked(potr_context *ctx, const potr_in
     {
         potr_internal_callback_emit_locked(ctx, peer->peer_id, prepared->session_event, NULL, 0);
     }
+}
+
+/**
+ *  @brief          PING 受信状態が NORMAL かどうかを判定します。
+ *  @param[in]      state   判定する PING 受信状態 (POTR_PING_STATE_*)。
+ *  @return         POTR_PING_STATE_NORMAL の場合は 1、それ以外は 0 を返します。
+ */
+static int path_state_is_normal(uint8_t state)
+{
+    if (state == POTR_PING_STATE_NORMAL)
+    {
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ *  @brief          論理接続中の path が 1 本以上存在するかを判定します。
+ *  @param[in]      states  POTR_MAX_PATH 要素の path 論理接続状態配列。
+ *  @return         1 本以上が接続中の場合は 1、すべて切断の場合は 0 を返します。
+ */
+static int any_path_alive(const int *states)
+{
+    int k;
+
+    for (k = 0; k < (int)POTR_MAX_PATH; k++)
+    {
+        if (states[k] != 0)
+        {
+            return 1;
+        }
+    }
+
+    return 0;
 }

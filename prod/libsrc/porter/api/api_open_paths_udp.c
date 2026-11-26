@@ -26,349 +26,16 @@
 #include "api_open_paths_udp.h"
 #include "api_open_paths_common.h"
 
-/* 途中失敗時に作成済みの UDP 登録とソケットを逆順で回収する。 */
-static void rollback_udp_paths(potr_context *ctx)
-{
-    int i;
-
-    for (i = 0; i < ctx->n_path && i < (int)POTR_MAX_PATH; i++)
-    {
-        if (ctx->udp_watch[i] != NULL)
-        {
-            cplat_socket_watch_detach(ctx->udp_watch[i]);
-            ctx->udp_watch[i] = NULL;
-        }
-        if (ctx->sock[i] != CPLAT_INVALID_SOCKET)
-        {
-            cplat_socket_close(ctx->sock[i]);
-            ctx->sock[i] = CPLAT_INVALID_SOCKET;
-        }
-    }
-
-    ctx->n_path = 0;
-}
-
-/* 作成済み UDP ソケットを watch へ登録する。失敗時はソケットを閉じてエラーを返す。 */
-static int attach_udp_watch(cplat_socket sock, cplat_socket_watch **watch_out)
-{
-    cplat_error detail;
-    int rc;
-
-    *watch_out = NULL;
-    cplat_error_clear(&detail);
-    rc = cplat_socket_watch_attach(sock, watch_out, &detail);
-    if (rc != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket watch attach failed");
-        cplat_socket_close(sock);
-        return potr_internal_result_from_socket_result(rc, &detail);
-    }
-
-    return POTR_OK;
-}
-
-/*
- * UDP ソケットの OS 受信バッファーの拡大を要求し、結果を確認して必要なら INFO にサービスごとに 1 回記録する。
- * 要求しない設定 (実効値 0) の場合は何もしない。失敗してもエラーにはせず続行する。
- */
-static void configure_udp_receive_buffer(const cplat_socket sock, const potr_context *ctx, int *logged)
-{
-    uint32_t requested_size = resolve_udp_receive_buffer_size(&ctx->service, &ctx->global);
-    cplat_error detail;
-    size_t actual_size = 0U;
-    int set_ret;
-    int get_ret;
-
-    if (requested_size == 0U)
-    {
-        return;
-    }
-
-    /*
-     * OS の受信バッファーの拡大を要求する。
-     * Linux は設定値を 2 倍にして保持し net.core.rmem_max で切り詰めるため、
-     * 取得値そのものが要求値未満かで不足を判定する。
-     * see: https://man7.org/linux/man-pages/man7/socket.7.html
-     */
-    set_ret = cplat_socket_set_receive_buffer_size(sock, (size_t)requested_size, &detail);
-    get_ret = cplat_socket_get_receive_buffer_size(sock, &actual_size, NULL);
-
-    if (*logged != 0)
-    {
-        return;
-    }
-
-    if (set_ret != CPLAT_OK || get_ret != CPLAT_OK || actual_size < (size_t)requested_size)
-    {
-        if (get_ret == CPLAT_OK)
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
-                       "udp_receive_buffer_size[service_id=%" PRId64 "]: requested=%" PRIu32
-                       " actual=%zu; check OS receive buffer settings (e.g. net.core.rmem_max on Linux)",
-                       ctx->service.service_id, requested_size, actual_size);
-        }
-        else
-        {
-            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
-                       "udp_receive_buffer_size[service_id=%" PRId64 "]: requested=%" PRIu32
-                       " actual=unknown; check OS receive buffer settings (e.g. net.core.rmem_max on Linux)",
-                       ctx->service.service_id, requested_size);
-        }
-        *logged = 1;
-    }
-}
-
-/*
- * ソケットを作成して bind・watch 登録する。成功時は POTR_OK を返す。
- * bind_addr: bind する IPv4 アドレス (ネットワーク バイト オーダー)。port: bind するポート番号 (0 = OS 自動選定)。
- */
+static void rollback_udp_paths(potr_context *ctx);
+static int attach_udp_watch(cplat_socket sock, cplat_socket_watch **watch_out);
+static void configure_udp_receive_buffer(const cplat_socket sock, const potr_context *ctx, int *logged);
 static int open_socket_unicast(const potr_context *ctx, const uint32_t bind_addr, const uint16_t port,
-                               int *rcvbuf_logged, cplat_socket *sock_out, cplat_socket_watch **watch_out)
-{
-    cplat_socket sock;
-    cplat_ipv4_endpoint addr = {0};
-    cplat_error detail;
-    int attach_ret;
-
-    *sock_out = CPLAT_INVALID_SOCKET;
-    *watch_out = NULL;
-
-    if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return POTR_ERR_IO;
-    }
-
-    /*
-     * 自動割り当て (port == 0) で SO_REUSEADDR を有効にすると、同一ホストの複数ソケットへ
-     * 同じローカル ポートが割り当てられ、返信や PING が片方にしか届かなくなる。
-     * 固定ポート (port != 0) の場合のみ、再起動時の互換性向上のための best-effort 設定として有効化する。
-     * 失敗しても bind を試行するため、戻り値は明示的に破棄する。
-     * see: https://man7.org/linux/man-pages/man7/socket.7.html
-     * see: https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
-     */
-    if (port != 0)
-    {
-        (void)cplat_socket_set_reuse_address(sock, 1, NULL);
-    }
-
-    addr.address = bind_addr;
-    addr.port = cplat_hton16(port);
-
-    if (cplat_socket_bind(sock, &addr, &detail) != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
-        cplat_socket_close(sock);
-        return POTR_ERR_IO;
-    }
-
-    configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
-
-    attach_ret = attach_udp_watch(sock, watch_out);
-    if (attach_ret != POTR_OK)
-    {
-        return attach_ret;
-    }
-
-    *sock_out = sock;
-    return POTR_OK;
-}
-
-/*
- * マルチキャスト ソケットを作成して bind・グループ参加・送信設定 (IF / TTL)・watch 登録する。
- * join_if: グループ参加と、送信者の送信インターフェイスに使うアドレス (INADDR_ANY = OS 自動選択)。
- * is_receiver: 1 = 受信者、0 = 送信者。
- */
+                               int *rcvbuf_logged, cplat_socket *sock_out, cplat_socket_watch **watch_out);
 static int open_socket_multicast(const potr_context *ctx, int path_idx, const uint32_t join_if, const int is_receiver,
-                                 int *rcvbuf_logged, cplat_socket *sock_out, cplat_socket_watch **watch_out)
-{
-    const potr_service_def *def = &ctx->service;
-    cplat_socket sock;
-    cplat_ipv4_endpoint addr = {0};
-    uint32_t group_addr;
-    cplat_error detail;
-    int attach_ret;
-
-    /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
-    uint16_t bind_port;
-
-    *sock_out = CPLAT_INVALID_SOCKET;
-    *watch_out = NULL;
-
-    if (is_receiver)
-    {
-        bind_port = def->dst_port;
-    }
-    else
-    {
-        bind_port = def->src_port;
-    }
-
-    if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return POTR_ERR_IO;
-    }
-
-    /*
-     * 受信者は常に固定ポート (dst_port != 0) で bind するため、同一ポートへの複数参加を許可する。
-     * 送信者が自動割り当て (src_port == 0) で bind する場合は、同一ホストの複数ソケット間で
-     * ローカル ポートが重複するのを防ぐため有効化しない。
-     * 失敗しても bind を試行するため、戻り値は明示的に破棄する。
-     * see: https://man7.org/linux/man-pages/man7/socket.7.html
-     * see: https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
-     */
-    if (bind_port != 0)
-    {
-        (void)cplat_socket_set_reuse_address(sock, 1, NULL);
-    }
-
-    addr.address = CPLAT_IPV4_ADDR_ANY;
-    addr.port = cplat_hton16(bind_port);
-
-    if (cplat_socket_bind(sock, &addr, &detail) != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
-        cplat_socket_close(sock);
-        return POTR_ERR_IO;
-    }
-
-    /* マルチキャスト グループへ参加する (送受信ともに参加する)。 */
-    if (api_paths_parse_ipv4(def->multicast_group, &group_addr) != POTR_OK)
-    {
-        cplat_socket_close(sock);
-        return POTR_ERR_IO;
-    }
-
-    if (cplat_socket_join_multicast_group(sock, group_addr, join_if, &detail) != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "join_multicast_group failed");
-        cplat_socket_close(sock);
-        return POTR_ERR_IO;
-    }
-
-    /* 送信者: マルチキャスト送信インターフェイスと実効 TTL を設定する。設定できない場合は失敗とする。 */
-    if (!is_receiver)
-    {
-        unsigned int effective_ttl;
-
-        if (cplat_socket_set_multicast_interface(sock, join_if, &detail) != CPLAT_OK)
-        {
-            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "set_multicast_interface failed");
-            cplat_socket_close(sock);
-            return POTR_ERR_IO;
-        }
-
-        effective_ttl = potr_internal_config_effective_ttl(def->ttl);
-        if (cplat_socket_set_multicast_ttl(sock, effective_ttl, &detail) != CPLAT_OK)
-        {
-            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
-                                      "set_multicast_ttl failed (service_id=%" PRId64 " path=%d ttl=%u)",
-                                      def->service_id, path_idx, effective_ttl);
-            cplat_socket_close(sock);
-            return POTR_ERR_IO;
-        }
-    }
-
-    configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
-
-    attach_ret = attach_udp_watch(sock, watch_out);
-    if (attach_ret != POTR_OK)
-    {
-        return attach_ret;
-    }
-
-    *sock_out = sock;
-    return POTR_OK;
-}
-
-/*
- * ブロードキャスト ソケットを作成して bind・watch 登録する。
- * src_port: 送信者の送信元 bind ポート (0 = OS 自動選定)。
- * dst_port: 受信者の listen ポート / 送信者の送信先ポート (省略不可)。
- * src_if: 送信者が使用するローカル インターフェイス (INADDR_ANY = OS 自動選択)。
- * is_receiver: 1 = 受信者 (INADDR_ANY で bind)、0 = 送信者 (src_if で bind)。
- */
+                                 int *rcvbuf_logged, cplat_socket *sock_out, cplat_socket_watch **watch_out);
 static int open_socket_broadcast(const potr_context *ctx, uint16_t src_port, uint16_t dst_port, const uint32_t src_if,
                                  const int is_receiver, int *rcvbuf_logged, cplat_socket *sock_out,
-                                 cplat_socket_watch **watch_out)
-{
-    cplat_socket sock;
-    cplat_ipv4_endpoint addr = {0};
-    cplat_error detail;
-    int attach_ret;
-
-    /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
-    uint16_t bind_port;
-
-    *sock_out = CPLAT_INVALID_SOCKET;
-    *watch_out = NULL;
-
-    if (is_receiver)
-    {
-        bind_port = dst_port;
-    }
-    else
-    {
-        bind_port = src_port;
-    }
-
-    if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
-        return POTR_ERR_IO;
-    }
-
-    /*
-     * 受信者は常に固定ポート (dst_port != 0) で bind するため、同一ポートへの複数参加を許可する。
-     * 送信者が自動割り当て (src_port == 0) で bind する場合は、同一ホストの複数ソケット間で
-     * ローカル ポートが重複するのを防ぐため有効化しない。
-     * 失敗しても bind を試行するため、戻り値は明示的に破棄する。
-     * see: https://man7.org/linux/man-pages/man7/socket.7.html
-     * see: https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
-     */
-    if (bind_port != 0)
-    {
-        (void)cplat_socket_set_reuse_address(sock, 1, NULL);
-    }
-
-    if (cplat_socket_set_broadcast(sock, 1, &detail) != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "set_broadcast failed");
-        cplat_socket_close(sock);
-        return POTR_ERR_IO;
-    }
-
-    /* 送信者: src_addr で bind してインターフェイスを選択する。受信者: INADDR_ANY で bind する。 */
-    if (!is_receiver)
-    {
-        addr.address = src_if;
-    }
-    else
-    {
-        addr.address = CPLAT_IPV4_ADDR_ANY;
-    }
-
-    addr.port = cplat_hton16(bind_port);
-
-    if (cplat_socket_bind(sock, &addr, &detail) != CPLAT_OK)
-    {
-        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
-        cplat_socket_close(sock);
-        return POTR_ERR_IO;
-    }
-
-    configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
-
-    attach_ret = attach_udp_watch(sock, watch_out);
-    if (attach_ret != POTR_OK)
-    {
-        return attach_ret;
-    }
-
-    *sock_out = sock;
-    return POTR_OK;
-}
+                                 cplat_socket_watch **watch_out);
 
 /* UNICAST: src_addr/dst_addr ペアごとにソケットを作成する。 */
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -789,5 +456,349 @@ int api_open_paths_unicast_bidir_n1(potr_context *ctx)
                ctx->service.service_id, ctx->max_peers, (unsigned)ctx->service.src_port,
                (unsigned)ctx->service.dst_port, ctx->n_path);
 
+    return POTR_OK;
+}
+
+/* 途中失敗時に作成済みの UDP 登録とソケットを逆順で回収する。 */
+static void rollback_udp_paths(potr_context *ctx)
+{
+    int i;
+
+    for (i = 0; i < ctx->n_path && i < (int)POTR_MAX_PATH; i++)
+    {
+        if (ctx->udp_watch[i] != NULL)
+        {
+            cplat_socket_watch_detach(ctx->udp_watch[i]);
+            ctx->udp_watch[i] = NULL;
+        }
+        if (ctx->sock[i] != CPLAT_INVALID_SOCKET)
+        {
+            cplat_socket_close(ctx->sock[i]);
+            ctx->sock[i] = CPLAT_INVALID_SOCKET;
+        }
+    }
+
+    ctx->n_path = 0;
+}
+
+/* 作成済み UDP ソケットを watch へ登録する。失敗時はソケットを閉じてエラーを返す。 */
+static int attach_udp_watch(cplat_socket sock, cplat_socket_watch **watch_out)
+{
+    cplat_error detail;
+    int rc;
+
+    *watch_out = NULL;
+    cplat_error_clear(&detail);
+    rc = cplat_socket_watch_attach(sock, watch_out, &detail);
+    if (rc != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket watch attach failed");
+        cplat_socket_close(sock);
+        return potr_internal_result_from_socket_result(rc, &detail);
+    }
+
+    return POTR_OK;
+}
+
+/*
+ * UDP ソケットの OS 受信バッファーの拡大を要求し、結果を確認して必要なら INFO にサービスごとに 1 回記録する。
+ * 要求しない設定 (実効値 0) の場合は何もしない。失敗してもエラーにはせず続行する。
+ */
+static void configure_udp_receive_buffer(const cplat_socket sock, const potr_context *ctx, int *logged)
+{
+    uint32_t requested_size = resolve_udp_receive_buffer_size(&ctx->service, &ctx->global);
+    cplat_error detail;
+    size_t actual_size = 0U;
+    int set_ret;
+    int get_ret;
+
+    if (requested_size == 0U)
+    {
+        return;
+    }
+
+    /*
+     * OS の受信バッファーの拡大を要求する。
+     * Linux は設定値を 2 倍にして保持し net.core.rmem_max で切り詰めるため、
+     * 取得値そのものが要求値未満かで不足を判定する。
+     * see: https://man7.org/linux/man-pages/man7/socket.7.html
+     */
+    set_ret = cplat_socket_set_receive_buffer_size(sock, (size_t)requested_size, &detail);
+    get_ret = cplat_socket_get_receive_buffer_size(sock, &actual_size, NULL);
+
+    if (*logged != 0)
+    {
+        return;
+    }
+
+    if (set_ret != CPLAT_OK || get_ret != CPLAT_OK || actual_size < (size_t)requested_size)
+    {
+        if (get_ret == CPLAT_OK)
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                       "udp_receive_buffer_size[service_id=%" PRId64 "]: requested=%" PRIu32
+                       " actual=%zu; check OS receive buffer settings (e.g. net.core.rmem_max on Linux)",
+                       ctx->service.service_id, requested_size, actual_size);
+        }
+        else
+        {
+            POTR_TRACE(CPLAT_TRACE_LEVEL_INFO,
+                       "udp_receive_buffer_size[service_id=%" PRId64 "]: requested=%" PRIu32
+                       " actual=unknown; check OS receive buffer settings (e.g. net.core.rmem_max on Linux)",
+                       ctx->service.service_id, requested_size);
+        }
+        *logged = 1;
+    }
+}
+
+/*
+ * ソケットを作成して bind・watch 登録する。成功時は POTR_OK を返す。
+ * bind_addr: bind する IPv4 アドレス (ネットワーク バイト オーダー)。port: bind するポート番号 (0 = OS 自動選定)。
+ */
+static int open_socket_unicast(const potr_context *ctx, const uint32_t bind_addr, const uint16_t port,
+                               int *rcvbuf_logged, cplat_socket *sock_out, cplat_socket_watch **watch_out)
+{
+    cplat_socket sock;
+    cplat_ipv4_endpoint addr = {0};
+    cplat_error detail;
+    int attach_ret;
+
+    *sock_out = CPLAT_INVALID_SOCKET;
+    *watch_out = NULL;
+
+    if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        return POTR_ERR_IO;
+    }
+
+    /*
+     * 自動割り当て (port == 0) で SO_REUSEADDR を有効にすると、同一ホストの複数ソケットへ
+     * 同じローカル ポートが割り当てられ、返信や PING が片方にしか届かなくなる。
+     * 固定ポート (port != 0) の場合のみ、再起動時の互換性向上のための best-effort 設定として有効化する。
+     * 失敗しても bind を試行するため、戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man7/socket.7.html
+     * see: https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
+     */
+    if (port != 0)
+    {
+        (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    }
+
+    addr.address = bind_addr;
+    addr.port = cplat_hton16(port);
+
+    if (cplat_socket_bind(sock, &addr, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
+        cplat_socket_close(sock);
+        return POTR_ERR_IO;
+    }
+
+    configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
+
+    attach_ret = attach_udp_watch(sock, watch_out);
+    if (attach_ret != POTR_OK)
+    {
+        return attach_ret;
+    }
+
+    *sock_out = sock;
+    return POTR_OK;
+}
+
+/*
+ * マルチキャスト ソケットを作成して bind・グループ参加・送信設定 (IF / TTL)・watch 登録する。
+ * join_if: グループ参加と、送信者の送信インターフェイスに使うアドレス (INADDR_ANY = OS 自動選択)。
+ * is_receiver: 1 = 受信者、0 = 送信者。
+ */
+static int open_socket_multicast(const potr_context *ctx, int path_idx, const uint32_t join_if, const int is_receiver,
+                                 int *rcvbuf_logged, cplat_socket *sock_out, cplat_socket_watch **watch_out)
+{
+    const potr_service_def *def = &ctx->service;
+    cplat_socket sock;
+    cplat_ipv4_endpoint addr = {0};
+    uint32_t group_addr;
+    cplat_error detail;
+    int attach_ret;
+
+    /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
+    uint16_t bind_port;
+
+    *sock_out = CPLAT_INVALID_SOCKET;
+    *watch_out = NULL;
+
+    if (is_receiver)
+    {
+        bind_port = def->dst_port;
+    }
+    else
+    {
+        bind_port = def->src_port;
+    }
+
+    if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        return POTR_ERR_IO;
+    }
+
+    /*
+     * 受信者は常に固定ポート (dst_port != 0) で bind するため、同一ポートへの複数参加を許可する。
+     * 送信者が自動割り当て (src_port == 0) で bind する場合は、同一ホストの複数ソケット間で
+     * ローカル ポートが重複するのを防ぐため有効化しない。
+     * 失敗しても bind を試行するため、戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man7/socket.7.html
+     * see: https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
+     */
+    if (bind_port != 0)
+    {
+        (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    }
+
+    addr.address = CPLAT_IPV4_ADDR_ANY;
+    addr.port = cplat_hton16(bind_port);
+
+    if (cplat_socket_bind(sock, &addr, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
+        cplat_socket_close(sock);
+        return POTR_ERR_IO;
+    }
+
+    /* マルチキャスト グループへ参加する (送受信ともに参加する)。 */
+    if (api_paths_parse_ipv4(def->multicast_group, &group_addr) != POTR_OK)
+    {
+        cplat_socket_close(sock);
+        return POTR_ERR_IO;
+    }
+
+    if (cplat_socket_join_multicast_group(sock, group_addr, join_if, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "join_multicast_group failed");
+        cplat_socket_close(sock);
+        return POTR_ERR_IO;
+    }
+
+    /* 送信者: マルチキャスト送信インターフェイスと実効 TTL を設定する。設定できない場合は失敗とする。 */
+    if (!is_receiver)
+    {
+        unsigned int effective_ttl;
+
+        if (cplat_socket_set_multicast_interface(sock, join_if, &detail) != CPLAT_OK)
+        {
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "set_multicast_interface failed");
+            cplat_socket_close(sock);
+            return POTR_ERR_IO;
+        }
+
+        effective_ttl = potr_internal_config_effective_ttl(def->ttl);
+        if (cplat_socket_set_multicast_ttl(sock, effective_ttl, &detail) != CPLAT_OK)
+        {
+            POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail,
+                                      "set_multicast_ttl failed (service_id=%" PRId64 " path=%d ttl=%u)",
+                                      def->service_id, path_idx, effective_ttl);
+            cplat_socket_close(sock);
+            return POTR_ERR_IO;
+        }
+    }
+
+    configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
+
+    attach_ret = attach_udp_watch(sock, watch_out);
+    if (attach_ret != POTR_OK)
+    {
+        return attach_ret;
+    }
+
+    *sock_out = sock;
+    return POTR_OK;
+}
+
+/*
+ * ブロードキャスト ソケットを作成して bind・watch 登録する。
+ * src_port: 送信者の送信元 bind ポート (0 = OS 自動選定)。
+ * dst_port: 受信者の listen ポート / 送信者の送信先ポート (省略不可)。
+ * src_if: 送信者が使用するローカル インターフェイス (INADDR_ANY = OS 自動選択)。
+ * is_receiver: 1 = 受信者 (INADDR_ANY で bind)、0 = 送信者 (src_if で bind)。
+ */
+static int open_socket_broadcast(const potr_context *ctx, uint16_t src_port, uint16_t dst_port, const uint32_t src_if,
+                                 const int is_receiver, int *rcvbuf_logged, cplat_socket *sock_out,
+                                 cplat_socket_watch **watch_out)
+{
+    cplat_socket sock;
+    cplat_ipv4_endpoint addr = {0};
+    cplat_error detail;
+    int attach_ret;
+
+    /* 受信者: dst_port で bind する。送信者: src_port で bind する (送信元ポート)。 */
+    uint16_t bind_port;
+
+    *sock_out = CPLAT_INVALID_SOCKET;
+    *watch_out = NULL;
+
+    if (is_receiver)
+    {
+        bind_port = dst_port;
+    }
+    else
+    {
+        bind_port = src_port;
+    }
+
+    if (cplat_socket_open(CPLAT_SOCKET_UDP, &sock, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "socket failed");
+        return POTR_ERR_IO;
+    }
+
+    /*
+     * 受信者は常に固定ポート (dst_port != 0) で bind するため、同一ポートへの複数参加を許可する。
+     * 送信者が自動割り当て (src_port == 0) で bind する場合は、同一ホストの複数ソケット間で
+     * ローカル ポートが重複するのを防ぐため有効化しない。
+     * 失敗しても bind を試行するため、戻り値は明示的に破棄する。
+     * see: https://man7.org/linux/man-pages/man7/socket.7.html
+     * see: https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
+     */
+    if (bind_port != 0)
+    {
+        (void)cplat_socket_set_reuse_address(sock, 1, NULL);
+    }
+
+    if (cplat_socket_set_broadcast(sock, 1, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "set_broadcast failed");
+        cplat_socket_close(sock);
+        return POTR_ERR_IO;
+    }
+
+    /* 送信者: src_addr で bind してインターフェイスを選択する。受信者: INADDR_ANY で bind する。 */
+    if (!is_receiver)
+    {
+        addr.address = src_if;
+    }
+    else
+    {
+        addr.address = CPLAT_IPV4_ADDR_ANY;
+    }
+
+    addr.port = cplat_hton16(bind_port);
+
+    if (cplat_socket_bind(sock, &addr, &detail) != CPLAT_OK)
+    {
+        POTR_TRACE_SOCKET_FAILURE(CPLAT_TRACE_LEVEL_ERROR, &detail, "bind failed");
+        cplat_socket_close(sock);
+        return POTR_ERR_IO;
+    }
+
+    configure_udp_receive_buffer(sock, ctx, rcvbuf_logged);
+
+    attach_ret = attach_udp_watch(sock, watch_out);
+    if (attach_ret != POTR_OK)
+    {
+        return attach_ret;
+    }
+
+    *sock_out = sock;
     return POTR_OK;
 }

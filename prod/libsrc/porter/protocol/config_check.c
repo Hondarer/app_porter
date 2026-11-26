@@ -19,6 +19,440 @@
 #include <porter/protocol/config_check.h>
 #include <porter/protocol/config_schema.h>
 
+static int has_g_err(const potr_internal_config_field_errors *errors, unsigned int field_id);
+static int has_s_err(const potr_internal_config_field_errors *errors, unsigned int field_id);
+static int has_src_err(const potr_internal_config_field_errors *errors, size_t idx);
+static int has_dst_err(const potr_internal_config_field_errors *errors, size_t idx);
+static int has_pg_err(const potr_internal_config_field_errors *errors, size_t idx);
+static int has_explicit_pg(const potr_internal_config_field_errors *errors, size_t idx);
+static int report_field_issue(potr_internal_config_reporter *reporter, potr_config_issue_kind kind, int has_service_id,
+                              int64_t service_id, const char *base_path, const char *field_name, const char *message,
+                              const char *expected);
+static int report_indexed_field_issue(potr_internal_config_reporter *reporter, potr_config_issue_kind kind,
+                                      int has_service_id, int64_t service_id, const char *base_path,
+                                      const char *prefix, size_t idx, const char *message, const char *expected);
+static uint32_t read_u32_field(const void *base, const potr_internal_config_field_spec *spec);
+static int check_ipv4_multicast_string(const char *text, int *is_syntax_err);
+static int validate_paths_and_groups(const potr_service_def *service, uint32_t roles, int is_json_config,
+                                     const potr_internal_config_field_errors *errors, const int src_nul_ok[POTR_MAX_PATH],
+                                     const int dst_nul_ok[POTR_MAX_PATH], const char *service_path, int has_service_id,
+                                     int64_t service_id, potr_internal_config_reporter *reporter, int *found_err);
+static int validate_auth_combinations(const potr_service_def *service, uint32_t roles, int type_ok,
+                                        int is_json_config, int has_ca_file,
+                                        const potr_internal_config_field_errors *errors, const char *service_path,
+                                        int has_service_id, int64_t service_id,
+                                        potr_internal_config_reporter *reporter, int *found_err);
+static int validate_flow_control_constraints(const potr_global_config *global, const potr_service_def *service,
+                                             uint32_t roles, uint32_t eff_health_interval,
+                                             const potr_internal_config_field_errors *errors, const char *service_path,
+                                             int has_service_id, int64_t service_id,
+                                             potr_internal_config_reporter *reporter, int *found_err);
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+unsigned int potr_internal_config_effective_ttl(uint8_t configured_ttl)
+{
+    return (configured_ttl == 0U) ? (unsigned int)POTR_DEFAULT_TTL : (unsigned int)configured_ttl;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+void potr_internal_config_resolve_health(const potr_service_def *service, const potr_global_config *global,
+                                         uint32_t *interval_ms_out, uint32_t *timeout_ms_out)
+{
+    uint32_t interval_ms;
+    uint32_t timeout_ms;
+
+    if (service == NULL || global == NULL)
+    {
+        return;
+    }
+
+    if (is_tcp_type(service->type))
+    {
+        interval_ms = global->tcp_health_interval_ms;
+        timeout_ms = global->tcp_health_timeout_ms;
+    }
+    else
+    {
+        interval_ms = global->udp_health_interval_ms;
+        timeout_ms = global->udp_health_timeout_ms;
+    }
+
+    if (service->health_interval_ms != 0U)
+    {
+        interval_ms = service->health_interval_ms;
+    }
+
+    if (service->health_timeout_ms != 0U)
+    {
+        timeout_ms = service->health_timeout_ms;
+    }
+
+    if (interval_ms_out != NULL)
+    {
+        *interval_ms_out = interval_ms;
+    }
+    if (timeout_ms_out != NULL)
+    {
+        *timeout_ms_out = timeout_ms;
+    }
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_config_check_global(const potr_global_config *global,
+                                      const potr_internal_config_field_errors *errors, const char *global_path,
+                                      potr_internal_config_reporter *reporter)
+{
+    size_t count = 0U;
+    const potr_internal_config_field_spec *table = potr_internal_config_schema_global_table(&count);
+    const char *base_path = (global_path != NULL) ? global_path : "/global";
+    size_t i;
+    int found_err = 0;
+
+    if (global == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    for (i = 0U; i < count; i++)
+    {
+        const potr_internal_config_field_spec *spec = &table[i];
+        uint32_t val;
+
+        if (has_g_err(errors, spec->id) != 0)
+        {
+            continue;
+        }
+
+        val = read_u32_field(global, spec);
+        if (spec->allow_minus_one != 0 && val == POTR_FLOW_CONTROL_DISABLED)
+        {
+            continue;
+        }
+
+        if (val < spec->min_val || val > spec->max_val)
+        {
+            found_err = 1;
+            if (report_field_issue(reporter, POTR_CONFIG_ISSUE_OUT_OF_RANGE, 0, 0, base_path, spec->name,
+                                   "value is out of range", spec->expected) != POTR_OK)
+            {
+                return POTR_ERR_OUT_OF_MEMORY;
+            }
+        }
+    }
+
+    if (has_g_err(errors, POTR_CONFIG_GFIELD_MAX_PAYLOAD) == 0 &&
+        has_g_err(errors, POTR_CONFIG_GFIELD_MAX_MESSAGE_SIZE) == 0 &&
+        global->max_message_size < (uint32_t)global->max_payload)
+    {
+        found_err = 1;
+        if (report_field_issue(reporter, POTR_CONFIG_ISSUE_CONSTRAINT, 0, 0, base_path, "max_message_size",
+                               "max_message_size must be at least max_payload",
+                               "max_message_size >= max_payload") != POTR_OK)
+        {
+            return POTR_ERR_OUT_OF_MEMORY;
+        }
+    }
+
+    return (found_err != 0) ? POTR_ERR_INVALID_CONFIG : POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_config_check_service(const potr_global_config *global, const potr_service_def *service,
+                                       uint32_t roles, int is_json_config, int has_ca_file,
+                                       const potr_internal_config_field_errors *errors, const char *service_path,
+                                       int has_service_id, int64_t service_id, potr_internal_config_reporter *reporter)
+{
+    int src_nul_ok[POTR_MAX_PATH];
+    int dst_nul_ok[POTR_MAX_PATH];
+    int mcast_nul_ok = 1;
+    int bcast_nul_ok = 1;
+    int type_ok;
+    int found_err = 0;
+    size_t i;
+    const char *base_path = (service_path != NULL) ? service_path : "";
+    uint32_t eff_health_interval = 0U;
+
+    if (global == NULL || service == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    /* 固定長文字配列に NUL 終端があるか先に確認し、後続の文字列長・IP 解釈での範囲外読み取りを防ぐ。 */
+    for (i = 0U; i < (size_t)POTR_MAX_PATH; i++)
+    {
+        src_nul_ok[i] = (memchr(service->src_addr[i], '\0', sizeof(service->src_addr[i])) != NULL) ? 1 : 0;
+        if (src_nul_ok[i] == 0)
+        {
+            found_err = 1;
+            if (report_indexed_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id,
+                                           base_path, "src_addr", i, "string buffer is not NUL-terminated",
+                                           "1..63 bytes") != POTR_OK)
+            {
+                return POTR_ERR_OUT_OF_MEMORY;
+            }
+        }
+
+        dst_nul_ok[i] = (memchr(service->dst_addr[i], '\0', sizeof(service->dst_addr[i])) != NULL) ? 1 : 0;
+        if (dst_nul_ok[i] == 0)
+        {
+            found_err = 1;
+            if (report_indexed_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id,
+                                           base_path, "dst_addr", i, "string buffer is not NUL-terminated",
+                                           "1..63 bytes") != POTR_OK)
+            {
+                return POTR_ERR_OUT_OF_MEMORY;
+            }
+        }
+    }
+
+    if (memchr(service->multicast_group, '\0', sizeof(service->multicast_group)) == NULL)
+    {
+        mcast_nul_ok = 0;
+        found_err = 1;
+        if (report_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id, base_path,
+                               "multicast_group", "string buffer is not NUL-terminated",
+                               "IPv4 multicast address (224.0.0.0..239.255.255.255)") != POTR_OK)
+        {
+            return POTR_ERR_OUT_OF_MEMORY;
+        }
+    }
+
+    if (memchr(service->broadcast_addr, '\0', sizeof(service->broadcast_addr)) == NULL)
+    {
+        bcast_nul_ok = 0;
+        found_err = 1;
+        if (report_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id, base_path,
+                               "broadcast_addr", "string buffer is not NUL-terminated", "IPv4 address") != POTR_OK)
+        {
+            return POTR_ERR_OUT_OF_MEMORY;
+        }
+    }
+
+    type_ok = (has_s_err(errors, POTR_CONFIG_SFIELD_TYPE) == 0 && service->type >= POTR_TYPE_UNICAST_RAW &&
+               service->type <= POTR_TYPE_TCP_BIDIR)
+                  ? 1
+                  : 0;
+
+    if (is_json_config == 0)
+    {
+        size_t count = 0U;
+        const potr_internal_config_field_spec *table = potr_internal_config_schema_service_table(&count);
+
+        if (has_s_err(errors, POTR_CONFIG_SFIELD_TYPE) == 0 && type_ok == 0)
+        {
+            found_err = 1;
+            if (report_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id, base_path,
+                                   "type", "unsupported service type", table[0].expected) != POTR_OK)
+            {
+                return POTR_ERR_OUT_OF_MEMORY;
+            }
+        }
+
+        for (i = 0U; i < count; i++)
+        {
+            const potr_internal_config_field_spec *spec = &table[i];
+            uint32_t val;
+
+            if (spec->kind != POTR_CONFIG_VAL_U8 && spec->kind != POTR_CONFIG_VAL_U16 &&
+                spec->kind != POTR_CONFIG_VAL_U32)
+            {
+                continue;
+            }
+
+            if (spec->id == POTR_CONFIG_SFIELD_TTL)
+            {
+                unsigned int eff_ttl = potr_internal_config_effective_ttl(service->ttl);
+                if (eff_ttl < 1U || eff_ttl > UINT8_MAX)
+                {
+                    found_err = 1;
+                    if (report_field_issue(reporter, POTR_CONFIG_ISSUE_OUT_OF_RANGE, has_service_id, service_id,
+                                           base_path, spec->name, "value is out of range", spec->expected) != POTR_OK)
+                    {
+                        return POTR_ERR_OUT_OF_MEMORY;
+                    }
+                }
+                continue;
+            }
+
+            val = read_u32_field(service, spec);
+            if (spec->zero_is_default_in_struct != 0 && val == 0U)
+            {
+                continue;
+            }
+            if (spec->allow_minus_one != 0 && val == POTR_FLOW_CONTROL_DISABLED)
+            {
+                continue;
+            }
+
+            if (val < spec->min_val || val > spec->max_val)
+            {
+                found_err = 1;
+                if (report_field_issue(reporter, POTR_CONFIG_ISSUE_OUT_OF_RANGE, has_service_id, service_id, base_path,
+                                       spec->name, "value is out of range", spec->expected) != POTR_OK)
+                {
+                    return POTR_ERR_OUT_OF_MEMORY;
+                }
+            }
+        }
+
+        for (i = 0U; i < (size_t)POTR_MAX_PATH; i++)
+        {
+            uint8_t pg = service->path_group[i];
+            if (pg > POTR_MAX_PATH_GROUP)
+            {
+                found_err = 1;
+                if (report_indexed_field_issue(reporter, POTR_CONFIG_ISSUE_OUT_OF_RANGE, has_service_id, service_id,
+                                               base_path, "path_group", i, "value is out of range", "1..4") != POTR_OK)
+                {
+                    return POTR_ERR_OUT_OF_MEMORY;
+                }
+            }
+            else if (type_ok != 0 && is_raw_type(service->type) && pg >= 2U)
+            {
+                found_err = 1;
+                if (report_indexed_field_issue(reporter, POTR_CONFIG_ISSUE_NOT_APPLICABLE, has_service_id, service_id,
+                                               base_path, "path_group", i, "key is not applicable to RAW service type",
+                                               NULL) != POTR_OK)
+                {
+                    return POTR_ERR_OUT_OF_MEMORY;
+                }
+            }
+        }
+    }
+
+    if (type_ok != 0)
+    {
+        if ((service->type == POTR_TYPE_MULTICAST || service->type == POTR_TYPE_MULTICAST_RAW) &&
+            has_s_err(errors, POTR_CONFIG_SFIELD_MULTICAST_GROUP) == 0 && mcast_nul_ok != 0)
+        {
+            if (service->multicast_group[0] == '\0')
+            {
+                found_err = 1;
+                if (report_field_issue(reporter, POTR_CONFIG_ISSUE_MISSING, has_service_id, service_id, base_path,
+                                       "multicast_group", "required key is missing",
+                                       "IPv4 multicast address (224.0.0.0..239.255.255.255)") != POTR_OK)
+                {
+                    return POTR_ERR_OUT_OF_MEMORY;
+                }
+            }
+            else if (is_json_config == 0)
+            {
+                int is_syntax = 0;
+                if (check_ipv4_multicast_string(service->multicast_group, &is_syntax) == 0)
+                {
+                    potr_config_issue_kind kind =
+                        (is_syntax != 0) ? POTR_CONFIG_ISSUE_INVALID_VALUE : POTR_CONFIG_ISSUE_OUT_OF_RANGE;
+                    const char *msg =
+                        (is_syntax != 0) ? "invalid IPv4 multicast address" : "multicast_group is outside 224.0.0.0..239.255.255.255";
+                    found_err = 1;
+                    if (report_field_issue(reporter, kind, has_service_id, service_id, base_path, "multicast_group", msg,
+                                           "IPv4 multicast address (224.0.0.0..239.255.255.255)") != POTR_OK)
+                    {
+                        return POTR_ERR_OUT_OF_MEMORY;
+                    }
+                }
+            }
+        }
+
+        if ((service->type == POTR_TYPE_BROADCAST || service->type == POTR_TYPE_BROADCAST_RAW) &&
+            is_json_config == 0 && has_s_err(errors, POTR_CONFIG_SFIELD_BROADCAST_ADDR) == 0 && bcast_nul_ok != 0 &&
+            service->broadcast_addr[0] != '\0')
+        {
+            uint32_t tmp_ip = 0U;
+            if (cplat_ipv4_parse(service->broadcast_addr, &tmp_ip) != CPLAT_OK)
+            {
+                found_err = 1;
+                if (report_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id, base_path,
+                                       "broadcast_addr", "invalid IPv4 address", "IPv4 address") != POTR_OK)
+                {
+                    return POTR_ERR_OUT_OF_MEMORY;
+                }
+            }
+        }
+
+        if (validate_paths_and_groups(service, roles, is_json_config, errors, src_nul_ok, dst_nul_ok, base_path,
+                                      has_service_id, service_id, reporter, &found_err) != POTR_OK)
+        {
+            return POTR_ERR_OUT_OF_MEMORY;
+        }
+    }
+
+    if (validate_auth_combinations(service, roles, type_ok, is_json_config, has_ca_file, errors, base_path,
+                                   has_service_id, service_id, reporter, &found_err) != POTR_OK)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+
+    potr_internal_config_resolve_health(service, global, &eff_health_interval, NULL);
+
+    if (type_ok != 0 && !is_raw_type(service->type))
+    {
+        if (validate_flow_control_constraints(global, service, roles, eff_health_interval, errors, base_path,
+                                              has_service_id, service_id, reporter, &found_err) != POTR_OK)
+        {
+            return POTR_ERR_OUT_OF_MEMORY;
+        }
+    }
+
+    return (found_err != 0) ? POTR_ERR_INVALID_CONFIG : POTR_OK;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_config_check_all(const potr_global_config *global, const potr_service_def *service, potr_role role,
+                                   potr_internal_config_reporter *reporter)
+{
+    uint32_t role_mask = 0U;
+    int ret_global;
+    int ret_service;
+    int has_err = 0;
+
+    if (global == NULL || service == NULL)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    if (role == POTR_ROLE_SENDER)
+    {
+        role_mask = POTR_CONFIG_ROLE_SENDER;
+    }
+    else if (role == POTR_ROLE_RECEIVER)
+    {
+        role_mask = POTR_CONFIG_ROLE_RECEIVER;
+    }
+    else
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    ret_global = potr_internal_config_check_global(global, NULL, "/global", reporter);
+    if (ret_global == POTR_ERR_OUT_OF_MEMORY)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    if (ret_global != POTR_OK)
+    {
+        has_err = 1;
+    }
+
+    ret_service = potr_internal_config_check_service(global, service, role_mask, 0, 0, NULL, "", 1, service->service_id,
+                                                     reporter);
+    if (ret_service == POTR_ERR_OUT_OF_MEMORY)
+    {
+        return POTR_ERR_OUT_OF_MEMORY;
+    }
+    if (ret_service != POTR_OK)
+    {
+        has_err = 1;
+    }
+
+    return (has_err != 0) ? POTR_ERR_INVALID_CONFIG : POTR_OK;
+}
+
 static int has_g_err(const potr_internal_config_field_errors *errors, unsigned int field_id)
 {
     return (errors != NULL && (errors->global_mask & ((uint32_t)1U << field_id)) != 0U) ? 1 : 0;
@@ -800,409 +1234,4 @@ static int validate_flow_control_constraints(const potr_global_config *global, c
     }
 
     return POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-unsigned int potr_internal_config_effective_ttl(uint8_t configured_ttl)
-{
-    return (configured_ttl == 0U) ? (unsigned int)POTR_DEFAULT_TTL : (unsigned int)configured_ttl;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-void potr_internal_config_resolve_health(const potr_service_def *service, const potr_global_config *global,
-                                         uint32_t *interval_ms_out, uint32_t *timeout_ms_out)
-{
-    uint32_t interval_ms;
-    uint32_t timeout_ms;
-
-    if (service == NULL || global == NULL)
-    {
-        return;
-    }
-
-    if (is_tcp_type(service->type))
-    {
-        interval_ms = global->tcp_health_interval_ms;
-        timeout_ms = global->tcp_health_timeout_ms;
-    }
-    else
-    {
-        interval_ms = global->udp_health_interval_ms;
-        timeout_ms = global->udp_health_timeout_ms;
-    }
-
-    if (service->health_interval_ms != 0U)
-    {
-        interval_ms = service->health_interval_ms;
-    }
-
-    if (service->health_timeout_ms != 0U)
-    {
-        timeout_ms = service->health_timeout_ms;
-    }
-
-    if (interval_ms_out != NULL)
-    {
-        *interval_ms_out = interval_ms;
-    }
-    if (timeout_ms_out != NULL)
-    {
-        *timeout_ms_out = timeout_ms;
-    }
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_config_check_global(const potr_global_config *global,
-                                      const potr_internal_config_field_errors *errors, const char *global_path,
-                                      potr_internal_config_reporter *reporter)
-{
-    size_t count = 0U;
-    const potr_internal_config_field_spec *table = potr_internal_config_schema_global_table(&count);
-    const char *base_path = (global_path != NULL) ? global_path : "/global";
-    size_t i;
-    int found_err = 0;
-
-    if (global == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    for (i = 0U; i < count; i++)
-    {
-        const potr_internal_config_field_spec *spec = &table[i];
-        uint32_t val;
-
-        if (has_g_err(errors, spec->id) != 0)
-        {
-            continue;
-        }
-
-        val = read_u32_field(global, spec);
-        if (spec->allow_minus_one != 0 && val == POTR_FLOW_CONTROL_DISABLED)
-        {
-            continue;
-        }
-
-        if (val < spec->min_val || val > spec->max_val)
-        {
-            found_err = 1;
-            if (report_field_issue(reporter, POTR_CONFIG_ISSUE_OUT_OF_RANGE, 0, 0, base_path, spec->name,
-                                   "value is out of range", spec->expected) != POTR_OK)
-            {
-                return POTR_ERR_OUT_OF_MEMORY;
-            }
-        }
-    }
-
-    if (has_g_err(errors, POTR_CONFIG_GFIELD_MAX_PAYLOAD) == 0 &&
-        has_g_err(errors, POTR_CONFIG_GFIELD_MAX_MESSAGE_SIZE) == 0 &&
-        global->max_message_size < (uint32_t)global->max_payload)
-    {
-        found_err = 1;
-        if (report_field_issue(reporter, POTR_CONFIG_ISSUE_CONSTRAINT, 0, 0, base_path, "max_message_size",
-                               "max_message_size must be at least max_payload",
-                               "max_message_size >= max_payload") != POTR_OK)
-        {
-            return POTR_ERR_OUT_OF_MEMORY;
-        }
-    }
-
-    return (found_err != 0) ? POTR_ERR_INVALID_CONFIG : POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_config_check_service(const potr_global_config *global, const potr_service_def *service,
-                                       uint32_t roles, int is_json_config, int has_ca_file,
-                                       const potr_internal_config_field_errors *errors, const char *service_path,
-                                       int has_service_id, int64_t service_id, potr_internal_config_reporter *reporter)
-{
-    int src_nul_ok[POTR_MAX_PATH];
-    int dst_nul_ok[POTR_MAX_PATH];
-    int mcast_nul_ok = 1;
-    int bcast_nul_ok = 1;
-    int type_ok;
-    int found_err = 0;
-    size_t i;
-    const char *base_path = (service_path != NULL) ? service_path : "";
-    uint32_t eff_health_interval = 0U;
-
-    if (global == NULL || service == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    /* 固定長文字配列に NUL 終端があるか先に確認し、後続の文字列長・IP 解釈での範囲外読み取りを防ぐ。 */
-    for (i = 0U; i < (size_t)POTR_MAX_PATH; i++)
-    {
-        src_nul_ok[i] = (memchr(service->src_addr[i], '\0', sizeof(service->src_addr[i])) != NULL) ? 1 : 0;
-        if (src_nul_ok[i] == 0)
-        {
-            found_err = 1;
-            if (report_indexed_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id,
-                                           base_path, "src_addr", i, "string buffer is not NUL-terminated",
-                                           "1..63 bytes") != POTR_OK)
-            {
-                return POTR_ERR_OUT_OF_MEMORY;
-            }
-        }
-
-        dst_nul_ok[i] = (memchr(service->dst_addr[i], '\0', sizeof(service->dst_addr[i])) != NULL) ? 1 : 0;
-        if (dst_nul_ok[i] == 0)
-        {
-            found_err = 1;
-            if (report_indexed_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id,
-                                           base_path, "dst_addr", i, "string buffer is not NUL-terminated",
-                                           "1..63 bytes") != POTR_OK)
-            {
-                return POTR_ERR_OUT_OF_MEMORY;
-            }
-        }
-    }
-
-    if (memchr(service->multicast_group, '\0', sizeof(service->multicast_group)) == NULL)
-    {
-        mcast_nul_ok = 0;
-        found_err = 1;
-        if (report_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id, base_path,
-                               "multicast_group", "string buffer is not NUL-terminated",
-                               "IPv4 multicast address (224.0.0.0..239.255.255.255)") != POTR_OK)
-        {
-            return POTR_ERR_OUT_OF_MEMORY;
-        }
-    }
-
-    if (memchr(service->broadcast_addr, '\0', sizeof(service->broadcast_addr)) == NULL)
-    {
-        bcast_nul_ok = 0;
-        found_err = 1;
-        if (report_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id, base_path,
-                               "broadcast_addr", "string buffer is not NUL-terminated", "IPv4 address") != POTR_OK)
-        {
-            return POTR_ERR_OUT_OF_MEMORY;
-        }
-    }
-
-    type_ok = (has_s_err(errors, POTR_CONFIG_SFIELD_TYPE) == 0 && service->type >= POTR_TYPE_UNICAST_RAW &&
-               service->type <= POTR_TYPE_TCP_BIDIR)
-                  ? 1
-                  : 0;
-
-    if (is_json_config == 0)
-    {
-        size_t count = 0U;
-        const potr_internal_config_field_spec *table = potr_internal_config_schema_service_table(&count);
-
-        if (has_s_err(errors, POTR_CONFIG_SFIELD_TYPE) == 0 && type_ok == 0)
-        {
-            found_err = 1;
-            if (report_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id, base_path,
-                                   "type", "unsupported service type", table[0].expected) != POTR_OK)
-            {
-                return POTR_ERR_OUT_OF_MEMORY;
-            }
-        }
-
-        for (i = 0U; i < count; i++)
-        {
-            const potr_internal_config_field_spec *spec = &table[i];
-            uint32_t val;
-
-            if (spec->kind != POTR_CONFIG_VAL_U8 && spec->kind != POTR_CONFIG_VAL_U16 &&
-                spec->kind != POTR_CONFIG_VAL_U32)
-            {
-                continue;
-            }
-
-            if (spec->id == POTR_CONFIG_SFIELD_TTL)
-            {
-                unsigned int eff_ttl = potr_internal_config_effective_ttl(service->ttl);
-                if (eff_ttl < 1U || eff_ttl > UINT8_MAX)
-                {
-                    found_err = 1;
-                    if (report_field_issue(reporter, POTR_CONFIG_ISSUE_OUT_OF_RANGE, has_service_id, service_id,
-                                           base_path, spec->name, "value is out of range", spec->expected) != POTR_OK)
-                    {
-                        return POTR_ERR_OUT_OF_MEMORY;
-                    }
-                }
-                continue;
-            }
-
-            val = read_u32_field(service, spec);
-            if (spec->zero_is_default_in_struct != 0 && val == 0U)
-            {
-                continue;
-            }
-            if (spec->allow_minus_one != 0 && val == POTR_FLOW_CONTROL_DISABLED)
-            {
-                continue;
-            }
-
-            if (val < spec->min_val || val > spec->max_val)
-            {
-                found_err = 1;
-                if (report_field_issue(reporter, POTR_CONFIG_ISSUE_OUT_OF_RANGE, has_service_id, service_id, base_path,
-                                       spec->name, "value is out of range", spec->expected) != POTR_OK)
-                {
-                    return POTR_ERR_OUT_OF_MEMORY;
-                }
-            }
-        }
-
-        for (i = 0U; i < (size_t)POTR_MAX_PATH; i++)
-        {
-            uint8_t pg = service->path_group[i];
-            if (pg > POTR_MAX_PATH_GROUP)
-            {
-                found_err = 1;
-                if (report_indexed_field_issue(reporter, POTR_CONFIG_ISSUE_OUT_OF_RANGE, has_service_id, service_id,
-                                               base_path, "path_group", i, "value is out of range", "1..4") != POTR_OK)
-                {
-                    return POTR_ERR_OUT_OF_MEMORY;
-                }
-            }
-            else if (type_ok != 0 && is_raw_type(service->type) && pg >= 2U)
-            {
-                found_err = 1;
-                if (report_indexed_field_issue(reporter, POTR_CONFIG_ISSUE_NOT_APPLICABLE, has_service_id, service_id,
-                                               base_path, "path_group", i, "key is not applicable to RAW service type",
-                                               NULL) != POTR_OK)
-                {
-                    return POTR_ERR_OUT_OF_MEMORY;
-                }
-            }
-        }
-    }
-
-    if (type_ok != 0)
-    {
-        if ((service->type == POTR_TYPE_MULTICAST || service->type == POTR_TYPE_MULTICAST_RAW) &&
-            has_s_err(errors, POTR_CONFIG_SFIELD_MULTICAST_GROUP) == 0 && mcast_nul_ok != 0)
-        {
-            if (service->multicast_group[0] == '\0')
-            {
-                found_err = 1;
-                if (report_field_issue(reporter, POTR_CONFIG_ISSUE_MISSING, has_service_id, service_id, base_path,
-                                       "multicast_group", "required key is missing",
-                                       "IPv4 multicast address (224.0.0.0..239.255.255.255)") != POTR_OK)
-                {
-                    return POTR_ERR_OUT_OF_MEMORY;
-                }
-            }
-            else if (is_json_config == 0)
-            {
-                int is_syntax = 0;
-                if (check_ipv4_multicast_string(service->multicast_group, &is_syntax) == 0)
-                {
-                    potr_config_issue_kind kind =
-                        (is_syntax != 0) ? POTR_CONFIG_ISSUE_INVALID_VALUE : POTR_CONFIG_ISSUE_OUT_OF_RANGE;
-                    const char *msg =
-                        (is_syntax != 0) ? "invalid IPv4 multicast address" : "multicast_group is outside 224.0.0.0..239.255.255.255";
-                    found_err = 1;
-                    if (report_field_issue(reporter, kind, has_service_id, service_id, base_path, "multicast_group", msg,
-                                           "IPv4 multicast address (224.0.0.0..239.255.255.255)") != POTR_OK)
-                    {
-                        return POTR_ERR_OUT_OF_MEMORY;
-                    }
-                }
-            }
-        }
-
-        if ((service->type == POTR_TYPE_BROADCAST || service->type == POTR_TYPE_BROADCAST_RAW) &&
-            is_json_config == 0 && has_s_err(errors, POTR_CONFIG_SFIELD_BROADCAST_ADDR) == 0 && bcast_nul_ok != 0 &&
-            service->broadcast_addr[0] != '\0')
-        {
-            uint32_t tmp_ip = 0U;
-            if (cplat_ipv4_parse(service->broadcast_addr, &tmp_ip) != CPLAT_OK)
-            {
-                found_err = 1;
-                if (report_field_issue(reporter, POTR_CONFIG_ISSUE_INVALID_VALUE, has_service_id, service_id, base_path,
-                                       "broadcast_addr", "invalid IPv4 address", "IPv4 address") != POTR_OK)
-                {
-                    return POTR_ERR_OUT_OF_MEMORY;
-                }
-            }
-        }
-
-        if (validate_paths_and_groups(service, roles, is_json_config, errors, src_nul_ok, dst_nul_ok, base_path,
-                                      has_service_id, service_id, reporter, &found_err) != POTR_OK)
-        {
-            return POTR_ERR_OUT_OF_MEMORY;
-        }
-    }
-
-    if (validate_auth_combinations(service, roles, type_ok, is_json_config, has_ca_file, errors, base_path,
-                                   has_service_id, service_id, reporter, &found_err) != POTR_OK)
-    {
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-
-    potr_internal_config_resolve_health(service, global, &eff_health_interval, NULL);
-
-    if (type_ok != 0 && !is_raw_type(service->type))
-    {
-        if (validate_flow_control_constraints(global, service, roles, eff_health_interval, errors, base_path,
-                                              has_service_id, service_id, reporter, &found_err) != POTR_OK)
-        {
-            return POTR_ERR_OUT_OF_MEMORY;
-        }
-    }
-
-    return (found_err != 0) ? POTR_ERR_INVALID_CONFIG : POTR_OK;
-}
-
-/* Doxygen コメントは、ヘッダーに記載 */
-
-int potr_internal_config_check_all(const potr_global_config *global, const potr_service_def *service, potr_role role,
-                                   potr_internal_config_reporter *reporter)
-{
-    uint32_t role_mask = 0U;
-    int ret_global;
-    int ret_service;
-    int has_err = 0;
-
-    if (global == NULL || service == NULL)
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    if (role == POTR_ROLE_SENDER)
-    {
-        role_mask = POTR_CONFIG_ROLE_SENDER;
-    }
-    else if (role == POTR_ROLE_RECEIVER)
-    {
-        role_mask = POTR_CONFIG_ROLE_RECEIVER;
-    }
-    else
-    {
-        return POTR_ERR_INVALID_ARGUMENT;
-    }
-
-    ret_global = potr_internal_config_check_global(global, NULL, "/global", reporter);
-    if (ret_global == POTR_ERR_OUT_OF_MEMORY)
-    {
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-    if (ret_global != POTR_OK)
-    {
-        has_err = 1;
-    }
-
-    ret_service = potr_internal_config_check_service(global, service, role_mask, 0, 0, NULL, "", 1, service->service_id,
-                                                     reporter);
-    if (ret_service == POTR_ERR_OUT_OF_MEMORY)
-    {
-        return POTR_ERR_OUT_OF_MEMORY;
-    }
-    if (ret_service != POTR_OK)
-    {
-        has_err = 1;
-    }
-
-    return (has_err != 0) ? POTR_ERR_INVALID_CONFIG : POTR_OK;
 }

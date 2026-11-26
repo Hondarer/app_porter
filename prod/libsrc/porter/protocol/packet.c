@@ -94,51 +94,11 @@ static_assert(POTR_FLOW_CONTROL_MONITOR_ENTRY_SIZE == POTR_IDENTITY_SIZE,
               "porter: monitor list entry must hold a session identity");
 static_assert(POTR_FLOW_CONTROL_MONITOR_PAYLOAD_MAX <= POTR_DEFAULT_MAX_PAYLOAD,
               "porter: monitor list payload must fit in the default max payload");
-/**
- *  @brief          64 ビット値をホスト バイト オーダーからネットワーク バイト オーダーへ変換します。
- *  @param[in]      v   変換するホスト バイト オーダーの値。
- *  @return         ネットワーク バイト オーダーに変換した値。
- *
- *  cplat_hton32() を上位 32 ビットと下位 32 ビットに適用し、ワードを入れ替えて連結します。
- */
-static uint64_t hton64(uint64_t v)
-{
-    uint32_t hi = cplat_hton32((uint32_t)(v >> 32));
-    uint32_t lo = cplat_hton32((uint32_t)(v & 0xFFFFFFFFUL));
 
-    return ((uint64_t)lo << 32) | (uint64_t)hi;
-}
-
-/**
- *  @brief          64 ビット値をネットワーク バイト オーダーからホスト バイト オーダーへ変換します。
- *  @param[in]      v   変換するネットワーク バイト オーダーの値。
- *  @return         ホスト バイト オーダーに変換した値。
- *
- *  変換は対称であるため hton64() をそのまま再利用します。
- */
-static uint64_t ntoh64(uint64_t v)
-{
-    return hton64(v); /* 対称変換 */
-}
-
-/**
- *  @brief          セッション識別フィールドをパケットにネットワーク バイト オーダーで書き込みます。
- *  @param[out]     packet  書き込み先パケット構造体へのポインター。
- *  @param[in]      shdr    セッション識別ヘッダーへのポインター。
- *
- *  service_id・session_tv_sec・session_id・session_tv_nsec を NBO に変換して格納し、
- *  protocol_version に POTR_PROTOCOL_VERSION を NBO で設定します。
- */
-static void fill_session_hdr(potr_packet *packet, const potr_internal_packet_session_hdr *shdr)
-{
-    packet->service_id = (int64_t)hton64((uint64_t)shdr->service_id);
-    packet->session_tv_sec = (int64_t)hton64((uint64_t)shdr->session_tv_sec);
-    packet->session_id = cplat_hton32(shdr->session_id);
-
-    /* session_tv_nsec は正規化済みナノ秒部 (0..999999999)。ワイヤのビット列を int32_t へ格納する。 */
-    packet->session_tv_nsec = (int32_t)cplat_hton32((uint32_t)shdr->session_tv_nsec);
-    packet->protocol_version = cplat_hton32(POTR_PROTOCOL_VERSION);
-}
+static uint64_t hton64(uint64_t v);
+static uint64_t ntoh64(uint64_t v);
+static void fill_session_hdr(potr_packet *packet, const potr_internal_packet_session_hdr *shdr);
+static void put_network_order(uint8_t *destination, uint64_t value, size_t length);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -212,17 +172,6 @@ int potr_internal_packet_build_flow_control(potr_packet *packet, const potr_inte
     packet->payload_len = cplat_hton16(payload_len);
 
     return POTR_OK;
-}
-
-/* 値を、上位のバイトから順に length [byte] 書き込む (ネットワーク バイト オーダー)。 */
-static void put_network_order(uint8_t *destination, uint64_t value, size_t length)
-{
-    size_t i;
-
-    for (i = 0U; i < length; i++)
-    {
-        destination[i] = (uint8_t)(value >> (8U * (length - 1U - i)));
-    }
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -508,4 +457,61 @@ size_t potr_internal_packet_wire_size(const potr_packet *packet)
     }
 
     return POTR_PACKET_HEADER_SIZE + cplat_ntoh16(packet->payload_len);
+}
+
+/**
+ *  @brief          64 ビット値をホスト バイト オーダーからネットワーク バイト オーダーへ変換します。
+ *  @param[in]      v   変換するホスト バイト オーダーの値。
+ *  @return         ネットワーク バイト オーダーに変換した値。
+ *
+ *  cplat_hton32() を上位 32 ビットと下位 32 ビットに適用し、ワードを入れ替えて連結します。
+ */
+static uint64_t hton64(uint64_t v)
+{
+    uint32_t hi = cplat_hton32((uint32_t)(v >> 32));
+    uint32_t lo = cplat_hton32((uint32_t)(v & 0xFFFFFFFFUL));
+
+    return ((uint64_t)lo << 32) | (uint64_t)hi;
+}
+
+/**
+ *  @brief          64 ビット値をネットワーク バイト オーダーからホスト バイト オーダーへ変換します。
+ *  @param[in]      v   変換するネットワーク バイト オーダーの値。
+ *  @return         ホスト バイト オーダーに変換した値。
+ *
+ *  変換は対称であるため hton64() をそのまま再利用します。
+ */
+static uint64_t ntoh64(uint64_t v)
+{
+    return hton64(v); /* 対称変換 */
+}
+
+/**
+ *  @brief          セッション識別フィールドをパケットにネットワーク バイト オーダーで書き込みます。
+ *  @param[out]     packet  書き込み先パケット構造体へのポインター。
+ *  @param[in]      shdr    セッション識別ヘッダーへのポインター。
+ *
+ *  service_id・session_tv_sec・session_id・session_tv_nsec を NBO に変換して格納し、
+ *  protocol_version に POTR_PROTOCOL_VERSION を NBO で設定します。
+ */
+static void fill_session_hdr(potr_packet *packet, const potr_internal_packet_session_hdr *shdr)
+{
+    packet->service_id = (int64_t)hton64((uint64_t)shdr->service_id);
+    packet->session_tv_sec = (int64_t)hton64((uint64_t)shdr->session_tv_sec);
+    packet->session_id = cplat_hton32(shdr->session_id);
+
+    /* session_tv_nsec は正規化済みナノ秒部 (0..999999999)。ワイヤのビット列を int32_t へ格納する。 */
+    packet->session_tv_nsec = (int32_t)cplat_hton32((uint32_t)shdr->session_tv_nsec);
+    packet->protocol_version = cplat_hton32(POTR_PROTOCOL_VERSION);
+}
+
+/* 値を、上位のバイトから順に length [byte] 書き込む (ネットワーク バイト オーダー)。 */
+static void put_network_order(uint8_t *destination, uint64_t value, size_t length)
+{
+    size_t i;
+
+    for (i = 0U; i < length; i++)
+    {
+        destination[i] = (uint8_t)(value >> (8U * (length - 1U - i)));
+    }
 }

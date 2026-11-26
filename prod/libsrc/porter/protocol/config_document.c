@@ -31,151 +31,9 @@ typedef enum jsonc_scan_state
     JSONC_SCAN_BLOCK_COMMENT = 3
 } jsonc_scan_state;
 
-/*
- * byte オフセット (0 始まり) を、1 始まりの行番号と byte 単位の列番号へ変換する。
- * 行区切りは '\n' とし、CRLF では '\r' も通常文字として列を 1 進める。
- */
-static void offset_to_line_column(const char *buf, size_t len, size_t offset, uint32_t *line_out, uint32_t *col_out)
-{
-    size_t limit = (offset <= len) ? offset : len;
-    uint32_t line = 1U;
-    uint32_t col = 1U;
-    size_t i;
-
-    for (i = 0U; i < limit; i++)
-    {
-        if (buf[i] == '\n')
-        {
-            line++;
-            col = 1U;
-        }
-        else
-        {
-            col++;
-        }
-    }
-
-    *line_out = line;
-    *col_out = col;
-}
-
-/*
- * コメントを除いた JSON 文字列中の "\u0000" エスケープを検出し、最初の '\' オフセットを返す。
- * "\\" は 2 byte 一組で消費するため、"\\u0000" のようにリテラルのバックスラッシュに続く "u0000" は許可する。
- */
-static int find_string_u0000_escape(const char *buf, size_t len, size_t *offset_out)
-{
-    jsonc_scan_state state = JSONC_SCAN_NORMAL;
-    size_t i = 0U;
-
-    while (i < len)
-    {
-        char ch = buf[i];
-
-        if (state == JSONC_SCAN_NORMAL)
-        {
-            if (ch == '"')
-            {
-                state = JSONC_SCAN_STRING;
-            }
-            else if (ch == '/' && (i + 1U) < len)
-            {
-                if (buf[i + 1U] == '/')
-                {
-                    state = JSONC_SCAN_LINE_COMMENT;
-                    i += 2U;
-                    continue;
-                }
-                if (buf[i + 1U] == '*')
-                {
-                    state = JSONC_SCAN_BLOCK_COMMENT;
-                    i += 2U;
-                    continue;
-                }
-            }
-            i++;
-        }
-        else if (state == JSONC_SCAN_LINE_COMMENT)
-        {
-            if (ch == '\n')
-            {
-                state = JSONC_SCAN_NORMAL;
-            }
-            i++;
-        }
-        else if (state == JSONC_SCAN_BLOCK_COMMENT)
-        {
-            if (ch == '*' && (i + 1U) < len && buf[i + 1U] == '/')
-            {
-                state = JSONC_SCAN_NORMAL;
-                i += 2U;
-                continue;
-            }
-            i++;
-        }
-        else /* JSONC_SCAN_STRING */
-        {
-            if (ch == '\\')
-            {
-                if ((i + 5U) < len && buf[i + 1U] == 'u' && buf[i + 2U] == '0' && buf[i + 3U] == '0' &&
-                    buf[i + 4U] == '0' && buf[i + 5U] == '0')
-                {
-                    *offset_out = i;
-                    return 1;
-                }
-                if ((i + 1U) < len)
-                {
-                    i += 2U;
-                }
-                else
-                {
-                    i++;
-                }
-            }
-            else
-            {
-                if (ch == '"')
-                {
-                    state = JSONC_SCAN_NORMAL;
-                }
-                i++;
-            }
-        }
-    }
-
-    return 0;
-}
-
-static int check_no_nul_or_u0000(const char *buf, size_t used, potr_internal_config_reporter *reporter)
-{
-    size_t i;
-    size_t esc_offset = 0U;
-
-    for (i = 0U; i < used; i++)
-    {
-        if (buf[i] == '\0')
-        {
-            uint32_t line = 1U;
-            uint32_t col = 1U;
-            offset_to_line_column(buf, used, i, &line, &col);
-            potr_internal_config_report_issue(reporter, POTR_CONFIG_ISSUE_SYNTAX, 0, 0, "",
-                                              "NUL byte is not allowed in config file", NULL, line, col);
-            return POTR_ERR_INVALID_CONFIG;
-        }
-    }
-
-    if (find_string_u0000_escape(buf, used, &esc_offset) != 0)
-    {
-        uint32_t line = 1U;
-        uint32_t col = 1U;
-        offset_to_line_column(buf, used, esc_offset, &line, &col);
-        potr_internal_config_report_issue(reporter, POTR_CONFIG_ISSUE_SYNTAX, 0, 0, "",
-                                          "U+0000 escape is not allowed in JSON strings", NULL, line, col);
-        return POTR_ERR_INVALID_CONFIG;
-    }
-
-    return POTR_OK;
-}
+static void offset_to_line_column(const char *buf, size_t len, size_t offset, uint32_t *line_out, uint32_t *col_out);
+static int find_string_u0000_escape(const char *buf, size_t len, size_t *offset_out);
+static int check_no_nul_or_u0000(const char *buf, size_t used, potr_internal_config_reporter *reporter);
 
 /* Doxygen コメントは、ヘッダーに記載 */
 
@@ -360,4 +218,150 @@ cleanup:
         cplat_free(buf);
     }
     return ret;
+}
+
+/*
+ * byte オフセット (0 始まり) を、1 始まりの行番号と byte 単位の列番号へ変換する。
+ * 行区切りは '\n' とし、CRLF では '\r' も通常文字として列を 1 進める。
+ */
+static void offset_to_line_column(const char *buf, size_t len, size_t offset, uint32_t *line_out, uint32_t *col_out)
+{
+    size_t limit = (offset <= len) ? offset : len;
+    uint32_t line = 1U;
+    uint32_t col = 1U;
+    size_t i;
+
+    for (i = 0U; i < limit; i++)
+    {
+        if (buf[i] == '\n')
+        {
+            line++;
+            col = 1U;
+        }
+        else
+        {
+            col++;
+        }
+    }
+
+    *line_out = line;
+    *col_out = col;
+}
+
+/*
+ * コメントを除いた JSON 文字列中の "\u0000" エスケープを検出し、最初の '\' オフセットを返す。
+ * "\\" は 2 byte 一組で消費するため、"\\u0000" のようにリテラルのバックスラッシュに続く "u0000" は許可する。
+ */
+static int find_string_u0000_escape(const char *buf, size_t len, size_t *offset_out)
+{
+    jsonc_scan_state state = JSONC_SCAN_NORMAL;
+    size_t i = 0U;
+
+    while (i < len)
+    {
+        char ch = buf[i];
+
+        if (state == JSONC_SCAN_NORMAL)
+        {
+            if (ch == '"')
+            {
+                state = JSONC_SCAN_STRING;
+            }
+            else if (ch == '/' && (i + 1U) < len)
+            {
+                if (buf[i + 1U] == '/')
+                {
+                    state = JSONC_SCAN_LINE_COMMENT;
+                    i += 2U;
+                    continue;
+                }
+                if (buf[i + 1U] == '*')
+                {
+                    state = JSONC_SCAN_BLOCK_COMMENT;
+                    i += 2U;
+                    continue;
+                }
+            }
+            i++;
+        }
+        else if (state == JSONC_SCAN_LINE_COMMENT)
+        {
+            if (ch == '\n')
+            {
+                state = JSONC_SCAN_NORMAL;
+            }
+            i++;
+        }
+        else if (state == JSONC_SCAN_BLOCK_COMMENT)
+        {
+            if (ch == '*' && (i + 1U) < len && buf[i + 1U] == '/')
+            {
+                state = JSONC_SCAN_NORMAL;
+                i += 2U;
+                continue;
+            }
+            i++;
+        }
+        else /* JSONC_SCAN_STRING */
+        {
+            if (ch == '\\')
+            {
+                if ((i + 5U) < len && buf[i + 1U] == 'u' && buf[i + 2U] == '0' && buf[i + 3U] == '0' &&
+                    buf[i + 4U] == '0' && buf[i + 5U] == '0')
+                {
+                    *offset_out = i;
+                    return 1;
+                }
+                if ((i + 1U) < len)
+                {
+                    i += 2U;
+                }
+                else
+                {
+                    i++;
+                }
+            }
+            else
+            {
+                if (ch == '"')
+                {
+                    state = JSONC_SCAN_NORMAL;
+                }
+                i++;
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int check_no_nul_or_u0000(const char *buf, size_t used, potr_internal_config_reporter *reporter)
+{
+    size_t i;
+    size_t esc_offset = 0U;
+
+    for (i = 0U; i < used; i++)
+    {
+        if (buf[i] == '\0')
+        {
+            uint32_t line = 1U;
+            uint32_t col = 1U;
+            offset_to_line_column(buf, used, i, &line, &col);
+            potr_internal_config_report_issue(reporter, POTR_CONFIG_ISSUE_SYNTAX, 0, 0, "",
+                                              "NUL byte is not allowed in config file", NULL, line, col);
+            return POTR_ERR_INVALID_CONFIG;
+        }
+    }
+
+    if (find_string_u0000_escape(buf, used, &esc_offset) != 0)
+    {
+        uint32_t line = 1U;
+        uint32_t col = 1U;
+        offset_to_line_column(buf, used, esc_offset, &line, &col);
+        potr_internal_config_report_issue(reporter, POTR_CONFIG_ISSUE_SYNTAX, 0, 0, "",
+                                          "U+0000 escape is not allowed in JSON strings", NULL, line, col);
+        return POTR_ERR_INVALID_CONFIG;
+    }
+
+    return POTR_OK;
 }
