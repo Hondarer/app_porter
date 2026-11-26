@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-25 22:22:57 JST
-最終更新エージェント: claude code (opus サブエージェント、主セッション session_01KJc53UFydnbt2gLXTJC1ZC)
+最終更新日時: 2026-11-27 02:09:13 JST
+最終更新エージェント: agy (gemini-4-hydrogen-medium、主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
 稼働 OS: Linux (WSL)
 上流文書: `261123-porter-remaining-backlog-phase2-overview.md` (全体管理文書)、`261123-porter-remaining-backlog-phase2-design.md` (最終仕様)、`261123-porter-remaining-backlog-phase2-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-phase2-lightadr.md` (簡易 ADR)。転記元の残課題一覧は、`261123-porter-remaining-backlog-backlog.md` です。いずれも削除されている場合があります。
 下流文書: この残課題一覧を対策する継続作業が開始された場合は、その全体管理文書・検討用 Markdown・最終仕様・残課題一覧のパスを追記します。未作成の場合や、削除されている場合があります。
@@ -40,6 +40,7 @@ Table: 残課題一覧
 | BL-011 | Windows で、Registered I/O の送信だけに使う専用のソケットによる一括の送信が未検討 | 作業中摘出 | 低 | 未着手 |
 | BL-012 | Windows の一括の送信の性能の基準 (処理件数が上がる) を満たせない | 作業中摘出 | 低 | 未着手 |
 | BL-013 | 暗号化と複数経路の UDP の一括の送信の性能を測っていない | 作業中摘出 | 低 | 未着手 |
+| BL-014 | make test の実行の省略の判定が、テストの実行ファイルの古さを見ず、古い実行ファイルの結果のまま成功と扱うことがある | 作業中摘出 | 中 | 未着手 |
 
 ## BL-001 TCP 双方向 N:1 通信の実施要否判断と設計・実装
 
@@ -412,3 +413,36 @@ Table: 残課題一覧
 
 - **恒久対応案**: `porter-bench` に、暗号化 (事前共有鍵) と経路の数を指定する引数を追加し、`p1` で、変更の前と変更の後を比べます。
 - **参考情報**: `app/porter/docs/performance-measurement.md`、`app/porter/prod/src/cmd/porter-bench/`。
+
+## BL-014 make test の実行の省略の判定が、テストの実行ファイルの古さを見ず、古い実行ファイルの結果のまま成功と扱うことがある
+
+区分: 作業中摘出  
+優先度 / 影響度: 中
+
+### 概要と問題点
+
+- **現状の事象**: `app/porter/test/src/libporter/potrFlowControlTest` で、実行ファイル `bin/potrFlowControlTest` が、テストを足す前の内容で作られたままでした。
+    - 実行ファイルの時刻 (2026-11-26 18:53) は、ソース `potrFlowControlTest.cc` の時刻 (18:52) より新しく、`make` は作り直しませんでした。
+    - `test.stamp` (19:17) があるため、`make test` は `INFO: Skipping test (dependencies are unchanged and clean)` で実行を省きました。
+    - その結果、162 件のまま成功と報告されました。
+    - 2026-11-27 にソースの時刻を更新して作り直すと、163 件が登録されました。`make test` は、その後も同じ理由で実行を省きました。
+- **推定の原因 (未確認)**: ソースの時刻が、内容の変更を反映していなかったと考えられます (編集の方法による可能性があります)。
+    また、省略の判定がソースの状態だけを見ていて、実行ファイルとの対応を確かめていない可能性があります。  
+    どちらも推定であり、確かめていません。
+- **本来あるべき姿**: 実行ファイルやリンクの入力が最新でない場合に、`make test` が古い実行ファイルの結果のまま成功と扱わず、再ビルドおよび再実行されること。
+
+### 経緯と見送り理由
+
+- **摘出契機**: 継続案件 `261123-porter-remaining-backlog-phase2` において、Windows の検証結果 (163 件) と Linux の記録 (162 件) の差を確認した際 (2026-11-27) に判明しました。
+- **今回の見送り理由**: 対策先は `framework/makefw` であり、この案件 (`app/porter` の BL-010 対策) の範囲外のため、残課題一覧へ起票します。
+- **継続作業での経緯と対処**: なし。
+
+### 影響範囲とリスク
+
+- **影響対象**: `framework/makefw` を使用する局所テスト (`make test`)。CI はきれいな状態からビルドするため、影響しない見込みです。
+- **放置した場合のリスク**: 局所テストで、追加したテストを流さずに成功と判断するおそれがあります。
+
+### 推奨される対応策
+
+- **恒久対応案**: `framework/makefw` の `test.stamp` と `assured.stamp` の判定 (`makefiles` の `test` の規則と `bin_internal` のスクリプト) を調べ、実行ファイルの内容やリンクの入力を判定に含めるかを検討します。対策先は `framework/makefw` です。
+- **参考情報**: 継続案件の全体管理文書 `261123-porter-remaining-backlog-phase2-overview.md` の「反映と検証の記録」(作業 WBS 4.5 から 4.10 の訂正注記)。

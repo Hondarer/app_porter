@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 全体管理文書 (overview)
-最終更新日時: 2026-11-26 22:44:47 JST
-最終更新エージェント: agy (gemini-4-neon-medium、主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
+最終更新日時: 2026-11-27 02:09:13 JST
+最終更新エージェント: agy (gemini-4-hydrogen-medium、主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
 稼働 OS: Linux (WSL)
 上流文書: 対策元の残課題一覧は、`261123-porter-remaining-backlog-backlog.md` です。削除されている場合があります。
 下流文書: `261123-porter-remaining-backlog-phase2-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-phase2-lightadr.md` (簡易 ADR)、`261123-porter-remaining-backlog-phase2-design.md` (最終仕様)、`261123-porter-remaining-backlog-phase2-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
@@ -56,7 +56,7 @@
     - ✅ 4.8. `app/porter` の単体テスト (`potrSocketIoTest`、`potrSendThreadTest`、`potrFlowControlTest`) の追加と変更、Linux のビルドとテスト
     - ✅ 4.9. 正本ドキュメントおよびコード コメントへの永続的知見の反映 (`potr_send_thread.c` の先頭のコメント、`potr_send_thread.h`、`potr_socket_io.h`、`docs/architecture.md`、`docs/protocol.md`、cplat の Windows と Linux の実装のコメント)
     - ✅ 4.10. Linux の `make test` (`app/cplat`、`app/porter`)、`.warn` の確認、`text_style_jp.py`
-    - ⏸️ 4.11. Windows のセッションでのビルドとテストと修正 (主エージェントが差分を仲介。Windows で直した差分の Linux での再確認を含む)
+    - ✅ 4.11. Windows のセッションでのビルドとテストと修正 (主エージェントが差分を仲介。依頼 16 と 17 で cplat と porter のビルド、テスト、`mock` の `/INCLUDE` リンクが成功。MSVC の警告と内容のある `.warn` はなく、MSVC 向けの修正は不要)
     - 🔄 4.12. Linux と Windows の性能の測定と記録 (受入条件 1 から 4。Linux は測定済み、Windows は未測定。受入条件 4 (Windows) は未判定) ← **CURRENT**
     - ⏸️ 4.13. サブモジュールの順の main へのコミットと push、親リポジトリの参照の更新、CI の確認 (Git の操作は主エージェント)
     - ⏸️ 4.14. 受入条件への適合確認と、対策元の残課題一覧の BL-010 の更新
@@ -162,6 +162,7 @@ Table: 経緯
 | 2026-11-26 18:35 | 作業 WBS 4.5 の再開 | 主エージェントの指示で、opus のサブエージェントが作業 WBS 4.5 から 4.10 (porter の UDP のまとめ送り) に着手。testfw `75cd774`、cplat `8252c026`、porter `1438394` (いずれも main) を基点とする |
 | 2026-11-26 22:20 | 作業 WBS 4.5 から 4.10 の完了 | Linux のビルド、局所テスト、`make test` (`app/porter`、`app/cplat`) が成功。結果は「反映と検証の記録」に記録。4.11 (Windows の検証) で停止 (主エージェントが仲介) |
 | 2026-11-26 22:44 | 作業 WBS 4.12 の Linux の性能の測定と記録 | Linux (WSL) の性能の測定結果を集計し、「反映と検証の記録」へ記録。受入条件 1 から 3 はすべて適合 (`p1` 5,000 byte `blocking` の `target` ÷ `tcp` は 0.97)。受入条件 4 (Windows) は未測定・未判定 |
+| 2026-11-27 02:09 | 作業 WBS 4.11 の完了と Linux 件数の訂正 | Windows の検証結果 (依頼 16 と 17) を「反映と検証の記録」へ記録し、4.11 を完了へ更新。Linux の `potrFlowControlTest` 件数の訂正 (162 件→163 件) を追記し、残課題一覧に BL-014 を起票 |
 
 ## 反映と検証の記録
 
@@ -231,8 +232,27 @@ Table: 作業 WBS 4.5 から 4.10 の Linux の検証結果
 | `text_style_jp.py --mode c` / `--mode cpp --dry-run` (変更した C とテストの追加の行) | 追加した行に指摘なし。引数を足しただけの既存の行に、もとからの指摘が 9 件 (`potrFlowControlTest.cc` 5 件、`potr_service_send_test.cc` 4 件) |
 | `check_c_topdown.py` | `potr_send_thread.c` はエラー 20 件から 18 件 (新しいファイル内補助関数は前方宣言を置き、`flush_packed_peer()` を削除し、`pack_queued_entries()` に前方宣言を置いたため)。`potr_socket_io.c` は 0 件のまま。`potr_flow_control.c` 74 件、`potr_service_open.c` 10 件、`api_context_cleanup.c` 5 件、`potr_service_send.c` 11 件は変化なし |
 
+- 訂正 (2026-11-27): 上表の `potrFlowControlTest` は「162 件」と記録しましたが、正しくは 163 件です。当時の実行ファイルが、テストを足す前の内容のまま古くなっていたためです。2026-11-27 に作り直した実行ファイルで 163 件の登録を確かめ、追加した `peer_state_reports_allowance` の成功も確かめました (残課題一覧の BL-014)。
 - カバレッジ: 新しいコードのうち、`potr_internal_udp_sendto_multi()` の未登録のソケット、一括の送信が要求より大きい数を返す場合の切り詰め、先頭のデータグラムの OS の送信失敗の分岐と、送信スレッドの防御の分岐 (一括の送信の引数の不正、N:1 の封緘の失敗、経路の選択とパケットの構築の失敗) は通っていません。最終仕様のテストの一覧の外です。
-- 未確認: Windows のビルドとテスト (作業 WBS 4.11) と、性能の測定 (作業 WBS 4.12)。
+- 未確認: 性能の測定 (作業 WBS 4.12)。Windows のビルドとテスト (作業 WBS 4.11) は以下のとおりです。
+
+### 作業 WBS 4.11: Windows のビルドとテスト (2026-11-27、Windows)
+
+- 実施: Windows 側のセッション (主エージェントが仲介、依頼 16 と 17)。
+- 同期した版: `framework/testfw` main `75cd774`、`app/cplat` main `8252c026`、`app/porter` main `72c8930`。
+- ビルドとリンク: MSVC の警告および内容のある `.warn` はありません。MSVC 向けの修正は不要でした。`mock` の `/INCLUDE` によるリンクも成功しました。
+
+Table: 作業 WBS 4.11 の Windows の検証結果
+
+| 対象 | 結果 |
+| --- | --- |
+| 依頼 16 (`socketTest`) | 成功 (65 件) |
+| 依頼 16 (`exportTest`) | 成功 (2 件) |
+| 依頼 17 (`cplat` の全体) | 成功 (2,105 件、SKIPPED 1 件) |
+| 依頼 17 (`potrSocketIoTest`) | 成功 (16 件) |
+| 依頼 17 (`potrSendThreadTest`) | 成功 (49 件、`potrSendThreadUdpBatchTest` の 12 件と CNG の暗号化を含む) |
+| 依頼 17 (`potrFlowControlTest`) | 成功 (163 件) |
+| 依頼 17 (`porter` の全体) | 成功 (768 件、SKIPPED 1 件。変更のないディレクトリは省かれたため、上の 3 つは別に数えている) |
 
 ### 作業 WBS 4.12: Linux の性能の測定 (2026-11-26、Linux (WSL))
 
