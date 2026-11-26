@@ -4,6 +4,7 @@
 
 #include "potr_trace.inject.h"
 
+/* 終了済み (3) を含むどの状態からも、未生成 (0) へ戻す。 */
 void potr_trace_test_reset_state(void)
 {
     cplat_atomic_store_ptr(&s_trace, NULL, CPLAT_MEMORY_ORDER_RELAXED);

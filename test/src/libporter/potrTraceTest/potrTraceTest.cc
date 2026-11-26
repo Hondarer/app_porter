@@ -207,3 +207,139 @@ TEST(potrTraceTest, trace_write_continues_when_tracer_creation_fails)
 
     potr_trace_test_reset_state();
 }
+
+TEST(potrTraceTest, registers_shutdown_callback_once_after_successful_creation)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    cplat_tracer *const expected_tracer = reinterpret_cast<cplat_tracer *>(1);
+    cplat_shutdown_fn registered_callback = nullptr;
+    potr_trace_test_reset_state(); // [状態] - porter のトレーサーを未生成の状態にする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_create(CPLAT_TRACER_CONCURRENCY_TRACER_MANAGED))
+        .WillOnce(Return(expected_tracer)); // [Pre-Assert確認_正常系] - cplat_tracer_create() が CPLAT_TRACER_CONCURRENCY_TRACER_MANAGED を指定して 1 回呼び出されること。
+                                            // [Pre-Assert手順] - cplat_tracer_create() から expected_tracer を返す。
+    EXPECT_CALL(mock_cplat, cplat_tracer_set_name(expected_tracer, StrEq("porter"), 0))
+        .WillOnce(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - cplat_tracer_set_name() が expected_tracer、"porter" と等しい文字列、0 を指定して 1 回呼び出されること。
+                                     // [Pre-Assert手順] - cplat_tracer_set_name() から CPLAT_OK を返す。
+    EXPECT_CALL(mock_cplat, cplat_shutdown_register(NotNull(), nullptr))
+        .WillOnce(DoAll(SaveArg<0>(&registered_callback), Return(CPLAT_OK))); // [Pre-Assert確認_正常系] - cplat_shutdown_register() が nullptr 以外、nullptr を指定して 1 回呼び出されること。
+                                                                              // [Pre-Assert手順] - 登録されたコールバックを registered_callback へ保存し、CPLAT_OK を返す。
+
+    // Act
+    cplat_tracer *actual_first = potr_tracer_get(); // [手順] - potr_tracer_get() で初回の取得を行う。
+    cplat_tracer *actual_second = potr_tracer_get(); // [手順] - potr_tracer_get() でもう一度取得する。
+
+    // Assert
+    EXPECT_EQ(expected_tracer, actual_first); // [確認_正常系] - 初回の potr_tracer_get() の戻り値が expected_tracer と一致すること。
+    EXPECT_EQ(expected_tracer, actual_second); // [確認_正常系] - 2 回目の potr_tracer_get() の戻り値が expected_tracer と一致すること。(2 回目の取得では登録を繰り返さないことの確認)
+    EXPECT_NE(nullptr, registered_callback); // [確認_正常系] - registered_callback が nullptr 以外であること。
+
+    // Cleanup
+    potr_trace_test_reset_state();
+}
+
+TEST(potrTraceTest, returns_null_without_recreation_after_shutdown_callback)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    cplat_tracer *const expected_tracer = reinterpret_cast<cplat_tracer *>(1);
+    cplat_shutdown_fn registered_callback = nullptr;
+    const cplat_shutdown_event event = {CPLAT_SHUTDOWN_REASON_NORMAL_EXIT, CPLAT_SHUTDOWN_CODE_KIND_NONE, 0};
+    potr_trace_test_reset_state(); // [状態] - porter のトレーサーを未生成の状態にする。
+    ON_CALL(mock_cplat, cplat_tracer_set_name(_, _, _)).WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_tracer_set_name() は CPLAT_OK を返す。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_create(CPLAT_TRACER_CONCURRENCY_TRACER_MANAGED))
+        .WillOnce(Return(expected_tracer)); // [Pre-Assert確認_正常系] - cplat_tracer_create() が CPLAT_TRACER_CONCURRENCY_TRACER_MANAGED を指定して 1 回呼び出されること。(終了コールバックの後に再生成しないことの確認)
+                                            // [Pre-Assert手順] - cplat_tracer_create() から expected_tracer を返す。
+    EXPECT_CALL(mock_cplat, cplat_shutdown_register(NotNull(), nullptr))
+        .WillOnce(DoAll(SaveArg<0>(&registered_callback), Return(CPLAT_OK))); // [Pre-Assert確認_正常系] - cplat_shutdown_register() が nullptr 以外、nullptr を指定して 1 回呼び出されること。
+                                                                              // [Pre-Assert手順] - 登録されたコールバックを registered_callback へ保存し、CPLAT_OK を返す。
+
+    // Act
+    cplat_tracer *actual_before = potr_tracer_get(); // [手順] - potr_tracer_get() でトレーサーを生成する。
+    ASSERT_NE(nullptr, registered_callback); // [確認_正常系] - registered_callback が nullptr 以外であること。
+    registered_callback(&event, nullptr); // [手順] - cplat の終了処理として、registered_callback を通常の終了のイベントで呼ぶ。
+    cplat_tracer *actual_public = potr_tracer_get(); // [手順] - 終了コールバックの後に potr_tracer_get() を呼ぶ。
+    cplat_tracer *actual_internal = potr_internal_trace_get(); // [手順] - 終了コールバックの後に potr_internal_trace_get() を呼ぶ。
+
+    // Assert
+    EXPECT_EQ(expected_tracer, actual_before); // [確認_正常系] - 終了コールバックの前の potr_tracer_get() の戻り値が expected_tracer と一致すること。
+    EXPECT_EQ(nullptr, actual_public); // [確認_正常系] - 終了コールバックの後の potr_tracer_get() の戻り値が nullptr であること。
+    EXPECT_EQ(nullptr, actual_internal); // [確認_正常系] - 終了コールバックの後の potr_internal_trace_get() の戻り値が nullptr であること。
+    EXPECT_EQ(nullptr, potr_trace_test_get_published()); // [確認_正常系] - potr_trace_test_get_published() の戻り値が nullptr であること。(共有ハンドルを取り下げたことの確認)
+
+    // Cleanup
+    potr_trace_test_reset_state();
+}
+
+TEST(potrTraceTest, trace_write_after_shutdown_callback_passes_null_handle)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    cplat_tracer *const expected_tracer = reinterpret_cast<cplat_tracer *>(1);
+    cplat_shutdown_fn registered_callback = nullptr;
+    const cplat_shutdown_event event = {CPLAT_SHUTDOWN_REASON_NORMAL_EXIT, CPLAT_SHUTDOWN_CODE_KIND_NONE, 0};
+    potr_trace_test_reset_state(); // [状態] - porter のトレーサーを未生成の状態にする。
+    ON_CALL(mock_cplat, cplat_tracer_create(_)).WillByDefault(Return(expected_tracer)); // [状態] - cplat_tracer_create() は expected_tracer を返す。
+    ON_CALL(mock_cplat, cplat_tracer_set_name(_, _, _)).WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_tracer_set_name() は CPLAT_OK を返す。
+    ON_CALL(mock_cplat, cplat_shutdown_register(_, _))
+        .WillByDefault(DoAll(SaveArg<0>(&registered_callback), Return(CPLAT_OK))); // [状態] - cplat_shutdown_register() は登録されたコールバックを registered_callback へ保存し、CPLAT_OK を返す。
+    ASSERT_EQ(expected_tracer, potr_tracer_get()); // [状態確認] - potr_tracer_get() の戻り値が expected_tracer と一致すること。
+    ASSERT_NE(nullptr, registered_callback); // [状態確認] - registered_callback が nullptr 以外であること。
+    registered_callback(&event, nullptr); // [状態] - cplat の終了処理として、registered_callback を通常の終了のイベントで呼ぶ。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_writef_at(nullptr, CPLAT_TRACE_LEVEL_ERROR, nullptr, _))
+        .WillOnce(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - cplat_tracer_writef_at() が nullptr、CPLAT_TRACE_LEVEL_ERROR、nullptr を指定して 1 回呼び出されること。(終了処理の後は解放されたトレーサーを渡さないことの確認)
+                                     // [Pre-Assert手順] - cplat_tracer_writef_at() から CPLAT_OK を返す。
+
+    // Act
+    POTR_TRACE(CPLAT_TRACE_LEVEL_ERROR, "after shutdown: value=%d", 1); // [手順] - 終了コールバックの後に POTR_TRACE で出力する。
+
+    // Assert
+    SUCCEED(); // [確認_正常系] - SUCCEED() に到達すること。(終了コールバックの後の POTR_TRACE が異常終了しないことの確認)
+
+    // Cleanup
+    potr_trace_test_reset_state();
+}
+
+TEST(potrTraceTest, disposes_tracer_and_retries_when_shutdown_registration_fails)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    cplat_tracer *const failed_tracer = reinterpret_cast<cplat_tracer *>(1);
+    cplat_tracer *const expected_tracer = reinterpret_cast<cplat_tracer *>(2);
+    potr_trace_test_reset_state(); // [状態] - porter のトレーサーを未生成の状態にする。
+    ON_CALL(mock_cplat, cplat_tracer_set_name(_, _, _)).WillByDefault(Return(CPLAT_OK)); // [状態] - cplat_tracer_set_name() は CPLAT_OK を返す。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_tracer_create(CPLAT_TRACER_CONCURRENCY_TRACER_MANAGED))
+        .WillOnce(Return(failed_tracer))
+        .WillOnce(Return(expected_tracer)); // [Pre-Assert確認_正常系] - cplat_tracer_create() が CPLAT_TRACER_CONCURRENCY_TRACER_MANAGED を指定して 2 回呼び出されること。(次の呼び出しで再試行することの確認)
+                                            // [Pre-Assert手順] - cplat_tracer_create() から 1 回目は failed_tracer、2 回目は expected_tracer を返す。
+    EXPECT_CALL(mock_cplat, cplat_shutdown_register(NotNull(), nullptr))
+        .WillOnce(Return(CPLAT_ERR_OUT_OF_MEMORY))
+        .WillOnce(Return(CPLAT_OK)); // [Pre-Assert確認_正常系] - cplat_shutdown_register() が nullptr 以外、nullptr を指定して 2 回呼び出されること。
+                                     // [Pre-Assert手順] - cplat_shutdown_register() から 1 回目は CPLAT_ERR_OUT_OF_MEMORY、2 回目は CPLAT_OK を返す。
+    EXPECT_CALL(mock_cplat, cplat_tracer_dispose(Pointee(failed_tracer)))
+        .WillOnce([](cplat_tracer **handle) { *handle = nullptr; }); // [Pre-Assert確認_異常系] - cplat_tracer_dispose() が指す先が failed_tracer であるポインターを指定して 1 回呼び出されること。
+                                                                       // [Pre-Assert手順] - cplat_tracer_dispose() で *handle を nullptr にする。
+    EXPECT_CALL(mock_cplat, cplat_tracer_dispose(Pointee(expected_tracer)))
+        .Times(0); // [Pre-Assert確認_正常系] - 指す先が expected_tracer であるポインターを指定した cplat_tracer_dispose() の呼び出しがないこと。
+
+    // Act
+    cplat_tracer *actual_failed = potr_tracer_get(); // [手順] - 登録が失敗する状態で potr_tracer_get() を呼ぶ。
+    cplat_tracer *actual_published = potr_trace_test_get_published(); // [手順] - 失敗の後の共有ハンドルを取得する。
+    cplat_tracer *actual_retried = potr_tracer_get(); // [手順] - 次の potr_tracer_get() を呼ぶ。
+
+    // Assert
+    EXPECT_EQ(nullptr, actual_failed); // [確認_異常系] - 登録が失敗した potr_tracer_get() の戻り値が nullptr であること。
+    EXPECT_EQ(nullptr, actual_published); // [確認_異常系] - actual_published が nullptr であること。(解放したトレーサーを公開しないことの確認)
+    EXPECT_EQ(expected_tracer, actual_retried); // [確認_正常系] - 次の potr_tracer_get() の戻り値が expected_tracer と一致すること。
+
+    // Cleanup
+    potr_trace_test_reset_state();
+}
