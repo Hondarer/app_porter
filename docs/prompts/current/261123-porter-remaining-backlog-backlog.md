@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-23 12:45:00 JST
-最終更新エージェント: claude code / セッション ID: session_01KJc53QSNM6huJLdCU7M29H (継続案件 `261123-porter-remaining-backlog-phase2` の開始を記録)
+最終更新日時: 2026-11-25 22:27:14 JST
+最終更新エージェント: claude code (opus サブエージェント、主セッション session_01KJc53UFydnbt2gLXTJC1ZC。継続案件 `261123-porter-remaining-backlog-phase2` の範囲の決定を記録)
 稼働 OS: Linux (WSL)
 上流文書: `261123-porter-remaining-backlog-overview.md` (全体管理文書)、`261123-porter-remaining-backlog-design.md` (最終仕様)、`261123-porter-remaining-backlog-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-lightadr.md` (簡易 ADR)。転記元の残課題一覧は、`../past/261115-porter-tcp-bidir-n1-backlog.md`、`../past/261115-porter-multicast-src-contract-backlog.md`、`../past/261117-porter-transport-performance-redo-backlog.md`、`../past/261121-porter-flow-control-refine-backlog.md` です。いずれも削除されている場合があります。
 下流文書: この残課題一覧を対策する継続作業は、`261123-porter-remaining-backlog-phase2-overview.md` (全体管理文書)、`261123-porter-remaining-backlog-phase2-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-phase2-lightadr.md` (簡易 ADR)、`261123-porter-remaining-backlog-phase2-design.md` (最終仕様)、`261123-porter-remaining-backlog-phase2-backlog.md` (残課題一覧) です。未作成の場合や、削除されている場合があります。
@@ -27,16 +27,16 @@ Table: 残課題一覧
 
 | 課題 ID | 題名 | 区分 | 優先度 / 影響度 | 状態 |
 | --- | --- | --- | --- | --- |
-| BL-001 | TCP 双方向 N:1 通信の実施要否判断と設計・実装 | 過去 backlog からの転記 (`../past/261115-porter-tcp-bidir-n1-backlog.md` の BL-001) | 低 | 検討中 |
-| BL-002 | Windows/WSL 相互接続試験のスクリプトの、Windows での実行の確認 | 過去 backlog からの転記 (`../past/261115-porter-multicast-src-contract-backlog.md` の BL-005) | 低 | 検討中 |
-| BL-003 | 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える | 過去 backlog からの転記 (`../past/261117-porter-transport-performance-redo-backlog.md` の BL-001) | 中 | 検討中 |
-| BL-004 | Linux の 5,000 byte・待ち合わせ・1 スレッドの TCP 送信で処理件数が対策前より約 17% 低い | 過去 backlog からの転記 (`../past/261117-porter-transport-performance-redo-backlog.md` の BL-002) | 低 | 検討中 |
-| BL-005 | Windows の圧縮送信の処理件数が測定ごとに大きく変わる | 過去 backlog からの転記 (`../past/261117-porter-transport-performance-redo-backlog.md` の BL-003) | 低 | 検討中 |
-| BL-006 | multicast の多数の受信者での確認を、複数のホストで行っていない | 過去 backlog からの転記 (`../past/261121-porter-flow-control-refine-backlog.md` の BL-002) | 低 | 検討中 |
-| BL-007 | Windows のビルドで、1 つのディレクトリのソースが多いと、コンパイルのコマンド行が長さの上限を超える | 過去 backlog からの転記 (`../past/261121-porter-flow-control-refine-backlog.md` の BL-003) | 中 | 検討中 |
-| BL-008 | Windows で、N 対 1 の送出上限を有効にすると、処理件数が約 10% 下がる | 過去 backlog からの転記 (`../past/261121-porter-flow-control-refine-backlog.md` の BL-005) | 低 | 検討中 |
-| BL-009 | 開発環境に、アドレス サニタイザーとスレッド サニタイザーの実行時ライブラリ (libasan、libtsan) が導入されていない | 作業中の気付き | 低 | 検討中 |
-| BL-010 | unicast の待ち合わせを指定した 5,000 byte の送信が、tcp の約 0.48 倍にとどまる (複数のパケットを 1 回の呼び出しで送る方法が未実装) | 検討時見送り | 中 | 検討中 |
+| BL-001 | TCP 双方向 N:1 通信の実施要否判断と設計・実装 | 過去 backlog からの転記 (`../past/261115-porter-tcp-bidir-n1-backlog.md` の BL-001) | 低 | 次フェーズへ転記 |
+| BL-002 | Windows/WSL 相互接続試験のスクリプトの、Windows での実行の確認 | 過去 backlog からの転記 (`../past/261115-porter-multicast-src-contract-backlog.md` の BL-005) | 低 | 次フェーズへ転記 |
+| BL-003 | 小さいメッセージと圧縮送信で処理件数が低下し通知遅延が増える | 過去 backlog からの転記 (`../past/261117-porter-transport-performance-redo-backlog.md` の BL-001) | 中 | 次フェーズへ転記 |
+| BL-004 | Linux の 5,000 byte・待ち合わせ・1 スレッドの TCP 送信で処理件数が対策前より約 17% 低い | 過去 backlog からの転記 (`../past/261117-porter-transport-performance-redo-backlog.md` の BL-002) | 低 | 次フェーズへ転記 |
+| BL-005 | Windows の圧縮送信の処理件数が測定ごとに大きく変わる | 過去 backlog からの転記 (`../past/261117-porter-transport-performance-redo-backlog.md` の BL-003) | 低 | 次フェーズへ転記 |
+| BL-006 | multicast の多数の受信者での確認を、複数のホストで行っていない | 過去 backlog からの転記 (`../past/261121-porter-flow-control-refine-backlog.md` の BL-002) | 低 | 次フェーズへ転記 |
+| BL-007 | Windows のビルドで、1 つのディレクトリのソースが多いと、コンパイルのコマンド行が長さの上限を超える | 過去 backlog からの転記 (`../past/261121-porter-flow-control-refine-backlog.md` の BL-003) | 中 | 次フェーズへ転記 |
+| BL-008 | Windows で、N 対 1 の送出上限を有効にすると、処理件数が約 10% 下がる | 過去 backlog からの転記 (`../past/261121-porter-flow-control-refine-backlog.md` の BL-005) | 低 | 次フェーズへ転記 |
+| BL-009 | 開発環境に、アドレス サニタイザーとスレッド サニタイザーの実行時ライブラリ (libasan、libtsan) が導入されていない | 作業中の気付き | 低 | 完了 |
+| BL-010 | unicast の待ち合わせを指定した 5,000 byte の送信が、tcp の約 0.48 倍にとどまる (複数のパケットを 1 回の呼び出しで送る方法が未実装) | 検討時見送り | 中 | 対応中 |
 
 ## BL-001 TCP 双方向 N:1 通信の実施要否判断と設計・実装
 
@@ -58,7 +58,8 @@ Table: 残課題一覧
     `source-comment-cleanup-20261108` において `app/porter/prod/include/porter/porter_type.h` のコメント アウトされた列挙子 `POTR_TYPE_TCP_BIDIR_N1 = 11` を削除した際、将来予定の採否判断を失わないよう BL-025 として残課題へ移管しました。  
     その後、`source-comment-remaining-20261109` で実施要否の判断と対処をともに先送りする合意となり、`261113-source-comment-bl029-backlog.md` の BL-004 へ転記されました。
 - **今回の見送り理由**: ユーザーが、利用目的と要求が定まるまで保留を続けると決めました (簡易 ADR の LADR-005)。
-- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。
+- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。  
+    2026-11-25 に、ユーザーが継続案件の対策の範囲を BL-010 だけにすると決めたため (継続案件の検討用 Markdown の Q-001、簡易 ADR の LADR-001)、状態を「次フェーズへ転記」にしました。転記先は `261123-porter-remaining-backlog-phase2-backlog.md` の BL-001 です。
 
 ### 影響範囲とリスク
 
@@ -92,7 +93,8 @@ Table: 残課題一覧
     転記元の案件の受入試験で摘出しました。  
     スクリプトは、前回 (2026-11-15) の試験で使われた一時領域のスクリプトを直して使いました。
 - **今回の見送り理由**: Windows のセッションが必要なためです (簡易 ADR の LADR-002)。
-- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。
+- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。  
+    2026-11-25 に、ユーザーが継続案件の対策の範囲を BL-010 だけにすると決めたため (継続案件の検討用 Markdown の Q-001、簡易 ADR の LADR-001)、状態を「次フェーズへ転記」にしました。転記先は `261123-porter-remaining-backlog-phase2-backlog.md` の BL-002 です。
 
 ### 影響範囲とリスク
 
@@ -133,7 +135,8 @@ Table: 残課題一覧
     `../past/261115-porter-reject-recovery-backlog.md` の BL-002 からの引き継ぎです。
 - **今回の見送り理由**: この案件の `unicast` の計測 (最終仕様の作業 4) と領域が重なりますが、原因が複数に分かれる見込みのため、範囲に含めませんでした (簡易 ADR の LADR-002)。
     この案件の計測で分かったことは、「参考情報」に記載しました。
-- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。
+- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。  
+    2026-11-25 に、ユーザーが継続案件の対策の範囲を BL-010 だけにすると決めたため (継続案件の検討用 Markdown の Q-001、簡易 ADR の LADR-001)、状態を「次フェーズへ転記」にしました。転記先は `261123-porter-remaining-backlog-phase2-backlog.md` の BL-003 です。
 
 ### 影響範囲とリスク
 
@@ -177,7 +180,8 @@ Table: 残課題一覧
 - **摘出契機**: `../past/261117-porter-transport-performance-redo-backlog.md` の BL-002 からの転記です。
     転記元の案件の性能の測定 (2026-11-17) で確認しました。
 - **今回の見送り理由**: この案件の範囲に含めませんでした (簡易 ADR の LADR-002)。
-- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。
+- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。  
+    2026-11-25 に、ユーザーが継続案件の対策の範囲を BL-010 だけにすると決めたため (継続案件の検討用 Markdown の Q-001、簡易 ADR の LADR-001)、状態を「次フェーズへ転記」にしました。転記先は `261123-porter-remaining-backlog-phase2-backlog.md` の BL-004 です。
 
 ### 影響範囲とリスク
 
@@ -210,7 +214,8 @@ Table: 残課題一覧
 - **摘出契機**: `../past/261117-porter-transport-performance-redo-backlog.md` の BL-003 からの転記です。
     転記元の案件の Windows の測定 (2026-11-17) で確認しました。
 - **今回の見送り理由**: Windows のセッションが必要なためです (簡易 ADR の LADR-002)。
-- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。
+- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。  
+    2026-11-25 に、ユーザーが継続案件の対策の範囲を BL-010 だけにすると決めたため (継続案件の検討用 Markdown の Q-001、簡易 ADR の LADR-001)、状態を「次フェーズへ転記」にしました。転記先は `261123-porter-remaining-backlog-phase2-backlog.md` の BL-005 です。
 
 ### 影響範囲とリスク
 
@@ -240,7 +245,8 @@ Table: 残課題一覧
 - **摘出契機**: `../past/261121-porter-flow-control-refine-backlog.md` の BL-002 からの転記です。
     転記元の案件の前提検討時に見送りました (`../past/261121-porter-flow-control-refine-discussion.md` の Q-013。転記元が対策した残課題一覧の BL-008 からの継続)。
 - **今回の見送り理由**: 複数のホストの環境が必要なためです (簡易 ADR の LADR-002)。
-- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。
+- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。  
+    2026-11-25 に、ユーザーが継続案件の対策の範囲を BL-010 だけにすると決めたため (継続案件の検討用 Markdown の Q-001、簡易 ADR の LADR-001)、状態を「次フェーズへ転記」にしました。転記先は `261123-porter-remaining-backlog-phase2-backlog.md` の BL-006 です。
 
 ### 影響範囲とリスク
 
@@ -274,7 +280,8 @@ Table: 残課題一覧
 - **摘出契機**: `../past/261121-porter-flow-control-refine-backlog.md` の BL-003 からの転記です。
     作業中の気付き (2026-11-22。Windows のセッションでの、作業用のブランチの MSVC のビルドの確認で判明)。
 - **今回の見送り理由**: `framework/makefw` の共通の仕組みの変更で、Windows (MSVC) での確認が必要なためです (簡易 ADR の LADR-002)。
-- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。
+- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。  
+    2026-11-25 に、ユーザーが継続案件の対策の範囲を BL-010 だけにすると決めたため (継続案件の検討用 Markdown の Q-001、簡易 ADR の LADR-001)、状態を「次フェーズへ転記」にしました。転記先は `261123-porter-remaining-backlog-phase2-backlog.md` の BL-007 です。
 
 ### 影響範囲とリスク
 
@@ -311,7 +318,8 @@ Table: 残課題一覧
 - **摘出契機**: `../past/261121-porter-flow-control-refine-backlog.md` の BL-005 からの転記です。
     作業中の気付き (2026-11-23。受入条件 11 の Windows での測定)。
 - **今回の見送り理由**: Windows のセッションが必要なためです (簡易 ADR の LADR-002)。
-- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。
+- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。  
+    2026-11-25 に、ユーザーが継続案件の対策の範囲を BL-010 だけにすると決めたため (継続案件の検討用 Markdown の Q-001、簡易 ADR の LADR-001)、状態を「次フェーズへ転記」にしました。転記先は `261123-porter-remaining-backlog-phase2-backlog.md` の BL-008 です。
 
 ### 影響範囲とリスク
 
@@ -338,7 +346,8 @@ Table: 残課題一覧
 
 - **摘出契機**: 作業中の気付き (2026-11-23。最終仕様の作業 5 の、SIGSEGV の再現の試験の用意で判明)。最終仕様の作成の時点では、リンカー スクリプトの存在から、`libasan` があると誤って判断していました。
 - **今回の見送り理由**: この案件の作業 5 は、システムへ導入せずに、OS の公式のリポジトリのパッケージ (`libasan-8.5.0-31.0.1.el8_10.x86_64.rpm`) をセッションの一時領域へ展開し、`LIBRARY_PATH` と `LD_LIBRARY_PATH` で参照する方法で行いました。環境への導入と、サニタイザーを使うかどうかの判断は、この案件の範囲の外です。
-- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。
+- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。  
+    2026-11-25 に、ユーザーがサニタイザーを導入しないと決めたため (継続案件の検討用 Markdown の Q-007、簡易 ADR の LADR-007)、この項目を「完了」として閉じました。継続案件の残課題一覧へは転記していません。必要になった場合の一時的な使い方は、この項目の「暫定対応案」に残しています。
 
 ### 影響範囲とリスク
 
@@ -364,7 +373,10 @@ Table: 残課題一覧
 
 - **摘出契機**: 検討時の見送り (2026-11-23。この案件の検討用 Markdown の Q-007、簡易 ADR の LADR-007)。対策元は、`../past/261121-porter-flow-control-refine-backlog.md` の BL-001 です。
 - **今回の見送り理由**: 対策 (複数のパケットを 1 回の呼び出しで送る方法) は、`app/cplat` への関数の追加、`framework/testfw` の mock、porter の送信スレッドの UDP の送出の作り直しを伴い、送信ウィンドウとフロー制御の更新の順序などの設計が必要なためです。ユーザーが、別の案件で設計すると決めました。
-- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。
+- **継続作業での経緯と対処**: 2026-11-23 に、継続案件 `261123-porter-remaining-backlog-phase2` を開始し、この項目を今回の範囲に含めるかどうかを検討しています (継続案件の検討用 Markdown の Q-001)。  
+    2026-11-25 に、ユーザーがこの項目を継続案件の対策の範囲にすると決めました (継続案件の検討用 Markdown の Q-001)。合意した方針は、適用の範囲を UDP の DATA の送出のすべて (1 対 1 の 4 つの通信種別と N 対 1。暗号化と複数経路を含む)、Windows も Registered I/O などで一括の送信にする、Linux の性能の基準は待ち合わせを指定した 5,000 byte の `tcp` との比が 0.5 以上でほかの条件が下がらない、一部だけ送れた場合の残りは 1 個ずつ 1 回ずつ試みる、です (簡易 ADR の LADR-003 から LADR-006)。Windows の実装の担当、Registered I/O の実現性の確認、cplat の API の形、Windows の性能の基準、N 対 1 のまとめる単位を、追加の質問 (Q-008 から Q-014) で確認しています。  
+    2026-11-25 に、追加の質問の回答で、次を決めました (簡易 ADR の LADR-002、LADR-003、LADR-004、LADR-008、LADR-009)。Linux のセッションが Windows の実装の初版まで書き、Windows のセッションがビルド、テスト、測定を行う。最終仕様の前に Windows で Registered I/O の試作を行い、使えない、または速くない場合は Windows を `sendto` の繰り返しにする。cplat には、呼び出し元のバッファーを渡して先頭から送れた個数を返す同期の関数を追加する。N 対 1 は同じピア宛てに続くパケットだけをまとめる。Windows の基準は、変更の前より待ち合わせを指定した 5,000 byte の処理件数が上がり、ほかの条件が下がらないこと。現在は、Windows の試作の結果を待っています。  
+    2026-11-25 に、Windows の試作で、Registered I/O のソケットでは `WSAEventSelect()`、`sendto`、`recvfrom` が `WSAENOTSOCK` で失敗すると分かり、Windows の一括の送信は `sendto` の繰り返しに確定しました。最終仕様 `261123-porter-remaining-backlog-phase2-design.md` を作成し、状態を「対応中」にしました。確定した方針は、cplat に登録したソケットの一括の送信の関数 (`cplat_socket_watch_sendto_multi()`。Linux は `sendmmsg()`) を追加し、porter の送信スレッドが UDP の DATA を、1 対 1 は送信キューに続く外側パケットを、N 対 1 は同じピア宛てに続く外側パケットを、最大 16 個まで 1 回で送る、です。Windows の処理件数が上がることの確認と、暗号化と複数経路の性能の測定は、継続案件の残課題一覧の BL-012 と BL-013 へ送りました。
 
 ### 影響範囲とリスク
 
