@@ -391,7 +391,7 @@ extern "C"
 
     /**
      *  @brief          porter 内部トレーサー ハンドルを返します。
-     *  @return         成功時は共有ハンドル、生成できない場合は NULL を返します。
+     *  @return         成功時は共有ハンドル、生成できない場合と cplat の終了処理の開始後は NULL を返します。
      *
      *  porter ライブラリが内部で使用する cplat_tracer ハンドルを返します。\n
      *  本関数は potr_service_open() の前に呼び出すことができます。\n
@@ -399,6 +399,12 @@ extern "C"
      *  利用側はハンドルを破棄しません。NULL の場合は設定と開始を行わず、必要なら後で再取得してください。\n
      *  取得したハンドルに対して cplat_tracer_set_stderr_level() と
      *  cplat_tracer_start() を呼び出すことで、stderr へのトレース出力を有効化できます。
+     *
+     *  @par            寿命と cplat の終了処理
+     *  トレーサーは cplat の終了処理 (cplat_exit() や通常の終了) が解放します。\n
+     *  終了処理の開始後は NULL を返し、トレーサーを再生成しません。\n
+     *  終了処理より前に取得したハンドルを、終了処理の開始後に使わないでください。\n
+     *  終了処理と並行して porter を使うスレッドを残さないでください。
      *
      *  @note           出力先の詳細度は、すべて CPLAT_TRACE_LEVEL_NONE (無効) が初期値です。\n
      *                  cplat_tracer_start() だけを呼び出しても、どこへも出力されません。\n

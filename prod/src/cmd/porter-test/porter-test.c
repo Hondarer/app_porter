@@ -1786,7 +1786,12 @@ int main(int argc, char *argv[])
     session.is_bidir = 0;
     session.can_send = 0;
 
-    cplat_argparser_init(argc, argv, "porter の送受信動作を対話的に検証します。");
+    if (cplat_argparser_init(argc, argv, "porter の送受信動作を対話的に検証します。") != CPLAT_OK)
+    {
+        /* 診断の出力先がほかにないため、戻り値は明示的に破棄する。 */
+        (void)fprintf(stderr, "引数の解析の準備に失敗しました。\n");
+        return EXIT_FAILURE;
+    }
     /* 登録の失敗は直後の cplat_argparser_get_register_error_count() でまとめて検査するため、戻り値は明示的に破棄する。 */
     (void)cplat_argparser_register_flag("-h", "--help", "ヘルプを表示します。", &need_help);
     (void)cplat_argparser_register_option_string("-l", NULL, "level", "ログレベル。", 0, &log_level);
