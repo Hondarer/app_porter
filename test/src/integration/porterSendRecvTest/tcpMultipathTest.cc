@@ -1,5 +1,6 @@
 #include <testfw.h>
 #include <porter.h>
+#include <porter_test_trace.h>
 #include <cplat/net/socket.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/compress/compress.h>
@@ -186,10 +187,16 @@ class tcpMultipathTest : public Test
   protected:
     potr_context *handle = nullptr;
     cplat_socket sockets[2] = {CPLAT_INVALID_SOCKET, CPLAT_INVALID_SOCKET};
+    // 払い出したポート (要素は 1 個)。uint16_t のメンバーは構造体の詰め物の警告になるため、配列で持つ。
+    std::vector<uint16_t> test_ports;
 
     // [サブ手順 名前=tcpMultipathTest.SetUp]
     void SetUp() override
     {
+        ASSERT_TRUE(allocateTestPorts(1U, test_ports)); // [状態] - 待ち受けに使うポートを allocateTestPorts() で 1 個払い出す。
+        // [状態確認] - allocateTestPorts() の戻り値が true であること。
+        ASSERT_TRUE(porter_test_start_error_trace()); // [状態] - porter のトレーサーの標準エラー出力を ERROR で開始する。
+        // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
         std::lock_guard<std::mutex> lock(s_mutex);
         s_expected_close_ret = POTR_OK;
         s_hold_header = s_header_held = s_release = s_hold_callback = s_callback_held = false;
@@ -221,7 +228,7 @@ class tcpMultipathTest : public Test
             /* tcp_close_timeout_ms == 0 かつ相手 FIN 未受理のため、FIN_ACK 待機は POTR_ERR_TIMEOUT となる。 */
             s_expected_close_ret = POTR_ERR_TIMEOUT;
         }
-        service.dst_port = 19723;
+        service.dst_port = test_ports[0];
         service.encrypt_enabled = crypto;
         strcpy(service.src_addr[0], "127.0.0.1");
         strcpy(service.src_addr[1], "127.0.0.1");
@@ -623,7 +630,7 @@ TEST_F(tcpMultipathTest, reconnect_path_and_finish_in_order)
         "127.0.0.1", &endpoint.address); // [手順] - 再接続先の IPv4 アドレスを指定して cplat_ipv4_parse() を呼び出す。
     ASSERT_EQ(CPLAT_OK, actual_ret_parse);
     // [状態確認] - cplat_ipv4_parse() の戻り値が CPLAT_OK であること。
-    endpoint.port = cplat_hton16(19723);
+    endpoint.port = cplat_hton16(test_ports[0]);
     int actual_ret_open = cplat_socket_open(
         CPLAT_SOCKET_TCP, &sockets[0],
         nullptr); // [手順] - 再接続用の TCP ソケットを作成するため、CPLAT_SOCKET_TCP を指定して cplat_socket_open() を呼び出す。

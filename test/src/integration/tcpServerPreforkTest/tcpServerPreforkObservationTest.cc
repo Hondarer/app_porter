@@ -90,17 +90,11 @@ class server_session
         WSADATA data = {};
         require(WSAStartup(MAKEWORD(2, 2), &data) == 0, "WSAStartup");
         winsock_started = true;
-        SOCKET port_probe = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        require(port_probe != INVALID_SOCKET, "port probe socket");
-        clients.push_back(port_probe);
+        const uint16_t port = allocateTestPort();
+        require(port != 0U, "allocate test port");
         endpoint.sin_family = AF_INET;
         endpoint.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        require(::bind(port_probe, reinterpret_cast<sockaddr *>(&endpoint), static_cast<int>(sizeof(endpoint))) == 0,
-                "bind port probe");
-        int size = sizeof(endpoint);
-        require(getsockname(port_probe, reinterpret_cast<sockaddr *>(&endpoint), &size) == 0, "getsockname");
-        closesocket(port_probe);
-        clients.clear();
+        endpoint.sin_port = htons(port);
 
         wchar_t executable[4096] = {};
         std::wstring key;

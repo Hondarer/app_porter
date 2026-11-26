@@ -4,6 +4,7 @@
 #endif /* PLATFORM_WINDOWS */
 #include <testfw.h>
 #include <porter.h>
+#include <porter_test_trace.h>
 #include <cplat/crt/string.h>
 
 #include <atomic>
@@ -195,10 +196,16 @@ class handleConcurrencyTest : public Test
   protected:
     potr_context *server = nullptr;
     std::vector<potr_context *> clients;
+    // 払い出したポート (要素は 1 個)。uint16_t のメンバーは構造体の詰め物の警告になるため、配列で持つ。
+    std::vector<uint16_t> test_ports;
 
     // [サブ手順 名前=handleConcurrencyTest.SetUp]
     void SetUp() override
     {
+        ASSERT_TRUE(allocateTestPorts(1U, test_ports)); // [状態] - 待ち受けに使うポートを allocateTestPorts() で 1 個払い出す。
+        // [状態確認] - allocateTestPorts() の戻り値が true であること。
+        ASSERT_TRUE(porter_test_start_error_trace()); // [状態] - porter のトレーサーの標準エラー出力を ERROR で開始する。
+        // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
         std::lock_guard<std::mutex> lock(s_mutex);
         s_received.clear();
         s_connected_peers.clear();
@@ -275,7 +282,7 @@ TEST_F(handleConcurrencyTest, concurrent_fragmented_compressed_sends_arrive_inta
 {
     // Arrange
     // [サブ手順参照 名前=handleConcurrencyTest.open_tcp_pair]
-    ASSERT_NO_FATAL_FAILURE(open_tcp_pair(19931));
+    ASSERT_NO_FATAL_FAILURE(open_tcp_pair(test_ports[0]));
     potr_context *client = clients[0];
     std::atomic<int> failures(0);
 
@@ -349,7 +356,7 @@ TEST_F(handleConcurrencyTest, blocking_send_returns_while_others_keep_sending)
 {
     // Arrange
     // [サブ手順参照 名前=handleConcurrencyTest.open_tcp_pair]
-    ASSERT_NO_FATAL_FAILURE(open_tcp_pair(19932));
+    ASSERT_NO_FATAL_FAILURE(open_tcp_pair(test_ports[0]));
     potr_context *client = clients[0];
     std::atomic<bool> stop(false);
     std::vector<std::thread> flooders;
@@ -403,7 +410,7 @@ TEST_F(handleConcurrencyTest, n1_disconnect_peers_while_sending)
 {
     // Arrange
     // [サブ手順参照 名前=handleConcurrencyTest.open_n1]
-    ASSERT_NO_FATAL_FAILURE(open_n1(19933, 4, record_callback));
+    ASSERT_NO_FATAL_FAILURE(open_n1(test_ports[0], 4, record_callback));
     std::vector<potr_peer_id> peers;
     {
         std::lock_guard<std::mutex> lock(s_mutex);
@@ -462,7 +469,7 @@ TEST_F(handleConcurrencyTest, n1_callback_supports_send_and_disconnect)
     // Arrange
     // [サブ手順参照 名前=handleConcurrencyTest.open_n1]
     // [サブ手順参照 名前=handleConcurrencyTest.reentry_callback]
-    ASSERT_NO_FATAL_FAILURE(open_n1(19934, 1, reentry_callback));
+    ASSERT_NO_FATAL_FAILURE(open_n1(test_ports[0], 1, reentry_callback));
     potr_context *client = clients[0];
     ASSERT_TRUE(wait_for([] { return s_client_connected; }));
     // [状態確認] - クライアントが CONNECTED になるまで待つ wait_for() の戻り値が true であること。
@@ -495,7 +502,7 @@ TEST_F(handleConcurrencyTest, concurrent_close_and_send_preserve_handle_lifetime
 {
     // Arrange
     // [サブ手順参照 名前=handleConcurrencyTest.open_tcp_pair]
-    ASSERT_NO_FATAL_FAILURE(open_tcp_pair(19935));
+    ASSERT_NO_FATAL_FAILURE(open_tcp_pair(test_ports[0]));
     potr_context *client = clients[0];
     std::atomic<int> ready(0);
     std::atomic<bool> go(false);
@@ -557,7 +564,7 @@ TEST_F(handleConcurrencyTest, close_waits_for_running_callback_and_rejects_callb
     s_gate_release = false;
     s_gate_send = POTR_OK;
     // [サブ手順参照 名前=handleConcurrencyTest.open_n1]
-    ASSERT_NO_FATAL_FAILURE(open_n1(19936, 1, gated_callback));
+    ASSERT_NO_FATAL_FAILURE(open_n1(test_ports[0], 1, gated_callback));
     uint8_t data = 3;
     ASSERT_EQ(POTR_OK, potr_service_send(clients[0], POTR_PEER_NA, &data, sizeof(data), POTR_SEND_BLOCKING));
     // [状態確認] - 先行通知を生成できること。
@@ -605,7 +612,7 @@ TEST_F(handleConcurrencyTest, tcp_bidir_consecutive_close_sender_then_receiver)
 {
     // Arrange
     // [サブ手順参照 名前=handleConcurrencyTest.open_tcp_pair]
-    ASSERT_NO_FATAL_FAILURE(open_tcp_pair(19937));
+    ASSERT_NO_FATAL_FAILURE(open_tcp_pair(test_ports[0]));
     potr_context *client = clients[0];
     potr_context *srv = server;
     const uint8_t payload[16] = {1U, 2U, 3U, 4U};
@@ -653,7 +660,7 @@ TEST_F(handleConcurrencyTest, tcp_bidir_consecutive_close_receiver_then_sender)
         }
     };
     potr_global_config global = make_global();
-    potr_service_def service = make_tcp_service(19938);
+    potr_service_def service = make_tcp_service(test_ports[0]);
     potr_context *client = nullptr;
     ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_RECEIVER, record_callback, &server));
     ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_SENDER, bidir_client_cb, &client));
@@ -706,7 +713,7 @@ TEST_F(handleConcurrencyTest, tcp_bidir_both_send_consecutive_close_sender_then_
         }
     };
     potr_global_config global = make_global();
-    potr_service_def service = make_tcp_service(19939);
+    potr_service_def service = make_tcp_service(test_ports[0]);
     potr_context *client = nullptr;
     ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_RECEIVER, record_callback, &server));
     ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_SENDER, bidir_client_cb, &client));
@@ -762,7 +769,7 @@ TEST_F(handleConcurrencyTest, tcp_bidir_both_send_consecutive_close_receiver_the
         }
     };
     potr_global_config global = make_global();
-    potr_service_def service = make_tcp_service(19940);
+    potr_service_def service = make_tcp_service(test_ports[0]);
     potr_context *client = nullptr;
     ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_RECEIVER, record_callback, &server));
     ASSERT_EQ(POTR_OK, potr_service_open(&global, &service, POTR_ROLE_SENDER, bidir_client_cb, &client));

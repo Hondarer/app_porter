@@ -8,6 +8,7 @@
 #endif
 #include <testfw.h>
 #include <porter.h>
+#include <porter_test_trace.h>
 #include <cplat/crt/string.h>
 #include <cplat/net/byteorder.h>
 #include <cplat/net/socket.h>
@@ -48,50 +49,19 @@ potr_global_config make_global(uint32_t close_timeout_ms = 1000U)
     g.tcp_close_timeout_ms = close_timeout_ms;
     return g;
 }
-
-uint16_t pick_free_port(cplat_socket_kind kind)
-{
-    cplat_error detail = {};
-    cplat_socket sock = CPLAT_INVALID_SOCKET;
-    if (cplat_socket_open(kind, &sock, &detail) != CPLAT_OK)
-    {
-        return 0U;
-    }
-    cplat_ipv4_endpoint ep = {};
-    ep.address = cplat_hton32(0x7F000001U);
-    ep.port = 0U;
-    uint16_t port = 0U;
-    if (cplat_socket_bind(sock, &ep, &detail) == CPLAT_OK)
-    {
-        struct sockaddr_in sin = {};
-#if defined(PLATFORM_WINDOWS)
-        int sin_len = (int)sizeof(sin);
-        if (getsockname((SOCKET)sock, reinterpret_cast<struct sockaddr *>(&sin), &sin_len) == 0)
-#else
-        socklen_t sin_len = (socklen_t)sizeof(sin);
-        if (getsockname((int)sock, reinterpret_cast<struct sockaddr *>(&sin), &sin_len) == 0)
-#endif
-        {
-            port = cplat_ntoh16(sin.sin_port);
-        }
-    }
-    cplat_socket_close(sock);
-    return port;
-}
 } // namespace
 
 // UDP 無通信・複数経路・双方向・N:1 の各構成が recv_cancel により 1 秒以内に安全停止することの確認
 TEST(nonblockingStopIntegrationTest, udp_idle_multipath_bidir_n1_stop_quickly)
 {
     potr_global_config global = make_global();
-    const uint16_t p1 = pick_free_port(CPLAT_SOCKET_UDP);
-    const uint16_t p2 = pick_free_port(CPLAT_SOCKET_UDP);
-    const uint16_t p3 = pick_free_port(CPLAT_SOCKET_UDP);
-    const uint16_t p4 = pick_free_port(CPLAT_SOCKET_UDP);
-    ASSERT_NE(0U, p1);
-    ASSERT_NE(0U, p2);
-    ASSERT_NE(0U, p3);
-    ASSERT_NE(0U, p4);
+    std::vector<uint16_t> ports;
+    ASSERT_TRUE(allocateTestPorts(4U, ports)); // [状態確認] - allocateTestPorts() の戻り値が true であること。
+    ASSERT_TRUE(porter_test_start_error_trace()); // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
+    const uint16_t p1 = ports[0];
+    const uint16_t p2 = ports[1];
+    const uint16_t p3 = ports[2];
+    const uint16_t p4 = ports[3];
 
     // 1. 単一経路 UDP 受信者 (無通信)
     {
@@ -168,8 +138,9 @@ TEST(nonblockingStopIntegrationTest, tcp_accept_wait_and_partial_header_stop_wit
 {
     g_recv_count.store(0, std::memory_order_release);
     potr_global_config global = make_global(500U);
-    const uint16_t port = pick_free_port(CPLAT_SOCKET_TCP);
-    ASSERT_NE(0U, port);
+    const uint16_t port = allocateTestPort();
+    ASSERT_NE(0U, port); // [状態確認] - allocateTestPort() の戻り値が 0 以外であること。
+    ASSERT_TRUE(porter_test_start_error_trace()); // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
 
     // 1. 無期限の受け付け待ちからの即時停止
     {
@@ -222,8 +193,9 @@ TEST(nonblockingStopIntegrationTest, multicast_send_recv_with_ttl)
 {
     g_recv_count.store(0, std::memory_order_release);
     potr_global_config global = make_global();
-    const uint16_t port = pick_free_port(CPLAT_SOCKET_UDP);
-    ASSERT_NE(0U, port);
+    const uint16_t port = allocateTestPort();
+    ASSERT_NE(0U, port); // [状態確認] - allocateTestPort() の戻り値が 0 以外であること。
+    ASSERT_TRUE(porter_test_start_error_trace()); // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
 
     potr_service_def svc = {};
     svc.service_id = 8301;

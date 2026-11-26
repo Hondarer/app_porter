@@ -290,6 +290,8 @@ class porterSendRecvTest : public Test
 
     // TearDown でのクリーンアップ用。テスト失敗時もプロセス リークを防ぐ。
     AsyncProcessHandle recv_h_, send_h_;
+    // 払い出したポート (要素は 1 個)。uint16_t のメンバーは構造体の詰め物の警告になるため、配列で持つ。
+    std::vector<uint16_t> test_ports;
 
     // [サブ手順 名前=porterSendRecvTest.SetUp]
     void SetUp() override
@@ -297,6 +299,8 @@ class porterSendRecvTest : public Test
         string ws = findWorkspaceRoot();
         ASSERT_FALSE(ws.empty());
         // [状態確認] - ws.empty() の戻り値が false であること。
+        ASSERT_TRUE(allocateTestPorts(1U, test_ports)); // [状態] - サービスが送受信に使うポートを allocateTestPorts() で 1 個払い出す。
+        // [状態確認] - allocateTestPorts() の戻り値が true であること。
 #if defined(PLATFORM_LINUX)
         recv_path = ws + "/app/porter/prod/cbin/porter-test";
         send_path = ws + "/app/porter/prod/cbin/porter-test";
@@ -354,11 +358,11 @@ class porterSendRecvTest : public Test
 TEST_F(porterSendRecvTest, send_single_message)
 {
     // Arrange
-    // 設定ファイルを動的生成 (ポート 19010 を使用)
+    // 設定ファイルを動的生成 (払い出したポートを使用)
     PorterConfigBuilder cfg;
     string config_path =
-        cfg.addUnicastService(10, 19010)
-            .build(); // [状態] - 127.0.0.1 で ポート 19010 を送受信に利用する unicast サービスを定義する。
+        cfg.addUnicastService(10, test_ports[0])
+            .build(); // [状態] - 127.0.0.1 の払い出したポートを送受信に利用する unicast サービスを定義する。
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ =
@@ -427,8 +431,8 @@ TEST_F(porterSendRecvTest, send_multiple_messages)
     // Arrange
     PorterConfigBuilder cfg;
     string config_path =
-        cfg.addUnicastService(10, 19011)
-            .build(); // [状態] - 127.0.0.1 で ポート 19011 を送受信に利用する unicast サービスを定義する。
+        cfg.addUnicastService(10, test_ports[0])
+            .build(); // [状態] - 127.0.0.1 の払い出したポートを送受信に利用する unicast サービスを定義する。
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ =
@@ -501,8 +505,8 @@ TEST_F(porterSendRecvTest, recv_exits_cleanly_on_sigint)
     // Arrange
     PorterConfigBuilder cfg;
     string config_path =
-        cfg.addUnicastService(10, 19012)
-            .build(); // [状態] - 127.0.0.1 で ポート 19012 を送受信に利用する unicast サービスを定義する。
+        cfg.addUnicastService(10, test_ports[0])
+            .build(); // [状態] - 127.0.0.1 の払い出したポートを送受信に利用する unicast サービスを定義する。
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ =
@@ -538,8 +542,8 @@ TEST_F(porterSendRecvTest, unicast_initial_data_establishes_connected_without_pi
     PorterConfigBuilder cfg;
     string config_path = cfg.setUdpHealthIntervalMs(0)
                              .setUdpHealthTimeoutMs(1200)
-                             .addUnicastService(11, 19016)
-                             .build(); // [状態] - PING 無効 (interval 0) の unicast サービスをポート 19016 で定義する。
+                             .addUnicastService(11, test_ports[0])
+                             .build(); // [状態] - PING 無効 (interval 0) の unicast サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "11"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -553,7 +557,7 @@ TEST_F(porterSendRecvTest, unicast_initial_data_establishes_connected_without_pi
     // Act
     int actual_ret_send_data = send_udp_packet(
         make_plain_data_packet(11, 0x4101U, 1200, 3400, 0U, "data-connect-ok"),
-        19016); // [手順] - 初回 DATA パケット "data-connect-ok" を UDP で直接送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 初回 DATA パケット "data-connect-ok" を UDP で直接送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_data); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
 
     bool actual_ret_wait_12 =
@@ -592,8 +596,8 @@ TEST_F(porterSendRecvTest, unicast_sender_open_does_not_trigger_immediate_ping)
     PorterConfigBuilder cfg;
     string config_path = cfg.setUdpHealthIntervalMs(1000)
                              .setUdpHealthTimeoutMs(1500)
-                             .addUnicastService(13, 19018)
-                             .build(); // [状態] - PING 周期 1000 ms の unicast サービスをポート 19018 で定義する。
+                             .addUnicastService(13, test_ports[0])
+                             .build(); // [状態] - PING 周期 1000 ms の unicast サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "13"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -648,8 +652,8 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
     string config_path =
         cfg.setUdpHealthIntervalMs(0)
             .setUdpHealthTimeoutMs(900)
-            .addUnicastService(12, 19017)
-            .build(); // [状態] - PING 無効・health timeout 900 ms の unicast サービスをポート 19017 で定義する。
+            .addUnicastService(12, test_ports[0])
+            .build(); // [状態] - PING 無効・health timeout 900 ms の unicast サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "12"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -663,7 +667,7 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
     // Act
     int actual_ret_send_data1 = send_udp_packet(
         make_plain_data_packet(12, 0x4102U, 2200, 4500, 0U, "timeout-reset-1"),
-        19017); // [手順] - 1 通目の DATA "timeout-reset-1" を UDP で直接送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 1 通目の DATA "timeout-reset-1" を UDP で直接送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_data1); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_17 =
         tryWaitForOutput(recv_h_, "timeout-reset-1", 3000); // [手順] - RECIEVER が 1 通目の受信を出力するまで待機する。
@@ -675,7 +679,7 @@ TEST_F(porterSendRecvTest, unicast_data_resets_health_timeout_without_ping)
 
     int actual_ret_send_data2 = send_udp_packet(
         make_plain_data_packet(12, 0x4102U, 2200, 4500, 1U, "timeout-reset-2"),
-        19017); // [手順] - 2 通目の DATA "timeout-reset-2" を送信して timeout を延長させるため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 2 通目の DATA "timeout-reset-2" を送信して timeout を延長させるため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_data2); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_18 =
         tryWaitForOutput(recv_h_, "timeout-reset-2", 3000); // [手順] - RECIEVER が 2 通目の受信を出力するまで待機する。
@@ -732,7 +736,7 @@ TEST_F(porterSendRecvTest, unicast_close_after_single_send_delivers_before_disco
     const string payload = "fin-pending-ok"; // [状態] - 送信メッセージを "fin-pending-ok" とする。
     PorterConfigBuilder cfg;
     string config_path =
-        cfg.addUnicastService(53, 19053).build(); // [状態] - unicast サービスをポート 19053 で定義する。
+        cfg.addUnicastService(53, test_ports[0]).build(); // [状態] - unicast サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "53"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -807,7 +811,7 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
     // Arrange
     PorterConfigBuilder cfg;
     string config_path =
-        cfg.addUnicastService(56, 19056).build(); // [状態] - unicast サービスをポート 19056 で定義する。
+        cfg.addUnicastService(56, test_ports[0]).build(); // [状態] - unicast サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "56"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -821,7 +825,7 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
     // Act
     int actual_ret_send_ping = send_udp_packet(
         make_plain_ping_packet(56, 0x5601U, 4234, 8678, 0U, POTR_PING_STATE_UNDEFINED),
-        19056); // [手順] - PING パケットを送信して接続を確立させるため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - PING パケットを送信して接続を確立させるため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_ping); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_26 =
         tryWaitForOutput(recv_h_, "接続確立", 3000); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
@@ -830,7 +834,7 @@ TEST_F(porterSendRecvTest, fin_without_target_flag_disconnects_immediately)
 
     int actual_ret_send_fin = send_udp_packet(
         make_plain_fin_packet(56, 0x5601U, 4234, 8678, 0U, false),
-        19056); // [手順] - target フラグなしの FIN パケットを送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - target フラグなしの FIN パケットを送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_fin); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_27 =
         tryWaitForOutput(recv_h_, "切断検知", 3000); // [手順] - RECIEVER が "切断検知" を出力するまで待機する。
@@ -866,7 +870,7 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
     PorterConfigBuilder cfg;
     const string payload = "wrap-fin-target-zero"; // [状態] - 最終 DATA のメッセージを "wrap-fin-target-zero" とする。
     string config_path =
-        cfg.addUnicastService(57, 19057).build(); // [状態] - unicast サービスをポート 19057 で定義する。
+        cfg.addUnicastService(57, test_ports[0]).build(); // [状態] - unicast サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "57"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -880,7 +884,7 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
     // Act
     int actual_ret_send_ping = send_udp_packet(
         make_plain_ping_packet(57, 0x5701U, 5234, 9678, UINT32_MAX, POTR_PING_STATE_UNDEFINED),
-        19057); // [手順] - 通番 UINT32_MAX の PING を送信して接続を確立させるため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 通番 UINT32_MAX の PING を送信して接続を確立させるため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_ping); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_29 =
         tryWaitForOutput(recv_h_, "接続確立", 3000); // [手順] - RECIEVER が "接続確立" を出力するまで待機する。
@@ -889,14 +893,14 @@ TEST_F(porterSendRecvTest, fin_target_zero_wrap_is_handled_by_flag)
 
     int actual_ret_send_fin = send_udp_packet(
         make_plain_fin_packet(57, 0x5701U, 5234, 9678, 0U, true),
-        19057); // [手順] - target が 0 に wrap した FIN (target フラグ付き) を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - target が 0 に wrap した FIN (target フラグ付き) を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_fin); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     sleep_ms(150);                     // [手順] - 150 ms を指定して sleep_ms() を呼び出す。
     size_t actual_ret_find_disc_early = getStdout(recv_h_).find("切断検知");
 
     int actual_ret_send_data = send_udp_packet(
         make_plain_data_packet(57, 0x5701U, 5234, 9678, UINT32_MAX, payload),
-        19057); // [手順] - 通番 UINT32_MAX の最終 DATA を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 通番 UINT32_MAX の最終 DATA を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_data); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_30 =
         tryWaitForOutput(recv_h_, payload, 3000); // [手順] - RECIEVER が最終 DATA を出力するまで待機する。
@@ -939,9 +943,9 @@ TEST_F(porterSendRecvTest, n1_close_after_single_send_delivers_before_disconnect
     const string payload = "n1-fin-pending-ok"; // [状態] - 送信メッセージを "n1-fin-pending-ok" とする。
     PorterConfigBuilder server_cfg;
     PorterConfigBuilder client_cfg;
-    string server_config_path = server_cfg.addUnicastBidirN1Service(54, 19054, 1, "0.0.0.0")
-                                    .build(); // [状態] - N:1 サーバー側サービスをポート 19054 で定義する。
-    string client_config_path = client_cfg.addUnicastBidirService(54, 19054)
+    string server_config_path = server_cfg.addUnicastBidirN1Service(54, test_ports[0], 1, "0.0.0.0")
+                                    .build(); // [状態] - N:1 サーバー側サービスを払い出したポート で定義する。
+    string client_config_path = client_cfg.addUnicastBidirService(54, test_ports[0])
                                     .build(); // [状態] - クライアント側の unicast_bidir サービスを定義する。
 
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "54"},
@@ -1024,8 +1028,8 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
     PorterConfigBuilder cfg;
     const string payload = "n1-pending-fin-complete"; // [状態] - FIN の目標通番に到達させるメッセージを用意する。
     const string recovery_payload = "n1-after-fin";   // [状態] - peer 解放後の受信継続を確認するメッセージを用意する。
-    string config_path = cfg.addUnicastBidirN1Service(58, 19058, 1, "0.0.0.0")
-                             .build(); // [状態] - N:1 サーバー側サービスをポート 19058 で定義する。
+    string config_path = cfg.addUnicastBidirN1Service(58, test_ports[0], 1, "0.0.0.0")
+                             .build(); // [状態] - N:1 サーバー側サービスを払い出したポート で定義する。
 
     recv_h_ = startProcessAsync(recv_path, {"receiver", "-l", "INFO", config_path, "58"},
                                 makeOpts()); // [状態] - INFO トレース付きで RECEIVER を起動する。
@@ -1039,7 +1043,7 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
     // Act
     int actual_ret_send_ping1 = send_udp_packet(
         make_plain_ping_packet(58, 0x5801U, 6234, 10678, 0U, POTR_PING_STATE_NORMAL),
-        19058); // [手順] - PING を送信して N:1 peer を作成するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - PING を送信して N:1 peer を作成するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_ping1); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_41 =
         tryWaitForOutput(recv_h_, "接続確立", 3000); // [手順] - RECIEVER が peer の "接続確立" を出力するまで待機する。
@@ -1048,7 +1052,7 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
 
     int actual_ret_send_fin = send_udp_packet(
         make_plain_fin_packet(58, 0x5801U, 6234, 10678, 1U, true),
-        19058); // [手順] - 未到達の通番 1 を目標とする FIN を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 未到達の通番 1 を目標とする FIN を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_fin); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_fin_pending = wait_for_stderr(
         recv_h_, "FIN pending",
@@ -1057,7 +1061,7 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
         actual_ret_wait_fin_pending); // [確認_正常系] - "FIN pending" を探した wait_for_stderr() の戻り値が true であること。(FIN が pending 状態に登録されたことの確認)
     int actual_ret_send_data = send_udp_packet(
         make_plain_data_packet(58, 0x5801U, 6234, 10678, 0U, payload),
-        19058); // [手順] - 通番 0 の DATA で pending FIN の目標に到達させるため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 通番 0 の DATA で pending FIN の目標に到達させるため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_data); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_42 =
         tryWaitForOutput(recv_h_, payload, 3000); // [手順] - FIN 完了前に RECIEVER が payload を出力するまで待機する。
@@ -1070,11 +1074,11 @@ TEST_F(porterSendRecvTest, n1_pending_fin_completion_keeps_receiver_running)
 
     int actual_ret_send_ping2 = send_udp_packet(
         make_plain_ping_packet(58, 0x5802U, 6235, 10679, 0U, POTR_PING_STATE_NORMAL),
-        19058); // [手順] - 切断後に別セッションの PING を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 切断後に別セッションの PING を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_ping2); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     int actual_ret_send_recovery = send_udp_packet(
         make_plain_data_packet(58, 0x5802U, 6235, 10679, 0U, recovery_payload),
-        19058); // [手順] - 新しい peer から DATA を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 新しい peer から DATA を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_recovery); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_44 =
         tryWaitForOutput(recv_h_, recovery_payload,
@@ -1113,8 +1117,8 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
     // health timeout は最後の受信から数えるため、受信の表示待ちと FIN の送信が CI の負荷で延びても、
     // FIN の 150 ms 後の確認より前に期限が来ないよう、十分に長くする。
     string config_path = cfg.setUdpHealthTimeoutMs(1000)
-                             .addUnicastService(55, 19055)
-                             .build(); // [状態] - health timeout 1000 ms の unicast サービスをポート 19055 で定義する。
+                             .addUnicastService(55, test_ports[0])
+                             .build(); // [状態] - health timeout 1000 ms の unicast サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "55"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -1128,7 +1132,7 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
     // Act
     int actual_ret_send_first = send_udp_packet(
         make_plain_data_packet(55, 0x5501U, 3234, 7678, 0U, first_payload),
-        19055); // [手順] - 1 つ目のセッションで DATA を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 1 つ目のセッションで DATA を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_first); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_46 =
         tryWaitForOutput(recv_h_, first_payload, 3000); // [手順] - RECIEVER が受信を出力するまで待機する。
@@ -1137,7 +1141,7 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
 
     int actual_ret_send_fin = send_udp_packet(
         make_plain_fin_packet(55, 0x5501U, 3234, 7678, 2U, true),
-        19055); // [手順] - 未到達の target (通番 2) を指す FIN を送信し pending FIN 状態にするため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 未到達の target (通番 2) を指す FIN を送信し pending FIN 状態にするため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_fin); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     sleep_ms(150);                     // [手順] - 150 ms を指定して sleep_ms() を呼び出す。
     size_t actual_ret_find_disc_early = getStdout(recv_h_).find("切断検知");
@@ -1148,7 +1152,7 @@ TEST_F(porterSendRecvTest, health_timeout_clears_pending_fin_before_new_session)
 
     int actual_ret_send_payload = send_udp_packet(
         make_plain_data_packet(55, 0x5502U, 3235, 7679, 0U, payload),
-        19055); // [手順] - 新しいセッション ID で DATA を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 新しいセッション ID で DATA を送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_payload); // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     bool actual_ret_wait_48 =
         tryWaitForOutput(recv_h_, payload, 3000); // [手順] - RECIEVER が新セッションの受信を出力するまで待機する。
@@ -1191,8 +1195,8 @@ TEST_F(porterSendRecvTest, unicast_recent_data_defers_ping_until_last_data_inter
     PorterConfigBuilder cfg;
     string config_path = cfg.setUdpHealthIntervalMs(500)
                              .setUdpHealthTimeoutMs(1500)
-                             .addUnicastService(14, 19019)
-                             .build(); // [状態] - PING 周期 500 ms の unicast サービスをポート 19019 で定義する。
+                             .addUnicastService(14, test_ports[0])
+                             .build(); // [状態] - PING 周期 500 ms の unicast サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "14"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -1301,8 +1305,8 @@ TEST_F(porterSendRecvTest, bidir_echo)
     // Arrange
     PorterConfigBuilder cfg;
     string config_path =
-        cfg.addUnicastBidirService(20, 19020)
-            .build(); // [状態] - 127.0.0.1 で ポート 19020 を送受信に利用する unicast_bidir サービスを定義する。
+        cfg.addUnicastBidirService(20, test_ports[0])
+            .build(); // [状態] - 127.0.0.1 の払い出したポートを送受信に利用する unicast_bidir サービスを定義する。
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ =
@@ -1378,8 +1382,8 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
     // Arrange
     PorterConfigBuilder cfg;
     string config_path =
-        cfg.addUnicastService(30, 19030, "127.0.0.1", "mysecretphrase")
-            .build(); // [状態] - パスフレーズ "mysecretphrase" で暗号化した unicast サービスをポート 19030 で定義する。
+        cfg.addUnicastService(30, test_ports[0], "127.0.0.1", "mysecretphrase")
+            .build(); // [状態] - パスフレーズ "mysecretphrase" で暗号化した unicast サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "30"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -1393,7 +1397,7 @@ TEST_F(porterSendRecvTest, encrypted_unicast_drops_plain_udp_packet)
     // Act
     int actual_ret_send_packet = send_udp_packet(
         make_plain_data_packet(30, 0x1001U, 1234, 5678, 0U, "plain-should-drop"),
-        19030); // [手順] - 平文の DATA パケット "plain-should-drop" を UDP で直接送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 平文の DATA パケット "plain-should-drop" を UDP で直接送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_packet);
     // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     sleep_ms(300); // [手順] - 破棄処理を待つため、300 ms を指定して sleep_ms() を呼び出す。
@@ -1461,9 +1465,9 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
      * 本テストでは PorterConfigBuilder が 1 ファイル内に同じ service_id の複数定義を持てないため、
      * server/client 用に別ファイルを生成して同一 service_id の構成を模擬する。
      */
-    string server_config_path = server_cfg.addUnicastBidirN1Service(50, 19050, 1, "0.0.0.0", "mysecretphrase")
-                                    .build(); // [状態] - 暗号化 N:1 サーバー (peer 上限 1) をポート 19050 で定義する。
-    string client_config_path = client_cfg.addUnicastBidirService(50, 19050, "127.0.0.1", "mysecretphrase")
+    string server_config_path = server_cfg.addUnicastBidirN1Service(50, test_ports[0], 1, "0.0.0.0", "mysecretphrase")
+                                    .build(); // [状態] - 暗号化 N:1 サーバー (peer 上限 1) を払い出したポート で定義する。
+    string client_config_path = client_cfg.addUnicastBidirService(50, test_ports[0], "127.0.0.1", "mysecretphrase")
                                     .build(); // [状態] - 同じパスフレーズのクライアント側サービスを定義する。
 
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "50"},
@@ -1478,7 +1482,7 @@ TEST_F(porterSendRecvTest, encrypted_n1_bad_tag_does_not_consume_peer_slot)
     // Act
     int actual_ret_send_packet = send_udp_packet(
         make_invalid_encrypted_ping_packet(50, 0x2001U, 2234, 6678, 0U),
-        19050); // [手順] - 認証タグ不正の暗号化 PING パケットを UDP で直接送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 認証タグ不正の暗号化 PING パケットを UDP で直接送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_packet);
     // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     sleep_ms(300); // [手順] - 破棄処理を待つため、300 ms を指定して sleep_ms() を呼び出す。
@@ -1560,9 +1564,9 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
     // Arrange
     PorterConfigBuilder server_cfg;
     PorterConfigBuilder client_cfg;
-    string server_config_path = server_cfg.addUnicastBidirN1Service(52, 19052, 1, "0.0.0.0")
-                                    .build(); // [状態] - N:1 サーバー (peer 上限 1) をポート 19052 で定義する。
-    string client_config_path = client_cfg.addUnicastBidirService(52, 19052)
+    string server_config_path = server_cfg.addUnicastBidirN1Service(52, test_ports[0], 1, "0.0.0.0")
+                                    .build(); // [状態] - N:1 サーバー (peer 上限 1) を払い出したポート で定義する。
+    string client_config_path = client_cfg.addUnicastBidirService(52, test_ports[0])
                                     .build(); // [状態] - クライアント側の unicast_bidir サービスを定義する。
 
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "52"},
@@ -1577,7 +1581,7 @@ TEST_F(porterSendRecvTest, n1_initial_plain_data_does_not_consume_peer_slot)
     // Act
     int actual_ret_send_packet = send_udp_packet(
         make_plain_data_packet(52, 0x3001U, 3234, 7678, 0U, "plain-n1-drop"),
-        19052); // [手順] - 未知 peer からの初回 DATA "plain-n1-drop" を UDP で直接送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
+        test_ports[0]); // [手順] - 未知 peer からの初回 DATA "plain-n1-drop" を UDP で直接送信するため、対象パケットと宛先ポートを指定して send_udp_packet() を呼び出す。
     ASSERT_EQ(0, actual_ret_send_packet);
     // [状態確認] - send_udp_packet() の戻り値が 0 であること。
     sleep_ms(300); // [手順] - 破棄処理を待つため、300 ms を指定して sleep_ms() を呼び出す。
@@ -1660,9 +1664,9 @@ TEST_F(porterSendRecvTest, encrypted_n1_client_reaches_connected_before_send)
     // Arrange
     PorterConfigBuilder server_cfg;
     PorterConfigBuilder client_cfg;
-    string server_config_path = server_cfg.addUnicastBidirN1Service(51, 19051, 1, "0.0.0.0", "mysecretphrase")
-                                    .build(); // [状態] - 暗号化 N:1 サーバーをポート 19051 で定義する。
-    string client_config_path = client_cfg.addUnicastBidirService(51, 19051, "127.0.0.1", "mysecretphrase")
+    string server_config_path = server_cfg.addUnicastBidirN1Service(51, test_ports[0], 1, "0.0.0.0", "mysecretphrase")
+                                    .build(); // [状態] - 暗号化 N:1 サーバーを払い出したポート で定義する。
+    string client_config_path = client_cfg.addUnicastBidirService(51, test_ports[0], "127.0.0.1", "mysecretphrase")
                                     .build(); // [状態] - 同じパスフレーズのクライアント側サービスを定義する。
 
     recv_h_ = startProcessAsync(recv_path, {"receiver", server_config_path, "51"},
@@ -1742,8 +1746,8 @@ TEST_F(porterSendRecvTest, encrypted_tcp_bidir_stays_healthy_and_receives)
     // Arrange
     PorterConfigBuilder cfg;
     string config_path =
-        cfg.addTcpBidirService(60, 19060, "127.0.0.1", "mysecretphrase")
-            .build(); // [状態] - パスフレーズ "mysecretphrase" で暗号化した tcp_bidir サービスをポート 19060 で定義する。
+        cfg.addTcpBidirService(60, test_ports[0], "127.0.0.1", "mysecretphrase")
+            .build(); // [状態] - パスフレーズ "mysecretphrase" で暗号化した tcp_bidir サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "60"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -1824,8 +1828,8 @@ TEST_F(porterSendRecvTest, tcp_bidir_connects_without_periodic_health_ping)
     string config_path =
         cfg.setTcpHealthIntervalMs(0)
             .setTcpHealthTimeoutMs(0)
-            .addTcpBidirService(61, 19061)
-            .build(); // [状態] - 定周期 health PING 無効 (interval 0) の tcp_bidir サービスをポート 19061 で定義する。
+            .addTcpBidirService(61, test_ports[0])
+            .build(); // [状態] - 定周期 health PING 無効 (interval 0) の tcp_bidir サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "61"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -1905,8 +1909,8 @@ TEST_F(porterSendRecvTest, tcp_bidir_without_periodic_health_ping_ignores_timeou
     string config_path =
         cfg.setTcpHealthIntervalMs(0)
             .setTcpHealthTimeoutMs(500)
-            .addTcpBidirService(62, 19062)
-            .build(); // [状態] - PING 無効かつ timeout 500 ms の tcp_bidir サービスをポート 19062 で定義する。
+            .addTcpBidirService(62, test_ports[0])
+            .build(); // [状態] - PING 無効かつ timeout 500 ms の tcp_bidir サービスを払い出したポート で定義する。
 
     recv_h_ =
         startProcessAsync(recv_path, {"receiver", config_path, "62"}, makeOpts()); // [状態] - RECIEVER を起動する。
@@ -1980,8 +1984,8 @@ TEST_F(porterSendRecvTest, send_binary_file_and_recv_saves)
     // Arrange
     PorterConfigBuilder cfg;
     string config_path =
-        cfg.addUnicastService(10, 19013)
-            .build(); // [状態] - 127.0.0.1 で ポート 19013 を送受信に利用する unicast サービスを定義する。
+        cfg.addUnicastService(10, test_ports[0])
+            .build(); // [状態] - 127.0.0.1 の払い出したポートを送受信に利用する unicast サービスを定義する。
 
     // バイナリ ファイルを作成する (NUL バイトを含むデータ)
     TempBinaryFile bin_file;
@@ -2061,8 +2065,8 @@ TEST_F(porterSendRecvTest, send_text_still_displays_as_text)
     // Arrange
     PorterConfigBuilder cfg;
     string config_path =
-        cfg.addUnicastService(10, 19014)
-            .build(); // [状態] - 127.0.0.1 で ポート 19014 を送受信に利用する unicast サービスを定義する。
+        cfg.addUnicastService(10, test_ports[0])
+            .build(); // [状態] - 127.0.0.1 の払い出したポートを送受信に利用する unicast サービスを定義する。
 
     // RECIEVER を先に起動してリスナー確立を待つ
     recv_h_ =
@@ -2128,8 +2132,8 @@ TEST_F(porterSendRecvTest, send_file_too_large_fails)
     // Arrange
     PorterConfigBuilder cfg;
     string config_path =
-        cfg.addUnicastService(10, 19015)
-            .build(); // [状態] - 127.0.0.1 で ポート 19015 を送受信に利用する unicast サービスを定義する。
+        cfg.addUnicastService(10, test_ports[0])
+            .build(); // [状態] - 127.0.0.1 の払い出したポートを送受信に利用する unicast サービスを定義する。
 
     // 65536 バイトのファイルを作成する (POTR_MAX_MESSAGE_SIZE = 65535 を超過)
     TempBinaryFile large_file;

@@ -9,6 +9,7 @@
 #include <testfw.h>
 #include <mock_openssl.h>
 #include <porter.h>
+#include <porter_test_trace.h>
 #include <porter/potr_context.h>
 #include <porter/potr_flow_control.h>
 #include <porter/potr_handle.h>
@@ -91,7 +92,8 @@ struct certificate_configuration
     std::array<const char *, 2> names{"porter.test", "urn:porter:peer"};
     potr_service_def definition{};
 
-    certificate_configuration(potr_type type, int mode, const char *identity, const char *other, uint16_t port)
+    certificate_configuration(potr_type type, int mode, const char *identity, const char *other, uint16_t dst_port,
+                              uint16_t src_port)
     {
         auto source_directory = std::filesystem::path(__FILE__).parent_path();
         if (source_directory.empty())
@@ -106,8 +108,8 @@ struct certificate_configuration
         definition.auth = POTR_AUTH_CERT;
         definition.type = type;
         definition.service_id = 9361;
-        definition.dst_port = port;
-        definition.src_port = (uint16_t)(port + 1U);
+        definition.dst_port = dst_port;
+        definition.src_port = src_port;
         definition.ttl = 1U;
         definition.max_peers = 4U;
         definition.reconnect_interval_ms = 100U;
@@ -173,9 +175,13 @@ TEST_P(certificateTest, sends_data_after_mutual_authentication)
     const auto type = GetParam().type;
     const auto mode = GetParam().trust;
     auto global = global_configuration();
-    uint16_t port = (uint16_t)(38800 + (int)type * 10 + mode * 2);
-    certificate_configuration sender(type, mode, "server", "client", port);
-    certificate_configuration receiver(type, mode, "client", "server", port);
+    std::vector<uint16_t> ports;
+    ASSERT_TRUE(allocateTestPorts(2U, ports)); // [状態] - 宛先と送信元のポートを allocateTestPorts() で 2 個払い出す。
+    // [状態確認] - allocateTestPorts() の戻り値が true であること。
+    ASSERT_TRUE(porter_test_start_error_trace()); // [状態] - porter のトレーサーの標準エラー出力を ERROR で開始する。
+    // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
+    certificate_configuration sender(type, mode, "server", "client", ports[0], ports[1]);
+    certificate_configuration receiver(type, mode, "client", "server", ports[0], ports[1]);
     if (type == POTR_TYPE_UNICAST_BIDIR_N1)
     {
         sender.definition.type = POTR_TYPE_UNICAST_BIDIR;
@@ -210,8 +216,13 @@ TEST(certificate_rejection_test, rejects_untrusted_authority)
     // Arrange
     testing::NiceMock<Mock_openssl> mock_openssl;
     auto global = global_configuration();
-    certificate_configuration sender(POTR_TYPE_UNICAST_BIDIR, 0, "foreign", "client", 38622U);
-    certificate_configuration receiver(POTR_TYPE_UNICAST_BIDIR, 0, "client", "foreign", 38622U);
+    std::vector<uint16_t> ports;
+    ASSERT_TRUE(allocateTestPorts(2U, ports)); // [状態] - 宛先と送信元のポートを allocateTestPorts() で 2 個払い出す。
+    // [状態確認] - allocateTestPorts() の戻り値が true であること。
+    ASSERT_TRUE(porter_test_start_error_trace()); // [状態] - porter のトレーサーの標準エラー出力を ERROR で開始する。
+    // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
+    certificate_configuration sender(POTR_TYPE_UNICAST_BIDIR, 0, "foreign", "client", ports[0], ports[1]);
+    certificate_configuration receiver(POTR_TYPE_UNICAST_BIDIR, 0, "client", "foreign", ports[0], ports[1]);
     service_handle receiving;
     service_handle sending;
     delivered.store(0U);
@@ -234,9 +245,14 @@ TEST(certificate_open_test, validates_credentials_and_oneway_source_port)
     // Arrange
     testing::NiceMock<Mock_openssl> mock_openssl;
     auto global = global_configuration();
-    certificate_configuration configuration(POTR_TYPE_MULTICAST, 0, "server", "client", 38624U);
-    certificate_configuration unicast_receiver(POTR_TYPE_UNICAST, 0, "client", "server", 38640U);
-    certificate_configuration unicast_raw_receiver(POTR_TYPE_UNICAST_RAW, 0, "client", "server", 38642U);
+    std::vector<uint16_t> ports;
+    ASSERT_TRUE(allocateTestPorts(8U, ports)); // [状態] - 4 つの設定の宛先と送信元のポートを allocateTestPorts() で 8 個払い出す。
+    // [状態確認] - allocateTestPorts() の戻り値が true であること。
+    ASSERT_TRUE(porter_test_start_error_trace()); // [状態] - porter のトレーサーの標準エラー出力を ERROR で開始する。
+    // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
+    certificate_configuration configuration(POTR_TYPE_MULTICAST, 0, "server", "client", ports[0], ports[1]);
+    certificate_configuration unicast_receiver(POTR_TYPE_UNICAST, 0, "client", "server", ports[2], ports[3]);
+    certificate_configuration unicast_raw_receiver(POTR_TYPE_UNICAST_RAW, 0, "client", "server", ports[4], ports[5]);
     std::array<potr_service_def, 10> invalid{};
     invalid.fill(configuration.definition);
     int invalid_auth = 7;
@@ -256,7 +272,7 @@ TEST(certificate_open_test, validates_credentials_and_oneway_source_port)
     unicast_raw_receiver.definition.src_port = 0U;
     std::array<int, 10> results{};
     std::string absent = configuration.certificate + ".absent";
-    certificate_configuration mismatched_key_cfg(POTR_TYPE_UNICAST, 0, "server", "client", 38625U);
+    certificate_configuration mismatched_key_cfg(POTR_TYPE_UNICAST, 0, "server", "client", ports[6], ports[7]);
     mismatched_key_cfg.definition.key_file = unicast_receiver.key.c_str();
     service_handle missing;
     service_handle mismatch;
@@ -299,7 +315,12 @@ TEST(certificate_open_test, retains_credentials_without_configuration_pointers)
     // Arrange
     testing::NiceMock<Mock_openssl> mock_openssl;
     auto global = global_configuration();
-    certificate_configuration configuration(POTR_TYPE_UNICAST, 2, "server", "client", 38624U);
+    std::vector<uint16_t> ports;
+    ASSERT_TRUE(allocateTestPorts(2U, ports)); // [状態] - 宛先と送信元のポートを allocateTestPorts() で 2 個払い出す。
+    // [状態確認] - allocateTestPorts() の戻り値が true であること。
+    ASSERT_TRUE(porter_test_start_error_trace()); // [状態] - porter のトレーサーの標準エラー出力を ERROR で開始する。
+    // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
+    certificate_configuration configuration(POTR_TYPE_UNICAST, 2, "server", "client", ports[0], ports[1]);
     service_handle service;
     potr_context *context = nullptr;
     ASSERT_EQ(POTR_OK, potr_service_open(&global, &configuration.definition, POTR_ROLE_SENDER, nullptr,
@@ -329,10 +350,15 @@ TEST(certificate_group_test, isolates_receiver_authentication_failure)
     // Arrange
     testing::NiceMock<Mock_openssl> mock_openssl;
     auto global = global_configuration();
-    certificate_configuration sender(POTR_TYPE_MULTICAST, 0, "server", "client", 38626U);
-    certificate_configuration receiver(POTR_TYPE_MULTICAST, 0, "client", "server", 38626U);
-    certificate_configuration untrusted(POTR_TYPE_MULTICAST, 0, "foreign", "server", 38626U);
-    untrusted.definition.dst_port = 38628U;
+    std::vector<uint16_t> ports;
+    ASSERT_TRUE(allocateTestPorts(3U, ports)); // [状態] - 宛先、送信元、信頼しない受信者の返送用のポートを allocateTestPorts() で 3 個払い出す。
+    // [状態確認] - allocateTestPorts() の戻り値が true であること。
+    ASSERT_TRUE(porter_test_start_error_trace()); // [状態] - porter のトレーサーの標準エラー出力を ERROR で開始する。
+    // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
+    certificate_configuration sender(POTR_TYPE_MULTICAST, 0, "server", "client", ports[0], ports[1]);
+    certificate_configuration receiver(POTR_TYPE_MULTICAST, 0, "client", "server", ports[0], ports[1]);
+    certificate_configuration untrusted(POTR_TYPE_MULTICAST, 0, "foreign", "server", ports[0], ports[1]);
+    untrusted.definition.dst_port = ports[2];
     service_handle receiving;
     service_handle rejecting;
     service_handle sending;
@@ -372,7 +398,10 @@ TEST(certificate_packet_test, preserves_state_before_authentication)
 {
     // Arrange
     testing::NiceMock<Mock_openssl> mock_openssl;
-    certificate_configuration configuration(POTR_TYPE_MULTICAST, 0, "client", "server", 38630U);
+    std::vector<uint16_t> ports;
+    ASSERT_TRUE(allocateTestPorts(2U, ports)); // [状態] - 宛先と送信元のポートを allocateTestPorts() で 2 個払い出す。
+    // [状態確認] - allocateTestPorts() の戻り値が true であること。
+    certificate_configuration configuration(POTR_TYPE_MULTICAST, 0, "client", "server", ports[0], ports[1]);
     potr_context context{};
     context.service = configuration.definition;
     context.global = global_configuration();
@@ -450,8 +479,13 @@ TEST(certificate_group_test, retries_handshake_until_group_key_is_available)
     testing::NiceMock<Mock_openssl> mock_openssl;
     auto global = global_configuration();
     global.window_size = 128U;
-    certificate_configuration sender(POTR_TYPE_MULTICAST, 0, "server", "client", 38632U);
-    certificate_configuration receiver(POTR_TYPE_MULTICAST, 0, "client", "server", 38632U);
+    std::vector<uint16_t> ports;
+    ASSERT_TRUE(allocateTestPorts(2U, ports)); // [状態] - 宛先と送信元のポートを allocateTestPorts() で 2 個払い出す。
+    // [状態確認] - allocateTestPorts() の戻り値が true であること。
+    ASSERT_TRUE(porter_test_start_error_trace()); // [状態] - porter のトレーサーの標準エラー出力を ERROR で開始する。
+    // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
+    certificate_configuration sender(POTR_TYPE_MULTICAST, 0, "server", "client", ports[0], ports[1]);
+    certificate_configuration receiver(POTR_TYPE_MULTICAST, 0, "client", "server", ports[0], ports[1]);
     service_handle receiving;
     service_handle sending;
     potr_context *context = nullptr;
@@ -663,25 +697,13 @@ TEST(certificateTest, tcp_stop_during_certificate_exchange_completes_quickly)
     potr_global_config global = global_configuration();
     global.tcp_close_timeout_ms = 500U;
 
+    std::vector<uint16_t> ports;
+    ASSERT_TRUE(allocateTestPorts(2U, ports)); // [状態確認] - allocateTestPorts() の戻り値が true であること。
+    ASSERT_TRUE(porter_test_start_error_trace()); // [状態確認] - porter_test_start_error_trace() の戻り値が true であること。
+    const uint16_t port = ports[0];
     cplat_error detail{};
-    cplat_socket probe = CPLAT_INVALID_SOCKET;
-    ASSERT_EQ(CPLAT_OK, cplat_socket_open(CPLAT_SOCKET_TCP, &probe, &detail));
-    cplat_ipv4_endpoint ep{};
-    ep.address = cplat_hton32(0x7F000001U);
-    ep.port = 0U;
-    ASSERT_EQ(CPLAT_OK, cplat_socket_bind(probe, &ep, &detail));
-    struct sockaddr_in sin{};
-#if defined(PLATFORM_WINDOWS)
-    int sin_len = (int)sizeof(sin);
-    ASSERT_EQ(0, getsockname((SOCKET)probe, reinterpret_cast<struct sockaddr *>(&sin), &sin_len));
-#else
-    socklen_t sin_len = (socklen_t)sizeof(sin);
-    ASSERT_EQ(0, getsockname((int)probe, reinterpret_cast<struct sockaddr *>(&sin), &sin_len));
-#endif
-    const uint16_t port = cplat_ntoh16(sin.sin_port);
-    cplat_socket_close(probe);
 
-    certificate_configuration receiver_cfg(POTR_TYPE_TCP, 0, "client", "server", port);
+    certificate_configuration receiver_cfg(POTR_TYPE_TCP, 0, "client", "server", port, ports[1]);
     potr_context *receiver = nullptr;
     ASSERT_EQ(POTR_OK, potr_service_open(&global, &receiver_cfg.definition, POTR_ROLE_RECEIVER, receive_data, &receiver));
 

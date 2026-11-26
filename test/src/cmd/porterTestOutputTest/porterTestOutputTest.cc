@@ -101,8 +101,10 @@ TEST(porterTestOutputTest, does_not_remove_path_when_creation_fails)
 TEST(porterTestOutputTest, tcp_bidir_receiver_enables_can_send)
 {
     // Arrange
+    uint16_t port = allocateTestPort(); // [状態] - 待ち受けに使うポートを allocateTestPort() で払い出す。
+    ASSERT_NE(0U, port); // [状態確認] - allocateTestPort() の戻り値が 0 以外であること。
     PorterConfigBuilder cfg;
-    std::string config_path = cfg.addTcpBidirService(1, 19360).build();
+    std::string config_path = cfg.addTcpBidirService(1, port).build();
     ASSERT_FALSE(config_path.empty()); // [状態確認] - TCP_BIDIR サービス設定ファイルを生成できること。
     int recv_is_bidir = -1;
     int recv_can_send = -1;
@@ -130,8 +132,10 @@ TEST(porterTestOutputTest, tcp_bidir_receiver_enables_can_send)
 TEST(porterTestOutputTest, one_way_receiver_keeps_can_send_disabled)
 {
     // Arrange
+    uint16_t port = allocateTestPort(); // [状態] - 待ち受けに使うポートを allocateTestPort() で払い出す。
+    ASSERT_NE(0U, port); // [状態確認] - allocateTestPort() の戻り値が 0 以外であること。
     PorterConfigBuilder cfg;
-    std::string config_path = cfg.addUnicastService(2, 19361).build();
+    std::string config_path = cfg.addUnicastService(2, port).build();
     ASSERT_FALSE(config_path.empty()); // [状態確認] - 片方向 UNICAST サービス設定ファイルを生成できること。
     int actual_is_bidir = -1;
     int actual_can_send = -1;
@@ -389,7 +393,8 @@ TEST(porterTestOutputTest, do_close_reports_close_failure)
 TEST(porterTestOutputTest, main_reports_close_failure_at_exit)
 {
     // Arrange
-    const int port = 19362;
+    const uint16_t port = allocateTestPort(); // [状態] - 待ち受けに使うポートを allocateTestPort() で払い出す。
+    ASSERT_NE(0U, port); // [状態確認] - allocateTestPort() の戻り値が 0 以外であること。
     PorterConfigBuilder cfg;
     std::string config_path = cfg.setTcpHealthIntervalMs(0U)
                                   .setTcpHealthTimeoutMs(0U)
@@ -404,7 +409,7 @@ TEST(porterTestOutputTest, main_reports_close_failure_at_exit)
     cplat_socket accepted_sock = CPLAT_INVALID_SOCKET;
     cplat_ipv4_endpoint listen_addr = {};
     ASSERT_EQ(CPLAT_OK, cplat_ipv4_parse("127.0.0.1", &listen_addr.address)); // [状態確認] - ループバック アドレスを解釈できること。
-    listen_addr.port = cplat_hton16((uint16_t)port);
+    listen_addr.port = cplat_hton16(port);
     ASSERT_EQ(CPLAT_OK, cplat_socket_open(CPLAT_SOCKET_TCP, &listen_sock, nullptr)); // [状態確認] - 待ち受けのソケットを作成できること。
     (void)cplat_socket_set_reuse_address(listen_sock, 1, nullptr);
     ASSERT_EQ(CPLAT_OK, cplat_socket_bind(listen_sock, &listen_addr, nullptr)); // [状態確認] - 待ち受けのソケットを bind できること。

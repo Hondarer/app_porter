@@ -86,28 +86,15 @@ int exercise(const int capacity)
     {
         return -1;
     }
-    SocketOwner probe;
-    probe.value = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (probe.value == INVALID_SOCKET)
+    const uint16_t port = allocateTestPort(); // [手順] - サーバーが待ち受けるポートを allocateTestPort() で払い出す。
+    if (port == 0U)
     {
         return -1;
     }
     sockaddr_in endpoint = {};
     endpoint.sin_family = AF_INET;
     endpoint.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    // testfw.h の using namespace std があると、第 3 引数が size_t の bind は std::bind になる。
-    // see: https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-bind
-    if (::bind(probe.value, reinterpret_cast<sockaddr *>(&endpoint), static_cast<int>(sizeof(endpoint))) != 0)
-    {
-        return -1;
-    }
-    int address_size = sizeof(endpoint);
-    if (getsockname(probe.value, reinterpret_cast<sockaddr *>(&endpoint), &address_size) != 0)
-    {
-        return -1;
-    }
-    closesocket(probe.value);
-    probe.value = INVALID_SOCKET;
+    endpoint.sin_port = htons(port);
     char executable_path[PLATFORM_PATH_MAX];
     int exists = 0;
     if (cplat_getenv("POTR_TCPSERVER_TEST_EXE", executable_path, sizeof(executable_path), &exists, nullptr) != CPLAT_OK)
