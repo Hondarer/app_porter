@@ -1067,14 +1067,21 @@ extern "C"
      *  @param[in]      peer_id     ピア識別子。
      *  @param[in]      now_ms      現在の単調増加時刻 [ms]。
      *  @param[out]     deferred    送信スレッドが保留している、このピア宛のエントリ数の格納先。NULL は許可しません。
+     *  @param[out]     allowance   送出上限に達するまでに送出できる DATA のパケット数の格納先。NULL 可。
+     *                              送出上限を保持していない場合、抑制する場合、close の開始後、存在しないピアでは
+     *                              UINT32_MAX を格納します。
      *  @return         抑制する場合は 1、しない場合は 0。失敗モードのない述語のため共通結果コードの適用対象外。
+     *
+     *  送信スレッドは、同じピア宛ての外側パケットをまとめて送る数を allowance 以下に抑えます。\n
+     *  ロックを取得せずに送出できると判定する記録 (potr_context::flow_peer_ready) は、残りの数を持たないため、
+     *  allowance を求める場合は使わず、ロックの下で判定します。
      *
      *  @par            スレッド セーフ
      *  任意のスレッドから呼べます。内部で peers_mutex、ピアの send_window_mutex の順に取得するため、
      *  呼び出し元はどちらも保持しないこと。
      */
     extern int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms,
-                                                     int *deferred);
+                                                     int *deferred, uint32_t *allowance);
 
     /**
      *  @brief          N:1 モードで、指定したピアがほかのピアへの送信を妨げた時点を記録します。

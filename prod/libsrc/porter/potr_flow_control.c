@@ -2899,8 +2899,11 @@ int potr_internal_flow_control_suppressed(potr_context *ctx, uint64_t now_ms, in
  * 呼び出し元が peers_mutex を保持していること。
  * allow_query が非 0 の場合 (送信要求や送信スレッドからの呼び出し) は、送出上限に達している間に問い合わせを進める。
  * 周期処理の積算判定など、送出する DATA がないピアを含めて判定する場合は allow_query を 0 とする。
+ * allowance_out が NULL でない場合は、送出上限に達するまでに送出できる DATA のパケット数を格納する
+ * (送出上限を保持していない場合と、止める状態の場合は UINT32_MAX)。
  */
-static int peer_state_locked(potr_context *ctx, potr_internal_peer_context *peer, uint64_t now_ms, int allow_query)
+static int peer_state_locked(potr_context *ctx, potr_internal_peer_context *peer, uint64_t now_ms, int allow_query,
+                             uint32_t *allowance_out)
 {
     uint64_t limit_until_ms = 0U;
     uint32_t allowance = 0U;
@@ -2978,14 +2981,25 @@ static int peer_state_locked(potr_context *ctx, potr_internal_peer_context *peer
 
     potr_internal_flow_control_peer_sync(ctx, peer);
 
+    if (allowance_out != NULL)
+    {
+        *allowance_out = (suppressed != 0) ? UINT32_MAX : allowance;
+    }
+
     return suppressed;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
-int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms, int *deferred)
+int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms, int *deferred,
+                                          uint32_t *allowance)
 {
     potr_internal_peer_context *peer;
     int suppressed = 0;
+
+    if (allowance != NULL)
+    {
+        *allowance = UINT32_MAX;
+    }
 
     if (ctx == NULL || deferred == NULL)
     {
@@ -3002,7 +3016,9 @@ int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_i
     /*
      * ピア識別子と期限が一致する記録だけを使う。衝突、切断、抑制、保留、上限到達、期限切れでは
      * 記録が無効になるため、従来のロック下の判定へ戻る。ピアのポインターはロック外へ持ち出さない。
+     * 記録は送出上限までの残りの数を持たないため、送出できる数を求める場合は使わない。
      */
+    if (allowance == NULL)
     {
         uint64_t epoch = cplat_atomic_load_u64(&ctx->flow_peer_ready_epoch, CPLAT_MEMORY_ORDER_ACQUIRE);
         uint64_t ready = cplat_atomic_load_u64(
@@ -3020,7 +3036,7 @@ int potr_internal_flow_control_peer_state(potr_context *ctx, potr_peer_id peer_i
     /* close の開始後は、抑制の要求と送出上限を無視する。 */
     if (peer != NULL && cplat_atomic_load_i32(&ctx->close_requested, CPLAT_MEMORY_ORDER_ACQUIRE) == 0)
     {
-        suppressed = peer_state_locked(ctx, peer, now_ms, 1);
+        suppressed = peer_state_locked(ctx, peer, now_ms, 1, allowance);
     }
 
     if (peer != NULL)
@@ -3059,7 +3075,7 @@ void potr_internal_flow_control_peer_mark_blocking(potr_context *ctx, potr_peer_
 
                 other->flow_last_stopping = other->active &&
                     cplat_atomic_load_i32(&other->health_alive, CPLAT_MEMORY_ORDER_ACQUIRE) != 0 &&
-                    peer_state_locked(ctx, other, now_ms, 0);
+                    peer_state_locked(ctx, other, now_ms, 0, NULL);
             }
         }
         peer->flow_blocking = 1;
@@ -3139,7 +3155,7 @@ size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, u
         {
             previous_stopping_count++;
         }
-        if (peer_state_locked(ctx, peer, now_ms, 0))
+        if (peer_state_locked(ctx, peer, now_ms, 0, NULL))
         {
             stopping_count++;
         }
@@ -3158,7 +3174,7 @@ size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, u
             continue;
         }
 
-        stopping = peer_state_locked(ctx, peer, now_ms, 0);
+        stopping = peer_state_locked(ctx, peer, now_ms, 0, NULL);
 
         /* 送信キュー満杯の記録があり、保留エントリを持つ止める状態のピアには妨げを記録する。 */
         if (full_ms != 0U && peer->flow_deferred_entries > 0 && stopping != 0 && peer->flow_blocking == 0)
@@ -3226,7 +3242,7 @@ size_t potr_internal_flow_control_collect_slow_peers_locked(potr_context *ctx, u
             continue;
         }
 
-        stopping = peer_state_locked(ctx, peer, now_ms, 0);
+        stopping = peer_state_locked(ctx, peer, now_ms, 0, NULL);
         if (stopping != 0 && peer->flow_stall_accum_units >= grace_units)
         {
             if (out_peers != NULL && count < max_out)

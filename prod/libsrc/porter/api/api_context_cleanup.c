@@ -94,11 +94,11 @@ void api_context_dispose_resources(potr_context *ctx)
     ctx->frag_buf = NULL;
     dispose_secret_buffer(ctx->crypto_buf, ctx->crypto_buf_size);
     ctx->crypto_buf = NULL;
-    dispose_secret_buffer(ctx->tcp_batch_plain_buf, ctx->tcp_batch_cap * ctx->global.max_payload);
-    ctx->tcp_batch_plain_buf = NULL;
-    dispose_secret_buffer(ctx->tcp_batch_wire_buf, ctx->tcp_batch_cap * ctx->crypto_buf_size);
-    ctx->tcp_batch_wire_buf = NULL;
-    ctx->tcp_batch_cap = 0U;
+    dispose_secret_buffer(ctx->send_batch_plain_buf, ctx->send_batch_cap * ctx->global.max_payload);
+    ctx->send_batch_plain_buf = NULL;
+    dispose_secret_buffer(ctx->send_batch_wire_buf, ctx->send_batch_cap * ctx->crypto_buf_size);
+    ctx->send_batch_wire_buf = NULL;
+    ctx->send_batch_cap = 0U;
     dispose_secret_buffer(ctx->recv_buf, POTR_PACKET_HEADER_SIZE + ctx->global.max_payload);
     ctx->recv_buf = NULL;
     while (ctx->receivers != NULL)

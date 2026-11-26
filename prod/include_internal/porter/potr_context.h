@@ -485,9 +485,9 @@ struct potr_context
     size_t compress_buf_size; /**< 圧縮・展開用バッファーのサイズ [byte]。送信時の圧縮先は呼び出しごとに確保します。 */
     uint8_t *crypto_buf;      /**< 送信スレッド専用の封緘先 (動的確保、ヘッダーを含む)。 */
     size_t crypto_buf_size;   /**< crypto_buf のサイズ [byte]。 */
-    uint8_t *tcp_batch_plain_buf; /**< TCP のまとめ送りで組み立てる平文ペイロード (動的確保、tcp_batch_cap 個 x max_payload バイト)。送信スレッドのみ使用。 */
-    uint8_t *tcp_batch_wire_buf; /**< TCP のまとめ送りの封緘結果の連結先 (動的確保、tcp_batch_cap 個 x crypto_buf_size バイト)。送信スレッドのみ使用。 */
-    size_t tcp_batch_cap; /**< TCP のまとめ送りで 1 回にまとめる外側パケットの上限数。0 はまとめ送りを使いません。 */
+    uint8_t *send_batch_plain_buf; /**< まとめ送り (TCP と UDP) で組み立てる平文ペイロード (動的確保、send_batch_cap 個 x max_payload バイト)。送信スレッドのみ使用。 */
+    uint8_t *send_batch_wire_buf; /**< まとめ送り (TCP と UDP) の封緘結果の格納先 (動的確保、send_batch_cap 個 x crypto_buf_size バイト)。送信スレッドのみ使用。 */
+    size_t send_batch_cap; /**< まとめ送り (TCP と UDP) で 1 回にまとめる外側パケットの上限数。0 はまとめ送りを使いません。 */
     uint8_t *recv_compress_buf; /**< 受信展開用バッファー (動的確保、compress_buf_size バイト)。 */
     uint8_t *recv_crypto_buf;   /**< 受信復号と UDP 再送平文の退避用バッファー (動的確保、crypto_buf_size バイト)。 */
     uint8_t *tcp_recv_buf

@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 全体管理文書 (overview)
-最終更新日時: 2026-11-25 22:27:14 JST
-最終更新エージェント: claude code (opus サブエージェント、主セッション session_01KJc53UFydnbt2gLXTJC1ZC)
+最終更新日時: 2026-11-26 22:20:18 JST
+最終更新エージェント: claude code (opus サブエージェント、主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
 稼働 OS: Linux (WSL)
 上流文書: 対策元の残課題一覧は、`261123-porter-remaining-backlog-backlog.md` です。削除されている場合があります。
 下流文書: `261123-porter-remaining-backlog-phase2-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-phase2-lightadr.md` (簡易 ADR)、`261123-porter-remaining-backlog-phase2-design.md` (最終仕様)、`261123-porter-remaining-backlog-phase2-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
@@ -21,7 +21,7 @@
 
 検討用 Markdown の版: 2
 
-状態: 最終仕様の承認済み (作業の実施の待ち)
+状態: 作業の実施中
 
 ## 作業 WBS と進捗管理
 
@@ -45,18 +45,18 @@
     - ✅ 3.1. `261123-porter-remaining-backlog-phase2-design.md` の作成 (対策元の残課題一覧へ確定した方針を反映) (作成済み。対策元の残課題一覧の BL-010 を「対応中」へ更新)
     - ✅ 3.2. 最終仕様における受入条件と整合性の確認 (受入条件 1 から 8 と、簡易 ADR の LADR-001 から LADR-010 の一致を確認)
     - ✅ 3.3. 対話セッションにおける最終仕様の承認の受付 (第 2 ゲート) (ユーザーの自走の指示 (2026-11-25 21:48 頃) により承認済みとして扱う。簡易 ADR の LADR-010)
-- ⏸️ 4. 承認された最終仕様に従った作業の実施
-    - ⏸️ 4.1. `framework/testfw` の `sendmmsg()` の mock の追加 (`include/sys/mock_socket.h`、`libsrc/mock_libc/mock_sys_socket.cc`) とビルド ← **CURRENT**
-    - ⏸️ 4.2. `app/cplat` の `cplat_socket_watch_sendto_multi()` の追加 (`prod/include/cplat/net/socket.h`、`prod/libsrc/cplat/net/socket_watch_linux.c`、`socket_watch_windows.c` の Windows の初版)
-    - ⏸️ 4.3. `app/cplat` の `mock_cplat`、`exportTest`、単体テスト (`test/src/libcplatTest/net/socketTest/socketTest.cc`) の追加と、Linux のビルドとテスト
-    - ⏸️ 4.4. `app/cplat` の文書 (`docs/api-cheatsheet.md`、`docs/functional-spec/net.md`) の更新と `check_functional_spec.py`
-    - ⏸️ 4.5. `app/porter` のまとめ送りの資源の名前の変更と UDP への確保 (`potr_send_thread.h`、`potr_context.h`、`api/potr_service_open.c`、`api/api_context_cleanup.c` と参照箇所)
-    - ⏸️ 4.6. `app/porter` の `potr_internal_udp_sendto_multi()` の追加 (`infra/potr_socket_io.c`、`.h`) と mock (`mock_porter`)
-    - ⏸️ 4.7. `app/porter` の送信スレッドの UDP のまとめ送り (`thread/potr_send_thread.c` の 1 対 1 と N 対 1) と、`potr_internal_flow_control_peer_state()` の送出できる数の出力 (`potr_flow_control.h`、`potr_flow_control.c`)
-    - ⏸️ 4.8. `app/porter` の単体テスト (`potrSocketIoTest`、`potrSendThreadTest`、`potrFlowControlTest`) の追加と変更、Linux のビルドとテスト
-    - ⏸️ 4.9. 正本ドキュメントおよびコード コメントへの永続的知見の反映 (`potr_send_thread.c` の先頭のコメント、`potr_send_thread.h`、`potr_socket_io.h`、`docs/architecture.md`、`docs/protocol.md`、cplat の Windows と Linux の実装のコメント)
-    - ⏸️ 4.10. Linux の `make test` (`app/cplat`、`app/porter`)、`.warn` の確認、`text_style_jp.py`
-    - ⏸️ 4.11. Windows のセッションでのビルドとテストと修正 (主エージェントが差分を仲介。Windows で直した差分の Linux での再確認を含む)
+- 🔄 4. 承認された最終仕様に従った作業の実施
+    - ✅ 4.1. `framework/testfw` の `sendmmsg()` の mock の追加 (`include/sys/mock_socket.h`、`libsrc/mock_libc/mock_sys_socket.cc`) とビルド
+    - ✅ 4.2. `app/cplat` の `cplat_socket_watch_sendto_multi()` の追加 (`prod/include/cplat/net/socket.h`、`prod/libsrc/cplat/net/socket_watch_linux.c`、`socket_watch_windows.c` の Windows の初版)
+    - ✅ 4.3. `app/cplat` の `mock_cplat`、`exportTest`、単体テスト (`test/src/libcplatTest/net/socketTest/socketTest.cc`) の追加と、Linux のビルドとテスト
+    - ✅ 4.4. `app/cplat` の文書 (`docs/api-cheatsheet.md`、`docs/functional-spec/net.md`) の更新と `check_functional_spec.py`
+    - ✅ 4.5. `app/porter` のまとめ送りの資源の名前の変更と UDP への確保 (`potr_send_thread.h`、`potr_context.h`、`api/potr_service_open.c`、`api/api_context_cleanup.c` と参照箇所)
+    - ✅ 4.6. `app/porter` の `potr_internal_udp_sendto_multi()` の追加 (`infra/potr_socket_io.c`、`.h`) と mock (`mock_porter`)
+    - ✅ 4.7. `app/porter` の送信スレッドの UDP のまとめ送り (`thread/potr_send_thread.c` の 1 対 1 と N 対 1) と、`potr_internal_flow_control_peer_state()` の送出できる数の出力 (`potr_flow_control.h`、`potr_flow_control.c`)
+    - ✅ 4.8. `app/porter` の単体テスト (`potrSocketIoTest`、`potrSendThreadTest`、`potrFlowControlTest`) の追加と変更、Linux のビルドとテスト
+    - ✅ 4.9. 正本ドキュメントおよびコード コメントへの永続的知見の反映 (`potr_send_thread.c` の先頭のコメント、`potr_send_thread.h`、`potr_socket_io.h`、`docs/architecture.md`、`docs/protocol.md`、cplat の Windows と Linux の実装のコメント)
+    - ✅ 4.10. Linux の `make test` (`app/cplat`、`app/porter`)、`.warn` の確認、`text_style_jp.py`
+    - ⏸️ 4.11. Windows のセッションでのビルドとテストと修正 (主エージェントが差分を仲介。Windows で直した差分の Linux での再確認を含む) ← **CURRENT**
     - ⏸️ 4.12. Linux と Windows の性能の測定と記録 (受入条件 1 から 4)
     - ⏸️ 4.13. サブモジュールの順の main へのコミットと push、親リポジトリの参照の更新、CI の確認 (Git の操作は主エージェント)
     - ⏸️ 4.14. 受入条件への適合確認と、対策元の残課題一覧の BL-010 の更新
@@ -157,6 +157,10 @@ Table: 経緯
 | 2026-11-25 22:19 | Windows の試作の結果 | 併用は不適合。Windows は `sendto` の繰り返しに確定。簡易 ADR の LADR-004、LADR-005、LADR-008、LADR-009 を更新し、残課題一覧に BL-011 から BL-013 を追記 |
 | 2026-11-25 22:23 | 第 1 ゲートの通過 | 未解決の Q と懸念がないことを確認し、最終仕様の作成に着手 |
 | 2026-11-25 22:27 | 最終仕様の作成と承認 | `261123-porter-remaining-backlog-phase2-design.md` (版 1) を作成。自走の指示により第 2 ゲートを承認済みとして扱い、作業 WBS の項目 4 をファイルごとの項目へ書き直した。実装は主エージェントの指示を待つ |
+| 2026-11-26 16:45 | 作業の実施の開始 | 主エージェントの指示で、opus のサブエージェントが作業 WBS 4.1 から 4.4 (testfw の `sendmmsg()` の mock と、cplat の `cplat_socket_watch_sendto_multi()`) に着手。testfw `84b1b78`、cplat `84ea0ec6` (いずれも main) を基点とする |
+| 2026-11-26 18:30 | 作業 WBS 4.1 から 4.4 の完了 | Linux のビルドと局所テストが成功。Windows の確認は 4.11 で行う。結果は「反映と検証の記録」に記録。4.5 で停止 (主エージェントの指示を待つ) |
+| 2026-11-26 18:35 | 作業 WBS 4.5 の再開 | 主エージェントの指示で、opus のサブエージェントが作業 WBS 4.5 から 4.10 (porter の UDP のまとめ送り) に着手。testfw `75cd774`、cplat `8252c026`、porter `1438394` (いずれも main) を基点とする |
+| 2026-11-26 22:20 | 作業 WBS 4.5 から 4.10 の完了 | Linux のビルド、局所テスト、`make test` (`app/porter`、`app/cplat`) が成功。結果は「反映と検証の記録」に記録。4.11 (Windows の検証) で停止 (主エージェントが仲介) |
 
 ## 反映と検証の記録
 
@@ -169,3 +173,62 @@ Table: 経緯
 - 判定 2 (時間の比較): 判定 1 の不適合で、試作のプログラムが比較の前に止まるため、実施していません。
 - 結論: porter の UDP のソケットは、受信の待機 (`WSAEventSelect`) と、受信と制御パケットの送信に通常の関数を使います。RIO のソケットではこれらが使えないため、Windows の一括の送信は `sendto` の繰り返しとします。Microsoft の資料で、この制約が文書化されているかは確認していません。
 - Windows 側からの代案 (未実施): RIO の送信だけに使う専用のソケットを別に作る構成。送信元のポートが分かれるため、要件の判断が必要です。この案件の残課題一覧へ送ります。
+
+### 作業 WBS 4.1 から 4.4: testfw の sendmmsg の mock と cplat の一括の送信 (2026-11-26、Linux (WSL))
+
+- 基点: `framework/testfw` main `84b1b78`、`app/cplat` main `84ea0ec6`。Git の操作はしていません。
+- 4.1 (testfw): `include/sys/mock_socket.h` と `libsrc/mock_libc/mock_sys_socket.cc` に、`sendto` と同じ形で `sendmmsg` の mock (置き換えのマクロ、`mock_sendmmsg()`、`delegate_real_sendmmsg()`、`MOCK_METHOD`、既定の委譲の `ON_CALL`) を追加しました。`struct mmsghdr` は `_GNU_SOURCE` を定義した場合だけ宣言されるため、ヘッダーで前方宣言し、`_GNU_SOURCE` のない C の翻訳単位でも警告なくコンパイルできることを、セッションの一時領域で確かめました。`make -C framework/testfw` は成功し、`.warn` はありません。
+- 4.2 (cplat の実装): `socket.h` に `CPLAT_SOCKET_SENDTO_MULTI_MAX` (64)、`cplat_socket_datagram`、`cplat_socket_watch_sendto_multi()` と Doxygen コメントを追加し、`cplat_socket_watch_attach()` の登録中の規則の送信の関数に加えました。Linux は `sendmmsg()` (`EINTR` で呼び直し、先頭から `msg_len` が `len` と等しい数を返す)、Windows は既存の `send_once()` を先頭から順に呼ぶ初版です。Windows で Registered I/O を使わない理由と `see:` の URL を、`socket_watch_windows.c` の関数の前のコメントに残しました。
+- 4.3 (cplat の mock とテスト): `mock_cplat` (`mock_cplat.h`、`mock_cplat.cc`、新規 `net/mock_cplat_socket_watch_sendto_multi.cc`)、`exportTest` の `CPLAT_EXPORT_TABLE_COMMON`、`socketTest.cc` の 8 個のテスト (Linux 7 個、Windows 5 個) と、登録の下位の呼び出しを期待するサブ手順 2 個 (`socketTest.expectMockWatchAttach`、`socketTest.expectMockWatchDetach`) を追加しました。
+- 4.4 (cplat の文書): `docs/functional-spec/net.md` に `CPLAT-NET-FUNC-010` (UUID `148caece-1233-4a58-b153-212a3bb2ff7e`) と「送受信と待機」の振る舞いとプラットフォームの差を、`docs/api-cheatsheet.md` に `sendmmsg()` との対応と「登録中の送受信と接続」の行を追加しました。
+
+Table: 作業 WBS 4.1 から 4.4 の Linux の検証結果
+
+| 確認 | 結果 |
+| --- | --- |
+| `make -C framework/testfw` | 成功。`.warn` なし |
+| `make -C app/cplat` (prod と test のビルド) | 成功。警告なし、`.warn` なし |
+| `socketTest` | 成功 (69 件。追加した 7 件はすべて成功)。`.warn` なし |
+| `exportTest` | 成功 (2 件) |
+| `make doxy` (`app/cplat`) | 成功。Doxygen の警告なし |
+| `check_functional_spec.py` | 成功 (要件 423 件、下流参照 42 件) |
+| `text_style_jp.py --dry-run` (`net.md`、`api-cheatsheet.md`) | 指摘なし (`--in-place` も変更なし) |
+| `text_style_jp.py --mode cpp --dry-run` (`socketTest.cc` の追加の行) | 指摘なし |
+| `check_c_topdown.py` (`socket_watch_linux.c`、`socket_watch_windows.c`) | エラー 51 件から 53 件。増えたのは、新しい関数の `non-topdown-order` の 1 件ずつ |
+
+- `check_c_topdown.py` の増分は、新しい関数を、ヘッダーの宣言順どおり `cplat_socket_watch_sendto()` の直後に置いたためです。2 つのファイルは、もともとファイル内補助関数が主たる関数より前にある構成で、トップ ダウンの並べ替えは、`261125-topdown-function-order` の最終仕様の第 2 段 (この案件の main への統合の後に `reorder_c_topdown.py` で `cplat` を書き換える) の対象です。並べ替えの道具は主たる関数の定義をファイル内補助関数の定義より前へ移すため、第 2 段の後は、新しい関数も `cplat_socket_watch_sendto()` の後に並ぶ見込みです (道具の実行は対象の外のため未確認)。先頭へ置けば件数は増えませんが、第 2 段の後も宣言順から外れたまま残るため、規範の最終形 (ヘッダーの宣言順) を優先しました。新しいファイル内補助関数は追加していません。
+- カバレッジ: `socket_watch_linux.c` の新しい関数のうち、`sendmmsg()` が要求より大きい数を返す場合と、先頭のデータグラムが短い送信の場合の、2 つの防御の分岐 (`CPLAT_ERR_UNKNOWN`) は通っていません。最終仕様のテストの一覧の外です。
+- 未確認: Windows のビルドとテスト (`socket_watch_windows.c` の初版、Windows のテスト 5 個) は、作業 WBS 4.11 で確かめます。
+
+### 作業 WBS 4.5 から 4.10: porter の UDP のまとめ送り (2026-11-26、Linux (WSL))
+
+- 基点: `framework/testfw` main `75cd774`、`app/cplat` main `8252c026`、`app/porter` main `1438394`。Git の操作はしていません。
+- 4.5 (資源の名前): `POTR_TCP_BATCH_*` を `POTR_SEND_BATCH_*` へ、`tcp_batch_*` を `send_batch_*` へ改め、テストと mock の参照も改めました。`potr_service_open.c` の確保は、TCP に加えて、送信スレッドを起動する UDP の通信種別 (送信者、`unicast_bidir`、`unicast_bidir_n1`) でも行います。値と確保の数の計算は変えていません。
+- 4.6 (ソケットの入出力): `potr_internal_udp_sendto_multi()` を追加しました。既存の `potr_internal_udp_sendto()` の送信と待機は、排他を持った状態で呼べる `udp_sendto_locked()` と、期限の判定と待機の `udp_wait_send_ready()` へ移し、両方から使います。最終仕様に書かれていない次の 2 点は、契約の表の趣旨に沿って決め、ヘッダーの Doxygen コメントに書きました。
+    - 一括の送信の待機が期限の超過または解除で終わった場合は、残りのデータグラムすべてに同じ結果を格納し、1 個ずつの送信を試みません (データグラムごとに 100 [ms] 待つと、送信スレッドが最大 16 倍止まるため)。
+    - 先頭のデータグラムが OS の送信失敗となった場合は、その結果を格納し、続くデータグラムを 1 個ずつ 1 回ずつ試みます (一部だけ送れた場合と同じ扱い)。
+- 4.6 (mock): `mock_porter` に `potr_internal_udp_sendto_multi` を追加しました (既定は全要素 `POTR_OK`)。
+- 4.7 (送信スレッド): `send_tcp_batch()` を `send_batch()` へ改め、UDP は新しい `udp_flush_packets()` で送ります。経路ごとの封緘と送信は `udp_send_path()` に集め、1 個の場合は `crypto_buf` と `potr_internal_udp_sendto()`、複数の場合は `send_batch_wire_buf` の区画と `potr_internal_udp_sendto_multi()` を使います。`flush_packed()` の UDP の処理と `flush_packed_peer()` は、それぞれ `udp_flush_packets()` と `udp_flush_packets_peer()` の 1 個の場合として呼ぶ形にし、1 個の送出の振る舞いは変えていません。N:1 は `send_packed_peer_mode()` で、同じピア宛てに続くエントリをまとめます (`pack_queued_entries()` にピアの絞り込みの引数を追加)。
+- 4.7 (フロー制御): `potr_internal_flow_control_peer_state()` に `allowance` (NULL 可) を追加し、ファイル内の `peer_state_locked()` から受け取ります。ロックを取らない判定の記録 (`flow_peer_ready`) は残りの数を持たないため、`allowance` を求める呼び出しでは使わず、ロックの下で判定します。送信スレッドは、`send_batch_cap` が最小数以上の場合だけ `allowance` を求めます。送信 API (`potr_service_send.c`) は NULL を渡し、従来の速い経路を保ちます。
+- 4.7 (原因の修正): `test/src/integration/porterCancelFailureTest` は cplat の `socket_watch_linux.c` を取り込んでコンパイルするため、`struct mmsghdr` が宣言されずにビルドが失敗しました。cplat と同じく `_GNU_SOURCE` を定義する設定を、このテストの `makepart.mk` に加えました (`see:` の URL 付き)。
+- 4.8 (単体テスト): 最終仕様の一覧のテストをすべて追加しました。`potrSocketIoTest` に 5 個、`potrSendThreadTest` に UDP のまとめ送りの fixture (`potrSendThreadUdpBatchTest`) と 12 個、`potrFlowControlTest` に `peer_state_reports_allowance` を追加しました。既存のテストは、`potr_internal_flow_control_peer_state()` の引数の追加に合わせて改めたほかは、変更なしで成功しました (既存のテストは `send_batch_cap` が 0 のため、従来の 1 個の送出を通ります)。
+- 4.9 (知見の反映): `potr_send_thread.c` の先頭のコメント、`potr_send_thread.h`、`potr_socket_io.h`、`potr_flow_control.h`、`potr_context.h` のコメント、`docs/architecture.md` (「送信スレッドのまとめ送り」の節の追加、送信スレッドの役割の表、フロー制御、UDP の送信の箇条)、`docs/protocol.md` (送出上限の判定の箇条) を更新しました。cplat の Windows と Linux の実装のコメントは、4.2 で反映済みであることを確認しました。最終仕様に従い、`docs/protocol.md` の「パッキングの動作」の節 (TCP のまとめ送りの説明) は変えていません。
+
+Table: 作業 WBS 4.5 から 4.10 の Linux の検証結果
+
+| 確認 | 結果 |
+| --- | --- |
+| `make -C app/porter` (prod と test のビルド) | 成功。`.warn` なし |
+| `potrSocketIoTest` | 成功 (16 件。追加した 5 件はすべて成功) |
+| `potrSendThreadTest` | 成功 (49 件。追加した 12 件はすべて成功) |
+| `potrFlowControlTest` | 成功 (162 件。追加した 1 件は成功) |
+| `make -C app/porter test` | 成功 (57 ディレクトリ、985 件、失敗 0)。所要 約 41 分 |
+| `make -C app/cplat test` | 成功 (99 ディレクトリ、2,243 件、失敗 0)。所要 約 136 分 |
+| `.warn` (`framework/testfw`、`app/cplat`、`app/porter`) | 内容のあるファイルなし |
+| `make doxy` (`app/porter`) | 成功。Doxygen の警告なし |
+| `text_style_jp.py --dry-run` (`architecture.md`、`protocol.md`) | 指摘なし (`--in-place` も変更なし) |
+| `text_style_jp.py --mode c` / `--mode cpp --dry-run` (変更した C とテストの追加の行) | 追加した行に指摘なし。引数を足しただけの既存の行に、もとからの指摘が 9 件 (`potrFlowControlTest.cc` 5 件、`potr_service_send_test.cc` 4 件) |
+| `check_c_topdown.py` | `potr_send_thread.c` はエラー 20 件から 18 件 (新しいファイル内補助関数は前方宣言を置き、`flush_packed_peer()` を削除し、`pack_queued_entries()` に前方宣言を置いたため)。`potr_socket_io.c` は 0 件のまま。`potr_flow_control.c` 74 件、`potr_service_open.c` 10 件、`api_context_cleanup.c` 5 件、`potr_service_send.c` 11 件は変化なし |
+
+- カバレッジ: 新しいコードのうち、`potr_internal_udp_sendto_multi()` の未登録のソケット、一括の送信が要求より大きい数を返す場合の切り詰め、先頭のデータグラムの OS の送信失敗の分岐と、送信スレッドの防御の分岐 (一括の送信の引数の不正、N:1 の封緘の失敗、経路の選択とパケットの構築の失敗) は通っていません。最終仕様のテストの一覧の外です。
+- 未確認: Windows のビルドとテスト (作業 WBS 4.11) と、性能の測定 (作業 WBS 4.12)。

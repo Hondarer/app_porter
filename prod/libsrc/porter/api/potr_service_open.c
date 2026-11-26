@@ -243,25 +243,30 @@ static int alloc_context_buffers(potr_context *ctx)
                 return POTR_ERR_OUT_OF_MEMORY;
             }
         }
+    }
 
-        /*
-         * 送信スレッドのまとめ送り用バッファー。連結バッファーが POTR_TCP_BATCH_MAX_BYTES を超えないよう上限数を決め、
-         * 2 個未満になる設定 (最大ペイロード長が大きい場合) では確保せず、まとめ送りを使わない。
-         */
-        size_t batch_cap = POTR_TCP_BATCH_MAX_BYTES / ctx->crypto_buf_size;
-        if (batch_cap > POTR_TCP_BATCH_MAX_PACKETS)
+    /*
+     * 送信スレッドのまとめ送り用バッファー。TCP と、送信スレッドを起動する UDP の通信種別 (DATA を送る側) で確保する。
+     * 連結バッファーが POTR_SEND_BATCH_MAX_BYTES を超えないよう上限数を決め、
+     * 2 個未満になる設定 (最大ペイロード長が大きい場合) では確保せず、まとめ送りを使わない。
+     */
+    if (is_tcp_type(ctx->service.type) || ctx->role == POTR_ROLE_SENDER ||
+        ctx->service.type == POTR_TYPE_UNICAST_BIDIR || ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1)
+    {
+        size_t batch_cap = POTR_SEND_BATCH_MAX_BYTES / ctx->crypto_buf_size;
+        if (batch_cap > POTR_SEND_BATCH_MAX_PACKETS)
         {
-            batch_cap = POTR_TCP_BATCH_MAX_PACKETS;
+            batch_cap = POTR_SEND_BATCH_MAX_PACKETS;
         }
-        if (batch_cap >= POTR_TCP_BATCH_MIN_PACKETS)
+        if (batch_cap >= POTR_SEND_BATCH_MIN_PACKETS)
         {
-            ctx->tcp_batch_plain_buf = (uint8_t *)cplat_malloc(batch_cap * (size_t)ctx->global.max_payload);
-            ctx->tcp_batch_wire_buf = (uint8_t *)cplat_malloc(batch_cap * ctx->crypto_buf_size);
-            if (ctx->tcp_batch_plain_buf == NULL || ctx->tcp_batch_wire_buf == NULL)
+            ctx->send_batch_plain_buf = (uint8_t *)cplat_malloc(batch_cap * (size_t)ctx->global.max_payload);
+            ctx->send_batch_wire_buf = (uint8_t *)cplat_malloc(batch_cap * ctx->crypto_buf_size);
+            if (ctx->send_batch_plain_buf == NULL || ctx->send_batch_wire_buf == NULL)
             {
                 return POTR_ERR_OUT_OF_MEMORY;
             }
-            ctx->tcp_batch_cap = batch_cap;
+            ctx->send_batch_cap = batch_cap;
         }
     }
 

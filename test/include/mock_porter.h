@@ -104,6 +104,7 @@ extern "C"
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_conn_request_close_all")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_conn_release")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_udp_sendto")
+    #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_udp_sendto_multi")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_send_all_locked")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_send_all")
     #pragma comment(linker, "/INCLUDE:_mock_impl_potr_internal_tcp_check_writable")
@@ -299,6 +300,9 @@ class Mock_porter
     MOCK_METHOD(int, potr_internal_udp_sendto,
                 (potr_context * ctx, int path_idx, const void *buf, size_t len, const cplat_ipv4_endpoint *endpoint,
                  cplat_error *detail_out));
+    MOCK_METHOD(int, potr_internal_udp_sendto_multi,
+                (potr_context * ctx, int path_idx, const cplat_socket_datagram *datagrams, size_t count,
+                 int *results_out));
     MOCK_METHOD(int, potr_internal_tcp_send_all_locked,
                 (potr_context * ctx, int path_idx, const void *buf, size_t len, size_t *sent_out,
                  cplat_error *detail_out));
@@ -372,7 +376,8 @@ class Mock_porter
     MOCK_METHOD(int, potr_internal_flow_control_piggyback_limit, (potr_context *ctx, potr_peer_id peer_id, uint32_t *send_limit));
     MOCK_METHOD(void, potr_internal_flow_control_piggyback_complete, (potr_context *ctx, potr_peer_id peer_id, uint32_t send_limit, int sent));
     MOCK_METHOD(int, potr_internal_flow_control_suppressed, (potr_context *ctx, uint64_t now_ms, int *wait_ms, uint32_t *allowance));
-    MOCK_METHOD(int, potr_internal_flow_control_peer_state, (potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms, int *deferred));
+    MOCK_METHOD(int, potr_internal_flow_control_peer_state,
+                (potr_context * ctx, potr_peer_id peer_id, uint64_t now_ms, int *deferred, uint32_t *allowance));
     MOCK_METHOD(void, potr_internal_flow_control_peer_mark_blocking, (potr_context *ctx, potr_peer_id peer_id, uint64_t now_ms));
     MOCK_METHOD(void, potr_internal_flow_control_note_queue_full, (potr_context *ctx, uint64_t now_ms));
     MOCK_METHOD(size_t, potr_internal_flow_control_collect_slow_peers_locked, (potr_context *ctx, uint64_t now_ms, potr_peer_id *out_peers, uint64_t *out_accum_ms, size_t max_out, uint64_t *next_check_ms));

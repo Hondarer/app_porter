@@ -19,3 +19,10 @@ ADD_SRCS := \
 
 LIBS += mock_porter mock_cplat mock_libc
 INCDIR += $(MYAPP_DIR)/prod/libsrc/porter/thread $(WORKSPACE_DIR)/app/cplat/prod/include_internal
+
+# 取り込んだ cplat のソースは、cplat と同じく GNU 拡張 (sendmmsg と struct mmsghdr など) を、
+# 最初の標準ヘッダーより前から有効にしてコンパイルする (app/cplat/makepart.mk と同じ設定)。
+# see: https://man7.org/linux/man-pages/man7/feature_test_macros.7.html
+ifdef PLATFORM_LINUX
+    DEFINES += _GNU_SOURCE
+endif

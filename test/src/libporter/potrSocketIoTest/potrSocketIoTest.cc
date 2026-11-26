@@ -259,6 +259,269 @@ TEST(potrSocketIoTest, udp_sendto_short_send_returns_io)
     dispose_udp_ctx(&ctx);
 }
 
+// 一括の送信で、全データグラムを 1 回の呼び出しで送り、全要素の結果を POTR_OK にすることの確認
+TEST(potrSocketIoTest, udp_sendto_multi_sends_all_in_one_call)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    init_udp_ctx(&ctx, &watch_tok, &cancel_tok); // [状態] - path 0 を登録済みの UDP ソケットとする。
+    const uint8_t payload[3][4] = {{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}};
+    cplat_ipv4_endpoint ep = {};
+    cplat_socket_datagram datagrams[3] = {};
+    int results[3] = {POTR_ERR_UNKNOWN, POTR_ERR_UNKNOWN, POTR_ERR_UNKNOWN};
+    for (size_t i = 0U; i < 3U; i++)
+    {
+        datagrams[i].buf = payload[i];
+        datagrams[i].len = sizeof(payload[i]);
+        datagrams[i].endpoint = &ep;
+    } // [状態] - 4 [byte] のデータグラムを 3 個用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto_multi(ctx.udp_watch[0], datagrams, 3U, _, _))
+        .WillOnce(DoAll(SetArgPointee<3>(3U), Return(CPLAT_OK)));
+    // [Pre-Assert確認_正常系] - cplat_socket_watch_sendto_multi() が path 0 の登録、先頭のデータグラム、3 を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - 3 個を送れたことを返す。
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto(_, _, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - cplat_socket_watch_sendto() が呼び出されないこと。
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_wait_writable(_, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - cplat_socket_watch_wait_writable() が呼び出されないこと。
+
+    // Act
+    int actual_ret = potr_internal_udp_sendto_multi(&ctx, 0, datagrams, 3U, results); // [手順] - 3 個を一括で送る。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - POTR_OK を返すこと。
+    EXPECT_EQ(POTR_OK, results[0]); // [確認_正常系] - 1 個目の結果が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, results[1]); // [確認_正常系] - 2 個目の結果が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, results[2]); // [確認_正常系] - 3 個目の結果が POTR_OK であること。
+    dispose_udp_ctx(&ctx);
+}
+
+// 一括の送信で先頭に送信の空きがない場合に、送信可能を待って、まだ送っていない先頭から送り直すことの確認
+TEST(potrSocketIoTest, udp_sendto_multi_waits_and_retries_on_would_block)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    init_udp_ctx(&ctx, &watch_tok, &cancel_tok); // [状態] - path 0 を登録済みの UDP ソケットとする。
+    const uint8_t payload[3][4] = {{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}};
+    cplat_ipv4_endpoint ep = {};
+    cplat_socket_datagram datagrams[3] = {};
+    int results[3] = {POTR_ERR_UNKNOWN, POTR_ERR_UNKNOWN, POTR_ERR_UNKNOWN};
+    for (size_t i = 0U; i < 3U; i++)
+    {
+        datagrams[i].buf = payload[i];
+        datagrams[i].len = sizeof(payload[i]);
+        datagrams[i].endpoint = &ep;
+    } // [状態] - 4 [byte] のデータグラムを 3 個用意する。
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_))
+        .WillByDefault(DoAll(SetArgPointee<0>(1000U), Return(CPLAT_OK))); // [状態] - 単調時刻を 1000 [ms] とする。
+
+    // Pre-Assert
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto_multi(ctx.udp_watch[0], datagrams, 3U, _, _))
+            .WillOnce(Return(CPLAT_ERR_WOULD_BLOCK));
+        // [Pre-Assert確認_正常系] - cplat_socket_watch_sendto_multi() が先頭のデータグラムと 3 を指定して呼び出されること。
+        // [Pre-Assert手順] - 送信の空きがないことを返す。
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_wait_writable(ctx.udp_watch[0], ctx.recv_cancel, 100, _))
+            .WillOnce(Return(CPLAT_OK));
+        // [Pre-Assert確認_正常系] - cplat_socket_watch_wait_writable() が path 0 の登録、recv_cancel、100 を指定して 1 回呼び出されること。
+        // [Pre-Assert手順] - 送信可能を返す。
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto_multi(ctx.udp_watch[0], datagrams, 3U, _, _))
+            .WillOnce(DoAll(SetArgPointee<3>(3U), Return(CPLAT_OK)));
+        // [Pre-Assert確認_正常系] - 待機の後に、cplat_socket_watch_sendto_multi() が先頭のデータグラムと 3 を指定して呼び出されること。
+        // [Pre-Assert手順] - 3 個を送れたことを返す。
+    }
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto(_, _, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - cplat_socket_watch_sendto() が呼び出されないこと。
+
+    // Act
+    int actual_ret = potr_internal_udp_sendto_multi(&ctx, 0, datagrams, 3U, results); // [手順] - 3 個を一括で送る。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret); // [確認_正常系] - POTR_OK を返すこと。
+    EXPECT_EQ(POTR_OK, results[0]); // [確認_正常系] - 1 個目の結果が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, results[1]); // [確認_正常系] - 2 個目の結果が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, results[2]); // [確認_正常系] - 3 個目の結果が POTR_OK であること。
+    dispose_udp_ctx(&ctx);
+}
+
+// 一括の送信が一部 (要求 4 個のうち 2 個) だけを送った場合に、残りを 1 個ずつ 1 回ずつ送り、その結果を格納することの確認
+TEST(potrSocketIoTest, udp_sendto_multi_sends_rest_one_by_one_after_partial)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    init_udp_ctx(&ctx, &watch_tok, &cancel_tok); // [状態] - path 0 を登録済みの UDP ソケットとする。
+    const uint8_t payload[4][4] = {{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}, {13, 14, 15, 16}};
+    cplat_ipv4_endpoint ep = {};
+    cplat_socket_datagram datagrams[4] = {};
+    int results[4] = {POTR_ERR_UNKNOWN, POTR_ERR_UNKNOWN, POTR_ERR_UNKNOWN, POTR_ERR_UNKNOWN};
+    for (size_t i = 0U; i < 4U; i++)
+    {
+        datagrams[i].buf = payload[i];
+        datagrams[i].len = sizeof(payload[i]);
+        datagrams[i].endpoint = &ep;
+    } // [状態] - 4 [byte] のデータグラムを 4 個用意する。
+
+    // Pre-Assert
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto_multi(ctx.udp_watch[0], datagrams, 4U, _, _))
+            .WillOnce(DoAll(SetArgPointee<3>(2U), Return(CPLAT_OK)));
+        // [Pre-Assert確認_正常系] - cplat_socket_watch_sendto_multi() が先頭のデータグラムと 4 を指定して 1 回呼び出されること。
+        // [Pre-Assert手順] - 先頭の 2 個だけを送れたことを返す。
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto(ctx.udp_watch[0], payload[2], 4U, &ep, _, _))
+            .WillOnce(DoAll(SetArgPointee<4>(4U), Return(CPLAT_OK)));
+        // [Pre-Assert確認_正常系] - cplat_socket_watch_sendto() が 3 個目のデータグラムを指定して 1 回呼び出されること。
+        // [Pre-Assert手順] - 全量を送れたことを返す。
+        EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto(ctx.udp_watch[0], payload[3], 4U, &ep, _, _))
+            .WillOnce(DoAll(SetArgPointee<4>(1U), Return(CPLAT_OK)));
+        // [Pre-Assert確認_正常系] - cplat_socket_watch_sendto() が 4 個目のデータグラムを指定して 1 回呼び出されること。
+        // [Pre-Assert手順] - 1 [byte] だけの短い送信を返す。
+    }
+
+    // Act
+    int actual_ret = potr_internal_udp_sendto_multi(&ctx, 0, datagrams, 4U, results); // [手順] - 4 個を一括で送る。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);     // [確認_正常系] - POTR_OK を返すこと。
+    EXPECT_EQ(POTR_OK, results[0]);     // [確認_正常系] - 一括で送った 1 個目の結果が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, results[1]);     // [確認_正常系] - 一括で送った 2 個目の結果が POTR_OK であること。
+    EXPECT_EQ(POTR_OK, results[2]);     // [確認_正常系] - 1 個ずつ送った 3 個目の結果が POTR_OK であること。
+    EXPECT_EQ(POTR_ERR_IO, results[3]); // [確認_異常系] - 短い送信となった 4 個目の結果が POTR_ERR_IO であること。
+    dispose_udp_ctx(&ctx);
+}
+
+// 一括の送信で送信可能にならないまま期限を過ぎた場合に、全要素へ POTR_ERR_TIMEOUT を格納することの確認
+TEST(potrSocketIoTest, udp_sendto_multi_times_out)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    init_udp_ctx(&ctx, &watch_tok, &cancel_tok); // [状態] - path 0 を登録済みの UDP ソケットとする。
+    const uint8_t payload[2][4] = {{1, 2, 3, 4}, {5, 6, 7, 8}};
+    cplat_ipv4_endpoint ep = {};
+    cplat_socket_datagram datagrams[2] = {};
+    int results[2] = {POTR_ERR_UNKNOWN, POTR_ERR_UNKNOWN};
+    uint64_t now_ms = 5000U;
+    for (size_t i = 0U; i < 2U; i++)
+    {
+        datagrams[i].buf = payload[i];
+        datagrams[i].len = sizeof(payload[i]);
+        datagrams[i].endpoint = &ep;
+    } // [状態] - 4 [byte] のデータグラムを 2 個用意する。
+    ON_CALL(mock_cplat, cplat_clock_get_monotonic_ms(_))
+        .WillByDefault(
+            [&](uint64_t *out)
+            {
+                *out = now_ms;
+                return CPLAT_OK;
+            }); // [状態] - 単調時刻として now_ms を返す。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto_multi(ctx.udp_watch[0], datagrams, 2U, _, _))
+        .WillOnce(Return(CPLAT_ERR_WOULD_BLOCK));
+    // [Pre-Assert確認_異常系] - cplat_socket_watch_sendto_multi() が 1 回だけ呼び出されること。
+    // [Pre-Assert手順] - 送信の空きがないことを返す。
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_wait_writable(ctx.udp_watch[0], ctx.recv_cancel, 100, _))
+        .WillOnce(
+            [&](cplat_socket_watch *, cplat_socket_wait_cancel *, int, cplat_error *)
+            {
+                now_ms += 100U;
+                return CPLAT_ERR_TIMEOUT;
+            });
+    // [Pre-Assert確認_異常系] - cplat_socket_watch_wait_writable() が 100 を指定して 1 回呼び出されること。
+    // [Pre-Assert手順] - 時刻を 100 [ms] 進めて、待機の時間切れを返す。
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto(_, _, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_異常系] - 期限を過ぎた後に cplat_socket_watch_sendto() で送り直さないこと。
+
+    // Act
+    int actual_ret = potr_internal_udp_sendto_multi(&ctx, 0, datagrams, 2U, results); // [手順] - 2 個を一括で送る。
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);          // [確認_正常系] - 引数が正しいため POTR_OK を返すこと。
+    EXPECT_EQ(POTR_ERR_TIMEOUT, results[0]); // [確認_異常系] - 1 個目の結果が POTR_ERR_TIMEOUT であること。
+    EXPECT_EQ(POTR_ERR_TIMEOUT, results[1]); // [確認_異常系] - 2 個目の結果が POTR_ERR_TIMEOUT であること。
+    dispose_udp_ctx(&ctx);
+}
+
+// 一括の送信の不正な引数で POTR_ERR_INVALID_ARGUMENT を返し、何も送らないことの確認
+TEST(potrSocketIoTest, udp_sendto_multi_rejects_invalid_arguments)
+{
+    // Arrange
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx = {};
+    int watch_tok = 0;
+    int cancel_tok = 0;
+    init_udp_ctx(&ctx, &watch_tok, &cancel_tok); // [状態] - path 0 を登録済みの UDP ソケットとする。
+    const uint8_t payload[4] = {1, 2, 3, 4};
+    cplat_ipv4_endpoint ep = {};
+    cplat_socket_datagram datagrams[2] = {};
+    cplat_socket_datagram null_buf[2] = {};
+    cplat_socket_datagram null_endpoint[2] = {};
+    int results[2] = {POTR_ERR_UNKNOWN, POTR_ERR_UNKNOWN};
+    for (size_t i = 0U; i < 2U; i++)
+    {
+        datagrams[i].buf = payload;
+        datagrams[i].len = sizeof(payload);
+        datagrams[i].endpoint = &ep;
+        null_buf[i] = datagrams[i];
+        null_endpoint[i] = datagrams[i];
+    } // [状態] - 正しいデータグラムを 2 個用意する。
+    null_buf[1].buf = nullptr;           // [状態] - 2 個目の buf を NULL にした配列を用意する。
+    null_endpoint[1].endpoint = nullptr; // [状態] - 2 個目の endpoint を NULL にした配列を用意する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto_multi(_, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_異常系] - cplat_socket_watch_sendto_multi() が呼び出されないこと。
+    EXPECT_CALL(mock_cplat, cplat_socket_watch_sendto(_, _, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_異常系] - cplat_socket_watch_sendto() が呼び出されないこと。
+
+    // Act
+    int null_ctx = potr_internal_udp_sendto_multi(nullptr, 0, datagrams, 2U, results); // [手順] - ctx を NULL にして呼び出す。
+    int null_datagrams = potr_internal_udp_sendto_multi(&ctx, 0, nullptr, 2U, results); // [手順] - datagrams を NULL にして呼び出す。
+    int null_results = potr_internal_udp_sendto_multi(&ctx, 0, datagrams, 2U, nullptr); // [手順] - results_out を NULL にして呼び出す。
+    int negative_path = potr_internal_udp_sendto_multi(&ctx, -1, datagrams, 2U, results); // [手順] - path_idx を -1 にして呼び出す。
+    int over_path = potr_internal_udp_sendto_multi(&ctx, (int)POTR_MAX_PATH, datagrams, 2U, results);
+    // [手順] - path_idx を POTR_MAX_PATH にして呼び出す。
+    int zero_count = potr_internal_udp_sendto_multi(&ctx, 0, datagrams, 0U, results); // [手順] - count を 0 にして呼び出す。
+    int over_count = potr_internal_udp_sendto_multi(&ctx, 0, datagrams, CPLAT_SOCKET_SENDTO_MULTI_MAX + 1U, results);
+    // [手順] - count を CPLAT_SOCKET_SENDTO_MULTI_MAX + 1 にして呼び出す。
+    int element_buf = potr_internal_udp_sendto_multi(&ctx, 0, null_buf, 2U, results); // [手順] - 要素の buf が NULL の配列で呼び出す。
+    int element_endpoint = potr_internal_udp_sendto_multi(&ctx, 0, null_endpoint, 2U, results);
+    // [手順] - 要素の endpoint が NULL の配列で呼び出す。
+
+    // Assert
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, null_ctx);         // [確認_異常系] - ctx が NULL の場合に POTR_ERR_INVALID_ARGUMENT を返すこと。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, null_datagrams);   // [確認_異常系] - datagrams が NULL の場合に POTR_ERR_INVALID_ARGUMENT を返すこと。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, null_results);     // [確認_異常系] - results_out が NULL の場合に POTR_ERR_INVALID_ARGUMENT を返すこと。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, negative_path);    // [確認_異常系] - path_idx が -1 の場合に POTR_ERR_INVALID_ARGUMENT を返すこと。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, over_path);        // [確認_異常系] - path_idx が POTR_MAX_PATH の場合に POTR_ERR_INVALID_ARGUMENT を返すこと。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, zero_count);       // [確認_異常系] - count が 0 の場合に POTR_ERR_INVALID_ARGUMENT を返すこと。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, over_count);       // [確認_異常系] - count が上限を超える場合に POTR_ERR_INVALID_ARGUMENT を返すこと。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, element_buf);      // [確認_異常系] - 要素の buf が NULL の場合に POTR_ERR_INVALID_ARGUMENT を返すこと。
+    EXPECT_EQ(POTR_ERR_INVALID_ARGUMENT, element_endpoint); // [確認_異常系] - 要素の endpoint が NULL の場合に POTR_ERR_INVALID_ARGUMENT を返すこと。
+    EXPECT_EQ(POTR_ERR_UNKNOWN, results[0]);                // [確認_異常系] - results_out の 1 個目を変更しないこと。
+    EXPECT_EQ(POTR_ERR_UNKNOWN, results[1]);                // [確認_異常系] - results_out の 2 個目を変更しないこと。
+    dispose_udp_ctx(&ctx);
+}
+
 // TCP 送信で部分送信・待機・残量送信を経て全量送信に成功することの確認
 TEST(potrSocketIoTest, tcp_send_all_partial_then_complete)
 {

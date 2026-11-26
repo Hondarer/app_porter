@@ -191,7 +191,7 @@ static int peer_is_suppressed(potr_context *ctx, potr_peer_id peer_id, int *defe
 
     *now_ms_out = now_ms;
 
-    return potr_internal_flow_control_peer_state(ctx, peer_id, now_ms, deferred);
+    return potr_internal_flow_control_peer_state(ctx, peer_id, now_ms, deferred, NULL);
 }
 
 /*

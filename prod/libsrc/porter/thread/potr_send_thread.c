@@ -26,13 +26,21 @@
  *  - MORE_FRAG フラグが付いているエントリ (フラグメント化メッセージの途中)
  *  - キューに追加エントリが存在しない場合
  *
- *  @par            まとめ送り (TCP 1:1)
- *  TCP_NODELAY を有効にした TCP では、送信呼び出しごとにセグメントが送り出されます。\n
- *  外側パケットごとに送信を呼び出すと、セグメント数と受信側の起床が増えて処理件数が下がるため、
+ *  @par            まとめ送り (TCP と UDP)
  *  送信スレッドはキューにある後続のエントリも外側パケットに組み立て、メッセージの境界をまたいで
- *  最大 tcp_batch_cap 個を経路ごとに 1 つのバッファーへ封緘して、1 回の送信呼び出しで書き込みます。\n
+ *  最大 send_batch_cap 個を、経路ごとに 1 回の送信呼び出しで送ります。\n
  *  外側パケットの組み立ての規則と、各外側パケットの封緘結果は変えません。
  *  メッセージの境界では待たず、キューが空になった時点で集めた分を送ります。
+ *  まとめる数は、相手から受けた送出上限までに送出できる数を超えません。
+ *  - TCP: TCP_NODELAY の下では送信呼び出しごとにセグメントが送り出され、セグメント数と受信側の起床が
+ *    増えて処理件数が下がるため、経路ごとに 1 つのバッファーへ封緘して連結し、1 回で書き込みます。
+ *  - UDP: データグラムごとの送信呼び出しのカーネルの処理が処理件数を下げるため、外側パケットごとの
+ *    データグラムを 1 回の一括の送信 (potr_internal_udp_sendto_multi()) で送ります。
+ *    一括の送信は、Linux では sendmmsg() の 1 回の呼び出し、Windows では sendto() の繰り返しです。
+ *    一括の送信が一部だけを送って戻った場合は、残りを 1 個ずつの送信で 1 回ずつ試みます。
+ *    送れたかどうかによらず、まとめた外側パケットはすべて送信ウィンドウに登録し、再送で回復します。
+ *  - N:1 (unicast_bidir_n1): 同じピア宛てに続く外側パケットだけをまとめ、別のピア宛てのエントリで区切ります。
+ *    まとめる数は、そのピアの送出上限までに送出できる数を超えません。
  *
  *  @copyright      Copyright (C) Tetsuo Honda. 2026. All rights reserved.
  *
@@ -67,6 +75,32 @@
 #include "thread_recv_session.h"
 
 /*
+ * まとめ送りでは、経路ごとにパケット列を続けて封緘する。
+ * 経路が複数の場合、送出通番 (tx_counter) の割り当て順は、パケットごとに経路を巡る順と異なり、
+ * 1 回のまとめ送りの中で POTR_SEND_BATCH_MAX_PACKETS と経路数の積より小さい範囲でずれる。
+ * 受信側の重複検出は直近 256 通番の範囲で順不同の到着を受け入れ、DATA の順序は通番 (seq_num) で整列するため、
+ * ずれの最大値をこの範囲内に保つ。
+ */
+static_assert(POTR_SEND_BATCH_MAX_PACKETS * POTR_MAX_PATH <
+                  sizeof(((potr_internal_replay_window *)0)->bitmap) * CHAR_BIT,
+              "porter: send batch skew must stay within the replay window");
+static_assert(POTR_SEND_BATCH_MAX_BYTES >=
+                  POTR_PACKET_HEADER_WIRE_SIZE + POTR_DEFAULT_MAX_PAYLOAD + POTR_CRYPTO_TAG_SIZE,
+              "porter: POTR_SEND_BATCH_MAX_BYTES must hold a packet of the default max payload");
+static_assert(POTR_SEND_BATCH_MAX_PACKETS <= CPLAT_SOCKET_SENDTO_MULTI_MAX,
+              "porter: POTR_SEND_BATCH_MAX_PACKETS must not exceed CPLAT_SOCKET_SENDTO_MULTI_MAX");
+
+static int udp_flush_packets(potr_context *ctx, const uint8_t *payload_base, size_t payload_stride,
+                             const size_t *payload_lens, size_t n_packets);
+static int udp_send_path(potr_context *ctx, potr_internal_tx_session *session, int path_idx,
+                         const potr_packet *packets, size_t n_packets, const cplat_ipv4_endpoint *endpoint,
+                         int *results);
+static void udp_flush_packets_peer(potr_context *ctx, potr_internal_peer_context *peer, const uint8_t *payload_base,
+                                   size_t payload_stride, const size_t *payload_lens, size_t n_packets);
+static void pack_queued_entries(potr_context *ctx, const potr_peer_id *peer_id, uint8_t *packed_buf,
+                                size_t *packed_len, int *n_dequeued);
+
+/*
  * 有効データの送信時刻を記録するかを判定する。
  * 1:1 かつ片方向 UDP の場合は 1、それ以外は 0 を返す。
  */
@@ -89,23 +123,10 @@ static void append_payload_elem(uint8_t *packed_buf, size_t *packed_len, const p
     *packed_len += entry->payload_len;
 }
 
-/*
- * まとめ送りでは、経路ごとにパケット列を続けて封緘する。
- * 経路が複数の場合、送出通番 (tx_counter) の割り当て順は、パケットごとに経路を巡る順と異なり、
- * 1 回のまとめ送りの中で POTR_TCP_BATCH_MAX_PACKETS と経路数の積より小さい範囲でずれる。
- * 受信側の重複検出は直近 256 通番の範囲で順不同の到着を受け入れ、DATA の順序は通番 (seq_num) で整列するため、
- * ずれの最大値をこの範囲内に保つ。
- */
-static_assert(POTR_TCP_BATCH_MAX_PACKETS * POTR_MAX_PATH <
-                  sizeof(((potr_internal_replay_window *)0)->bitmap) * CHAR_BIT,
-              "porter: TCP batch skew must stay within the replay window");
-static_assert(POTR_TCP_BATCH_MAX_BYTES >=
-                  POTR_PACKET_HEADER_WIRE_SIZE + POTR_DEFAULT_MAX_PAYLOAD + POTR_CRYPTO_TAG_SIZE,
-              "porter: POTR_TCP_BATCH_MAX_BYTES must hold a packet of the default max payload");
 
 /*
  * TCP の指定 path へ、packets の n_packets 個のパケットを順に封緘して連結し、1 回の送信呼び出しで書き込む。
- * 1 個の場合は crypto_buf、複数の場合は tcp_batch_wire_buf (tcp_batch_cap 個分) を封緘先とする。
+ * 1 個の場合は crypto_buf、複数の場合は send_batch_wire_buf (send_batch_cap 個分) を封緘先とする。
  * 相手端は CONNECTED になる前に受信した DATA を破棄するため、未通知の経路状態があれば先に PING を書き込む。
  * 書き込めなかった path はストリームの途中が欠けるため、ソケットを停止して受信スレッドに切断を検知させる。
  * 成功時は POTR_OK、path が未接続、封緘または書き込みに失敗した場合は POTR_ERR_DISCONNECTED を返す。
@@ -114,7 +135,7 @@ static_assert(POTR_TCP_BATCH_MAX_BYTES >=
 static int tcp_write_path(potr_context *ctx, int path_idx, const potr_packet *packets, size_t n_packets)
 {
     int result = POTR_ERR_DISCONNECTED;
-    uint8_t *wire_buf = (n_packets > 1U) ? ctx->tcp_batch_wire_buf : ctx->crypto_buf;
+    uint8_t *wire_buf = (n_packets > 1U) ? ctx->send_batch_wire_buf : ctx->crypto_buf;
 
     cplat_local_lock_lock(ctx->tcp_send_mutex[path_idx]);
 
@@ -302,13 +323,13 @@ static int tcp_write_all_paths(potr_context *ctx, const potr_packet *packets, si
  * 再送が必要な場合は、保持中の DATA を新しい DATA より先に 1 個ずつ送り直す。
  * どれかの path に書き込めた場合に限り、全パケットを send_window に登録して通番を進める。
  * どの path にも書き込めない場合は登録せず、次の送信で同じ通番を使う。
- * n_packets は 1 以上とし、2 以上の場合は tcp_batch_cap 以下とする。
+ * n_packets は 1 以上とし、2 以上の場合は send_batch_cap 以下とする。
  * 成功時は POTR_OK を返す。パケットを構築できない場合と、どの path にも書き込めない場合はエラー コードを返す。
  */
 static int tcp_flush_packets(potr_context *ctx, const uint8_t *payload_base, size_t payload_stride,
                              const size_t *payload_lens, size_t n_packets)
 {
-    potr_packet packets[POTR_TCP_BATCH_MAX_PACKETS];
+    potr_packet packets[POTR_SEND_BATCH_MAX_PACKETS];
     potr_internal_packet_session_hdr shdr;
     potr_internal_path_group_result selection;
     uint32_t seq;
@@ -409,24 +430,44 @@ static int tcp_flush_packets(potr_context *ctx, const uint8_t *payload_base, siz
  */
 static int flush_packed(potr_context *ctx, size_t packed_len)
 {
-    potr_packet outer_pkt;
-    potr_internal_packet_session_hdr shdr;
-    uint32_t seq;
-    size_t wire_len;
-    uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
-    int build_result;
-    int result = POTR_OK;
-    potr_internal_path_group_result selection;
-    int i;
-    int has_sent_time = 0;
-    uint64_t sent_ms = 0U;
-    int window_pending = 1;
-    int piggyback_pending = 0;
+    const uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
 
     if (is_tcp_type(ctx->service.type))
     {
         return tcp_flush_packets(ctx, packed_buf, 0U, &packed_len, 1U);
     }
+
+    return udp_flush_packets(ctx, packed_buf, 0U, &packed_len, 1U);
+}
+
+/*
+ * UDP で、詰め済みのペイロード n_packets 個から連番の外側パケットを構築し、選択した経路ごとに送る。
+ * i 番目のペイロードは payload_base + i * payload_stride から始まる payload_lens[i] [byte] である。
+ * 経路ごとの封緘と送信は udp_send_path() が行い、1 個の場合は 1 個の送信、複数の場合は一括の送信で送る。
+ * 封緘に失敗した経路には何も送らず、その結果を返して以降の経路へは送らない。
+ * 最初に送る経路の封緘に失敗した場合は、送信ウィンドウに登録せず、通番も進めない。
+ * 最初の経路の送出を試みた後、n_packets 個すべてを送信ウィンドウに登録する。
+ * UDP の送出の失敗は再送で回復するため、送れたかどうかによらず登録する。
+ * unicast_bidir と unicast_bidir_n1 で送出上限を相乗りさせる場合は、先頭の外側パケットにだけ載せ、
+ * 先頭の外側パケットをどれかの経路で送れた場合に限り記録済みにする。
+ * n_packets は 1 以上とし、2 以上の場合は send_batch_cap 以下とする。
+ * 成功時は POTR_OK を返す。経路を選択できない場合、パケットを構築または封緘できない場合と、
+ * 単調時刻を取得できない場合はエラー コードを返す。
+ */
+static int udp_flush_packets(potr_context *ctx, const uint8_t *payload_base, size_t payload_stride,
+                             const size_t *payload_lens, size_t n_packets)
+{
+    potr_packet packets[POTR_SEND_BATCH_MAX_PACKETS];
+    potr_internal_packet_session_hdr shdr;
+    potr_internal_path_group_result selection;
+    uint32_t seq;
+    size_t k;
+    int i;
+    int result = POTR_OK;
+    int has_sent_time = 0;
+    uint64_t sent_ms = 0U;
+    int window_pending = 1;
+    int piggyback_pending = 0;
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = ctx->session_id;
@@ -447,17 +488,21 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
     }
 
     seq = ctx->send_window.next_seq;
-
-    build_result = potr_internal_packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len);
-    if (build_result != POTR_OK)
+    for (k = 0U; k < n_packets; k++)
     {
-        cplat_local_lock_unlock(ctx->send_window_mutex);
-        return build_result;
+        result = potr_internal_packet_build_packed(&packets[k], &shdr, seq + (uint32_t)k,
+                                                   payload_base + k * payload_stride, payload_lens[k]);
+        if (result != POTR_OK)
+        {
+            cplat_local_lock_unlock(ctx->send_window_mutex);
+            return result;
+        }
     }
 
     /*
      * unicast_bidir と unicast_bidir_n1 では、送出上限を使う場合に逆方向の DATA へ送出上限を相乗りさせる。
      * ロック順は send_window_mutex -> fc->mutex とする。相乗りしない通信種別ではロックを増やさない。
+     * まとめて送る場合も、相乗りの値は 1 回だけ求めて先頭の外側パケットに載せる。
      */
     if ((ctx->service.type == POTR_TYPE_UNICAST_BIDIR || ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1) &&
         ctx->flow_control != NULL)
@@ -466,75 +511,80 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
 
         if (potr_internal_flow_control_piggyback_limit(ctx, POTR_PEER_NA, &send_limit) != 0)
         {
-            outer_pkt.flags |= cplat_hton16(POTR_FLAG_SEND_LIMIT);
-            outer_pkt.ack_num = cplat_hton32(send_limit);
+            packets[0].flags |= cplat_hton16(POTR_FLAG_SEND_LIMIT);
+            packets[0].ack_num = cplat_hton32(send_limit);
             piggyback_pending = 1;
         }
     }
 
     for (i = 0; i < ctx->n_path; i++)
     {
-        int send_ret;
+        int results[POTR_SEND_BATCH_MAX_PACKETS];
+        int sent_any = 0;
 
         if ((selection.data_paths & (uint8_t)(1U << i)) == 0U)
         {
             continue;
         }
-        wire_len = ctx->crypto_buf_size;
-        result = potr_internal_packet_seal_for_context(ctx, &ctx->tx_session, &outer_pkt, ctx->crypto_buf, &wire_len);
+        result = udp_send_path(ctx, &ctx->tx_session, i, packets, n_packets, &ctx->dest_addr[i], results);
         if (result != POTR_OK)
         {
             if (piggyback_pending != 0)
             {
-                potr_internal_flow_control_piggyback_complete(ctx, POTR_PEER_NA, cplat_ntoh32(outer_pkt.ack_num), 0);
+                potr_internal_flow_control_piggyback_complete(ctx, POTR_PEER_NA, cplat_ntoh32(packets[0].ack_num), 0);
             }
             cplat_local_lock_unlock(ctx->send_window_mutex);
             return result;
         }
-        send_ret = potr_internal_udp_sendto(ctx, i, ctx->crypto_buf, wire_len, &ctx->dest_addr[i], NULL);
         if (window_pending)
         {
             /*
              * 封緘に成功した平文を保持する。封緘と送出の間にはウィンドウ操作を挟まない。
              * 満杯でも最古のエントリを追い出して格納し、NULL の場合だけ失敗する契約のため、戻り値は明示的に破棄する。
              */
-            (void)potr_internal_window_send_push(&ctx->send_window, &outer_pkt);
+            for (k = 0U; k < n_packets; k++)
+            {
+                (void)potr_internal_window_send_push(&ctx->send_window, &packets[k]);
+            }
             ctx->send_has_data = 1;
             window_pending = 0;
         }
-        if (send_ret == POTR_OK)
+        for (k = 0U; k < n_packets; k++)
         {
-            if (piggyback_pending != 0)
+            if (results[k] == POTR_OK)
             {
-                potr_internal_flow_control_piggyback_complete(ctx, POTR_PEER_NA, cplat_ntoh32(outer_pkt.ack_num), 1);
-                piggyback_pending = 0;
+                sent_any = 1;
             }
-            if (should_track_valid_data_send_time(ctx))
+        }
+        if (results[0] == POTR_OK && piggyback_pending != 0)
+        {
+            potr_internal_flow_control_piggyback_complete(ctx, POTR_PEER_NA, cplat_ntoh32(packets[0].ack_num), 1);
+            piggyback_pending = 0;
+        }
+        if (sent_any && should_track_valid_data_send_time(ctx))
+        {
+            if (cplat_clock_get_monotonic_ms(&sent_ms) == CPLAT_OK)
             {
-                if (cplat_clock_get_monotonic_ms(&sent_ms) == CPLAT_OK)
-                {
-                    has_sent_time = 1;
-                    /*
-                     * PING の期限は後ろへ動くだけなので、ヘルス スレッドは起こさない。
-                     * ヘルス スレッドは待機中の期限が来た時点で、新しい期限を計算し直す。
-                     */
-                    cplat_atomic_store_u64(&ctx->last_valid_data_send_ms[i], sent_ms,
-                                           CPLAT_MEMORY_ORDER_RELAXED);
-                }
-                else
-                {
-                    cplat_local_lock_unlock(ctx->send_window_mutex);
-                    cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
-                    potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
-                    return POTR_ERR_IO;
-                }
+                has_sent_time = 1;
+                /*
+                 * PING の期限は後ろへ動くだけなので、ヘルス スレッドは起こさない。
+                 * ヘルス スレッドは待機中の期限が来た時点で、新しい期限を計算し直す。
+                 */
+                cplat_atomic_store_u64(&ctx->last_valid_data_send_ms[i], sent_ms, CPLAT_MEMORY_ORDER_RELAXED);
+            }
+            else
+            {
+                cplat_local_lock_unlock(ctx->send_window_mutex);
+                cplat_atomic_store_i32(&ctx->fatal_error, POTR_ERR_IO, CPLAT_MEMORY_ORDER_RELEASE);
+                potr_internal_send_queue_abort(&ctx->send_queue, POTR_ERR_IO);
+                return POTR_ERR_IO;
             }
         }
     }
 
     if (piggyback_pending != 0)
     {
-        potr_internal_flow_control_piggyback_complete(ctx, POTR_PEER_NA, cplat_ntoh32(outer_pkt.ack_num), 0);
+        potr_internal_flow_control_piggyback_complete(ctx, POTR_PEER_NA, cplat_ntoh32(packets[0].ack_num), 0);
     }
     cplat_local_lock_unlock(ctx->send_window_mutex);
     if (!window_pending && (ctx->service.type == POTR_TYPE_UNICAST || ctx->service.type == POTR_TYPE_UNICAST_BIDIR))
@@ -553,19 +603,77 @@ static int flush_packed(potr_context *ctx, size_t packed_len)
 }
 
 /*
- * N:1 モード専用: ピアの send_window を使ってパック コンテナーを構築して sendto する。
- * 呼び出し元は peers_mutex を保持し、peer が解放されないことを保証する。
+ * UDP の 1 つの経路へ、packets の n_packets 個を封緘して送る。results[i] に各パケットの送信の結果を格納する。
+ * 1 個の場合は crypto_buf へ封緘して potr_internal_udp_sendto() で送る。
+ * 複数の場合は send_batch_wire_buf の区画 (crypto_buf_size ごと) へ封緘し、
+ * potr_internal_udp_sendto_multi() で 1 回の一括の送信で送る。
+ * n_packets 個すべてを封緘できた場合に限り送る。封緘に失敗した場合は何も送らず、封緘の結果を返す。
+ * 封緘できた場合は POTR_OK を返す (送信の成否は results)。
  */
-static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *peer, size_t packed_len)
+static int udp_send_path(potr_context *ctx, potr_internal_tx_session *session, int path_idx,
+                         const potr_packet *packets, size_t n_packets, const cplat_ipv4_endpoint *endpoint,
+                         int *results)
 {
-    potr_packet outer_pkt;
+    cplat_socket_datagram datagrams[POTR_SEND_BATCH_MAX_PACKETS];
+    size_t k;
+
+    if (n_packets == 1U)
+    {
+        size_t wire_len = ctx->crypto_buf_size;
+        int result = potr_internal_packet_seal_for_context(ctx, session, &packets[0], ctx->crypto_buf, &wire_len);
+
+        if (result != POTR_OK)
+        {
+            return result;
+        }
+        results[0] = potr_internal_udp_sendto(ctx, path_idx, ctx->crypto_buf, wire_len, endpoint, NULL);
+        return POTR_OK;
+    }
+
+    for (k = 0U; k < n_packets; k++)
+    {
+        uint8_t *wire = ctx->send_batch_wire_buf + k * ctx->crypto_buf_size;
+        size_t wire_len = ctx->crypto_buf_size;
+        int result = potr_internal_packet_seal_for_context(ctx, session, &packets[k], wire, &wire_len);
+
+        if (result != POTR_OK)
+        {
+            return result;
+        }
+        datagrams[k].buf = wire;
+        datagrams[k].len = wire_len;
+        datagrams[k].endpoint = endpoint;
+    }
+
+    if (potr_internal_udp_sendto_multi(ctx, path_idx, datagrams, n_packets, results) != POTR_OK)
+    {
+        /* 引数は送信スレッドが組み立てるため不正にならないが、不正の場合は何も送っていないため送信の失敗とする。 */
+        for (k = 0U; k < n_packets; k++)
+        {
+            results[k] = POTR_ERR_IO;
+        }
+    }
+
+    return POTR_OK;
+}
+
+/*
+ * N:1 モード専用: ピアの send_window を使って、詰め済みのペイロード n_packets 個から連番の外側パケットを構築し、
+ * ピアの経路ごとに送る。i 番目のペイロードは payload_base + i * payload_stride から始まる payload_lens[i] [byte] である。
+ * 経路ごとの封緘と送信、封緘の失敗、送信ウィンドウへの登録、相乗りの規則は udp_flush_packets() と同じである。
+ * 呼び出し元は peers_mutex を保持し、peer が解放されないことを保証する。
+ * n_packets は 1 以上とし、2 以上の場合は send_batch_cap 以下とする。
+ */
+static void udp_flush_packets_peer(potr_context *ctx, potr_internal_peer_context *peer, const uint8_t *payload_base,
+                                   size_t payload_stride, const size_t *payload_lens, size_t n_packets)
+{
+    potr_packet packets[POTR_SEND_BATCH_MAX_PACKETS];
     potr_internal_packet_session_hdr shdr;
     uint32_t seq;
-    size_t wire_len;
+    size_t k;
     int window_pending = 1;
     int piggyback_pending = 0;
     potr_internal_path_group_result selection;
-    uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
 
     shdr.service_id = ctx->service.service_id;
     shdr.session_id = peer->session_id;
@@ -580,15 +688,20 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
     }
     seq = peer->send_window.next_seq;
 
-    if (potr_internal_packet_build_packed(&outer_pkt, &shdr, seq, packed_buf, packed_len) != POTR_OK)
+    for (k = 0U; k < n_packets; k++)
     {
-        cplat_local_lock_unlock(peer->send_window_mutex);
-        return;
+        if (potr_internal_packet_build_packed(&packets[k], &shdr, seq + (uint32_t)k, payload_base + k * payload_stride,
+                                              payload_lens[k]) != POTR_OK)
+        {
+            cplat_local_lock_unlock(peer->send_window_mutex);
+            return;
+        }
     }
 
     /*
      * N:1 サーバーでは、送出上限を使う場合に逆方向の DATA へ送出上限を相乗りさせる。
      * ロック順は peers_mutex -> peer->send_window_mutex -> fc->mutex とする。
+     * まとめて送る場合も、相乗りの値は 1 回だけ求めて先頭の外側パケットに載せる。
      */
     if (ctx->service.type == POTR_TYPE_UNICAST_BIDIR_N1 && ctx->flow_control != NULL)
     {
@@ -596,28 +709,30 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
 
         if (potr_internal_flow_control_piggyback_limit(ctx, peer->peer_id, &send_limit) != 0)
         {
-            outer_pkt.flags |= cplat_hton16(POTR_FLAG_SEND_LIMIT);
-            outer_pkt.ack_num = cplat_hton32(send_limit);
+            packets[0].flags |= cplat_hton16(POTR_FLAG_SEND_LIMIT);
+            packets[0].ack_num = cplat_hton32(send_limit);
             piggyback_pending = 1;
         }
     }
 
     /* N:1 はソケットのインデックスに対応する選択グループの経路へ送信する。 */
     {
-        int k;
+        int i;
 
-        for (k = 0; k < (int)POTR_MAX_PATH; k++)
+        for (i = 0; i < (int)POTR_MAX_PATH; i++)
         {
-            if ((selection.data_paths & (uint8_t)(1U << k)) == 0U || endpoint_is_unset(&peer->dest_addr[k]))
+            int results[POTR_SEND_BATCH_MAX_PACKETS];
+
+            if ((selection.data_paths & (uint8_t)(1U << i)) == 0U || endpoint_is_unset(&peer->dest_addr[i]))
             {
                 continue;
             }
-            wire_len = ctx->crypto_buf_size;
-            if (potr_internal_packet_seal_for_context(ctx, &peer->tx_session, &outer_pkt, ctx->crypto_buf, &wire_len) != POTR_OK)
+            if (udp_send_path(ctx, &peer->tx_session, i, packets, n_packets, &peer->dest_addr[i], results) != POTR_OK)
             {
                 if (piggyback_pending != 0)
                 {
-                    potr_internal_flow_control_piggyback_complete(ctx, peer->peer_id, cplat_ntoh32(outer_pkt.ack_num), 0);
+                    potr_internal_flow_control_piggyback_complete(ctx, peer->peer_id, cplat_ntoh32(packets[0].ack_num),
+                                                                  0);
                 }
                 if (window_pending)
                 {
@@ -625,10 +740,9 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
                 }
                 return;
             }
-            int send_ret = potr_internal_udp_sendto(ctx, k, ctx->crypto_buf, wire_len, &peer->dest_addr[k], NULL);
-            if (send_ret == POTR_OK && piggyback_pending != 0)
+            if (results[0] == POTR_OK && piggyback_pending != 0)
             {
-                potr_internal_flow_control_piggyback_complete(ctx, peer->peer_id, cplat_ntoh32(outer_pkt.ack_num), 1);
+                potr_internal_flow_control_piggyback_complete(ctx, peer->peer_id, cplat_ntoh32(packets[0].ack_num), 1);
                 piggyback_pending = 0;
             }
             if (window_pending)
@@ -636,7 +750,10 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
                 uint64_t sent_ms = 0U;
 
                 /* 満杯でも最古のエントリを追い出して格納し、NULL の場合だけ失敗する契約のため、戻り値は明示的に破棄する。 */
-                (void)potr_internal_window_send_push(&peer->send_window, &outer_pkt);
+                for (k = 0U; k < n_packets; k++)
+                {
+                    (void)potr_internal_window_send_push(&peer->send_window, &packets[k]);
+                }
                 peer->send_has_data = 1;
                 if (cplat_clock_get_monotonic_ms(&sent_ms) == CPLAT_OK)
                 {
@@ -650,7 +767,7 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
     }
     if (piggyback_pending != 0)
     {
-        potr_internal_flow_control_piggyback_complete(ctx, peer->peer_id, cplat_ntoh32(outer_pkt.ack_num), 0);
+        potr_internal_flow_control_piggyback_complete(ctx, peer->peer_id, cplat_ntoh32(packets[0].ack_num), 0);
     }
     if (window_pending)
     {
@@ -658,13 +775,21 @@ static void flush_packed_peer(potr_context *ctx, potr_internal_peer_context *pee
     }
 }
 
-/* N:1 モード専用: キューからエントリを取り出してピアへパッキング送信する。 */
-static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem *first)
+/*
+ * N:1 モード専用: キューからエントリを取り出してピアへパッキング送信する。
+ * send_batch_cap が POTR_SEND_BATCH_MIN_PACKETS 以上の場合は、同じピア宛てに続くエントリを、1:1 と同じ組み立ての規則で
+ * 最大 send_batch_cap 個の外側パケットにまとめ、1 回の一括の送信で送る。
+ * 別のピア宛てのエントリが来た時点、キューが空になった時点、上限に達した時点で、集めた分を送る。
+ * まとめる数は、そのピアの送出上限までに送出できる数 (allowance) を超えない。
+ */
+static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem *first, uint32_t allowance)
 {
     potr_peer_id target_peer_id = first->peer_id;
     potr_internal_peer_context *peer = NULL;
-    uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
-    size_t packed_len = 0;
+    size_t payload_lens[POTR_SEND_BATCH_MAX_PACKETS];
+    const uint8_t *payload_base = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
+    size_t stride = 0U;
+    size_t n_packets = 0U;
     int n_dequeued = 1;
     int peer_exists;
 
@@ -684,51 +809,53 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
         return;
     }
 
-    append_payload_elem(packed_buf, &packed_len, first);
-
-    /* 同一ピア宛の追加エントリを即時パッキングする (pack_wait なし)。 */
-    if (!(first->flags & POTR_FLAG_MORE_FRAG))
+    if (ctx->send_batch_cap >= POTR_SEND_BATCH_MIN_PACKETS)
     {
-        potr_internal_payload_elem next;
+        size_t batch_cap = ctx->send_batch_cap;
+        potr_internal_payload_elem cur = *first;
 
-        while (potr_internal_send_queue_peek(&ctx->send_queue, &next) == POTR_OK)
+        if ((size_t)allowance < batch_cap)
         {
-            size_t elem_size;
-            size_t crypto_tag_overhead;
+            batch_cap = (size_t)allowance;
+        }
 
-            if (next.peer_id != target_peer_id)
+        payload_base = ctx->send_batch_plain_buf;
+        stride = (size_t)ctx->global.max_payload;
+
+        for (;;)
+        {
+            uint8_t *packed_buf = ctx->send_batch_plain_buf + n_packets * stride;
+            size_t packed_len = 0U;
+            potr_internal_payload_elem next;
+
+            append_payload_elem(packed_buf, &packed_len, &cur);
+            if (!(cur.flags & POTR_FLAG_MORE_FRAG))
+            {
+                pack_queued_entries(ctx, &target_peer_id, packed_buf, &packed_len, &n_dequeued);
+            }
+            payload_lens[n_packets++] = packed_len;
+
+            if (n_packets >= batch_cap || potr_internal_send_queue_peek(&ctx->send_queue, &next) != POTR_OK ||
+                next.peer_id != target_peer_id || potr_internal_send_queue_try_pop(&ctx->send_queue, &cur) != POTR_OK)
             {
                 break;
             }
-            if (next.flags & POTR_FLAG_MORE_FRAG)
-            {
-                break;
-            }
-
-            elem_size = POTR_PAYLOAD_ELEM_HDR_SIZE + (size_t)next.payload_len;
-
-            if (ctx->service.encrypt_enabled)
-            {
-                crypto_tag_overhead = POTR_CRYPTO_TAG_SIZE;
-            }
-            else
-            {
-                crypto_tag_overhead = 0U;
-            }
-
-            if (packed_len + elem_size > (size_t)ctx->global.max_payload - crypto_tag_overhead)
-            {
-                break;
-            }
-
-            if (potr_internal_send_queue_try_pop(&ctx->send_queue, &next) != POTR_OK)
-            {
-                break;
-            }
-
-            append_payload_elem(packed_buf, &packed_len, &next);
             n_dequeued++;
         }
+    }
+    else
+    {
+        uint8_t *packed_buf = ctx->send_wire_buf + POTR_PACKET_HEADER_SIZE;
+        size_t packed_len = 0U;
+
+        append_payload_elem(packed_buf, &packed_len, first);
+
+        /* 同一ピア宛の追加エントリを即時パッキングする (pack_wait なし)。 */
+        if (!(first->flags & POTR_FLAG_MORE_FRAG))
+        {
+            pack_queued_entries(ctx, &target_peer_id, packed_buf, &packed_len, &n_dequeued);
+        }
+        payload_lens[n_packets++] = packed_len;
     }
 
     /*
@@ -740,7 +867,7 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
     peer = potr_internal_peer_find_by_id(ctx, target_peer_id);
     if (peer != NULL)
     {
-        flush_packed_peer(ctx, peer, packed_len);
+        udp_flush_packets_peer(ctx, peer, payload_base, stride, payload_lens, n_packets);
         if (cplat_atomic_load_i32(&peer->tx_session.exhausted, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             thread_recv_disconnect_peer_all_paths(ctx, peer);
@@ -769,8 +896,10 @@ static void send_packed_peer_mode(potr_context *ctx, potr_internal_payload_elem 
 /*
  * パッキング待ちなしで、キューの先頭から続く単体エントリ (MORE_FRAG なし) を、外側パケットの上限まで
  * packed_buf へ詰める。暗号化時は認証タグの分を空けておく。詰めたエントリ数を *n_dequeued に加算する。
+ * peer_id が NULL でない場合 (N:1 モード) は、そのピア宛てのエントリだけを詰める。
  */
-static void pack_queued_entries(potr_context *ctx, uint8_t *packed_buf, size_t *packed_len, int *n_dequeued)
+static void pack_queued_entries(potr_context *ctx, const potr_peer_id *peer_id, uint8_t *packed_buf,
+                                size_t *packed_len, int *n_dequeued)
 {
     potr_internal_payload_elem next;
 
@@ -779,6 +908,10 @@ static void pack_queued_entries(potr_context *ctx, uint8_t *packed_buf, size_t *
         size_t elem_size;
         size_t crypto_tag_overhead;
 
+        if (peer_id != NULL && next.peer_id != *peer_id)
+        {
+            break;
+        }
         if (next.flags & POTR_FLAG_MORE_FRAG)
         {
             break;
@@ -811,10 +944,13 @@ static void pack_queued_entries(potr_context *ctx, uint8_t *packed_buf, size_t *
 }
 
 /*
- * TCP 1:1 のまとめ送り。取り出し済みのエントリ first から始めて、キューにある後続のエントリも外側パケットに
- * 組み立て、最大 tcp_batch_cap 個を経路ごとに 1 回の送信呼び出しで書き込む。
+ * 1:1 のまとめ送り (TCP と UDP)。取り出し済みのエントリ first から始めて、キューにある後続のエントリも外側パケットに
+ * 組み立て、最大 send_batch_cap 個をまとめて送る。
+ * TCP は、経路ごとに 1 つのバッファーへ封緘して 1 回の送信呼び出しで書き込む (tcp_flush_packets())。
  * TCP_NODELAY の下では送信呼び出しごとにセグメントが送り出されるため、外側パケットごとに送信を呼び出すと
  * セグメント数と受信側の起床が増え、処理件数が下がる。
+ * UDP は、経路ごとに外側パケットごとのデータグラムを 1 回の一括の送信で送る (udp_flush_packets())。
+ * データグラムごとに送信を呼び出すと、呼び出しごとのカーネルの処理が処理件数を下げるためである。
  * 外側パケットの組み立ての規則は従来と同じである。
  * - MORE_FRAG 付きのエントリ (分割されたメッセージの途中の断片) は、1 件で 1 つの外側パケットにする。
  * - MORE_FRAG なしのエントリは、パッキング待ちなしの規則で後続の単体エントリを同じ外側パケットへ詰める。
@@ -824,15 +960,14 @@ static void pack_queued_entries(potr_context *ctx, uint8_t *packed_buf, size_t *
  * 残りの断片は、次の周回で同じ規則により送る。
  * 外側パケットの数は、相手から受けた送出上限までに送出できる数 (allowance) を超えない。
  * 送出上限は送出の前に 1 回だけ判定するため、まとめ送りで送出上限を超えて送り続けないようにするためである。
- * *n_dequeued には取り出したエントリ数を加算する。戻り値は tcp_flush_packets() の結果である。
+ * *n_dequeued には取り出したエントリ数を加算する。戻り値は tcp_flush_packets() または udp_flush_packets() の結果である。
  */
-static int send_tcp_batch(potr_context *ctx, const potr_internal_payload_elem *first, int *n_dequeued,
-                          uint32_t allowance)
+static int send_batch(potr_context *ctx, const potr_internal_payload_elem *first, int *n_dequeued, uint32_t allowance)
 {
-    size_t payload_lens[POTR_TCP_BATCH_MAX_PACKETS];
+    size_t payload_lens[POTR_SEND_BATCH_MAX_PACKETS];
     size_t stride = (size_t)ctx->global.max_payload;
     size_t n_packets = 0U;
-    size_t batch_cap = ctx->tcp_batch_cap;
+    size_t batch_cap = ctx->send_batch_cap;
     potr_internal_payload_elem cur = *first;
 
     if ((size_t)allowance < batch_cap)
@@ -842,13 +977,13 @@ static int send_tcp_batch(potr_context *ctx, const potr_internal_payload_elem *f
 
     for (;;)
     {
-        uint8_t *packed_buf = ctx->tcp_batch_plain_buf + n_packets * stride;
+        uint8_t *packed_buf = ctx->send_batch_plain_buf + n_packets * stride;
         size_t packed_len = 0U;
 
         append_payload_elem(packed_buf, &packed_len, &cur);
         if (!(cur.flags & POTR_FLAG_MORE_FRAG))
         {
-            pack_queued_entries(ctx, packed_buf, &packed_len, n_dequeued);
+            pack_queued_entries(ctx, NULL, packed_buf, &packed_len, n_dequeued);
         }
         payload_lens[n_packets++] = packed_len;
 
@@ -860,7 +995,12 @@ static int send_tcp_batch(potr_context *ctx, const potr_internal_payload_elem *f
         (*n_dequeued)++;
     }
 
-    return tcp_flush_packets(ctx, ctx->tcp_batch_plain_buf, stride, payload_lens, n_packets);
+    if (is_tcp_type(ctx->service.type))
+    {
+        return tcp_flush_packets(ctx, ctx->send_batch_plain_buf, stride, payload_lens, n_packets);
+    }
+
+    return udp_flush_packets(ctx, ctx->send_batch_plain_buf, stride, payload_lens, n_packets);
 }
 
 /* 送信スレッド本体 */
@@ -885,11 +1025,17 @@ typedef struct potr_internal_deferred_entry
 /*
  * ピアが抑制中か、またはそのピア宛の保留エントリが残っているかを返す。どちらの場合も、新しいエントリを先に送出しない。
  * blocked には、ピアが抑制中かどうかを返す。
+ * allowance が NULL でない場合は、ピアの送出上限までに送出できる DATA のパケット数を返す (上限がない場合は UINT32_MAX)。
  */
-static int peer_send_deferred(potr_context *ctx, potr_peer_id peer_id, int *blocked)
+static int peer_send_deferred(potr_context *ctx, potr_peer_id peer_id, int *blocked, uint32_t *allowance)
 {
     uint64_t now_ms;
     int deferred = 0;
+
+    if (allowance != NULL)
+    {
+        *allowance = UINT32_MAX;
+    }
 
     /* 時刻を取得できない場合は期限を判定できないため、抑制せずに送出する。 */
     if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
@@ -898,7 +1044,7 @@ static int peer_send_deferred(potr_context *ctx, potr_peer_id peer_id, int *bloc
         return 0;
     }
 
-    *blocked = potr_internal_flow_control_peer_state(ctx, peer_id, now_ms, &deferred);
+    *blocked = potr_internal_flow_control_peer_state(ctx, peer_id, now_ms, &deferred, allowance);
 
     return *blocked != 0 || deferred != 0;
 }
@@ -906,13 +1052,17 @@ static int peer_send_deferred(potr_context *ctx, potr_peer_id peer_id, int *bloc
 /*
  * 取り出したエントリの宛先が抑制中の場合、または同じ宛先の保留エントリが残っている場合に、エントリを保留する。
  * 保留した場合は 1、そのまま送出する場合は 0 を返す。
+ * そのまま送出する場合は、*allowance に宛先のピアの送出上限までに送出できる DATA のパケット数を返す
+ * (上限がない場合と、まとめ送りを使わない場合は UINT32_MAX)。
  * 保留したエントリは、完了待ちの番号だけを進める。送信キューの容量は、送出するまで占有し続ける。
  */
-static int defer_entry_if_blocked(potr_context *ctx, const potr_internal_payload_elem *entry)
+static int defer_entry_if_blocked(potr_context *ctx, const potr_internal_payload_elem *entry, uint32_t *allowance)
 {
     potr_internal_deferred_entry *node;
     potr_internal_peer_context *peer;
     int blocked;
+
+    *allowance = UINT32_MAX;
 
     /*
      * 保留中のエントリがなく、抑制の要求または送出上限を保持しているピアもない間は、どのピア宛も保留しない。
@@ -923,7 +1073,9 @@ static int defer_entry_if_blocked(potr_context *ctx, const potr_internal_payload
         return 0;
     }
 
-    if (peer_send_deferred(ctx, entry->peer_id, &blocked) == 0)
+    /* 送出できる数は、まとめ送りの数を抑える場合だけ求める。求める場合は、ロックを取らない判定を使えないためである。 */
+    if (peer_send_deferred(ctx, entry->peer_id, &blocked,
+                           (ctx->send_batch_cap >= POTR_SEND_BATCH_MIN_PACKETS) ? allowance : NULL) == 0)
     {
         return 0;
     }
@@ -1011,7 +1163,7 @@ static void send_deferred_entry(potr_context *ctx, potr_internal_deferred_entry 
             }
         }
 
-        flush_packed_peer(ctx, peer, packed_len);
+        udp_flush_packets_peer(ctx, peer, packed_buf, 0U, &packed_len, 1U);
         if (cplat_atomic_load_i32(&peer->tx_session.exhausted, CPLAT_MEMORY_ORDER_ACQUIRE) != 0)
         {
             thread_recv_disconnect_peer_all_paths(ctx, peer);
@@ -1059,7 +1211,7 @@ static void flush_deferred_entries(potr_context *ctx, int drop_all)
                 if (potr_internal_flow_control_peers_idle(ctx) == 0)
                 {
                     /* 保留の有無ではなく抑制の状態 (blocked) だけを使うため、戻り値は明示的に破棄する。 */
-                    (void)peer_send_deferred(ctx, node->peer_id, &blocked);
+                    (void)peer_send_deferred(ctx, node->peer_id, &blocked, NULL);
                 }
 
                 if (blocked != 0)
@@ -1299,9 +1451,9 @@ static void send_thread_func(void *arg)
                 break;
             }
 
-            if (defer_entry_if_blocked(ctx, &first) == 0)
+            if (defer_entry_if_blocked(ctx, &first, &allowance) == 0)
             {
-                send_packed_peer_mode(ctx, &first);
+                send_packed_peer_mode(ctx, &first, allowance);
             }
 
             continue;
@@ -1325,13 +1477,13 @@ static void send_thread_func(void *arg)
             int flush_result = POTR_OK;
 
             /*
-             * TCP 1:1 はまとめ送りで送る。パッキング待ちが設定され、先頭が分割されていないメッセージの場合は、
+             * 1:1 はまとめ送りで送る (TCP と UDP)。パッキング待ちが設定され、先頭が分割されていないメッセージの場合は、
              * 待ち合わせを含む従来の処理で送る。
              */
-            if (ctx->tcp_batch_cap >= POTR_TCP_BATCH_MIN_PACKETS &&
+            if (ctx->send_batch_cap >= POTR_SEND_BATCH_MIN_PACKETS &&
                 ((first.flags & POTR_FLAG_MORE_FRAG) != 0U || ctx->service.pack_wait_ms == 0U))
             {
-                flush_result = send_tcp_batch(ctx, &first, &n_dequeued, allowance);
+                flush_result = send_batch(ctx, &first, &n_dequeued, allowance);
                 goto complete_packed;
             }
 
@@ -1418,7 +1570,7 @@ static void send_thread_func(void *arg)
                 else
                 {
                     /* パッキング待ちなし: キューにあるエントリを即時まとめる。 */
-                    pack_queued_entries(ctx, packed_buf, &packed_len, &n_dequeued);
+                    pack_queued_entries(ctx, NULL, packed_buf, &packed_len, &n_dequeued);
                 }
             }
 

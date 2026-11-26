@@ -32,30 +32,34 @@
 #include <porter/potr_context.h>
 
 /**
- *  @brief          TCP の 1:1 通信で、送信スレッドが 1 回の送信呼び出しにまとめる外側パケットの上限数です。
+ *  @brief          送信スレッドのまとめ送りで、1 回の送信呼び出しにまとめる外側パケットの上限数です。
  *
+ *  TCP の 1:1 通信では、経路ごとに連結した外側パケットを 1 回の書き込みで送ります。\n
+ *  UDP では、外側パケットごとのデータグラムを 1 回の一括の送信で送ります。
+ *  N:1 通信では、同じピア宛ての外側パケットだけをまとめます。\n
  *  送出通番の割り当て順は経路ごとに最大この数だけずれるため、
  *  経路数の上限との積は受信側の重複検出の範囲 (直近 256 通番) より小さくします。
  */
-#define POTR_TCP_BATCH_MAX_PACKETS 16U
+#define POTR_SEND_BATCH_MAX_PACKETS 16U
 
 /**
- *  @brief          まとめ送りの連結バッファーの上限 [byte] です。
+ *  @brief          まとめ送りのバッファーの上限 [byte] です。
  *
- *  封緘後の外側パケットの最大長 (crypto_buf_size) と POTR_TCP_BATCH_MAX_PACKETS の積がこの値を超える場合は、
+ *  TCP の連結バッファーと、UDP の封緘結果の格納先 (外側パケットごとの区画) の両方に適用します。\n
+ *  封緘後の外側パケットの最大長 (crypto_buf_size) と POTR_SEND_BATCH_MAX_PACKETS の積がこの値を超える場合は、
  *  1 回にまとめる数を下げます。2 個未満になる場合は、まとめ送りを使いません。
  */
-#define POTR_TCP_BATCH_MAX_BYTES 65536U
+#define POTR_SEND_BATCH_MAX_BYTES 65536U
 
 /**
  *  @brief          まとめ送りを使う、1 回にまとめる外側パケットの最小数です。
  *
- *  1 回にまとめる数 (tcp_batch_cap) がこの値未満の場合は、まとめ送りを使いません。
+ *  1 回にまとめる数 (send_batch_cap) がこの値未満の場合は、まとめ送りを使いません。
  */
-#define POTR_TCP_BATCH_MIN_PACKETS 2U
+#define POTR_SEND_BATCH_MIN_PACKETS 2U
 
-static_assert(POTR_TCP_BATCH_MIN_PACKETS <= POTR_TCP_BATCH_MAX_PACKETS,
-              "porter: POTR_TCP_BATCH_MIN_PACKETS must not exceed POTR_TCP_BATCH_MAX_PACKETS");
+static_assert(POTR_SEND_BATCH_MIN_PACKETS <= POTR_SEND_BATCH_MAX_PACKETS,
+              "porter: POTR_SEND_BATCH_MIN_PACKETS must not exceed POTR_SEND_BATCH_MAX_PACKETS");
 
 /**
  *  @brief          TCP の送信バッファー満杯の警告を抑制する回数です。

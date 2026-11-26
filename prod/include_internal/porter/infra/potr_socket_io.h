@@ -145,6 +145,39 @@ extern "C"
                                         const cplat_ipv4_endpoint *endpoint, cplat_error *detail_out);
 
     /**
+     *  @brief          登録済み UDP ソケットから、複数のデータグラムを 1 回の一括の送信で送ります。
+     *  @param[in,out]  ctx         セッション コンテキスト。
+     *  @param[in]      path_idx    送信経路インデックス。
+     *  @param[in]      datagrams   送信するデータグラムの配列。各要素の `buf` と `endpoint` は NULL 不可。
+     *  @param[in]      count       `datagrams` の要素数。1 以上 `CPLAT_SOCKET_SENDTO_MULTI_MAX` 以下。
+     *  @param[out]     results_out 各データグラムの結果の格納先 (要素数 `count`)。
+     *  @retval         POTR_OK                 引数が正しく、各データグラムの結果を `results_out` に格納しました。
+     *  @retval         POTR_ERR_INVALID_ARGUMENT 引数が不正です。何も送らず、`results_out` を変更しません。
+     *
+     *  `udp_send_mutex[path_idx]` を呼び出しの全体で保持し、`cplat_socket_watch_sendto_multi()` で先頭から送ります。\n
+     *  `results_out` の各要素は、次のいずれかです。
+     *
+     *  Table: results_out の各要素の値
+     *
+     *  | 値                  | 意味                                                                 |
+     *  | ------------------- | -------------------------------------------------------------------- |
+     *  | `POTR_OK`           | 全量を送りました。                                                   |
+     *  | `POTR_ERR_TIMEOUT`  | 期限内に送信可能になりませんでした。                                 |
+     *  | `POTR_ERR_CANCELED` | `recv_cancel` により待機が解除されました。                           |
+     *  | `POTR_ERR_IO`       | 短い送信、OS の送信失敗、未登録のソケットのいずれかです。            |
+     *
+     *  一括の送信で送信の空きがない場合 (`CPLAT_ERR_WOULD_BLOCK`) は、`potr_internal_udp_sendto()` と同じく、
+     *  最初の試行から 100 [ms] の絶対期限内で送信可能を待ち、まだ送っていない先頭から送り直します。
+     *  期限の超過と解除では、残りのデータグラムすべてに同じ結果を格納します。\n
+     *  一括の送信が一部だけを送って戻った場合は、送れなかった残りのデータグラムを、
+     *  先頭から順に 1 個ずつの送信で 1 回ずつ試みます。一括の送信は途中で失敗した理由を返さないためです。
+     *  先頭のデータグラムが OS の送信失敗となった場合は、その結果を格納し、続くデータグラムを同じく 1 個ずつ試みます。
+     *  1 個ずつの送信の待機と期限の規則は `potr_internal_udp_sendto()` と同じで、期限はデータグラムごとに数えます。
+     */
+    extern int potr_internal_udp_sendto_multi(potr_context *ctx, int path_idx, const cplat_socket_datagram *datagrams,
+                                              size_t count, int *results_out);
+
+    /**
      *  @brief          送信用ロック保持下で、指定経路の TCP 接続へ全量送信します。
      *  @param[in,out]  ctx        セッション コンテキスト。
      *  @param[in]      path_idx   送信経路インデックス。

@@ -505,16 +505,16 @@ class potrSendThreadTcpBatchTest : public Test
         memset(&ctx, 0, sizeof(ctx));
         wire_buf.assign(POTR_PACKET_HEADER_SIZE + 1400U, 0U);
         sealed_buf.assign(POTR_PACKET_HEADER_SIZE + 1400U + POTR_CRYPTO_TAG_SIZE, 0U);
-        batch_plain_buf.assign(POTR_TCP_BATCH_MAX_PACKETS * 1400U, 0U);
-        batch_wire_buf.assign(POTR_TCP_BATCH_MAX_PACKETS * sealed_buf.size(), 0U);
+        batch_plain_buf.assign(POTR_SEND_BATCH_MAX_PACKETS * 1400U, 0U);
+        batch_wire_buf.assign(POTR_SEND_BATCH_MAX_PACKETS * sealed_buf.size(), 0U);
         ctx.service.type = POTR_TYPE_TCP_BIDIR; // [状態] - TCP_BIDIR とする。
         ctx.global.max_payload = 1400U;         // [状態] - 最大ペイロード長を設定する。
         ctx.crypto_buf = sealed_buf.data();
         ctx.crypto_buf_size = sealed_buf.size();
         ctx.send_wire_buf = wire_buf.data();    // [状態] - 送信 wire 組立バッファーを設定する。
-        ctx.tcp_batch_plain_buf = batch_plain_buf.data();
-        ctx.tcp_batch_wire_buf = batch_wire_buf.data();
-        ctx.tcp_batch_cap = POTR_TCP_BATCH_MAX_PACKETS; // [状態] - まとめ送りの上限を 16 個とする。
+        ctx.send_batch_plain_buf = batch_plain_buf.data();
+        ctx.send_batch_wire_buf = batch_wire_buf.data();
+        ctx.send_batch_cap = POTR_SEND_BATCH_MAX_PACKETS; // [状態] - まとめ送りの上限を 16 個とする。
         ctx.send_queue.depth = 64U;                     // [状態] - 送信キューの深さを 64 とする。
         ctx.n_path = 1;                                 // [状態] - path 数を 1 とする。
         ctx.tcp_conn_fd[0] = conn_fd;                   // [状態] - path 0 を接続済みとする。
@@ -604,9 +604,9 @@ class potrSendThreadTcpBatchTest : public Test
     std::vector<uint8_t> runReference(size_t *write_count)
     {
         std::vector<uint8_t> joined;
-        const size_t cap = ctx.tcp_batch_cap;
+        const size_t cap = ctx.send_batch_cap;
 
-        ctx.tcp_batch_cap = 0U; // [状態] - まとめ送りを使わない。
+        ctx.send_batch_cap = 0U; // [状態] - まとめ送りを使わない。
         // [サブ手順参照 名前=potrSendThreadTcpBatchTest.runQueue]
         (void)runQueue();
         for (const std::vector<uint8_t> &w : writes)
@@ -615,7 +615,7 @@ class potrSendThreadTcpBatchTest : public Test
         }
         *write_count = writes.size();
         clearWrites();
-        ctx.tcp_batch_cap = cap;
+        ctx.send_batch_cap = cap;
         ctx.send_window.next_seq = 0U;
         cplat_atomic_store_u64(&ctx.tx_session.next_counter, 0U, CPLAT_MEMORY_ORDER_RELAXED);
         return joined;
@@ -1032,7 +1032,7 @@ TEST(potrSendThreadTest, n1_suppressed_peer_entry_is_deferred_without_sending)
     elem.payload = payload;
     cplat_atomic_store_i32(&ctx.flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELAXED);
     // [状態] - 抑制の要求または送出上限を保持しているピアが 1 つあるものとする。
-    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 5U, _, _))
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 5U, _, _, _))
         .WillByDefault(Return(1)); // [状態] - ピア 5 がフロー制御で抑制中であるものとする。
     ON_CALL(mock_porter, potr_internal_send_queue_peek_timed(_, _, _))
         .WillByDefault(Return(POTR_ERR_TIMEOUT)); // [状態] - 保留中の再確認では、追加のエントリはないものとする。
@@ -1097,9 +1097,9 @@ TEST(potrSendThreadTest, n1_deferred_entry_is_released_after_peer_resumes)
     elem.payload = payload;
     cplat_atomic_store_i32(&ctx.flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELAXED);
     // [状態] - 抑制の要求または送出上限を保持しているピアが 1 つあるものとする。
-    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 5U, _, _))
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 5U, _, _, _))
         .WillByDefault(Invoke(
-            [&](potr_context *, potr_peer_id, uint64_t, int *)
+            [&](potr_context *, potr_peer_id, uint64_t, int *, uint32_t *)
             { return (int)cplat_atomic_load_i32(&suppressed, CPLAT_MEMORY_ORDER_ACQUIRE); }));
     // [状態] - ピア 5 の抑制の状態を、テストから切り替えられるようにする (最初は抑制中)。
     ON_CALL(mock_porter, potr_internal_send_queue_peek_timed(_, _, _))
@@ -1232,7 +1232,7 @@ TEST(potrSendThreadTest, n1_idle_peers_skip_flow_control_check)
     EXPECT_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 5U)).WillOnce(Return(&peer)).WillOnce(Return(nullptr));
     // [Pre-Assert確認_正常系] - 送出の処理の存在確認と再検索だけで、ピアを 2 回検索すること。
     // [Pre-Assert手順] - 存在確認ではピアを返し、再検索では解放済みとして NULL を返す。
-    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(_, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(_, _, _, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - ピアの抑制の判定を呼び出さないこと。
     EXPECT_CALL(mock_porter, potr_internal_send_queue_defer(_)).Times(0);
     // [Pre-Assert確認_正常系] - エントリを保留しないこと。
@@ -1738,3 +1738,646 @@ TEST(potrSendThreadTest, all_path_send_failure_updates_flow_last_send_only_and_p
         delegate_real_cplat_local_lock_dispose(ctx.peers_mutex);
     }
 }
+
+// UDP のまとめ送りの確認用 fixture。送信キューを模擬し、データグラムの送信を記録する。
+// -Wpadded の警告を避けるため、メンバーは 8 [byte] 境界のものだけとし、ソケット値は静的定数とする。
+class potrSendThreadUdpBatchTest : public Test
+{
+  protected:
+    static constexpr cplat_socket first_sock = (cplat_socket)5;
+    static constexpr cplat_socket second_sock = (cplat_socket)6;
+
+    // [サブ手順 名前=potrSendThreadUdpBatchTest.SetUp]
+    void SetUp() override
+    {
+        memset(&ctx, 0, sizeof(ctx));
+        wire_buf.assign(POTR_PACKET_HEADER_SIZE + 1400U, 0U);
+        sealed_buf.assign(POTR_PACKET_HEADER_SIZE + 1400U + POTR_CRYPTO_TAG_SIZE, 0U);
+        batch_plain_buf.assign(POTR_SEND_BATCH_MAX_PACKETS * 1400U, 0U);
+        batch_wire_buf.assign(POTR_SEND_BATCH_MAX_PACKETS * sealed_buf.size(), 0U);
+        ctx.service.type = POTR_TYPE_UNICAST; // [状態] - 片方向の unicast とする。
+        ctx.role = POTR_ROLE_SENDER;          // [状態] - 送信者とする。
+        ctx.global.max_payload = 1400U;       // [状態] - 最大ペイロード長を設定する。
+        ctx.crypto_buf = sealed_buf.data();
+        ctx.crypto_buf_size = sealed_buf.size();
+        ctx.send_wire_buf = wire_buf.data(); // [状態] - 送信 wire 組立バッファーを設定する。
+        ctx.send_batch_plain_buf = batch_plain_buf.data();
+        ctx.send_batch_wire_buf = batch_wire_buf.data();
+        ctx.send_batch_cap = POTR_SEND_BATCH_MAX_PACKETS; // [状態] - まとめ送りの上限を 16 個とする。
+        ctx.n_path = 1;                                   // [状態] - path 数を 1 とする。
+        ctx.sock[0] = first_sock;                         // [状態] - path 0 のソケットを開いているものとする。
+        cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_UNLIMITED, CPLAT_MEMORY_ORDER_RELAXED);
+        ON_CALL(mock_porter, potr_internal_window_send_push(_, _))
+            .WillByDefault([](potr_internal_window *window, const potr_packet *) {
+                window->next_seq++;
+                return POTR_OK;
+            }); // [状態] - DATA 保持時に送信通番を進める。
+        ON_CALL(mock_cplat, cplat_clock_get_realtime(_))
+            .WillByDefault(Return(CPLAT_ERR_UNKNOWN)); // [状態] - 封緘結果を固定するため、実時刻の取得を失敗させる。
+        ON_CALL(mock_porter, potr_internal_send_queue_pop(&ctx.send_queue, _, _))
+            .WillByDefault([this](potr_internal_send_queue *, potr_internal_payload_elem *out, cplat_atomic_i32 *) {
+                return takeFront(out, POTR_ERR_CANCELED);
+            }); // [状態] - 模擬キューの先頭を取り出し、空なら停止を返す。
+        ON_CALL(mock_porter, potr_internal_send_queue_try_pop(&ctx.send_queue, _))
+            .WillByDefault([this](potr_internal_send_queue *, potr_internal_payload_elem *out) {
+                return takeFront(out, POTR_ERR_EMPTY);
+            }); // [状態] - 模擬キューの先頭を取り出す。
+        ON_CALL(mock_porter, potr_internal_send_queue_peek(&ctx.send_queue, _))
+            .WillByDefault([this](potr_internal_send_queue *, potr_internal_payload_elem *out) {
+                return peekFront(out, POTR_ERR_EMPTY);
+            }); // [状態] - 模擬キューの先頭を参照する。
+        ON_CALL(mock_porter, potr_internal_udp_sendto_multi(_, _, _, _, _))
+            .WillByDefault([this](potr_context *, int path_idx, const cplat_socket_datagram *datagrams, size_t count,
+                                  int *results_out) {
+                std::vector<std::vector<uint8_t>> call;
+                std::vector<int> results;
+                if (!multi_results.empty())
+                {
+                    results = multi_results.front();
+                    multi_results.pop_front();
+                }
+                for (size_t i = 0U; i < count; ++i)
+                {
+                    const uint8_t *bytes = static_cast<const uint8_t *>(datagrams[i].buf);
+                    call.emplace_back(bytes, bytes + datagrams[i].len);
+                    multi_endpoints.push_back(datagrams[i].endpoint);
+                    results_out[i] = (i < results.size()) ? results[i] : POTR_OK;
+                }
+                multi_paths.push_back(path_idx);
+                multi_calls.push_back(call);
+                return POTR_OK;
+            }); // [状態] - 一括の送信を記録し、指定した結果 (既定は全件成功) を返す。
+        ON_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _))
+            .WillByDefault([this](potr_context *, int path_idx, const void *buf, size_t len,
+                                  const cplat_ipv4_endpoint *, cplat_error *) {
+                const uint8_t *bytes = static_cast<const uint8_t *>(buf);
+                single_paths.push_back(path_idx);
+                single_bufs.push_back(buf);
+                single_calls.emplace_back(bytes, bytes + len);
+                return POTR_OK;
+            }); // [状態] - 1 個の送信を記録して成功を返す。
+    }
+    // [サブ手順終了]
+
+    // [サブ手順 名前=potrSendThreadUdpBatchTest.setupN1]
+    // N:1 サーバーとし、ピア 5 とピア 6 を、それぞれの送信先とともに検索できるようにする。
+    void setupN1()
+    {
+        ctx.service.type = POTR_TYPE_UNICAST_BIDIR_N1; // [状態] - N:1 サーバーとする。
+        ctx.role = POTR_ROLE_RECEIVER;
+        ctx.is_multi_peer = 1; // [状態] - N:1 モードとする。
+        delegate_real_cplat_local_lock_create(&ctx.peers_mutex);
+        for (size_t i = 0U; i < 2U; ++i)
+        {
+            peers[i] = {};
+            peers[i].active = 1;
+            peers[i].peer_id = static_cast<potr_peer_id>(5U + i);
+            peers[i].dest_addr[0].address = 0x0100007FU;
+            peers[i].dest_addr[0].port = cplat_hton16(static_cast<uint16_t>(9000U + i));
+            delegate_real_cplat_local_lock_create(&peers[i].send_window_mutex);
+        } // [状態] - ピア 5 とピア 6 を、送信先のポートを分けて用意する。
+        ON_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 5U))
+            .WillByDefault(Return(&peers[0])); // [状態] - ピア 5 を検索できるようにする。
+        ON_CALL(mock_porter, potr_internal_peer_find_by_id(&ctx, 6U))
+            .WillByDefault(Return(&peers[1])); // [状態] - ピア 6 を検索できるようにする。
+        n1_ready = 1;
+    }
+    // [サブ手順終了]
+
+    // [サブ手順 名前=potrSendThreadUdpBatchTest.TearDown]
+    void TearDown() override
+    {
+        if (n1_ready != 0)
+        {
+            for (size_t i = 0U; i < 2U; ++i)
+            {
+                delegate_real_cplat_local_lock_dispose(peers[i].send_window_mutex);
+            }
+            delegate_real_cplat_local_lock_dispose(ctx.peers_mutex);
+        }
+    }
+    // [サブ手順終了]
+
+    // [サブ手順 名前=potrSendThreadUdpBatchTest.addMessage]
+    // len [byte] のメッセージを、送信 API と同じ規則で断片に分けて、peer_id 宛ての登録対象へ加える。
+    void addMessage(size_t len, uint8_t seed, potr_peer_id peer_id = POTR_PEER_NA)
+    {
+        const size_t max_chunk = 1400U - POTR_PAYLOAD_ELEM_HDR_SIZE;
+        size_t offset = 0U;
+
+        messages.emplace_back(len);
+        std::vector<uint8_t> &data = messages.back();
+        for (size_t i = 0U; i < len; ++i)
+        {
+            data[i] = static_cast<uint8_t>(seed + i);
+        }
+        while (offset < len)
+        {
+            potr_internal_payload_elem entry = {};
+            const size_t chunk = (std::min)(max_chunk, len - offset);
+            entry.peer_id = peer_id;
+            entry.flags = (offset + chunk < len) ? POTR_FLAG_MORE_FRAG : 0U;
+            entry.payload_len = static_cast<uint16_t>(chunk);
+            entry.payload = data.data() + offset;
+            entries.push_back(entry);
+            offset += chunk;
+        }
+    }
+    // [サブ手順終了]
+
+    // [サブ手順 名前=potrSendThreadUdpBatchTest.runQueue]
+    // 登録対象を模擬キューへ積み、送信スレッドを開始して、キューが空になって終了するまで待つ。
+    int runQueue()
+    {
+        queue.assign(entries.begin(), entries.end());
+        clearSends();
+        int ret = potr_internal_send_thread_start(&ctx); // [手順] - send を開始する。
+        potr_internal_send_thread_stop(&ctx);            // [手順] - send を停止して終了を待つ。
+        return ret;
+    }
+    // [サブ手順終了]
+
+    void clearSends()
+    {
+        multi_paths.clear();
+        multi_calls.clear();
+        multi_endpoints.clear();
+        single_paths.clear();
+        single_bufs.clear();
+        single_calls.clear();
+    }
+
+    int takeFront(potr_internal_payload_elem *out, int empty_result)
+    {
+        if (queue.empty())
+        {
+            return empty_result;
+        }
+        *out = queue.front();
+        queue.pop_front();
+        return POTR_OK;
+    }
+
+    int peekFront(potr_internal_payload_elem *out, int empty_result)
+    {
+        if (queue.empty())
+        {
+            return empty_result;
+        }
+        *out = queue.front();
+        return POTR_OK;
+    }
+
+    static potr_packet parseDatagram(const std::vector<uint8_t> &bytes)
+    {
+        potr_packet packet = {};
+        EXPECT_EQ(POTR_OK, potr_internal_packet_parse(&packet, bytes.data(), bytes.size()));
+        return packet;
+    }
+
+    NiceMock<Mock_cplat> mock_cplat;
+    NiceMock<Mock_porter> mock_porter;
+    potr_context ctx;
+    potr_internal_peer_context peers[2];
+    size_t n1_ready = 0U;
+    std::vector<uint8_t> wire_buf;
+    std::vector<uint8_t> sealed_buf;
+    std::vector<uint8_t> batch_plain_buf;
+    std::vector<uint8_t> batch_wire_buf;
+    std::deque<std::vector<uint8_t>> messages;
+    std::vector<potr_internal_payload_elem> entries;
+    std::deque<potr_internal_payload_elem> queue;
+    std::deque<std::vector<int>> multi_results;
+    std::vector<int> multi_paths;
+    std::vector<std::vector<std::vector<uint8_t>>> multi_calls;
+    std::vector<const cplat_ipv4_endpoint *> multi_endpoints;
+    std::vector<int> single_paths;
+    std::vector<const void *> single_bufs;
+    std::vector<std::vector<uint8_t>> single_calls;
+};
+
+// 5000 [byte] のメッセージの 4 個の断片を、連番の 4 個のデータグラムとして 1 回で送り、送信ウィンドウに 4 個登録することの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, udp_fragmented_message_sent_in_one_call)
+{
+    // Arrange
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage]
+    addMessage(5000U, 0x10U); // [状態] - 4 個の断片に分かれる 5000 [byte] のメッセージを登録する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - potr_internal_udp_sendto() が呼び出されないこと。
+    EXPECT_CALL(mock_porter, potr_internal_window_send_push(&ctx.send_window, _)).Times(4);
+    // [Pre-Assert確認_正常系] - potr_internal_window_send_push() が 4 回呼び出されること。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(4);
+    // [Pre-Assert確認_正常系] - 取り出した 4 件を成功として完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(1U, multi_calls.size());    // [確認_正常系] - 一括の送信を 1 回呼び出すこと。
+    EXPECT_EQ(0, multi_paths[0]);         // [確認_正常系] - path 0 へ送ること。
+    ASSERT_EQ(4U, multi_calls[0].size()); // [確認_正常系] - 4 個のデータグラムを送ること。
+    for (size_t i = 0U; i < 4U; ++i)
+    {
+        potr_packet packet = parseDatagram(multi_calls[0][i]);
+        EXPECT_EQ(static_cast<uint32_t>(i), packet.seq_num);
+        // [確認_正常系 回数=4] - i 番目のデータグラムの通番が i であること。
+        EXPECT_EQ(&ctx.dest_addr[0], multi_endpoints[i]);
+        // [確認_正常系 回数=4] - i 番目のデータグラムの送信先が path 0 の送信先であること。
+    }
+    EXPECT_EQ(4U, ctx.send_window.next_seq); // [確認_正常系] - 4 個の DATA の通番を消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]
+
+// キューにある複数のメッセージを、メッセージの境界をまたいで 1 回の一括の送信にまとめることの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, udp_messages_across_boundaries_sent_in_one_call)
+{
+    // Arrange
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage 回数=3]
+    addMessage(8U, 0x20U);    // [状態] - 分割されないメッセージを登録する。
+    addMessage(2000U, 0x30U); // [状態] - 2 個の断片に分かれるメッセージを登録する。
+    addMessage(8U, 0x40U);    // [状態] - 分割されないメッセージを登録する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(4);
+    // [Pre-Assert確認_正常系] - 取り出した 4 件を成功として完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);          // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(1U, multi_calls.size());       // [確認_正常系] - 一括の送信を 1 回呼び出すこと。
+    EXPECT_EQ(3U, multi_calls[0].size());    // [確認_正常系] - 外側パケット 3 個を 1 回で送ること。
+    EXPECT_EQ(0U, single_calls.size());      // [確認_正常系] - 1 個の送信を呼び出さないこと。
+    EXPECT_EQ(3U, ctx.send_window.next_seq); // [確認_正常系] - 3 個の DATA の通番を消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]
+
+// 上限 (16 個) を超える分は、次の一括の送信に分かれることの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, udp_packets_over_cap_split_into_next_call)
+{
+    // Arrange
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage]
+    addMessage(20U * (1400U - POTR_PAYLOAD_ELEM_HDR_SIZE), 0x50U); // [状態] - 20 個の断片に分かれるメッセージを登録する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(20);
+    // [Pre-Assert確認_正常系] - 取り出した 20 件を成功として完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);        // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(2U, multi_calls.size());     // [確認_正常系] - 2 回の一括の送信に分かれること。
+    EXPECT_EQ(16U, multi_calls[0].size()); // [確認_正常系] - 1 回目は上限の 16 個であること。
+    EXPECT_EQ(4U, multi_calls[1].size());  // [確認_正常系] - 2 回目は残りの 4 個であること。
+    EXPECT_EQ(16U, parseDatagram(multi_calls[1][0]).seq_num); // [確認_正常系] - 2 回目は通番 16 から続くこと。
+    EXPECT_EQ(20U, ctx.send_window.next_seq); // [確認_正常系] - 20 個の DATA の通番を消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]
+
+// 送出上限までに送出できる数 (3 個) が上限 (16 個) より少ない場合に、一括の送信をその数で区切ることの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, udp_batch_is_limited_by_send_limit_allowance)
+{
+    // Arrange
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage]
+    addMessage(8U * (1400U - POTR_PAYLOAD_ELEM_HDR_SIZE), 0x58U); // [状態] - 8 個の断片に分かれるメッセージを登録する。
+    cplat_atomic_store_u64(&ctx.flow_send_limit, POTR_FLOW_SEND_LIMIT_HELD | 3U, CPLAT_MEMORY_ORDER_RELAXED);
+    // [状態] - 相手から送出上限を受けている状態にし、送信スレッドが抑制の判定を行うようにする。
+    ON_CALL(mock_porter, potr_internal_flow_control_suppressed(&ctx, _, _, _))
+        .WillByDefault(DoAll(SetArgPointee<3>(3U), Return(0)));
+    // [状態] - 抑制せず、送出上限までに送出できる数を 3 個として返す。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(8);
+    // [Pre-Assert確認_正常系] - 取り出した 8 件を成功として完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);          // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(3U, multi_calls.size());       // [確認_正常系] - 3 回の一括の送信に分かれること。
+    EXPECT_EQ(3U, multi_calls[0].size());    // [確認_正常系] - 1 回目は送出できる数の 3 個であること。
+    EXPECT_EQ(3U, multi_calls[1].size());    // [確認_正常系] - 2 回目も 3 個であること。
+    EXPECT_EQ(2U, multi_calls[2].size());    // [確認_正常系] - 3 回目は残りの 2 個であること。
+    EXPECT_EQ(8U, ctx.send_window.next_seq); // [確認_正常系] - 8 個の DATA の通番を消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]
+
+// 暗号化で、各データグラムを個別に封緘し、受信側の開封で元の外側パケットに戻ることの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, udp_encrypted_batch_seals_each_packet)
+{
+    // Arrange
+    std::vector<std::vector<uint8_t>> plain;
+    std::vector<uint8_t> opened(1400U, 0U);
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage]
+    addMessage(5000U, 0x60U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    (void)runQueue(); // [状態] - 暗号化しない場合のデータグラムを、元の外側パケットとして記録する。
+    ASSERT_EQ(1U, multi_calls.size()); // [状態確認] - 暗号化しない場合も 1 回で送ること。
+    for (const std::vector<uint8_t> &d : multi_calls[0])
+    {
+        potr_packet packet = parseDatagram(d);
+        plain.emplace_back(packet.payload, packet.payload + packet.payload_len);
+    }
+    ctx.send_window.next_seq = 0U;
+    cplat_atomic_store_u64(&ctx.tx_session.next_counter, 0U, CPLAT_MEMORY_ORDER_RELAXED);
+    ctx.service.encrypt_enabled = 1; // [状態] - パケットを暗号化する。
+    for (size_t i = 0U; i < sizeof(ctx.service.encrypt_key); ++i)
+    {
+        ctx.service.encrypt_key[i] = static_cast<uint8_t>(0xA0U + i);
+    } // [状態] - 事前共有鍵を設定する。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(1U, multi_calls.size());    // [確認_正常系] - 一括の送信を 1 回呼び出すこと。
+    ASSERT_EQ(4U, multi_calls[0].size()); // [確認_正常系] - 4 個のデータグラムを送ること。
+    ASSERT_EQ(4U, plain.size());          // [確認_正常系] - 元の外側パケットが 4 個あること。
+    for (size_t i = 0U; i < 4U; ++i)
+    {
+        potr_packet packet = parseDatagram(multi_calls[0][i]);
+        EXPECT_EQ(static_cast<uint64_t>(i), packet.tx_counter);
+        // [確認_正常系 回数=4] - i 番目のデータグラムを送出通番 i で個別に封緘すること。
+        EXPECT_EQ(POTR_OK, potr_internal_packet_open(&packet, multi_calls[0][i].data(), ctx.service.encrypt_key,
+                                                     opened.data(), opened.size()));
+        // [確認_正常系 回数=4] - i 番目のデータグラムを事前共有鍵で開封できること。
+        EXPECT_EQ(static_cast<uint32_t>(i), packet.seq_num);
+        // [確認_正常系 回数=4] - 開封した i 番目の外側パケットの通番が i であること。
+        EXPECT_EQ(plain[i], std::vector<uint8_t>(packet.payload, packet.payload + packet.payload_len));
+        // [確認_正常系 回数=4] - 開封した i 番目のペイロードが元の外側パケットと一致すること。
+    }
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]
+
+// 2 経路で、経路ごとに 1 回ずつ、同じ通番の 4 個を送ることの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, udp_two_paths_send_same_packets_per_path)
+{
+    // Arrange
+    ctx.n_path = 2;            // [状態] - path 数を 2 とする。
+    ctx.sock[1] = second_sock; // [状態] - path 1 のソケットを開いているものとする。
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage]
+    addMessage(5000U, 0x70U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(2U, multi_calls.size());    // [確認_正常系] - 経路ごとに 1 回ずつ一括の送信を呼び出すこと。
+    EXPECT_EQ(0, multi_paths[0]);         // [確認_正常系] - 1 回目は path 0 へ送ること。
+    EXPECT_EQ(1, multi_paths[1]);         // [確認_正常系] - 2 回目は path 1 へ送ること。
+    ASSERT_EQ(4U, multi_calls[0].size()); // [確認_正常系] - path 0 へ 4 個を送ること。
+    ASSERT_EQ(4U, multi_calls[1].size()); // [確認_正常系] - path 1 へ 4 個を送ること。
+    for (size_t i = 0U; i < 4U; ++i)
+    {
+        potr_packet first_path = parseDatagram(multi_calls[0][i]);
+        potr_packet second_path = parseDatagram(multi_calls[1][i]);
+        EXPECT_EQ(first_path.seq_num, second_path.seq_num);
+        // [確認_正常系 回数=4] - 両経路の i 番目のデータグラムの通番が一致すること。
+        EXPECT_EQ(&ctx.dest_addr[1], multi_endpoints[4U + i]);
+        // [確認_正常系 回数=4] - path 1 の i 番目のデータグラムの送信先が path 1 の送信先であること。
+    }
+    EXPECT_EQ(4U, ctx.send_window.next_seq); // [確認_正常系] - 4 個の DATA の通番を 1 回だけ消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]
+
+// 一部のデータグラムの送信が失敗しても、4 個すべてを送信ウィンドウに登録し、エントリを成功として完了させることの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, udp_partial_failure_registers_all_packets)
+{
+    // Arrange
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage]
+    addMessage(5000U, 0x78U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
+    multi_results.push_back({POTR_OK, POTR_ERR_IO, POTR_OK, POTR_ERR_TIMEOUT});
+    // [状態] - 一括の送信で、2 個目と 4 個目の送信が失敗したことを返す。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_window_send_push(&ctx.send_window, _)).Times(4);
+    // [Pre-Assert確認_正常系] - potr_internal_window_send_push() が 4 回呼び出されること。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(4);
+    // [Pre-Assert確認_正常系] - 取り出した 4 件を成功として完了させること。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete_failed(_, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 送信失敗として完了させないこと。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);          // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(1U, multi_calls.size());       // [確認_正常系] - 一括の送信を 1 回呼び出すこと。
+    EXPECT_EQ(4U, ctx.send_window.next_seq); // [確認_正常系] - 4 個の DATA の通番を消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]
+
+// 最初の経路の封緘に失敗した場合、何も送らず、送信ウィンドウに登録せず、通番を進めないことの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, udp_seal_failure_on_first_path_sends_nothing)
+{
+    // Arrange
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage]
+    addMessage(5000U, 0x80U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
+    cplat_atomic_store_u64(&ctx.tx_session.next_counter, UINT64_MAX - 2U, CPLAT_MEMORY_ORDER_RELAXED);
+    // [状態] - 3 個目の封緘で送出通番が尽きるようにする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto_multi(_, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_異常系] - 封緘できたパケットも含めて一括の送信を呼び出さないこと。
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto(_, _, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_異常系] - 1 個の送信も呼び出さないこと。
+    EXPECT_CALL(mock_porter, potr_internal_window_send_push(_, _)).Times(0);
+    // [Pre-Assert確認_異常系] - 送信ウィンドウへ登録しないこと。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete_failed(&ctx.send_queue, POTR_ERR_DISCONNECTED)).Times(4);
+    // [Pre-Assert確認_異常系] - 取り出した 4 件を POTR_ERR_DISCONNECTED の送信失敗として完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);          // [確認_正常系] - 開始に成功すること。
+    EXPECT_EQ(0U, ctx.send_window.next_seq); // [確認_異常系] - 送れなかった DATA の通番を消費しないこと。
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]
+
+// unicast_bidir で、送出上限を先頭のパケットにだけ載せ、先頭を送れた場合に限り記録することの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, udp_piggyback_on_first_packet_only)
+{
+    // Arrange
+    int flow_token = 0;
+    std::vector<std::vector<std::vector<uint8_t>>> sent_calls;
+    ctx.service.type = POTR_TYPE_UNICAST_BIDIR; // [状態] - unicast_bidir とする。
+    ctx.flow_control = reinterpret_cast<struct potr_internal_flow_control *>(&flow_token);
+    // [状態] - フロー制御を有効にし、相乗り対象の構成にする。
+    ON_CALL(mock_porter, potr_internal_flow_control_piggyback_limit(&ctx, POTR_PEER_NA, _))
+        .WillByDefault(DoAll(SetArgPointee<2>(123U), Return(1))); // [状態] - 相乗りする送出上限として 123 を返す。
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage]
+    addMessage(5000U, 0x88U); // [状態] - 4 個の断片に分かれるメッセージを登録する。
+    multi_results.push_back({POTR_OK, POTR_OK, POTR_OK, POTR_OK});
+    // [状態] - 1 回目の一括の送信は全件成功とする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_piggyback_limit(&ctx, POTR_PEER_NA, _)).Times(2);
+    // [Pre-Assert確認_正常系] - 相乗りの値を、一括の送信ごとに 1 回ずつ、2 回求めること。
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_piggyback_complete(&ctx, POTR_PEER_NA, 123U, 1)).Times(1);
+    // [Pre-Assert確認_正常系] - 先頭を送れた 1 回目に、相乗りを記録済みにすること。
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_piggyback_complete(&ctx, POTR_PEER_NA, 123U, 0)).Times(1);
+    // [Pre-Assert確認_正常系] - 先頭を送れなかった 2 回目に、相乗りを記録しないこと。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int first_ret = runQueue();
+    sent_calls = multi_calls;
+    multi_results.push_back({POTR_ERR_IO, POTR_OK, POTR_OK, POTR_OK});
+    // [手順] - 2 回目の一括の送信は先頭だけ失敗とする。
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int second_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, first_ret);        // [確認_正常系] - 1 回目の開始に成功すること。
+    EXPECT_EQ(POTR_OK, second_ret);       // [確認_正常系] - 2 回目の開始に成功すること。
+    ASSERT_EQ(1U, sent_calls.size());     // [確認_正常系] - 1 回目に一括の送信を 1 回呼び出すこと。
+    ASSERT_EQ(4U, sent_calls[0].size());  // [確認_正常系] - 1 回目に 4 個のデータグラムを送ること。
+    potr_packet head = parseDatagram(sent_calls[0][0]);
+    EXPECT_EQ((uint16_t)(POTR_FLAG_DATA | POTR_FLAG_SEND_LIMIT), head.flags);
+    // [確認_正常系] - 先頭のデータグラムに DATA フラグと POTR_FLAG_SEND_LIMIT の両方が立つこと。
+    EXPECT_EQ(123U, head.ack_num); // [確認_正常系] - 先頭のデータグラムの ack_num に送出上限 123 が載ること。
+    for (size_t i = 1U; i < 4U; ++i)
+    {
+        potr_packet rest = parseDatagram(sent_calls[0][i]);
+        EXPECT_EQ((uint16_t)POTR_FLAG_DATA, rest.flags);
+        // [確認_正常系 回数=3] - 2 個目以降のデータグラムに POTR_FLAG_SEND_LIMIT が立たないこと。
+    }
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]
+
+// 1 個の外側パケットの場合と、パッキングの待ちがある場合に、従来の 1 個の送信 (crypto_buf への封緘) で送ることの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, udp_single_packet_uses_single_packet_path)
+{
+    // Arrange
+    std::vector<const void *> first_bufs;
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage]
+    addMessage(8U, 0x90U); // [状態] - 分割されないメッセージを 1 件登録する。
+    ON_CALL(mock_porter, potr_internal_send_queue_peek_timed(&ctx.send_queue, _, _))
+        .WillByDefault(Return(POTR_ERR_TIMEOUT)); // [状態] - パッキングの待ちでは、追加のエントリはないものとする。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_udp_sendto_multi(_, _, _, _, _)).Times(0);
+    // [Pre-Assert確認_正常系] - 一括の送信を呼び出さないこと。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int no_wait_ret = runQueue();
+    first_bufs = single_bufs;
+    ctx.service.pack_wait_ms = 10U; // [手順] - パッキングの待ちを 10 [ms] とする。
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int wait_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, no_wait_ret); // [確認_正常系] - 待ちなしの開始に成功すること。
+    EXPECT_EQ(POTR_OK, wait_ret);    // [確認_正常系] - 待ちありの開始に成功すること。
+    ASSERT_EQ(1U, first_bufs.size()); // [確認_正常系] - 待ちなしで 1 個の送信を 1 回呼び出すこと。
+    EXPECT_EQ(static_cast<const void *>(ctx.crypto_buf), first_bufs[0]); // [確認_正常系] - 待ちなしで crypto_buf から送ること。
+    ASSERT_EQ(1U, single_bufs.size()); // [確認_正常系] - 待ちありで 1 個の送信を 1 回呼び出すこと。
+    EXPECT_EQ(static_cast<const void *>(ctx.crypto_buf), single_bufs[0]); // [確認_正常系] - 待ちありで crypto_buf から送ること。
+    EXPECT_EQ(2U, ctx.send_window.next_seq); // [確認_正常系] - 2 回の実行で 2 個の DATA の通番を消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]
+
+// N:1 で、同じピア宛ての断片が 1 回の一括の送信にまとまり、別のピア宛てのエントリで区切られることの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, n1_same_peer_entries_batched_and_other_peer_ends_batch)
+{
+    // Arrange
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.setupN1]
+    setupN1();
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage 回数=3]
+    addMessage(5000U, 0xA0U, 5U); // [状態] - ピア 5 宛てに、4 個の断片に分かれるメッセージを登録する。
+    addMessage(2000U, 0xB0U, 6U); // [状態] - ピア 6 宛てに、2 個の断片に分かれるメッセージを登録する。
+    addMessage(8U, 0xC0U, 5U);    // [状態] - ピア 5 宛てに、分割されないメッセージを登録する。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(7);
+    // [Pre-Assert確認_正常系] - 取り出した 7 件を完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(2U, multi_calls.size());    // [確認_正常系] - 一括の送信を 2 回呼び出すこと。
+    ASSERT_EQ(4U, multi_calls[0].size()); // [確認_正常系] - 1 回目はピア 5 宛ての 4 個であること。
+    ASSERT_EQ(2U, multi_calls[1].size()); // [確認_正常系] - 2 回目はピア 6 宛ての 2 個であること。
+    for (size_t i = 0U; i < 4U; ++i)
+    {
+        EXPECT_EQ(&peers[0].dest_addr[0], multi_endpoints[i]);
+        // [確認_正常系 回数=4] - 1 回目の i 番目のデータグラムの送信先がピア 5 であること。
+    }
+    for (size_t i = 0U; i < 2U; ++i)
+    {
+        EXPECT_EQ(&peers[1].dest_addr[0], multi_endpoints[4U + i]);
+        // [確認_正常系 回数=2] - 2 回目の i 番目のデータグラムの送信先がピア 6 であること。
+    }
+    ASSERT_EQ(1U, single_calls.size()); // [確認_正常系] - ピア 5 宛ての最後の 1 個は、1 個の送信で送ること。
+    EXPECT_EQ(5U, peers[0].send_window.next_seq); // [確認_正常系] - ピア 5 の通番を 5 個消費すること。
+    EXPECT_EQ(2U, peers[1].send_window.next_seq); // [確認_正常系] - ピア 6 の通番を 2 個消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]
+
+// N:1 で、ピアの送出上限までに送出できる数 (3 個) を超えてまとめないことの確認
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.SetUp]
+TEST_F(potrSendThreadUdpBatchTest, n1_batch_is_limited_by_peer_allowance)
+{
+    // Arrange
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.setupN1]
+    setupN1();
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.addMessage]
+    addMessage(8U * (1400U - POTR_PAYLOAD_ELEM_HDR_SIZE), 0xD0U, 5U); // [状態] - ピア 5 宛てに、8 個の断片に分かれるメッセージを登録する。
+    cplat_atomic_store_i32(&ctx.flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELAXED);
+    // [状態] - 抑制の要求または送出上限を保持しているピアが 1 つあるものとする。
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 5U, _, _, _))
+        .WillByDefault(DoAll(SetArgPointee<4>(3U), Return(0)));
+    // [状態] - ピア 5 を抑制せず、送出上限までに送出できる数を 3 個として返す。
+
+    // Pre-Assert
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 5U, _, _, NotNull())).Times(3);
+    // [Pre-Assert確認_正常系] - 一括の送信ごとに、送出できる数の格納先を指定してピア 5 の状態を 3 回判定すること。
+    EXPECT_CALL(mock_porter, potr_internal_send_queue_complete(&ctx.send_queue)).Times(8);
+    // [Pre-Assert確認_正常系] - 取り出した 8 件を完了させること。
+
+    // Act
+    // [サブ手順参照 名前=potrSendThreadUdpBatchTest.runQueue]
+    int actual_ret = runQueue();
+
+    // Assert
+    EXPECT_EQ(POTR_OK, actual_ret);       // [確認_正常系] - 開始に成功すること。
+    ASSERT_EQ(3U, multi_calls.size());    // [確認_正常系] - 3 回の一括の送信に分かれること。
+    EXPECT_EQ(3U, multi_calls[0].size()); // [確認_正常系] - 1 回目は送出できる数の 3 個であること。
+    EXPECT_EQ(3U, multi_calls[1].size()); // [確認_正常系] - 2 回目も 3 個であること。
+    EXPECT_EQ(2U, multi_calls[2].size()); // [確認_正常系] - 3 回目は残りの 2 個であること。
+    EXPECT_EQ(8U, peers[0].send_window.next_seq); // [確認_正常系] - ピア 5 の通番を 8 個消費すること。
+}
+// [サブ手順参照 名前=potrSendThreadUdpBatchTest.TearDown]

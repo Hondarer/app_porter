@@ -809,7 +809,7 @@ TEST_F(potrSendTest, n1_nonblocking_send_returns_full_when_peer_is_suppressed)
     // [状態] - 抑制の要求または送出上限を保持しているピアが 1 つあるものとする。
 
     // Pre-Assert
-    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _)).Times(1).WillOnce(Return(1));
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _, _)).Times(1).WillOnce(Return(1));
     // [Pre-Assert確認_異常系] - potr_internal_flow_control_peer_state() が peer 10 を指定して 1 回呼ばれること。
     // [Pre-Assert手順] - peer 10 が抑制中であるとして 1 を返す。
 
@@ -845,8 +845,8 @@ TEST_F(potrSendTest, n1_nonblocking_peer_all_queues_no_peer_when_one_peer_is_sup
     peers[1].peer_id = 11;
     cplat_atomic_store_i32(&peers[1].health_alive, 1,
                            CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 接続済みの peer 10 と peer 11 を用意する。
-    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(_, 10U, _, _)).WillByDefault(Return(0));
-    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(_, 11U, _, _)).WillByDefault(Return(1));
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(_, 10U, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(_, 11U, _, _, _)).WillByDefault(Return(1));
     // [状態] - peer 10 は抑制中でなく、peer 11 は抑制中とする。
     cplat_atomic_store_i32(&ctx.flow_tracked_peers, 1, CPLAT_MEMORY_ORDER_RELAXED);
     // [状態] - 抑制の要求または送出上限を保持しているピアが 1 つあるものとする。
@@ -895,10 +895,10 @@ TEST_F(potrSendTest, n1_blocking_send_waits_until_peer_suppression_is_released)
     // [状態] - 抑制の要求または送出上限を保持しているピアが 1 つあり、送信スレッドが保留しているエントリはないものとする。
 
     // Pre-Assert
-    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _))
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _, _))
         .Times(4)
         .WillRepeatedly(Invoke(
-            [&](potr_context *, potr_peer_id, uint64_t, int *)
+            [&](potr_context *, potr_peer_id, uint64_t, int *, uint32_t *)
             {
                 int n = ++state_calls;
                 if (n <= 3)
@@ -963,10 +963,10 @@ TEST_F(potrSendTest, n1_blocking_send_waits_until_deferred_entries_are_released)
     // [状態] - peer 10 を検索できるようにする。
 
     // Pre-Assert
-    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _))
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _, _))
         .Times(AtLeast(1))
         .WillRepeatedly(Invoke(
-            [&](potr_context *, potr_peer_id, uint64_t, int *deferred)
+            [&](potr_context *, potr_peer_id, uint64_t, int *deferred, uint32_t *)
             {
                 if (deferred_marked.load() == 0)
                 {
@@ -1053,9 +1053,9 @@ TEST_F(potrSendTest, n1_blocking_send_returns_canceled_when_send_thread_stops_wh
                            CPLAT_MEMORY_ORDER_RELAXED); // [状態] - 接続済みの peer 10 を用意する。
     ON_CALL(mock_porter, potr_internal_peer_find_by_id(_, 10U)).WillByDefault(Return(&peers[0]));
     // [状態] - peer 10 を検索できるようにする。
-    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _))
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _, _))
         .WillByDefault(Invoke(
-            [&](potr_context *, potr_peer_id, uint64_t, int *)
+            [&](potr_context *, potr_peer_id, uint64_t, int *, uint32_t *)
             {
                 ++state_calls;
                 return 1;
@@ -1111,7 +1111,7 @@ TEST_F(potrSendTest, n1_send_skips_peer_state_when_no_peer_is_tracked)
     // [状態] - peer 10 を検索できるようにする。flow_tracked_peers と flow_deferred_total は 0 のままとする。
 
     // Pre-Assert
-    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(_, _, _, _)).Times(0);
+    EXPECT_CALL(mock_porter, potr_internal_flow_control_peer_state(_, _, _, _, _)).Times(0);
     // [Pre-Assert確認_正常系] - potr_internal_flow_control_peer_state() が呼ばれないこと。(登録前と完了後の確認を省くことの確認)
 
     // Act
@@ -1156,7 +1156,7 @@ TEST_F(potrSendTest, n1_single_peer_suppressed_does_not_mark_blocking_or_disconn
     peers[0].peer_id = 10U;
     cplat_atomic_store_i32(&peers[0].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
     ON_CALL(mock_porter, potr_internal_peer_find_by_id(_, 10U)).WillByDefault(Return(&peers[0]));
-    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _)).WillByDefault(Return(1));
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _, _)).WillByDefault(Return(1));
     // [状態] - ピア 10 が止める状態であるとする。
 
     // Pre-Assert
@@ -1193,8 +1193,8 @@ TEST_F(potrSendTest, n1_peer_all_nonblocking_marks_blocking_without_disconnect)
     peers[1].active = 1;
     peers[1].peer_id = 11U;
     cplat_atomic_store_i32(&peers[1].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
-    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _)).WillByDefault(Return(0));
-    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 11U, _, _)).WillByDefault(Return(1));
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 11U, _, _, _)).WillByDefault(Return(1));
     // [状態] - ピア 10 は送信可能、ピア 11 は止める状態とする。
 
     // Pre-Assert
@@ -1236,9 +1236,9 @@ TEST_F(potrSendTest, n1_peer_all_blocking_marks_blocking_and_proceeds_after_peer
     peers[1].active = 1;
     peers[1].peer_id = 11U;
     cplat_atomic_store_i32(&peers[1].health_alive, 1, CPLAT_MEMORY_ORDER_RELAXED);
-    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _)).WillByDefault(Return(0));
-    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 11U, _, _))
-        .WillByDefault([&](potr_context *, potr_peer_id, uint64_t, int *deferred) {
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 10U, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(mock_porter, potr_internal_flow_control_peer_state(&ctx, 11U, _, _, _))
+        .WillByDefault([&](potr_context *, potr_peer_id, uint64_t, int *deferred, uint32_t *) {
             *deferred = 0;
             return peer11_suppressed.load();
         });

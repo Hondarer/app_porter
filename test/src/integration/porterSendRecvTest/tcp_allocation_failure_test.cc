@@ -20,7 +20,7 @@ constexpr size_t message_size = 8192;
 constexpr size_t wire_size = offsetof(potr_packet, payload) + payload_size;
 constexpr size_t compress_size = message_size;
 constexpr size_t crypto_size = wire_size + POTR_CRYPTO_TAG_SIZE;
-/* TCP のまとめ送り用バッファーは、上限 16 個 (POTR_TCP_BATCH_MAX_PACKETS) 分を open 時に確保します。
+/* TCP のまとめ送り用バッファーは、上限 16 個 (POTR_SEND_BATCH_MAX_PACKETS) 分を open 時に確保します。
  * この設定では、平文側 (16 × max_payload) が max_message_size と同じサイズになります。 */
 constexpr size_t batch_packets = 16;
 constexpr size_t batch_plain_size = batch_packets * payload_size;
@@ -336,8 +336,8 @@ INSTANTIATE_TEST_SUITE_P(
     Values(allocation_case{"recv_compress_buf", compress_size, 2}, allocation_case{"recv_crypto_buf", crypto_size, 2},
            allocation_case{"tcp_recv_buf_0", wire_size, 3}, allocation_case{"tcp_recv_buf_1", wire_size, 4},
            allocation_case{"tcp_recv_buf_2", wire_size, 5}, allocation_case{"tcp_recv_buf_3", wire_size, 6},
-           allocation_case{"tcp_batch_plain_buf", batch_plain_size, 3},
-           allocation_case{"tcp_batch_wire_buf", batch_wire_size, 1}),
+           allocation_case{"send_batch_plain_buf", batch_plain_size, 3},
+           allocation_case{"send_batch_wire_buf", batch_wire_size, 1}),
     [](const TestParamInfo<allocation_case> &case_info) { return case_info.param.name; });
 #else
 INSTANTIATE_TEST_SUITE_P(receive_buffers, tcp_allocation_failure_test, Values(allocation_case{"linux_only", 0, 0}));

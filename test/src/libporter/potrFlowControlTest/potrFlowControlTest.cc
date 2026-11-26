@@ -890,7 +890,7 @@ TEST_F(potrFlowControlTest, peer_state_active)
     // [状態] - N:1 モードで、ピア 10 の期限が先、相手が生きている、保留が 3 件の状態にする。
     // Pre-Assert
     // Act
-    int actual_ret = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred); // [手順] - ピア 10 で peer_state を呼び出す。
+    int actual_ret = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred, nullptr); // [手順] - ピア 10 で peer_state を呼び出す。
     // Assert
     EXPECT_EQ(1, actual_ret);  // [確認_正常系] - 1 であること。
     EXPECT_EQ(3, deferred);    // [確認_正常系] - deferred がピアの保留件数 3 であること。
@@ -914,15 +914,15 @@ TEST_F(potrFlowControlTest, peer_state_inactive_cases)
     // Act
     peer10->flow_request_expire_ms = 1000U;
     cplat_atomic_store_i32(&peer10->health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
-    int actual_expired = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred_expired); // [手順] - 期限が now と同じ状態で呼び出す。
+    int actual_expired = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred_expired, nullptr); // [手順] - 期限が now と同じ状態で呼び出す。
     peer10->flow_request_expire_ms = 1500U;
     cplat_atomic_store_i32(&peer10->health_alive, 0, CPLAT_MEMORY_ORDER_RELEASE);
-    int actual_dead = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred_dead); // [手順] - health_alive が 0 の状態で呼び出す。
+    int actual_dead = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred_dead, nullptr); // [手順] - health_alive が 0 の状態で呼び出す。
     cplat_atomic_store_i32(&peer10->health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
     cplat_atomic_store_i32(&ctx.close_requested, 1, CPLAT_MEMORY_ORDER_RELEASE);
-    int actual_closing = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred_closing); // [手順] - close_requested が 1 の状態で呼び出す。
+    int actual_closing = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred_closing, nullptr); // [手順] - close_requested が 1 の状態で呼び出す。
     cplat_atomic_store_i32(&ctx.close_requested, 0, CPLAT_MEMORY_ORDER_RELEASE);
-    int actual_missing = potr_internal_flow_control_peer_state(&ctx, 99U, 1000U, &deferred_missing); // [手順] - 存在しないピア 99 で呼び出す。
+    int actual_missing = potr_internal_flow_control_peer_state(&ctx, 99U, 1000U, &deferred_missing, nullptr); // [手順] - 存在しないピア 99 で呼び出す。
     // Assert
     EXPECT_EQ(0, actual_expired);   // [確認_正常系] - 期限切れで 0 であること。
     EXPECT_EQ(2, deferred_expired); // [確認_正常系] - 期限切れでも deferred がピアの保留件数であること。
@@ -944,7 +944,7 @@ TEST_F(potrFlowControlTest, peer_state_without_multi_peer)
     // [状態] - N:1 モードでない状態にする (deferred は -1 で初期化する)。
     // Pre-Assert
     // Act
-    int actual_ret = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred); // [手順] - peer_state を呼び出す。
+    int actual_ret = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred, nullptr); // [手順] - peer_state を呼び出す。
     // Assert
     EXPECT_EQ(0, actual_ret); // [確認_正常系] - 0 であること。
     EXPECT_EQ(0, deferred);   // [確認_正常系] - deferred が 0 であること。
@@ -1316,16 +1316,16 @@ TEST_F(potrFlowControlTest, peer_state_send_limit)
     // Pre-Assert
     // Act
     peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | 6U;
-    int actual_below = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred); // [手順] - 送出上限 6 で呼び出す。
+    int actual_below = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred, nullptr); // [手順] - 送出上限 6 で呼び出す。
     peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | 5U;
-    int actual_reached = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred); // [手順] - 送出上限 5 で呼び出す。
-    int actual_expired = potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred);
+    int actual_reached = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred, nullptr); // [手順] - 送出上限 5 で呼び出す。
+    int actual_expired = potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred, nullptr);
     // [手順] - 止まった時点 1000 から有効期限 1000 [ms] が経過した時刻 2000 に呼び出す。
     uint64_t limit_after_expiry = peer10->flow_send_limit;
     peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | 5U;
     peer10->flow_limit_received_ms = 2500U;
     cplat_atomic_store_i32(&peer10->health_alive, 0, CPLAT_MEMORY_ORDER_RELEASE);
-    int actual_dead = potr_internal_flow_control_peer_state(&ctx, 10U, 2500U, &deferred);
+    int actual_dead = potr_internal_flow_control_peer_state(&ctx, 10U, 2500U, &deferred, nullptr);
     // [手順] - 新しい送出上限 5 を受けた後、相手を切断と判定した状態で呼び出す。
     // Assert
     EXPECT_EQ(0, actual_below);   // [確認_正常系] - 送出上限の手前では抑制しないこと。
@@ -1334,6 +1334,49 @@ TEST_F(potrFlowControlTest, peer_state_send_limit)
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_NO_PEER, limit_after_expiry); // [確認_正常系] - 有効期限の経過で「相手なし」へ遷移すること。
     EXPECT_EQ(0, actual_dead);    // [確認_正常系] - 相手を切断と判定した場合は抑制しないこと。
     EXPECT_EQ(POTR_FLOW_SEND_LIMIT_NO_PEER, peer10->flow_send_limit); // [確認_正常系] - 切断の判定で「相手なし」へ遷移すること。
+}
+// [サブ手順参照 名前=potrFlowControlTest.TearDown]
+
+// N:1 モードで、ピアの送出上限までに送出できる数を出力し、ロックを取らない判定の記録があっても使わないことの確認
+// [サブ手順参照 名前=potrFlowControlTest.SetUp]
+TEST_F(potrFlowControlTest, peer_state_reports_allowance)
+{
+    // Arrange
+    enable_multi_peer();
+    int deferred = -1;
+    uint32_t allowance_unlimited = 0U;
+    uint32_t allowance_held = 0U;
+    uint32_t allowance_reached = 0U;
+    uint32_t allowance_missing = 0U;
+    peer10->send_window.next_seq = 5U;
+    peer10->flow_limit_received_ms = 900U;
+    peer10->flow_last_data_send_ms = 950U;
+    cplat_atomic_store_i32(&peer10->health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
+    // [状態] - N:1 モードで、ピア 10 の次の通番を 5、最後の DATA の送出を 950 [ms]、相手が生きている状態にする。
+    // Pre-Assert
+    // Act
+    peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNLIMITED;
+    int actual_unlimited = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred, &allowance_unlimited);
+    // [手順] - 送出上限なしで呼び出す。
+    peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | 8U;
+    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred, nullptr);
+    // [手順] - 送出上限 8 で、送出できる数を求めずに呼び出し、ロックを取らない判定の記録を作る。
+    int actual_held = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred, &allowance_held);
+    // [手順] - 送出上限 8 で、送出できる数を求めて呼び出す。
+    peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | 5U;
+    int actual_reached = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred, &allowance_reached);
+    // [手順] - 送出上限 5 (次の通番と同じ) で呼び出す。
+    int actual_missing = potr_internal_flow_control_peer_state(&ctx, 99U, 1000U, &deferred, &allowance_missing);
+    // [手順] - 存在しないピア 99 で呼び出す。
+    // Assert
+    EXPECT_EQ(0, actual_unlimited);              // [確認_正常系] - 送出上限なしでは抑制しないこと。
+    EXPECT_EQ(UINT32_MAX, allowance_unlimited);  // [確認_正常系] - 送出上限なしでは UINT32_MAX を出力すること。
+    EXPECT_EQ(0, actual_held);                   // [確認_正常系] - 送出上限の手前では抑制しないこと。
+    EXPECT_EQ(3U, allowance_held);               // [確認_正常系] - 記録があっても、送出上限 8 と次の通番 5 の差 3 を出力すること。
+    EXPECT_EQ(1, actual_reached);                // [確認_正常系] - 送出上限に達したら抑制すること。
+    EXPECT_EQ(UINT32_MAX, allowance_reached);    // [確認_正常系] - 抑制する場合は UINT32_MAX を出力すること。
+    EXPECT_EQ(0, actual_missing);                // [確認_正常系] - 存在しないピアは抑制しないこと。
+    EXPECT_EQ(UINT32_MAX, allowance_missing);    // [確認_正常系] - 存在しないピアでは UINT32_MAX を出力すること。
 }
 // [サブ手順参照 名前=potrFlowControlTest.TearDown]
 
@@ -1433,14 +1476,14 @@ TEST_F(potrFlowControlTest, peer_tracking_returns_to_zero_after_request_expiry_a
     // [状態] - 時刻 5000 にピア 10 から抑制の要求 (期限 6000、送出上限 300) を受け、次の通番を 300 (送出上限に到達) にする。
     // Pre-Assert
     // Act
-    int actual_requesting = potr_internal_flow_control_peer_state(&ctx, 10U, 5500U, &deferred);
+    int actual_requesting = potr_internal_flow_control_peer_state(&ctx, 10U, 5500U, &deferred, nullptr);
     // [手順] - 要求の期限内の時刻 5500 に判定する (送出上限で止まった時点を 5500 と記録する)。
     int32_t count_requesting = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
-    int actual_limited = potr_internal_flow_control_peer_state(&ctx, 10U, 6000U, &deferred);
+    int actual_limited = potr_internal_flow_control_peer_state(&ctx, 10U, 6000U, &deferred, nullptr);
     // [手順] - 要求の期限 6000 に判定する (送出上限は止まった時点 5500 から有効期限内)。
     uint64_t expire_after_expiry = peer10->flow_request_expire_ms;
     int32_t count_limited = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
-    int actual_discarded = potr_internal_flow_control_peer_state(&ctx, 10U, 6500U, &deferred);
+    int actual_discarded = potr_internal_flow_control_peer_state(&ctx, 10U, 6500U, &deferred, nullptr);
     // [手順] - 止まった時点 5500 から有効期限 1000 [ms] が経過した時刻 6500 に判定する。
     int32_t count_discarded = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
     // Assert
@@ -1470,7 +1513,7 @@ TEST_F(potrFlowControlTest, peer_tracking_returns_to_zero_on_dead_peer)
     // Pre-Assert
     // Act
     int32_t count_before = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
-    int actual_ret = potr_internal_flow_control_peer_state(&ctx, 10U, 5500U, &deferred); // [手順] - 時刻 5500 に判定する。
+    int actual_ret = potr_internal_flow_control_peer_state(&ctx, 10U, 5500U, &deferred, nullptr); // [手順] - 時刻 5500 に判定する。
     int32_t count_after = cplat_atomic_load_i32(&ctx.flow_tracked_peers, CPLAT_MEMORY_ORDER_ACQUIRE);
     // Assert
     EXPECT_EQ(1, count_before); // [確認_正常系] - 切断の判定の前は 1 として数えていること。
@@ -1695,15 +1738,15 @@ TEST_F(potrFlowControlTest, multi_peer_initial_width_query_and_no_peer_recovery)
     // [状態] - N:1 ピア 10 が未通知 (基準 0、初期の幅 4)、次の通番 4、生存中の状態にする。
     // Pre-Assert
     // Act
-    int stalled = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred);
-    int queried = potr_internal_flow_control_peer_state(&ctx, 10U, 1010U, &deferred);
+    int stalled = potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred, nullptr);
+    int queried = potr_internal_flow_control_peer_state(&ctx, 10U, 1010U, &deferred, nullptr);
     int sent_after_10 = sendto_count;
     now_ms = 1800U;
     cplat_local_lock_lock(ctx.peers_mutex);
     potr_internal_flow_control_on_peer_packet(&ctx, peer10, &ping);
     cplat_local_lock_unlock(ctx.peers_mutex);
-    int kept = potr_internal_flow_control_peer_state(&ctx, 10U, 2500U, &deferred);
-    int expired = potr_internal_flow_control_peer_state(&ctx, 10U, 2800U, &deferred);
+    int kept = potr_internal_flow_control_peer_state(&ctx, 10U, 2500U, &deferred, nullptr);
+    int expired = potr_internal_flow_control_peer_state(&ctx, 10U, 2800U, &deferred, nullptr);
     uint64_t state_no_peer = peer10->flow_send_limit;
     int sent_before_recovery = sendto_count;
     peer10->send_window.next_seq = 20U;
@@ -1783,9 +1826,9 @@ TEST_F(potrFlowControlTest, idle_send_reduces_allowance_on_udp_and_not_tcp)
     peer10->flow_last_data_send_ms = 1000U;
     peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_HELD | 100U;
     cplat_atomic_store_i32(&peer10->health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
-    EXPECT_EQ(0, potr_internal_flow_control_peer_state(&ctx, 10U, 1999U, &deferred));
+    EXPECT_EQ(0, potr_internal_flow_control_peer_state(&ctx, 10U, 1999U, &deferred, nullptr));
     uint64_t peer_before = peer10->flow_send_limit;
-    EXPECT_EQ(0, potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred));
+    EXPECT_EQ(0, potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred, nullptr));
     uint64_t peer_after = peer10->flow_send_limit;
     // [手順] - N:1 ピア 10 で有効期限の 1 [ms] 前とちょうどで判定する。
     // Assert
@@ -2263,31 +2306,31 @@ TEST_F(potrFlowControlTest, udp_unnotified_no_peer_recovers_and_does_not_oscilla
     peer10->flow_send_limit = POTR_FLOW_SEND_LIMIT_UNNOTIFIED;
     cplat_atomic_store_i32(&peer10->health_alive, 1, CPLAT_MEMORY_ORDER_RELEASE);
     now_ms = 1000U;
-    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred);
+    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 1000U, &deferred, nullptr);
     now_ms = 1999U;
     cplat_local_lock_lock(ctx.peers_mutex);
     potr_internal_flow_control_on_peer_packet(&ctx, peer10, &ping_no_limit);
     cplat_local_lock_unlock(ctx.peers_mutex);
-    int n1_expired = potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred);
+    int n1_expired = potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred, nullptr);
     now_ms = 2001U;
     cplat_local_lock_lock(ctx.peers_mutex);
     potr_internal_flow_control_on_peer_packet(&ctx, peer10, &ping_no_limit);
     cplat_local_lock_unlock(ctx.peers_mutex);
     uint64_t n1_state_after_return = peer10->flow_send_limit;
     uint64_t n1_stalled_after_return = peer10->flow_limit_stalled_ms;
-    int n1_reopened = potr_internal_flow_control_peer_state(&ctx, 10U, 2001U, &deferred);
+    int n1_reopened = potr_internal_flow_control_peer_state(&ctx, 10U, 2001U, &deferred, nullptr);
     peer10->send_window.next_seq = 8U;
-    int n1_restopped = potr_internal_flow_control_peer_state(&ctx, 10U, 2010U, &deferred);
+    int n1_restopped = potr_internal_flow_control_peer_state(&ctx, 10U, 2010U, &deferred, nullptr);
     now_ms = 2015U;
     cplat_local_lock_lock(ctx.peers_mutex);
     potr_internal_flow_control_on_peer_packet(&ctx, peer10, &ping_no_limit);
     cplat_local_lock_unlock(ctx.peers_mutex);
-    int n1_no_oscillation = potr_internal_flow_control_peer_state(&ctx, 10U, 3009U, &deferred);
+    int n1_no_oscillation = potr_internal_flow_control_peer_state(&ctx, 10U, 3009U, &deferred, nullptr);
     now_ms = 3009U;
     cplat_local_lock_lock(ctx.peers_mutex);
     potr_internal_flow_control_on_packet(&ctx, peer10, &notified);
     cplat_local_lock_unlock(ctx.peers_mutex);
-    int n1_recovered = potr_internal_flow_control_peer_state(&ctx, 10U, 3009U, &deferred);
+    int n1_recovered = potr_internal_flow_control_peer_state(&ctx, 10U, 3009U, &deferred, nullptr);
     // [手順] - 期限切れ→上限なしパケットで未通知 (基準 4) へ復帰→追加 DATA 4 個→再停止後に新期限直前まで振動しないこと→通知で回復を確認する。
     // Assert
     EXPECT_EQ(0, bidir_expired); // [確認_正常系] - unicast_bidir が初期幅の停止期限で相手なしへ移ること。
@@ -2623,7 +2666,7 @@ TEST_F(potrFlowControlTest, ready_peer_cache_avoids_lock_until_deadline)
     EXPECT_CALL(mock_cplat, cplat_local_lock_lock(ctx.peers_mutex)).Times(0);
     // [Pre-Assert確認_正常系] - 有効な記録があればピア表のロックを取らないこと。
     // Act
-    int blocked = potr_internal_flow_control_peer_state(&ctx, 10U, 1999U, &deferred);
+    int blocked = potr_internal_flow_control_peer_state(&ctx, 10U, 1999U, &deferred, nullptr);
     // [手順] - 有効期限の直前に送出可否を調べる。
     // Assert
     EXPECT_EQ(0, blocked); // [確認_正常系] - 上限まで余裕があるピアを止めないこと。
@@ -2649,19 +2692,19 @@ TEST_F(potrFlowControlTest, ready_peer_cache_invalidates_on_limit_defer_disconne
     // [Pre-Assert確認_正常系] - 衝突、上限到達、保留、期限切れの 4 回でロックを取ること。
     // Act
     potr_internal_flow_control_peer_sync(&ctx, peer10);
-    int collided = potr_internal_flow_control_peer_state(&ctx, 10U + POTR_FLOW_PEER_READY_CACHE_SIZE, 1001U, &deferred);
+    int collided = potr_internal_flow_control_peer_state(&ctx, 10U + POTR_FLOW_PEER_READY_CACHE_SIZE, 1001U, &deferred, nullptr);
     peer10->send_window.next_seq = 300U;
     potr_internal_flow_control_peer_sync(&ctx, peer10);
-    int at_limit = potr_internal_flow_control_peer_state(&ctx, 10U, 1001U, &deferred);
+    int at_limit = potr_internal_flow_control_peer_state(&ctx, 10U, 1001U, &deferred, nullptr);
     peer10->send_window.next_seq = 299U;
     peer10->flow_limit_stalled_ms = 0U;
     peer10->flow_deferred_entries = 1;
     potr_internal_flow_control_peer_sync(&ctx, peer10);
-    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 1001U, &deferred);
+    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 1001U, &deferred, nullptr);
     int held = deferred;
     peer10->flow_deferred_entries = 0;
     potr_internal_flow_control_peer_sync(&ctx, peer10);
-    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred);
+    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred, nullptr);
     potr_internal_flow_control_peer_untrack(&ctx, peer10);
     // [手順] - 別のピア識別子、上限到達、保留、期限到達、切断の順に記録を確認する。
     // Assert
@@ -2708,9 +2751,9 @@ TEST_F(potrFlowControlTest, never_sent_data_clamps_from_first_limit_without_exte
     enable_multi_peer();
     potr_internal_flow_control_peer_sync(&ctx, peer10);
     uint64_t ready = cplat_atomic_load_u64(&ctx.flow_peer_ready[10U], CPLAT_MEMORY_ORDER_ACQUIRE);
-    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 1999U, &deferred);
+    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 1999U, &deferred, nullptr);
     uint64_t peer_before = peer10->flow_send_limit;
-    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred);
+    (void)potr_internal_flow_control_peer_state(&ctx, 10U, 2000U, &deferred, nullptr);
     // [手順] - 最初の通知から 900 [ms] 後に再通知し、999 [ms] と 1000 [ms] で両経路を判定する。
     // Assert
     EXPECT_EQ(1000U, cplat_atomic_load_u64(&ctx.flow_first_limit_ms, CPLAT_MEMORY_ORDER_ACQUIRE));

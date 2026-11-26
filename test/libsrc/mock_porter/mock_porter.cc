@@ -118,6 +118,14 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_tcp_conn_request_close_all(_)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_tcp_conn_release(_, _, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_udp_sendto(_, _, _, _, _, _)).WillByDefault(Return(POTR_OK));
+    ON_CALL(*this, potr_internal_udp_sendto_multi(_, _, _, _, _))
+        .WillByDefault([](potr_context *, int, const cplat_socket_datagram *, size_t count, int *results_out) {
+            for (size_t i = 0U; i < count; i++)
+            {
+                results_out[i] = POTR_OK;
+            }
+            return POTR_OK;
+        });
     ON_CALL(*this, potr_internal_tcp_send_all_locked(_, _, _, _, _, _)).WillByDefault(Return(POTR_OK));
     ON_CALL(*this, potr_internal_tcp_send_all(_, _, _, _, _, _)).WillByDefault(Return(POTR_OK));
     ON_CALL(*this, potr_internal_tcp_check_writable(_, _)).WillByDefault(Return(POTR_OK));
@@ -174,7 +182,14 @@ Mock_porter::Mock_porter()
     ON_CALL(*this, potr_internal_flow_control_on_peer_packet(_, _, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_flow_control_piggyback_limit(_, _, _)).WillByDefault(Return(0));
     ON_CALL(*this, potr_internal_flow_control_suppressed(_, _, _, _)).WillByDefault(Return(0));
-    ON_CALL(*this, potr_internal_flow_control_peer_state(_, _, _, _)).WillByDefault(Return(0));
+    ON_CALL(*this, potr_internal_flow_control_peer_state(_, _, _, _, _))
+        .WillByDefault([](potr_context *, potr_peer_id, uint64_t, int *, uint32_t *allowance) {
+            if (allowance != nullptr)
+            {
+                *allowance = UINT32_MAX;
+            }
+            return 0;
+        });
     ON_CALL(*this, potr_internal_flow_control_peer_mark_blocking(_, _, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_flow_control_note_queue_full(_, _)).WillByDefault(Return());
     ON_CALL(*this, potr_internal_flow_control_collect_slow_peers_locked(_, _, _, _, _, _)).WillByDefault(Return(0U));

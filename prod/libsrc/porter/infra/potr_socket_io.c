@@ -35,6 +35,11 @@ static_assert(POTR_UDP_SEND_TIMEOUT_MS > 0U && POTR_UDP_SEND_TIMEOUT_MS <= POTR_
 static_assert(POTR_TCP_SEND_WAIT_SLICE_MS > 0U && POTR_TCP_SEND_WAIT_SLICE_MS <= POTR_WAIT_MS_MAX,
               "porter: POTR_TCP_SEND_WAIT_SLICE_MS out of range");
 
+static int udp_sendto_locked(potr_context *ctx, cplat_socket_watch *watch, const void *buf, size_t len,
+                             const cplat_ipv4_endpoint *endpoint, cplat_error *detail_out);
+static int udp_wait_send_ready(potr_context *ctx, cplat_socket_watch *watch, int *has_deadline,
+                               uint64_t *deadline_ms, cplat_error *detail);
+
 /* Doxygen コメントは、ヘッダーに記載 */
 
 void potr_internal_tcp_close_deadline_publish(potr_context *ctx)
@@ -249,10 +254,7 @@ int potr_internal_udp_sendto(potr_context *ctx, int path_idx, const void *buf, s
                              const cplat_ipv4_endpoint *endpoint, cplat_error *detail_out)
 {
     cplat_socket_watch *watch;
-    cplat_error detail;
-    int has_deadline = 0;
-    uint64_t deadline_ms = 0U;
-    int result = POTR_OK;
+    int result;
 
     if (detail_out != NULL)
     {
@@ -273,91 +275,122 @@ int potr_internal_udp_sendto(potr_context *ctx, int path_idx, const void *buf, s
     if (watch == NULL || ctx->sock[path_idx] == CPLAT_INVALID_SOCKET)
     {
         result = POTR_ERR_IO;
-        goto done;
     }
-
-    for (;;)
+    else
     {
-        size_t sent = 0U;
-        int send_rc;
-
-        cplat_error_clear(&detail);
-        send_rc = cplat_socket_watch_sendto(watch, buf, len, endpoint, &sent, &detail);
-        if (send_rc == CPLAT_OK)
-        {
-            if (sent != len)
-            {
-                /* UDP は全量が送信された場合だけ成功とし、短い送信は残りだけを別データグラムとして送らない。 */
-                result = POTR_ERR_IO;
-            }
-            else
-            {
-                result = POTR_OK;
-            }
-            break;
-        }
-
-        if (send_rc == CPLAT_ERR_WOULD_BLOCK)
-        {
-            uint64_t now_ms;
-            uint64_t remaining;
-            int wait_rc;
-
-            if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
-            {
-                result = POTR_ERR_IO;
-                break;
-            }
-
-            if (!has_deadline)
-            {
-                deadline_ms = now_ms + (uint64_t)POTR_UDP_SEND_TIMEOUT_MS;
-                has_deadline = 1;
-            }
-
-            if (now_ms >= deadline_ms)
-            {
-                result = POTR_ERR_TIMEOUT;
-                break;
-            }
-
-            remaining = deadline_ms - now_ms;
-            if (remaining > (uint64_t)POTR_WAIT_MS_MAX)
-            {
-                remaining = (uint64_t)POTR_WAIT_MS_MAX;
-            }
-
-            cplat_error_clear(&detail);
-            wait_rc = cplat_socket_watch_wait_writable(watch, ctx->recv_cancel, (int)remaining, &detail);
-            if (wait_rc == CPLAT_OK)
-            {
-                /* 待機成功は送信成功を意味しないため、必ず再送信して結果を判定する。 */
-                continue;
-            }
-
-            if (detail_out != NULL && cplat_error_is_set(&detail))
-            {
-                *detail_out = detail;
-            }
-            result = potr_internal_result_from_socket_result(wait_rc, &detail);
-            break;
-        }
-
-        if (detail_out != NULL && cplat_error_is_set(&detail))
-        {
-            *detail_out = detail;
-        }
-        result = potr_internal_result_from_socket_result(send_rc, &detail);
-        break;
+        result = udp_sendto_locked(ctx, watch, buf, len, endpoint, detail_out);
     }
 
-done:
     if (ctx->udp_send_mutex[path_idx] != NULL)
     {
         cplat_local_lock_unlock(ctx->udp_send_mutex[path_idx]);
     }
 
     return result;
+}
+
+/* Doxygen コメントは、ヘッダーに記載 */
+
+int potr_internal_udp_sendto_multi(potr_context *ctx, int path_idx, const cplat_socket_datagram *datagrams,
+                                   size_t count, int *results_out)
+{
+    cplat_socket_watch *watch;
+    int has_deadline = 0;
+    uint64_t deadline_ms = 0U;
+    size_t next = 0U;
+    size_t i;
+
+    if (ctx == NULL || datagrams == NULL || results_out == NULL || path_idx < 0 || path_idx >= (int)POTR_MAX_PATH ||
+        count == 0U || count > CPLAT_SOCKET_SENDTO_MULTI_MAX)
+    {
+        return POTR_ERR_INVALID_ARGUMENT;
+    }
+
+    for (i = 0U; i < count; i++)
+    {
+        if (datagrams[i].buf == NULL || datagrams[i].endpoint == NULL)
+        {
+            return POTR_ERR_INVALID_ARGUMENT;
+        }
+    }
+
+    if (ctx->udp_send_mutex[path_idx] != NULL)
+    {
+        cplat_local_lock_lock(ctx->udp_send_mutex[path_idx]);
+    }
+
+    watch = ctx->udp_watch[path_idx];
+    if (watch == NULL || ctx->sock[path_idx] == CPLAT_INVALID_SOCKET)
+    {
+        for (i = 0U; i < count; i++)
+        {
+            results_out[i] = POTR_ERR_IO;
+        }
+        next = count;
+    }
+
+    /* 一括の送信は、送信可能を待って送り直す間も、まだ送っていない先頭から送る。 */
+    while (next < count)
+    {
+        cplat_error detail;
+        size_t sent = 0U;
+        int send_rc;
+
+        cplat_error_clear(&detail);
+        send_rc = cplat_socket_watch_sendto_multi(watch, datagrams + next, count - next, &sent, &detail);
+        if (send_rc == CPLAT_OK)
+        {
+            if (sent > count - next)
+            {
+                sent = count - next;
+            }
+            for (i = 0U; i < sent; i++)
+            {
+                results_out[next + i] = POTR_OK;
+            }
+            next += sent;
+            break;
+        }
+
+        if (send_rc == CPLAT_ERR_WOULD_BLOCK)
+        {
+            int wait_result = udp_wait_send_ready(ctx, watch, &has_deadline, &deadline_ms, &detail);
+
+            if (wait_result == POTR_OK)
+            {
+                /* 待機成功は送信成功を意味しないため、必ず送り直して結果を判定する。 */
+                continue;
+            }
+
+            /* 期限内に送信可能にならなかった場合と解除された場合は、残りのデータグラムも同じ結果とする。 */
+            for (; next < count; next++)
+            {
+                results_out[next] = wait_result;
+            }
+            break;
+        }
+
+        results_out[next] = potr_internal_result_from_socket_result(send_rc, &detail);
+        next++;
+        break;
+    }
+
+    /*
+     * 一括の送信で送れなかった残りは、先頭から順に 1 個ずつの送信で 1 回ずつ試みる。
+     * 一括の送信は途中で失敗した理由を返さないため、各データグラムの結果を個別の送信で確かめる。
+     */
+    for (; next < count; next++)
+    {
+        results_out[next] =
+            udp_sendto_locked(ctx, watch, datagrams[next].buf, datagrams[next].len, datagrams[next].endpoint, NULL);
+    }
+
+    if (ctx->udp_send_mutex[path_idx] != NULL)
+    {
+        cplat_local_lock_unlock(ctx->udp_send_mutex[path_idx]);
+    }
+
+    return POTR_OK;
 }
 
 /* Doxygen コメントは、ヘッダーに記載 */
@@ -680,4 +713,108 @@ int potr_internal_tcp_frame_reader_step(potr_internal_tcp_frame_reader *reader, 
     }
 
     return POTR_OK;
+}
+
+/*
+ * 登録済み UDP ソケットへ、1 つのデータグラムを全量送信する。呼び出し元は udp_send_mutex[path_idx] を保持する。
+ * CPLAT_ERR_WOULD_BLOCK の場合は、最初の試行から POTR_UDP_SEND_TIMEOUT_MS の絶対期限内で待機と再試行を繰り返す。
+ * 結果は potr_internal_udp_sendto() と同じである。
+ */
+static int udp_sendto_locked(potr_context *ctx, cplat_socket_watch *watch, const void *buf, size_t len,
+                             const cplat_ipv4_endpoint *endpoint, cplat_error *detail_out)
+{
+    cplat_error detail;
+    int has_deadline = 0;
+    uint64_t deadline_ms = 0U;
+    int result;
+
+    for (;;)
+    {
+        size_t sent = 0U;
+        int send_rc;
+
+        cplat_error_clear(&detail);
+        send_rc = cplat_socket_watch_sendto(watch, buf, len, endpoint, &sent, &detail);
+        if (send_rc == CPLAT_OK)
+        {
+            if (sent != len)
+            {
+                /* UDP は全量が送信された場合だけ成功とし、短い送信は残りだけを別データグラムとして送らない。 */
+                result = POTR_ERR_IO;
+            }
+            else
+            {
+                result = POTR_OK;
+            }
+            break;
+        }
+
+        if (send_rc == CPLAT_ERR_WOULD_BLOCK)
+        {
+            result = udp_wait_send_ready(ctx, watch, &has_deadline, &deadline_ms, &detail);
+            if (result == POTR_OK)
+            {
+                /* 待機成功は送信成功を意味しないため、必ず再送信して結果を判定する。 */
+                continue;
+            }
+        }
+        else
+        {
+            result = potr_internal_result_from_socket_result(send_rc, &detail);
+        }
+
+        if (detail_out != NULL && cplat_error_is_set(&detail))
+        {
+            *detail_out = detail;
+        }
+        break;
+    }
+
+    return result;
+}
+
+/*
+ * 送信の空きがなかった UDP ソケットで、絶対期限までの残り時間だけ送信可能を待つ。
+ * 最初の呼び出しで、現在時刻から POTR_UDP_SEND_TIMEOUT_MS 後を *deadline_ms に設定し、以後は延長しない。
+ * 送り直してよい場合は POTR_OK を返す。期限の超過は POTR_ERR_TIMEOUT、単調時刻の取得の失敗は POTR_ERR_IO、
+ * 待機の失敗と解除は待機の結果を変換した結果コードを返す。detail には待機の失敗の詳細を格納する。
+ */
+static int udp_wait_send_ready(potr_context *ctx, cplat_socket_watch *watch, int *has_deadline,
+                               uint64_t *deadline_ms, cplat_error *detail)
+{
+    uint64_t now_ms;
+    uint64_t remaining;
+    int wait_rc;
+
+    cplat_error_clear(detail);
+
+    if (cplat_clock_get_monotonic_ms(&now_ms) != CPLAT_OK)
+    {
+        return POTR_ERR_IO;
+    }
+
+    if (*has_deadline == 0)
+    {
+        *deadline_ms = now_ms + (uint64_t)POTR_UDP_SEND_TIMEOUT_MS;
+        *has_deadline = 1;
+    }
+
+    if (now_ms >= *deadline_ms)
+    {
+        return POTR_ERR_TIMEOUT;
+    }
+
+    remaining = *deadline_ms - now_ms;
+    if (remaining > (uint64_t)POTR_WAIT_MS_MAX)
+    {
+        remaining = (uint64_t)POTR_WAIT_MS_MAX;
+    }
+
+    wait_rc = cplat_socket_watch_wait_writable(watch, ctx->recv_cancel, (int)remaining, detail);
+    if (wait_rc == CPLAT_OK)
+    {
+        return POTR_OK;
+    }
+
+    return potr_internal_result_from_socket_result(wait_rc, detail);
 }
