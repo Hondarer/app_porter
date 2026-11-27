@@ -1,7 +1,7 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 残課題一覧 (backlog)
-最終更新日時: 2026-11-27 05:11:18 JST
+最終更新日時: 2026-11-27 12:23:27 JST
 最終更新エージェント: agy (gemini-4-neon-medium、主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
 稼働 OS: Linux (WSL)
 上流文書: `261123-porter-remaining-backlog-overview.md` (全体管理文書)、`261123-porter-remaining-backlog-design.md` (最終仕様)、`261123-porter-remaining-backlog-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-lightadr.md` (簡易 ADR)。転記元の残課題一覧は、`../past/261115-porter-tcp-bidir-n1-backlog.md`、`../past/261115-porter-multicast-src-contract-backlog.md`、`../past/261117-porter-transport-performance-redo-backlog.md`、`../past/261121-porter-flow-control-refine-backlog.md` です。いずれも削除されている場合があります。
@@ -36,7 +36,7 @@ Table: 残課題一覧
 | BL-007 | Windows のビルドで、1 つのディレクトリのソースが多いと、コンパイルのコマンド行が長さの上限を超える | 過去 backlog からの転記 (`../past/261121-porter-flow-control-refine-backlog.md` の BL-003) | 中 | 次フェーズへ転記 |
 | BL-008 | Windows で、N 対 1 の送出上限を有効にすると、処理件数が約 10% 下がる | 過去 backlog からの転記 (`../past/261121-porter-flow-control-refine-backlog.md` の BL-005) | 低 | 次フェーズへ転記 |
 | BL-009 | 開発環境に、アドレス サニタイザーとスレッド サニタイザーの実行時ライブラリ (libasan、libtsan) が導入されていない | 作業中の気付き | 低 | 完了 |
-| BL-010 | unicast の待ち合わせを指定した 5,000 byte の送信が、tcp の約 0.48 倍にとどまる (複数のパケットを 1 回の呼び出しで送る方法が未実装) | 検討時見送り | 中 | 対応中 |
+| BL-010 | unicast の待ち合わせを指定した 5,000 byte の送信が、tcp の約 0.48 倍にとどまる (複数のパケットを 1 回の呼び出しで送る方法が未実装) | 検討時見送り | 中 | 対策済み |
 
 ## BL-001 TCP 双方向 N:1 通信の実施要否判断と設計・実装
 

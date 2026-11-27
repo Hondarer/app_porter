@@ -1,8 +1,8 @@
 <!--
 生成元: agree-before-implement スキル
 文書種別: 全体管理文書 (overview)
-最終更新日時: 2026-11-27 05:11:18 JST
-最終更新エージェント: agy (gemini-4-neon-medium、主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
+最終更新日時: 2026-11-27 12:23:27 JST
+最終更新エージェント: claude code (主セッション session_01KJc53RTnwmpzd7VMLf1qR9)
 稼働 OS: Linux (WSL)
 上流文書: 対策元の残課題一覧は、`261123-porter-remaining-backlog-backlog.md` です。削除されている場合があります。
 下流文書: `261123-porter-remaining-backlog-phase2-discussion.md` (検討用 Markdown)、`261123-porter-remaining-backlog-phase2-lightadr.md` (簡易 ADR)、`261123-porter-remaining-backlog-phase2-design.md` (最終仕様)、`261123-porter-remaining-backlog-phase2-backlog.md` (残課題一覧)。未作成の場合や、削除されている場合があります。
@@ -21,7 +21,7 @@
 
 検討用 Markdown の版: 2
 
-状態: 作業の実施中
+状態: 成果物の承認の受付中 (第 3 ゲート)
 
 ## 作業 WBS と進捗管理
 
@@ -45,7 +45,7 @@
     - ✅ 3.1. `261123-porter-remaining-backlog-phase2-design.md` の作成 (対策元の残課題一覧へ確定した方針を反映) (作成済み。対策元の残課題一覧の BL-010 を「対応中」へ更新)
     - ✅ 3.2. 最終仕様における受入条件と整合性の確認 (受入条件 1 から 8 と、簡易 ADR の LADR-001 から LADR-010 の一致を確認)
     - ✅ 3.3. 対話セッションにおける最終仕様の承認の受付 (第 2 ゲート) (ユーザーの自走の指示 (2026-11-25 21:48 頃) により承認済みとして扱う。簡易 ADR の LADR-010)
-- 🔄 4. 承認された最終仕様に従った作業の実施
+- ✅ 4. 承認された最終仕様に従った作業の実施
     - ✅ 4.1. `framework/testfw` の `sendmmsg()` の mock の追加 (`include/sys/mock_socket.h`、`libsrc/mock_libc/mock_sys_socket.cc`) とビルド
     - ✅ 4.2. `app/cplat` の `cplat_socket_watch_sendto_multi()` の追加 (`prod/include/cplat/net/socket.h`、`prod/libsrc/cplat/net/socket_watch_linux.c`、`socket_watch_windows.c` の Windows の初版)
     - ✅ 4.3. `app/cplat` の `mock_cplat`、`exportTest`、単体テスト (`test/src/libcplatTest/net/socketTest/socketTest.cc`) の追加と、Linux のビルドとテスト
@@ -58,12 +58,12 @@
     - ✅ 4.10. Linux の `make test` (`app/cplat`、`app/porter`)、`.warn` の確認、`text_style_jp.py`
     - ✅ 4.11. Windows のセッションでのビルドとテストと修正 (主エージェントが差分を仲介。依頼 16 と 17 で cplat と porter のビルド、テスト、`mock` の `/INCLUDE` リンクが成功。MSVC の警告と内容のある `.warn` はなく、MSVC 向けの修正は不要)
     - ✅ 4.12. Linux と Windows の性能の測定と記録 (受入条件 1 から 4。Linux と Windows の両方を測定済み。受入条件 1 から 3 は適合、受入条件 4 (Windows) は主エージェント判断で条件付きで適合)
-    - 🔄 4.13. サブモジュールの順の main へのコミットと push、親リポジトリの参照の更新、CI の確認 (Git の操作は主エージェント。testfw `75cd774`、cplat `8252c026`、porter `063d8cc`、親リポジトリ `dbc28819` を main へ push 済み。CI `45888369745` の結果待ち)
-    - ⚠️ 4.14. 受入条件への適合確認と、対策元の残課題一覧の BL-010 の更新 (受入条件 1 から 6 は確認済み。受入条件 7 と 8 は CI `45888369745` の結果待ち。対策元の BL-010 は「対応中」のまま実装と検証の結果の要約を追記済み。CI の結果確認後に再判定して完了へ更新する) ← **CURRENT**
+    - ✅ 4.13. サブモジュールの順の main へのコミットと push、親リポジトリの参照の更新、CI の確認 (Git の操作は主エージェント。testfw `75cd774`、cplat `8252c026`、porter `063d8cc`、親リポジトリ `dbc28819` を main へ push 済み。CI `45888369745` は全ジョブが成功 (ビルドとテストは Linux の ol8、ol9、ol10 と Windows で成功。警告は struct-meta の生成パーサーの C4127 だけで、この案件の変更によるものではなく、別の修正 (親リポジトリの 9376a220) で対処中))
+    - ✅ 4.14. 受入条件への適合確認と、対策元の残課題一覧の BL-010 の更新 (受入条件 1 から 3、5 から 8 は適合。受入条件 4 は主エージェントの判断で条件付きで適合 (BL-015)。対策元の BL-010 は「対策済み」へ更新)
     - ✅ 4.15. 簡易 ADR の最終確認 (LADR-001 から LADR-010 と実装結果の一致を確認。実装中に決めた事項を経緯へ追記し、状態の記載を更新済み)
-    - ⚠️ 4.16. 残課題一覧 (`261123-porter-remaining-backlog-phase2-backlog.md`) の再構築と整理 (この案件の残課題一覧は BL-014 から BL-016 を含めて再構築し「整理済み」へ更新済み。対策元の残課題一覧の BL-010 の最終状態は CI `45888369745` の結果待ちのため未確定。CI の結果確認後に確定して完了へ更新する)
-- ⏸️ 5. 成果物の承認の受付 (第 3 ゲート)
-    - ⏸️ 5.1. 成果物・検証結果・残課題の提示
+    - ✅ 4.16. 残課題一覧 (`261123-porter-remaining-backlog-phase2-backlog.md`) の再構築と整理 (この案件の残課題一覧は BL-014 から BL-016 を含めて「整理済み」。対策元の BL-010 は「対策済み」で確定)
+- 🔄 5. 成果物の承認の受付 (第 3 ゲート)
+    - 🔄 5.1. 成果物・検証結果・残課題の提示 ← **CURRENT**
     - ⏸️ 5.2. 対話セッションにおける成果物の承認の受付
 
 ## 対象と参照資料
@@ -342,8 +342,8 @@ Table: 受入条件への適合確認
 | 4 | Windows で `p1` の 6 条件、`p2`、`p6`、`p7` が変動の幅を超えて下がらない。`tcp` との比を記録する | 4.12 (Windows の性能の測定、依頼 18): 9 条件中 8 条件は適合 (`p1` 1,000 byte `normal` +35.2 [%]、5,000 byte `normal` +35.5 [%]、5,000 byte `blocking` +20.8 [%] は幅を超えて向上、ほか 5 条件は幅の範囲内)。`tcp` との比は全 6 条件を記録済み。`p1` 1,000 byte `blocking` のみ 3 回測定で -1.8 [%] と幅が重ならず低く出たが、追加 5 回交互測定で幅が重なり中央値差 +0.05 [%]、差の大きさは他条件の幅と同程度、実装上 `sendto` 繰り返しで 1 呼び出し 1 個のため大きな差が出る仕組みがないことから、主エージェント判断で条件付きで適合 (BL-015) | 条件付きで適合 |
 | 5 | Linux と Windows の両方で `testfw`、`cplat`、`porter` のビルドと `cplat`・`porter` の `make test` および追加単体テストが成功し、対象範囲の `.warn` に変更起因の警告がない | 4.1 から 4.10 (Linux): 3 サブモジュールのビルド成功、`cplat` `make test` 成功 (99 ディレクトリ、2,243 件、`socketTest` 69 件・追加 7 件、`exportTest` 2 件)、`porter` `make test` 成功 (57 ディレクトリ、985 件、`potrSocketIoTest` 16 件・追加 5 件、`potrSendThreadTest` 49 件・追加 12 件、`potrFlowControlTest` 訂正後 163 件・追加 1 件)。内容のある `.warn` なし。4.11 (Windows、依頼 16・17): `cplat` 全体 2,105 件 (SKIPPED 1、`socketTest` 65 件、`exportTest` 2 件)、`porter` 全体 768 件 (SKIPPED 1、変更対象 3 テスト 16 件・49 件・163 件) が成功。MSVC 警告および内容のある `.warn` なし | 適合 |
 | 6 | `check_functional_spec.py` が成功し、変更した Markdown の `text_style_jp.py --dry-run` に指摘がない | 4.4 で `check_functional_spec.py` 成功 (要件 423 件、下流参照 42 件)、`cplat` の `net.md`・`api-cheatsheet.md` 指摘なし。4.10 で `porter` の `architecture.md`・`protocol.md` 指摘なし。4.14 から 4.16 で更新した案件文書も `text_style_jp.py --dry-run` で指摘なしを確認 | 適合 |
-| 7 | main へ push した後の CI (Linux と Windows のビルドとテスト) が成功する | 4.13: `testfw` `75cd774`、`cplat` `8252c026`、`porter` `063d8cc`、親リポジトリ `dbc28819` を main へ push 済み。CI `45888369745` が実行中 | CI の結果待ち |
-| 8 | 対策元の残課題一覧の BL-010 の状態と対処が更新され、この案件の残課題一覧が整理されている | 対策元 (`261123-porter-remaining-backlog-backlog.md`) の BL-010 は経緯に実装・検証結果の要約を追記済みだが、CI `45888369745` の結果待ちのため状態は「対応中」のまま未確定。この案件の残課題一覧 (`261123-porter-remaining-backlog-phase2-backlog.md`) は 4.16 で再構築・整理済み | CI の結果待ち |
+| 7 | main へ push した後の CI (Linux と Windows のビルドとテスト) が成功する | CI `45888369745` は全ジョブが成功 (ビルドとテストは Linux の ol8、ol9、ol10 と Windows で成功。警告は struct-meta の生成パーサーの C4127 だけで、この案件の変更によるものではなく、別の修正 (親リポジトリの 9376a220) で対処中) | 適合 |
+| 8 | 対策元の残課題一覧の BL-010 の状態と対処が更新され、この案件の残課題一覧が整理されている | 対策元の BL-010 を「対策済み」へ更新し、経緯に実装と検証の結果を記録済み。この案件の残課題一覧は整理済み | 適合 |
 
 - 対策元の残課題一覧 (`261123-porter-remaining-backlog-backlog.md`) の BL-010 は、状態を「対応中」のまま維持し、「継続作業での経緯と対処」に Linux と Windows の実装・検証・性能測定の結果および CI `45888369745` の結果待ちである旨を追記しました。
 
