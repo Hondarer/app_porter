@@ -14,6 +14,7 @@
 #include <inttypes.h>
 
 #include <cJSON.h>
+#include <cJSON_PatchCheck.h>
 
 #include <cplat/runtime/memory_lock.h>
 

@@ -107,6 +107,7 @@ Table: porter API のスレッド セーフ性一覧
 
 > [!IMPORTANT]
 > JSONC 解析をほかの解析と並行に実行できるのは、`app/cjson` の libcjson_app が、同梱の cJSON 本体へ独自のパッチ (`patches/0003-thread-local-global-error.patch`) を当て、解析の誤りの位置 (`global_error`) をスレッド ローカルにしているためです。  
+> ビルド時に `cJSON_PatchCheck.h` でパッチ `0003` の適用を検査し、パッチのない `cJSON.h` の取り込みをコンパイル エラーとして検出します。  
 > パッチを当てていない cJSON (上流の配布物やシステムの cJSON) とリンクした場合は、この並行実行は成り立ちません。
 
 通知はハンドルごとの専用スレッドで、登録順に直列実行します。  

@@ -14,6 +14,7 @@
 #include <inttypes.h>
 
 #include <cJSON.h>
+#include <cJSON_PatchCheck.h>
 
 #include <porter/porter_const.h>
 #include <porter/porter_result.h>

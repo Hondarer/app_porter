@@ -6,6 +6,7 @@
  */
 
 #include <cJSON.h>
+#include <cJSON_PatchCheck.h>
 
 #include <porter/porter_result.h>
 #include <porter/porter_spec.h>

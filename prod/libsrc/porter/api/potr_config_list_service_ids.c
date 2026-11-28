@@ -6,6 +6,7 @@
  */
 
 #include <cJSON.h>
+#include <cJSON_PatchCheck.h>
 
 #include <cplat/crt/stdlib.h>
 

@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include <cJSON.h>
+#include <cJSON_PatchCheck.h>
 #include <cJSON_Integer.h>
 
 #include <cplat/crt/stdlib.h>
